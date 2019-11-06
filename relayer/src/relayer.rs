@@ -1,9 +1,9 @@
-enum RelayerState {
+pub enum RelayerState {
     ScanningBitcoin,
     Failure,
 }
 
-enum RelayerEvent {
+pub enum RelayerEvent {
     NewHeader,
 }
 
@@ -17,7 +17,7 @@ impl RelayerState {
     }
 }
 
-struct RelayerStateMachine {
+pub struct RelayerStateMachine {
     pub state: RelayerState,
 }
 
