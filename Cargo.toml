@@ -1,2 +1,6 @@
 [workspace]
-members = ["relayer"]
+members = [
+    "relayer",
+    "core/primitives",
+]
+
