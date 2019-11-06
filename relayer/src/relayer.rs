@@ -1,8 +1,12 @@
+use nomic_primitives::transaction::Transaction;
+
+#[derive(Debug)]
 pub enum RelayerState {
     ScanningBitcoin,
     Failure,
 }
 
+#[derive(Debug)]
 pub enum RelayerEvent {
     NewHeader,
 }
@@ -32,5 +36,17 @@ impl RelayerStateMachine {
         match &mut self.state {
             _ => RelayerEvent::NewHeader,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn run_relayer_state_machine() {
+        let mut sm = RelayerStateMachine::new();
+        let event = sm.run();
+
+        println!("got an event: {:?}", event);
     }
 }
