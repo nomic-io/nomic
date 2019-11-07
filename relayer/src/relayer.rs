@@ -16,7 +16,22 @@ pub enum RelayerState {
 
 #[derive(Debug)]
 pub enum RelayerEvent {
-    NewHeader,
+    BitcoinRpcReady,
+    BitcoinRpcError,
+    PegClientReady,
+    PegClientError,
+    Initialized,
+    FetchBestBitcoinBlockHashSuccess,
+    FetchBestBitcoinBlockHashFailure,
+    FetchPegBlockHashesSuccess,
+    FetchPegBlockHashesFailure,
+    ComputeCommonAncestorSuccess,
+    ComputeCommonAncestorFailure,
+    FetchLinkingHeadersSuccess,
+    FetchLinkingHeadersFailure,
+    BuiltHeaderTransaction,
+    BroadcastHeaderTransactionSuccess,
+    BroadcastHeaderTransactionFailure,
 }
 
 impl RelayerState {
@@ -50,7 +65,7 @@ impl RelayerStateMachine {
         match &mut self.state {
             _ => {
                 get_best_hash(&self.rpc);
-                RelayerEvent::NewHeader
+                RelayerEvent::Initialized
             }
         }
     }
