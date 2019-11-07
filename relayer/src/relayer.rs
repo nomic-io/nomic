@@ -4,7 +4,8 @@ use std::env;
 
 #[derive(Debug)]
 pub enum RelayerState {
-    Initialize,
+    InitializeBitcoinRpc,
+    InitializePegClient,
     FetchBestBitcoinBlockHash,
     FetchPegBlockHashes,
     ComputeCommonAncestor,
@@ -16,11 +17,10 @@ pub enum RelayerState {
 
 #[derive(Debug)]
 pub enum RelayerEvent {
-    BitcoinRpcReady,
-    BitcoinRpcError,
-    PegClientReady,
-    PegClientError,
-    Initialized,
+    InitializeBitcoinRpcSuccess,
+    InitializeBitcoinRpcFailure,
+    InitializedPegClientSuccess,
+    InitializedPegClientFailure,
     FetchBestBitcoinBlockHashSuccess,
     FetchBestBitcoinBlockHashFailure,
     FetchPegBlockHashesSuccess,
@@ -56,7 +56,7 @@ impl RelayerStateMachine {
         let rpc_auth = Auth::UserPass(rpc_user, rpc_pass);
         let rpc_url = "http://localhost:18332";
         RelayerStateMachine {
-            state: RelayerState::Initialize,
+            state: RelayerState::InitializeBitcoinRpc,
             rpc: Client::new(rpc_url.to_string(), rpc_auth).unwrap(),
         }
     }
@@ -65,7 +65,7 @@ impl RelayerStateMachine {
         match &mut self.state {
             _ => {
                 get_best_hash(&self.rpc);
-                RelayerEvent::Initialized
+                RelayerEvent::InitializeBitcoinRpcSuccess
             }
         }
     }
@@ -83,5 +83,6 @@ mod tests {
     fn run_relayer_state_machine() {
         let mut sm = RelayerStateMachine::new();
         let event = sm.run();
+        sm.state = sm.state.next(event);
     }
 }
