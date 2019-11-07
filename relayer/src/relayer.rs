@@ -19,8 +19,8 @@ pub enum RelayerState {
 pub enum RelayerEvent {
     InitializeBitcoinRpcSuccess,
     InitializeBitcoinRpcFailure,
-    InitializedPegClientSuccess,
-    InitializedPegClientFailure,
+    InitializePegClientSuccess,
+    InitializePegClientFailure,
     FetchBestBitcoinBlockHashSuccess,
     FetchBestBitcoinBlockHashFailure,
     FetchPegBlockHashesSuccess,
