@@ -39,6 +39,20 @@ impl RelayerState {
         use self::RelayerEvent::*;
         use self::RelayerState::*;
         match (self, event) {
+            (InitializeBitcoinRpc, InitializeBitcoinRpcSuccess) => InitializePegClient,
+            (InitializePegClient, InitializePegClientSuccess) => FetchBestBitcoinBlockHash,
+            (FetchBestBitcoinBlockHash, FetchBestBitcoinBlockHashSuccess) => FetchPegBlockHashes,
+            (FetchPegBlockHashes, FetchPegBlockHashesSuccess) => ComputeCommonAncestor,
+            (FetchPegBlockHashes, FetchPegBlockHashesFailure) => FetchPegBlockHashes,
+            (ComputeCommonAncestor, ComputeCommonAncestorSuccess) => FetchLinkingHeaders,
+            (FetchLinkingHeaders, FetchLinkingHeadersSuccess) => BuildHeaderTransaction,
+            (BuildHeaderTransaction, BuiltHeaderTransaction) => BroadcastHeaderTransaction,
+            (BroadcastHeaderTransaction, BroadcastHeaderTransactionSuccess) => {
+                FetchBestBitcoinBlockHash
+            }
+            (BroadcastHeaderTransaction, BroadcastHeaderTransactionFailure) => {
+                BroadcastHeaderTransaction
+            }
             (s, e) => Failure,
         }
     }
