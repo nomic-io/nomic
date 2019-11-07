@@ -4,7 +4,13 @@ use std::env;
 
 #[derive(Debug)]
 pub enum RelayerState {
-    ScanningBitcoin,
+    Initialize,
+    FetchBestBitcoinBlockHash,
+    FetchPegBlockHashes,
+    ComputeCommonAncestor,
+    FetchLinkingHeaders,
+    BuildHeaderTransaction,
+    BroadcastHeaderTransaction,
     Failure,
 }
 
@@ -35,7 +41,7 @@ impl RelayerStateMachine {
         let rpc_auth = Auth::UserPass(rpc_user, rpc_pass);
         let rpc_url = "http://localhost:18332";
         RelayerStateMachine {
-            state: RelayerState::ScanningBitcoin,
+            state: RelayerState::Initialize,
             rpc: Client::new(rpc_url.to_string(), rpc_auth).unwrap(),
         }
     }
