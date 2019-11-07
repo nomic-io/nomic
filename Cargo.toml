@@ -2,5 +2,6 @@
 members = [
     "relayer",
     "core/primitives",
+    "chain/client",
 ]
 
