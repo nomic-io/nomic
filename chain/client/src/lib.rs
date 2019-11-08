@@ -1,3 +1,3 @@
-pub use crate::client::Client;
+pub use crate::client::{Client, ClientError};
 
 mod client;
