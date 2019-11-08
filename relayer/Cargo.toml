@@ -7,6 +7,6 @@ edition = "2018"
 [dependencies]
 nomic-primitives = { path = "../core/primitives" }
 nomic-client = { path = "../chain/client" }
-bitcoincore-rpc = "0.7.0"
-bitcoin = "0.21.0"
+bitcoincore-rpc = "0.8.0-rc1"
+bitcoin = "^0.19.1"
 

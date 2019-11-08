@@ -5,6 +5,6 @@ authors = ["Judd <kepzorz@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-bitcoin = "0.21.0"
+bitcoin = "^0.19.1"
 
 
