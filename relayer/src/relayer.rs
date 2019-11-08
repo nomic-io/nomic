@@ -9,10 +9,18 @@ pub enum RelayerState {
     InitializeBitcoinRpc,
     InitializePegClient,
     FetchPegBlockHashes,
-    ComputeCommonAncestor,
-    FetchLinkingHeaders,
-    BuildHeaderTransaction,
-    BroadcastHeaderTransaction,
+    ComputeCommonAncestor {
+        peg_block_hashes: Vec<Hash>,
+    },
+    FetchLinkingHeaders {
+        common_block_hash: Hash,
+    },
+    BuildHeaderTransaction {
+        linking_headers: Vec<Hash>,
+    },
+    BroadcastHeaderTransaction {
+        header_transaction: Transaction::Headers,
+    },
     Failure,
 }
 
