@@ -1,5 +1,7 @@
+use bitcoin::BlockHeader;
+
 pub enum Transaction {
-    Headers,
+    Headers { block_headers: Vec<BlockHeader> },
     Deposit,
     SignatoryCommitment,
     SignatorySignature,
