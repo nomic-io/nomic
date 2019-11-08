@@ -122,7 +122,11 @@ impl RelayerStateMachine {
             }
 
             FetchPegBlockHashes => {
-                let peg_client = self.peg_client.as_ref().unwrap();
+                let peg_client = match self.peg_client.as_ref() {
+                    Some(peg_client) => peg_client,
+                    None => return FetchPegBlockHashesFailure,
+                };
+
                 let peg_hashes = peg_client.get_bitcoin_block_hashes();
 
                 match peg_hashes {
