@@ -1,4 +1,5 @@
 use bitcoincore_rpc::{Auth, Client, Error, RpcApi};
+use nomic_client::{Client as PegClient, ClientError as PegClientError};
 use nomic_primitives::transaction::Transaction;
 use std::env;
 
@@ -61,6 +62,7 @@ impl RelayerState {
 pub struct RelayerStateMachine {
     pub state: RelayerState,
     rpc: Option<Client>,
+    peg_client: Option<PegClient>,
 }
 
 impl RelayerStateMachine {
@@ -68,6 +70,7 @@ impl RelayerStateMachine {
         RelayerStateMachine {
             state: RelayerState::InitializeBitcoinRpc,
             rpc: None,
+            peg_client: None,
         }
     }
 
@@ -83,6 +86,16 @@ impl RelayerStateMachine {
                         InitializeBitcoinRpcSuccess
                     }
                     Err(_) => InitializeBitcoinRpcFailure,
+                }
+            }
+            InitializePegClient => {
+                let peg_client = PegClient::new();
+                match peg_client {
+                    Ok(peg_client) => {
+                        self.peg_client = Some(peg_client);
+                        InitializePegClientSuccess
+                    }
+                    Err(_) => InitializePegClientFailure,
                 }
             }
             _ => panic!("Relayer is in an unhandled state"),
@@ -109,8 +122,10 @@ mod tests {
     #[test]
     fn run_relayer_state_machine() {
         let mut sm = RelayerStateMachine::new();
-        let event = sm.run();
-        sm.state = sm.state.next(event);
-        println!("sm state: {:?}", sm.state);
+        for _ in 0..2 {
+            let event = sm.run();
+            sm.state = sm.state.next(event);
+            println!("sm state: {:?}", sm.state);
+        }
     }
 }
