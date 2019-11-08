@@ -1,7 +1,7 @@
 use bitcoin::hashes::sha256d::Hash;
 use bitcoincore_rpc::{Auth, Client, Error, RpcApi};
 use nomic_client::{Client as PegClient, ClientError as PegClientError};
-use nomic_primitives::transaction::Transaction;
+use nomic_primitives::transaction::HeaderTransaction;
 use std::env;
 
 #[derive(Debug)]
@@ -19,7 +19,7 @@ pub enum RelayerState {
         linking_headers: Vec<Hash>,
     },
     BroadcastHeaderTransaction {
-        header_transaction: Transaction::Headers,
+        header_transaction: HeaderTransaction,
     },
     Failure,
 }
@@ -43,7 +43,7 @@ pub enum RelayerEvent {
     },
     FetchLinkingHeadersFailure,
     BuiltHeaderTransaction {
-        header_transaction: Transaction::Headers,
+        header_transaction: HeaderTransaction,
     },
     BroadcastHeaderTransactionSuccess,
     BroadcastHeaderTransactionFailure,
