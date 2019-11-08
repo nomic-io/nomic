@@ -94,6 +94,16 @@ impl RelayerStateMachine {
                 }
             }
 
+            FetchPegBlockHashes => {
+                let peg_client = self.peg_client.as_ref().unwrap();
+                let peg_headers = peg_client.get_bitcoin_block_hashes();
+
+                match peg_headers {
+                    Ok(headers) => FetchPegBlockHashesSuccess,
+                    Err(_) => FetchPegBlockHashesFailure,
+                }
+            }
+
             _ => panic!("Relayer is in an unhandled state"),
         }
     }
