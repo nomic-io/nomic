@@ -30,13 +30,21 @@ pub enum RelayerEvent {
     InitializeBitcoinRpcFailure,
     InitializePegClientSuccess,
     InitializePegClientFailure,
-    FetchPegBlockHashesSuccess,
+    FetchPegBlockHashesSuccess {
+        peg_block_hashes: Vec<Hash>,
+    },
     FetchPegBlockHashesFailure,
-    ComputeCommonAncestorSuccess,
+    ComputeCommonAncestorSuccess {
+        common_block_hash: Hash,
+    },
     ComputeCommonAncestorFailure,
-    FetchLinkingHeadersSuccess,
+    FetchLinkingHeadersSuccess {
+        linking_headers: Vec<Hash>,
+    },
     FetchLinkingHeadersFailure,
-    BuiltHeaderTransaction,
+    BuiltHeaderTransaction {
+        header_transaction: Transaction::Headers,
+    },
     BroadcastHeaderTransactionSuccess,
     BroadcastHeaderTransactionFailure,
 }
