@@ -1,1 +1,3 @@
-pub use client::Client;
+pub use crate::client::Client;
+
+mod client;
