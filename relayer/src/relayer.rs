@@ -56,15 +56,26 @@ impl RelayerState {
         match (self, event) {
             (InitializeBitcoinRpc, InitializeBitcoinRpcSuccess) => InitializePegClient,
             (InitializePegClient, InitializePegClientSuccess) => FetchPegBlockHashes,
-            (FetchPegBlockHashes, FetchPegBlockHashesSuccess) => ComputeCommonAncestor,
-            (FetchPegBlockHashes, FetchPegBlockHashesFailure) => FetchPegBlockHashes,
-            (ComputeCommonAncestor, ComputeCommonAncestorSuccess) => FetchLinkingHeaders,
-            (FetchLinkingHeaders, FetchLinkingHeadersSuccess) => BuildHeaderTransaction,
-            (BuildHeaderTransaction, BuiltHeaderTransaction) => BroadcastHeaderTransaction,
-            (BroadcastHeaderTransaction, BroadcastHeaderTransactionSuccess) => FetchPegBlockHashes,
-            (BroadcastHeaderTransaction, BroadcastHeaderTransactionFailure) => {
-                BroadcastHeaderTransaction
+            (FetchPegBlockHashes, FetchPegBlockHashesSuccess { peg_block_hashes }) => {
+                ComputeCommonAncestor { peg_block_hashes }
             }
+            (FetchPegBlockHashes, FetchPegBlockHashesFailure) => FetchPegBlockHashes,
+            (ComputeCommonAncestor { .. }, ComputeCommonAncestorSuccess { common_block_hash }) => {
+                FetchLinkingHeaders { common_block_hash }
+            }
+            (FetchLinkingHeaders { .. }, FetchLinkingHeadersSuccess { linking_headers }) => {
+                BuildHeaderTransaction { linking_headers }
+            }
+            (BuildHeaderTransaction { .. }, BuiltHeaderTransaction { header_transaction }) => {
+                BroadcastHeaderTransaction { header_transaction }
+            }
+            (BroadcastHeaderTransaction { .. }, BroadcastHeaderTransactionSuccess) => {
+                FetchPegBlockHashes
+            }
+            (
+                BroadcastHeaderTransaction { header_transaction },
+                BroadcastHeaderTransactionFailure,
+            ) => BroadcastHeaderTransaction { header_transaction },
             (_, _) => Failure,
         }
     }
@@ -112,10 +123,12 @@ impl RelayerStateMachine {
 
             FetchPegBlockHashes => {
                 let peg_client = self.peg_client.as_ref().unwrap();
-                let peg_headers = peg_client.get_bitcoin_block_hashes();
+                let peg_hashes = peg_client.get_bitcoin_block_hashes();
 
-                match peg_headers {
-                    Ok(headers) => FetchPegBlockHashesSuccess,
+                match peg_hashes {
+                    Ok(hashes) => FetchPegBlockHashesSuccess {
+                        peg_block_hashes: hashes,
+                    },
                     Err(_) => FetchPegBlockHashesFailure,
                 }
             }
@@ -131,11 +144,6 @@ pub fn make_rpc_client() -> Result<Client, Error> {
     let rpc_auth = Auth::UserPass(rpc_user, rpc_pass);
     let rpc_url = "http://localhost:18332";
     Client::new(rpc_url.to_string(), rpc_auth)
-}
-
-fn get_best_bitcoin_hash(rpc: &Client) {
-    let hash = &rpc.get_best_block_hash().unwrap();
-    println!("best hash: {}", hash);
 }
 
 #[cfg(test)]
