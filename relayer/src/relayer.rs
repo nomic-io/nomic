@@ -1,3 +1,4 @@
+use bitcoin::hashes::sha256d::Hash;
 use bitcoincore_rpc::{Auth, Client, Error, RpcApi};
 use nomic_client::{Client as PegClient, ClientError as PegClientError};
 use nomic_primitives::transaction::Transaction;
@@ -7,7 +8,6 @@ use std::env;
 pub enum RelayerState {
     InitializeBitcoinRpc,
     InitializePegClient,
-    FetchBestBitcoinBlockHash,
     FetchPegBlockHashes,
     ComputeCommonAncestor,
     FetchLinkingHeaders,
@@ -22,8 +22,6 @@ pub enum RelayerEvent {
     InitializeBitcoinRpcFailure,
     InitializePegClientSuccess,
     InitializePegClientFailure,
-    FetchBestBitcoinBlockHashSuccess,
-    FetchBestBitcoinBlockHashFailure,
     FetchPegBlockHashesSuccess,
     FetchPegBlockHashesFailure,
     ComputeCommonAncestorSuccess,
@@ -41,16 +39,13 @@ impl RelayerState {
         use self::RelayerState::*;
         match (self, event) {
             (InitializeBitcoinRpc, InitializeBitcoinRpcSuccess) => InitializePegClient,
-            (InitializePegClient, InitializePegClientSuccess) => FetchBestBitcoinBlockHash,
-            (FetchBestBitcoinBlockHash, FetchBestBitcoinBlockHashSuccess) => FetchPegBlockHashes,
+            (InitializePegClient, InitializePegClientSuccess) => FetchPegBlockHashes,
             (FetchPegBlockHashes, FetchPegBlockHashesSuccess) => ComputeCommonAncestor,
             (FetchPegBlockHashes, FetchPegBlockHashesFailure) => FetchPegBlockHashes,
             (ComputeCommonAncestor, ComputeCommonAncestorSuccess) => FetchLinkingHeaders,
             (FetchLinkingHeaders, FetchLinkingHeadersSuccess) => BuildHeaderTransaction,
             (BuildHeaderTransaction, BuiltHeaderTransaction) => BroadcastHeaderTransaction,
-            (BroadcastHeaderTransaction, BroadcastHeaderTransactionSuccess) => {
-                FetchBestBitcoinBlockHash
-            }
+            (BroadcastHeaderTransaction, BroadcastHeaderTransactionSuccess) => FetchPegBlockHashes,
             (BroadcastHeaderTransaction, BroadcastHeaderTransactionFailure) => {
                 BroadcastHeaderTransaction
             }
@@ -98,6 +93,7 @@ impl RelayerStateMachine {
                     Err(_) => InitializePegClientFailure,
                 }
             }
+
             _ => panic!("Relayer is in an unhandled state"),
         }
     }
@@ -111,7 +107,7 @@ pub fn make_rpc_client() -> Result<Client, Error> {
     Client::new(rpc_url.to_string(), rpc_auth)
 }
 
-fn get_best_hash(rpc: &Client) {
+fn get_best_bitcoin_hash(rpc: &Client) {
     let hash = &rpc.get_best_block_hash().unwrap();
     println!("best hash: {}", hash);
 }
