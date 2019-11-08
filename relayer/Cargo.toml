@@ -8,4 +8,5 @@ edition = "2018"
 nomic-primitives = { path = "../core/primitives" }
 nomic-client = { path = "../chain/client" }
 bitcoincore-rpc = "0.7.0"
+bitcoin = "0.21.0"
 
