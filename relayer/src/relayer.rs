@@ -150,6 +150,27 @@ pub fn make_rpc_client() -> Result<Client, Error> {
     Client::new(rpc_url.to_string(), rpc_auth)
 }
 
+/// Iterate over peg hashes, starting from the tip and going backwards.
+/// The first hash that we find that's in our full node's longest chain
+/// is considered the common ancestor.
+pub fn compute_common_ancestor(rpc: &Client, peg_hashes: Vec<Hash>) -> Result<Hash, Error> {
+    for hash in peg_hashes.iter().rev() {
+        let rpc_response = rpc.get_block_header_verbose(hash);
+        match rpc_response {
+            Ok(response) => {
+                let confs = response.confirmations;
+                if confs > 0 {
+                    return Ok(response.hash);
+                }
+            }
+            Err(e) => return Err(e),
+        }
+    }
+
+    // No rpc error, but no common headers found
+    panic!("No common headers found");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
