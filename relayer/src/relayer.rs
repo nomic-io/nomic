@@ -137,6 +137,19 @@ impl RelayerStateMachine {
                 }
             }
 
+            ComputeCommonAncestor { peg_block_hashes } => {
+                let rpc = match self.rpc.as_ref() {
+                    Some(rpc) => rpc,
+                    None => return ComputeCommonAncestorFailure,
+                };
+                match compute_common_ancestor(rpc, peg_block_hashes.to_vec()) {
+                    Ok(hash) => ComputeCommonAncestorSuccess {
+                        common_block_hash: hash,
+                    },
+                    Err(_) => ComputeCommonAncestorFailure,
+                }
+            }
+
             _ => panic!("Relayer is in an unhandled state"),
         }
     }
