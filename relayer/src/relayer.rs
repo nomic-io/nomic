@@ -172,6 +172,13 @@ impl RelayerStateMachine {
                 }
             }
 
+            BuildHeaderTransactions { linking_headers } => {
+                let header_transactions = build_headers_transactions(linking_headers);
+                BuiltHeaderTransactions {
+                    header_transactions,
+                }
+            }
+
             _ => panic!("Relayer is in an unhandled state"),
         }
     }
