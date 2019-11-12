@@ -16,7 +16,7 @@ pub enum RelayerState {
         common_block_hash: Hash,
     },
     BuildHeaderTransaction {
-        linking_headers: Vec<Hash>,
+        linking_headers: Vec<bitcoin::BlockHeader>,
     },
     BroadcastHeaderTransaction {
         header_transaction: HeaderTransaction,
@@ -39,7 +39,7 @@ pub enum RelayerEvent {
     },
     ComputeCommonAncestorFailure,
     FetchLinkingHeadersSuccess {
-        linking_headers: Vec<Hash>,
+        linking_headers: Vec<bitcoin::BlockHeader>,
     },
     FetchLinkingHeadersFailure,
     BuiltHeaderTransaction {
