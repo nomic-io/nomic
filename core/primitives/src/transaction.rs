@@ -1,7 +1,8 @@
 use bitcoin::BlockHeader;
 
+#[derive(Debug)]
 pub enum Transaction {
-    Headers(HeaderTransaction),
+    Header(HeaderTransaction),
     Deposit,
     SignatoryCommitment,
     SignatorySignature,
