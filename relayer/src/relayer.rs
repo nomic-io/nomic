@@ -173,9 +173,22 @@ impl RelayerStateMachine {
             }
 
             BuildHeaderTransactions { linking_headers } => {
-                let header_transactions = build_headers_transactions(linking_headers);
+                let header_transactions = build_header_transactions(linking_headers);
                 BuiltHeaderTransactions {
                     header_transactions,
+                }
+            }
+
+            BroadcastHeaderTransactions {
+                header_transactions,
+            } => {
+                let peg_client = match self.peg_client.as_ref() {
+                    Some(peg_client) => peg_client,
+                    None => return BroadcastHeaderTransactionsFailure,
+                };
+                match broadcast_header_transactions(peg_client, header_transactions) {
+                    Ok(_) => BroadcastHeaderTransactionsSuccess,
+                    Err(_) => BroadcastHeaderTransactionsFailure,
                 }
             }
 
@@ -184,7 +197,7 @@ impl RelayerStateMachine {
     }
 }
 
-pub fn make_rpc_client() -> Result<Client, Error> {
+pub fn make_rpc_client() -> Result<Client, RpcError> {
     let rpc_user = env::var("BTC_RPC_USER").unwrap();
     let rpc_pass = env::var("BTC_RPC_PASS").unwrap();
     let rpc_auth = Auth::UserPass(rpc_user, rpc_pass);
@@ -239,7 +252,7 @@ pub fn fetch_linking_headers(
     Ok(headers)
 }
 
-pub fn build_headers_transactions(headers: &[bitcoin::BlockHeader]) -> Vec<HeaderTransaction> {
+pub fn build_header_transactions(headers: &[bitcoin::BlockHeader]) -> Vec<HeaderTransaction> {
     const BATCH_SIZE: usize = 100;
     headers
         .chunks(BATCH_SIZE)
