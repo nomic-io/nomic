@@ -1,5 +1,5 @@
 use bitcoin::hashes::sha256d::Hash;
-use bitcoincore_rpc::{Auth, Client, Error, RpcApi};
+use bitcoincore_rpc::{Auth, Client, Error as RpcError, RpcApi};
 use nomic_client::{Client as PegClient, ClientError as PegClientError};
 use nomic_primitives::transaction::HeaderTransaction;
 use std::env;
@@ -195,7 +195,7 @@ pub fn make_rpc_client() -> Result<Client, Error> {
 /// Iterate over peg hashes, starting from the tip and going backwards.
 /// The first hash that we find that's in our full node's longest chain
 /// is considered the common ancestor.
-pub fn compute_common_ancestor(rpc: &Client, peg_hashes: &[Hash]) -> Result<Hash, Error> {
+pub fn compute_common_ancestor(rpc: &Client, peg_hashes: &[Hash]) -> Result<Hash, RpcError> {
     for hash in peg_hashes.iter().rev() {
         let rpc_response = rpc.get_block_header_verbose(hash);
         match rpc_response {
@@ -218,7 +218,7 @@ pub fn compute_common_ancestor(rpc: &Client, peg_hashes: &[Hash]) -> Result<Hash
 pub fn fetch_linking_headers(
     rpc: &Client,
     common_block_hash: Hash,
-) -> Result<Vec<bitcoin::BlockHeader>, Error> {
+) -> Result<Vec<bitcoin::BlockHeader>, RpcError> {
     // Start at bitcoind's best block
     let best_block_hash = rpc.get_best_block_hash()?;
     let mut headers: Vec<bitcoin::BlockHeader> = Vec::new();
