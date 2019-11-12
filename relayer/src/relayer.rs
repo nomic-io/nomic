@@ -15,11 +15,11 @@ pub enum RelayerState {
     FetchLinkingHeaders {
         common_block_hash: Hash,
     },
-    BuildHeaderTransaction {
+    BuildHeaderTransactions {
         linking_headers: Vec<bitcoin::BlockHeader>,
     },
-    BroadcastHeaderTransaction {
-        header_transaction: HeaderTransaction,
+    BroadcastHeaderTransactions {
+        header_transactions: Vec<HeaderTransaction>,
     },
     Failure,
 }
@@ -42,11 +42,11 @@ pub enum RelayerEvent {
         linking_headers: Vec<bitcoin::BlockHeader>,
     },
     FetchLinkingHeadersFailure,
-    BuiltHeaderTransaction {
-        header_transaction: HeaderTransaction,
+    BuiltHeaderTransactions {
+        header_transactions: Vec<HeaderTransaction>,
     },
-    BroadcastHeaderTransactionSuccess,
-    BroadcastHeaderTransactionFailure,
+    BroadcastHeaderTransactionsSuccess,
+    BroadcastHeaderTransactionsFailure,
 }
 
 impl RelayerState {
@@ -64,18 +64,27 @@ impl RelayerState {
                 FetchLinkingHeaders { common_block_hash }
             }
             (FetchLinkingHeaders { .. }, FetchLinkingHeadersSuccess { linking_headers }) => {
-                BuildHeaderTransaction { linking_headers }
+                BuildHeaderTransactions { linking_headers }
             }
-            (BuildHeaderTransaction { .. }, BuiltHeaderTransaction { header_transaction }) => {
-                BroadcastHeaderTransaction { header_transaction }
-            }
-            (BroadcastHeaderTransaction { .. }, BroadcastHeaderTransactionSuccess) => {
+            (
+                BuildHeaderTransactions { .. },
+                BuiltHeaderTransactions {
+                    header_transactions,
+                },
+            ) => BroadcastHeaderTransactions {
+                header_transactions,
+            },
+            (BroadcastHeaderTransactions { .. }, BroadcastHeaderTransactionsSuccess) => {
                 FetchPegBlockHashes
             }
             (
-                BroadcastHeaderTransaction { header_transaction },
-                BroadcastHeaderTransactionFailure,
-            ) => BroadcastHeaderTransaction { header_transaction },
+                BroadcastHeaderTransactions {
+                    header_transactions,
+                },
+                BroadcastHeaderTransactionsFailure,
+            ) => BroadcastHeaderTransactions {
+                header_transactions,
+            },
             (_, _) => Failure,
         }
     }
