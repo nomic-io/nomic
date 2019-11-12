@@ -9,5 +9,5 @@ pub enum Transaction {
 
 #[derive(Debug)]
 pub struct HeaderTransaction {
-    block_headers: Vec<BlockHeader>,
+    pub block_headers: Vec<BlockHeader>,
 }
