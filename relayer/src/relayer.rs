@@ -232,6 +232,16 @@ pub fn fetch_linking_headers(
     Ok(headers)
 }
 
+pub fn build_headers_transactions(headers: &[bitcoin::BlockHeader]) -> Vec<HeaderTransaction> {
+    const BATCH_SIZE: usize = 100;
+    headers
+        .chunks(BATCH_SIZE)
+        .map(|block_headers| HeaderTransaction {
+            block_headers: block_headers.to_vec(),
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
