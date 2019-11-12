@@ -249,6 +249,18 @@ pub fn build_headers_transactions(headers: &[bitcoin::BlockHeader]) -> Vec<Heade
         .collect()
 }
 
+/// Broadcast header relay transactions to the peg.
+/// Returns an error result if any transactions aren't successfully broadcasted.
+pub fn broadcast_header_transactions(
+    peg_client: &PegClient,
+    header_transactions: &[HeaderTransaction],
+) -> Result<(), PegClientError> {
+    for header_transaction in header_transactions {
+        peg_client.send(header_transaction)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
