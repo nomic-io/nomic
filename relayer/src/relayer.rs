@@ -150,6 +150,19 @@ impl RelayerStateMachine {
                 }
             }
 
+            FetchLinkingHeaders { common_block_hash } => {
+                let rpc = match self.rpc.as_ref() {
+                    Some(rpc) => rpc,
+                    None => return FetchLinkingHeadersFailure,
+                };
+
+                let linking_headers = fetch_linking_headers(rpc, *common_block_hash);
+                match linking_headers {
+                    Ok(linking_headers) => FetchLinkingHeadersSuccess { linking_headers },
+                    Err(_) => FetchLinkingHeadersFailure,
+                }
+            }
+
             _ => panic!("Relayer is in an unhandled state"),
         }
     }
