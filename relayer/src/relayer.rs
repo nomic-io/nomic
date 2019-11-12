@@ -199,6 +199,14 @@ impl RelayerStateMachine {
     }
 }
 
+pub struct RelayerError {}
+
+impl RelayerError {
+    fn new() -> Self {
+        RelayerError {}
+    }
+}
+
 pub fn make_rpc_client() -> Result<Client, RpcError> {
     let rpc_user = env::var("BTC_RPC_USER").unwrap();
     let rpc_pass = env::var("BTC_RPC_PASS").unwrap();
@@ -220,12 +228,11 @@ pub fn compute_common_ancestor(rpc: &Client, peg_hashes: &[Hash]) -> Result<Hash
                     return Ok(response.hash);
                 }
             }
-            Err(e) => return Err(e),
+            Err(_) => return Err(RelayerError::new()),
         }
     }
 
-    // No rpc error, but no common headers found
-    panic!("No common headers found");
+    Err(RelayerError::new())
 }
 
 /// Fetch all the Bitcoin block headers that connect the peg zone to the tip of Bitcoind's longest
