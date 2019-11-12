@@ -184,6 +184,32 @@ pub fn compute_common_ancestor(rpc: &Client, peg_hashes: &[Hash]) -> Result<Hash
     panic!("No common headers found");
 }
 
+/// Fetch all the Bitcoin block headers that connect the peg zone to the tip of Bitcoind's longest
+/// chain.
+pub fn fetch_linking_headers(
+    rpc: &Client,
+    common_block_hash: Hash,
+) -> Result<Vec<bitcoin::BlockHeader>, Error> {
+    // Start at bitcoind's best block
+    let best_block_hash = rpc.get_best_block_hash()?;
+    let mut headers: Vec<bitcoin::BlockHeader> = Vec::new();
+    let mut header = rpc.get_block_header_raw(&best_block_hash)?;
+    headers.push(header);
+
+    loop {
+        header = rpc.get_block_header_raw(&header.prev_blockhash)?;
+
+        if header.prev_blockhash == common_block_hash {
+            headers.push(header);
+            break;
+        } else {
+            headers.push(header);
+        }
+    }
+
+    Ok(headers)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
