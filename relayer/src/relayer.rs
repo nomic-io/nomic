@@ -49,6 +49,7 @@ pub enum RelayerEvent {
     },
     BroadcastHeaderTransactionsSuccess,
     BroadcastHeaderTransactionsFailure,
+    Restart,
 }
 
 impl RelayerState {
@@ -87,6 +88,8 @@ impl RelayerState {
             ) => BroadcastHeaderTransactions {
                 header_transactions,
             },
+            // Restart loop on failure
+            (Failure { .. }, Restart) => InitializeBitcoinRpc,
             (_, event) => Failure { event },
         }
     }
@@ -194,7 +197,10 @@ impl RelayerStateMachine {
                 }
             }
 
-            Failure { event } => panic!("Entered failure state from event: {:?}", event),
+            Failure { event } => {
+                println!("Entered failure state with event: {:?}", event);
+                Restart {}
+            }
         }
     }
 }
@@ -218,7 +224,7 @@ pub fn make_rpc_client() -> Result<Client, RpcError> {
 /// Iterate over peg hashes, starting from the tip and going backwards.
 /// The first hash that we find that's in our full node's longest chain
 /// is considered the common ancestor.
-pub fn compute_common_ancestor(rpc: &Client, peg_hashes: &[Hash]) -> Result<Hash, RpcError> {
+pub fn compute_common_ancestor(rpc: &Client, peg_hashes: &[Hash]) -> Result<Hash, RelayerError> {
     for hash in peg_hashes.iter().rev() {
         let rpc_response = rpc.get_block_header_verbose(hash);
         match rpc_response {
@@ -289,7 +295,7 @@ mod tests {
     #[test]
     fn run_relayer_state_machine() {
         let mut sm = RelayerStateMachine::new();
-        for _ in 0..2 {
+        for _ in 0..20 {
             let event = sm.run();
             sm.state = sm.state.next(event);
             println!("sm state: {:?}", sm.state);
