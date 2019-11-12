@@ -195,6 +195,7 @@ version = "0.1.0"
 dependencies = [
  "bitcoin 0.19.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "bitcoincore-rpc 0.8.0-rc1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nomic-primitives 0.1.0",
 ]
 
 [[package]]

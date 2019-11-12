@@ -6,6 +6,7 @@ edition = "2018"
 
 [dependencies]
 bitcoin = "^0.19.1"
+nomic-primitives = { path = "../../core/primitives" }
 
 [dev-dependencies]
 bitcoincore-rpc = "0.8.0-rc1"
