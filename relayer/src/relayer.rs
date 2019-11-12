@@ -21,7 +21,9 @@ pub enum RelayerState {
     BroadcastHeaderTransactions {
         header_transactions: Vec<HeaderTransaction>,
     },
-    Failure,
+    Failure {
+        event: RelayerEvent,
+    },
 }
 
 #[derive(Debug)]
@@ -85,7 +87,7 @@ impl RelayerState {
             ) => BroadcastHeaderTransactions {
                 header_transactions,
             },
-            (_, _) => Failure,
+            (_, event) => Failure { event },
         }
     }
 }
@@ -192,7 +194,7 @@ impl RelayerStateMachine {
                 }
             }
 
-            _ => panic!("Relayer is in an unhandled state"),
+            Failure { event } => panic!("Entered failure state from event: {:?}", event),
         }
     }
 }
