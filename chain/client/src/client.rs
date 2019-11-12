@@ -1,4 +1,5 @@
 use bitcoin::hashes::sha256d::Hash;
+use nomic_primitives::transaction::HeaderTransaction;
 
 pub struct Client {
     bitcoin_block_hashes: Vec<Hash>,
@@ -9,6 +10,10 @@ impl Client {
         Ok(Client {
             bitcoin_block_hashes: Vec::new(),
         })
+    }
+
+    pub fn send(&self, transaction: &HeaderTransaction) -> Result<(), ClientError> {
+        Ok(())
     }
 
     /// Get the Bitcoin headers currently used by the peg zone's on-chain SPV client.
