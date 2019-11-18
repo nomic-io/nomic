@@ -8,3 +8,4 @@ edition = "2018"
 
 [dependencies]
 orga = { git = "https://github.com/nomic-io/orga" }
+nomic-primitives = { path = "../../core/primitives" }
