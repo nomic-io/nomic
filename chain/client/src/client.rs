@@ -5,12 +5,12 @@ use nomic_primitives::transaction::HeaderTransaction;
 
 pub struct Client {
     bitcoin_block_hashes: Vec<Hash>,
-    store: orga::WriteCache<'static, orga::NullStore>,
+    store: orga::MapStore,
 }
 
 impl Client {
     pub fn new() -> Result<Self, ClientError> {
-        let mut mem_store = orga::WriteCache::new();
+        let mut mem_store = orga::MapStore::new();
 
         Ok(Client {
             bitcoin_block_hashes: Vec::new(),
