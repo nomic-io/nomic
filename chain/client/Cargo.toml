@@ -10,3 +10,4 @@ nomic-primitives = { path = "../../core/primitives" }
 
 [dev-dependencies]
 bitcoincore-rpc = "0.8.0-rc1"
+nomic-chain = { path = "../chain" }
