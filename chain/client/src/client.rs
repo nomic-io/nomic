@@ -1,7 +1,7 @@
 use bitcoin::hashes::sha256d::Hash;
 use nomic_chain::state_machine::run;
 use nomic_chain::{orga, Action};
-use nomic_primitives::transaction::HeaderTransaction;
+use nomic_primitives::transaction::{HeaderTransaction, Transaction};
 
 pub struct Client {
     bitcoin_block_hashes: Vec<Hash>,
@@ -18,8 +18,22 @@ impl Client {
         })
     }
 
-    pub fn send(&self, transaction: &HeaderTransaction) -> Result<(), ClientError> {
-        Ok(())
+    /// Transmit a transaction the peg state machine.
+    ///
+    /// In this mock implementation, the transaction is wrapped in a peg action and then
+    /// immediately evaluated against the client's store.
+    ///
+    /// In the future, the transaction will be serialized and broadcasted to the network, and the
+    /// state machine abci host will be responsible for wrapping the transaction in the appropriate Action
+    /// enum variant.
+    pub fn send(&mut self, transaction: Transaction) -> Result<(), ClientError> {
+        let action = Action::Transaction(transaction);
+        let execution_result = run(&mut self.store, action);
+
+        match execution_result {
+            Ok(()) => Ok(()),
+            Err(_) => Err(ClientError::new()),
+        }
     }
 
     /// Get the Bitcoin headers currently used by the peg zone's on-chain SPV client.
