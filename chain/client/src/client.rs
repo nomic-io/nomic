@@ -1,14 +1,20 @@
 use bitcoin::hashes::sha256d::Hash;
+use nomic_chain::orga;
+use nomic_chain::state_machine::{run, Action};
 use nomic_primitives::transaction::HeaderTransaction;
 
 pub struct Client {
     bitcoin_block_hashes: Vec<Hash>,
+    store: orga::WriteCache<'static, orga::NullStore>,
 }
 
 impl Client {
     pub fn new() -> Result<Self, ClientError> {
+        let mut mem_store = orga::WriteCache::new();
+
         Ok(Client {
             bitcoin_block_hashes: Vec::new(),
+            store: mem_store,
         })
     }
 
