@@ -1,11 +1,11 @@
 use bitcoin::hashes::sha256d::Hash;
-use nomic_chain::orga;
-use nomic_chain::state_machine::{run, Action};
+use nomic_chain::state_machine::run;
+use nomic_chain::{orga, Action};
 use nomic_primitives::transaction::HeaderTransaction;
 
 pub struct Client {
     bitcoin_block_hashes: Vec<Hash>,
-    store: orga::MapStore,
+    pub store: orga::MapStore,
 }
 
 impl Client {
@@ -32,12 +32,33 @@ impl Client {
     pub fn set_bitcoin_block_hashes(&mut self, bitcoin_block_hashes: Vec<Hash>) {
         self.bitcoin_block_hashes = bitcoin_block_hashes;
     }
+
+    /// Execute the raw action on the peg state machine.
+    /// For debugging only -- this won't exist in the non-mock version of the peg client.
+    pub fn do_raw_action(&mut self, action: Action) {
+        run(&mut self.store, action);
+    }
 }
 
+#[derive(Debug)]
 pub struct ClientError {}
 
 impl ClientError {
     fn new() -> Self {
         ClientError {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use orga::{Read, Write};
+    #[test]
+    fn sanity() {
+        let mut client = Client::new().unwrap();
+        let action = Action::Foo;
+        client.do_raw_action(action);
+        let result = client.store.get(&b"hello".to_vec()).unwrap().unwrap();
+        assert_eq!(std::str::from_utf8(&result).unwrap(), "world");
     }
 }
