@@ -1,7 +1,7 @@
 use bitcoin::hashes::sha256d::Hash;
 use bitcoincore_rpc::{Auth, Client, Error as RpcError, RpcApi};
 use nomic_client::{Client as PegClient, ClientError as PegClientError};
-use nomic_primitives::transaction::HeaderTransaction;
+use nomic_primitives::transaction::{HeaderTransaction, Transaction};
 use std::env;
 
 #[derive(Debug)]
@@ -187,11 +187,12 @@ impl RelayerStateMachine {
             BroadcastHeaderTransactions {
                 header_transactions,
             } => {
-                let peg_client = match self.peg_client.as_ref() {
+                let peg_client = match self.peg_client.as_mut() {
                     Some(peg_client) => peg_client,
                     None => return BroadcastHeaderTransactionsFailure,
                 };
-                match broadcast_header_transactions(peg_client, header_transactions) {
+
+                match broadcast_header_transactions(peg_client, header_transactions.clone()) {
                     Ok(_) => BroadcastHeaderTransactionsSuccess,
                     Err(_) => BroadcastHeaderTransactionsFailure,
                 }
@@ -280,11 +281,11 @@ pub fn build_header_transactions(headers: &[bitcoin::BlockHeader]) -> Vec<Header
 /// Broadcast header relay transactions to the peg.
 /// Returns an error result if any transactions aren't successfully broadcasted.
 pub fn broadcast_header_transactions(
-    peg_client: &PegClient,
-    header_transactions: &[HeaderTransaction],
+    peg_client: &mut PegClient,
+    header_transactions: Vec<HeaderTransaction>,
 ) -> Result<(), PegClientError> {
     for header_transaction in header_transactions {
-        peg_client.send(header_transaction)?;
+        peg_client.send(Transaction::Header(header_transaction))?;
     }
     Ok(())
 }

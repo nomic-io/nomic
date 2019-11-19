@@ -7,10 +7,18 @@ use orga::{StateMachine, Store};
 /// framework design settles.
 pub fn run(store: &mut dyn Store, action: Action) -> Result<(), StateMachineError> {
     println!("Got action: {:?}", action);
-    store.put(b"hello".to_vec(), b"world".to_vec());
+    match action {
+        Action::Transaction(transaction) => {
+            println!("got transaction: {:?}", transaction);
+        }
+        _ => (),
+    }
 
     Ok(())
 }
+
+/// Called once at genesis to write some data to the store.
+pub fn initialize(store: &mut dyn Store) {}
 
 #[derive(Debug)]
 pub struct StateMachineError {}

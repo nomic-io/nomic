@@ -1,6 +1,6 @@
 use bitcoin::BlockHeader;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Transaction {
     Header(HeaderTransaction),
     Deposit,
@@ -8,7 +8,7 @@ pub enum Transaction {
     SignatorySignature,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HeaderTransaction {
     pub block_headers: Vec<BlockHeader>,
 }

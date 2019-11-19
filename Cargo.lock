@@ -222,6 +222,7 @@ dependencies = [
 name = "nomic-chain"
 version = "0.1.0"
 dependencies = [
+ "bitcoin 0.19.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "nomic-primitives 0.1.0",
  "orga 0.1.0 (git+https://github.com/nomic-io/orga)",
 ]
