@@ -17,15 +17,32 @@
 //! # Cache of headers and the chain with most work
 //!
 
+use super::error::Error;
 use bitcoin::{
-    blockdata::block::BlockHeader, network::constants::Network, util::uint::Uint256, BitcoinHash,
+    blockdata::block::BlockHeader, hashes as bitcoin_hashes, network::constants::Network,
+    util::uint::Uint256, BitcoinHash,
 };
 use bitcoin_hashes::sha256d::Hash as Sha256dHash;
 use bitcoin_hashes::Hash;
-use chaindb::StoredHeader;
-use error::Error;
 use std::collections::HashMap;
 
+/// A header enriched with information about its position on the blockchain
+#[derive(Debug, Clone)]
+pub struct StoredHeader {
+    /// header
+    pub header: BlockHeader,
+    /// chain height
+    pub height: u32,
+    /// log2 of total work
+    pub log2work: f64,
+}
+
+// need to implement if put_hash_keyed and get_hash_keyed should be used
+impl BitcoinHash for StoredHeader {
+    fn bitcoin_hash(&self) -> bitcoin_hashes::sha256d::Hash {
+        self.header.bitcoin_hash()
+    }
+}
 #[derive(Clone)]
 pub struct CachedHeader {
     pub stored: StoredHeader,
@@ -165,7 +182,6 @@ impl HeaderCache {
                 previous = prev.clone();
             } else {
                 // reject unconnected
-                trace!("previous header not in cache {}", &header.prev_blockhash);
                 return Err(Error::UnconnectedHeader);
             }
             // add  to tree
@@ -237,7 +253,6 @@ impl HeaderCache {
                             if let Some(header) = self.headers.get(&scan.stored.header.prev_blockhash) {
                                 scan = header.clone();
                             } else {
-                                trace!("previous header not in cache (diff change) {}", &scan.stored.header.prev_blockhash);
                                 return Err(Error::UnconnectedHeader);
                             }
                         }
@@ -276,7 +291,6 @@ impl HeaderCache {
                         scan = header.clone();
                         height = header.stored.height;
                     } else {
-                        trace!("previous header not in cache (testnet) {}", &scan.stored.header.prev_blockhash);
                         return Err(Error::UnconnectedHeader);
                     }
                 }
@@ -316,10 +330,6 @@ impl HeaderCache {
                         forks_at = h.stored.header.prev_blockhash;
                         path_to_new_tip.push(forks_at);
                     } else {
-                        trace!(
-                            "previous header not in cache (path to new tip) {}",
-                            &forks_at
-                        );
                         return Err(Error::UnconnectedHeader);
                     }
                 }
@@ -337,10 +347,6 @@ impl HeaderCache {
                             self.trunk.truncate(pos + 1);
                         }
                     } else {
-                        trace!(
-                            "previous header not in cache (header no longer on trunk) {}",
-                            &forks_at
-                        );
                         return Err(Error::UnconnectedHeader);
                     }
                     self.trunk.extend(path_to_new_tip.iter().map(|h| *h));
