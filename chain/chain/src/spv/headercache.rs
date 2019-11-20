@@ -19,19 +19,143 @@
 
 use super::error::Error;
 use bitcoin::{
-    blockdata::block::BlockHeader,
-    consensus::{deserialize, serialize},
-    hashes as bitcoin_hashes,
-    network::constants::Network,
-    util::uint::Uint256,
-    BitcoinHash,
+    blockdata::block::BlockHeader, hashes as bitcoin_hashes, network::constants::Network,
+    util::uint::Uint256, BitcoinHash,
 };
 use bitcoin_hashes::sha256d::Hash as Sha256dHash;
 use bitcoin_hashes::Hash;
 use orga::Store;
+use serde::de::{
+    self, Deserialize, Deserializer, Error as DeserializationError, MapAccess, SeqAccess, Visitor,
+};
 use serde::ser::{Serialize, SerializeStruct, Serializer};
-use serde::Serialize as SerializeMacro;
+use serde::{Deserialize as DeserializeMacro, Serialize as SerializeMacro};
 use std::collections::HashMap;
+use std::fmt;
+
+impl<'de> Deserialize<'de> for StoredHeader {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        enum Field {
+            Height,
+            Header,
+            Log2work,
+        };
+
+        impl<'de> Deserialize<'de> for Field {
+            fn deserialize<D>(deserializer: D) -> Result<Field, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                struct FieldVisitor;
+
+                impl<'de> Visitor<'de> for FieldVisitor {
+                    type Value = Field;
+
+                    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                        formatter.write_str("`height` or `header` or `log2work`")
+                    }
+
+                    fn visit_str<E>(self, value: &str) -> Result<Field, E>
+                    where
+                        E: de::Error,
+                    {
+                        match value {
+                            "height" => Ok(Field::Height),
+                            "log2work" => Ok(Field::Log2work),
+                            "header" => Ok(Field::Header),
+                            _ => Err(de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+
+                deserializer.deserialize_identifier(FieldVisitor)
+            }
+        }
+
+        struct StoredHeaderVisitor;
+
+        impl<'de> Visitor<'de> for StoredHeaderVisitor {
+            type Value = StoredHeader;
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("struct StoredHeader")
+            }
+
+            fn visit_seq<V>(self, mut seq: V) -> Result<StoredHeader, V::Error>
+            where
+                V: SeqAccess<'de>,
+            {
+                let header_element = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(0, &self))?;
+
+                // TODO: change error handling here
+                let header = bitcoin::consensus::deserialize(header_element).unwrap();
+
+                let height = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(1, &self))?;
+
+                let log2work = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(2, &self))?;
+
+                Ok(StoredHeader {
+                    header,
+                    height,
+                    log2work,
+                })
+            }
+
+            fn visit_map<V>(self, mut map: V) -> Result<StoredHeader, V::Error>
+            where
+                V: MapAccess<'de>,
+            {
+                let mut header = None;
+                let mut height = None;
+                let mut log2work = None;
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        Field::Header => {
+                            if header.is_some() {
+                                return Err(de::Error::duplicate_field("header"));
+                            }
+                            header = Some(map.next_value()?);
+                        }
+                        Field::Height => {
+                            if height.is_some() {
+                                return Err(de::Error::duplicate_field("height"));
+                            }
+                            height = Some(map.next_value()?);
+                        }
+
+                        Field::Log2work => {
+                            if log2work.is_some() {
+                                return Err(de::Error::duplicate_field("log2work"));
+                            }
+                            log2work = Some(map.next_value()?);
+                        }
+                    }
+                }
+                let header = header.ok_or_else(|| de::Error::missing_field("header"))?;
+                // TODO: error handling
+                let header = bitcoin::consensus::deserialize(header).unwrap();
+                let height = height.ok_or_else(|| de::Error::missing_field("height"))?;
+                let log2work = log2work.ok_or_else(|| de::Error::missing_field("log2work"))?;
+                Ok(StoredHeader {
+                    header,
+                    height,
+                    log2work,
+                })
+            }
+        }
+
+        const FIELDS: &'static [&'static str] = &["header", "height", "log2work"];
+        deserializer.deserialize_struct("StoredHeader", FIELDS, StoredHeaderVisitor)
+    }
+}
 
 /// Custom serialization/deserialization because I can't get the derive macro to work with
 /// rust-bitcoin.
@@ -43,7 +167,7 @@ impl Serialize for StoredHeader {
         let mut state = serializer.serialize_struct("StoredHeader", 3)?;
         state.serialize_field("height", &self.height)?;
         state.serialize_field("log2work", &self.log2work)?;
-        state.serialize_field("header", &serialize(&self.header))?;
+        state.serialize_field("header", &bitcoin::consensus::serialize(&self.header))?;
         state.end()
     }
 }
@@ -65,7 +189,7 @@ impl BitcoinHash for StoredHeader {
         self.header.bitcoin_hash()
     }
 }
-#[derive(Debug, Clone, SerializeMacro)]
+#[derive(Debug, Clone, SerializeMacro, Deserialize)]
 pub struct CachedHeader {
     pub stored: StoredHeader,
     id: Sha256dHash,
