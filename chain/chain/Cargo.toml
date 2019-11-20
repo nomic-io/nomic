@@ -9,6 +9,7 @@ edition = "2018"
 [dependencies]
 orga = { git = "https://github.com/nomic-io/orga" }
 nomic-primitives = { path = "../../core/primitives" }
-bitcoin = "^0.19.1"
+bitcoin = {version = "^0.19.1", features=["serde"] }
 byteorder = "1.3.2"
+serde = {version = "=1.0.98", features=["derive"] }
 
