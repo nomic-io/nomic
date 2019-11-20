@@ -1,5 +1,5 @@
 use bitcoin::hashes::sha256d::Hash;
-use nomic_chain::state_machine::run;
+use nomic_chain::state_machine::{initialize, run};
 use nomic_chain::{orga, Action};
 use nomic_primitives::transaction::{HeaderTransaction, Transaction};
 
@@ -11,6 +11,7 @@ pub struct Client {
 impl Client {
     pub fn new() -> Result<Self, ClientError> {
         let mut mem_store = orga::MapStore::new();
+        initialize(&mut mem_store);
 
         Ok(Client {
             bitcoin_block_hashes: Vec::new(),
@@ -72,7 +73,5 @@ mod tests {
         let mut client = Client::new().unwrap();
         let action = Action::Foo;
         client.do_raw_action(action);
-        let result = client.store.get(&b"hello".to_vec()).unwrap().unwrap();
-        assert_eq!(std::str::from_utf8(&result).unwrap(), "world");
     }
 }
