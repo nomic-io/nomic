@@ -19,11 +19,16 @@
 
 use super::error::Error;
 use bitcoin::{
-    blockdata::block::BlockHeader, hashes as bitcoin_hashes, network::constants::Network,
-    util::uint::Uint256, BitcoinHash,
+    blockdata::block::BlockHeader,
+    consensus::{deserialize, serialize},
+    hashes as bitcoin_hashes,
+    network::constants::Network,
+    util::uint::Uint256,
+    BitcoinHash,
 };
 use bitcoin_hashes::sha256d::Hash as Sha256dHash;
 use bitcoin_hashes::Hash;
+use orga::Store;
 use std::collections::HashMap;
 
 /// A header enriched with information about its position on the blockchain
@@ -43,7 +48,7 @@ impl BitcoinHash for StoredHeader {
         self.header.bitcoin_hash()
     }
 }
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct CachedHeader {
     pub stored: StoredHeader,
     id: Sha256dHash,
@@ -125,24 +130,32 @@ impl BitcoinHash for CachedHeader {
     }
 }
 
-pub struct HeaderCache {
+pub struct HeaderCache<'a> {
     // network
     network: Network,
     // all known headers
-    headers: HashMap<Sha256dHash, CachedHeader>,
+    pub headers: HashMap<Sha256dHash, CachedHeader>,
     // header chain with most work
-    trunk: Vec<Sha256dHash>,
+    pub trunk: Vec<Sha256dHash>,
+    // orga store to use instead of headers hashmap
+    store: &'a mut dyn Store,
 }
 
 const EXPECTED_CHAIN_LENGTH: usize = 600000;
 
-impl HeaderCache {
-    pub fn new(network: Network) -> HeaderCache {
+impl<'a> HeaderCache<'a> {
+    pub fn new(network: Network, store: &'a mut dyn Store) -> HeaderCache {
         HeaderCache {
             network,
+            store,
             headers: HashMap::with_capacity(EXPECTED_CHAIN_LENGTH),
             trunk: Vec::with_capacity(EXPECTED_CHAIN_LENGTH),
         }
+    }
+
+    /// Write the current state of the header cache into the store at the provided key.
+    pub fn save(&mut self, store: &mut dyn Store, key: &[u8]) {
+        println!("saving headercache.");
     }
 
     pub fn add_header_unchecked(&mut self, id: &Sha256dHash, stored: &StoredHeader) {
@@ -421,7 +434,7 @@ impl HeaderCache {
         }
     }
 
-    pub fn iter_trunk<'a>(&'a self, from: u32) -> Box<dyn Iterator<Item = &'a CachedHeader> + 'a> {
+    pub fn iter_trunk<'b>(&'b self, from: u32) -> Box<dyn Iterator<Item = &'b CachedHeader> + 'b> {
         Box::new(
             self.trunk
                 .iter()
@@ -430,10 +443,10 @@ impl HeaderCache {
         )
     }
 
-    pub fn iter_trunk_rev<'a>(
-        &'a self,
+    pub fn iter_trunk_rev<'b>(
+        &'b self,
         from: Option<u32>,
-    ) -> Box<dyn Iterator<Item = &'a CachedHeader> + 'a> {
+    ) -> Box<dyn Iterator<Item = &'b CachedHeader> + 'b> {
         let len = self.trunk.len();
         if let Some(from) = from {
             Box::new(
@@ -441,7 +454,7 @@ impl HeaderCache {
                     .iter()
                     .rev()
                     .skip(len - from as usize)
-                    .map(move |a| self.headers.get(&*a).unwrap()),
+                    .map(move |b| self.headers.get(&*b).unwrap()),
             )
         } else {
             Box::new(
