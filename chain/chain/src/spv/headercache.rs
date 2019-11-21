@@ -25,12 +25,8 @@ use bitcoin::{
 use bitcoin_hashes::sha256d::Hash as Sha256dHash;
 use bitcoin_hashes::Hash;
 use orga::Store;
-use serde::de::{
-    self, Deserialize, Deserializer, Error as DeserializationError, MapAccess, SeqAccess, Visitor,
-};
+use serde::de::{self, Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde::ser::{Serialize, SerializeStruct, Serializer};
-use serde::{Deserialize as DeserializeMacro, Serialize as SerializeMacro};
-use std::collections::HashMap;
 use std::fmt;
 
 impl<'de> Deserialize<'de> for StoredHeader {
@@ -189,7 +185,7 @@ impl BitcoinHash for StoredHeader {
         self.header.bitcoin_hash()
     }
 }
-#[derive(Debug, Clone, SerializeMacro, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CachedHeader {
     pub stored: StoredHeader,
     id: Sha256dHash,
@@ -274,8 +270,6 @@ impl BitcoinHash for CachedHeader {
 pub struct HeaderCache<'a> {
     // network
     network: Network,
-    // all known headers
-    //    pub headers: HashMap<Sha256dHash, CachedHeader>,
     // header chain with most work
     pub trunk: Vec<Sha256dHash>,
     // orga store to use instead of headers hashmap
@@ -293,23 +287,10 @@ impl<'a> HeaderCache<'a> {
         }
     }
 
-    /// Write the current state of the header cache into the store at the provided key.
-    pub fn save(&mut self, store: &mut dyn Store, key: &[u8]) {
-        println!("saving headercache.");
-    }
-
     pub fn add_header_unchecked(&mut self, id: &Sha256dHash, stored: &StoredHeader) {
         let cached = CachedHeader::new(id, stored.clone());
         self.insert_header(id.clone(), cached);
         self.trunk.push(id.clone());
-    }
-
-    pub fn reverse_trunk(&mut self) {
-        self.trunk.reverse()
-    }
-
-    pub fn len(&self) -> usize {
-        self.trunk.len()
     }
 
     /// add a Bitcoin header
@@ -357,9 +338,25 @@ impl<'a> HeaderCache<'a> {
     }
 
     /// Writes a CachedHeader to the backing store.
-    fn insert_header(&mut self, header_id: Sha256dHash, header: CachedHeader) {}
-    fn get_header(&mut self, header_id: &Sha256dHash) -> Option<CachedHeader> {
-        None
+    fn insert_header(&mut self, header_id: Sha256dHash, header: CachedHeader) {
+        // TODO: error handling
+        let header_bytes = bincode::serialize(&header).unwrap();
+        let key = header_id.to_vec();
+
+        self.store.put(key, header_bytes);
+    }
+    fn get_header(&self, header_id: &Sha256dHash) -> Option<CachedHeader> {
+        let header_bytes = self.store.get(header_id);
+        match header_bytes {
+            Ok(header_bytes) => match header_bytes {
+                Some(header_bytes) => {
+                    let header: Option<CachedHeader> = bincode::deserialize(&header_bytes).unwrap();
+                    header
+                }
+                None => None,
+            },
+            Err(_) => None,
+        }
     }
 
     fn log2(work: Uint256) -> f64 {
@@ -570,60 +567,5 @@ impl<'a> HeaderCache<'a> {
         } else {
             None
         }
-    }
-
-    /*pub fn iter_trunk<'b>(&'b self, from: u32) -> Box<dyn Iterator<Item = &'b CachedHeader> + 'b> {
-        Box::new(
-            self.trunk
-                .iter()
-                .skip(from as usize)
-                .map(move |b| self.get_header(&*b).unwrap()),
-        )
-    }
-
-    pub fn iter_trunk_rev<'b>(
-        &'b self,
-        from: Option<u32>,
-    ) -> Box<dyn Iterator<Item = &'b CachedHeader> + 'b> {
-        let len = self.trunk.len();
-        if let Some(from) = from {
-            Box::new(
-                self.trunk
-                    .iter()
-                    .rev()
-                    .skip(len - from as usize)
-                    .map(move |b| self.get_header(&*b).unwrap()),
-            )
-        } else {
-            Box::new(
-                self.trunk
-                    .iter()
-                    .rev()
-                    .map(move |b| self.get_header(&*b).unwrap()),
-            )
-        }
-    } */
-
-    // locator for getheaders message
-    pub fn locator_hashes(&self) -> Vec<Sha256dHash> {
-        let mut locator = vec![];
-        let mut skip = 1;
-        let mut count = 0;
-        let mut s = 0;
-
-        let iterator = self.trunk.iter().rev();
-        for h in iterator {
-            if s == 0 {
-                locator.push(h.clone());
-                count += 1;
-                s = skip;
-                if count > 10 {
-                    skip *= 2;
-                }
-            }
-            s -= 1;
-        }
-
-        locator
     }
 }

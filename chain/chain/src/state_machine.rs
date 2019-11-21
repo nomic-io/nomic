@@ -21,10 +21,10 @@ pub fn run(store: &mut dyn Store, action: Action) -> Result<(), StateMachineErro
 
 /// Called once at genesis to write some data to the store.
 pub fn initialize(store: &mut dyn Store) {
-    let mut header_cache = HeaderCache::new(bitcoin_network);
+    let mut header_cache = HeaderCache::new(bitcoin_network, store);
     let genesis_header = bitcoin::blockdata::constants::genesis_block(bitcoin_network).header;
     header_cache.add_header(&genesis_header);
-    println!("called initialize. headers: {:?}", header_cache.headers);
+    println!("initialized header cache.");
 }
 
 #[derive(Debug)]
