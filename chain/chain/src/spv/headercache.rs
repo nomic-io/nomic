@@ -305,6 +305,7 @@ impl<'a> HeaderCache<'a> {
         )>,
         Error,
     > {
+        self.load_trunk();
         if self.get_header(&header.bitcoin_hash()).is_some() {
             // ignore already known header
             return Ok(None);
@@ -333,6 +334,7 @@ impl<'a> HeaderCache<'a> {
             );
             self.trunk.push(new_tip.clone());
             self.insert_header(new_tip.clone(), stored.clone());
+            self.save_trunk();
             return Ok(Some((stored, None, Some(vec![new_tip]))));
         }
     }
@@ -357,6 +359,26 @@ impl<'a> HeaderCache<'a> {
             },
             Err(_) => None,
         }
+    }
+
+    /// Load and deserialize trunk from store.
+    fn load_trunk(&mut self) {
+        let trunk_bytes = self.store.get(b"trunk");
+        if let Ok(trunk_bytes) = trunk_bytes {
+            if let Some(trunk_bytes) = trunk_bytes {
+                // TODO: change error handling
+                let trunk: Option<Vec<Sha256dHash>> = bincode::deserialize(&trunk_bytes).unwrap();
+                if let Some(trunk) = trunk {
+                    self.trunk = trunk;
+                }
+            }
+        }
+    }
+
+    /// Serialize and save current trunk to store.
+    fn save_trunk(&mut self) {
+        let trunk_bytes = bincode::serialize(&self.trunk).unwrap();
+        self.store.put(b"trunk".to_vec(), trunk_bytes);
     }
 
     fn log2(work: Uint256) -> f64 {
@@ -395,7 +417,7 @@ impl<'a> HeaderCache<'a> {
         const DIFFCHANGE_INTERVAL: u32 = 2016;
         const DIFFCHANGE_TIMESPAN: u32 = 14 * 24 * 3600;
         const TARGET_BLOCK_SPACING: u32 = 600;
-
+        self.load_trunk();
         let required_work =
         // Compute required difficulty if this is a diffchange block
             if (prev.stored.height + 1) % DIFFCHANGE_INTERVAL == 0 {
@@ -506,21 +528,26 @@ impl<'a> HeaderCache<'a> {
                         return Err(Error::UnconnectedHeader);
                     }
                     self.trunk.extend(path_to_new_tip.iter().map(|h| *h));
+                    self.save_trunk();
                     return Ok((cached, Some(unwinds), Some(path_to_new_tip)));
                 } else {
                     self.trunk.extend(path_to_new_tip.iter().map(|h| *h));
+                    self.save_trunk();
                     return Ok((cached, None, Some(path_to_new_tip)));
                 }
             } else {
+                self.save_trunk();
                 return Ok((cached, None, None));
             }
         } else {
+            self.save_trunk();
             return Err(Error::NoTip);
         }
     }
 
     /// position on trunk (chain with most work from genesis to tip)
-    pub fn pos_on_trunk(&self, hash: &Sha256dHash) -> Option<u32> {
+    pub fn pos_on_trunk(&mut self, hash: &Sha256dHash) -> Option<u32> {
+        self.load_trunk();
         self.trunk
             .iter()
             .rev()
@@ -529,14 +556,14 @@ impl<'a> HeaderCache<'a> {
     }
 
     /// retrieve the id of the block/header with most work
-    pub fn tip(&self) -> Option<CachedHeader> {
+    fn tip(&self) -> Option<CachedHeader> {
         if let Some(id) = self.tip_hash() {
             return self.get_header(&id);
         }
         None
     }
 
-    pub fn tip_hash(&self) -> Option<Sha256dHash> {
+    fn tip_hash(&self) -> Option<Sha256dHash> {
         if let Some(tip) = self.trunk.last() {
             return Some(*tip);
         }
