@@ -56,11 +56,15 @@ impl Client {
 }
 
 #[derive(Debug)]
-pub struct ClientError {}
+pub struct ClientError {
+    message: String,
+}
 
 impl ClientError {
-    fn new() -> Self {
-        ClientError {}
+    fn new(message: &str) -> Self {
+        ClientError {
+            message: String::from(message),
+        }
     }
 }
 
