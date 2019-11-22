@@ -5,9 +5,12 @@ authors = ["Judd <kepzorz@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-bitcoin = "^0.19.1"
+bitcoin = { version = "^0.19.1", features=["serde"]}
 nomic-primitives = { path = "../../core/primitives" }
 nomic-chain = { path = "../chain" }
+bincode = "1.2.0"
+serde_derive = "=1.0.98"
+serde = { version = "=1.0.98", features=["derive"]}
 
 [dev-dependencies]
 bitcoincore-rpc = "0.8.0-rc1"
