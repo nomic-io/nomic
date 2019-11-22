@@ -1,7 +1,9 @@
 use bitcoin::hashes::sha256d::Hash;
+use bitcoin::network::constants::Network::Testnet as bitcoin_network;
 use nomic_chain::state_machine::{initialize, run};
-use nomic_chain::{orga, Action};
+use nomic_chain::{orga, spv, Action};
 use nomic_primitives::transaction::{HeaderTransaction, Transaction};
+use orga::{Read, Write};
 
 pub struct Client {
     bitcoin_block_hashes: Vec<Hash>,
@@ -33,13 +35,19 @@ impl Client {
 
         match execution_result {
             Ok(()) => Ok(()),
-            Err(_) => Err(ClientError::new()),
+            Err(_) => Err(ClientError::new("error executing transaction")),
         }
     }
 
     /// Get the Bitcoin headers currently used by the peg zone's on-chain SPV client.
-    pub fn get_bitcoin_block_hashes(&self) -> Result<Vec<Hash>, ClientError> {
-        Ok(self.bitcoin_block_hashes.clone())
+    pub fn get_bitcoin_block_hashes(&mut self) -> Result<Vec<Hash>, ClientError> {
+        let store = &mut self.store;
+        let mut header_cache = spv::headercache::HeaderCache::new(bitcoin_network, store);
+        let trunk = header_cache.load_trunk();
+        match trunk {
+            Some(trunk) => Ok(trunk.clone()),
+            None => Err(ClientError::new("unable to get trunk")),
+        }
     }
 
     /// Set the peg's headers. This is only for use in testing since this is currently a mock

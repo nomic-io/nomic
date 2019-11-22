@@ -136,7 +136,7 @@ impl RelayerStateMachine {
             }
 
             FetchPegBlockHashes => {
-                let peg_client = match self.peg_client.as_ref() {
+                let peg_client = match self.peg_client.as_mut() {
                     Some(peg_client) => peg_client,
                     None => return FetchPegBlockHashesFailure,
                 };
@@ -254,6 +254,7 @@ pub fn fetch_linking_headers(
     let mut header = rpc.get_block_header_raw(&best_block_hash)?;
     headers.push(header);
 
+    let mut count = 0;
     loop {
         header = rpc.get_block_header_raw(&header.prev_blockhash)?;
 
@@ -261,6 +262,8 @@ pub fn fetch_linking_headers(
             headers.push(header);
             break;
         } else {
+            count += 1;
+            println!("{} headers fetched", count);
             headers.push(header);
         }
     }
@@ -296,8 +299,9 @@ mod tests {
     #[test]
     fn run_relayer_state_machine() {
         let mut sm = RelayerStateMachine::new();
-        for _ in 0..20 {
+        for _ in 0..2000000 {
             let event = sm.run();
+            println!("sm event: {:?}", event);
             sm.state = sm.state.next(event);
             println!("sm state: {:?}", sm.state);
         }
