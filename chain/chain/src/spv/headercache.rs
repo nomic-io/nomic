@@ -18,11 +18,11 @@
 //!
 
 use super::error::Error;
+use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use bitcoin::{
     blockdata::block::BlockHeader, hashes as bitcoin_hashes, network::constants::Network,
     util::uint::Uint256, BitcoinHash,
 };
-use bitcoin_hashes::sha256d::Hash as Sha256dHash;
 use bitcoin_hashes::Hash;
 use orga::Store;
 use serde::de::{self, Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
@@ -283,7 +283,7 @@ impl<'a> HeaderCache<'a> {
         HeaderCache {
             network,
             store,
-            trunk: Vec::with_capacity(EXPECTED_CHAIN_LENGTH),
+            trunk: Vec::new(),
         }
     }
 
@@ -362,22 +362,24 @@ impl<'a> HeaderCache<'a> {
     }
 
     /// Load and deserialize trunk from store.
-    fn load_trunk(&mut self) {
+    pub fn load_trunk(&mut self) -> Option<&Vec<Sha256dHash>> {
         let trunk_bytes = self.store.get(b"trunk");
         if let Ok(trunk_bytes) = trunk_bytes {
             if let Some(trunk_bytes) = trunk_bytes {
                 // TODO: change error handling
-                let trunk: Option<Vec<Sha256dHash>> = bincode::deserialize(&trunk_bytes).unwrap();
+                let trunk: Option<Vec<Sha256dHash>> = serde_json::from_slice(&trunk_bytes).unwrap();
                 if let Some(trunk) = trunk {
                     self.trunk = trunk;
+                    return Some(&self.trunk);
                 }
             }
         }
+        None
     }
 
     /// Serialize and save current trunk to store.
     fn save_trunk(&mut self) {
-        let trunk_bytes = bincode::serialize(&self.trunk).unwrap();
+        let trunk_bytes = serde_json::to_vec(&self.trunk).unwrap();
         self.store.put(b"trunk".to_vec(), trunk_bytes);
     }
 
