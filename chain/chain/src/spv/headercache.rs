@@ -287,10 +287,24 @@ impl<'a> HeaderCache<'a> {
         }
     }
 
-    pub fn add_header_unchecked(&mut self, id: &Sha256dHash, stored: &StoredHeader) {
+    /// Adds a trusted header without any verification.
+    ///
+    /// Useful for configuring the SPV to work from some checkpoint sufficiently deep in the
+    /// past.
+    pub fn add_header_raw(&mut self, header: BlockHeader, height: u32) {
+        let stored = StoredHeader {
+            log2work: Self::log2(header.work()),
+            header,
+            height,
+        };
+        self.add_header_unchecked(&header.bitcoin_hash(), &stored);
+    }
+    fn add_header_unchecked(&mut self, id: &Sha256dHash, stored: &StoredHeader) {
+        self.load_trunk();
         let cached = CachedHeader::new(id, stored.clone());
         self.insert_header(id.clone(), cached);
         self.trunk.push(id.clone());
+        self.save_trunk();
     }
 
     /// add a Bitcoin header
@@ -367,7 +381,8 @@ impl<'a> HeaderCache<'a> {
         if let Ok(trunk_bytes) = trunk_bytes {
             if let Some(trunk_bytes) = trunk_bytes {
                 // TODO: change error handling
-                let trunk: Option<Vec<Sha256dHash>> = serde_json::from_slice(&trunk_bytes).unwrap();
+                let trunk: Option<Vec<Sha256dHash>> =
+                    serde_json::from_slice(&trunk_bytes).unwrap_or(None);
                 if let Some(trunk) = trunk {
                     self.trunk = trunk;
                     return Some(&self.trunk);
@@ -558,14 +573,15 @@ impl<'a> HeaderCache<'a> {
     }
 
     /// retrieve the id of the block/header with most work
-    fn tip(&self) -> Option<CachedHeader> {
+    pub fn tip(&mut self) -> Option<CachedHeader> {
         if let Some(id) = self.tip_hash() {
             return self.get_header(&id);
         }
         None
     }
 
-    fn tip_hash(&self) -> Option<Sha256dHash> {
+    pub fn tip_hash(&mut self) -> Option<Sha256dHash> {
+        self.load_trunk();
         if let Some(tip) = self.trunk.last() {
             return Some(*tip);
         }
