@@ -60,6 +60,11 @@ impl Client {
     pub fn do_raw_action(&mut self, action: Action) {
         run(&mut self.store, action);
     }
+
+    pub fn get_bitcoin_tip(&mut self) -> bitcoin::BlockHeader {
+        let mut header_cache = spv::headercache::HeaderCache::new(bitcoin_network, &mut self.store);
+        header_cache.tip().unwrap().stored.header
+    }
 }
 
 #[derive(Debug)]
