@@ -251,6 +251,12 @@ pub fn fetch_linking_headers(
     // Start at bitcoind's best block
     let best_block_hash = rpc.get_best_block_hash()?;
     let mut headers: Vec<bitcoin::BlockHeader> = Vec::new();
+
+    // Handle case where peg and bitcoin are already synced
+    if best_block_hash == common_block_hash {
+        return Ok(headers);
+    }
+
     let mut header = rpc.get_block_header_raw(&best_block_hash)?;
     headers.push(header);
 
@@ -260,15 +266,15 @@ pub fn fetch_linking_headers(
 
         if header.prev_blockhash == common_block_hash {
             headers.push(header);
-            break;
+            return Ok(headers);
         } else {
             count += 1;
-            println!("{} headers fetched", count);
+            if count > 2016 {
+                println!("WARNING: Relayer fetched more than 2016 headers");
+            }
             headers.push(header);
         }
     }
-
-    Ok(headers)
 }
 
 pub fn build_header_transactions(
@@ -291,14 +297,12 @@ pub fn broadcast_header_transactions(
     header_transactions: Vec<HeaderTransaction>,
 ) -> Result<(), PegClientError> {
     for header_transaction in header_transactions {
-        println!("broadcasting one tx");
         peg_client.send(Transaction::Header(header_transaction))?;
         println!(
             "peg client header len: {}",
             peg_client.get_bitcoin_block_hashes().unwrap().len()
         );
     }
-    println!("broadcasted");
     Ok(())
 }
 
