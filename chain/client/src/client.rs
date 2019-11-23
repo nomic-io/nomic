@@ -32,7 +32,6 @@ impl Client {
     pub fn send(&mut self, transaction: Transaction) -> Result<(), ClientError> {
         let action = Action::Transaction(transaction);
         let execution_result = run(&mut self.store, action);
-        println!("execution result: {:?}", execution_result);
         match execution_result {
             Ok(()) => Ok(()),
             Err(_) => Err(ClientError::new("error executing transaction")),

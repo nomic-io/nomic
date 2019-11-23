@@ -157,8 +157,6 @@ pub struct HeaderCache<'a> {
     store: &'a mut dyn Store,
 }
 
-const EXPECTED_CHAIN_LENGTH: usize = 600000;
-
 impl<'a> HeaderCache<'a> {
     pub fn new(network: Network, store: &'a mut dyn Store) -> HeaderCache {
         HeaderCache {
@@ -239,12 +237,6 @@ impl<'a> HeaderCache<'a> {
         // TODO: error handling
         let header_bytes = serde_json::to_vec(&header).unwrap();
         let key = header_id.to_vec();
-        println!("serialized a header");
-        let header: CachedHeader = serde_json::from_slice(header_bytes.as_ref()).unwrap();
-        println!(
-            "successfully deserialized header right after serializing: {:?}",
-            header
-        );
 
         self.store.put(key, header_bytes);
     }

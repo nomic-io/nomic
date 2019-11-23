@@ -14,8 +14,6 @@ pub fn run(store: &mut dyn Store, action: Action) -> Result<(), StateMachineErro
             Transaction::Header(header_transaction) => {
                 let mut header_cache = HeaderCache::new(bitcoin_network, store);
                 for header in header_transaction.block_headers {
-                    println!("header to add: {:?}", header);
-
                     match header_cache.add_header(&header) {
                         Ok(_) => {}
                         Err(e) => {
