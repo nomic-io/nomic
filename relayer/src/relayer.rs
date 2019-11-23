@@ -178,7 +178,7 @@ impl RelayerStateMachine {
             }
 
             BuildHeaderTransactions { linking_headers } => {
-                let header_transactions = build_header_transactions(linking_headers);
+                let header_transactions = build_header_transactions(&mut linking_headers.to_vec());
                 BuiltHeaderTransactions {
                     header_transactions,
                 }
@@ -199,7 +199,7 @@ impl RelayerStateMachine {
             }
 
             Failure { event } => {
-                println!("Entered failure state with event: {:?}", event);
+                println!("Entered failure state");
                 Restart {}
             }
         }
@@ -271,8 +271,11 @@ pub fn fetch_linking_headers(
     Ok(headers)
 }
 
-pub fn build_header_transactions(headers: &[bitcoin::BlockHeader]) -> Vec<HeaderTransaction> {
+pub fn build_header_transactions(
+    headers: &mut Vec<bitcoin::BlockHeader>,
+) -> Vec<HeaderTransaction> {
     const BATCH_SIZE: usize = 100;
+    headers.reverse();
     headers
         .chunks(BATCH_SIZE)
         .map(|block_headers| HeaderTransaction {
@@ -288,8 +291,14 @@ pub fn broadcast_header_transactions(
     header_transactions: Vec<HeaderTransaction>,
 ) -> Result<(), PegClientError> {
     for header_transaction in header_transactions {
+        println!("broadcasting one tx");
         peg_client.send(Transaction::Header(header_transaction))?;
+        println!(
+            "peg client header len: {}",
+            peg_client.get_bitcoin_block_hashes().unwrap().len()
+        );
     }
+    println!("broadcasted");
     Ok(())
 }
 
@@ -301,9 +310,9 @@ mod tests {
         let mut sm = RelayerStateMachine::new();
         for _ in 0..2000000 {
             let event = sm.run();
-            println!("sm event: {:?}", event);
+            //println!("sm event: {:?}", event);
             sm.state = sm.state.next(event);
-            println!("sm state: {:?}", sm.state);
+            //println!("sm state: {:?}", sm.state);
         }
     }
 }

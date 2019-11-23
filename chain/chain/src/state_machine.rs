@@ -39,8 +39,8 @@ pub fn initialize(store: &mut dyn Store) {
     let genesis_header = bitcoin::blockdata::constants::genesis_block(bitcoin_network).header;
     let (checkpoint, height) = utils::get_latest_checkpoint_header();
 
-    //header_cache.add_header_raw(checkpoint, height);
-    header_cache.add_header(&genesis_header);
+    header_cache.add_header_raw(checkpoint, height);
+    //   header_cache.add_header(&genesis_header);
 }
 
 mod utils {
