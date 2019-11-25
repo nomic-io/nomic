@@ -125,7 +125,7 @@ impl RelayerStateMachine {
                 }
             }
             InitializePegClient => {
-                let peg_client = PegClient::new();
+                let peg_client = PegClient::new("localhost:26657");
                 match peg_client {
                     Ok(peg_client) => {
                         self.peg_client = Some(peg_client);
@@ -295,13 +295,12 @@ pub fn build_header_transactions(
 pub fn broadcast_header_transactions(
     peg_client: &mut PegClient,
     header_transactions: Vec<HeaderTransaction>,
-) -> Result<(), PegClientError> {
+) -> Result<(), RelayerError> {
     for header_transaction in header_transactions {
-        peg_client.send(Transaction::Header(header_transaction))?;
-        println!(
-            "peg client header len: {}",
-            peg_client.get_bitcoin_block_hashes().unwrap().len()
-        );
+        match peg_client.send(Transaction::Header(header_transaction)) {
+            Err(_) => return Err(RelayerError::new()),
+            _ => (),
+        };
     }
     Ok(())
 }
@@ -312,11 +311,10 @@ mod tests {
     #[test]
     fn run_relayer_state_machine() {
         let mut sm = RelayerStateMachine::new();
-        for _ in 0..2000000 {
+        for i in 0..2000000 {
             let event = sm.run();
-            //println!("sm event: {:?}", event);
             sm.state = sm.state.next(event);
-            //println!("sm state: {:?}", sm.state);
+            println!("sm state: {:?}", sm.state);
         }
     }
 }
