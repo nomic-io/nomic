@@ -5,6 +5,8 @@ use nomic_chain::state_machine::{initialize, run};
 use nomic_chain::{orga, spv, Action};
 use nomic_primitives::transaction::{HeaderTransaction, Transaction};
 use orga::{Read, Write};
+use std::collections::HashMap;
+use std::str::FromStr;
 use tendermint::rpc::Client as TendermintRpcClient;
 
 struct RemoteStore<'a> {
@@ -46,21 +48,22 @@ impl<'a> Write for RemoteStore<'a> {
     }
 }
 
-        //        match abci_result {}
 pub struct Client {
-    bitcoin_block_hashes: Vec<Hash>,
-    pub store: orga::MapStore,
+    tendermint_rpc: TendermintRpcClient,
 }
 
 impl Client {
-    pub fn new() -> Result<Self, ClientError> {
-        let mut mem_store = orga::MapStore::new();
-        initialize(&mut mem_store);
+    pub fn new(tendermint_rpc_address: &str) -> Result<Self, ClientError> {
+        let address = tendermint::net::Address::from_str(tendermint_rpc_address).unwrap();
+        let tendermint_rpc = TendermintRpcClient::new(&address).unwrap();
 
-        Ok(Client {
-            bitcoin_block_hashes: Vec::new(),
-            store: mem_store,
-        })
+        Ok(Client { tendermint_rpc })
+    }
+
+    fn store(&self) -> RemoteStore {
+        RemoteStore {
+            rpc: &self.tendermint_rpc,
+        }
     }
 
     /// Transmit a transaction the peg state machine.
@@ -71,19 +74,23 @@ impl Client {
     /// In the future, the transaction will be serialized and broadcasted to the network, and the
     /// state machine abci host will be responsible for wrapping the transaction in the appropriate Action
     /// enum variant.
-    pub fn send(&mut self, transaction: Transaction) -> Result<(), ClientError> {
-        let action = Action::Transaction(transaction);
-        let execution_result = run(&mut self.store, action);
-        match execution_result {
-            Ok(()) => Ok(()),
-            Err(_) => Err(ClientError::new("error executing transaction")),
-        }
+    pub fn send(
+        &mut self,
+        transaction: Transaction,
+    ) -> Result<tendermint::rpc::endpoint::broadcast::tx_commit::Response, tendermint::rpc::Error>
+    {
+        let tx_bytes = serde_json::to_vec(&transaction).unwrap();
+
+        let rpc = &self.tendermint_rpc;
+        let tx = tendermint::abci::Transaction::new(tx_bytes);
+        let broadcast_result = rpc.broadcast_tx_commit(tx);
+        broadcast_result
     }
 
     /// Get the Bitcoin headers currently used by the peg zone's on-chain SPV client.
     pub fn get_bitcoin_block_hashes(&mut self) -> Result<Vec<Hash>, ClientError> {
-        let store = &mut self.store;
-        let mut header_cache = spv::headercache::HeaderCache::new(bitcoin_network, store);
+        let mut store = self.store();
+        let mut header_cache = spv::headercache::HeaderCache::new(bitcoin_network, &mut store);
         let trunk = header_cache.load_trunk();
         match trunk {
             Some(trunk) => Ok(trunk.clone()),
@@ -91,20 +98,15 @@ impl Client {
         }
     }
 
-    /// Set the peg's headers. This is only for use in testing since this is currently a mock
-    /// client.
-    pub fn set_bitcoin_block_hashes(&mut self, bitcoin_block_hashes: Vec<Hash>) {
-        self.bitcoin_block_hashes = bitcoin_block_hashes;
-    }
-
     /// Execute the raw action on the peg state machine.
     /// For debugging only -- this won't exist in the non-mock version of the peg client.
     pub fn do_raw_action(&mut self, action: Action) {
-        run(&mut self.store, action);
+        run(&mut self.store(), action);
     }
 
     pub fn get_bitcoin_tip(&mut self) -> bitcoin::BlockHeader {
-        let mut header_cache = spv::headercache::HeaderCache::new(bitcoin_network, &mut self.store);
+        let mut store = self.store();
+        let mut header_cache = spv::headercache::HeaderCache::new(bitcoin_network, &mut store);
         header_cache.tip().unwrap().stored.header
     }
 }
