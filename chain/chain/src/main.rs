@@ -8,7 +8,7 @@ use nomic_chain::Action;
 use nomic_primitives::transaction::Transaction;
 use orga::abci::{ABCIStateMachine, Application};
 use orga::Result as OrgaResult;
-use orga::{MerkStore, Store};
+use orga::{MapStore, Store};
 
 struct App;
 
@@ -57,11 +57,8 @@ impl Application for App {
 }
 
 pub fn main() {
-    let mut merk = Merk::open("./merk.db").unwrap();
-    merk.destroy().unwrap();
-    let mut merk = Merk::open("./merk.db").unwrap();
-    let store = MerkStore::new(&mut merk);
-    ABCIStateMachine::new(App, store)
+    let store = MapStore::new();
+    ABCIStateMachine::new(App, store, 0)
         .listen("127.0.0.1:26658")
         .unwrap();
 }
