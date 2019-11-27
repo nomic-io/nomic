@@ -200,6 +200,7 @@ impl RelayerStateMachine {
 
             Failure { event } => {
                 println!("Entered failure state");
+                println!("failure event: {:?}", event);
                 Restart {}
             }
         }
@@ -231,7 +232,7 @@ pub fn compute_common_ancestor(rpc: &Client, peg_hashes: &[Hash]) -> Result<Hash
         match rpc_response {
             Ok(response) => {
                 let confs = response.confirmations;
-                if confs > 0 {
+                if confs >= 0 {
                     return Ok(response.hash);
                 }
             }
@@ -258,12 +259,9 @@ pub fn fetch_linking_headers(
     }
 
     let mut header = rpc.get_block_header_raw(&best_block_hash)?;
-    headers.push(header);
 
     let mut count = 0;
     loop {
-        header = rpc.get_block_header_raw(&header.prev_blockhash)?;
-
         if header.prev_blockhash == common_block_hash {
             headers.push(header);
             return Ok(headers);
@@ -271,9 +269,15 @@ pub fn fetch_linking_headers(
             count += 1;
             if count > 2016 {
                 println!("WARNING: Relayer fetched more than 2016 headers");
+                println!(
+                    "prev header hash: {:?}, common block hash: {:?}",
+                    header.prev_blockhash, common_block_hash
+                );
             }
             headers.push(header);
         }
+
+        header = rpc.get_block_header_raw(&header.prev_blockhash)?;
     }
 }
 
@@ -314,7 +318,6 @@ mod tests {
         for i in 0..400 {
             let event = sm.run();
             sm.state = sm.state.next(event);
-            //           println!("sm state: {:?}", sm.state);
         }
         println!("did 100 relayer steps");
         let mut rpc = sm.peg_client.unwrap();

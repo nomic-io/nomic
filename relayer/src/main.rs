@@ -5,6 +5,8 @@ use std::{thread, time};
 fn main() {
     let mut sm = RelayerStateMachine::new();
     let mut latest_tip: Option<Hash> = None;
+
+    println!("Relayer process started. Watching Bitcoin network for new Block headers.");
     loop {
         let event = sm.run();
 
