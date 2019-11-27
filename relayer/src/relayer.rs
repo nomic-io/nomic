@@ -298,7 +298,7 @@ pub fn broadcast_header_transactions(
 ) -> Result<(), RelayerError> {
     for header_transaction in header_transactions {
         match peg_client.send(Transaction::Header(header_transaction)) {
-            Err(_) => return Err(RelayerError::new()),
+            //Err(_) => return Err(RelayerError::new()),
             _ => (),
         };
     }
@@ -311,10 +311,14 @@ mod tests {
     #[test]
     fn run_relayer_state_machine() {
         let mut sm = RelayerStateMachine::new();
-        for i in 0..2000000 {
+        for i in 0..400 {
             let event = sm.run();
             sm.state = sm.state.next(event);
-            println!("sm state: {:?}", sm.state);
+            //           println!("sm state: {:?}", sm.state);
         }
+        println!("did 100 relayer steps");
+        let mut rpc = sm.peg_client.unwrap();
+        let tip = rpc.get_bitcoin_tip();
+        println!("tip: {:?}", tip);
     }
 }
