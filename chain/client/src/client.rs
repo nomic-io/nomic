@@ -1,10 +1,52 @@
 use bitcoin::hashes::sha256d::Hash;
 use bitcoin::network::constants::Network::Testnet as bitcoin_network;
+use error_chain::bail;
 use nomic_chain::state_machine::{initialize, run};
 use nomic_chain::{orga, spv, Action};
 use nomic_primitives::transaction::{HeaderTransaction, Transaction};
 use orga::{Read, Write};
+use tendermint::rpc::Client as TendermintRpcClient;
 
+struct RemoteStore<'a> {
+    pub rpc: &'a TendermintRpcClient,
+}
+
+impl<'a> Read for RemoteStore<'a> {
+    fn get(&self, key: &[u8]) -> orga::Result<Option<Vec<u8>>> {
+        let rpc = &self.rpc;
+        let query_response = reqwest::blocking::get(
+            &format!(
+                "http://localhost:26657/abci_query?data=0x{}",
+                hex::encode(key)
+            )[..],
+        );
+        if let Ok(res) = query_response {
+            if let Ok(query_response_json) = res.json::<serde_json::Value>() {
+                // TODO: error handling if response json isn't what we expect
+                let query_response_value = &query_response_json["result"]["response"]["value"]
+                    .as_str()
+                    .unwrap();
+                let query_response_value_bytes = base64::decode(query_response_value).unwrap();
+                return Ok(Some(query_response_value_bytes));
+            }
+        }
+
+        //        match abci_result {}
+        Ok(None)
+    }
+}
+
+impl<'a> Write for RemoteStore<'a> {
+    fn put(&mut self, key: Vec<u8>, value: Vec<u8>) -> orga::Result<()> {
+        panic!("Write method should not be called on a RemoteStore");
+    }
+
+    fn delete(&mut self, key: &[u8]) -> orga::Result<()> {
+        panic!("Delete method should not be called on a RemoteStore");
+    }
+}
+
+        //        match abci_result {}
 pub struct Client {
     bitcoin_block_hashes: Vec<Hash>,
     pub store: orga::MapStore,
