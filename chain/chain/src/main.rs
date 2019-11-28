@@ -8,7 +8,7 @@ use nomic_chain::Action;
 use nomic_primitives::transaction::Transaction;
 use orga::abci::{ABCIStateMachine, Application};
 use orga::Result as OrgaResult;
-use orga::{MapStore, Store};
+use orga::{abci::MemStore, Store};
 
 struct App;
 
@@ -57,8 +57,8 @@ impl Application for App {
 }
 
 pub fn main() {
-    let store = MapStore::new();
-    ABCIStateMachine::new(App, store, 0)
+    let store = MemStore::new();
+    ABCIStateMachine::new(App, store)
         .listen("127.0.0.1:26658")
         .unwrap();
 }
