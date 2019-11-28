@@ -6,7 +6,7 @@ fn main() {
     let mut sm = RelayerStateMachine::new();
     let mut latest_tip: Option<Hash> = None;
 
-    println!("Relayer process started. Watching Bitcoin network for new Block headers.");
+    println!("Relayer process started. Watching Bitcoin network for new block headers.");
     loop {
         let event = sm.run();
 
