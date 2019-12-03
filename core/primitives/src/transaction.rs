@@ -66,6 +66,6 @@ where
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkProofTransaction {
-    public_key: Vec<u8>,
-    nonce: u64,
+    pub public_key: Vec<u8>,
+    pub nonce: u64,
 }

@@ -2,8 +2,11 @@ use crate::spv::headercache::HeaderCache;
 use crate::Action;
 use bitcoin::network::constants::Network::Testnet as bitcoin_network;
 use nomic_primitives::transaction::Transaction;
+use nomic_work::work;
 use orga::{StateMachine, Store};
+use sha2::{Digest, Sha256};
 
+const MIN_WORK: u64 = 1 << 20;
 /// Main entrypoint to the core bitcoin peg state machine.
 ///
 /// This function implements the conventions set by Orga, though this may change as our core
@@ -11,6 +14,26 @@ use orga::{StateMachine, Store};
 pub fn run(store: &mut dyn Store, action: Action) -> Result<(), StateMachineError> {
     match action {
         Action::Transaction(transaction) => match transaction {
+            Transaction::WorkProof(work_transaction) => {
+                let mut hasher = Sha256::new();
+                hasher.input(work_transaction.public_key);
+                let nonce_bytes = work_transaction.nonce.to_be_bytes();
+                hasher.input(&nonce_bytes);
+                let hash = hasher.result().to_vec();
+                let work_proof_value = work(&hash);
+
+                if work_proof_value >= MIN_WORK {
+                    // Make sure this proof hasn't been redeemed yet
+                    let value_at_work_proof_hash = store.get(&hash);
+                    if let Ok(None) = value_at_work_proof_hash {
+                        // Grant voting power
+                        // Write the redeemed hash to the store so it can't be replayed
+                        store.put(hash.to_vec(), vec![0]);
+                    } else {
+                        println!("duplicate work proof");
+                    }
+                }
+            }
             Transaction::Header(header_transaction) => {
                 let mut header_cache = HeaderCache::new(bitcoin_network, store);
                 for header in header_transaction.block_headers {
@@ -38,7 +61,6 @@ pub fn initialize(store: &mut dyn Store) {
     let (checkpoint, height) = utils::get_latest_checkpoint_header();
 
     header_cache.add_header_raw(checkpoint, height);
-    //   header_cache.add_header(&genesis_header);
 }
 
 mod utils {

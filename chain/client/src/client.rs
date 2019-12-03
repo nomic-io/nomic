@@ -3,7 +3,7 @@ use bitcoin::network::constants::Network::Testnet as bitcoin_network;
 use error_chain::bail;
 use nomic_chain::state_machine::{initialize, run};
 use nomic_chain::{orga, spv, Action};
-use nomic_primitives::transaction::{HeaderTransaction, Transaction};
+use nomic_primitives::transaction::{HeaderTransaction, Transaction, WorkProofTransaction};
 use orga::{Read, Write};
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -98,6 +98,22 @@ impl Client {
         }
     }
 
+    /// Create and broadcast a transaction which reedems a golden nonce, granting voting power to
+    /// the provided validator public key.
+    pub fn submit_work_proof(
+        &mut self,
+        public_key: &[u8],
+        nonce: u64,
+    ) -> Result<tendermint::rpc::endpoint::broadcast::tx_commit::Response, tendermint::rpc::Error>
+    {
+        let work_transaction = Transaction::WorkProof(WorkProofTransaction {
+            public_key: public_key.to_vec(),
+            nonce,
+        });
+
+        self.send(work_transaction)
+    }
+
     /// Execute the raw action on the peg state machine.
     /// For debugging only -- this won't exist in the non-mock version of the peg client.
     pub fn do_raw_action(&mut self, action: Action) {
@@ -121,17 +137,5 @@ impl ClientError {
         ClientError {
             message: String::from(message),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use orga::{Read, Write};
-    #[test]
-    fn sanity() {
-        let mut client = Client::new().unwrap();
-        let action = Action::Foo;
-        client.do_raw_action(action);
     }
 }
