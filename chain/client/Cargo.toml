@@ -8,6 +8,7 @@ edition = "2018"
 bitcoin = { version = "^0.19.1", features=["serde"]}
 nomic-primitives = { path = "../../core/primitives" }
 nomic-chain = { path = "../chain" }
+nomic-work = { path = "../../core/work" }
 bincode = "1.2.0"
 serde_derive = "=1.0.98"
 serde = { version = "=1.0.98", features=["derive"]}

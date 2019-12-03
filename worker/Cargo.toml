@@ -1,5 +1,5 @@
 [package]
-name = "nomic-work"
+name = "nomic-worker"
 version = "0.1.0"
 authors = ["Judd <kepzorz@gmail.com>"]
 edition = "2018"
@@ -8,3 +8,9 @@ edition = "2018"
 
 [dependencies]
 sha2 = "0.8.0"
+base64 = "0.11.0"
+rand = "0.7.2"
+nomic-client = { path = "../chain/client"}
+nomic-work = { path = "../core/work"}
+
+
