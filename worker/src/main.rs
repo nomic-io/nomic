@@ -7,14 +7,20 @@ const MIN_WORK: u64 = 1 << 20;
 
 pub fn main() {
     println!("Running work program");
-    let pub_key = base64::decode("mcobVGU+QG/nJHrlUL3v06aIFbhSEhPJ+GApWjh411Q=")
-        .expect("Invalid base64 validator public key");
     let mut rpc = PegClient::new("localhost:26657").unwrap();
+    let pub_key_bytes = rpc
+        .tendermint_rpc
+        .status()
+        .expect("Unable to connect to tendermint RPC")
+        .validator_info
+        .pub_key
+        .as_bytes();
+
     let mut nonce = random::<u64>();
     loop {
-        let work_value = try_nonce(&pub_key, nonce);
+        let work_value = try_nonce(&pub_key_bytes, nonce);
         if work_value >= MIN_WORK {
-            rpc.submit_work_proof(&pub_key.to_vec(), nonce);
+            rpc.submit_work_proof(&pub_key_bytes.to_vec(), nonce);
         }
         nonce += 1;
     }
