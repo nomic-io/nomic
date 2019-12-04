@@ -25,6 +25,10 @@ impl Application for App {
             let power = validator.get_power() as u64;
             validators.insert(pub_key, power);
         }
+        let validator_map_bytes = serde_json::to_vec(&validators)
+            .expect("Failed to serialize validator map on init_chain");
+        store.put(b"validators".to_vec(), validator_map_bytes);
+
         initialize(store);
 
         Ok(ResponseInitChain::new())
