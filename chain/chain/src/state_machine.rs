@@ -80,7 +80,7 @@ mod utils {
 
     use bitcoincore_rpc::{Auth, Client, Error as RpcError, RpcApi};
     use std::env;
-
+    const BITCOIN_START_HEIGHT: usize = 1610784;
     pub fn make_rpc_client() -> Result<Client, RpcError> {
         let rpc_user = env::var("BTC_RPC_USER").unwrap();
         let rpc_pass = env::var("BTC_RPC_PASS").unwrap();
@@ -93,8 +93,11 @@ mod utils {
         let rpc = make_rpc_client().unwrap();
         let best_block_hash = rpc.get_best_block_hash().unwrap();
         let mut header = rpc.get_block_header_verbose(&best_block_hash).unwrap();
+        if header.height < BITCOIN_START_HEIGHT {
+            panic!("Start and sync a Bitcoin testnet full node before starting the peg ABCI state machine.");
+        }
         loop {
-            if header.height % 2016 == 0 {
+            if header.height == BITCOIN_START_HEIGHT {
                 return (
                     rpc.get_block_header_raw(&header.hash).unwrap(),
                     header.height as u32,
