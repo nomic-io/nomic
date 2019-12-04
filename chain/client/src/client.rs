@@ -48,7 +48,7 @@ impl<'a> Write for RemoteStore<'a> {
 }
 
 pub struct Client {
-    tendermint_rpc: TendermintRpcClient,
+    pub tendermint_rpc: TendermintRpcClient,
 }
 
 impl Client {
