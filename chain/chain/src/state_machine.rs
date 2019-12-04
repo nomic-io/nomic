@@ -5,7 +5,7 @@ use nomic_primitives::transaction::Transaction;
 use nomic_work::work;
 use orga::{StateMachine, Store};
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 const MIN_WORK: u64 = 1 << 20;
 /// Main entrypoint to the core bitcoin peg state machine.
@@ -15,13 +15,13 @@ const MIN_WORK: u64 = 1 << 20;
 pub fn run(
     store: &mut dyn Store,
     action: Action,
-    validators: &mut HashMap<Vec<u8>, u64>,
+    validators: &mut BTreeMap<Vec<u8>, u64>,
 ) -> Result<(), StateMachineError> {
     match action {
         Action::Transaction(transaction) => match transaction {
             Transaction::WorkProof(work_transaction) => {
                 let mut hasher = Sha256::new();
-                hasher.input(work_transaction.public_key);
+                hasher.input(&work_transaction.public_key);
                 let nonce_bytes = work_transaction.nonce.to_be_bytes();
                 hasher.input(&nonce_bytes);
                 let hash = hasher.result().to_vec();
@@ -32,6 +32,14 @@ pub fn run(
                     let value_at_work_proof_hash = store.get(&hash);
                     if let Ok(None) = value_at_work_proof_hash {
                         // Grant voting power
+                        let current_voting_power = *validators
+                            .get(&work_transaction.public_key)
+                            .unwrap_or(&(0 as u64));
+
+                        validators.insert(
+                            work_transaction.public_key,
+                            current_voting_power + work_proof_value,
+                        );
                         // Write the redeemed hash to the store so it can't be replayed
                         store.put(hash.to_vec(), vec![0]);
                     } else {

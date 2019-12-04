@@ -1,7 +1,6 @@
 use bitcoin::hashes::sha256d::Hash;
 use bitcoin::network::constants::Network::Testnet as bitcoin_network;
 use error_chain::bail;
-use nomic_chain::state_machine::{initialize, run};
 use nomic_chain::{orga, spv, Action};
 use nomic_primitives::transaction::{HeaderTransaction, Transaction, WorkProofTransaction};
 use orga::{Read, Write};
@@ -110,14 +109,7 @@ impl Client {
             public_key: public_key.to_vec(),
             nonce,
         });
-
         self.send(work_transaction)
-    }
-
-    /// Execute the raw action on the peg state machine.
-    /// For debugging only -- this won't exist in the non-mock version of the peg client.
-    pub fn do_raw_action(&mut self, action: Action) {
-        run(&mut self.store(), action);
     }
 
     pub fn get_bitcoin_tip(&mut self) -> bitcoin::BlockHeader {

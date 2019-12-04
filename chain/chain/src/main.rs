@@ -9,7 +9,7 @@ use nomic_primitives::transaction::Transaction;
 use orga::abci::{ABCIStateMachine, Application};
 use orga::Result as OrgaResult;
 use orga::{abci::MemStore, Store};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 struct App;
 
@@ -19,7 +19,7 @@ impl Application for App {
         store: &mut dyn Store,
         req: RequestInitChain,
     ) -> OrgaResult<ResponseInitChain> {
-        let mut validators = HashMap::<Vec<u8>, u64>::new();
+        let mut validators = BTreeMap::<Vec<u8>, u64>::new();
         for validator in req.get_validators() {
             let pub_key = validator.get_pub_key().get_data().to_vec();
             let power = validator.get_power() as u64;
@@ -70,22 +70,44 @@ impl Application for App {
             Err(e) => bail!("error deserializing tx (deliver_tx)"),
         }
     }
+
+    fn end_block(
+        &self,
+        store: &mut dyn Store,
+        req: RequestEndBlock,
+    ) -> OrgaResult<ResponseEndBlock> {
+        let validators = read_validators(store);
+        let mut validator_updates: Vec<ValidatorUpdate> = Vec::new();
+        for (pub_key_bytes, power) in validators {
+            let mut validator_update = ValidatorUpdate::new();
+            let mut pub_key = PubKey::new();
+            pub_key.set_data(pub_key_bytes);
+            pub_key.set_field_type(String::from("ed25519"));
+            validator_update.set_pub_key(pub_key);
+            validator_update.set_power(power as i64);
+            validator_updates.push(validator_update);
+        }
+
+        let mut response = ResponseEndBlock::new();
+
+        response.set_validator_updates(validator_updates.into());
+        Ok(response)
+    }
 }
 
-fn write_validators(store: &mut dyn Store, validators: HashMap<Vec<u8>, u64>) {
+fn write_validators(store: &mut dyn Store, validators: BTreeMap<Vec<u8>, u64>) {
     let validator_map_bytes =
-        serde_json::to_vec(&validators).expect("Failed to serialize validator map on init_chain");
+        bincode::serialize(&validators).expect("Failed to serialize validator map");
     store.put(b"validators".to_vec(), validator_map_bytes);
 }
-fn read_validators(store: &mut dyn Store) -> HashMap<Vec<u8>, u64> {
+fn read_validators(store: &mut dyn Store) -> BTreeMap<Vec<u8>, u64> {
     let validator_map_bytes = store
         .get(b"validators")
         .expect("Failed to read validator map bytes from store")
         .expect("Validator map was not written to store");
-    let mut validators = serde_json::from_slice::<HashMap<Vec<u8>, u64>>(&validator_map_bytes)
-        .expect("Failed to deserialize validator bytes");
-
-    validators
+    let validators: Result<BTreeMap<Vec<u8>, u64>, bincode::Error> =
+        bincode::deserialize(&validator_map_bytes);
+    validators.expect("Failed to deserialize validator map")
 }
 
 pub fn main() {
