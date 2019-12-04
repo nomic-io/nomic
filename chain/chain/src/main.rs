@@ -9,6 +9,7 @@ use nomic_primitives::transaction::Transaction;
 use orga::abci::{ABCIStateMachine, Application};
 use orga::Result as OrgaResult;
 use orga::{abci::MemStore, Store};
+use std::collections::HashMap;
 
 struct App;
 
@@ -18,7 +19,12 @@ impl Application for App {
         store: &mut dyn Store,
         req: RequestInitChain,
     ) -> OrgaResult<ResponseInitChain> {
-        println!("init chain: {:?}", req);
+        let mut validators = HashMap::<Vec<u8>, u64>::new();
+        for validator in req.get_validators() {
+            let pub_key = validator.get_pub_key().get_data().to_vec();
+            let power = validator.get_power() as u64;
+            validators.insert(pub_key, power);
+        }
         initialize(store);
 
         Ok(ResponseInitChain::new())
