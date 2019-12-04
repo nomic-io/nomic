@@ -5,13 +5,18 @@ use nomic_primitives::transaction::Transaction;
 use nomic_work::work;
 use orga::{StateMachine, Store};
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 
 const MIN_WORK: u64 = 1 << 20;
 /// Main entrypoint to the core bitcoin peg state machine.
 ///
 /// This function implements the conventions set by Orga, though this may change as our core
 /// framework design settles.
-pub fn run(store: &mut dyn Store, action: Action) -> Result<(), StateMachineError> {
+pub fn run(
+    store: &mut dyn Store,
+    action: Action,
+    validators: &mut HashMap<Vec<u8>, u64>,
+) -> Result<(), StateMachineError> {
     match action {
         Action::Transaction(transaction) => match transaction {
             Transaction::WorkProof(work_transaction) => {
