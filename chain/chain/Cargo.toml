@@ -19,6 +19,6 @@ bincode = "1.2.0"
 serde_json = "1.0.41"
 merk = "1.0.0-alpha.6"
 abci2 = {git = "https://github.com/nomic-io/abci2"}
-error-chain = "0.12.1"
 sha2 = "0.8.0"
+failure = "0.1.6"
 

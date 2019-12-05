@@ -1,7 +1,7 @@
 //!  Start the peg abci server.
 
 use abci2::messages::abci::*;
-use error_chain::bail;
+use failure::bail;
 use merk::Merk;
 use nomic_chain::state_machine::{initialize, run};
 use nomic_chain::Action;

@@ -1,6 +1,6 @@
 use bitcoin::hashes::sha256d::Hash;
 use bitcoin::network::constants::Network::Testnet as bitcoin_network;
-use error_chain::bail;
+use failure::bail;
 use nomic_chain::{orga, spv, Action};
 use nomic_primitives::transaction::{HeaderTransaction, Transaction, WorkProofTransaction};
 use orga::{Read, Write};
