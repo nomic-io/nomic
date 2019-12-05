@@ -3,41 +3,29 @@ use bitcoin::network::constants::Network::Testnet as bitcoin_network;
 use failure::bail;
 use nomic_chain::{orga, spv, Action};
 use nomic_primitives::transaction::{HeaderTransaction, Transaction, WorkProofTransaction};
-use orga::{Read, Write};
+use orga::{abci::TendermintClient, merkstore::Client as MerkStoreClient, Read, Write};
 use std::collections::HashMap;
 use std::str::FromStr;
 use tendermint::rpc::Client as TendermintRpcClient;
 
-struct RemoteStore<'a> {
-    pub rpc: &'a TendermintRpcClient,
+struct RemoteStore {
+    pub tendermint_client: TendermintClient,
 }
 
-impl<'a> Read for RemoteStore<'a> {
-    fn get(&self, key: &[u8]) -> orga::Result<Option<Vec<u8>>> {
-        let rpc = &self.rpc;
-        let query_response = reqwest::blocking::get(
-            &format!(
-                "http://localhost:26657/abci_query?data=0x{}",
-                hex::encode(key)
-            )[..],
-        );
-        if let Ok(res) = query_response {
-            if let Ok(query_response_json) = res.json::<serde_json::Value>() {
-                // TODO: error handling if response json isn't what we expect
-                let query_response_value = &query_response_json["result"]["response"]["value"]
-                    .as_str()
-                    .unwrap();
-                let query_response_value_bytes = base64::decode(query_response_value).unwrap();
-                return Ok(Some(query_response_value_bytes));
-            }
-        }
-
-        //        match abci_result {}
-        Ok(None)
+impl RemoteStore {
+    fn new() -> Self {
+        let tendermint_client = TendermintClient::new("localhost:26657").expect("Failed to initialize tendermint client in RemoteStore. Is a local Tendermint full node running?");
+        RemoteStore { tendermint_client }
     }
 }
 
-impl<'a> Write for RemoteStore<'a> {
+impl Read for RemoteStore {
+    fn get(&self, key: &[u8]) -> orga::Result<Option<Vec<u8>>> {
+        self.tendermint_client.get(key)
+    }
+}
+
+impl Write for RemoteStore {
     fn put(&mut self, key: Vec<u8>, value: Vec<u8>) -> orga::Result<()> {
         panic!("Write method should not be called on a RemoteStore");
     }
@@ -49,6 +37,7 @@ impl<'a> Write for RemoteStore<'a> {
 
 pub struct Client {
     pub tendermint_rpc: TendermintRpcClient,
+    rpc_address: tendermint::net::Address,
 }
 
 impl Client {
@@ -56,13 +45,14 @@ impl Client {
         let address = tendermint::net::Address::from_str(tendermint_rpc_address).unwrap();
         let tendermint_rpc = TendermintRpcClient::new(&address).unwrap();
 
-        Ok(Client { tendermint_rpc })
+        Ok(Client {
+            tendermint_rpc,
+            rpc_address: address,
+        })
     }
 
     fn store(&self) -> RemoteStore {
-        RemoteStore {
-            rpc: &self.tendermint_rpc,
-        }
+        RemoteStore::new()
     }
 
     /// Transmit a transaction the peg state machine.
