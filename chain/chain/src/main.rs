@@ -8,7 +8,7 @@ use nomic_chain::Action;
 use nomic_primitives::transaction::Transaction;
 use orga::abci::{ABCIStateMachine, Application};
 use orga::Result as OrgaResult;
-use orga::{abci::MemStore, Store};
+use orga::{merkstore::MerkStore, Store};
 use std::collections::BTreeMap;
 
 struct App;
@@ -111,7 +111,8 @@ fn read_validators(store: &mut dyn Store) -> BTreeMap<Vec<u8>, u64> {
 }
 
 pub fn main() {
-    let store = MemStore::new();
+    let mut merk = Merk::open("merk.db").expect("Failed to open Merk database");
+    let store = MerkStore::new(&mut merk);
     ABCIStateMachine::new(App, store)
         .listen("127.0.0.1:26658")
         .unwrap();
