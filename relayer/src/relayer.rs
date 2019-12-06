@@ -142,7 +142,6 @@ impl RelayerStateMachine {
                 };
 
                 let peg_hashes = peg_client.get_bitcoin_block_hashes();
-
                 match peg_hashes {
                     Ok(hashes) => FetchPegBlockHashesSuccess {
                         peg_block_hashes: hashes,

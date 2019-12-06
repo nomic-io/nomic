@@ -9,19 +9,21 @@ use std::str::FromStr;
 use tendermint::rpc::Client as TendermintRpcClient;
 
 struct RemoteStore {
-    pub tendermint_client: TendermintClient,
+    merk_store_client: MerkStoreClient<TendermintClient>,
 }
 
 impl RemoteStore {
     fn new() -> Self {
         let tendermint_client = TendermintClient::new("localhost:26657").expect("Failed to initialize tendermint client in RemoteStore. Is a local Tendermint full node running?");
-        RemoteStore { tendermint_client }
+        let merk_store_client = MerkStoreClient::new(tendermint_client);
+        RemoteStore { merk_store_client }
     }
 }
 
 impl Read for RemoteStore {
     fn get(&self, key: &[u8]) -> orga::Result<Option<Vec<u8>>> {
-        self.tendermint_client.get(key)
+        let result = self.merk_store_client.get(key);
+        result
     }
 }
 
@@ -38,21 +40,20 @@ impl Write for RemoteStore {
 pub struct Client {
     pub tendermint_rpc: TendermintRpcClient,
     rpc_address: tendermint::net::Address,
+    remote_store: RemoteStore,
 }
 
 impl Client {
     pub fn new(tendermint_rpc_address: &str) -> Result<Self, ClientError> {
         let address = tendermint::net::Address::from_str(tendermint_rpc_address).unwrap();
         let tendermint_rpc = TendermintRpcClient::new(&address).unwrap();
+        let remote_store = RemoteStore::new();
 
         Ok(Client {
             tendermint_rpc,
             rpc_address: address,
+            remote_store,
         })
-    }
-
-    fn store(&self) -> RemoteStore {
-        RemoteStore::new()
     }
 
     /// Transmit a transaction the peg state machine.
@@ -78,8 +79,8 @@ impl Client {
 
     /// Get the Bitcoin headers currently used by the peg zone's on-chain SPV client.
     pub fn get_bitcoin_block_hashes(&mut self) -> Result<Vec<Hash>, ClientError> {
-        let mut store = self.store();
-        let mut header_cache = spv::headercache::HeaderCache::new(bitcoin_network, &mut store);
+        let mut store = &mut self.remote_store;
+        let mut header_cache = spv::headercache::HeaderCache::new(bitcoin_network, store);
         let trunk = header_cache.load_trunk();
         match trunk {
             Some(trunk) => Ok(trunk.clone()),
@@ -103,8 +104,8 @@ impl Client {
     }
 
     pub fn get_bitcoin_tip(&mut self) -> bitcoin::BlockHeader {
-        let mut store = self.store();
-        let mut header_cache = spv::headercache::HeaderCache::new(bitcoin_network, &mut store);
+        let mut store = &mut self.remote_store;
+        let mut header_cache = spv::headercache::HeaderCache::new(bitcoin_network, store);
         header_cache.tip().unwrap().stored.header
     }
 }

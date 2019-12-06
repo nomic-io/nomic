@@ -261,12 +261,10 @@ impl<'a> HeaderCache<'a> {
         if let Ok(trunk_bytes) = trunk_bytes {
             if let Some(trunk_bytes) = trunk_bytes {
                 // TODO: change error handling
-                let trunk: Option<Vec<Sha256dHash>> =
-                    serde_json::from_slice(&trunk_bytes).unwrap_or(None);
-                if let Some(trunk) = trunk {
-                    self.trunk = trunk;
-                    return Some(&self.trunk);
-                }
+                let trunk = serde_json::from_slice::<Vec<Sha256dHash>>(&trunk_bytes)
+                    .expect("Tried to deserialize invalid trunk bytes");
+                self.trunk = trunk;
+                return Some(&self.trunk);
             }
         }
         None
