@@ -29,8 +29,8 @@ pub fn run(
 
                 if work_proof_value >= MIN_WORK {
                     // Make sure this proof hasn't been redeemed yet
-                    let value_at_work_proof_hash = store.get(&hash);
-                    if let Ok(None) = value_at_work_proof_hash {
+                    let value_at_work_proof_hash = store.get(&hash).unwrap_or(None);
+                    if let None = value_at_work_proof_hash {
                         // Grant voting power
                         let current_voting_power = *validators
                             .get(&work_transaction.public_key)
@@ -43,7 +43,7 @@ pub fn run(
                         // Write the redeemed hash to the store so it can't be replayed
                         store.put(hash.to_vec(), vec![0]);
                     } else {
-                        println!("duplicate work proof");
+                        println!("duplicate work proof: {:?},\n\nHash: {:?}, \n\nValue stored at hash on store: {:?}", work_transaction, hash, value_at_work_proof_hash);
                     }
                 }
             }
