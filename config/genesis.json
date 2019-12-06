@@ -1,6 +1,6 @@
 {
   "genesis_time": "2019-11-27T20:05:12.407135Z",
-  "chain_id": "test-chain-QieFPY",
+  "chain_id": "nomic-sidechain-v0.2",
   "consensus_params": {
     "block": {
       "max_bytes": "22020096",
