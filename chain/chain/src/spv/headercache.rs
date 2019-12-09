@@ -261,7 +261,7 @@ impl<'a> HeaderCache<'a> {
         if let Ok(trunk_bytes) = trunk_bytes {
             if let Some(trunk_bytes) = trunk_bytes {
                 // TODO: change error handling
-                let trunk = serde_json::from_slice::<Vec<Sha256dHash>>(&trunk_bytes)
+                let trunk = bincode::deserialize::<Vec<Sha256dHash>>(&trunk_bytes)
                     .expect("Tried to deserialize invalid trunk bytes");
                 self.trunk = trunk;
                 return Some(&self.trunk);
@@ -272,7 +272,7 @@ impl<'a> HeaderCache<'a> {
 
     /// Serialize and save current trunk to store.
     fn save_trunk(&mut self) {
-        let trunk_bytes = serde_json::to_vec(&self.trunk).unwrap();
+        let trunk_bytes = bincode::serialize(&self.trunk).unwrap();
         self.store.put(b"trunk".to_vec(), trunk_bytes);
     }
 
