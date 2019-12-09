@@ -182,6 +182,9 @@ impl<'a> HeaderCache<'a> {
         self.load_trunk();
         let cached = CachedHeader::new(id, stored.clone());
         self.insert_header(id.clone(), cached);
+        if self.trunk.len() > 2018 {
+            self.trunk = self.trunk.drain((self.trunk.len() - 2018)..).collect();
+        }
         self.trunk.push(id.clone());
         self.save_trunk();
     }
