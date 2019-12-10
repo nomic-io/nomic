@@ -2,10 +2,22 @@ use nomic_client::{Client as PegClient, ClientError as PegClientError};
 use nomic_work::work;
 use rand::random;
 use sha2::{Digest, Sha256};
+use std::env;
 
 const MIN_WORK: u64 = 1 << 20;
 
 pub fn main() {
+    let args: Vec<String> = env::args().collect();
+    if args.len() < 2 {
+        generate();
+        return;
+    }
+    if args[1] == "recover" {
+        recover()
+    }
+}
+
+fn generate() {
     println!("Running work program");
     let mut rpc = PegClient::new("localhost:26657").unwrap();
     let pub_key_bytes = rpc
@@ -24,6 +36,18 @@ pub fn main() {
         }
         nonce += 1;
     }
+}
+
+fn recover() {
+    unimplemented!();
+    let mut rpc = PegClient::new("localhost:26657").unwrap();
+    let pub_key_bytes = rpc
+        .tendermint_rpc
+        .status()
+        .expect("Unable to connect to tendermint RPC")
+        .validator_info
+        .pub_key
+        .as_bytes();
 }
 
 fn try_nonce(pub_key_bytes: &[u8], nonce: u64) -> u64 {
