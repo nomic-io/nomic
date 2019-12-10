@@ -13,8 +13,8 @@ struct RemoteStore {
 }
 
 impl RemoteStore {
-    fn new() -> Self {
-        let tendermint_client = TendermintClient::new("localhost:26657").expect("Failed to initialize tendermint client in RemoteStore. Is a local Tendermint full node running?");
+    fn new(address: &str) -> Self {
+        let tendermint_client = TendermintClient::new(address).expect("Failed to initialize tendermint client in RemoteStore. Is a local Tendermint full node running?");
         let merk_store_client = MerkStoreClient::new(tendermint_client);
         RemoteStore { merk_store_client }
     }
@@ -47,7 +47,7 @@ impl Client {
     pub fn new(tendermint_rpc_address: &str) -> Result<Self, ClientError> {
         let address = tendermint::net::Address::from_str(tendermint_rpc_address).unwrap();
         let tendermint_rpc = TendermintRpcClient::new(&address).unwrap();
-        let remote_store = RemoteStore::new();
+        let remote_store = RemoteStore::new(tendermint_rpc_address);
 
         Ok(Client {
             tendermint_rpc,
