@@ -235,7 +235,13 @@ pub fn compute_common_ancestor(rpc: &Client, peg_hashes: &[Hash]) -> Result<Hash
                     return Ok(response.hash);
                 }
             }
-            Err(_) => return Err(RelayerError::new()),
+            Err(err) => {
+                // XXX: the bitcoincore-rpc library is beig overly strict and failing when confirmations are negative
+                if err.to_string() == "JSON-RPC error: JSON decode error: invalid value: integer `-1`, expected u32" {
+                    continue;
+                }
+                return Err(RelayerError::new())
+            },
         }
     }
 
