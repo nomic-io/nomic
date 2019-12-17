@@ -1487,7 +1487,7 @@ dependencies = [
  "bitcoincore-rpc 0.8.0-rc1 (registry+https://github.com/rust-lang/crates.io-index)",
  "nomic-client 0.1.0",
  "nomic-primitives 0.1.0",
- "tendermint 0.10.0 (git+https://github.com/interchainio/tendermint-rs)",
+ "tendermint 0.10.0 (git+https://github.com/interchainio/tendermint-rs?rev=0b9450ddcd00a6ed39c8c6b0931ef9c8e6c86e4b)",
 ]
 
 [[package]]
