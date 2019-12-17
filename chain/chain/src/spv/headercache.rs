@@ -29,6 +29,7 @@ use orga::Store;
 //use serde::ser::{Serialize, SerializeStruct, Serializer};
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use failure::bail;
 
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "BlockHeader")]
@@ -260,22 +261,19 @@ impl<'a> HeaderCache<'a> {
 
     /// Load and deserialize trunk from store.
     pub fn load_trunk(&mut self) -> Option<&Vec<Sha256dHash>> {
-        let trunk_bytes = self.store.get(b"trunk");
-        if let Ok(trunk_bytes) = trunk_bytes {
-            if let Some(trunk_bytes) = trunk_bytes {
-                // TODO: change error handling
-                let trunk = bincode::deserialize::<Vec<Sha256dHash>>(&trunk_bytes)
-                    .expect("Tried to deserialize invalid trunk bytes");
+        self.store.get(b"trunk")
+            .expect("Failed to get trunk from store")
+            .map(move |trunk_bytes| {
+                let trunk = bytes_to_hashes(trunk_bytes.as_slice())
+                    .expect("Failed to read trunk hashes");
                 self.trunk = trunk;
-                return Some(&self.trunk);
-            }
-        }
-        None
+                &self.trunk
+            })
     }
 
     /// Serialize and save current trunk to store.
     fn save_trunk(&mut self) {
-        let trunk_bytes = bincode::serialize(&self.trunk).unwrap();
+        let trunk_bytes = hashes_to_bytes(&self.trunk);
         self.store.put(b"trunk".to_vec(), trunk_bytes);
     }
 
@@ -493,5 +491,67 @@ impl<'a> HeaderCache<'a> {
         } else {
             None
         }
+    }
+}
+
+pub fn bytes_to_hashes(bytes: &[u8]) -> Result<Vec<Sha256dHash>, failure::Error> {
+    if bytes.len() % 32 != 0 {
+        bail!("Byte length should be a multiple of 32");
+    }
+
+    Ok(bytes
+        .chunks_exact(32)
+        .map(Sha256dHash::from_slice)
+        .collect::<Result<Vec<Sha256dHash>, bitcoin::hashes::Error>>()?)
+}
+
+pub fn hashes_to_bytes<T>(hashes: T) -> Vec<u8>
+    where T: AsRef<[Sha256dHash]>
+{
+    let hashes = hashes.as_ref();
+    let mut bytes = Vec::with_capacity(hashes.len() * 32);
+    for hash in hashes {
+        bytes.extend(&hash.into_inner());
+    }
+    bytes
+}
+
+#[cfg(test)]
+mod tests {
+    use bitcoin::hashes::sha256d::Hash as Sha256dHash;
+    use super::*;
+
+    #[test]
+    fn test_bytes_to_hashes() {
+        let bytes = [
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3
+        ];
+        let hashes = bytes_to_hashes(&bytes).unwrap();
+        assert_eq!(hashes, [
+            Sha256dHash::from_slice(&[0; 32]).unwrap(),
+            Sha256dHash::from_slice(&[1; 32]).unwrap(),
+            Sha256dHash::from_slice(&[2; 32]).unwrap(),
+            Sha256dHash::from_slice(&[3; 32]).unwrap()
+        ]);
+    }
+
+    #[test]
+    fn test_hashes_to_bytes() {
+        let hashes = [
+            Sha256dHash::from_slice(&[0; 32]).unwrap(),
+            Sha256dHash::from_slice(&[1; 32]).unwrap(),
+            Sha256dHash::from_slice(&[2; 32]).unwrap(),
+            Sha256dHash::from_slice(&[3; 32]).unwrap()
+        ];
+        let bytes = hashes_to_bytes(&hashes);
+        assert_eq!(bytes, vec![
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3
+        ]);
     }
 }
