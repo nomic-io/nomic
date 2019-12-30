@@ -10,7 +10,7 @@ This guide will walk you through setting up a validator for the Nomic Bitcoin si
 
 Note: the examples below assume you're using 64-bit Linux.
 
-### Run a Bitcoin testnet full node
+### 1. Run a Bitcoin testnet full node
 
 Download the Bitcoin core binary with wget, and start a full node in testnet mode:
 
@@ -22,7 +22,7 @@ tar -xzf bitcoin-0.19.0.1-x86_64-linux-gnu.tar.gz
 
 Syncing your Bitcoin testnet full node will take a few hours, depending on your CPU and bandwidth. Enjoy a cup of tea while you wait.
 
-### Run the Nomic ABCI server
+### 2. Run the Nomic ABCI server
 
 Download and run the Nomic ABCI server binary.
 
@@ -33,7 +33,7 @@ BTC_RPC_USER=foo BTC_RPC_PASS=bar ./nomic-x86_64-linux
 
 The ABCI server will wait for a connection from the local Tendermint node, and you won't see any output. Leave this running while you set up your Tendermint node in the next step.
 
-### Run a Tendermint full node
+### 3. Run a Tendermint full node
 
 Download and unzip Tendermint v0.32.8.
 
@@ -53,7 +53,7 @@ curl https://raw.githubusercontent.com/nomic-io/rust-bitcoin-peg/master/config/g
 
 You'll see a bunch of output while your node catches up with the rest of the network. This would be a good time for another cup of tea.
 
-### Run the relayer
+### 4. Run the relayer
 
 The relayer scans Bitcoin for new block headers and broadcasts them to the sidechain.
 
@@ -66,7 +66,7 @@ BTC_RPC_USER=foo BTC_RPC_PASS=bar ./relayer-x86_64-linux
 
 You'll see the latest Bitcoin block hash printed whenever a new block is mined.
 
-### Run the work generator
+### 5. Run the work generator
 
 At this point, you are now running a **full node**, but not yet running a **validator**. To become a validator, you'll need some voting power.
 
