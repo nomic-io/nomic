@@ -28,6 +28,7 @@ Download and run the Nomic ABCI server binary.
 
 ```bash
 wget https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.1.0-rc.1/nomic-x86_64-linux
+chmod +x ./nomic-x86_64-linux
 BTC_RPC_USER=foo BTC_RPC_PASS=bar ./nomic-x86_64-linux
 ```
 
@@ -40,7 +41,6 @@ Download and unzip Tendermint v0.32.8.
 ```bash
 wget https://github.com/tendermint/tendermint/releases/download/v0.32.8/tendermint_v0.32.8_linux_amd64.zip
 unzip tendermint_v0.32.8_linux_amd64.zip
-
 ```
 
 Now configure your Tendermint home directory and start your full node:
@@ -61,6 +61,7 @@ Download and run the latest version of the relayer:
 
 ```bash
 wget https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.1.0-rc.1/relayer-x86_64-linux
+chmod +x relayer-x86_64-linux
 BTC_RPC_USER=foo BTC_RPC_PASS=bar ./relayer-x86_64-linux
 ```
 
@@ -76,6 +77,7 @@ Download and run the single-CPU work generation script:
 
 ```bash
 wget https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.1.0-rc.1/worker-x86_64-linux
+chmod +x worker-x86_64-linux
 ./worker-x86_64-linux
 ```
 
