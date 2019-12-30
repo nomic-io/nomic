@@ -1,4 +1,6 @@
-# rust-bitcoin-peg
+<h1 style="text-align: center">
+<img src="./logo.svg" style="max-width: 500px">
+</h1>
 
 Rust implementation of the [Nomic Bitcoin sidechain](https://github.com/nomic-io/bitcoin-peg).
 
