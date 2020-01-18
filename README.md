@@ -40,7 +40,7 @@ If you'd like to reduce the amount of storage required, you can instead run the 
 Download and run the Nomic ABCI server binary.
 
 ```bash
-wget https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.1.0-rc.1/nomic-x86_64-linux
+wget https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.1.0-rc.2/nomic-x86_64-linux
 chmod +x ./nomic-x86_64-linux
 BTC_RPC_USER=foo BTC_RPC_PASS=bar ./nomic-x86_64-linux
 ```
