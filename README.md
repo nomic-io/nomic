@@ -16,7 +16,7 @@ If you need any help getting your node running, join the [Telegram channel](http
 
 - At least 1GB RAM
 - A few hours (to sync your Bitcoin Testnet full node and Nomic full node)
-- At least 30GB of available storage (for the Bitcoin Testnet blockchain), or 1GB if your run the Bitcoin node in pruned mode
+- At least 30GB of available storage (for the Bitcoin Testnet blockchain), or 1GB if you run the Bitcoin node in pruned mode
 
 ### 1. Run a Bitcoin testnet full node
 
@@ -99,6 +99,30 @@ chmod +x worker-x86_64-linux
 ```
 
 You won't see any output, but you can watch your voting power increase at [http://localhost:26657/status](http://localhost:26657/status). You're now a validator on the Nomic sidechain! Keep your node running to help ensure stability of the network.
+
+### Backing up your private key
+
+Your validator is signing blocks with a unqiue private key stored at `~/.nomic-testnet/config/priv_validator_key.json`. Remember to keep this safe since losing it would mean you lose the voting power you worked hard to get. Also, keep it safe since if an attacker got a hold of it they would be able to attack the network, also resulting in the loss of your voting power.
+
+However, as the network is still just an early testnet and security is not as critical yet, it probably is sufficient to just copy the file to another folder:
+
+```bash
+cp ~/.nomic-testnet/config/priv_validator_key.json ~/nomic-key-backup.json
+```
+
+### Hard-resetting your node
+
+Since Nomic is in the early stages, we may end up resetting the network after making a backwards-incompatible change, or introduce a bug which results in corrupt data. If we specify that you need to hard reset your node, simply make sure you've backed up the key as in the above section, then remove all the data:
+
+```bash
+rm -rf merk.db # located in the directory where you ran the ABCI server
+rm -rf ~/.nomic-testnet
+```
+
+Then follow the setup steps again as normal (skipping step 1, the Bitcoin node setup), but copy your validator private key back in after running `tendermint init` in step 3:
+```bash
+cp nomic-key-backup.json ~/.nomic-testnet/config/priv_validator_key.json
+```
 
 ### Next Steps
 
