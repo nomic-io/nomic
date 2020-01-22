@@ -10,7 +10,7 @@ This guide will walk you through setting up a validator for the Nomic Bitcoin si
 
 Note: the examples below assume you're using 64-bit Linux.
 
-If you need any help getting your node running, join the [Telegram channel](https://t.me/nomicvalidators).
+If you need any help getting your node running, join the [Telegram channel](https://t.me/nomicbtc).
 
 ### Requirements
 
@@ -126,4 +126,4 @@ cp nomic-key-backup.json ~/.nomic-testnet/config/priv_validator_key.json
 
 ### Next Steps
 
-In the future, validator nodes like yours will also be responsible for helping manage the network's Bitcoin reserves. Stay tuned as the Nomic sidechain develops, and join the discussion in the [Telegram channel](https://t.me/nomicvalidators)!
+In the future, validator nodes like yours will also be responsible for helping manage the network's Bitcoin reserves. Stay tuned as the Nomic sidechain develops, and join the discussion in the [Telegram channel](https://t.me/nomicbtc)!
