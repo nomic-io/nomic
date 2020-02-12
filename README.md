@@ -40,7 +40,7 @@ If you'd like to reduce the amount of storage required, you can instead run the 
 Download and run the Nomic ABCI server binary.
 
 ```bash
-wget https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.1.0-rc.2/nomic-x86_64-linux
+wget https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.1.0/nomic-x86_64-linux
 chmod +x ./nomic-x86_64-linux
 BTC_RPC_USER=foo BTC_RPC_PASS=bar ./nomic-x86_64-linux
 ```
@@ -77,7 +77,7 @@ The relayer scans Bitcoin for new block headers and broadcasts them to the sidec
 Download and run the latest version of the relayer:
 
 ```bash
-wget https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.1.0-rc.1/relayer-x86_64-linux
+wget https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.1.0/relayer-x86_64-linux
 chmod +x relayer-x86_64-linux
 BTC_RPC_USER=foo BTC_RPC_PASS=bar ./relayer-x86_64-linux
 ```
@@ -93,7 +93,7 @@ To gain voting power on the Nomic sidechain, full nodes must create [hashcash](h
 Download and run the single-CPU work generation script:
 
 ```bash
-wget https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.1.0-rc.1/worker-x86_64-linux
+wget https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.1.0/worker-x86_64-linux
 chmod +x worker-x86_64-linux
 ./worker-x86_64-linux
 ```
