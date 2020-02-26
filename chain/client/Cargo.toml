@@ -10,10 +10,10 @@ nomic-primitives = { path = "../../core/primitives" }
 nomic-chain = { path = "../chain" }
 nomic-work = { path = "../../core/work" }
 bincode = "1.2.0"
-serde_derive = "=1.0.98"
-serde = { version = "=1.0.98", features=["derive"]}
+serde_derive = "1.0.100"
+serde = { version = "1.0.100", features=["derive"]}
 tendermint = { git = "https://github.com/interchainio/tendermint-rs", rev = "0b9450ddcd00a6ed39c8c6b0931ef9c8e6c86e4b" }
-serde_json = "1.0.41"
+serde_json = "1.0.46"
 base64 = "0.11.0"
 hex = "0.4.0"
 reqwest = {version = "0.10.0-alpha.2", features=["blocking", "json"]}
