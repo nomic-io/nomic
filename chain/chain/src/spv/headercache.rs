@@ -58,7 +58,13 @@ pub struct StoredHeader {
     /// chain height
     pub height: u32,
     /// log2 of total work
-    pub log2work: f64,
+    pub work_bytes: [u64; 4],
+}
+
+impl StoredHeader {
+    pub fn work(&self) -> Uint256 {
+        Uint256(self.work_bytes)
+    }
 }
 
 // need to implement if put_hash_keyed and get_hash_keyed should be used
@@ -173,7 +179,7 @@ impl<'a> HeaderCache<'a> {
     /// past.
     pub fn add_header_raw(&mut self, header: BlockHeader, height: u32) {
         let stored = StoredHeader {
-            log2work: Self::log2(header.work()),
+            work_bytes: header.work().to_bytes(),
             header,
             height,
         };
@@ -224,7 +230,7 @@ impl<'a> HeaderCache<'a> {
                 StoredHeader {
                     header: header.clone(),
                     height: 0,
-                    log2work: Self::log2(header.work()),
+                    work_bytes: header.work().to_bytes(),
                 },
             );
             self.trunk.push(new_tip.clone());
@@ -376,12 +382,13 @@ impl<'a> HeaderCache<'a> {
                 prev.stored.header.target()
             };
 
+        let combined_work: Uint256 = next.work() + prev.stored.header.work();
         let cached = CachedHeader::new(
             &next.bitcoin_hash(),
             StoredHeader {
                 header: next.clone(),
                 height: prev.stored.height + 1,
-                log2work: Self::log2(next.work() + Self::exp2(prev.stored.log2work)),
+                work_bytes: combined_work.to_bytes(),
             },
         );
 
@@ -395,7 +402,7 @@ impl<'a> HeaderCache<'a> {
         // store header in cache
         self.insert_header(next_hash.clone(), cached.clone());
         if let Some(tip) = self.tip() {
-            if tip.stored.log2work < cached.stored.log2work {
+            if tip.stored.work() < cached.stored.work() {
                 // higher POW than previous tip
 
                 // compute path to new tip
