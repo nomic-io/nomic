@@ -1,10 +1,10 @@
 //!  Start the peg abci server.
 
+use crate::state_machine::{initialize, run};
+use crate::Action;
 use abci2::messages::abci::*;
 use failure::bail;
 use merk::Merk;
-use nomic_chain::state_machine::{initialize, run};
-use nomic_chain::Action;
 use nomic_primitives::transaction::Transaction;
 use orga::abci::{ABCIStateMachine, Application};
 use orga::Result as OrgaResult;
@@ -110,7 +110,7 @@ fn read_validators(store: &mut dyn Store) -> BTreeMap<Vec<u8>, u64> {
     validators.expect("Failed to deserialize validator map")
 }
 
-pub fn main() {
+pub fn start() {
     let mut merk = Merk::open("merk.db").expect("Failed to open Merk database");
     let store = MerkStore::new(&mut merk);
     ABCIStateMachine::new(App, store)

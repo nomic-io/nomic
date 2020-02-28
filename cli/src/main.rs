@@ -1,4 +1,5 @@
 use clap::Clap;
+use nomic_chain::abci_server;
 
 /// Command-line interface for interacting with the Nomic Bitcoin sidechain
 #[derive(Clap)]
@@ -32,7 +33,8 @@ fn main() {
             relayer::relayer::start();
         }
         SubCommand::Start(s) => {
-            println!("running start");
+            // Start the ABCI server
+            abci_server::start();
         }
     }
 }

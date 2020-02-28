@@ -9,3 +9,4 @@ edition = "2018"
 [dependencies]
 clap = { git = "https://github.com/clap-rs/clap/" }
 relayer = { path = "../relayer" }
+nomic-chain = { path = "../chain/chain" }
