@@ -1,5 +1,6 @@
 use clap::Clap;
 use nomic_chain::abci_server;
+use std::fs;
 
 /// Command-line interface for interacting with the Nomic Bitcoin sidechain
 #[derive(Clap)]
@@ -28,13 +29,23 @@ struct Relayer {}
 
 fn main() {
     let opts: Opts = Opts::parse();
+    // Ensure nomic-testnet home directory
+    let mut nomic_home = dirs::home_dir()
+        .unwrap_or(std::env::current_dir().expect("Failed to create Nomic home directory"));
+    nomic_home.push(".nomic-testnet");
+    let mkdir_result = fs::create_dir(&nomic_home);
+    if let Err(_) = mkdir_result {
+        // TODO: Panic if this error is anything except "directory already exists"
+    }
+
     match opts.subcmd {
-        SubCommand::Relayer(r) => {
+        SubCommand::Relayer(_) => {
             relayer::relayer::start();
         }
-        SubCommand::Start(s) => {
+        SubCommand::Start(_) => {
             // Start the ABCI server
-            abci_server::start();
+            println!("ABCI server started");
+            abci_server::start(&nomic_home);
         }
     }
 }
