@@ -10,3 +10,4 @@ edition = "2018"
 clap = { git = "https://github.com/clap-rs/clap/" }
 relayer = { path = "../relayer" }
 nomic-chain = { path = "../chain/chain" }
+dirs = "2.0.2"
