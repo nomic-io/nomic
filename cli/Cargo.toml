@@ -10,4 +10,5 @@ edition = "2018"
 clap = { git = "https://github.com/clap-rs/clap/" }
 relayer = { path = "../relayer" }
 nomic-chain = { path = "../chain/chain" }
+nomic-worker = { path = "../worker" }
 dirs = "2.0.2"

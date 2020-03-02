@@ -19,6 +19,10 @@ enum SubCommand {
     /// Starts a sidechain full node
     #[clap(name = "start")]
     Start(Start),
+
+    /// Generate voting power for the validator running locally
+    #[clap(name = "worker")]
+    Worker(Worker),
 }
 
 #[derive(Clap)]
@@ -26,6 +30,9 @@ struct Start {}
 
 #[derive(Clap)]
 struct Relayer {}
+
+#[derive(Clap)]
+struct Worker {}
 
 fn main() {
     let opts: Opts = Opts::parse();
@@ -46,6 +53,9 @@ fn main() {
             // Start the ABCI server
             println!("ABCI server started");
             abci_server::start(&nomic_home);
+        }
+        SubCommand::Worker(_) => {
+            nomic_worker::generate();
         }
     }
 }

@@ -1261,6 +1261,7 @@ dependencies = [
  "clap 3.0.0-beta.1",
  "dirs",
  "nomic-chain",
+ "nomic-worker",
  "relayer",
 ]
 
