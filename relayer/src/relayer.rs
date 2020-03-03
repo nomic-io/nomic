@@ -2,7 +2,7 @@ use bitcoin::hashes::sha256d::Hash;
 use bitcoincore_rpc::{Auth, Client, Error as RpcError, RpcApi};
 use nomic_client::{Client as PegClient, ClientError as PegClientError};
 use nomic_primitives::transaction::{HeaderTransaction, Transaction};
-use std::env;
+use std::{env, thread, time};
 
 #[derive(Debug)]
 pub enum RelayerState {
@@ -312,4 +312,24 @@ pub fn broadcast_header_transactions(
         };
     }
     Ok(())
+}
+
+/// Start the relayer process
+pub fn start() {
+    let mut sm = RelayerStateMachine::new();
+    let mut latest_tip: Option<Hash> = None;
+
+    println!("Relayer process started. Watching Bitcoin network for new block headers.");
+    loop {
+        let event = sm.run();
+        if let RelayerEvent::ComputeCommonAncestorSuccess { common_block_hash } = event {
+            if Some(common_block_hash) != latest_tip && latest_tip.is_some() {
+                println!("New tip hash: {:?}", common_block_hash);
+            } else {
+                thread::sleep(time::Duration::from_secs(10));
+            }
+            latest_tip = Some(common_block_hash);
+        }
+        sm.state = sm.state.next(event);
+    }
 }
