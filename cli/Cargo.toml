@@ -12,3 +12,7 @@ relayer = { path = "../relayer" }
 nomic-chain = { path = "../chain/chain" }
 nomic-worker = { path = "../worker" }
 dirs = "2.0.2"
+zip = "0.5.5"
+reqwest = { version = "0.10.3", features = ["blocking"] }
+hex-literal = "0.2.1"
+sha2 = "0.8.1"

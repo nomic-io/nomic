@@ -1,3 +1,4 @@
+mod tendermint;
 use clap::Clap;
 use nomic_chain::abci_server;
 use std::fs;
@@ -44,12 +45,14 @@ fn main() {
     if let Err(_) = mkdir_result {
         // TODO: Panic if this error is anything except "directory already exists"
     }
-
     match opts.subcmd {
         SubCommand::Relayer(_) => {
             relayer::relayer::start();
         }
         SubCommand::Start(_) => {
+            // Install and start Tendermint
+            tendermint::install(&nomic_home);
+            tendermint::start(&nomic_home);
             // Start the ABCI server
             println!("ABCI server started");
             abci_server::start(&nomic_home);

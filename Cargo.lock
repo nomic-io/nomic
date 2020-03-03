@@ -10,6 +10,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "adler32"
+version = "1.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d2e7343e7fc9de883d1b0341e0b13970f764c14101234857d2ddafa1cb1cac2"
+
+[[package]]
 name = "aho-corasick"
 version = "0.7.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -308,6 +314,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "130aac562c0dd69c56b3b1cc8ffd2e17be31d0b6c25b61c96b76231aa23e39e1"
 
 [[package]]
+name = "bzip2"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42b7c3cbf0fa9c1b82308d57191728ca0256cb821220f4e2fd410a72ade26e3b"
+dependencies = [
+ "bzip2-sys",
+ "libc",
+]
+
+[[package]]
+name = "bzip2-sys"
+version = "0.1.8+1.0.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "05305b41c5034ff0e93937ac64133d109b5a2660114ec45e9760bc6816d83038"
+dependencies = [
+ "cc",
+ "libc",
+]
+
+[[package]]
 name = "c2-chacha"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -457,6 +483,15 @@ name = "core-foundation-sys"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e7ca8a5221364ef15ce201e8ed2f609fc312682a8f4e0e3d4aa5879764e0fa3b"
+
+[[package]]
+name = "crc32fast"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba125de2af0df55319f41944744ad91c71113bf74a4646efff39afe1f6842db1"
+dependencies = [
+ "cfg-if",
+]
 
 [[package]]
 name = "crossbeam-deque"
@@ -631,6 +666,18 @@ name = "fake-simd"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e88a8acf291dafb59c2d96e8f59828f3838bb1a70398823ade51a84de6a6deed"
+
+[[package]]
+name = "flate2"
+version = "1.0.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6bd6d6f4752952feb71363cffc9ebac9411b75b87c6ab6058c40c8900cf43c0f"
+dependencies = [
+ "cfg-if",
+ "crc32fast",
+ "libc",
+ "miniz_oxide",
+]
 
 [[package]]
 name = "fnv"
@@ -820,6 +867,25 @@ name = "hex"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "644f9158b2f133fd50f5fb3242878846d9eb792e445c893805ff0e3824006e35"
+
+[[package]]
+name = "hex-literal"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "961de220ec9a91af2e1e5bd80d02109155695e516771762381ef8581317066e0"
+dependencies = [
+ "hex-literal-impl",
+ "proc-macro-hack",
+]
+
+[[package]]
+name = "hex-literal-impl"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9d4c5c844e2fee0bf673d54c2c177f1713b3d2af2ff6e666b49cb7572e6cf42d"
+dependencies = [
+ "proc-macro-hack",
+]
 
 [[package]]
 name = "http"
@@ -1159,6 +1225,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "miniz_oxide"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa679ff6578b1cddee93d7e82e263b94a575e0bfced07284eb0c037c1d2416a5"
+dependencies = [
+ "adler32",
+]
+
+[[package]]
 name = "mio"
 version = "0.6.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1260,9 +1335,13 @@ version = "0.1.0"
 dependencies = [
  "clap 3.0.0-beta.1",
  "dirs",
+ "hex-literal",
  "nomic-chain",
  "nomic-worker",
  "relayer",
+ "reqwest",
+ "sha2 0.8.1",
+ "zip",
 ]
 
 [[package]]
@@ -1460,6 +1539,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "05da548ad6865900e60eaba7f589cc0783590a92e940c26953ff81ddbab2d677"
 
 [[package]]
+name = "podio"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "780fb4b6698bbf9cf2444ea5d22411cef2953f0824b98f33cf454ec5615645bd"
+
+[[package]]
 name = "ppv-lite86"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1489,6 +1574,17 @@ dependencies = [
  "rustversion",
  "syn 1.0.16",
  "syn-mid",
+]
+
+[[package]]
+name = "proc-macro-hack"
+version = "0.5.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ecd45702f76d6d3c75a80564378ae228a85f0b59d2f3ed43c91b4a69eb2ebfc5"
+dependencies = [
+ "proc-macro2 1.0.9",
+ "quote 1.0.2",
+ "syn 1.0.16",
 ]
 
 [[package]]
@@ -2576,4 +2672,17 @@ dependencies = [
  "quote 1.0.2",
  "syn 1.0.16",
  "synstructure",
+]
+
+[[package]]
+name = "zip"
+version = "0.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6df134e83b8f0f8153a094c7b0fd79dfebe437f1d76e7715afa18ed95ebe2fd7"
+dependencies = [
+ "bzip2",
+ "crc32fast",
+ "flate2",
+ "podio",
+ "time",
 ]
