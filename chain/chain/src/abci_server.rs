@@ -2,11 +2,10 @@
 
 use crate::state_machine::{initialize, run};
 use crate::Action;
-use abci2::messages::abci::*;
 use failure::bail;
 use merk::Merk;
 use nomic_primitives::transaction::Transaction;
-use orga::abci::{ABCIStateMachine, Application};
+use orga::abci::{ABCIStateMachine, Application, messages::*};
 use orga::Result as OrgaResult;
 use orga::{merkstore::MerkStore, Store};
 use std::collections::BTreeMap;
