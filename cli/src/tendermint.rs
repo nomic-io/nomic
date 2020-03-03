@@ -41,7 +41,7 @@ fn verify_hash(tendermint_bytes: &Vec<u8>) {
 }
 
 pub fn install(nomic_home: &PathBuf) {
-    info!("Installing Tendermint to {}", nomic_home);
+    info!("Installing Tendermint to {}", nomic_home.to_str().unwrap());
     let mut buf: Vec<u8> = vec![];
     reqwest::blocking::get(TENDERMINT_BINARY_URL)
         .expect("Failed to download Tendermint zip file from GitHub")
