@@ -58,7 +58,7 @@ fn main() {
             tendermint::install(&nomic_home);
             tendermint::start(&nomic_home);
             // Start the ABCI server
-            info!("ABCI server started");
+            info!("Starting ABCI server");
             abci_server::start(&nomic_home);
         }
         SubCommand::Worker(_) => {

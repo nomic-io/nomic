@@ -25,15 +25,18 @@ fn verify_hash(tendermint_bytes: &Vec<u8>) {
         bytes, TENDERMINT_ZIP_HASH,
         "Tendermint binary zip did not match expected hash"
     );
+    info!("Confirmed correct Tendermint zip hash");
 }
 
 pub fn install(nomic_home: &PathBuf) {
+    info!("Installing Tendermint to {}", nomic_home);
     let mut buf: Vec<u8> = vec![];
     reqwest::blocking::get(TENDERMINT_BINARY_URL)
         .expect("Failed to download Tendermint zip file from GitHub")
         .copy_to(&mut buf)
         .expect("Failed to read bytes from zip file");
 
+    info!("Downloaded Tendermint binary");
     verify_hash(&buf);
     let cursor = std::io::Cursor::new(buf);
     let mut zip = ZipArchive::new(cursor).expect("Invalid zip file contents");
@@ -55,11 +58,11 @@ pub fn install(nomic_home: &PathBuf) {
 
 pub fn start(nomic_home: &PathBuf) {
     let tendermint_path = nomic_home.join("tendermint-v0.32.8");
-    println!("nomic home: {}", nomic_home.to_str().unwrap());
     Command::new(tendermint_path)
         .arg("node")
         .arg("--home")
         .arg(nomic_home.to_str().unwrap())
         .spawn()
         .expect("Failed to start Tendermint");
+    info!("Spawned Tendermint child process");
 }
