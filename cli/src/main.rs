@@ -2,6 +2,7 @@ mod tendermint;
 use clap::Clap;
 use nomic_chain::abci_server;
 use std::fs;
+use log::info;
 
 /// Command-line interface for interacting with the Nomic Bitcoin sidechain
 #[derive(Clap)]
@@ -37,6 +38,9 @@ struct Worker {}
 
 fn main() {
     let opts: Opts = Opts::parse();
+
+    pretty_env_logger::init();
+
     // Ensure nomic-testnet home directory
     let mut nomic_home = dirs::home_dir()
         .unwrap_or(std::env::current_dir().expect("Failed to create Nomic home directory"));
@@ -54,7 +58,7 @@ fn main() {
             tendermint::install(&nomic_home);
             tendermint::start(&nomic_home);
             // Start the ABCI server
-            println!("ABCI server started");
+            info!("ABCI server started");
             abci_server::start(&nomic_home);
         }
         SubCommand::Worker(_) => {

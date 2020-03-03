@@ -16,3 +16,9 @@ zip = "0.5.5"
 reqwest = { version = "0.10.3", features = ["blocking"] }
 hex-literal = "0.2.1"
 sha2 = "0.8.1"
+log = "0.4.8"
+pretty_env_logger = "0.4.0"
+
+[[bin]]
+name = "cli"
+path = "./src/main.rs"
