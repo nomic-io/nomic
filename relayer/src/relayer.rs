@@ -240,8 +240,8 @@ pub fn compute_common_ancestor(rpc: &Client, peg_hashes: &[Hash]) -> Result<Hash
                 if err.to_string() == "JSON-RPC error: JSON decode error: invalid value: integer `-1`, expected u32" {
                     continue;
                 }
-                return Err(RelayerError::new())
-            },
+                return Err(RelayerError::new());
+            }
         }
     }
 
@@ -312,21 +312,4 @@ pub fn broadcast_header_transactions(
         };
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn run_relayer_state_machine() {
-        let mut sm = RelayerStateMachine::new();
-        for i in 0..400 {
-            let event = sm.run();
-            sm.state = sm.state.next(event);
-        }
-        println!("did 100 relayer steps");
-        let mut rpc = sm.peg_client.unwrap();
-        let tip = rpc.get_bitcoin_tip();
-        println!("tip: {:?}", tip);
-    }
 }
