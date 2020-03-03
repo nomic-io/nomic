@@ -3,9 +3,10 @@
 [[package]]
 name = "abci2"
 version = "0.1.3-alpha.0"
-source = "git+https://github.com/nomic-io/abci2#3478db209529b56cc65f1d177417534fad56d5e2"
+source = "git+https://github.com/nomic-io/abci2#957231756591d19945a2ca3bdc6ed5d965493943"
 dependencies = [
  "failure",
+ "log 0.4.8",
  "protobuf",
 ]
 
@@ -151,7 +152,7 @@ dependencies = [
  "cfg-if",
  "clang-sys",
  "clap 2.33.0",
- "env_logger",
+ "env_logger 0.6.2",
  "fxhash",
  "lazy_static",
  "log 0.4.8",
@@ -631,6 +632,19 @@ name = "env_logger"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aafcde04e90a5226a6443b7aabdb016ba2f8307c847d524724bd9b346dd1a2d3"
+dependencies = [
+ "atty",
+ "humantime",
+ "log 0.4.8",
+ "regex",
+ "termcolor",
+]
+
+[[package]]
+name = "env_logger"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "44533bbbb3bb3c1fa17d9f2e4e38bbbaf8396ba82193c4cb1b6445d711445d36"
 dependencies = [
  "atty",
  "humantime",
@@ -1313,7 +1327,6 @@ dependencies = [
 name = "nomic-chain"
 version = "0.1.0"
 dependencies = [
- "abci2",
  "bincode",
  "bitcoin",
  "bitcoincore-rpc",
@@ -1336,8 +1349,10 @@ dependencies = [
  "clap 3.0.0-beta.1",
  "dirs",
  "hex-literal",
+ "log 0.4.8",
  "nomic-chain",
  "nomic-worker",
+ "pretty_env_logger",
  "relayer",
  "reqwest",
  "sha2 0.8.1",
@@ -1473,7 +1488,6 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.1.0"
-source = "git+https://github.com/nomic-io/orga#1c8b1669913753d1aa3e3d34e2b229f82cd09343"
 dependencies = [
  "abci2",
  "byteorder",
@@ -1549,6 +1563,16 @@ name = "ppv-lite86"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "74490b50b9fbe561ac330df47c08f3f33073d2d00c150f719147d7c54522fa1b"
+
+[[package]]
+name = "pretty_env_logger"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "926d36b9553851b8b0005f1275891b392ee4d2d833852c417ed025477350fb9d"
+dependencies = [
+ "env_logger 0.7.1",
+ "log 0.4.8",
+]
 
 [[package]]
 name = "proc-macro-error"
