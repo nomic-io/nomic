@@ -6,6 +6,7 @@ members = [
     "chain/client",
     "chain/chain",
     "core/work",
+    "core/signatory-set",
     "worker",
 ]
 
