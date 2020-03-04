@@ -51,6 +51,8 @@ impl SignatorySet {
     }
 
     fn add(&mut self, signatory: Signatory) {
+        // TODO: ensure we don't overflow total_voting_power
+
         self.total_voting_power += signatory.voting_power;
         self.map.insert(signatory.pubkey.clone(), signatory.clone());
         self.set.insert(signatory);
@@ -64,22 +66,7 @@ impl SignatorySet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitcoin::{PublicKey, PrivateKey};
-    use secp256k1::Secp256k1;
-
-    fn mock_pubkey(byte: u8) -> PublicKey {
-        let secp = Secp256k1::new();
-        let privkey = PrivateKey {
-            compressed: true,
-            network: bitcoin::Network::Regtest,
-            key: secp256k1::key::SecretKey::from_slice(&[byte; 32]).unwrap()
-        };
-        privkey.public_key(&secp)
-    }
-
-    fn mock_signatory(key_byte: u8, voting_power: u32) -> Signatory {
-        Signatory::new(mock_pubkey(key_byte), voting_power)
-    }
+    use crate::test_utils::*;
 
     #[test]
     fn len() {
