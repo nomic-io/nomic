@@ -102,6 +102,8 @@ mod tests {
         set.add(mock_signatory(1, 100));
         set.add(mock_signatory(2, 100));
         assert_eq!(set.total_voting_power(), 200);
+        set.remove(&mock_pubkey(1));
+        assert_eq!(set.total_voting_power(), 100);
     }
 
     #[test]
