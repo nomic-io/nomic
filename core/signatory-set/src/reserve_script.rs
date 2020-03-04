@@ -23,6 +23,12 @@ pub fn build_script(signatories: &SignatorySet) -> Script {
     bytes.into()
 }
 
+impl SignatorySet {
+    pub fn to_reserve_script(&self) -> Script {
+        build_script(self)
+    }
+}
+
 fn first_signatory_script(signatory: &Signatory) -> Script {
     bitcoin_script! {
         <signatory.pubkey> OP_CHECKSIG
@@ -56,8 +62,7 @@ mod tests {
 
     #[test]
     fn build_script_fixture() {
-        let signatories = mock_signatory_set(4);
-        let script = build_script(&signatories);
+        let script = mock_signatory_set(4).to_reserve_script();
 
         assert_eq!(script, bitcoin_script! {
             0x03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b OP_CHECKSIG
