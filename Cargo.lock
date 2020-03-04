@@ -1172,6 +1172,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "make-checkpoint-header"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "nomic-bitcoin",
+ "serde",
+ "serde_derive",
+]
+
+[[package]]
 name = "mappum-librocksdb-sys"
 version = "6.7.0-alpha.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1346,6 +1356,14 @@ checksum = "2ad2a91a8e869eeb30b9cb3119ae87773a8f4ae617f41b1eb9c154b2905f7bd6"
 dependencies = [
  "memchr",
  "version_check 0.1.5",
+]
+
+[[package]]
+name = "nomic-bitcoin"
+version = "0.1.0"
+dependencies = [
+ "bitcoin 0.19.2",
+ "bitcoincore-rpc",
 ]
 
 [[package]]
