@@ -174,8 +174,33 @@ dependencies = [
  "bitcoin_hashes",
  "byteorder",
  "hex 0.3.2",
- "secp256k1",
+ "secp256k1 0.12.0",
  "serde",
+]
+
+[[package]]
+name = "bitcoin"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a32c9d2fa897cfbb0db45d71e3d2838666194abc4828c0f994e4b5c3bf85ba4"
+dependencies = [
+ "bech32",
+ "bitcoin_hashes",
+ "secp256k1 0.17.2",
+]
+
+[[package]]
+name = "bitcoin-script"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "984eb439281137a0cb3fbae399fc85ee473a3aeb1e5305c4868096c368d06476"
+dependencies = [
+ "bitcoin 0.23.0",
+ "hex 0.4.2",
+ "lazy_static",
+ "proc-macro-error",
+ "proc-macro2 1.0.9",
+ "quote 1.0.2",
 ]
 
 [[package]]
@@ -193,7 +218,7 @@ version = "0.8.0-rc1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dccfa1a1851ead31758939818ec2b70a22301916fbf74d65546e4197e9a09dee"
 dependencies = [
- "bitcoin",
+ "bitcoin 0.19.2",
  "bitcoincore-rpc-json",
  "hex 0.3.2",
  "jsonrpc",
@@ -209,7 +234,7 @@ version = "0.8.0-rc1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "33bfa722d94b369b35dfa9354d2bbfbd89a5cdeb37c149e67ec2ac125d95519a"
 dependencies = [
- "bitcoin",
+ "bitcoin 0.19.2",
  "hex 0.3.2",
  "num-bigint",
  "serde",
@@ -345,9 +370,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.0.26"
+version = "1.0.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "389803e36973d242e7fecb092b2de44a3d35ac62524b3b9339e51d577d668e02"
+checksum = "8dae9c4b8fedcae85592ba623c4fd08cfdab3e3b72d6df780c6ead964a69bfff"
 dependencies = [
  "rayon",
 ]
@@ -1328,7 +1353,7 @@ name = "nomic-chain"
 version = "0.1.0"
 dependencies = [
  "bincode",
- "bitcoin",
+ "bitcoin 0.19.2",
  "bitcoincore-rpc",
  "byteorder",
  "failure",
@@ -1365,7 +1390,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.11.0",
  "bincode",
- "bitcoin",
+ "bitcoin 0.19.2",
  "bitcoincore-rpc",
  "failure",
  "hex 0.4.2",
@@ -1383,7 +1408,7 @@ dependencies = [
 name = "nomic-primitives"
 version = "0.1.0"
 dependencies = [
- "bitcoin",
+ "bitcoin 0.19.2",
  "serde",
 ]
 
@@ -1488,6 +1513,7 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.1.0"
+source = "git+https://github.com/nomic-io/orga#28ed8179cd60f816794d273558096503ede6f9f3"
 dependencies = [
  "abci2",
  "byteorder",
@@ -1836,7 +1862,7 @@ checksum = "b28dfe3fe9badec5dbf0a79a9cccad2cfc2ab5484bdb3e44cbd1ae8b3ba2be06"
 name = "relayer"
 version = "0.1.0"
 dependencies = [
- "bitcoin",
+ "bitcoin 0.19.2",
  "bitcoincore-rpc",
  "nomic-client",
  "nomic-primitives",
@@ -1956,9 +1982,28 @@ checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
 
 [[package]]
 name = "secp256k1"
-version = "0.12.2"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfaccd3a23619349e0878d9a241f34b1982343cdf67367058cd7d078d326b63e"
+checksum = "4070f3906e65249228094cf97b04a90799fba04468190bbbcfa812309cf86e32"
+dependencies = [
+ "cc",
+ "libc",
+]
+
+[[package]]
+name = "secp256k1"
+version = "0.17.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2932dc07acd2066ff2e3921a4419606b220ba6cd03a9935123856cc534877056"
+dependencies = [
+ "secp256k1-sys",
+]
+
+[[package]]
+name = "secp256k1-sys"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ab2c26f0d3552a0f12e639ae8a64afc2e3db9c52fe32f5fc6c289d38519f220"
 dependencies = [
  "cc",
 ]
@@ -2095,6 +2140,16 @@ dependencies = [
  "ed25519-dalek",
  "sha2 0.8.1",
  "signatory",
+]
+
+[[package]]
+name = "signatory-set"
+version = "0.1.0"
+dependencies = [
+ "bitcoin 0.23.0",
+ "bitcoin-script",
+ "failure",
+ "secp256k1 0.17.2",
 ]
 
 [[package]]
