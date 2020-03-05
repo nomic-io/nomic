@@ -10,6 +10,7 @@ edition = "2018"
 orga = { git = "https://github.com/nomic-io/orga" }
 nomic-primitives = { path = "../../core/primitives" }
 nomic-work = { path = "../../core/work" }
+nomic-bitcoin = { path = "../../core/bitcoin" }
 bitcoin = {version = "^0.19.1", features=["use-serde"] }
 bitcoincore-rpc = "0.8.0-rc1"
 byteorder = "1.3.2"

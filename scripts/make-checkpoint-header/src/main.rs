@@ -1,7 +1,5 @@
-use bitcoin::blockdata::block::BlockHeader;
-use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use bitcoincore_rpc::{Auth, Client, Error as RpcError, RpcApi};
-use nomic_bitcoin::{bitcoin, bitcoincore_rpc};
+use nomic_bitcoin::{bitcoin, bitcoincore_rpc, EnrichedHeader};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
@@ -16,7 +14,7 @@ fn make_rpc_client() -> Result<Client, RpcError> {
     Client::new(rpc_url.to_string(), rpc_auth)
 }
 /// Get the latest checkpoint header from rpc
-fn get_checkpoint_header() -> CheckpointHeader {
+fn get_checkpoint_header() -> EnrichedHeader {
     let rpc = make_rpc_client().unwrap();
     let best_block_hash = rpc.get_best_block_hash().unwrap();
     let mut header = rpc.get_block_header_verbose(&best_block_hash).unwrap();
@@ -35,29 +33,7 @@ fn get_checkpoint_header() -> CheckpointHeader {
             .unwrap();
     }
 }
-#[derive(Serialize, Deserialize)]
-#[serde(remote = "BlockHeader")]
-pub struct BlockHeaderDef {
-    /// The protocol version. Should always be 1.
-    pub version: u32,
-    /// Reference to the previous block in the chain
-    pub prev_blockhash: Sha256dHash,
-    /// The root hash of the merkle tree of transactions in the block
-    pub merkle_root: Sha256dHash,
-    /// The timestamp of the block, as claimed by the miner
-    pub time: u32,
-    /// The target value below which the blockhash must lie, encoded as a
-    /// a float (with well-defined rounding, of course)
-    pub bits: u32,
-    /// The nonce, selected to obtain a low enough blockhash
-    pub nonce: u32,
-}
-#[derive(Serialize, Deserialize)]
-struct CheckpointHeader {
-    pub height: u32,
-    #[serde(with = "BlockHeaderDef")]
-    pub header: BlockHeader,
-}
+
 fn main() {
     let header_info = get_checkpoint_header();
     let header_info_encoded: Vec<u8> =

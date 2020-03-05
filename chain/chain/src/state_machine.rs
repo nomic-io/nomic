@@ -1,6 +1,7 @@
 use crate::spv::headercache::HeaderCache;
 use crate::Action;
 use bitcoin::network::constants::Network::Testnet as bitcoin_network;
+use nomic_bitcoin::{bitcoin, EnrichedHeader};
 use nomic_primitives::transaction::Transaction;
 use nomic_work::work;
 use orga::Store;
@@ -75,36 +76,9 @@ pub fn initialize(store: &mut dyn Store) {
     header_cache.add_header_raw(checkpoint.header, checkpoint.height);
 }
 
-use bitcoin::blockdata::block::BlockHeader;
-use bitcoin::hashes::sha256d::Hash as Sha256dHash;
-use serde::{Deserialize, Serialize};
-#[derive(Serialize, Deserialize)]
-#[serde(remote = "BlockHeader")]
-pub struct BlockHeaderDef {
-    /// The protocol version. Should always be 1.
-    pub version: u32,
-    /// Reference to the previous block in the chain
-    pub prev_blockhash: Sha256dHash,
-    /// The root hash of the merkle tree of transactions in the block
-    pub merkle_root: Sha256dHash,
-    /// The timestamp of the block, as claimed by the miner
-    pub time: u32,
-    /// The target value below which the blockhash must lie, encoded as a
-    /// a float (with well-defined rounding, of course)
-    pub bits: u32,
-    /// The nonce, selected to obtain a low enough blockhash
-    pub nonce: u32,
-}
-#[derive(Serialize, Deserialize)]
-struct CheckpointHeader {
-    pub height: u32,
-    #[serde(with = "BlockHeaderDef")]
-    pub header: BlockHeader,
-}
-
-fn get_checkpoint_header() -> CheckpointHeader {
+fn get_checkpoint_header() -> EnrichedHeader {
     let encoded_checkpoint = include_bytes!("../../../config/header");
-    let checkpoint: CheckpointHeader = bincode::deserialize(&encoded_checkpoint[..])
+    let checkpoint: EnrichedHeader = bincode::deserialize(&encoded_checkpoint[..])
         .expect("Failed to deserialize checkpoint header");
 
     checkpoint

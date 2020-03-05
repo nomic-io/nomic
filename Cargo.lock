@@ -1364,6 +1364,7 @@ version = "0.1.0"
 dependencies = [
  "bitcoin 0.19.2",
  "bitcoincore-rpc",
+ "serde",
 ]
 
 [[package]]
@@ -1376,6 +1377,7 @@ dependencies = [
  "byteorder",
  "failure",
  "merk",
+ "nomic-bitcoin",
  "nomic-primitives",
  "nomic-work",
  "orga",
@@ -1426,7 +1428,7 @@ dependencies = [
 name = "nomic-primitives"
 version = "0.1.0"
 dependencies = [
- "bitcoin 0.19.2",
+ "nomic-bitcoin",
  "serde",
 ]
 

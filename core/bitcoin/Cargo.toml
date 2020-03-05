@@ -9,4 +9,5 @@ edition = "2018"
 [dependencies]
 bitcoin = {version = "^0.19.1", features=["use-serde"] }
 bitcoincore-rpc = "0.8.0-rc1"
+serde = {version = "1.0.104", features = ["derive"] }
 
