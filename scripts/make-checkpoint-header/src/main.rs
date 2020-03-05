@@ -23,7 +23,7 @@ fn get_checkpoint_header() -> EnrichedHeader {
     }
     loop {
         if header.height == BITCOIN_START_HEIGHT {
-            return CheckpointHeader {
+            return EnrichedHeader {
                 header: rpc.get_block_header_raw(&header.hash).unwrap(),
                 height: header.height as u32,
             };
