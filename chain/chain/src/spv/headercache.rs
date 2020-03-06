@@ -508,7 +508,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitcoin::hashes::sha256d::Hash as Sha256dHash;
+    use nomic_bitcoin::bitcoin::hash_types::BlockHash as Sha256dHash;
 
     #[test]
     fn test_bytes_to_hashes() {
