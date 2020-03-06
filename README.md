@@ -2,6 +2,8 @@
 <img src="./logo.png" width="60%">
 </h1>
 
+[![Rust](https://github.com/nomic-io/nomic/workflows/Rust/badge.svg)](https://github.com/nomic-io/nomic/actions?query=workflow%3ARust)
+
 Rust implementation of the [Nomic Bitcoin sidechain](https://github.com/nomic-io/bitcoin-peg).
 
 ## Validator setup guide
