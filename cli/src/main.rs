@@ -1,8 +1,8 @@
 mod tendermint;
 use clap::Clap;
+use log::info;
 use nomic_chain::abci_server;
 use std::fs;
-use log::info;
 
 /// Command-line interface for interacting with the Nomic Bitcoin sidechain
 #[derive(Clap)]

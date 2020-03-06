@@ -1,19 +1,22 @@
-use nomic_bitcoin::bitcoin;
 use super::{Error, Result};
-use std::collections::{BTreeSet, HashMap};
-use std::collections::btree_set::Iter;
 use bitcoin::PublicKey;
 use failure::bail;
+use nomic_bitcoin::bitcoin;
+use std::collections::btree_set::Iter;
+use std::collections::{BTreeSet, HashMap};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Signatory {
     pub voting_power: u32,
-    pub pubkey: PublicKey
+    pub pubkey: PublicKey,
 }
 
 impl Signatory {
     pub fn new(pubkey: PublicKey, voting_power: u32) -> Self {
-        Signatory { pubkey, voting_power }
+        Signatory {
+            pubkey,
+            voting_power,
+        }
     }
 }
 
@@ -21,7 +24,7 @@ impl Signatory {
 pub struct SignatorySet {
     map: HashMap<PublicKey, Signatory>,
     set: BTreeSet<Signatory>,
-    total_voting_power: u32
+    total_voting_power: u32,
 }
 
 impl SignatorySet {
@@ -59,7 +62,7 @@ impl SignatorySet {
         self.set.insert(signatory);
     }
 
-    pub fn iter(&self) -> impl Iterator<Item=&Signatory> {
+    pub fn iter(&self) -> impl Iterator<Item = &Signatory> {
         self.set.iter().rev()
     }
 }

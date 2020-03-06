@@ -1,5 +1,5 @@
 use bitcoin::BlockHeader;
-use nomic_bitcoin::{bitcoin};
+use nomic_bitcoin::bitcoin;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
