@@ -3,6 +3,7 @@
 </h1>
 
 [![Rust](https://github.com/nomic-io/nomic/workflows/Rust/badge.svg)](https://github.com/nomic-io/nomic/actions?query=workflow%3ARust)
+[![Telegram](https://img.shields.io/static/v1?label=chat&message=Telegram&color=blue&logo=telegram)](https://t.me/nomicbtc)
 
 Rust implementation of the [Nomic Bitcoin sidechain](https://github.com/nomic-io/bitcoin-peg).
 
