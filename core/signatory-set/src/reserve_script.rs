@@ -1,4 +1,4 @@
-use bitcoin::{PublicKey, Script};
+use nomic_bitcoin::bitcoin::{PublicKey, Script};
 use bitcoin_script::bitcoin_script;
 use failure::Error;
 use super::{Signatory, SignatorySet};

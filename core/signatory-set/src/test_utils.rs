@@ -1,3 +1,4 @@
+use nomic_bitcoin::bitcoin;
 use super::*;
 use bitcoin::{PublicKey, PrivateKey};
 use bitcoin::secp256k1::{Secp256k1, SecretKey};

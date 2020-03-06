@@ -1,9 +1,9 @@
 use crate::spv::headercache::HeaderCache;
 use crate::Action;
-use bitcoin::network::constants::Network::Testnet as bitcoin_network;
 use nomic_bitcoin::{bitcoin, EnrichedHeader};
 use nomic_primitives::transaction::Transaction;
 use nomic_work::work;
+use bitcoin::Network::Testnet as bitcoin_network;
 use orga::Store;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;

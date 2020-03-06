@@ -18,6 +18,7 @@
 //!
 //! All modules of this library use this error class to indicate problems.
 //!
+use nomic_bitcoin::bitcoin;
 use bitcoin::consensus::encode;
 use bitcoin::util;
 use bitcoin::util::bip158;

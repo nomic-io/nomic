@@ -1,3 +1,4 @@
+use nomic_bitcoin::bitcoin;
 use super::{Error, Result};
 use std::collections::{BTreeSet, HashMap};
 use std::collections::btree_set::Iter;

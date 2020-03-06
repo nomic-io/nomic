@@ -18,7 +18,8 @@
 //!
 
 use super::error::Error;
-use bitcoin::hashes::sha256d::Hash as Sha256dHash;
+use nomic_bitcoin::bitcoin;
+use bitcoin::hash_types::BlockHash as Sha256dHash;
 use bitcoin::{
     blockdata::block::BlockHeader, hashes as bitcoin_hashes, network::constants::Network,
     util::uint::Uint256, BitcoinHash,
@@ -28,29 +29,10 @@ use failure::bail;
 use orga::Store;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
-#[serde(remote = "BlockHeader")]
-pub struct BlockHeaderDef {
-    /// The protocol version. Should always be 1.
-    pub version: u32,
-    /// Reference to the previous block in the chain
-    pub prev_blockhash: Sha256dHash,
-    /// The root hash of the merkle tree of transactions in the block
-    pub merkle_root: Sha256dHash,
-    /// The timestamp of the block, as claimed by the miner
-    pub time: u32,
-    /// The target value below which the blockhash must lie, encoded as a
-    /// a float (with well-defined rounding, of course)
-    pub bits: u32,
-    /// The nonce, selected to obtain a low enough blockhash
-    pub nonce: u32,
-}
-
 /// A header enriched with information about its position on the blockchain
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredHeader {
     /// header
-    #[serde(with = "BlockHeaderDef")]
     pub header: BlockHeader,
     /// chain height
     pub height: u32,
@@ -65,8 +47,8 @@ impl StoredHeader {
 }
 
 // need to implement if put_hash_keyed and get_hash_keyed should be used
-impl BitcoinHash for StoredHeader {
-    fn bitcoin_hash(&self) -> bitcoin_hashes::sha256d::Hash {
+impl BitcoinHash<Sha256dHash> for StoredHeader {
+    fn bitcoin_hash(&self) -> bitcoin::hash_types::BlockHash {
         self.header.bitcoin_hash()
     }
 }
@@ -146,7 +128,7 @@ impl CachedHeader {
     }
 }
 
-impl BitcoinHash for CachedHeader {
+impl BitcoinHash<Sha256dHash> for CachedHeader {
     fn bitcoin_hash(&self) -> Sha256dHash {
         self.id
     }
@@ -526,7 +508,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitcoin::hashes::sha256d::Hash as Sha256dHash;
+    use nomic_bitcoin::bitcoin::hash_types::BlockHash as Sha256dHash;
 
     #[test]
     fn test_bytes_to_hashes() {
