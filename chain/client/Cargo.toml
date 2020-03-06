@@ -5,10 +5,10 @@ authors = ["Judd <kepzorz@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-bitcoin = { version = "^0.19.1", features=["serde"]}
 nomic-primitives = { path = "../../core/primitives" }
 nomic-chain = { path = "../chain" }
 nomic-work = { path = "../../core/work" }
+nomic-bitcoin = { path = "../../core/bitcoin" }
 bincode = "1.2.0"
 serde_derive = "1.0.100"
 serde = { version = "1.0.100", features=["derive"]}

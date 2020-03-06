@@ -5,9 +5,10 @@ authors = ["Matt Bell <mappum@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+failure = "0.1.6"
+nomic-bitcoin = { path = "../bitcoin" }
 bitcoin-script = "0.1.1"
 bitcoin = "0.23.0"
-failure = "0.1.6"
 
 [dev-dependencies]
 secp256k1 = "0.17.2"

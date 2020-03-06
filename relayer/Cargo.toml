@@ -7,7 +7,6 @@ edition = "2018"
 [dependencies]
 nomic-primitives = { path = "../core/primitives" }
 nomic-client = { path = "../chain/client" }
-bitcoincore-rpc = "0.8.0-rc1"
-bitcoin = "^0.19.1"
+nomic-bitcoin = { path = "../core/bitcoin" }
 tendermint = { git = "https://github.com/interchainio/tendermint-rs", rev = "0b9450ddcd00a6ed39c8c6b0931ef9c8e6c86e4b" }
 

@@ -1,4 +1,4 @@
-use bitcoin::{PublicKey, Script};
+use nomic_bitcoin::bitcoin::{PublicKey, Script};
 use bitcoin_script::bitcoin_script;
 use failure::Error;
 use super::{Signatory, SignatorySet};
@@ -58,7 +58,7 @@ fn greater_than_script(n: u32) -> Script {
 mod tests {
     use super::*;
     use crate::test_utils::*;
-    use bitcoin_script::bitcoin_script;
+    use nomic_bitcoin::bitcoin_script::bitcoin_script;
 
     #[test]
     fn build_script_fixture() {
