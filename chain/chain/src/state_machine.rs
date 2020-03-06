@@ -1,9 +1,10 @@
 use crate::spv::headercache::HeaderCache;
 use crate::Action;
 use bitcoin::network::constants::Network::Testnet as bitcoin_network;
+use nomic_bitcoin::{bitcoin, EnrichedHeader};
 use nomic_primitives::transaction::Transaction;
 use nomic_work::work;
-use orga::{StateMachine, Store};
+use orga::Store;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
@@ -70,44 +71,17 @@ pub fn run(
 /// Called once at genesis to write some data to the store.
 pub fn initialize(store: &mut dyn Store) {
     let mut header_cache = HeaderCache::new(bitcoin_network, store);
-    let genesis_header = bitcoin::blockdata::constants::genesis_block(bitcoin_network).header;
-    let (checkpoint, height) = utils::get_latest_checkpoint_header();
+    let checkpoint = get_checkpoint_header();
 
-    header_cache.add_header_raw(checkpoint, height);
+    header_cache.add_header_raw(checkpoint.header, checkpoint.height);
 }
 
-mod utils {
+fn get_checkpoint_header() -> EnrichedHeader {
+    let encoded_checkpoint = include_bytes!("../../../config/header");
+    let checkpoint: EnrichedHeader = bincode::deserialize(&encoded_checkpoint[..])
+        .expect("Failed to deserialize checkpoint header");
 
-    use bitcoincore_rpc::{Auth, Client, Error as RpcError, RpcApi};
-    use std::env;
-    const BITCOIN_START_HEIGHT: usize = 1667232;
-    pub fn make_rpc_client() -> Result<Client, RpcError> {
-        let rpc_user = env::var("BTC_RPC_USER").unwrap();
-        let rpc_pass = env::var("BTC_RPC_PASS").unwrap();
-        let rpc_auth = Auth::UserPass(rpc_user, rpc_pass);
-        let rpc_url = "http://localhost:18332";
-        Client::new(rpc_url.to_string(), rpc_auth)
-    }
-    /// Get the latest checkpoint header from rpc
-    pub fn get_latest_checkpoint_header() -> (bitcoin::blockdata::block::BlockHeader, u32) {
-        let rpc = make_rpc_client().unwrap();
-        let best_block_hash = rpc.get_best_block_hash().unwrap();
-        let mut header = rpc.get_block_header_verbose(&best_block_hash).unwrap();
-        if header.height < BITCOIN_START_HEIGHT {
-            panic!("Start and sync a Bitcoin testnet full node before starting the peg ABCI state machine.");
-        }
-        loop {
-            if header.height == BITCOIN_START_HEIGHT {
-                return (
-                    rpc.get_block_header_raw(&header.hash).unwrap(),
-                    header.height as u32,
-                );
-            }
-            header = rpc
-                .get_block_header_verbose(&header.previousblockhash.unwrap())
-                .unwrap();
-        }
-    }
+    checkpoint
 }
 
 #[derive(Debug)]

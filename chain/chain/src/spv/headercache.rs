@@ -24,12 +24,9 @@ use bitcoin::{
     util::uint::Uint256, BitcoinHash,
 };
 use bitcoin_hashes::Hash;
-use orga::Store;
-//use serde::de::{self, Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
-//use serde::ser::{Serialize, SerializeStruct, Serializer};
 use failure::bail;
+use orga::Store;
 use serde::{Deserialize, Serialize};
-use std::fmt;
 
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "BlockHeader")]
