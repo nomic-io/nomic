@@ -1,4 +1,5 @@
 use hex_literal::hex;
+use log::{info, trace};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::prelude::*;
@@ -6,27 +7,25 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::Command;
 use zip::read::ZipArchive;
-use log::{trace, info};
 
 /// Download Tendermint binary unless we already have the correct version downloaded.
 
 #[cfg(target_os = "macos")]
 static TENDERMINT_BINARY_URL: &str = "https://github.com/tendermint/tendermint/releases/download/v0.32.8/tendermint_v0.32.8_darwin_amd64.zip";
-#[cfg(all(target_os = "linux", target_arch="x86_64"))]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 static TENDERMINT_BINARY_URL: &str = "https://github.com/tendermint/tendermint/releases/download/v0.32.8/tendermint_v0.32.8_linux_amd64.zip";
-#[cfg(all(target_os = "linux", target_arch="arm"))]
+#[cfg(all(target_os = "linux", target_arch = "arm"))]
 static TENDERMINT_BINARY_URL: &str = "https://github.com/tendermint/tendermint/releases/download/v0.32.8/tendermint_v0.32.8_linux_arm.zip";
 
 #[cfg(target_os = "macos")]
 static TENDERMINT_ZIP_HASH: [u8; 32] =
     hex!("00577595c0672e287e651e55f6ca40eb780f93d415b5c48cfecafa9a12fd53b6");
-#[cfg(all(target_os = "linux", target_arch="x86_64"))]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 static TENDERMINT_ZIP_HASH: [u8; 32] =
     hex!("7b3bb2b156e624ff6792398fd8fcc422ea56a649c381e09a52491dab23906a4b");
-    #[cfg(all(target_os = "linux", target_arch="arm"))]
+#[cfg(all(target_os = "linux", target_arch = "arm"))]
 static TENDERMINT_ZIP_HASH: [u8; 32] =
     hex!("dcaff3ad9e498bae0468e5b2763ede0a71121e94e6d409bcf9f72b1d5d6f8148");
-
 
 fn verify_hash(tendermint_bytes: &Vec<u8>) {
     let mut hasher = Sha256::new();
