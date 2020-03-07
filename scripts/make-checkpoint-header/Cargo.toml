@@ -8,6 +8,4 @@ edition = "2018"
 
 [dependencies]
 nomic-bitcoin = { path = "../../core/bitcoin" }
-bincode = "1.2.1"
-serde_derive = "1.0.104"
-serde = "1.0.104"
+serde_json = "1.0.48"
