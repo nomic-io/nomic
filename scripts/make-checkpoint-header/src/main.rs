@@ -1,6 +1,5 @@
 use bitcoincore_rpc::{Auth, Client, Error as RpcError, RpcApi};
-use nomic_bitcoin::{bitcoin, bitcoincore_rpc, EnrichedHeader};
-use serde::{Deserialize, Serialize};
+use nomic_bitcoin::{bitcoincore_rpc, EnrichedHeader};
 use std::env;
 use std::fs;
 use std::path::Path;
@@ -36,13 +35,14 @@ fn get_checkpoint_header() -> EnrichedHeader {
 
 fn main() {
     let header_info = get_checkpoint_header();
-    let header_info_encoded: Vec<u8> =
-        bincode::serialize(&header_info).expect("Failed to serialize checkpoint header info");
+    let header_info_encoded: String =
+        serde_json::to_string(&header_info).expect("Failed to serialize checkpoint header info");
+    println!("header: {}", header_info_encoded);
     let header_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
         .join("config")
-        .join("header");
+        .join("header.json");
 
     fs::write(header_path, header_info_encoded)
         .expect("Failed to write serialized checkpoint header");

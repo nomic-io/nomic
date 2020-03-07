@@ -77,8 +77,8 @@ pub fn initialize(store: &mut dyn Store) {
 }
 
 fn get_checkpoint_header() -> EnrichedHeader {
-    let encoded_checkpoint = include_bytes!("../../../config/header");
-    let checkpoint: EnrichedHeader = bincode::deserialize(&encoded_checkpoint[..])
+    let encoded_checkpoint = include_bytes!("../../../config/header.json");
+    let checkpoint: EnrichedHeader = serde_json::from_slice(&encoded_checkpoint[..])
         .expect("Failed to deserialize checkpoint header");
 
     checkpoint
