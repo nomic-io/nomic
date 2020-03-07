@@ -1,5 +1,6 @@
 use hex_literal::hex;
-use log::{info, trace};
+use is_executable::IsExecutable;
+use log::info;
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::prelude::*;
@@ -40,6 +41,11 @@ fn verify_hash(tendermint_bytes: &Vec<u8>) {
 }
 
 pub fn install(nomic_home: &PathBuf) {
+    let tendermint_path = nomic_home.join("tendermint-v0.32.8");
+    if tendermint_path.is_executable() {
+        info!("Tendermint already installed");
+        return;
+    }
     info!("Installing Tendermint to {}", nomic_home.to_str().unwrap());
     let mut buf: Vec<u8> = vec![];
     reqwest::blocking::get(TENDERMINT_BINARY_URL)
@@ -56,7 +62,6 @@ pub fn install(nomic_home: &PathBuf) {
         .expect("Tendermint binary not found in the downloaded zip file");
     let mut buf: Vec<u8> = vec![];
     std::io::copy(&mut tendermint_bytes, &mut buf).expect("Failed to buffer Tendermint binary");
-    let tendermint_path = nomic_home.join("tendermint-v0.32.8");
     let mut f = fs::File::create(tendermint_path)
         .expect("Could not create Tendermint binary on file system");
     f.write_all(&mut buf)

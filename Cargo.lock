@@ -1081,6 +1081,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "is_executable"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "302d553b8abc8187beb7d663e34c065ac4570b273bc9511a50e940e99409c577"
+dependencies = [
+ "winapi 0.3.8",
+]
+
+[[package]]
 name = "itertools"
 version = "0.7.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1197,10 +1206,8 @@ dependencies = [
 name = "make-checkpoint-header"
 version = "0.1.0"
 dependencies = [
- "bincode",
  "nomic-bitcoin",
- "serde",
- "serde_derive",
+ "serde_json",
 ]
 
 [[package]]
@@ -1414,6 +1421,7 @@ dependencies = [
  "clap 3.0.0-beta.1",
  "dirs",
  "hex-literal",
+ "is_executable",
  "log 0.4.8",
  "nomic-chain",
  "nomic-worker",
