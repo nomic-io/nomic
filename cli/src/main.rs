@@ -25,11 +25,17 @@ enum SubCommand {
     /// Generate voting power for the validator running locally
     #[clap(name = "worker")]
     Worker(Worker),
+
+    /// Start a local testnet for development
+    #[clap(name = "dev")]
+    Dev(Dev),
 }
 
 #[derive(Clap)]
 struct Start {}
 
+#[derive(Clap)]
+struct Dev {}
 #[derive(Clap)]
 struct Relayer {}
 
@@ -44,7 +50,11 @@ fn main() {
     // Ensure nomic-testnet home directory
     let mut nomic_home = dirs::home_dir()
         .unwrap_or(std::env::current_dir().expect("Failed to create Nomic home directory"));
-    nomic_home.push(".nomic-testnet");
+    if let SubCommand::Dev(_) = opts.subcmd {
+        nomic_home.push(".nomic-dev");
+    } else {
+        nomic_home.push(".nomic-testnet");
+    }
     let mkdir_result = fs::create_dir(&nomic_home);
     if let Err(_) = mkdir_result {
         // TODO: Panic if this error is anything except "directory already exists"
@@ -56,6 +66,16 @@ fn main() {
         SubCommand::Start(_) => {
             // Install and start Tendermint
             tendermint::install(&nomic_home);
+            tendermint::init(&nomic_home, false);
+            tendermint::start(&nomic_home);
+            // Start the ABCI server
+            info!("Starting ABCI server");
+            abci_server::start(&nomic_home);
+        }
+        SubCommand::Dev(_) => {
+            // Install and start Tendermint
+            tendermint::install(&nomic_home);
+            tendermint::init(&nomic_home, true);
             tendermint::start(&nomic_home);
             // Start the ABCI server
             info!("Starting ABCI server");
