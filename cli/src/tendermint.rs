@@ -72,6 +72,25 @@ pub fn install(nomic_home: &PathBuf) {
         .expect("Failed to set Tendermint binary permissions");
 }
 
+pub fn init(nomic_home: &PathBuf, dev_mode: bool) {
+    let tendermint_path = nomic_home.join("tendermint-v0.32.8");
+    // Initialize Tendermint for testnet
+    Command::new(&tendermint_path)
+        .arg("init")
+        .arg("--home")
+        .arg(nomic_home.to_str().unwrap())
+        .output()
+        .expect("Failed to initialize Tendermint");
+
+    if !dev_mode {
+        // Write genesis
+        let genesis_str: &str = include_str!("../../config/genesis.json");
+        let genesis_path = nomic_home.join("config").join("genesis.json");
+        info!("Initializing with this genesis.json: {}", genesis_str);
+        fs::write(genesis_path, genesis_str).expect("Failed to write genesis.json");
+    }
+}
+
 pub fn start(nomic_home: &PathBuf) {
     let tendermint_path = nomic_home.join("tendermint-v0.32.8");
     Command::new(tendermint_path)
