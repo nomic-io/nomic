@@ -1,14 +1,14 @@
-use nomic_bitcoin::bitcoin;
 use super::*;
-use bitcoin::{PublicKey, PrivateKey};
 use bitcoin::secp256k1::{Secp256k1, SecretKey};
+use bitcoin::{PrivateKey, PublicKey};
+use nomic_bitcoin::bitcoin;
 
 pub fn mock_pubkey(byte: u8) -> PublicKey {
     let secp = Secp256k1::new();
     let privkey = PrivateKey {
         compressed: true,
         network: bitcoin::Network::Regtest,
-        key: SecretKey::from_slice(&[byte; 32]).unwrap()
+        key: SecretKey::from_slice(&[byte; 32]).unwrap(),
     };
     privkey.public_key(&secp)
 }

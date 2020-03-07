@@ -5,7 +5,7 @@ use crate::Action;
 use failure::bail;
 use merk::Merk;
 use nomic_primitives::transaction::Transaction;
-use orga::abci::{ABCIStateMachine, Application, messages::*};
+use orga::abci::{messages::*, ABCIStateMachine, Application};
 use orga::Result as OrgaResult;
 use orga::{merkstore::MerkStore, Store};
 use std::collections::BTreeMap;

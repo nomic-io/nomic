@@ -18,7 +18,6 @@
 //!
 
 use super::error::Error;
-use nomic_bitcoin::bitcoin;
 use bitcoin::hash_types::BlockHash as Sha256dHash;
 use bitcoin::{
     blockdata::block::BlockHeader, hashes as bitcoin_hashes, network::constants::Network,
@@ -26,6 +25,7 @@ use bitcoin::{
 };
 use bitcoin_hashes::Hash;
 use failure::bail;
+use nomic_bitcoin::bitcoin;
 use orga::Store;
 use serde::{Deserialize, Serialize};
 

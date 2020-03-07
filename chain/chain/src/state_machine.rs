@@ -1,9 +1,9 @@
 use crate::spv::headercache::HeaderCache;
 use crate::Action;
+use bitcoin::Network::Testnet as bitcoin_network;
 use nomic_bitcoin::{bitcoin, EnrichedHeader};
 use nomic_primitives::transaction::Transaction;
 use nomic_work::work;
-use bitcoin::Network::Testnet as bitcoin_network;
 use orga::Store;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -77,8 +77,8 @@ pub fn initialize(store: &mut dyn Store) {
 }
 
 fn get_checkpoint_header() -> EnrichedHeader {
-    let encoded_checkpoint = include_bytes!("../../../config/header");
-    let checkpoint: EnrichedHeader = bincode::deserialize(&encoded_checkpoint[..])
+    let encoded_checkpoint = include_bytes!("../../../config/header.json");
+    let checkpoint: EnrichedHeader = serde_json::from_slice(&encoded_checkpoint[..])
         .expect("Failed to deserialize checkpoint header");
 
     checkpoint

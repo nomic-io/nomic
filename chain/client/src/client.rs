@@ -1,7 +1,7 @@
-use nomic_bitcoin::bitcoin;
 use bitcoin::hash_types::BlockHash as Hash;
 use bitcoin::Network::Testnet as bitcoin_network;
 use failure::bail;
+use nomic_bitcoin::bitcoin;
 use nomic_chain::{orga, spv, Action};
 use nomic_primitives::transaction::{HeaderTransaction, Transaction, WorkProofTransaction};
 use orga::{abci::TendermintClient, merkstore::Client as MerkStoreClient, Read, Write};
