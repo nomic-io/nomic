@@ -1,4 +1,4 @@
-use bitcoin::BlockHeader;
+use bitcoin::{BlockHeader, util::merkleblock::PartialMerkleTree};
 use nomic_bitcoin::bitcoin;
 use serde::{Deserialize, Serialize};
 
@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 pub enum Transaction {
     Header(HeaderTransaction),
     WorkProof(WorkProofTransaction),
-    Deposit,
+    Deposit(DepositTransaction),
     SignatoryCommitment,
     SignatorySignature,
 }
@@ -20,4 +20,11 @@ pub struct HeaderTransaction {
 pub struct WorkProofTransaction {
     pub public_key: Vec<u8>,
     pub nonce: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DepositTransaction {
+    pub height: u32,
+    // pub proof: PartialMerkleTree,
+    pub txs: Vec<bitcoin::Transaction>
 }
