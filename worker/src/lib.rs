@@ -1,4 +1,4 @@
-use nomic_client::{Client as PegClient, ClientError as PegClientError};
+use nomic_client::{Client as PegClient};
 use nomic_work::work;
 use rand::random;
 use sha2::{Digest, Sha256};

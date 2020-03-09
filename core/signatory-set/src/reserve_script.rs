@@ -1,7 +1,7 @@
 use super::{Signatory, SignatorySet};
 use bitcoin_script::bitcoin_script;
 use failure::Error;
-use nomic_bitcoin::bitcoin::{PublicKey, Script};
+use nomic_bitcoin::bitcoin::{Script};
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -57,7 +57,7 @@ fn greater_than_script(n: u32) -> Script {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    
     use crate::test_utils::*;
     use bitcoin_script::bitcoin_script;
 

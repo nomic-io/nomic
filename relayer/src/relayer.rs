@@ -1,7 +1,7 @@
 use bitcoin::hash_types::BlockHash as Hash;
 use bitcoincore_rpc::{Auth, Client, Error as RpcError, RpcApi};
 use nomic_bitcoin::{bitcoin, bitcoincore_rpc};
-use nomic_client::{Client as PegClient, ClientError as PegClientError};
+use nomic_client::{Client as PegClient};
 use nomic_primitives::transaction::{HeaderTransaction, Transaction};
 use std::{env, thread, time};
 

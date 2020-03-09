@@ -38,16 +38,16 @@ impl Application for App {
 
         match tx {
             Ok(tx) => match run(store, Action::Transaction(tx), &mut validators) {
-                Ok(execution_result) => {
+                Ok(_execution_result) => {
                     // TODO: Don't write validators back to store if they haven't changed
                     write_validators(store, validators);
                     Ok(Default::default())
                 }
 
-                Err(e) => bail!("error executing tx (check_tx)"),
+                Err(_e) => bail!("error executing tx (check_tx)"),
             },
 
-            Err(e) => bail!("error deserializing tx (check_tx)"),
+            Err(_e) => bail!("error deserializing tx (check_tx)"),
         }
     }
 
@@ -60,21 +60,21 @@ impl Application for App {
         let mut validators = read_validators(store);
         match tx {
             Ok(tx) => match run(store, Action::Transaction(tx), &mut validators) {
-                Ok(execution_result) => {
+                Ok(_execution_result) => {
                     write_validators(store, validators);
                     Ok(Default::default())
                 }
 
-                Err(e) => bail!("error executing tx (deliver_tx)"),
+                Err(_e) => bail!("error executing tx (deliver_tx)"),
             },
-            Err(e) => bail!("error deserializing tx (deliver_tx)"),
+            Err(_e) => bail!("error deserializing tx (deliver_tx)"),
         }
     }
 
     fn end_block(
         &self,
         store: &mut dyn Store,
-        req: RequestEndBlock,
+        _req: RequestEndBlock,
     ) -> OrgaResult<ResponseEndBlock> {
         let validators = read_validators(store);
         let mut validator_updates: Vec<ValidatorUpdate> = Vec::new();

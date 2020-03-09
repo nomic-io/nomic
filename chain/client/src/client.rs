@@ -1,11 +1,11 @@
 use bitcoin::hash_types::BlockHash as Hash;
 use bitcoin::Network::Testnet as bitcoin_network;
-use failure::bail;
+
 use nomic_bitcoin::bitcoin;
-use nomic_chain::{orga, spv, Action};
-use nomic_primitives::transaction::{HeaderTransaction, Transaction, WorkProofTransaction};
+use nomic_chain::{orga, spv};
+use nomic_primitives::transaction::{Transaction, WorkProofTransaction};
 use orga::{abci::TendermintClient, merkstore::Client as MerkStoreClient, Read, Write};
-use std::collections::HashMap;
+
 use std::str::FromStr;
 use tendermint::rpc::Client as TendermintRpcClient;
 
@@ -29,11 +29,11 @@ impl Read for RemoteStore {
 }
 
 impl Write for RemoteStore {
-    fn put(&mut self, key: Vec<u8>, value: Vec<u8>) -> orga::Result<()> {
+    fn put(&mut self, _key: Vec<u8>, _value: Vec<u8>) -> orga::Result<()> {
         panic!("Write method should not be called on a RemoteStore");
     }
 
-    fn delete(&mut self, key: &[u8]) -> orga::Result<()> {
+    fn delete(&mut self, _key: &[u8]) -> orga::Result<()> {
         panic!("Delete method should not be called on a RemoteStore");
     }
 }
@@ -80,7 +80,7 @@ impl Client {
 
     /// Get the Bitcoin headers currently used by the peg zone's on-chain SPV client.
     pub fn get_bitcoin_block_hashes(&mut self) -> Result<Vec<Hash>, ClientError> {
-        let mut store = &mut self.remote_store;
+        let store = &mut self.remote_store;
         let mut header_cache = spv::headercache::HeaderCache::new(bitcoin_network, store);
         let trunk = header_cache.load_trunk();
         match trunk {
@@ -105,7 +105,7 @@ impl Client {
     }
 
     pub fn get_bitcoin_tip(&mut self) -> bitcoin::BlockHeader {
-        let mut store = &mut self.remote_store;
+        let store = &mut self.remote_store;
         let mut header_cache = spv::headercache::HeaderCache::new(bitcoin_network, store);
         header_cache.tip().unwrap().stored.header
     }

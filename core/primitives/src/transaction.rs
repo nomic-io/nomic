@@ -1,4 +1,4 @@
-use bitcoin::{BlockHeader, util::merkleblock::PartialMerkleTree};
+use bitcoin::{BlockHeader};
 use nomic_bitcoin::bitcoin;
 use serde::{Deserialize, Serialize};
 

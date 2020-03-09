@@ -1,8 +1,8 @@
-use super::{Error, Result};
+
 use bitcoin::PublicKey;
-use failure::bail;
+
 use nomic_bitcoin::bitcoin;
-use std::collections::btree_set::Iter;
+
 use std::collections::{BTreeSet, HashMap};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
