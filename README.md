@@ -97,20 +97,20 @@ If you'd like to run a relayer, you'll first need to download Bitcoin Core.
 
 *Linux (x86_64)*
 ```bash
-wget https://bitcoin.org/bin/bitcoin-core-0.19.0.1/bitcoin-0.19.0.1-x86_64-linux-gnu.tar.gz
-tar -xzf bitcoin-0.19.0.1-x86_64-linux-gnu.tar.gz
+wget https://bitcoin.org/bin/bitcoin-core-0.19.1/bitcoin-0.19.1-x86_64-linux-gnu.tar.gz
+tar -xzf bitcoin-0.19.1-x86_64-linux-gnu.tar.gz
 ```
 
 *Linux (arm64)*
 ```bash
-wget https://bitcoin.org/bin/bitcoin-core-0.19.0.1/bitcoin-0.19.0.1-x86_64-linux-gnu.tar.gz
-tar -xzf bitcoin-0.19.0.1-aarch64-linux-gnu.tar.gz
+wget https://bitcoin.org/bin/bitcoin-core-0.19.1/bitcoin-0.19.1-aarch64-linux-gnu.tar.gz
+tar -xzf bitcoin-0.19.1-aarch64-linux-gnu.tar.gz
 ```
 
 *macOS*
 ```bash
-wget https://bitcoin.org/bin/bitcoin-core-0.19.0.1/bitcoin-0.19.0.1-x86_64-linux-gnu.tar.gz
-tar -xzf bitcoin-0.19.0.1-osx64.tar.gz
+wget https://bitcoin.org/bin/bitcoin-core-0.19.1/bitcoin-0.19.1-osx64.tar.gz
+tar -xzf bitcoin-0.19.1-osx64.tar.gz
 ```
 
 #### 4b. Start your Bitcoin Testnet full node
