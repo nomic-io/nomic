@@ -40,7 +40,6 @@ impl Write for RemoteStore {
 
 pub struct Client {
     pub tendermint_rpc: TendermintRpcClient,
-    rpc_address: tendermint::net::Address,
     remote_store: RemoteStore,
 }
 
@@ -52,7 +51,6 @@ impl Client {
 
         Ok(Client {
             tendermint_rpc,
-            rpc_address: address,
             remote_store,
         })
     }

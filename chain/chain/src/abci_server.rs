@@ -26,8 +26,8 @@ impl Application for App {
             validators.insert(pub_key, power);
         }
 
-        write_validators(store, validators);
-        initialize(store);
+        write_validators(store, validators)?;
+        initialize(store)?;
 
         Ok(ResponseInitChain::new())
     }
@@ -40,7 +40,7 @@ impl Application for App {
             Ok(tx) => match run(store, Action::Transaction(tx), &mut validators) {
                 Ok(_execution_result) => {
                     // TODO: Don't write validators back to store if they haven't changed
-                    write_validators(store, validators);
+                    write_validators(store, validators)?;
                     Ok(Default::default())
                 }
 
@@ -61,7 +61,7 @@ impl Application for App {
         match tx {
             Ok(tx) => match run(store, Action::Transaction(tx), &mut validators) {
                 Ok(_execution_result) => {
-                    write_validators(store, validators);
+                    write_validators(store, validators)?;
                     Ok(Default::default())
                 }
 
@@ -95,10 +95,10 @@ impl Application for App {
     }
 }
 
-fn write_validators(store: &mut dyn Store, validators: BTreeMap<Vec<u8>, u64>) {
+fn write_validators(store: &mut dyn Store, validators: BTreeMap<Vec<u8>, u64>) -> OrgaResult<()> {
     let validator_map_bytes =
         bincode::serialize(&validators).expect("Failed to serialize validator map");
-    store.put(b"validators".to_vec(), validator_map_bytes);
+    store.put(b"validators".to_vec(), validator_map_bytes)
 }
 fn read_validators(store: &mut dyn Store) -> BTreeMap<Vec<u8>, u64> {
     let validator_map_bytes = store

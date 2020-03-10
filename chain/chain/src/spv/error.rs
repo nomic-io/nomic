@@ -56,6 +56,11 @@ pub enum Error {
     Lost(String),
 }
 
+impl From<failure::Error> for Error {
+    fn from(err: failure::Error) -> Self {
+        Error::Downstream(err.to_string())
+    }
+}
 impl std::error::Error for Error {
     fn description(&self) -> &str {
         match *self {
@@ -67,9 +72,9 @@ impl std::error::Error for Error {
             Error::NoPeers => "no peers",
             Error::BadMerkleRoot => "merkle root of header does not match transaction list",
             Error::Downstream(ref s) => s,
-            Error::IO(ref err) => err.description(),
-            Error::Util(ref err) => err.description(),
-            Error::Serialize(ref err) => err.description(),
+            Error::IO(ref _err) => "IO error",
+            Error::Util(ref _err) => "Util error",
+            Error::Serialize(ref _err) => "Serialization error",
             Error::Handshake => "handshake",
             Error::Lost(ref s) => s,
         }
@@ -106,10 +111,7 @@ impl fmt::Display for Error {
             | Error::NoPeers
             | Error::BadMerkleRoot
             | Error::Handshake
-            | Error::UnknownUTXO => {
-                use std::error::Error;
-                write!(f, "{}", self.description())
-            }
+            | Error::UnknownUTXO => write!(f, "{}", self),
             Error::Lost(ref s) | Error::Downstream(ref s) => write!(f, "{}", s),
             Error::IO(ref err) => write!(f, "IO error: {}", err),
             Error::Util(ref err) => write!(f, "Util error: {}", err),
@@ -128,10 +130,7 @@ impl convert::From<Error> for io::Error {
     fn from(err: Error) -> io::Error {
         match err {
             Error::IO(e) => e,
-            _ => {
-                use std::error::Error;
-                io::Error::new(io::ErrorKind::Other, err.description())
-            }
+            _ => io::Error::new(io::ErrorKind::Other, err.to_string().as_ref()),
         }
     }
 }
@@ -156,7 +155,7 @@ impl convert::From<encode::Error> for Error {
 
 impl convert::From<Box<dyn std::error::Error>> for Error {
     fn from(err: Box<dyn std::error::Error>) -> Self {
-        Error::Downstream(err.description().to_owned())
+        Error::Downstream(err.to_string())
     }
 }
 

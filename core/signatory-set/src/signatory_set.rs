@@ -1,4 +1,3 @@
-
 use bitcoin::PublicKey;
 
 use nomic_bitcoin::bitcoin;

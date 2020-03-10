@@ -1472,6 +1472,7 @@ name = "nomic-worker"
 version = "0.1.0"
 dependencies = [
  "base64 0.11.0",
+ "log 0.4.8",
  "nomic-client",
  "nomic-work",
  "rand",
@@ -1910,6 +1911,7 @@ checksum = "1132f845907680735a84409c3bebc64d1364a5683ffbce899550cd09d5eaefc1"
 name = "relayer"
 version = "0.1.0"
 dependencies = [
+ "log 0.4.8",
  "nomic-bitcoin",
  "nomic-client",
  "nomic-primitives",

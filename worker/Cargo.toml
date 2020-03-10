@@ -12,5 +12,6 @@ base64 = "0.11.0"
 rand = "0.7.2"
 nomic-client = { path = "../chain/client"}
 nomic-work = { path = "../core/work"}
+log = "0.4.8"
 
 

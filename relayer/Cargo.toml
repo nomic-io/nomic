@@ -9,4 +9,5 @@ nomic-primitives = { path = "../core/primitives" }
 nomic-client = { path = "../chain/client" }
 nomic-bitcoin = { path = "../core/bitcoin" }
 tendermint = { git = "https://github.com/interchainio/tendermint-rs", rev = "0b9450ddcd00a6ed39c8c6b0931ef9c8e6c86e4b" }
+log = "0.4.8"
 

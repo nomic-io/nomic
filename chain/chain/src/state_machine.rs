@@ -1,10 +1,11 @@
 use crate::spv::headercache::HeaderCache;
 use crate::Action;
 use bitcoin::Network::Testnet as bitcoin_network;
+use failure::bail;
 use nomic_bitcoin::{bitcoin, EnrichedHeader};
 use nomic_primitives::transaction::Transaction;
 use nomic_work::work;
-use orga::Store;
+use orga::{Result as OrgaResult, Store};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
@@ -17,7 +18,7 @@ pub fn run(
     store: &mut dyn Store,
     action: Action,
     validators: &mut BTreeMap<Vec<u8>, u64>,
-) -> Result<(), StateMachineError> {
+) -> OrgaResult<()> {
     match action {
         Action::Transaction(transaction) => match transaction {
             Transaction::WorkProof(work_transaction) => {
@@ -42,7 +43,7 @@ pub fn run(
                             current_voting_power + work_proof_value,
                         );
                         // Write the redeemed hash to the store so it can't be replayed
-                        store.put(hash.to_vec(), vec![0]);
+                        store.put(hash.to_vec(), vec![0])?;
                     } else {
                         println!("duplicate work proof: {:?},\n\nHash: {:?}, \n\nValue stored at hash on store: {:?}", work_transaction, hash, value_at_work_proof_hash);
                     }
@@ -54,26 +55,26 @@ pub fn run(
                     match header_cache.add_header(&header) {
                         Ok(_) => {}
                         Err(e) => {
-                            println!("header add err: {:?}", e);
-                            return Err(StateMachineError::new());
+                            bail!("header add err: {:?}", e);
                         }
                     }
                 }
             }
             _ => (),
         },
-        _ => (),
     };
 
     Ok(())
 }
 
 /// Called once at genesis to write some data to the store.
-pub fn initialize(store: &mut dyn Store) {
+pub fn initialize(store: &mut dyn Store) -> OrgaResult<()> {
     let mut header_cache = HeaderCache::new(bitcoin_network, store);
     let checkpoint = get_checkpoint_header();
 
-    header_cache.add_header_raw(checkpoint.header, checkpoint.height);
+    header_cache
+        .add_header_raw(checkpoint.header, checkpoint.height)
+        .map_err(|e| e.into())
 }
 
 fn get_checkpoint_header() -> EnrichedHeader {
@@ -82,13 +83,4 @@ fn get_checkpoint_header() -> EnrichedHeader {
         .expect("Failed to deserialize checkpoint header");
 
     checkpoint
-}
-
-#[derive(Debug)]
-pub struct StateMachineError {}
-
-impl StateMachineError {
-    fn new() -> Self {
-        StateMachineError {}
-    }
 }

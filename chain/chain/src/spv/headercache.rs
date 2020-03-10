@@ -26,6 +26,7 @@ use bitcoin::{
 use bitcoin_hashes::Hash;
 use failure::bail;
 use nomic_bitcoin::bitcoin;
+use orga::Result as OrgaResult;
 use orga::Store;
 use serde::{Deserialize, Serialize};
 
@@ -156,34 +157,42 @@ impl<'a> HeaderCache<'a> {
     ///
     /// Useful for configuring the SPV to work from some checkpoint sufficiently deep in the
     /// past.
-    pub fn add_header_raw(&mut self, header: BlockHeader, height: u32) {
+    pub fn add_header_raw(&mut self, header: BlockHeader, height: u32) -> Result<(), Error> {
         let stored = StoredHeader {
             work_bytes: header.work().to_bytes(),
             header,
             height,
         };
-        self.add_header_unchecked(&header.bitcoin_hash(), &stored);
+        self.add_header_unchecked(&header.bitcoin_hash(), &stored)
     }
-    fn add_header_unchecked(&mut self, id: &Sha256dHash, stored: &StoredHeader) {
+    fn add_header_unchecked(
+        &mut self,
+        id: &Sha256dHash,
+        stored: &StoredHeader,
+    ) -> Result<(), Error> {
         self.load_trunk();
         let cached = CachedHeader::new(id, stored.clone());
-        self.insert_header(id.clone(), cached);
+        let result = self.insert_header(id.clone(), cached);
+
+        if let Err(header_insert_err) = result {
+            return Err(header_insert_err.into());
+        }
 
         self.trunk.push(id.clone());
-        self.save_trunk();
+        self.save_trunk()?;
+        Ok(())
     }
 
     /// add a Bitcoin header
     pub fn add_header(
         &mut self,
         header: &BlockHeader,
-    ) -> Result<
+    ) -> OrgaResult<
         Option<(
             CachedHeader,
             Option<Vec<Sha256dHash>>,
             Option<Vec<Sha256dHash>>,
         )>,
-        Error,
     > {
         self.load_trunk();
         if self.get_header(&header.bitcoin_hash()).is_some() {
@@ -197,7 +206,7 @@ impl<'a> HeaderCache<'a> {
                 previous = prev.clone();
             } else {
                 // reject unconnected
-                return Err(Error::UnconnectedHeader);
+                return Err(Error::UnconnectedHeader.into());
             }
             // add  to tree
             return Ok(Some(self.add_header_to_tree(&previous, header)?));
@@ -213,19 +222,18 @@ impl<'a> HeaderCache<'a> {
                 },
             );
             self.trunk.push(new_tip.clone());
-            self.insert_header(new_tip.clone(), stored.clone());
-            self.save_trunk();
+            self.insert_header(new_tip.clone(), stored.clone())?;
+            self.save_trunk()?;
             return Ok(Some((stored, None, Some(vec![new_tip]))));
         }
     }
 
     /// Writes a CachedHeader to the backing store.
-    fn insert_header(&mut self, header_id: Sha256dHash, header: CachedHeader) {
-        // TODO: error handling
-        let header_bytes = serde_json::to_vec(&header).unwrap();
+    fn insert_header(&mut self, header_id: Sha256dHash, header: CachedHeader) -> OrgaResult<()> {
+        let header_bytes = serde_json::to_vec(&header)?;
         let key = header_id.to_vec();
 
-        self.store.put(key, header_bytes);
+        self.store.put(key, header_bytes)
     }
     fn get_header(&self, header_id: &Sha256dHash) -> Option<CachedHeader> {
         let header_bytes = self.store.get(header_id);
@@ -256,28 +264,12 @@ impl<'a> HeaderCache<'a> {
     }
 
     /// Serialize and save current trunk to store.
-    fn save_trunk(&mut self) {
+    fn save_trunk(&mut self) -> OrgaResult<()> {
         if self.trunk.len() > 2018 {
             self.trunk = self.trunk.drain((self.trunk.len() - 2018)..).collect();
         }
         let trunk_bytes = hashes_to_bytes(&self.trunk);
-        self.store.put(b"trunk".to_vec(), trunk_bytes);
-    }
-
-    fn log2(work: Uint256) -> f64 {
-        // we will have u256 faster in Rust than 2^128 total work in Bitcoin
-        assert!(work.0[2] == 0 && work.0[3] == 0);
-        ((work.0[0] as u128 + ((work.0[1] as u128) << 64)) as f64).log2()
-    }
-
-    fn exp2(n: f64) -> Uint256 {
-        // we will have u256 faster in Rust than 2^128 total work in Bitcoin
-        assert!(n < 128.0);
-        let e: u128 = n.exp2() as u128;
-        let mut b = [0u64; 4];
-        b[0] = e as u64;
-        b[1] = (e >> 64) as u64;
-        Uint256(b)
+        self.store.put(b"trunk".to_vec(), trunk_bytes)
     }
 
     fn max_target() -> Uint256 {
@@ -379,7 +371,10 @@ impl<'a> HeaderCache<'a> {
         let next_hash = cached.bitcoin_hash();
 
         // store header in cache
-        self.insert_header(next_hash.clone(), cached.clone());
+        let result = self.insert_header(next_hash.clone(), cached.clone());
+        if let Err(e) = result {
+            return Err(Error::Downstream(format!("{}", e)));
+        }
         if let Some(tip) = self.tip() {
             if tip.stored.work() < cached.stored.work() {
                 // higher POW than previous tip
@@ -412,19 +407,19 @@ impl<'a> HeaderCache<'a> {
                         return Err(Error::UnconnectedHeader);
                     }
                     self.trunk.extend(path_to_new_tip.iter().map(|h| *h));
-                    self.save_trunk();
+                    self.save_trunk()?;
                     return Ok((cached, Some(unwinds), Some(path_to_new_tip)));
                 } else {
                     self.trunk.extend(path_to_new_tip.iter().map(|h| *h));
-                    self.save_trunk();
+                    self.save_trunk()?;
                     return Ok((cached, None, Some(path_to_new_tip)));
                 }
             } else {
-                self.save_trunk();
+                self.save_trunk()?;
                 return Ok((cached, None, None));
             }
         } else {
-            self.save_trunk();
+            self.save_trunk()?;
             return Err(Error::NoTip);
         }
     }
