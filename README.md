@@ -17,7 +17,7 @@ If you need any help getting your node running, join the [Telegram channel](http
 
 - &gt;= 1GB RAM
 - &gt;= 5GB of storage
-- Linux or macOS *(Windows support coming soon)*
+- Linux or macOS _(Windows support coming soon)_
 
 ### 1. Download or compile Nomic
 
@@ -27,45 +27,26 @@ You may either download a prebuilt binary, or compile it youself.
 
 Download the binary from Github with wget, then give it executable permissions.
 
-*Linux (x86_64)*
-```
+```bash
+# on Linux (x86_64)
 wget -O nomic https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.1.1/nomic-x86_64-linux
 chmod +x nomic
-```
 
-*Linux (arm64)*
-```
+# on Linux (arm64)
 wget -O nomic https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.1.1/nomic-arm64-linux
 chmod +x nomic
-```
 
-*macOS*
-```
+# on macOS
 wget -O nomic https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.1.1/nomic-x86_64-macos
 chmod +x nomic
 ```
 
-**Self-Build Instructions:**
-
-Or, you can compile Nomic yourself.
-
-If you don't already have Rust, you'll need to install it:
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-```
-
-Now clone the repo and compile:
-```bash
-rustup default nightly # nomic requires rust nightly
-git clone https://github.com/nomic-io/nomic.git && cd nomic
-cargo install --path cli
-```
-
-This will take a few minutes. Once it's done, you'll have a `nomic` command.
+Or you can [build from source](#self-build-instructions)
 
 ### 2. Start your full node
 
 You can start your node by running:
+
 ```bash
 nomic start
 ```
@@ -76,11 +57,12 @@ Once connected, your node will sync through history and catch up to the current 
 
 ### 3. Mining for voting power
 
-At this point, you are now running a *full node*, but since your node does not have any voting power it is not yet a *validator*.
+At this point, you are now running a _full node_, but since your node does not have any voting power it is not yet a _validator_.
 
 To gain voting power on the Nomic sidechain, full nodes must mine [hashcash](https://en.wikipedia.org/wiki/Hashcash) proofs-of-work. This process lets participation in the network remain open and permissionless.
 
 To mine, run:
+
 ```bash
 nomic worker
 ```
@@ -89,26 +71,22 @@ You can watch your voting power increase at [http://localhost:26657/status](http
 
 ### 4. (Optional) Run a relayer
 
-Since the Nomic network is separate from the Bitcoin network, some nodes must connect to both and run *relayers* to move data between them.
+Since the Nomic network is separate from the Bitcoin network, some nodes must connect to both and run _relayers_ to move data between them.
 
 #### 4a. Download Bitcoin Core
 
 If you'd like to run a relayer, you'll first need to download Bitcoin Core.
 
-*Linux (x86_64)*
 ```bash
+# on Linux (x86_64)
 wget https://bitcoin.org/bin/bitcoin-core-0.19.1/bitcoin-0.19.1-x86_64-linux-gnu.tar.gz
 tar -xzf bitcoin-0.19.1-x86_64-linux-gnu.tar.gz
-```
 
-*Linux (arm64)*
-```bash
+# on Linux (arm64)
 wget https://bitcoin.org/bin/bitcoin-core-0.19.1/bitcoin-0.19.1-aarch64-linux-gnu.tar.gz
 tar -xzf bitcoin-0.19.1-aarch64-linux-gnu.tar.gz
-```
 
-*macOS*
-```bash
+# on macOS
 wget https://bitcoin.org/bin/bitcoin-core-0.19.1/bitcoin-0.19.1-osx64.tar.gz
 tar -xzf bitcoin-0.19.1-osx64.tar.gz
 ```
@@ -116,6 +94,7 @@ tar -xzf bitcoin-0.19.1-osx64.tar.gz
 #### 4b. Start your Bitcoin Testnet full node
 
 Now you can sync your full node:
+
 ```bash
 ./bitcoin-0.19.0.1/bin/bitcoind -testnet -rpcuser=user -rpcpassword=pass
 ```
@@ -125,6 +104,7 @@ Note that this will use ~30GB of disk space, and will take a few hours (the spee
 If you'd like to reduce the amount of storage required, you can instead run the node in pruned mode by adding the `-prune=N` option where N is the amount of storage to use in MB. This doesn't make the sync any faster, it just saves disk space.
 
 Example, limiting to 2000MB:
+
 ```bash
 ./bitcoin-0.19.0.1/bin/bitcoind -testnet -prune=2000 -rpcuser=user -rpcpassword=pass
 ```
@@ -132,6 +112,7 @@ Example, limiting to 2000MB:
 #### 4c. Start your Nomic relayer
 
 Once Bitcoin is synced, you can run the relayer:
+
 ```bash
 nomic relayer
 ```
@@ -159,10 +140,29 @@ rm -rf ~/.nomic-testnet
 ```
 
 Then start your node again to initialize the data, kill the process, and replace the key with your backup:
+
 ```bash
 cp nomic-key-backup.json ~/.nomic-testnet/config/priv_validator_key.json
 ```
 
-### Next Steps
+### Self-Build Instructions
+
+If you'd like to build Nomic yourself instead of downloading the pre-built binary, you'll first need to install Rust:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+Now clone the repo and compile:
+
+```bash
+rustup default nightly # nomic requires rust nightly
+git clone https://github.com/nomic-io/nomic.git && cd nomic
+cargo install --path cli
+```
+
+This will take a few minutes. Once it's done, you'll have a `nomic` command.
+
+## Next Steps
 
 In the future, validator nodes like yours will also be responsible for helping manage the network's Bitcoin reserves. Stay tuned as the Nomic sidechain develops, and join the discussion in the [Telegram channel](https://t.me/nomicbtc)!
