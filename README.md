@@ -15,9 +15,9 @@ If you need any help getting your node running, join the [Telegram channel](http
 
 ### Requirements
 
-- >= 1GB RAM
-- >= 5GB of storage
-- Linux (x86_64 or arm64), or macOS (Windows support coming soon)
+- &gt;= 1GB RAM
+- &gt;= 5GB of storage
+- Linux or macOS *(Windows support coming soon)*
 
 ### 1. Download or compile Nomic
 
@@ -97,20 +97,20 @@ If you'd like to run a relayer, you'll first need to download Bitcoin Core.
 
 *Linux (x86_64)*
 ```bash
-wget https://bitcoin.org/bin/bitcoin-core-0.19.0.1/bitcoin-0.19.0.1-x86_64-linux-gnu.tar.gz
-tar -xzf bitcoin-0.19.0.1-x86_64-linux-gnu.tar.gz
+wget https://bitcoin.org/bin/bitcoin-core-0.19.1/bitcoin-0.19.1-x86_64-linux-gnu.tar.gz
+tar -xzf bitcoin-0.19.1-x86_64-linux-gnu.tar.gz
 ```
 
 *Linux (arm64)*
 ```bash
-wget https://bitcoin.org/bin/bitcoin-core-0.19.0.1/bitcoin-0.19.0.1-x86_64-linux-gnu.tar.gz
-tar -xzf bitcoin-0.19.0.1-aarch64-linux-gnu.tar.gz
+wget https://bitcoin.org/bin/bitcoin-core-0.19.1/bitcoin-0.19.1-aarch64-linux-gnu.tar.gz
+tar -xzf bitcoin-0.19.1-aarch64-linux-gnu.tar.gz
 ```
 
 *macOS*
 ```bash
-wget https://bitcoin.org/bin/bitcoin-core-0.19.0.1/bitcoin-0.19.0.1-x86_64-linux-gnu.tar.gz
-tar -xzf bitcoin-0.19.0.1-osx64.tar.gz
+wget https://bitcoin.org/bin/bitcoin-core-0.19.1/bitcoin-0.19.1-osx64.tar.gz
+tar -xzf bitcoin-0.19.1-osx64.tar.gz
 ```
 
 #### 4b. Start your Bitcoin Testnet full node
@@ -124,7 +124,7 @@ Note that this will use ~30GB of disk space, and will take a few hours (the spee
 
 If you'd like to reduce the amount of storage required, you can instead run the node in pruned mode by adding the `-prune=N` option where N is the amount of storage to use in MB. This doesn't make the sync any faster, it just saves disk space.
 
-Example, limiting to 2000B:
+Example, limiting to 2000MB:
 ```bash
 ./bitcoin-0.19.0.1/bin/bitcoind -testnet -prune=2000 -rpcuser=user -rpcpassword=pass
 ```
@@ -142,7 +142,7 @@ Now any time a new Bitcoin block gets mined, your node will broadcast it to the 
 
 ### Backing up your private key
 
-Your validator is signing blocks with a unqiue private key stored at `~/.nomic-testnet/config/priv_validator_key.json`. Remember to keep this safe since losing it would mean you lose the voting power you worked hard to get. Also, keep it safe since if an attacker got a hold of it they would be able to attack the network, also resulting in the loss of your voting power.
+Your validator is signing blocks with a unique private key stored at `~/.nomic-testnet/config/priv_validator_key.json`. Remember to keep this safe since losing it would mean you lose the voting power you worked hard to get. Also, keep it safe since if an attacker got a hold of it they would be able to attack the network, also resulting in the loss of your voting power.
 
 However, as the network is still just an early testnet and security is not critical yet, it probably is sufficient to just copy the file to another folder:
 

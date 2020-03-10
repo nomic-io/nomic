@@ -1,9 +1,6 @@
 use super::{Signatory, SignatorySet};
 use bitcoin_script::bitcoin_script;
-use failure::Error;
-use nomic_bitcoin::bitcoin::{PublicKey, Script};
-
-type Result<T> = std::result::Result<T, Error>;
+use nomic_bitcoin::bitcoin::Script;
 
 pub fn build_script(signatories: &SignatorySet) -> Script {
     let mut iter = signatories.iter();
@@ -57,7 +54,7 @@ fn greater_than_script(n: u32) -> Script {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+
     use crate::test_utils::*;
     use bitcoin_script::bitcoin_script;
 

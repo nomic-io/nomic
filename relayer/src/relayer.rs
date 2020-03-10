@@ -1,7 +1,7 @@
 use bitcoin::hash_types::BlockHash as Hash;
 use bitcoincore_rpc::{Auth, Client, Error as RpcError, RpcApi};
 use nomic_bitcoin::{bitcoin, bitcoincore_rpc};
-use nomic_client::{Client as PegClient, ClientError as PegClientError};
+use nomic_client::Client as PegClient;
 use nomic_primitives::transaction::{HeaderTransaction, Transaction};
 use std::{env, thread, time};
 
@@ -231,10 +231,7 @@ pub fn compute_common_ancestor(rpc: &Client, peg_hashes: &[Hash]) -> Result<Hash
         let rpc_response = rpc.get_block_header_verbose(hash);
         match rpc_response {
             Ok(response) => {
-                let confs = response.confirmations;
-                if confs >= 0 {
-                    return Ok(response.hash);
-                }
+                return Ok(response.hash);
             }
             Err(err) => {
                 // XXX: the bitcoincore-rpc library is beig overly strict and failing when confirmations are negative
