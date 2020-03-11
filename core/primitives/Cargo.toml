@@ -7,5 +7,6 @@ edition = "2018"
 [dependencies]
 nomic-bitcoin = { path = "../bitcoin" }
 serde = { version= "1.0.104", features = ["derive"] }
+failure = "0.1.7"
 
 

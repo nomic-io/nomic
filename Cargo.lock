@@ -1456,6 +1456,7 @@ dependencies = [
 name = "nomic-primitives"
 version = "0.1.0"
 dependencies = [
+ "failure",
  "nomic-bitcoin",
  "serde",
 ]

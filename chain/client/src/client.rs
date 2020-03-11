@@ -4,7 +4,9 @@ use bitcoin::Network::Testnet as bitcoin_network;
 use nomic_bitcoin::bitcoin;
 use nomic_chain::{orga, spv};
 use nomic_primitives::transaction::{Transaction, WorkProofTransaction};
-use orga::{abci::TendermintClient, merkstore::Client as MerkStoreClient, Read, Write};
+use orga::{
+    abci::TendermintClient, merkstore::Client as MerkStoreClient, Read, Result as OrgaResult, Write,
+};
 
 use std::str::FromStr;
 use tendermint::rpc::Client as TendermintRpcClient;
@@ -102,10 +104,15 @@ impl Client {
         self.send(work_transaction)
     }
 
-    pub fn get_bitcoin_tip(&mut self) -> bitcoin::BlockHeader {
+    pub fn get_bitcoin_tip(&mut self) -> OrgaResult<bitcoin::BlockHeader> {
         let store = &mut self.remote_store;
         let mut header_cache = spv::headercache::HeaderCache::new(bitcoin_network, store);
-        header_cache.tip().unwrap().stored.header
+        let maybe_tip = header_cache.tip()?;
+        if let Some(tip) = maybe_tip {
+            Ok(tip.stored.header)
+        } else {
+            panic!("Unable to fetch Bitcoin tip header");
+        }
     }
 }
 

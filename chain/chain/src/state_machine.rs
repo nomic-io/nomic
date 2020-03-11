@@ -1,11 +1,13 @@
 use crate::spv::headercache::HeaderCache;
 use crate::Action;
 use bitcoin::Network::Testnet as bitcoin_network;
+use bitcoin::Txid;
 use failure::bail;
 use nomic_bitcoin::{bitcoin, EnrichedHeader};
 use nomic_primitives::transaction::Transaction;
+use nomic_primitives::{Error, Result};
 use nomic_work::work;
-use orga::{Result as OrgaResult, Store};
+use orga::Store;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
@@ -18,7 +20,7 @@ pub fn run(
     store: &mut dyn Store,
     action: Action,
     validators: &mut BTreeMap<Vec<u8>, u64>,
-) -> OrgaResult<()> {
+) -> Result<()> {
     match action {
         Action::Transaction(transaction) => match transaction {
             Transaction::WorkProof(work_transaction) => {
@@ -60,7 +62,43 @@ pub fn run(
                     }
                 }
             }
-            _ => (),
+
+            Transaction::Deposit(deposit_transaction) => {
+                // Hash transactions and check for duplicates
+                let txs = deposit_transaction.txs;
+                let mut txids: Vec<Txid> = txs.iter().map(|tx| tx.tx.txid()).collect();
+                for txid in txids.iter() {
+                    let hash = txid.as_hash();
+                    let key = [b"tx/", hash.as_ref()].concat();
+                    if let Some(_val) = store.get(key.as_slice())? {
+                        bail!("Duplicate transaction in deposit proof");
+                    }
+                }
+                // Fetch merkle root for this block by its height
+                let mut header_cache = HeaderCache::new(bitcoin_network, store);
+                let tx_height = deposit_transaction.height;
+                let header = header_cache.get_header_for_height(tx_height)?;
+
+                let header_merkle_root = match header {
+                    Some(header) => header.stored.header.merkle_root,
+                    None => bail!("Merkle root not found for deposit transaction"),
+                };
+
+                // Verify proof against the merkle root
+                let proof = deposit_transaction.proof;
+                let mut indexes = txs.iter().map(|tx| tx.index).collect();
+                let proof_merkle_root = proof
+                    .extract_matches(&mut txids, &mut indexes)
+                    .map_err(Error::from)?;
+
+                let proof_matches_chain_merkle_root = proof_merkle_root == header_merkle_root;
+                if !proof_matches_chain_merkle_root {
+                    bail!("Proof merkle root does not match chain");
+                }
+                // Verify transactions against the proof
+                // Deposit is valid, mark transactions as relayed
+                // Mint coins
+            }
         },
     };
 
@@ -68,9 +106,9 @@ pub fn run(
 }
 
 /// Called once at genesis to write some data to the store.
-pub fn initialize(store: &mut dyn Store) -> OrgaResult<()> {
-    let mut header_cache = HeaderCache::new(bitcoin_network, store);
+pub fn initialize(store: &mut dyn Store) -> Result<()> {
     let checkpoint = get_checkpoint_header();
+    let mut header_cache = HeaderCache::new(bitcoin_network, store);
 
     header_cache
         .add_header_raw(checkpoint.header, checkpoint.height)
@@ -83,4 +121,25 @@ fn get_checkpoint_header() -> EnrichedHeader {
         .expect("Failed to deserialize checkpoint header");
 
     checkpoint
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bitcoin::Network::Testnet as bitcoin_network;
+    use orga::MapStore;
+    use std::collections::BTreeMap;
+    #[test]
+    fn init() {
+        let mut store = MapStore::new();
+        let chkpt = get_checkpoint_header();
+        initialize(&mut store);
+
+        let mut header_cache = HeaderCache::new(bitcoin_network, &mut store);
+        let header = header_cache
+            .get_header_for_height(chkpt.height)
+            .unwrap()
+            .unwrap();
+        assert_eq!(header.stored.header, chkpt.header);
+    }
 }
