@@ -1,3 +1,5 @@
+mod error;
+pub use error::*;
 pub mod transaction;
 
 #[cfg(test)]
