@@ -9,8 +9,6 @@ pub enum Transaction {
     Header(HeaderTransaction),
     WorkProof(WorkProofTransaction),
     Deposit(DepositTransaction),
-    SignatoryCommitment,
-    SignatorySignature,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -47,6 +45,12 @@ fn decode_partial_merkle_tree<'de, D: Deserializer<'de>>(
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IncludedTx {
+    pub index: u32,
+    pub tx: bitcoin::Transaction,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DepositTransaction {
     pub height: u32,
     #[serde(
@@ -54,7 +58,7 @@ pub struct DepositTransaction {
         deserialize_with = "decode_partial_merkle_tree"
     )]
     pub proof: bitcoin::util::merkleblock::PartialMerkleTree,
-    pub txs: Vec<bitcoin::Transaction>,
+    pub txs: Vec<IncludedTx>,
 }
 
 impl DepositTransaction {}
