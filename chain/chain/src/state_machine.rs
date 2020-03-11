@@ -107,8 +107,8 @@ pub fn run(
 
 /// Called once at genesis to write some data to the store.
 pub fn initialize(store: &mut dyn Store) -> Result<()> {
-    let mut header_cache = HeaderCache::new(bitcoin_network, store);
     let checkpoint = get_checkpoint_header();
+    let mut header_cache = HeaderCache::new(bitcoin_network, store);
 
     header_cache
         .add_header_raw(checkpoint.header, checkpoint.height)
@@ -136,7 +136,10 @@ mod tests {
         initialize(&mut store);
 
         let mut header_cache = HeaderCache::new(bitcoin_network, &mut store);
-        let header = header_cache.get_header_for_height(0).unwrap().unwrap();
+        let header = header_cache
+            .get_header_for_height(chkpt.height)
+            .unwrap()
+            .unwrap();
         assert_eq!(header.stored.header, chkpt.header);
     }
 }

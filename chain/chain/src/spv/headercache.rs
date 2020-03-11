@@ -466,11 +466,18 @@ impl<'a> HeaderCache<'a> {
 
     pub fn get_header_for_height(&mut self, height: u32) -> OrgaResult<Option<CachedHeader>> {
         self.load_trunk();
-        if height < self.trunk.len() as u32 {
-            println!("height greater than len");
-            Ok(self.get_header(&self.trunk[height as usize])?)
+        let maybe_tip = self.tip()?;
+        let tip = match maybe_tip {
+            Some(cached_header) => cached_header.stored,
+            None => return Ok(None),
+        };
+
+        let start_height = tip.height - (self.trunk.len() - 1) as u32;
+        if height < start_height {
+            Ok(None)
+        } else if (height - start_height) < self.trunk.len() as u32 {
+            Ok(self.get_header(&self.trunk[(height - start_height) as usize])?)
         } else {
-            println!("height less than len");
             Ok(None)
         }
     }
