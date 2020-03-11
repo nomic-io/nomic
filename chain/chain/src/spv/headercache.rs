@@ -195,14 +195,14 @@ impl<'a> HeaderCache<'a> {
         )>,
     > {
         self.load_trunk();
-        if self.get_header(&header.bitcoin_hash()).is_some() {
+        if self.get_header(&header.bitcoin_hash())?.is_some() {
             // ignore already known header
             return Ok(None);
         }
         if header.prev_blockhash != Sha256dHash::default() {
             // regular update
             let previous;
-            if let Some(prev) = self.get_header(&header.prev_blockhash) {
+            if let Some(prev) = self.get_header(&header.prev_blockhash)? {
                 previous = prev.clone();
             } else {
                 // reject unconnected
@@ -235,18 +235,14 @@ impl<'a> HeaderCache<'a> {
 
         self.store.put(key, header_bytes)
     }
-    fn get_header(&self, header_id: &Sha256dHash) -> Option<CachedHeader> {
-        let header_bytes = self.store.get(header_id);
-        match header_bytes {
-            Ok(header_bytes) => match header_bytes {
-                Some(header_bytes) => {
-                    let header: Option<CachedHeader> =
-                        serde_json::from_slice(&header_bytes).unwrap();
-                    header
-                }
-                None => None,
-            },
-            Err(_) => None,
+    fn get_header(&self, header_id: &Sha256dHash) -> OrgaResult<Option<CachedHeader>> {
+        let maybe_header_bytes = self.store.get(header_id)?;
+
+        if let Some(header_bytes) = maybe_header_bytes {
+            let header = serde_json::from_slice(&header_bytes)?;
+            Ok(header)
+        } else {
+            Ok(None)
         }
     }
 
@@ -300,10 +296,10 @@ impl<'a> HeaderCache<'a> {
                     // Scan back DIFFCHANGE_INTERVAL blocks
                     let mut scan = prev.clone();
                     if self.tip_hash() == Some(scan.stored.header.prev_blockhash) {
-                        scan = self.get_header(&self.trunk[self.trunk.len() - DIFFCHANGE_INTERVAL as usize - 2]).unwrap().clone();
+                        scan = self.get_header(&self.trunk[self.trunk.len() - DIFFCHANGE_INTERVAL as usize - 2])?.unwrap().clone();
                     } else {
                         for _ in 0..(DIFFCHANGE_INTERVAL - 1) {
-                            if let Some(header) = self.get_header(&scan.stored.header.prev_blockhash) {
+                            if let Some(header) = self.get_header(&scan.stored.header.prev_blockhash)? {
                                 scan = header.clone();
                             } else {
                                 return Err(Error::UnconnectedHeader);
@@ -340,7 +336,7 @@ impl<'a> HeaderCache<'a> {
                 let mut height = prev.stored.height;
                 let max_target = Self::max_target();
                 while height % DIFFCHANGE_INTERVAL != 0 && scan.stored.header.prev_blockhash != Sha256dHash::default() && scan.stored.header.target() == max_target {
-                    if let Some(header) = self.get_header(&scan.stored.header.prev_blockhash) {
+                    if let Some(header) = self.get_header(&scan.stored.header.prev_blockhash)? {
                         scan = header.clone();
                         height = header.stored.height;
                     } else {
@@ -375,7 +371,7 @@ impl<'a> HeaderCache<'a> {
         if let Err(e) = result {
             return Err(Error::Downstream(format!("{}", e)));
         }
-        if let Some(tip) = self.tip() {
+        if let Some(tip) = self.tip()? {
             if tip.stored.work() < cached.stored.work() {
                 // higher POW than previous tip
 
@@ -383,7 +379,7 @@ impl<'a> HeaderCache<'a> {
                 let mut forks_at = next.prev_blockhash;
                 let mut path_to_new_tip = Vec::new();
                 while self.pos_on_trunk(&forks_at).is_none() {
-                    if let Some(h) = self.get_header(&forks_at) {
+                    if let Some(h) = self.get_header(&forks_at)? {
                         forks_at = h.stored.header.prev_blockhash;
                         path_to_new_tip.push(forks_at);
                     } else {
@@ -435,11 +431,11 @@ impl<'a> HeaderCache<'a> {
     }
 
     /// retrieve the id of the block/header with most work
-    pub fn tip(&mut self) -> Option<CachedHeader> {
+    pub fn tip(&mut self) -> OrgaResult<Option<CachedHeader>> {
         if let Some(id) = self.tip_hash() {
-            return self.get_header(&id);
+            return Ok(self.get_header(&id)?);
         }
-        None
+        Ok(None)
     }
 
     pub fn tip_hash(&mut self) -> Option<Sha256dHash> {
@@ -468,11 +464,14 @@ impl<'a> HeaderCache<'a> {
         ret << bits
     }
 
-    pub fn get_header_for_height(&self, height: u32) -> Option<CachedHeader> {
+    pub fn get_header_for_height(&mut self, height: u32) -> OrgaResult<Option<CachedHeader>> {
+        self.load_trunk();
         if height < self.trunk.len() as u32 {
-            self.get_header(&self.trunk[height as usize])
+            println!("height greater than len");
+            Ok(self.get_header(&self.trunk[height as usize])?)
         } else {
-            None
+            println!("height less than len");
+            Ok(None)
         }
     }
 }
