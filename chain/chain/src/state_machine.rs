@@ -126,14 +126,69 @@ fn get_checkpoint_header() -> EnrichedHeader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Action;
+    use nomic_primitives::transaction::*;
     use bitcoin::Network::Testnet as bitcoin_network;
+    use bitcoin::util::hash::bitcoin_merkle_root;
     use orga::MapStore;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, HashSet};
+
+    #[derive(Default)]
+    struct MockNet {
+        store: MapStore,
+        validators: BTreeMap<Vec<u8>, u64>
+    }
+
+    impl MockNet {
+        fn new(initial_header: bitcoin::BlockHeader) -> Self {
+            let mut net: Self = Default::default();
+            net.spv().add_header_raw(initial_header, 0)
+                .expect("failed to create mock net");
+            net
+        }
+
+        fn spv(&mut self) -> HeaderCache {
+            HeaderCache::new(bitcoin::Network::Regtest, &mut self.store)
+        }
+    }
+
+    fn build_txout(value: u64, script_pubkey: bitcoin::Script) -> bitcoin::TxOut {
+        bitcoin::TxOut { value, script_pubkey }
+    }
+
+    fn build_tx(outputs: Vec<bitcoin::TxOut>) -> bitcoin::Transaction {
+        bitcoin::Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![],
+            output: outputs
+        }
+    }
+
+    fn build_block(txs: Vec<bitcoin::Transaction>) -> bitcoin::Block {
+        let hashes = txs.iter().map(|tx| tx.txid().as_hash());
+        let merkle_root = bitcoin_merkle_root(hashes).into();
+
+        let header = bitcoin::BlockHeader {
+            version: 1,
+            prev_blockhash: Default::default(),
+            merkle_root,
+            time: 1,
+            bits: 0x207fffff,
+            nonce: 0
+        };
+
+        bitcoin::Block {
+            header,
+            txdata: txs
+        }
+    }
+
     #[test]
     fn init() {
         let mut store = MapStore::new();
         let chkpt = get_checkpoint_header();
-        initialize(&mut store);
+        initialize(&mut store).unwrap();
 
         let mut header_cache = HeaderCache::new(bitcoin_network, &mut store);
         let header = header_cache
@@ -141,5 +196,28 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(header.stored.header, chkpt.header);
+    }
+
+    #[test]
+    fn deposit_single() {
+        let tx = build_tx(vec![
+            build_txout(100_000_000, vec![].into())
+        ]);
+        let block = build_block(vec![ tx.clone() ]);
+        let mut net = MockNet::new(block.header.clone());
+
+        let mut txids = HashSet::new();
+        txids.insert(tx.txid());
+        let proof = bitcoin::MerkleBlock::from_block(&block, &txids).txn;
+
+        let deposit = DepositTransaction {
+            height: 0,
+            proof,
+            txs: vec![ IncludedTx { index: 0, tx: tx.clone() } ]
+        };
+        let action = Action::Transaction(Transaction::Deposit(deposit));
+
+        run(&mut net.store, action, &mut net.validators)
+            .expect("transition failed");
     }
 }
