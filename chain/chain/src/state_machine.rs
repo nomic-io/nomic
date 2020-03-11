@@ -106,7 +106,7 @@ pub fn run(
 }
 
 /// Called once at genesis to write some data to the store.
-pub fn initialize(store: &mut dyn Store) -> OrgaResult<()> {
+pub fn initialize(store: &mut dyn Store) -> Result<()> {
     let mut header_cache = HeaderCache::new(bitcoin_network, store);
     let checkpoint = get_checkpoint_header();
 
@@ -121,4 +121,22 @@ fn get_checkpoint_header() -> EnrichedHeader {
         .expect("Failed to deserialize checkpoint header");
 
     checkpoint
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bitcoin::Network::Testnet as bitcoin_network;
+    use orga::MapStore;
+    use std::collections::BTreeMap;
+    #[test]
+    fn init() {
+        let mut store = MapStore::new();
+        let chkpt = get_checkpoint_header();
+        initialize(&mut store);
+
+        let mut header_cache = HeaderCache::new(bitcoin_network, &mut store);
+        let header = header_cache.get_header_for_height(0).unwrap().unwrap();
+        assert_eq!(header.stored.header, chkpt.header);
+    }
 }
