@@ -60,5 +60,3 @@ pub struct DepositTransaction {
     pub proof: bitcoin::util::merkleblock::PartialMerkleTree,
     pub txs: Vec<IncludedTx>,
 }
-
-impl DepositTransaction {}

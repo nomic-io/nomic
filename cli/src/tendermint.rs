@@ -1,6 +1,6 @@
 use hex_literal::hex;
 use is_executable::IsExecutable;
-use log::info;
+use log::{info, debug};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::prelude::*;
@@ -74,21 +74,53 @@ pub fn install(nomic_home: &PathBuf) {
 
 pub fn init(nomic_home: &PathBuf, dev_mode: bool) {
     let tendermint_path = nomic_home.join("tendermint-v0.32.8");
+    
     // Initialize Tendermint for testnet
-    Command::new(&tendermint_path)
+    let run_init = || {
+        debug!("Running 'tendermint init'");
+        Command::new(&tendermint_path)
         .arg("init")
         .arg("--home")
         .arg(nomic_home.to_str().unwrap())
         .output()
         .expect("Failed to initialize Tendermint");
+    };
 
-    if !dev_mode {
-        // Write genesis
-        let genesis_str: &str = include_str!("../../config/genesis.json");
-        let genesis_path = nomic_home.join("config").join("genesis.json");
-        info!("Initializing with this genesis.json: {}", genesis_str);
-        fs::write(genesis_path, genesis_str).expect("Failed to write genesis.json");
+    let key_path = nomic_home.join("config/priv_validator_key.json");
+    let key_existed = key_path.exists();
+
+    run_init();
+
+    if !key_existed {
+        let key_str = gen_validator_key();
+        info!("Writing validator private key to '{:?}'", key_path);
+        fs::write(key_path, key_str).expect("Failed to write validator key");
+    } else {
+        info!("Validator private key exists at '{:?}'", key_path);
     }
+
+    let genesis_path = nomic_home.join("config/genesis.json");
+    let genesis_str = if dev_mode {
+        // regenerate genesis
+        fs::remove_file(&genesis_path).expect("Failed to delete genesis");
+        run_init();
+
+        // TODO: build genesis manually rather than replacing
+        let old_genesis = fs::read(&genesis_path).expect("Failed to read genesis");
+        let mut genesis = String::from_utf8(old_genesis).expect("Failed to parse genesis");
+        let pattern = "\"pub_key_types\": [\n        \"ed25519\"\n      ]";
+        let index = genesis.find(pattern).expect("Failed to modify genesis");
+        genesis.replace_range(
+            index..(index + pattern.len()),
+            "\"pub_key_types\": [\"secp256k1\"]"
+        );
+        genesis
+    } else {
+        include_str!("../../config/genesis.json").to_string()
+    };
+    debug!("genesis.json: {}", genesis_str);
+    info!("Writing genesis to '{:?}'", genesis_path);
+    fs::write(genesis_path, genesis_str).expect("Failed to write genesis.json");
 }
 
 pub fn start(nomic_home: &PathBuf) {
@@ -100,4 +132,29 @@ pub fn start(nomic_home: &PathBuf) {
         .spawn()
         .expect("Failed to start Tendermint");
     info!("Spawned Tendermint child process");
+}
+
+fn gen_validator_key() -> String {
+    let mut rng = rand::thread_rng();
+    let secp = secp256k1::Secp256k1::new();
+    let (priv_key, pub_key) = secp.generate_keypair(&mut rng);
+
+    let pub_key = pub_key.serialize();
+    let priv_key = hex::decode(format!("{}", priv_key))
+        .expect("Failed to parse private key bytes");
+
+    format!(
+        "{{
+            \"pub_key\": {{
+                \"type\": \"tendermint/PubKeySecp256k1\",
+                \"value\": \"{}\"
+            }},
+            \"priv_key\": {{
+                \"type\": \"tendermint/PrivKeySecp256k1\",
+                \"value\": \"{}\"
+            }}
+        }}",
+        base64::encode(&pub_key[..]),
+        base64::encode(&priv_key[..])
+    )
 }
