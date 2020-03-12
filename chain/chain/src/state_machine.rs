@@ -70,7 +70,7 @@ pub fn run(
                 for txid in txids.iter() {
                     let hash = txid.as_hash();
                     let key = [b"tx/", hash.as_ref()].concat();
-                    if let Some(_val) = store.get(key.as_slice())? {
+                    if let Some(_) = store.get(key.as_slice())? {
                         bail!("Duplicate transaction in deposit proof");
                     }
                 }
@@ -130,6 +130,8 @@ mod tests {
     use nomic_primitives::transaction::*;
     use bitcoin::Network::Testnet as bitcoin_network;
     use bitcoin::util::hash::bitcoin_merkle_root;
+    use bitcoin::util::merkleblock::PartialMerkleTree;
+    use bitcoin::consensus::encode as bitcoin_encode;
     use orga::MapStore;
     use std::collections::{BTreeMap, HashSet};
 
@@ -184,6 +186,12 @@ mod tests {
         }
     }
 
+    fn invalidate_proof(proof: PartialMerkleTree) -> PartialMerkleTree {
+        let mut proof_bytes = bitcoin_encode::serialize(&proof);
+        proof_bytes[10] ^= 1;
+        bitcoin_encode::deserialize(proof_bytes.as_slice()).unwrap()
+    }
+
     #[test]
     fn init() {
         let mut store = MapStore::new();
@@ -199,7 +207,8 @@ mod tests {
     }
 
     #[test]
-    fn deposit_single() {
+    #[should_panic(expected = "Merkle root not found for deposit transaction")]
+    fn deposit_invalid_height() {
         let tx = build_tx(vec![
             build_txout(100_000_000, vec![].into())
         ]);
@@ -211,13 +220,36 @@ mod tests {
         let proof = bitcoin::MerkleBlock::from_block(&block, &txids).txn;
 
         let deposit = DepositTransaction {
+            height: 100,
+            proof,
+            txs: vec![ IncludedTx { index: 0, tx: tx.clone() } ]
+        };
+        let action = Action::Transaction(Transaction::Deposit(deposit));
+
+        run(&mut net.store, action, &mut net.validators).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Proof merkle root does not match chain")]
+    fn deposit_invalid_proof() {
+        let tx = build_tx(vec![
+            build_txout(100_000_000, vec![].into())
+        ]);
+        let block = build_block(vec![ tx.clone() ]);
+        let mut net = MockNet::new(block.header.clone());
+
+        let mut txids = HashSet::new();
+        txids.insert(tx.txid());
+        let proof = bitcoin::MerkleBlock::from_block(&block, &txids).txn;
+        let proof = invalidate_proof(proof);
+
+        let deposit = DepositTransaction {
             height: 0,
             proof,
             txs: vec![ IncludedTx { index: 0, tx: tx.clone() } ]
         };
         let action = Action::Transaction(Transaction::Deposit(deposit));
 
-        run(&mut net.store, action, &mut net.validators)
-            .expect("transition failed");
+        run(&mut net.store, action, &mut net.validators).unwrap();
     }
 }
