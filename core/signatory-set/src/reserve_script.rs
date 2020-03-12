@@ -1,8 +1,29 @@
 use super::{Signatory, SignatorySet};
-use bitcoin_script::bitcoin_script;
+use bitcoin_script::bitcoin_script as script;
 use nomic_bitcoin::bitcoin::Script;
 
-pub fn build_script(signatories: &SignatorySet) -> Script {
+pub fn redeem_script(signatories: &SignatorySet) -> Script {
+    let first_signatory_script = |signatory: &Signatory| script! {
+        <signatory.pubkey> OP_CHECKSIG
+        OP_IF
+            <signatory.voting_power as i64>
+        OP_ELSE
+            0
+        OP_ENDIF
+    };
+
+    let nth_signatory_script = |signatory: &Signatory| script! {
+        OP_SWAP
+        <signatory.pubkey> OP_CHECKSIG
+        OP_IF
+            <signatory.voting_power as i64> OP_ADD
+        OP_ENDIF
+    };
+
+    let greater_than_script = |n: u32| script! {
+        <n as i64> OP_GREATERTHAN
+    };
+
     let mut iter = signatories.iter();
 
     let first_signatory = iter
@@ -21,46 +42,35 @@ pub fn build_script(signatories: &SignatorySet) -> Script {
     bytes.into()
 }
 
+pub fn output_script(signatories: &SignatorySet) -> Script {
+    redeem_script(signatories).to_v0_p2wsh()
+}
+
 impl SignatorySet {
-    pub fn to_reserve_script(&self) -> Script {
-        build_script(self)
+    pub fn to_redeem_script(&self) -> Script {
+        redeem_script(self)
     }
-}
 
-fn first_signatory_script(signatory: &Signatory) -> Script {
-    bitcoin_script! {
-        <signatory.pubkey> OP_CHECKSIG
-        OP_IF
-            <signatory.voting_power as i64>
-        OP_ELSE
-            0
-        OP_ENDIF
+    pub fn to_output_script(&self) -> Script {
+        output_script(self)
     }
-}
-
-fn nth_signatory_script(signatory: &Signatory) -> Script {
-    bitcoin_script! {
-        OP_SWAP
-        <signatory.pubkey> OP_CHECKSIG
-        OP_IF
-            <signatory.voting_power as i64> OP_ADD
-        OP_ENDIF
-    }
-}
-
-fn greater_than_script(n: u32) -> Script {
-    bitcoin_script! { <n as i64> OP_GREATERTHAN }
 }
 
 #[cfg(test)]
 mod tests {
-
-    use crate::test_utils::*;
+    use super::*;
+    use crate::{test_utils::*, SignatorySet};
     use bitcoin_script::bitcoin_script;
 
     #[test]
-    fn build_script_fixture() {
-        let script = mock_signatory_set(4).to_reserve_script();
+    #[should_panic(expected = "Cannot build script for empty signatory set")]
+    fn redeem_script_empty() {
+        redeem_script(&SignatorySet::new());
+    }
+
+    #[test]
+    fn redeem_script_fixture() {
+        let script = mock_signatory_set(4).to_redeem_script();
 
         assert_eq!(
             script,
@@ -107,6 +117,22 @@ mod tests {
                 64, 153, 93, 62, 213, 170, 186, 5, 101, 215, 30, 24, 52, 96, 72, 25, 255, 156, 23,
                 245, 233, 213, 221, 7, 143, 172, 99, 81, 147, 104, 86, 160
             ]
+        );
+    }
+
+    #[test]
+    fn output_script_fixture() {
+        let script = mock_signatory_set(4).to_output_script();
+
+        assert_eq!(
+            script,
+            bitcoin_script! {
+                0 0xc3cc0f5ae30d5da678fc042d46fcf0c1203f8a0de604f1165ceda9e00afb50f2
+            }
+        );
+        assert_eq!(
+            script.into_bytes(),
+            vec![0, 32, 195, 204, 15, 90, 227, 13, 93, 166, 120, 252, 4, 45, 70, 252, 240, 193, 32, 63, 138, 13, 230, 4, 241, 22, 92, 237, 169, 224, 10, 251, 80, 242]
         );
     }
 }
