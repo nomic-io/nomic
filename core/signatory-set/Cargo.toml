@@ -1,5 +1,5 @@
 [package]
-name = "signatory-set"
+name = "nomic-signatory-set"
 version = "0.1.0"
 authors = ["Matt Bell <mappum@gmail.com>"]
 edition = "2018"

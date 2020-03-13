@@ -6,6 +6,7 @@ use failure::bail;
 use nomic_bitcoin::{bitcoin, EnrichedHeader};
 use nomic_primitives::transaction::Transaction;
 use nomic_primitives::{Error, Result};
+use nomic_signatory_set::{Signatory, SignatorySet};
 use nomic_work::work;
 use orga::Store;
 use sha2::{Digest, Sha256};
@@ -64,19 +65,13 @@ pub fn run(
             }
 
             Transaction::Deposit(deposit_transaction) => {
-                fn tx_key(txid: &Txid) -> Vec<u8> {
-                    [b"tx/", txid.as_hash().as_ref()].concat()
+                // Hash transaction and check for duplicate
+                let txid = deposit_transaction.tx.txid();
+                let tx_key = [b"tx/", txid.as_hash().as_ref()].concat();
+                if let Some(_) = store.get(tx_key.as_slice())? {
+                    bail!("Transaction was already processed");
                 }
-
-                // Hash transactions and check for duplicates
-                let txs = deposit_transaction.txs;
-                let mut txids: Vec<Txid> = txs.iter().map(|tx| tx.tx.txid()).collect();
-                for txid in txids.iter() {
-                    let key = tx_key(txid);
-                    if let Some(_) = store.get(key.as_slice())? {
-                        bail!("Duplicate transaction in deposit proof");
-                    }
-                }
+                
                 // Fetch merkle root for this block by its height
                 let mut header_cache = HeaderCache::new(bitcoin_network, store);
                 let tx_height = deposit_transaction.height;
@@ -89,7 +84,8 @@ pub fn run(
 
                 // Verify proof against the merkle root
                 let proof = deposit_transaction.proof;
-                let mut indexes = txs.iter().map(|tx| tx.index).collect();
+                let mut txids = vec![txid];
+                let mut indexes = vec![deposit_transaction.block_index];
                 let proof_merkle_root = proof
                     .extract_matches(&mut txids, &mut indexes)
                     .map_err(Error::from)?;
@@ -99,10 +95,32 @@ pub fn run(
                     bail!("Proof merkle root does not match chain");
                 }
 
-                // Deposit is valid, mark transactions as relayed
-                for txid in txids.iter() {
-                    store.put(tx_key(txid), vec![])?;
+                // Ensure tx contains deposit outputs
+                let signatory_set = signatories_from_validators(validators)?;
+                let mut recipients = deposit_transaction.recipients
+                    .iter()
+                    .peekable();
+                let mut contains_deposit_outputs = false;
+                for txout in deposit_transaction.tx.output {
+                    let recipient = match recipients.peek() {
+                        Some(recipient) => recipient,
+                        None => bail!("Consumed all recipients")
+                    };
+                    let expected_script = nomic_signatory_set::output_script(
+                        &signatory_set,
+                        recipient.to_vec()
+                    );
+                    if txout.script_pubkey == expected_script {
+                        contains_deposit_outputs = true;
+                        break;
+                    }
                 }
+                if !contains_deposit_outputs {
+                    bail!("Transaction does not contain any deposit outputs");
+                }
+
+                // Deposit is valid, mark transaction as processed
+                store.put(tx_key, vec![])?;
 
                 // TODO: mint coins
             }
@@ -110,6 +128,15 @@ pub fn run(
     };
 
     Ok(())
+}
+
+fn signatories_from_validators(validators: &BTreeMap<Vec<u8>, u64>) -> Result<SignatorySet> {
+    let mut signatories = SignatorySet::new();
+    for (key_bytes, voting_power) in validators.iter() {
+        let key = bitcoin::PublicKey::from_slice(key_bytes.as_slice())?;
+        signatories.set(Signatory::new(key, *voting_power as u32));
+    }
+    Ok(signatories)
 }
 
 /// Called once at genesis to write some data to the store.
@@ -229,7 +256,9 @@ mod tests {
         let deposit = DepositTransaction {
             height: 100,
             proof,
-            txs: vec![ IncludedTx { index: 0, tx: tx.clone() } ]
+            tx: tx.clone(),
+            block_index: 0,
+            recipients: vec![]
         };
         let action = Action::Transaction(Transaction::Deposit(deposit));
 
@@ -253,7 +282,9 @@ mod tests {
         let deposit = DepositTransaction {
             height: 0,
             proof,
-            txs: vec![ IncludedTx { index: 0, tx: tx.clone() } ]
+            tx: tx.clone(),
+            block_index: 0,
+            recipients: vec![]
         };
         let action = Action::Transaction(Transaction::Deposit(deposit));
 
@@ -276,7 +307,9 @@ mod tests {
         let deposit = DepositTransaction {
             height: 0,
             proof,
-            txs: vec![ IncludedTx { index: 0, tx: tx.clone() } ]
+            tx: tx.clone(),
+            block_index: 0,
+            recipients: vec![[123; 32]]
         };
         let action = Action::Transaction(Transaction::Deposit(deposit));
 
@@ -299,7 +332,9 @@ mod tests {
         let deposit = DepositTransaction {
             height: 0,
             proof,
-            txs: vec![ IncludedTx { index: 0, tx: tx.clone() } ]
+            tx: tx.clone(),
+            block_index: 0,
+            recipients: vec![[123; 32]]
         };
         let action = Action::Transaction(Transaction::Deposit(deposit));
 

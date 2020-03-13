@@ -1409,6 +1409,7 @@ dependencies = [
  "merk",
  "nomic-bitcoin",
  "nomic-primitives",
+ "nomic-signatory-set",
  "nomic-work",
  "orga",
  "serde",
@@ -1466,6 +1467,17 @@ dependencies = [
  "failure",
  "nomic-bitcoin",
  "serde",
+]
+
+[[package]]
+name = "nomic-signatory-set"
+version = "0.1.0"
+dependencies = [
+ "bitcoin 0.23.0",
+ "bitcoin-script",
+ "failure",
+ "nomic-bitcoin",
+ "secp256k1 0.17.2",
 ]
 
 [[package]]
@@ -2266,17 +2278,6 @@ dependencies = [
  "ed25519-dalek",
  "sha2 0.8.1",
  "signatory",
-]
-
-[[package]]
-name = "signatory-set"
-version = "0.1.0"
-dependencies = [
- "bitcoin 0.23.0",
- "bitcoin-script",
- "failure",
- "nomic-bitcoin",
- "secp256k1 0.17.2",
 ]
 
 [[package]]
