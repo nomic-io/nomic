@@ -260,7 +260,6 @@ mod tests {
         run(&mut net.store, action, &mut net.validators).unwrap();
     }
 
-
     #[test]
     #[should_panic(expected = "Duplicate transaction in deposit proof")]
     fn deposit_duplicate() {
@@ -283,5 +282,27 @@ mod tests {
 
         run(&mut net.store, action.clone(), &mut net.validators).unwrap();
         run(&mut net.store, action, &mut net.validators).unwrap();
+    }
+
+    #[test]
+    fn deposit_ok() {
+        let tx = build_tx(vec![
+            build_txout(100_000_000, vec![].into())
+        ]);
+        let block = build_block(vec![ tx.clone() ]);
+        let mut net = MockNet::new(block.header.clone());
+
+        let mut txids = HashSet::new();
+        txids.insert(tx.txid());
+        let proof = bitcoin::MerkleBlock::from_block(&block, &txids).txn;
+
+        let deposit = DepositTransaction {
+            height: 0,
+            proof,
+            txs: vec![ IncludedTx { index: 0, tx: tx.clone() } ]
+        };
+        let action = Action::Transaction(Transaction::Deposit(deposit));
+
+        run(&mut net.store, action.clone(), &mut net.validators).unwrap();
     }
 }
