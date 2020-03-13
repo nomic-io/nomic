@@ -1,6 +1,6 @@
 use nomic_primitives::transaction::Transaction;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Action {
     Transaction(Transaction),
 }
