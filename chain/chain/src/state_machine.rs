@@ -169,6 +169,12 @@ mod tests {
     use orga::MapStore;
     use std::collections::{BTreeMap, HashSet};
 
+    fn mock_validator_set() -> BTreeMap<Vec<u8>, u64> {
+        let mut vals = BTreeMap::new();
+        vals.insert(vec![3,148,217,3,10,128,64,14,129,125,33,213,163,104,0,227,122,136,27,45,207,44,64,24,35,166,166,118,25,12,200,183,98], 100);
+        vals
+    }
+
     #[derive(Default)]
     struct MockNet {
         store: MapStore,
@@ -177,7 +183,10 @@ mod tests {
 
     impl MockNet {
         fn new(initial_header: bitcoin::BlockHeader) -> Self {
-            let mut net: Self = Default::default();
+            let mut net = MockNet {
+                store: Default::default(),
+                validators: mock_validator_set()
+            };
             net.spv().add_header_raw(initial_header, 0)
                 .expect("failed to create mock net");
             net
@@ -292,8 +301,8 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Duplicate transaction in deposit proof")]
-    fn deposit_duplicate() {
+    #[should_panic(expected = "Transaction does not contain any deposit outputs")]
+    fn deposit_irrelevant() {
         let tx = build_tx(vec![
             build_txout(100_000_000, vec![].into())
         ]);
@@ -318,9 +327,78 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "Transaction was already processed")]
+    fn deposit_duplicate() {
+        let tx = build_tx(vec![
+            build_txout(
+                100_000_000,
+                nomic_signatory_set::output_script(
+                    &signatories_from_validators(&mock_validator_set()).unwrap(),
+                    vec![123; 32]
+                )
+            )
+        ]);
+        let block = build_block(vec![ tx.clone() ]);
+        let mut net = MockNet::new(block.header.clone());
+
+        let mut txids = HashSet::new();
+        txids.insert(tx.txid());
+        let proof = bitcoin::MerkleBlock::from_block(&block, &txids).txn;
+
+        let deposit = DepositTransaction {
+            height: 0,
+            proof,
+            tx: tx.clone(),
+            block_index: 0,
+            recipients: vec![[123; 32]]
+        };
+        let action = Action::Transaction(Transaction::Deposit(deposit));
+
+        run(&mut net.store, action.clone(), &mut net.validators).unwrap();
+        run(&mut net.store, action, &mut net.validators).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Consumed all recipients")]
+    fn deposit_no_recipients() {
+        let tx = build_tx(vec![
+            build_txout(
+                100_000_000, 
+                nomic_signatory_set::output_script(
+                    &signatories_from_validators(&mock_validator_set()).unwrap(),
+                    vec![123; 32]
+                )
+            )
+        ]);
+        let block = build_block(vec![ tx.clone() ]);
+        let mut net = MockNet::new(block.header.clone());
+
+        let mut txids = HashSet::new();
+        txids.insert(tx.txid());
+        let proof = bitcoin::MerkleBlock::from_block(&block, &txids).txn;
+
+        let deposit = DepositTransaction {
+            height: 0,
+            proof,
+            tx: tx.clone(),
+            block_index: 0,
+            recipients: vec![]
+        };
+        let action = Action::Transaction(Transaction::Deposit(deposit));
+
+        run(&mut net.store, action.clone(), &mut net.validators).unwrap();
+    }
+
+    #[test]
     fn deposit_ok() {
         let tx = build_tx(vec![
-            build_txout(100_000_000, vec![].into())
+            build_txout(
+                100_000_000, 
+                nomic_signatory_set::output_script(
+                    &signatories_from_validators(&mock_validator_set()).unwrap(),
+                    vec![123; 32]
+                )
+            )
         ]);
         let block = build_block(vec![ tx.clone() ]);
         let mut net = MockNet::new(block.header.clone());
