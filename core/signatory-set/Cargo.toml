@@ -7,8 +7,11 @@ edition = "2018"
 [dependencies]
 failure = "0.1.6"
 nomic-bitcoin = { path = "../bitcoin" }
+nomic-primitives = { path = "../primitives" }
 bitcoin-script = "0.1.1"
 bitcoin = "0.23.0"
+serde = "1.0.104"
+bincode = "1.2.1"
 
 [dev-dependencies]
 secp256k1 = "0.17.2"
