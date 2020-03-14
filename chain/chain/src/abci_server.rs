@@ -71,6 +71,19 @@ impl Application for App {
         }
     }
 
+    fn begin_block(
+        &self,
+        store: &mut dyn Store,
+        req: RequestBeginBlock
+    ) -> OrgaResult<ResponseBeginBlock> {
+        let header = req.get_header().clone();
+        let action = Action::BeginBlock(header);
+        let mut validators = read_validators(store);
+        run(store, action, &mut validators)?;
+        write_validators(store, validators)?;
+        Ok(Default::default())
+    }
+
     fn end_block(
         &self,
         store: &mut dyn Store,
@@ -89,7 +102,6 @@ impl Application for App {
         }
 
         let mut response = ResponseEndBlock::new();
-
         response.set_validator_updates(validator_updates.into());
         Ok(response)
     }

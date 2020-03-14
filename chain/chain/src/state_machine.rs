@@ -13,6 +13,8 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
 const MIN_WORK: u64 = 1 << 20;
+const SIGNATORY_CHANGE_INTERVAL: u64 = 60 * 60 * 24 * 14;
+
 /// Main entrypoint to the core bitcoin peg state machine.
 ///
 /// This function implements the conventions set by Orga, though this may change as our core
@@ -23,6 +25,9 @@ pub fn run(
     validators: &mut BTreeMap<Vec<u8>, u64>,
 ) -> Result<()> {
     match action {
+        Action::BeginBlock(header) => {
+            
+        },
         Action::Transaction(transaction) => match transaction {
             Transaction::WorkProof(work_transaction) => {
                 let mut hasher = Sha256::new();
