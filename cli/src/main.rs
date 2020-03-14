@@ -45,7 +45,7 @@ struct Worker {}
 fn main() {
     let opts: Opts = Opts::parse();
 
-    pretty_env_logger::init();
+    pretty_env_logger::init_custom_env("NOMIC_LOG");
 
     // Ensure nomic-testnet home directory
     let mut nomic_home = dirs::home_dir()

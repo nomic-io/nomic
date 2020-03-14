@@ -18,10 +18,17 @@ hex-literal = "0.2.1"
 sha2 = "0.8.1"
 pretty_env_logger = "0.4.0"
 is_executable = "0.1.2"
+base64 = "0.12.0"
+rand = "0.6"
+hex = "0.4.2"
 
 [dependencies.log]
 version = "0.4.8"
 features = ["max_level_debug", "release_max_level_info"]
+
+[dependencies.secp256k1]
+version = "0.17.2"
+features = ["rand"]
 
 [[bin]]
 name = "nomic"

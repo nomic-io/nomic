@@ -1,5 +1,8 @@
+use crate::deposit::relay_deposits;
+use crate::Result;
 use bitcoin::hash_types::BlockHash as Hash;
-use bitcoincore_rpc::{Auth, Client, Error as RpcError, RpcApi};
+use bitcoincore_rpc::{Auth, Client, RpcApi};
+use failure::bail;
 use nomic_bitcoin::{bitcoin, bitcoincore_rpc};
 use nomic_client::Client as PegClient;
 use nomic_primitives::transaction::{HeaderTransaction, Transaction};
@@ -22,6 +25,7 @@ pub enum RelayerState {
     BroadcastHeaderTransactions {
         header_transactions: Vec<HeaderTransaction>,
     },
+    RelayDeposits,
     Failure {
         event: RelayerEvent,
     },
@@ -50,6 +54,8 @@ pub enum RelayerEvent {
     },
     BroadcastHeaderTransactionsSuccess,
     BroadcastHeaderTransactionsFailure,
+    RelayDepositsSuccess,
+    RelayDepositsFailure,
     Restart,
 }
 
@@ -79,7 +85,7 @@ impl RelayerState {
                 header_transactions,
             },
             (BroadcastHeaderTransactions { .. }, BroadcastHeaderTransactionsSuccess) => {
-                FetchPegBlockHashes
+                RelayDeposits {}
             }
             (
                 BroadcastHeaderTransactions {
@@ -89,6 +95,8 @@ impl RelayerState {
             ) => BroadcastHeaderTransactions {
                 header_transactions,
             },
+            (RelayDeposits, RelayDepositsSuccess) => FetchPegBlockHashes,
+            (RelayDeposits, RelayDepositsFailure) => InitializeBitcoinRpc,
             // Restart loop on failure
             (Failure { .. }, Restart) => InitializeBitcoinRpc,
             (_, event) => Failure { event },
@@ -198,6 +206,24 @@ impl RelayerStateMachine {
                 }
             }
 
+            RelayDeposits => {
+                let rpc = match self.rpc.as_ref() {
+                    Some(rpc) => rpc,
+                    None => return RelayDepositsFailure {},
+                };
+
+                let peg_client = match self.peg_client.as_mut() {
+                    Some(peg_client) => peg_client,
+                    None => return RelayDepositsFailure {},
+                };
+                // TODO: get possible addresses from relayer address pool server
+                let possible_addresses: Vec<Vec<u8>> = vec![];
+                match relay_deposits(possible_addresses, rpc, peg_client) {
+                    Ok(_) => RelayDepositsSuccess,
+                    Err(_) => RelayDepositsFailure,
+                }
+            }
+
             Failure { event } => {
                 println!("Entered failure state");
                 println!("failure event: {:?}", event);
@@ -207,26 +233,18 @@ impl RelayerStateMachine {
     }
 }
 
-pub struct RelayerError {}
-
-impl RelayerError {
-    fn new() -> Self {
-        RelayerError {}
-    }
-}
-
-pub fn make_rpc_client() -> Result<Client, RpcError> {
-    let rpc_user = env::var("BTC_RPC_USER").unwrap();
-    let rpc_pass = env::var("BTC_RPC_PASS").unwrap();
+pub fn make_rpc_client() -> Result<Client> {
+    let rpc_user = env::var("BTC_RPC_USER")?;
+    let rpc_pass = env::var("BTC_RPC_PASS")?;
     let rpc_auth = Auth::UserPass(rpc_user, rpc_pass);
     let rpc_url = "http://localhost:18332";
-    Client::new(rpc_url.to_string(), rpc_auth)
+    Ok(Client::new(rpc_url.to_string(), rpc_auth)?)
 }
 
 /// Iterate over peg hashes, starting from the tip and going backwards.
 /// The first hash that we find that's in our full node's longest chain
 /// is considered the common ancestor.
-pub fn compute_common_ancestor(rpc: &Client, peg_hashes: &[Hash]) -> Result<Hash, RelayerError> {
+pub fn compute_common_ancestor(rpc: &Client, peg_hashes: &[Hash]) -> Result<Hash> {
     for hash in peg_hashes.iter().rev() {
         let rpc_response = rpc.get_block_header_verbose(hash);
         match rpc_response {
@@ -238,12 +256,12 @@ pub fn compute_common_ancestor(rpc: &Client, peg_hashes: &[Hash]) -> Result<Hash
                 if err.to_string() == "JSON-RPC error: JSON decode error: invalid value: integer `-1`, expected u32" {
                     continue;
                 }
-                return Err(RelayerError::new());
+                bail!("Failed to compute common ancestor");
             }
         }
     }
 
-    Err(RelayerError::new())
+    bail!("Failed to compute common ancestor");
 }
 
 /// Fetch all the Bitcoin block headers that connect the peg zone to the tip of Bitcoind's longest
@@ -251,7 +269,7 @@ pub fn compute_common_ancestor(rpc: &Client, peg_hashes: &[Hash]) -> Result<Hash
 pub fn fetch_linking_headers(
     rpc: &Client,
     common_block_hash: Hash,
-) -> Result<Vec<bitcoin::BlockHeader>, RpcError> {
+) -> Result<Vec<bitcoin::BlockHeader>> {
     // Start at bitcoind's best block
     let best_block_hash = rpc.get_best_block_hash()?;
     let mut headers: Vec<bitcoin::BlockHeader> = Vec::new();
@@ -302,12 +320,9 @@ pub fn build_header_transactions(
 pub fn broadcast_header_transactions(
     peg_client: &mut PegClient,
     header_transactions: Vec<HeaderTransaction>,
-) -> Result<(), RelayerError> {
+) -> Result<()> {
     for header_transaction in header_transactions {
-        match peg_client.send(Transaction::Header(header_transaction)) {
-            //Err(_) => return Err(RelayerError::new()),
-            _ => (),
-        };
+        peg_client.send(Transaction::Header(header_transaction))?;
     }
     Ok(())
 }

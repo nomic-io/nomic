@@ -71,6 +71,19 @@ impl Application for App {
         }
     }
 
+    fn begin_block(
+        &self,
+        store: &mut dyn Store,
+        req: RequestBeginBlock
+    ) -> OrgaResult<ResponseBeginBlock> {
+        let header = req.get_header().clone();
+        let action = Action::BeginBlock(header);
+        let mut validators = read_validators(store);
+        run(store, action, &mut validators)?;
+        write_validators(store, validators)?;
+        Ok(Default::default())
+    }
+
     fn end_block(
         &self,
         store: &mut dyn Store,
@@ -82,14 +95,13 @@ impl Application for App {
             let mut validator_update = ValidatorUpdate::new();
             let mut pub_key = PubKey::new();
             pub_key.set_data(pub_key_bytes);
-            pub_key.set_field_type(String::from("ed25519"));
+            pub_key.set_field_type(String::from("secp256k1"));
             validator_update.set_pub_key(pub_key);
             validator_update.set_power(power as i64);
             validator_updates.push(validator_update);
         }
 
         let mut response = ResponseEndBlock::new();
-
         response.set_validator_updates(validator_updates.into());
         Ok(response)
     }

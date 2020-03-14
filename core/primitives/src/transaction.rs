@@ -45,12 +45,6 @@ fn decode_partial_merkle_tree<'de, D: Deserializer<'de>>(
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IncludedTx {
-    pub index: u32,
-    pub tx: bitcoin::Transaction,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DepositTransaction {
     pub height: u32,
     #[serde(
@@ -58,7 +52,7 @@ pub struct DepositTransaction {
         deserialize_with = "decode_partial_merkle_tree"
     )]
     pub proof: bitcoin::util::merkleblock::PartialMerkleTree,
-    pub txs: Vec<IncludedTx>,
+    pub tx: bitcoin::Transaction,
+    pub block_index: u32,
+    pub recipients: Vec<Vec<u8>>
 }
-
-impl DepositTransaction {}
