@@ -6,7 +6,7 @@ use failure::bail;
 use nomic_bitcoin::{bitcoin, EnrichedHeader};
 use nomic_primitives::transaction::Transaction;
 use nomic_primitives::{Error, Result};
-use nomic_signatory_set::{Signatory, SignatorySet};
+use nomic_signatory_set::{Signatory, SignatorySet, SignatorySetSnapshot};
 use nomic_work::work;
 use orga::Store;
 use sha2::{Digest, Sha256};
@@ -26,7 +26,35 @@ pub fn run(
 ) -> Result<()> {
     match action {
         Action::BeginBlock(header) => {
-            
+            match store.get(b"signatories")? {
+                None => {
+                    // init signatories/prev_signatories
+                    let snapshot = SignatorySetSnapshot {
+                        time: header.get_time().get_seconds() as u64,
+                        signatories: signatories_from_validators(validators)?
+                    };
+                    let signatories_bytes = snapshot.encode()?;
+                    store.put(b"signatories".to_vec(), signatories_bytes.clone())?;
+                    store.put(b"prev_signatories".to_vec(), signatories_bytes)?;
+                },
+                Some(signatories_bytes) => {
+                    // check if signatories should be updated
+                    let signatory_time = SignatorySetSnapshot::decode(
+                        signatories_bytes.as_slice()
+                    )?.time;
+                    let time = header.get_time().get_seconds() as u64;
+                    let elapsed = time - signatory_time;
+                    if elapsed >= SIGNATORY_CHANGE_INTERVAL {
+                        let snapshot = SignatorySetSnapshot {
+                            time,
+                            signatories: signatories_from_validators(validators)?
+                        };
+                        let new_signatories_bytes = snapshot.encode()?;
+                        store.put(b"signatories".to_vec(), new_signatories_bytes)?;
+                        store.put(b"prev_signatories".to_vec(), signatories_bytes)?;
+                    }
+                }
+            }
         },
         Action::Transaction(transaction) => match transaction {
             Transaction::WorkProof(work_transaction) => {
@@ -146,6 +174,7 @@ fn signatories_from_validators(validators: &BTreeMap<Vec<u8>, u64>) -> Result<Si
 
 /// Called once at genesis to write some data to the store.
 pub fn initialize(store: &mut dyn Store) -> Result<()> {
+    // TODO: this should be an action
     let checkpoint = get_checkpoint_header();
     let mut header_cache = HeaderCache::new(bitcoin_network, store);
 
@@ -167,12 +196,15 @@ mod tests {
     use super::*;
     use crate::Action;
     use nomic_primitives::transaction::*;
+    use nomic_signatory_set::{Signatory, SignatorySet, SignatorySetSnapshot};
     use bitcoin::Network::Testnet as bitcoin_network;
     use bitcoin::util::hash::bitcoin_merkle_root;
     use bitcoin::util::merkleblock::PartialMerkleTree;
     use bitcoin::consensus::encode as bitcoin_encode;
-    use orga::MapStore;
+    use orga::{MapStore, abci::messages::Header as TendermintHeader};
     use std::collections::{BTreeMap, HashSet};
+    use protobuf::well_known_types::Timestamp;
+    use orga::Read;
 
     fn mock_validator_set() -> BTreeMap<Vec<u8>, u64> {
         let mut vals = BTreeMap::new();
@@ -252,6 +284,90 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(header.stored.header, chkpt.header);
+    }
+
+    #[test]
+    fn begin_block() {
+        let tx = build_tx(vec![
+            build_txout(100_000_000, vec![].into())
+        ]);
+        let block = build_block(vec![ tx.clone() ]);
+        let mut net = MockNet::new(block.header.clone());
+
+        // initial snapshot
+        let mut header: TendermintHeader = Default::default();
+        let mut timestamp = Timestamp::new();
+        timestamp.set_seconds(123);
+        header.set_time(timestamp);
+        let action = Action::BeginBlock(header);
+        run(&mut net.store, action, &mut net.validators).unwrap();
+        let mut expected_signatories = SignatorySet::new();
+        expected_signatories.set(Signatory {
+            pubkey: bitcoin::PublicKey::from_slice(
+                &[3,148,217,3,10,128,64,14,129,125,33,213,163,104,0,227,122,136,27,45,207,44,64,24,35,166,166,118,25,12,200,183,98]
+            ).unwrap(),
+            voting_power: 100
+        });
+        assert_eq!(
+            net.store.get(b"signatories").unwrap().unwrap(),
+            SignatorySetSnapshot {
+                time: 123,
+                signatories: expected_signatories
+            }.encode().unwrap()
+        );
+
+        // changed validator set, should be same sig set
+        net.validators.insert(vec![
+            2,120,15,192,99,177,43,235,23,134,193,123,205,196,253,121,49,80,163,93,230,224,193,88,89,18,15,145,105,217,229,114,148
+        ], 555);
+        let mut header: TendermintHeader = Default::default();
+        let mut timestamp = Timestamp::new();
+        timestamp.set_seconds(456);
+        header.set_time(timestamp);
+        let action = Action::BeginBlock(header);
+        run(&mut net.store, action, &mut net.validators).unwrap();
+        let mut expected_signatories = SignatorySet::new();
+        expected_signatories.set(Signatory {
+            pubkey: bitcoin::PublicKey::from_slice(
+                &[3,148,217,3,10,128,64,14,129,125,33,213,163,104,0,227,122,136,27,45,207,44,64,24,35,166,166,118,25,12,200,183,98]
+            ).unwrap(),
+            voting_power: 100
+        });
+        assert_eq!(
+            net.store.get(b"signatories").unwrap().unwrap(),
+            SignatorySetSnapshot {
+                time: 123,
+                signatories: expected_signatories
+            }.encode().unwrap()
+        );
+
+        // lots of time has passed, signatory set should be updated
+        let mut header: TendermintHeader = Default::default();
+        let mut timestamp = Timestamp::new();
+        timestamp.set_seconds(1_000_000_000);
+        header.set_time(timestamp);
+        let action = Action::BeginBlock(header);
+        run(&mut net.store, action, &mut net.validators).unwrap();
+        let mut expected_signatories = SignatorySet::new();
+        expected_signatories.set(Signatory {
+            pubkey: bitcoin::PublicKey::from_slice(
+                &[2,120,15,192,99,177,43,235,23,134,193,123,205,196,253,121,49,80,163,93,230,224,193,88,89,18,15,145,105,217,229,114,148]
+            ).unwrap(),
+            voting_power: 555
+        });
+        expected_signatories.set(Signatory {
+            pubkey: bitcoin::PublicKey::from_slice(
+                &[3,148,217,3,10,128,64,14,129,125,33,213,163,104,0,227,122,136,27,45,207,44,64,24,35,166,166,118,25,12,200,183,98]
+            ).unwrap(),
+            voting_power: 100
+        });
+        assert_eq!(
+            net.store.get(b"signatories").unwrap().unwrap(),
+            SignatorySetSnapshot {
+                time: 1_000_000_000,
+                signatories: expected_signatories
+            }.encode().unwrap()
+        );
     }
 
     #[test]

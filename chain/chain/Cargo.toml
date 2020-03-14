@@ -21,3 +21,6 @@ merk = "1.0.0-alpha.9"
 sha2 = "0.8.0"
 failure = "0.1.6"
 
+[dev-dependencies]
+protobuf = "2.10.1"
+

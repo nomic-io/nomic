@@ -1412,6 +1412,7 @@ dependencies = [
  "nomic-signatory-set",
  "nomic-work",
  "orga",
+ "protobuf",
  "serde",
  "serde_derive",
  "serde_json",
@@ -1481,6 +1482,7 @@ dependencies = [
  "nomic-primitives",
  "secp256k1 0.17.2",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
