@@ -129,7 +129,14 @@ pub fn run(
                 }
 
                 // Ensure tx contains deposit outputs
-                let signatory_set = signatories_from_validators(validators)?;
+                let signatory_sets = [
+                    SignatorySetSnapshot::decode(
+                        store.get(b"signatories")?.unwrap()
+                            .as_slice()
+                        )?.signatories,
+                    SignatorySetSnapshot::decode(
+                        store.get(b"prev_signatories")?.unwrap().as_slice())?.signatories
+                ];
                 let mut recipients = deposit_transaction.recipients
                     .iter()
                     .peekable();
@@ -139,13 +146,15 @@ pub fn run(
                         Some(recipient) => recipient,
                         None => bail!("Consumed all recipients")
                     };
-                    let expected_script = nomic_signatory_set::output_script(
-                        &signatory_set,
-                        recipient.to_vec()
-                    );
-                    if txout.script_pubkey == expected_script {
-                        contains_deposit_outputs = true;
-                        break;
+                    for signatory_set in signatory_sets.iter() {
+                        let expected_script = nomic_signatory_set::output_script(
+                            signatory_set,
+                            recipient.to_vec()
+                        );
+                        if txout.script_pubkey == expected_script {
+                            contains_deposit_outputs = true;
+                            break;
+                        }
                     }
                 }
                 if !contains_deposit_outputs {
@@ -226,6 +235,15 @@ mod tests {
             };
             net.spv().add_header_raw(initial_header, 0)
                 .expect("failed to create mock net");
+
+            // initial beginblock
+            let mut header: TendermintHeader = Default::default();
+            let mut timestamp = Timestamp::new();
+            timestamp.set_seconds(123);
+            header.set_time(timestamp);
+            let action = Action::BeginBlock(header);
+            run(&mut net.store, action, &mut net.validators).unwrap();
+
             net
         }
 
@@ -294,13 +312,7 @@ mod tests {
         let block = build_block(vec![ tx.clone() ]);
         let mut net = MockNet::new(block.header.clone());
 
-        // initial snapshot
-        let mut header: TendermintHeader = Default::default();
-        let mut timestamp = Timestamp::new();
-        timestamp.set_seconds(123);
-        header.set_time(timestamp);
-        let action = Action::BeginBlock(header);
-        run(&mut net.store, action, &mut net.validators).unwrap();
+        // initial signatories
         let mut expected_signatories = SignatorySet::new();
         expected_signatories.set(Signatory {
             pubkey: bitcoin::PublicKey::from_slice(
