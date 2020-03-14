@@ -118,13 +118,13 @@ impl Client {
     }
 
     pub fn get_signatory_sets(&mut self) -> OrgaResult<Vec<SignatorySet>> {
-        let store = self.remote_store;
+        let store = &mut self.remote_store;
         let get_signatory_set = |key| {
             let signatory_set_bytes = match store.get(key)? {
                 Some(bytes) => bytes,
                 None => bail!("Signatory set was not available in the store"),
             };
-            SignatorySetSnapshot::from_bytes(signatory_set_bytes)?.signatories
+            Ok(SignatorySetSnapshot::decode(&signatory_set_bytes)?.signatories)
         };
 
         Ok(vec![

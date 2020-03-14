@@ -1,9 +1,11 @@
 use crate::Result;
 use bitcoin::Network::Testnet as bitcoin_network;
 use bitcoincore_rpc::{Client, RpcApi};
+use log::warn;
 use nomic_bitcoin::{bitcoin, bitcoincore_rpc};
 use nomic_client::Client as PegClient;
 use nomic_primitives::transaction::{DepositTransaction, Transaction};
+use nomic_signatory_set::SignatorySet;
 use std::collections::HashSet;
 /// Scan target address for any deposit transactions
 fn scan_for_deposits(
@@ -42,7 +44,7 @@ fn get_transaction_by_txid(btc_rpc: &Client, txid: bitcoin::Txid) -> Result<Verb
 fn build_deposit_tx(
     btc_rpc: &Client,
     tx: VerboseTransaction,
-    recipients: Vec<[u8; 32]>,
+    recipients: &[Vec<u8>],
 ) -> Transaction {
     let block = btc_rpc.get_block(&tx.blockhash).unwrap();
     let mut txids = HashSet::new();
@@ -54,7 +56,7 @@ fn build_deposit_tx(
         proof,
         tx: tx.tx,
         block_index: tx.index,
-        recipients,
+        recipients: recipients.to_vec(),
     };
 
     Transaction::Deposit(deposit_tx)
@@ -62,33 +64,47 @@ fn build_deposit_tx(
 
 fn possible_bitcoin_addresses(
     signatory_sets: Vec<SignatorySet>,
-    possible_recipients: Vec<[u8; 32]>,
-) -> impl Iterator<Item = (bitcoin::Address, [u8; 32])> {
-    signatory_sets
+    possible_recipients: &[Vec<u8>],
+) -> Vec<(bitcoin::Address, Vec<u8>)> {
+    let result = signatory_sets
         .iter()
         .map(|signatory_set| {
-            possible_recipients.iter().map(|possible_recipient| {
+            possible_recipients.iter().map(move |possible_recipient| {
                 let script =
-                    nomic_signatory_set::output_script(signatory_set, possible_recipient.to_vec());
-                bitcoin::Address::from_script(script, bitcoin_network)
+                    nomic_signatory_set::output_script(&signatory_set, possible_recipient.clone());
+                (
+                    bitcoin::Address::from_script(&script, bitcoin_network).unwrap(),
+                    possible_recipient.clone(),
+                )
             })
         })
         .flatten()
+        .collect();
+
+    result
 }
 
 pub fn relay_deposits(
-    possible_recipients: Vec<[u8; 32]>,
+    possible_recipients: Vec<Vec<u8>>,
     btc_rpc: &Client,
     peg_client: &mut PegClient,
 ) -> Result<()> {
     let signatory_sets = peg_client.get_signatory_sets()?;
-    for (address, recipient) in possible_bitcoin_addresses(signatory_sets, possible_recipients) {
+    for (address, recipient) in
+        possible_bitcoin_addresses(signatory_sets, possible_recipients.as_slice())
+    {
         let btc_deposit_txs = scan_for_deposits(btc_rpc, address)?;
+        let recipients = &[recipient];
         btc_deposit_txs
             .into_iter()
-            .map(|btc_deposit_tx| build_deposit_tx(&btc_rpc, btc_deposit_tx, recipient))
+            .map(|btc_deposit_tx| build_deposit_tx(&btc_rpc, btc_deposit_tx, recipients))
             .for_each(|tx| {
-                peg_client.send(tx);
+                let result = peg_client.send(tx);
+                // Swallow error; the relayer will just retry
+                match result {
+                    Err(e) => warn!("Error sending deposit tx: {:?}", e),
+                    _ => (),
+                }
             });
     }
     Ok(())

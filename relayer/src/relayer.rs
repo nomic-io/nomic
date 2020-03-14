@@ -5,8 +5,7 @@ use bitcoincore_rpc::{Auth, Client, RpcApi};
 use failure::bail;
 use nomic_bitcoin::{bitcoin, bitcoincore_rpc};
 use nomic_client::Client as PegClient;
-use nomic_primitives::transaction::{DepositTransaction, HeaderTransaction, Transaction};
-use std::collections::HashSet;
+use nomic_primitives::transaction::{HeaderTransaction, Transaction};
 use std::{env, thread, time};
 
 #[derive(Debug)]
@@ -213,12 +212,12 @@ impl RelayerStateMachine {
                     None => return RelayDepositsFailure {},
                 };
 
-                let mut peg_client = match self.peg_client.as_mut() {
+                let peg_client = match self.peg_client.as_mut() {
                     Some(peg_client) => peg_client,
                     None => return RelayDepositsFailure {},
                 };
                 // TODO: get possible addresses from relayer address pool server
-                let possible_addresses: Vec<&bitcoin::Address> = vec![];
+                let possible_addresses: Vec<Vec<u8>> = vec![];
                 match relay_deposits(possible_addresses, rpc, peg_client) {
                     Ok(_) => RelayDepositsSuccess,
                     Err(_) => RelayDepositsFailure,
