@@ -1453,6 +1453,7 @@ dependencies = [
  "nomic-bitcoin",
  "nomic-chain",
  "nomic-primitives",
+ "nomic-signatory-set",
  "nomic-work",
  "reqwest",
  "serde",
@@ -2013,10 +2014,12 @@ checksum = "1132f845907680735a84409c3bebc64d1364a5683ffbce899550cd09d5eaefc1"
 name = "relayer"
 version = "0.1.0"
 dependencies = [
+ "failure",
  "log 0.4.8",
  "nomic-bitcoin",
  "nomic-client",
  "nomic-primitives",
+ "nomic-signatory-set",
  "tendermint",
 ]
 

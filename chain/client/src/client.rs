@@ -1,9 +1,11 @@
 use bitcoin::hash_types::BlockHash as Hash;
 use bitcoin::Network::Testnet as bitcoin_network;
+use failure::bail;
 
 use nomic_bitcoin::bitcoin;
 use nomic_chain::{orga, spv};
 use nomic_primitives::transaction::{Transaction, WorkProofTransaction};
+use nomic_signatory_set::{SignatorySet, SignatorySetSnapshot};
 use orga::{
     abci::TendermintClient, merkstore::Client as MerkStoreClient, Read, Result as OrgaResult, Write,
 };
@@ -113,6 +115,22 @@ impl Client {
         } else {
             panic!("Unable to fetch Bitcoin tip header");
         }
+    }
+
+    pub fn get_signatory_sets(&mut self) -> OrgaResult<Vec<SignatorySet>> {
+        let store = self.remote_store;
+        let get_signatory_set = |key| {
+            let signatory_set_bytes = match store.get(key)? {
+                Some(bytes) => bytes,
+                None => bail!("Signatory set was not available in the store"),
+            };
+            SignatorySetSnapshot::from_bytes(signatory_set_bytes)?.signatories
+        };
+
+        Ok(vec![
+            get_signatory_set(b"signatories")?,
+            get_signatory_set(b"prev_signatories")?,
+        ])
     }
 }
 
