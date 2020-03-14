@@ -44,8 +44,6 @@ fn decode_partial_merkle_tree<'de, D: Deserializer<'de>>(
     Ok(bytes)
 }
 
-type Address = [u8; 32];
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DepositTransaction {
     pub height: u32,
@@ -56,5 +54,5 @@ pub struct DepositTransaction {
     pub proof: bitcoin::util::merkleblock::PartialMerkleTree,
     pub tx: bitcoin::Transaction,
     pub block_index: u32,
-    pub recipients: Vec<Address>
+    pub recipients: Vec<Vec<u8>>
 }

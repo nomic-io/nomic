@@ -146,6 +146,9 @@ pub fn run(
                         Some(recipient) => recipient,
                         None => bail!("Consumed all recipients")
                     };
+                    if recipient.len() != 32 {
+                        bail!("Recipient must be 32 bytes");
+                    }
                     for signatory_set in signatory_sets.iter() {
                         let expected_script = nomic_signatory_set::output_script(
                             signatory_set,
@@ -459,7 +462,7 @@ mod tests {
             proof,
             tx: tx.clone(),
             block_index: 0,
-            recipients: vec![[123; 32]]
+            recipients: vec![vec![123; 32]]
         };
         let action = Action::Transaction(Transaction::Deposit(deposit));
 
@@ -491,7 +494,7 @@ mod tests {
             proof,
             tx: tx.clone(),
             block_index: 0,
-            recipients: vec![[123; 32]]
+            recipients: vec![vec![123; 32]]
         };
         let action = Action::Transaction(Transaction::Deposit(deposit));
 
@@ -553,7 +556,7 @@ mod tests {
             proof,
             tx: tx.clone(),
             block_index: 0,
-            recipients: vec![[123; 32]]
+            recipients: vec![vec![123; 32]]
         };
         let action = Action::Transaction(Transaction::Deposit(deposit));
 
