@@ -1,10 +1,12 @@
+use crate::deposit::relay_deposits;
 use crate::Result;
 use bitcoin::hash_types::BlockHash as Hash;
 use bitcoincore_rpc::{Auth, Client, RpcApi};
 use failure::bail;
 use nomic_bitcoin::{bitcoin, bitcoincore_rpc};
 use nomic_client::Client as PegClient;
-use nomic_primitives::transaction::{HeaderTransaction, Transaction};
+use nomic_primitives::transaction::{DepositTransaction, HeaderTransaction, Transaction};
+use std::collections::HashSet;
 use std::{env, thread, time};
 
 #[derive(Debug)]
@@ -24,6 +26,7 @@ pub enum RelayerState {
     BroadcastHeaderTransactions {
         header_transactions: Vec<HeaderTransaction>,
     },
+    RelayDeposits,
     Failure {
         event: RelayerEvent,
     },
@@ -52,6 +55,8 @@ pub enum RelayerEvent {
     },
     BroadcastHeaderTransactionsSuccess,
     BroadcastHeaderTransactionsFailure,
+    RelayDepositsSuccess,
+    RelayDepositsFailure,
     Restart,
 }
 
@@ -81,7 +86,7 @@ impl RelayerState {
                 header_transactions,
             },
             (BroadcastHeaderTransactions { .. }, BroadcastHeaderTransactionsSuccess) => {
-                FetchPegBlockHashes
+                RelayDeposits {}
             }
             (
                 BroadcastHeaderTransactions {
@@ -91,6 +96,8 @@ impl RelayerState {
             ) => BroadcastHeaderTransactions {
                 header_transactions,
             },
+            (RelayDeposits, RelayDepositsSuccess) => FetchPegBlockHashes,
+            (RelayDeposits, RelayDepositsFailure) => InitializeBitcoinRpc,
             // Restart loop on failure
             (Failure { .. }, Restart) => InitializeBitcoinRpc,
             (_, event) => Failure { event },
@@ -197,6 +204,24 @@ impl RelayerStateMachine {
                 match broadcast_header_transactions(peg_client, header_transactions.clone()) {
                     Ok(_) => BroadcastHeaderTransactionsSuccess,
                     Err(_) => BroadcastHeaderTransactionsFailure,
+                }
+            }
+
+            RelayDeposits => {
+                let rpc = match self.rpc.as_ref() {
+                    Some(rpc) => rpc,
+                    None => return RelayDepositsFailure {},
+                };
+
+                let mut peg_client = match self.peg_client.as_mut() {
+                    Some(peg_client) => peg_client,
+                    None => return RelayDepositsFailure {},
+                };
+                // TODO: get possible addresses from relayer address pool server
+                let possible_addresses: Vec<&bitcoin::Address> = vec![];
+                match relay_deposits(possible_addresses, rpc, peg_client) {
+                    Ok(_) => RelayDepositsSuccess,
+                    Err(_) => RelayDepositsFailure,
                 }
             }
 
