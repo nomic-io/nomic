@@ -1,7 +1,6 @@
 use crate::spv::headercache::HeaderCache;
 use crate::Action;
 use bitcoin::Network::Testnet as bitcoin_network;
-use bitcoin::Txid;
 use failure::bail;
 use nomic_bitcoin::{bitcoin, EnrichedHeader};
 use nomic_primitives::transaction::Transaction;
@@ -11,6 +10,7 @@ use nomic_work::work;
 use orga::Store;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
+use std::convert::TryInto;
 
 const MIN_WORK: u64 = 1 << 20;
 const SIGNATORY_CHANGE_INTERVAL: u64 = 60 * 60 * 24 * 14;
@@ -152,6 +152,16 @@ pub fn run(
                             recipient.to_vec()
                         );
                         if txout.script_pubkey == expected_script {
+                            // mint coins
+                            let key = [b"balances/", recipient.as_ref()].concat();
+                            let balance = store.get(key.as_slice())?
+                                .map_or(0, |bytes| {
+                                    let bytes = bytes.as_slice().try_into().unwrap();
+                                    u64::from_be_bytes(bytes)
+                                });
+                            let balance = balance + txout.value;
+                            store.put(key, balance.to_be_bytes().to_vec());
+
                             contains_deposit_outputs = true;
                             break;
                         }
@@ -163,8 +173,6 @@ pub fn run(
 
                 // Deposit is valid, mark transaction as processed
                 store.put(tx_key, vec![])?;
-
-                // TODO: mint coins
             }
         },
     };
@@ -550,5 +558,11 @@ mod tests {
         let action = Action::Transaction(Transaction::Deposit(deposit));
 
         run(&mut net.store, action.clone(), &mut net.validators).unwrap();
+
+        // check recipient balance
+        assert_eq!(
+            net.store.get(&[98, 97, 108, 97, 110, 99, 101, 115, 47, 123, 123, 123, 123, 123, 123, 123, 123,  123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123 ]).unwrap(),
+            Some(100_000_000u64.to_be_bytes().to_vec())
+        );
     }
 }
