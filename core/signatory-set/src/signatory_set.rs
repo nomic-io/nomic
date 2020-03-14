@@ -4,7 +4,7 @@ use nomic_primitives::Result;
 use serde::{Serialize, Deserialize};
 use std::collections::{BTreeSet, HashMap};
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Signatory {
     pub voting_power: u32,
     pub pubkey: PublicKey,
@@ -19,7 +19,7 @@ impl Signatory {
     }
 }
 
-#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct SignatorySet {
     map: HashMap<PublicKey, Signatory>,
     set: BTreeSet<Signatory>,
@@ -66,20 +66,58 @@ impl SignatorySet {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
+struct SerializableSignatorySetSnapshot {
+    time: u64,
+    signatories: Vec<(Vec<u8>, u32)>
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub struct SignatorySetSnapshot {
     pub time: u64,
     pub signatories: SignatorySet
 }
 
 impl SignatorySetSnapshot {
+    fn to_serializable(&self) -> SerializableSignatorySetSnapshot {
+        let signatories = self.signatories
+            .iter()
+            .map(|signatory| (
+                signatory.pubkey.to_bytes(),
+                signatory.voting_power
+            ))
+            .collect();
+        SerializableSignatorySetSnapshot {
+            time: self.time,
+            signatories
+        }
+    }
+
+    fn from_serializable(
+        serializable: &SerializableSignatorySetSnapshot
+    ) -> Result<Self> {
+        let mut signatories = SignatorySet::new();
+        for (pubkey_bytes, voting_power) in serializable.signatories.iter() {
+            signatories.set(Signatory {
+                pubkey: PublicKey::from_slice(pubkey_bytes)?,
+                voting_power: *voting_power
+            });
+        }
+        Ok(SignatorySetSnapshot {
+            time: serializable.time,
+            signatories
+        })
+    }
+
     pub fn decode(bytes: &[u8]) -> Result<Self> {
-        bincode::deserialize(bytes)
-            .map_err(|err| failure::format_err!("{}", err))
+        let serializable = bincode::deserialize(bytes)
+            .map_err(|err| failure::format_err!("{}", err))?;
+        Ok(Self::from_serializable(&serializable)?)
     }
 
     pub fn encode(&self) -> Result<Vec<u8>> {
-        bincode::serialize(self)
+        let serializable = self.to_serializable();
+        bincode::serialize(&serializable)
             .map_err(|err| failure::format_err!("{}", err))
     }
 }
@@ -141,7 +179,7 @@ mod tests {
         };
         assert_eq!(
             snapshot.encode().unwrap(),
-            vec![123, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 33, 0, 0, 0, 0, 0, 0, 0, 2, 77, 75, 108, 209, 54, 16, 50, 202, 155, 210, 174, 185, 217, 0, 170, 77, 69, 217, 234, 216, 10, 201, 66, 51, 116, 196, 81, 167, 37, 77, 7, 102, 100, 0, 0, 0, 33, 0, 0, 0, 0, 0, 0, 0, 2, 77, 75, 108, 209, 54, 16, 50, 202, 155, 210, 174, 185, 217, 0, 170, 77, 69, 217, 234, 216, 10, 201, 66, 51, 116, 196, 81, 167, 37, 77, 7, 102, 33, 0, 0, 0, 0, 0, 0, 0, 3, 27, 132, 197, 86, 123, 18, 100, 64, 153, 93, 62, 213, 170, 186, 5, 101, 215, 30, 24, 52, 96, 72, 25, 255, 156, 23, 245, 233, 213, 221, 7, 143, 200, 0, 0, 0, 33, 0, 0, 0, 0, 0, 0, 0, 3, 27, 132, 197, 86, 123, 18, 100, 64, 153, 93, 62, 213, 170, 186, 5, 101, 215, 30, 24, 52, 96, 72, 25, 255, 156, 23, 245, 233, 213, 221, 7, 143, 2, 0, 0, 0, 0, 0, 0, 0, 100, 0, 0, 0, 33, 0, 0, 0, 0, 0, 0, 0, 2, 77, 75, 108, 209, 54, 16, 50, 202, 155, 210, 174, 185, 217, 0, 170, 77, 69, 217, 234, 216, 10, 201, 66, 51, 116, 196, 81, 167, 37, 77, 7, 102, 200, 0, 0, 0, 33, 0, 0, 0, 0, 0, 0, 0, 3, 27, 132, 197, 86, 123, 18, 100, 64, 153, 93, 62, 213, 170, 186, 5, 101, 215, 30, 24, 52, 96, 72, 25, 255, 156, 23, 245, 233, 213, 221, 7, 143, 44, 1, 0, 0]
+            vec![123, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 33, 0, 0, 0, 0, 0, 0, 0, 3, 27, 132, 197, 86, 123, 18, 100, 64, 153, 93, 62, 213, 170, 186, 5, 101, 215, 30, 24, 52, 96, 72, 25, 255, 156, 23, 245, 233, 213, 221, 7, 143, 200, 0, 0, 0, 33, 0, 0, 0, 0, 0, 0, 0, 2, 77, 75, 108, 209, 54, 16, 50, 202, 155, 210, 174, 185, 217, 0, 170, 77, 69, 217, 234, 216, 10, 201, 66, 51, 116, 196, 81, 167, 37, 77, 7, 102, 100, 0, 0, 0]
         );
     }
 
@@ -156,7 +194,7 @@ mod tests {
             signatories: set
         };
 
-        let bytes = vec![123, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 33, 0, 0, 0, 0, 0, 0, 0, 2, 77, 75, 108, 209, 54, 16, 50, 202, 155, 210, 174, 185, 217, 0, 170, 77, 69, 217, 234, 216, 10, 201, 66, 51, 116, 196, 81, 167, 37, 77, 7, 102, 100, 0, 0, 0, 33, 0, 0, 0, 0, 0, 0, 0, 2, 77, 75, 108, 209, 54, 16, 50, 202, 155, 210, 174, 185, 217, 0, 170, 77, 69, 217, 234, 216, 10, 201, 66, 51, 116, 196, 81, 167, 37, 77, 7, 102, 33, 0, 0, 0, 0, 0, 0, 0, 3, 27, 132, 197, 86, 123, 18, 100, 64, 153, 93, 62, 213, 170, 186, 5, 101, 215, 30, 24, 52, 96, 72, 25, 255, 156, 23, 245, 233, 213, 221, 7, 143, 200, 0, 0, 0, 33, 0, 0, 0, 0, 0, 0, 0, 3, 27, 132, 197, 86, 123, 18, 100, 64, 153, 93, 62, 213, 170, 186, 5, 101, 215, 30, 24, 52, 96, 72, 25, 255, 156, 23, 245, 233, 213, 221, 7, 143, 2, 0, 0, 0, 0, 0, 0, 0, 100, 0, 0, 0, 33, 0, 0, 0, 0, 0, 0, 0, 2, 77, 75, 108, 209, 54, 16, 50, 202, 155, 210, 174, 185, 217, 0, 170, 77, 69, 217, 234, 216, 10, 201, 66, 51, 116, 196, 81, 167, 37, 77, 7, 102, 200, 0, 0, 0, 33, 0, 0, 0, 0, 0, 0, 0, 3, 27, 132, 197, 86, 123, 18, 100, 64, 153, 93, 62, 213, 170, 186, 5, 101, 215, 30, 24, 52, 96, 72, 25, 255, 156, 23, 245, 233, 213, 221, 7, 143, 44, 1, 0, 0];
+        let bytes = vec![123, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 33, 0, 0, 0, 0, 0, 0, 0, 3, 27, 132, 197, 86, 123, 18, 100, 64, 153, 93, 62, 213, 170, 186, 5, 101, 215, 30, 24, 52, 96, 72, 25, 255, 156, 23, 245, 233, 213, 221, 7, 143, 200, 0, 0, 0, 33, 0, 0, 0, 0, 0, 0, 0, 2, 77, 75, 108, 209, 54, 16, 50, 202, 155, 210, 174, 185, 217, 0, 170, 77, 69, 217, 234, 216, 10, 201, 66, 51, 116, 196, 81, 167, 37, 77, 7, 102, 100, 0, 0, 0];
         assert_eq!(
             SignatorySetSnapshot::decode(bytes.as_slice()).unwrap(),
             expected_snapshot
