@@ -156,14 +156,14 @@ pub fn run(
                         );
                         if txout.script_pubkey == expected_script {
                             // mint coins
-                            let key = [b"balances/", recipient.as_ref()].concat();
+                            let key = [b"balances/", recipient.as_slice()].concat();
                             let balance = store.get(key.as_slice())?
                                 .map_or(0, |bytes| {
                                     let bytes = bytes.as_slice().try_into().unwrap();
                                     u64::from_be_bytes(bytes)
                                 });
                             let balance = balance + txout.value;
-                            store.put(key, balance.to_be_bytes().to_vec());
+                            store.put(key, balance.to_be_bytes().to_vec())?;
 
                             contains_deposit_outputs = true;
                             break;
