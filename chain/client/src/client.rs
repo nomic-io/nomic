@@ -1,7 +1,8 @@
 use crate::Result;
 use bitcoin::hash_types::BlockHash as Hash;
 use bitcoin::Network::Testnet as bitcoin_network;
-use failure::bail;
+use failure::{bail, format_err};
+
 use nomic_bitcoin::bitcoin;
 use nomic_chain::{orga, spv};
 use nomic_primitives::transaction::{Transaction, WorkProofTransaction};
@@ -130,5 +131,11 @@ impl Client {
             get_signatory_set(b"signatories")?,
             get_signatory_set(b"prev_signatories")?,
         ])
+    }
+
+    pub fn get_signatory_set_snapshot(&mut self) -> OrgaResult<SignatorySetSnapshot> {
+        let bytes = self.remote_store.get(b"signatories")?
+            .ok_or(format_err!("Signatory set snapshot was not available in the store"))?;
+        SignatorySetSnapshot::decode(bytes.as_slice())
     }
 }
