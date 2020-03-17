@@ -138,4 +138,17 @@ impl Client {
             .ok_or(format_err!("Signatory set snapshot was not available in the store"))?;
         SignatorySetSnapshot::decode(bytes.as_slice())
     }
+
+    pub fn get_balance(&mut self, pubkey: &bitcoin::PublicKey) -> OrgaResult<u64> {
+        let pubkey_bytes = pubkey.to_bytes();
+        let key = [b"balances/", pubkey_bytes.as_slice()].concat();
+        let value = match self.remote_store.get(key.as_slice())? {
+            Some(value) => value,
+            None => return Ok(0)
+        };
+
+        let mut balance_bytes = [0; 8];
+        balance_bytes.copy_from_slice(value.as_slice());
+        Ok(u64::from_be_bytes(balance_bytes))
+    }
 }
