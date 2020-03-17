@@ -37,7 +37,11 @@ enum SubCommand {
 
     /// Deposit Bitcoin into your sidechain account
     #[clap(name = "deposit")]
-    Deposit(Deposit)
+    Deposit(Deposit),
+
+    /// Displays the balance in your sidechain account
+    #[clap(name = "balance")]
+    Balance(Balance)
 }
 
 #[derive(Clap)]
@@ -54,6 +58,9 @@ struct Worker {}
 
 #[derive(Clap)]
 struct Deposit {}
+
+#[derive(Clap)]
+struct Balance {}
 
 fn main() {
     let opts: Opts = Opts::parse();
@@ -135,6 +142,21 @@ fn main() {
             println!("{} send to this address after it expires or you will risk",
                 "DO NOT".red().bold());
             println!("loss of funds.");
+        }
+        SubCommand::Balance(_) => {
+            let mut client = Client::new("localhost:26657").unwrap();
+
+            let wallet_path = nomic_home.join("wallet.key");
+            let wallet = Wallet::load_or_generate(wallet_path).unwrap();
+
+            let balance = client.get_balance(&wallet.pubkey()).unwrap();
+            let balance = format!(
+                "{}.{:0>8}",
+                balance / 100_000_000,
+                (balance % 100_000_000).to_string()
+            );
+
+            println!("YOUR BALANCE: {} NBTC", balance.cyan().bold());
         }
     }
 }

@@ -30,16 +30,14 @@ impl Wallet {
         Ok(Wallet { privkey })
     }
 
-    pub fn pubkey(&self) -> secp256k1::PublicKey {
+    pub fn pubkey(&self) -> bitcoin::PublicKey {
         let secp = secp256k1::Secp256k1::signing_only();
-        secp256k1::PublicKey::from_secret_key(&secp, &self.privkey)
+        let key = secp256k1::PublicKey::from_secret_key(&secp, &self.privkey);
+        bitcoin::PublicKey { compressed: true, key }
     }
 
     pub fn deposit_address(&self, signatories: &SignatorySet) -> bitcoin::Address {
-        let pubkey_bytes = bitcoin::PublicKey {
-            compressed: true,
-            key: self.pubkey()
-        }.to_bytes();
+        let pubkey_bytes = self.pubkey().to_bytes();
         let script = nomic_signatory_set::output_script(
             signatories,
             pubkey_bytes
