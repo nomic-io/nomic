@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 use std::convert::TryInto;
 
 const MIN_WORK: u64 = 1 << 20;
-const SIGNATORY_CHANGE_INTERVAL: u64 = 60 * 60 * 24 * 14;
+pub const SIGNATORY_CHANGE_INTERVAL: u64 = 60 * 60 * 24 * 7;
 
 /// Main entrypoint to the core bitcoin peg state machine.
 ///
