@@ -1,3 +1,4 @@
+mod address_pool;
 mod deposit;
 mod error;
 

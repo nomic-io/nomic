@@ -1,6 +1,6 @@
 use hex_literal::hex;
 use is_executable::IsExecutable;
-use log::{info, debug};
+use log::{debug, info};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::prelude::*;
@@ -74,16 +74,16 @@ pub fn install(nomic_home: &PathBuf) {
 
 pub fn init(nomic_home: &PathBuf, dev_mode: bool) {
     let tendermint_path = nomic_home.join("tendermint-v0.32.8");
-    
+
     // Initialize Tendermint for testnet
     let run_init = || {
         debug!("Running 'tendermint init'");
         Command::new(&tendermint_path)
-        .arg("init")
-        .arg("--home")
-        .arg(nomic_home.to_str().unwrap())
-        .output()
-        .expect("Failed to initialize Tendermint");
+            .arg("init")
+            .arg("--home")
+            .arg(nomic_home.to_str().unwrap())
+            .output()
+            .expect("Failed to initialize Tendermint");
     };
 
     let key_path = nomic_home.join("config/priv_validator_key.json");
@@ -112,7 +112,7 @@ pub fn init(nomic_home: &PathBuf, dev_mode: bool) {
         let index = genesis.find(pattern).expect("Failed to modify genesis");
         genesis.replace_range(
             index..(index + pattern.len()),
-            "\"pub_key_types\": [\"secp256k1\"]"
+            "\"pub_key_types\": [\"secp256k1\"]",
         );
         genesis
     } else {
@@ -140,8 +140,7 @@ fn gen_validator_key() -> String {
     let (priv_key, pub_key) = secp.generate_keypair(&mut rng);
 
     let pub_key = pub_key.serialize();
-    let priv_key = hex::decode(format!("{}", priv_key))
-        .expect("Failed to parse private key bytes");
+    let priv_key = hex::decode(format!("{}", priv_key)).expect("Failed to parse private key bytes");
 
     format!(
         "{{

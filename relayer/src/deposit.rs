@@ -12,7 +12,7 @@ fn scan_for_deposits(
     btc_rpc: &Client,
     address: bitcoin::Address,
 ) -> Result<Vec<VerboseTransaction>> {
-    let unspent = btc_rpc.list_unspent(None, None, Some(&[address]), None, None)?;
+    let unspent = btc_rpc.list_unspent(Some(2), None, Some(&[address]), None, None)?;
 
     unspent
         .into_iter()
@@ -64,16 +64,16 @@ fn build_deposit_tx(
 
 fn possible_bitcoin_addresses(
     signatory_sets: Vec<SignatorySet>,
-    possible_recipients: &[Vec<u8>],
+    possible_recipients: Vec<Vec<u8>>,
 ) -> Vec<(bitcoin::Address, Vec<u8>)> {
     let result = signatory_sets
         .iter()
         .map(|signatory_set| {
             possible_recipients.iter().map(move |possible_recipient| {
                 let script =
-                    nomic_signatory_set::output_script(&signatory_set, possible_recipient.clone());
+                    nomic_signatory_set::redeem_script(&signatory_set, possible_recipient.clone());
                 (
-                    bitcoin::Address::from_script(&script, bitcoin_network).unwrap(),
+                    bitcoin::Address::p2wsh(&script, bitcoin_network),
                     possible_recipient.clone(),
                 )
             })
@@ -85,14 +85,13 @@ fn possible_bitcoin_addresses(
 }
 
 pub fn relay_deposits(
-    possible_recipients: Vec<Vec<u8>>,
+    possible_recipients: &HashSet<Vec<u8>>,
     btc_rpc: &Client,
-    peg_client: &mut PegClient,
+    peg_client: &PegClient,
 ) -> Result<()> {
     let signatory_sets = peg_client.get_signatory_sets()?;
-    for (address, recipient) in
-        possible_bitcoin_addresses(signatory_sets, possible_recipients.as_slice())
-    {
+    let recipients = possible_recipients.iter().cloned().collect();
+    for (address, recipient) in possible_bitcoin_addresses(signatory_sets, recipients) {
         let btc_deposit_txs = scan_for_deposits(btc_rpc, address)?;
         let recipients = &[recipient];
         btc_deposit_txs
@@ -106,6 +105,19 @@ pub fn relay_deposits(
                     _ => (),
                 }
             });
+    }
+    Ok(())
+}
+
+pub fn import_addresses(
+    possible_recipients: Vec<Vec<u8>>,
+    btc_rpc: &Client,
+    peg_client: &PegClient,
+) -> Result<()> {
+    let signatory_sets = peg_client.get_signatory_sets()?;
+    let recipients = possible_recipients.into_iter().collect();
+    for (address, _) in possible_bitcoin_addresses(signatory_sets, recipients) {
+        btc_rpc.import_address(&address, None, Some(false), None)?;
     }
     Ok(())
 }

@@ -41,10 +41,12 @@ impl Application for App {
                 Ok(_execution_result) => {
                     // TODO: Don't write validators back to store if they haven't changed
                     write_validators(store, validators)?;
-                    Ok(Default::default())
+                    let mut res = ResponseCheckTx::new();
+                    res.set_data(vec![]);
+                    Ok(res)
                 }
 
-                Err(_e) => bail!("error executing tx (check_tx)"),
+                Err(e) => bail!("check tx err: {:?}", e),
             },
 
             Err(_e) => bail!("error deserializing tx (check_tx)"),
@@ -62,7 +64,9 @@ impl Application for App {
             Ok(tx) => match run(store, Action::Transaction(tx), &mut validators) {
                 Ok(_execution_result) => {
                     write_validators(store, validators)?;
-                    Ok(Default::default())
+                    let mut res = ResponseDeliverTx::new();
+                    res.set_data(vec![]);
+                    Ok(res)
                 }
 
                 Err(_e) => bail!("error executing tx (deliver_tx)"),
@@ -74,7 +78,7 @@ impl Application for App {
     fn begin_block(
         &self,
         store: &mut dyn Store,
-        req: RequestBeginBlock
+        req: RequestBeginBlock,
     ) -> OrgaResult<ResponseBeginBlock> {
         let header = req.get_header().clone();
         let action = Action::BeginBlock(header);

@@ -54,5 +54,5 @@ pub struct DepositTransaction {
     pub proof: bitcoin::util::merkleblock::PartialMerkleTree,
     pub tx: bitcoin::Transaction,
     pub block_index: u32,
-    pub recipients: Vec<Vec<u8>>
+    pub recipients: Vec<Vec<u8>>,
 }
