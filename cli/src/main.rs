@@ -2,14 +2,14 @@ mod tendermint;
 mod wallet;
 
 use clap::Clap;
-use log::{info, debug};
+use colored::*;
+use failure::bail;
+use log::{debug, info};
 use nomic_chain::abci_server;
 use nomic_client::Client;
 use nomic_primitives::Result;
 use std::fs;
-use colored::*;
 use wallet::Wallet;
-use failure::bail;
 
 /// Command-line interface for interacting with the Nomic Bitcoin sidechain
 #[derive(Clap)]
@@ -43,7 +43,7 @@ enum SubCommand {
 
     /// Displays the balance in your sidechain account
     #[clap(name = "balance")]
-    Balance(Balance)
+    Balance(Balance),
 }
 
 #[derive(Clap)]
@@ -111,7 +111,8 @@ fn main() {
                 let relayer = "http://localhost:8080";
                 debug!("Sending address to relayer: {}", relayer);
                 let client = reqwest::blocking::Client::new();
-                let res = client.post(format!("{}/addresses", relayer).as_str())
+                let res = client
+                    .post(format!("{}/addresses", relayer).as_str())
                     .body(hex::encode(address))
                     .send()?;
                 if res.status() != 200 {
@@ -127,15 +128,15 @@ fn main() {
             let wallet = Wallet::load_or_generate(wallet_path).unwrap();
             let address = wallet.deposit_address(&signatory_snapshot.signatories);
 
-            use std::time::{SystemTime, UNIX_EPOCH};
             use nomic_chain::state_machine::SIGNATORY_CHANGE_INTERVAL;
+            use std::time::{SystemTime, UNIX_EPOCH};
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs();
             let expiration = signatory_snapshot.time + SIGNATORY_CHANGE_INTERVAL;
-            let days_until_expiration = ((expiration - now) as f64 / (60 * 60 * 24) as f64)
-                .round() as usize;
+            let days_until_expiration =
+                ((expiration - now) as f64 / (60 * 60 * 24) as f64).round() as usize;
 
             submit_address(wallet.receive_address().as_slice()).unwrap();
 
@@ -143,19 +144,28 @@ fn main() {
             println!("{}", address.to_string().cyan().bold());
             println!();
             println!("EXPIRES:");
-            println!("{}", format!(
-                "{} day{} from now",
-                days_until_expiration,
-                if days_until_expiration == 1 { "" } else { "s" }
-            ).red().bold());
+            println!(
+                "{}",
+                format!(
+                    "{} day{} from now",
+                    days_until_expiration,
+                    if days_until_expiration == 1 { "" } else { "s" }
+                )
+                .red()
+                .bold()
+            );
             println!();
             println!("Send testnet Bitcoin to this address to deposit into your");
             println!("sidechain account. After the transaction has been confirmed,");
-            println!("you can check your balance with `{}`.",
-                "nomic balance".blue().italic());
+            println!(
+                "you can check your balance with `{}`.",
+                "nomic balance".blue().italic()
+            );
             println!();
-            println!("{} send to this address after it expires or you will risk",
-                "DO NOT".red().bold());
+            println!(
+                "{} send to this address after it expires or you will risk",
+                "DO NOT".red().bold()
+            );
             println!("loss of funds.");
         }
         SubCommand::Balance(_) => {

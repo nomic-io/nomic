@@ -1,16 +1,16 @@
+use log::{debug, info};
+use simple_server::{Request, Response, ResponseBuilder, ResponseResult, Server};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
-use simple_server::{Server, Request, Response, ResponseBuilder, ResponseResult};
-use log::{info, debug};
 
 pub struct AddressPool {
-    addresses: Arc<Mutex<HashSet<Vec<u8>>>>
+    addresses: Arc<Mutex<HashSet<Vec<u8>>>>,
 }
 
 impl AddressPool {
     pub fn new() -> Self {
         let address_pool = Self {
-            addresses: Arc::new(Mutex::new(Default::default()))
+            addresses: Arc::new(Mutex::new(Default::default())),
         };
         address_pool.spawn_server();
         address_pool
@@ -28,19 +28,19 @@ impl AddressPool {
                 };
 
                 if req.method() != "POST" {
-                    return response(401, b"")
+                    return response(401, b"");
                 }
                 if req.uri().to_string() != "/addresses" {
-                    return response(404, b"")
+                    return response(404, b"");
                 }
 
                 let body = req.body();
                 let address = match hex::decode(body) {
                     Ok(address) => address,
-                    Err(_) => return response(400, b"")
+                    Err(_) => return response(400, b""),
                 };
                 if address.len() != 32 {
-                    return response(400, b"")
+                    return response(400, b"");
                 }
 
                 addresses.lock().unwrap().insert(address);
@@ -56,10 +56,6 @@ impl AddressPool {
     }
 
     pub fn drain_addresses(&self) -> HashSet<Vec<u8>> {
-        self.addresses
-            .lock()
-            .unwrap()
-            .drain()
-            .collect()
+        self.addresses.lock().unwrap().drain().collect()
     }
 }

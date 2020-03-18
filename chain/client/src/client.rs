@@ -134,8 +134,9 @@ impl Client {
     }
 
     pub fn get_signatory_set_snapshot(&mut self) -> OrgaResult<SignatorySetSnapshot> {
-        let bytes = self.remote_store.get(b"signatories")?
-            .ok_or(format_err!("Signatory set snapshot was not available in the store"))?;
+        let bytes = self.remote_store.get(b"signatories")?.ok_or(format_err!(
+            "Signatory set snapshot was not available in the store"
+        ))?;
         SignatorySetSnapshot::decode(bytes.as_slice())
     }
 
@@ -144,7 +145,7 @@ impl Client {
         let key = [b"balances/", pubkey_bytes.as_slice()].concat();
         let value = match self.remote_store.get(key.as_slice())? {
             Some(value) => value,
-            None => return Ok(0)
+            None => return Ok(0),
         };
 
         let mut balance_bytes = [0; 8];
