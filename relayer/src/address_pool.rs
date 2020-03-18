@@ -35,11 +35,15 @@ impl AddressPool {
                 }
 
                 let body = req.body();
-                if body.len() != 32 {
+                let address = match hex::decode(body) {
+                    Ok(address) => address,
+                    Err(_) => return response(400, b"")
+                };
+                if address.len() != 32 {
                     return response(400, b"")
                 }
 
-                addresses.lock().unwrap().insert(body.clone());
+                addresses.lock().unwrap().insert(address);
 
                 response(200, b"")
             };
