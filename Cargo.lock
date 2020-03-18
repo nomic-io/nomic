@@ -947,7 +947,7 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "futures-util",
- "http",
+ "http 0.2.0",
  "indexmap",
  "log 0.4.8",
  "slab",
@@ -1006,6 +1006,17 @@ dependencies = [
 
 [[package]]
 name = "http"
+version = "0.1.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d6ccf5ede3a895d8856620237b2f02972c1bbc78d2965ad7fe8838d4a0ed41f0"
+dependencies = [
+ "bytes 0.4.12",
+ "fnv",
+ "itoa",
+]
+
+[[package]]
+name = "http"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b708cc7f06493459026f53b9a61a7a121a5d1ec6238dee58ea4941132b30156b"
@@ -1022,7 +1033,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13d5ff830006f7646652e057693569bfe0d51760c0085a071769d142a205111b"
 dependencies = [
  "bytes 0.5.4",
- "http",
+ "http 0.2.0",
 ]
 
 [[package]]
@@ -1070,7 +1081,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "h2",
- "http",
+ "http 0.2.0",
  "http-body",
  "httparse",
  "itoa",
@@ -2101,6 +2112,7 @@ dependencies = [
  "nomic-primitives",
  "nomic-signatory-set",
  "rocket",
+ "simple-server",
  "tendermint",
 ]
 
@@ -2124,7 +2136,7 @@ dependencies = [
  "encoding_rs",
  "futures-core",
  "futures-util",
- "http",
+ "http 0.2.0",
  "http-body",
  "hyper 0.13.3",
  "hyper-tls",
@@ -2253,6 +2265,12 @@ dependencies = [
  "lazy_static",
  "winapi 0.3.8",
 ]
+
+[[package]]
+name = "scoped_threadpool"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d51f5df5af43ab3f1360b429fa5e0152ac5ce8c0bd6485cae490332e96846a8"
 
 [[package]]
 name = "scopeguard"
@@ -2417,6 +2435,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "144b5d1138a4339c839603f15f69ffe3195e51b5caa92f815b47d4553db47337"
 dependencies = [
  "digest 0.8.1",
+]
+
+[[package]]
+name = "simple-server"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b47624fcb3e3416bd7f764b2319875043ce22b0eff78f5c7684de07c88ba5761"
+dependencies = [
+ "http 0.1.21",
+ "httparse",
+ "log 0.3.9",
+ "num_cpus",
+ "scoped_threadpool",
+ "time",
 ]
 
 [[package]]

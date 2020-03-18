@@ -13,4 +13,5 @@ tendermint = { git = "https://github.com/interchainio/tendermint-rs", rev = "0b9
 log = "0.4.8"
 failure = "0.1.7"
 rocket = "0.4.4"
+simple-server = "0.4.0"
 

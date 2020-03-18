@@ -1,3 +1,4 @@
+use crate::address_pool::AddressPool;
 use crate::deposit::relay_deposits;
 use crate::Result;
 use bitcoin::hash_types::BlockHash as Hash;
@@ -89,6 +90,8 @@ pub fn broadcast_header_transaction(
 
 /// Start the relayer process
 pub fn start() {
+    let address_pool = AddressPool::new();
+
     let relayer_step = || -> Result<()> {
         let btc_rpc = make_rpc_client()?;
         let mut peg_client = PegClient::new("localhost:26657")?;
@@ -106,7 +109,7 @@ pub fn start() {
 
         broadcast_header_transaction(&peg_client, header_transaction)?;
         // Relay deposits
-        let possible_addresses = vec![];
+        let possible_addresses = address_pool.addresses();
         relay_deposits(possible_addresses, &btc_rpc, &peg_client)?;
         Ok(())
     };
