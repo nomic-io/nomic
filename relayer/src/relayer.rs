@@ -77,7 +77,7 @@ pub fn build_header_transaction(headers: &mut Vec<bitcoin::BlockHeader>) -> Head
     use std::cmp::min;
 
     HeaderTransaction {
-        block_headers: headers[..min(headers.len() - 1, BATCH_SIZE)].to_vec(),
+        block_headers: headers[..min(headers.len(), BATCH_SIZE)].to_vec(),
     }
 }
 
