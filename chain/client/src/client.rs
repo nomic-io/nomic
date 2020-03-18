@@ -140,9 +140,8 @@ impl Client {
         SignatorySetSnapshot::decode(bytes.as_slice())
     }
 
-    pub fn get_balance(&mut self, pubkey: &bitcoin::PublicKey) -> OrgaResult<u64> {
-        let pubkey_bytes = pubkey.to_bytes();
-        let key = [b"balances/", pubkey_bytes.as_slice()].concat();
+    pub fn get_balance(&mut self, address: &[u8]) -> OrgaResult<u64> {
+        let key = [b"balances/", address].concat();
         let value = match self.remote_store.get(key.as_slice())? {
             Some(value) => value,
             None => return Ok(0),

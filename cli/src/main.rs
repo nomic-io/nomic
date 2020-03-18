@@ -174,7 +174,7 @@ fn main() {
             let wallet_path = nomic_home.join("wallet.key");
             let wallet = Wallet::load_or_generate(wallet_path).unwrap();
 
-            let balance = client.get_balance(&wallet.pubkey()).unwrap();
+            let balance = client.get_balance(&wallet.receive_address()).unwrap();
             let balance = format!(
                 "{}.{:0>8}",
                 balance / 100_000_000,
