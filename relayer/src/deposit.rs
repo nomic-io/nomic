@@ -71,9 +71,9 @@ fn possible_bitcoin_addresses(
         .map(|signatory_set| {
             possible_recipients.iter().map(move |possible_recipient| {
                 let script =
-                    nomic_signatory_set::output_script(&signatory_set, possible_recipient.clone());
+                    nomic_signatory_set::redeem_script(&signatory_set, possible_recipient.clone());
                 (
-                    bitcoin::Address::from_script(&script, bitcoin_network).unwrap(),
+                    bitcoin::Address::p2wsh(&script, bitcoin_network),
                     possible_recipient.clone(),
                 )
             })

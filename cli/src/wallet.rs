@@ -38,10 +38,9 @@ impl Wallet {
     }
 
     pub fn deposit_address(&self, signatories: &SignatorySet) -> bitcoin::Address {
-        let pubkey_bytes = self.pubkey().to_bytes();
-        let script = nomic_signatory_set::output_script(
+        let script = nomic_signatory_set::redeem_script(
             signatories,
-            pubkey_bytes
+            self.receive_address()
         );
         bitcoin::Address::p2wsh(&script, bitcoin::Network::Testnet)
     }
