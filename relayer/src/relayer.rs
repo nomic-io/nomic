@@ -4,12 +4,12 @@ use crate::Result;
 use bitcoin::hash_types::BlockHash as Hash;
 use bitcoincore_rpc::{Auth, Client, RpcApi};
 use failure::bail;
+use log::{debug, info};
 use nomic_bitcoin::{bitcoin, bitcoincore_rpc};
 use nomic_client::Client as PegClient;
 use nomic_primitives::transaction::{HeaderTransaction, Transaction};
 use std::collections::HashSet;
 use std::env;
-use log::{info, debug};
 
 pub fn make_rpc_client() -> Result<Client> {
     let rpc_user = env::var("BTC_RPC_USER")?;
@@ -74,9 +74,10 @@ pub fn fetch_linking_headers(
 
 pub fn build_header_transaction(headers: &mut Vec<bitcoin::BlockHeader>) -> HeaderTransaction {
     const BATCH_SIZE: usize = 100;
+    use std::cmp::min;
 
     HeaderTransaction {
-        block_headers: headers[..BATCH_SIZE].to_vec(),
+        block_headers: headers[..min(headers.len() - 1, BATCH_SIZE)].to_vec(),
     }
 }
 
@@ -115,7 +116,9 @@ pub fn start() {
         Ok(())
     };
 
-    info!("Relayer process started. Watching Bitcoin network for new block headers and transactions.");
+    info!(
+        "Relayer process started. Watching Bitcoin network for new block headers and transactions."
+    );
 
     std::thread::spawn(|| loop {
         header_step();
