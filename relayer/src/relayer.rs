@@ -1,5 +1,5 @@
 use crate::address_pool::AddressPool;
-use crate::deposit::relay_deposits;
+use crate::deposit::{import_addresses, relay_deposits};
 use crate::Result;
 use bitcoin::hash_types::BlockHash as Hash;
 use bitcoincore_rpc::{Auth, Client, RpcApi};
@@ -7,7 +7,9 @@ use failure::bail;
 use nomic_bitcoin::{bitcoin, bitcoincore_rpc};
 use nomic_client::Client as PegClient;
 use nomic_primitives::transaction::{HeaderTransaction, Transaction};
+use std::collections::HashSet;
 use std::env;
+use log::{info, debug};
 
 pub fn make_rpc_client() -> Result<Client> {
     let rpc_user = env::var("BTC_RPC_USER")?;
@@ -91,33 +93,55 @@ pub fn broadcast_header_transaction(
 /// Start the relayer process
 pub fn start() {
     let address_pool = AddressPool::new();
+    let mut addresses = HashSet::new();
 
-    let relayer_step = || -> Result<()> {
-        let btc_rpc = make_rpc_client()?;
+    let mut deposit_step = || -> Result<()> {
+        let btc_rpc = make_rpc_client().unwrap();
         let mut peg_client = PegClient::new("localhost:26657")?;
 
-        // Fetch peg hashes
-        let peg_hashes = peg_client.get_bitcoin_block_hashes()?;
-        // Compute common header
-        let common_block_hash = compute_common_ancestor(&btc_rpc, &peg_hashes)?;
-        // Fetch linking headers
-        let linking_headers = fetch_linking_headers(&btc_rpc, common_block_hash)?;
-        // Build header transactions
+        let new_addresses = address_pool.drain_addresses();
+        if !new_addresses.is_empty() {
+            let addresses_to_import = new_addresses.difference(&addresses);
+            debug!(
+                "Importing {} new addresses",
+                addresses_to_import.len()
+            );
+            import_addresses(&addresses_to_import, &btc_rpc)?;
+            addresses.extend(addresses_to_import);
+        }
 
-        let header_transaction = build_header_transaction(&mut linking_headers.to_vec());
-        // Broadcast header transactions
+        relay_deposits(&addresses, &btc_rpc, &peg_client)?;
 
-        broadcast_header_transaction(&peg_client, header_transaction)?;
-        // Relay deposits
-        let possible_addresses = address_pool.addresses();
-        relay_deposits(possible_addresses, &btc_rpc, &peg_client)?;
         Ok(())
     };
-    println!("Relayer process started. Watching Bitcoin network for new block headers.");
+
+    info!("Relayer process started. Watching Bitcoin network for new block headers and transactions.");
+
+    std::thread::spawn(|| loop {
+        header_step();
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    });
     loop {
-        match relayer_step() {
-            Err(_) => {}
-            Ok(_) => {}
-        };
+        deposit_step().unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(1));
     }
+}
+
+fn header_step() -> Result<()> {
+    let btc_rpc = make_rpc_client().unwrap();
+    let mut peg_client = PegClient::new("localhost:26657")?;
+
+    // Fetch peg hashes
+    let peg_hashes = peg_client.get_bitcoin_block_hashes()?;
+    // Compute common header
+    let common_block_hash = compute_common_ancestor(&btc_rpc, &peg_hashes)?;
+    // Fetch linking headers
+    let linking_headers = fetch_linking_headers(&btc_rpc, common_block_hash)?;
+    // Build header transactions
+
+    let header_transaction = build_header_transaction(&mut linking_headers.to_vec());
+    // Broadcast header transactions
+    broadcast_header_transaction(&peg_client, header_transaction)?;
+
+    Ok(())
 }

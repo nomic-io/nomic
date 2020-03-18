@@ -40,7 +40,6 @@ impl AddressPool {
                 }
 
                 addresses.lock().unwrap().insert(body.clone());
-                debug!("{:?}", addresses.lock().unwrap());
 
                 response(200, b"")
             };
@@ -52,12 +51,11 @@ impl AddressPool {
         });
     }
 
-    pub fn addresses(&self) -> Vec<Vec<u8>> {
+    pub fn drain_addresses(&self) -> Vec<Vec<u8>> {
         self.addresses
             .lock()
             .unwrap()
-            .clone()
-            .into_iter()
+            .drain()
             .collect()
     }
 }
