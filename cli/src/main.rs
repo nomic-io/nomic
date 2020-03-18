@@ -108,7 +108,7 @@ fn main() {
         }
         SubCommand::Deposit(_) => {
             fn submit_address(address: &[u8]) -> Result<()> {
-                let relayer = "http://localhost:8080";
+                let relayer = "http://kep.io:8080";
                 debug!("Sending address to relayer: {}", relayer);
                 let client = reqwest::blocking::Client::new();
                 let res = client
