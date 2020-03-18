@@ -12,7 +12,7 @@ fn scan_for_deposits(
     btc_rpc: &Client,
     address: bitcoin::Address,
 ) -> Result<Vec<VerboseTransaction>> {
-    let unspent = btc_rpc.list_unspent(Some(1), None, Some(&[address]), None, None)?;
+    let unspent = btc_rpc.list_unspent(Some(2), None, Some(&[address]), None, None)?;
 
     unspent
         .into_iter()
