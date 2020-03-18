@@ -112,7 +112,7 @@ fn main() {
                 debug!("Sending address to relayer: {}", relayer);
                 let client = reqwest::blocking::Client::new();
                 let res = client.post(format!("{}/addresses", relayer).as_str())
-                    .body(dbg!(hex::encode(dbg!(address))))
+                    .body(hex::encode(address))
                     .send()?;
                 if res.status() != 200 {
                     bail!("Error sending address to relayer: {}", res.status());
