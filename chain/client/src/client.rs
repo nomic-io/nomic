@@ -1,7 +1,7 @@
+use crate::Result;
 use bitcoin::hash_types::BlockHash as Hash;
 use bitcoin::Network::Testnet as bitcoin_network;
 use failure::bail;
-
 use nomic_bitcoin::bitcoin;
 use nomic_chain::{orga, spv};
 use nomic_primitives::transaction::{Transaction, WorkProofTransaction};
@@ -48,7 +48,7 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new(tendermint_rpc_address: &str) -> Result<Self, ClientError> {
+    pub fn new(tendermint_rpc_address: &str) -> Result<Self> {
         let address = tendermint::net::Address::from_str(tendermint_rpc_address).unwrap();
         let tendermint_rpc = TendermintRpcClient::new(&address).unwrap();
         let remote_store = RemoteStore::new(tendermint_rpc_address);
@@ -68,26 +68,26 @@ impl Client {
     /// state machine abci host will be responsible for wrapping the transaction in the appropriate Action
     /// enum variant.
     pub fn send(
-        &mut self,
+        &self,
         transaction: Transaction,
-    ) -> Result<tendermint::rpc::endpoint::broadcast::tx_commit::Response, tendermint::rpc::Error>
-    {
+    ) -> Result<tendermint::rpc::endpoint::broadcast::tx_commit::Response> {
         let tx_bytes = serde_json::to_vec(&transaction).unwrap();
 
         let rpc = &self.tendermint_rpc;
         let tx = tendermint::abci::Transaction::new(tx_bytes);
-        let broadcast_result = rpc.broadcast_tx_commit(tx);
-        broadcast_result
+        rpc.broadcast_tx_commit(tx)
+            .map_err(|e| failure::err_msg(format!("Tendermint RPC error: {}", e)))
     }
 
     /// Get the Bitcoin headers currently used by the peg zone's on-chain SPV client.
-    pub fn get_bitcoin_block_hashes(&mut self) -> Result<Vec<Hash>, ClientError> {
+    pub fn get_bitcoin_block_hashes(&mut self) -> Result<Vec<Hash>> {
         let store = &mut self.remote_store;
         let mut header_cache = spv::headercache::HeaderCache::new(bitcoin_network, store);
         let trunk = header_cache.load_trunk();
+
         match trunk {
             Some(trunk) => Ok(trunk.clone()),
-            None => Err(ClientError::new("unable to get trunk")),
+            None => bail!("Unable to get header trunk"),
         }
     }
 
@@ -97,8 +97,7 @@ impl Client {
         &mut self,
         public_key: &[u8],
         nonce: u64,
-    ) -> Result<tendermint::rpc::endpoint::broadcast::tx_commit::Response, tendermint::rpc::Error>
-    {
+    ) -> Result<tendermint::rpc::endpoint::broadcast::tx_commit::Response> {
         let work_transaction = Transaction::WorkProof(WorkProofTransaction {
             public_key: public_key.to_vec(),
             nonce,
@@ -117,8 +116,8 @@ impl Client {
         }
     }
 
-    pub fn get_signatory_sets(&mut self) -> OrgaResult<Vec<SignatorySet>> {
-        let store = &mut self.remote_store;
+    pub fn get_signatory_sets(&self) -> OrgaResult<Vec<SignatorySet>> {
+        let store = &self.remote_store;
         let get_signatory_set = |key| {
             let signatory_set_bytes = match store.get(key)? {
                 Some(bytes) => bytes,
@@ -131,18 +130,5 @@ impl Client {
             get_signatory_set(b"signatories")?,
             get_signatory_set(b"prev_signatories")?,
         ])
-    }
-}
-
-#[derive(Debug)]
-pub struct ClientError {
-    message: String,
-}
-
-impl ClientError {
-    fn new(message: &str) -> Self {
-        ClientError {
-            message: String::from(message),
-        }
     }
 }

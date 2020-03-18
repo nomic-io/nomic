@@ -349,7 +349,7 @@ impl<'a> HeaderCache<'a> {
                 prev.stored.header.target()
             };
 
-        let combined_work: Uint256 = next.work() + prev.stored.header.work();
+        let combined_work: Uint256 = next.work() + prev.stored.work();
         let cached = CachedHeader::new(
             &next.bitcoin_hash(),
             StoredHeader {
@@ -358,7 +358,6 @@ impl<'a> HeaderCache<'a> {
                 work_bytes: combined_work.to_bytes(),
             },
         );
-
         // Check POW
         if cached.spv_validate(&required_work).is_err() {
             return Err(Error::SpvBadProofOfWork);

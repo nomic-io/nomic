@@ -6,232 +6,7 @@ use failure::bail;
 use nomic_bitcoin::{bitcoin, bitcoincore_rpc};
 use nomic_client::Client as PegClient;
 use nomic_primitives::transaction::{HeaderTransaction, Transaction};
-use std::{env, thread, time};
-
-#[derive(Debug)]
-pub enum RelayerState {
-    InitializeBitcoinRpc,
-    InitializePegClient,
-    FetchPegBlockHashes,
-    ComputeCommonAncestor {
-        peg_block_hashes: Vec<Hash>,
-    },
-    FetchLinkingHeaders {
-        common_block_hash: Hash,
-    },
-    BuildHeaderTransactions {
-        linking_headers: Vec<bitcoin::BlockHeader>,
-    },
-    BroadcastHeaderTransactions {
-        header_transactions: Vec<HeaderTransaction>,
-    },
-    RelayDeposits,
-    Failure {
-        event: RelayerEvent,
-    },
-}
-
-#[derive(Debug)]
-pub enum RelayerEvent {
-    InitializeBitcoinRpcSuccess,
-    InitializeBitcoinRpcFailure,
-    InitializePegClientSuccess,
-    InitializePegClientFailure,
-    FetchPegBlockHashesSuccess {
-        peg_block_hashes: Vec<Hash>,
-    },
-    FetchPegBlockHashesFailure,
-    ComputeCommonAncestorSuccess {
-        common_block_hash: Hash,
-    },
-    ComputeCommonAncestorFailure,
-    FetchLinkingHeadersSuccess {
-        linking_headers: Vec<bitcoin::BlockHeader>,
-    },
-    FetchLinkingHeadersFailure,
-    BuiltHeaderTransactions {
-        header_transactions: Vec<HeaderTransaction>,
-    },
-    BroadcastHeaderTransactionsSuccess,
-    BroadcastHeaderTransactionsFailure,
-    RelayDepositsSuccess,
-    RelayDepositsFailure,
-    Restart,
-}
-
-impl RelayerState {
-    pub fn next(self, event: RelayerEvent) -> Self {
-        use self::RelayerEvent::*;
-        use self::RelayerState::*;
-        match (self, event) {
-            (InitializeBitcoinRpc, InitializeBitcoinRpcSuccess) => InitializePegClient,
-            (InitializePegClient, InitializePegClientSuccess) => FetchPegBlockHashes,
-            (FetchPegBlockHashes, FetchPegBlockHashesSuccess { peg_block_hashes }) => {
-                ComputeCommonAncestor { peg_block_hashes }
-            }
-            (FetchPegBlockHashes, FetchPegBlockHashesFailure) => FetchPegBlockHashes,
-            (ComputeCommonAncestor { .. }, ComputeCommonAncestorSuccess { common_block_hash }) => {
-                FetchLinkingHeaders { common_block_hash }
-            }
-            (FetchLinkingHeaders { .. }, FetchLinkingHeadersSuccess { linking_headers }) => {
-                BuildHeaderTransactions { linking_headers }
-            }
-            (
-                BuildHeaderTransactions { .. },
-                BuiltHeaderTransactions {
-                    header_transactions,
-                },
-            ) => BroadcastHeaderTransactions {
-                header_transactions,
-            },
-            (BroadcastHeaderTransactions { .. }, BroadcastHeaderTransactionsSuccess) => {
-                RelayDeposits {}
-            }
-            (
-                BroadcastHeaderTransactions {
-                    header_transactions,
-                },
-                BroadcastHeaderTransactionsFailure,
-            ) => BroadcastHeaderTransactions {
-                header_transactions,
-            },
-            (RelayDeposits, RelayDepositsSuccess) => FetchPegBlockHashes,
-            (RelayDeposits, RelayDepositsFailure) => InitializeBitcoinRpc,
-            // Restart loop on failure
-            (Failure { .. }, Restart) => InitializeBitcoinRpc,
-            (_, event) => Failure { event },
-        }
-    }
-}
-
-pub struct RelayerStateMachine {
-    pub state: RelayerState,
-    rpc: Option<Client>,
-    peg_client: Option<PegClient>,
-}
-
-impl RelayerStateMachine {
-    pub fn new() -> Self {
-        RelayerStateMachine {
-            state: RelayerState::InitializeBitcoinRpc,
-            rpc: None,
-            peg_client: None,
-        }
-    }
-
-    pub fn run(&mut self) -> RelayerEvent {
-        use self::RelayerEvent::*;
-        use self::RelayerState::*;
-        match &mut self.state {
-            InitializeBitcoinRpc => {
-                let rpc = make_rpc_client();
-                match rpc {
-                    Ok(rpc) => {
-                        self.rpc = Some(rpc);
-                        InitializeBitcoinRpcSuccess
-                    }
-                    Err(_) => InitializeBitcoinRpcFailure,
-                }
-            }
-            InitializePegClient => {
-                let peg_client = PegClient::new("localhost:26657");
-                match peg_client {
-                    Ok(peg_client) => {
-                        self.peg_client = Some(peg_client);
-                        InitializePegClientSuccess
-                    }
-                    Err(_) => InitializePegClientFailure,
-                }
-            }
-
-            FetchPegBlockHashes => {
-                let peg_client = match self.peg_client.as_mut() {
-                    Some(peg_client) => peg_client,
-                    None => return FetchPegBlockHashesFailure,
-                };
-
-                let peg_hashes = peg_client.get_bitcoin_block_hashes();
-                match peg_hashes {
-                    Ok(hashes) => FetchPegBlockHashesSuccess {
-                        peg_block_hashes: hashes,
-                    },
-                    Err(_) => FetchPegBlockHashesFailure,
-                }
-            }
-
-            ComputeCommonAncestor { peg_block_hashes } => {
-                let rpc = match self.rpc.as_ref() {
-                    Some(rpc) => rpc,
-                    None => return ComputeCommonAncestorFailure,
-                };
-                match compute_common_ancestor(rpc, peg_block_hashes) {
-                    Ok(hash) => ComputeCommonAncestorSuccess {
-                        common_block_hash: hash,
-                    },
-                    Err(_) => ComputeCommonAncestorFailure,
-                }
-            }
-
-            FetchLinkingHeaders { common_block_hash } => {
-                let rpc = match self.rpc.as_ref() {
-                    Some(rpc) => rpc,
-                    None => return FetchLinkingHeadersFailure,
-                };
-
-                let linking_headers = fetch_linking_headers(rpc, *common_block_hash);
-                match linking_headers {
-                    Ok(linking_headers) => FetchLinkingHeadersSuccess { linking_headers },
-                    Err(_) => FetchLinkingHeadersFailure,
-                }
-            }
-
-            BuildHeaderTransactions { linking_headers } => {
-                let header_transactions = build_header_transactions(&mut linking_headers.to_vec());
-                BuiltHeaderTransactions {
-                    header_transactions,
-                }
-            }
-
-            BroadcastHeaderTransactions {
-                header_transactions,
-            } => {
-                let peg_client = match self.peg_client.as_mut() {
-                    Some(peg_client) => peg_client,
-                    None => return BroadcastHeaderTransactionsFailure,
-                };
-
-                match broadcast_header_transactions(peg_client, header_transactions.clone()) {
-                    Ok(_) => BroadcastHeaderTransactionsSuccess,
-                    Err(_) => BroadcastHeaderTransactionsFailure,
-                }
-            }
-
-            RelayDeposits => {
-                let rpc = match self.rpc.as_ref() {
-                    Some(rpc) => rpc,
-                    None => return RelayDepositsFailure {},
-                };
-
-                let peg_client = match self.peg_client.as_mut() {
-                    Some(peg_client) => peg_client,
-                    None => return RelayDepositsFailure {},
-                };
-                // TODO: get possible addresses from relayer address pool server
-                let possible_addresses: Vec<Vec<u8>> = vec![];
-                match relay_deposits(possible_addresses, rpc, peg_client) {
-                    Ok(_) => RelayDepositsSuccess,
-                    Err(_) => RelayDepositsFailure,
-                }
-            }
-
-            Failure { event } => {
-                println!("Entered failure state");
-                println!("failure event: {:?}", event);
-                Restart {}
-            }
-        }
-    }
-}
+use std::env;
 
 pub fn make_rpc_client() -> Result<Client> {
     let rpc_user = env::var("BTC_RPC_USER")?;
@@ -281,20 +56,12 @@ pub fn fetch_linking_headers(
 
     let mut header = rpc.get_block_header_raw(&best_block_hash)?;
 
-    let mut count = 0;
     loop {
         if header.prev_blockhash == common_block_hash {
             headers.push(header);
+            headers.reverse();
             return Ok(headers);
         } else {
-            count += 1;
-            if count > 2016 {
-                println!("WARNING: Relayer fetched more than 2016 headers");
-                println!(
-                    "prev header hash: {:?}, common block hash: {:?}",
-                    header.prev_blockhash, common_block_hash
-                );
-            }
             headers.push(header);
         }
 
@@ -302,47 +69,52 @@ pub fn fetch_linking_headers(
     }
 }
 
-pub fn build_header_transactions(
-    headers: &mut Vec<bitcoin::BlockHeader>,
-) -> Vec<HeaderTransaction> {
+pub fn build_header_transaction(headers: &mut Vec<bitcoin::BlockHeader>) -> HeaderTransaction {
     const BATCH_SIZE: usize = 100;
-    headers.reverse();
-    headers
-        .chunks(BATCH_SIZE)
-        .map(|block_headers| HeaderTransaction {
-            block_headers: block_headers.to_vec(),
-        })
-        .collect()
+
+    HeaderTransaction {
+        block_headers: headers[..BATCH_SIZE].to_vec(),
+    }
 }
 
 /// Broadcast header relay transactions to the peg.
 /// Returns an error result if any transactions aren't successfully broadcasted.
-pub fn broadcast_header_transactions(
-    peg_client: &mut PegClient,
-    header_transactions: Vec<HeaderTransaction>,
+pub fn broadcast_header_transaction(
+    peg_client: &PegClient,
+    header_transaction: HeaderTransaction,
 ) -> Result<()> {
-    for header_transaction in header_transactions {
-        peg_client.send(Transaction::Header(header_transaction))?;
-    }
+    peg_client.send(Transaction::Header(header_transaction))?;
     Ok(())
 }
 
 /// Start the relayer process
 pub fn start() {
-    let mut sm = RelayerStateMachine::new();
-    let mut latest_tip: Option<Hash> = None;
+    let relayer_step = || -> Result<()> {
+        let btc_rpc = make_rpc_client()?;
+        let mut peg_client = PegClient::new("localhost:26657")?;
 
+        // Fetch peg hashes
+        let peg_hashes = peg_client.get_bitcoin_block_hashes()?;
+        // Compute common header
+        let common_block_hash = compute_common_ancestor(&btc_rpc, &peg_hashes)?;
+        // Fetch linking headers
+        let linking_headers = fetch_linking_headers(&btc_rpc, common_block_hash)?;
+        // Build header transactions
+
+        let header_transaction = build_header_transaction(&mut linking_headers.to_vec());
+        // Broadcast header transactions
+
+        broadcast_header_transaction(&peg_client, header_transaction)?;
+        // Relay deposits
+        let possible_addresses = vec![];
+        relay_deposits(possible_addresses, &btc_rpc, &peg_client)?;
+        Ok(())
+    };
     println!("Relayer process started. Watching Bitcoin network for new block headers.");
     loop {
-        let event = sm.run();
-        if let RelayerEvent::ComputeCommonAncestorSuccess { common_block_hash } = event {
-            if Some(common_block_hash) != latest_tip && latest_tip.is_some() {
-                println!("New tip hash: {:?}", common_block_hash);
-            } else {
-                thread::sleep(time::Duration::from_secs(10));
-            }
-            latest_tip = Some(common_block_hash);
-        }
-        sm.state = sm.state.next(event);
+        match relayer_step() {
+            Err(_) => {}
+            Ok(_) => {}
+        };
     }
 }

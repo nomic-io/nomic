@@ -31,23 +31,22 @@ pub fn run(
                     // init signatories/prev_signatories
                     let snapshot = SignatorySetSnapshot {
                         time: header.get_time().get_seconds() as u64,
-                        signatories: signatories_from_validators(validators)?
+                        signatories: signatories_from_validators(validators)?,
                     };
                     let signatories_bytes = snapshot.encode()?;
                     store.put(b"signatories".to_vec(), signatories_bytes.clone())?;
                     store.put(b"prev_signatories".to_vec(), signatories_bytes)?;
-                },
+                }
                 Some(signatories_bytes) => {
                     // check if signatories should be updated
-                    let signatory_time = SignatorySetSnapshot::decode(
-                        signatories_bytes.as_slice()
-                    )?.time;
+                    let signatory_time =
+                        SignatorySetSnapshot::decode(signatories_bytes.as_slice())?.time;
                     let time = header.get_time().get_seconds() as u64;
                     let elapsed = time - signatory_time;
                     if elapsed >= SIGNATORY_CHANGE_INTERVAL {
                         let snapshot = SignatorySetSnapshot {
                             time,
-                            signatories: signatories_from_validators(validators)?
+                            signatories: signatories_from_validators(validators)?,
                         };
                         let new_signatories_bytes = snapshot.encode()?;
                         store.put(b"signatories".to_vec(), new_signatories_bytes)?;
@@ -55,7 +54,7 @@ pub fn run(
                     }
                 }
             }
-        },
+        }
         Action::Transaction(transaction) => match transaction {
             Transaction::WorkProof(work_transaction) => {
                 let mut hasher = Sha256::new();
@@ -88,12 +87,7 @@ pub fn run(
             Transaction::Header(header_transaction) => {
                 let mut header_cache = HeaderCache::new(bitcoin_network, store);
                 for header in header_transaction.block_headers {
-                    match header_cache.add_header(&header) {
-                        Ok(_) => {}
-                        Err(e) => {
-                            bail!("header add err: {:?}", e);
-                        }
-                    }
+                    header_cache.add_header(&header)?;
                 }
             }
 
@@ -104,7 +98,7 @@ pub fn run(
                 if let Some(_) = store.get(tx_key.as_slice())? {
                     bail!("Transaction was already processed");
                 }
-                
+
                 // Fetch merkle root for this block by its height
                 let mut header_cache = HeaderCache::new(bitcoin_network, store);
                 let tx_height = deposit_transaction.height;
@@ -130,38 +124,33 @@ pub fn run(
 
                 // Ensure tx contains deposit outputs
                 let signatory_sets = [
+                    SignatorySetSnapshot::decode(store.get(b"signatories")?.unwrap().as_slice())?
+                        .signatories,
                     SignatorySetSnapshot::decode(
-                        store.get(b"signatories")?.unwrap()
-                            .as_slice()
-                        )?.signatories,
-                    SignatorySetSnapshot::decode(
-                        store.get(b"prev_signatories")?.unwrap().as_slice())?.signatories
+                        store.get(b"prev_signatories")?.unwrap().as_slice(),
+                    )?
+                    .signatories,
                 ];
-                let mut recipients = deposit_transaction.recipients
-                    .iter()
-                    .peekable();
+                let mut recipients = deposit_transaction.recipients.iter().peekable();
                 let mut contains_deposit_outputs = false;
                 for txout in deposit_transaction.tx.output {
                     let recipient = match recipients.peek() {
                         Some(recipient) => recipient,
-                        None => bail!("Consumed all recipients")
+                        None => bail!("Consumed all recipients"),
                     };
                     if recipient.len() != 32 {
                         bail!("Recipient must be 32 bytes");
                     }
                     for signatory_set in signatory_sets.iter() {
-                        let expected_script = nomic_signatory_set::output_script(
-                            signatory_set,
-                            recipient.to_vec()
-                        );
+                        let expected_script =
+                            nomic_signatory_set::output_script(signatory_set, recipient.to_vec());
                         if txout.script_pubkey == expected_script {
                             // mint coins
                             let key = [b"balances/", recipient.as_slice()].concat();
-                            let balance = store.get(key.as_slice())?
-                                .map_or(0, |bytes| {
-                                    let bytes = bytes.as_slice().try_into().unwrap();
-                                    u64::from_be_bytes(bytes)
-                                });
+                            let balance = store.get(key.as_slice())?.map_or(0, |bytes| {
+                                let bytes = bytes.as_slice().try_into().unwrap();
+                                u64::from_be_bytes(bytes)
+                            });
                             let balance = balance + txout.value;
                             store.put(key, balance.to_be_bytes().to_vec())?;
 
@@ -215,36 +204,43 @@ fn get_checkpoint_header() -> EnrichedHeader {
 mod tests {
     use super::*;
     use crate::Action;
-    use nomic_primitives::transaction::*;
-    use nomic_signatory_set::{Signatory, SignatorySet, SignatorySetSnapshot};
-    use bitcoin::Network::Testnet as bitcoin_network;
+    use bitcoin::consensus::encode as bitcoin_encode;
     use bitcoin::util::hash::bitcoin_merkle_root;
     use bitcoin::util::merkleblock::PartialMerkleTree;
-    use bitcoin::consensus::encode as bitcoin_encode;
-    use orga::{MapStore, abci::messages::Header as TendermintHeader};
-    use std::collections::{BTreeMap, HashSet};
-    use protobuf::well_known_types::Timestamp;
+    use bitcoin::Network::Testnet as bitcoin_network;
+    use nomic_primitives::transaction::*;
+    use nomic_signatory_set::{Signatory, SignatorySet, SignatorySetSnapshot};
     use orga::Read;
+    use orga::{abci::messages::Header as TendermintHeader, MapStore};
+    use protobuf::well_known_types::Timestamp;
+    use std::collections::{BTreeMap, HashSet};
 
     fn mock_validator_set() -> BTreeMap<Vec<u8>, u64> {
         let mut vals = BTreeMap::new();
-        vals.insert(vec![3,148,217,3,10,128,64,14,129,125,33,213,163,104,0,227,122,136,27,45,207,44,64,24,35,166,166,118,25,12,200,183,98], 100);
+        vals.insert(
+            vec![
+                3, 148, 217, 3, 10, 128, 64, 14, 129, 125, 33, 213, 163, 104, 0, 227, 122, 136, 27,
+                45, 207, 44, 64, 24, 35, 166, 166, 118, 25, 12, 200, 183, 98,
+            ],
+            100,
+        );
         vals
     }
 
     #[derive(Default)]
     struct MockNet {
         store: MapStore,
-        validators: BTreeMap<Vec<u8>, u64>
+        validators: BTreeMap<Vec<u8>, u64>,
     }
 
     impl MockNet {
         fn new(initial_header: bitcoin::BlockHeader) -> Self {
             let mut net = MockNet {
                 store: Default::default(),
-                validators: mock_validator_set()
+                validators: mock_validator_set(),
             };
-            net.spv().add_header_raw(initial_header, 0)
+            net.spv()
+                .add_header_raw(initial_header, 0)
                 .expect("failed to create mock net");
 
             // initial beginblock
@@ -264,7 +260,10 @@ mod tests {
     }
 
     fn build_txout(value: u64, script_pubkey: bitcoin::Script) -> bitcoin::TxOut {
-        bitcoin::TxOut { value, script_pubkey }
+        bitcoin::TxOut {
+            value,
+            script_pubkey,
+        }
     }
 
     fn build_tx(outputs: Vec<bitcoin::TxOut>) -> bitcoin::Transaction {
@@ -272,7 +271,7 @@ mod tests {
             version: 2,
             lock_time: 0,
             input: vec![],
-            output: outputs
+            output: outputs,
         }
     }
 
@@ -286,12 +285,12 @@ mod tests {
             merkle_root,
             time: 1,
             bits: 0x207fffff,
-            nonce: 0
+            nonce: 0,
         };
 
         bitcoin::Block {
             header,
-            txdata: txs
+            txdata: txs,
         }
     }
 
@@ -317,32 +316,38 @@ mod tests {
 
     #[test]
     fn begin_block() {
-        let tx = build_tx(vec![
-            build_txout(100_000_000, vec![].into())
-        ]);
-        let block = build_block(vec![ tx.clone() ]);
+        let tx = build_tx(vec![build_txout(100_000_000, vec![].into())]);
+        let block = build_block(vec![tx.clone()]);
         let mut net = MockNet::new(block.header.clone());
 
         // initial signatories
         let mut expected_signatories = SignatorySet::new();
         expected_signatories.set(Signatory {
-            pubkey: bitcoin::PublicKey::from_slice(
-                &[3,148,217,3,10,128,64,14,129,125,33,213,163,104,0,227,122,136,27,45,207,44,64,24,35,166,166,118,25,12,200,183,98]
-            ).unwrap(),
-            voting_power: 100
+            pubkey: bitcoin::PublicKey::from_slice(&[
+                3, 148, 217, 3, 10, 128, 64, 14, 129, 125, 33, 213, 163, 104, 0, 227, 122, 136, 27,
+                45, 207, 44, 64, 24, 35, 166, 166, 118, 25, 12, 200, 183, 98,
+            ])
+            .unwrap(),
+            voting_power: 100,
         });
         assert_eq!(
             net.store.get(b"signatories").unwrap().unwrap(),
             SignatorySetSnapshot {
                 time: 123,
                 signatories: expected_signatories
-            }.encode().unwrap()
+            }
+            .encode()
+            .unwrap()
         );
 
         // changed validator set, should be same sig set
-        net.validators.insert(vec![
-            2,120,15,192,99,177,43,235,23,134,193,123,205,196,253,121,49,80,163,93,230,224,193,88,89,18,15,145,105,217,229,114,148
-        ], 555);
+        net.validators.insert(
+            vec![
+                2, 120, 15, 192, 99, 177, 43, 235, 23, 134, 193, 123, 205, 196, 253, 121, 49, 80,
+                163, 93, 230, 224, 193, 88, 89, 18, 15, 145, 105, 217, 229, 114, 148,
+            ],
+            555,
+        );
         let mut header: TendermintHeader = Default::default();
         let mut timestamp = Timestamp::new();
         timestamp.set_seconds(456);
@@ -351,17 +356,21 @@ mod tests {
         run(&mut net.store, action, &mut net.validators).unwrap();
         let mut expected_signatories = SignatorySet::new();
         expected_signatories.set(Signatory {
-            pubkey: bitcoin::PublicKey::from_slice(
-                &[3,148,217,3,10,128,64,14,129,125,33,213,163,104,0,227,122,136,27,45,207,44,64,24,35,166,166,118,25,12,200,183,98]
-            ).unwrap(),
-            voting_power: 100
+            pubkey: bitcoin::PublicKey::from_slice(&[
+                3, 148, 217, 3, 10, 128, 64, 14, 129, 125, 33, 213, 163, 104, 0, 227, 122, 136, 27,
+                45, 207, 44, 64, 24, 35, 166, 166, 118, 25, 12, 200, 183, 98,
+            ])
+            .unwrap(),
+            voting_power: 100,
         });
         assert_eq!(
             net.store.get(b"signatories").unwrap().unwrap(),
             SignatorySetSnapshot {
                 time: 123,
                 signatories: expected_signatories
-            }.encode().unwrap()
+            }
+            .encode()
+            .unwrap()
         );
 
         // lots of time has passed, signatory set should be updated
@@ -373,33 +382,37 @@ mod tests {
         run(&mut net.store, action, &mut net.validators).unwrap();
         let mut expected_signatories = SignatorySet::new();
         expected_signatories.set(Signatory {
-            pubkey: bitcoin::PublicKey::from_slice(
-                &[2,120,15,192,99,177,43,235,23,134,193,123,205,196,253,121,49,80,163,93,230,224,193,88,89,18,15,145,105,217,229,114,148]
-            ).unwrap(),
-            voting_power: 555
+            pubkey: bitcoin::PublicKey::from_slice(&[
+                2, 120, 15, 192, 99, 177, 43, 235, 23, 134, 193, 123, 205, 196, 253, 121, 49, 80,
+                163, 93, 230, 224, 193, 88, 89, 18, 15, 145, 105, 217, 229, 114, 148,
+            ])
+            .unwrap(),
+            voting_power: 555,
         });
         expected_signatories.set(Signatory {
-            pubkey: bitcoin::PublicKey::from_slice(
-                &[3,148,217,3,10,128,64,14,129,125,33,213,163,104,0,227,122,136,27,45,207,44,64,24,35,166,166,118,25,12,200,183,98]
-            ).unwrap(),
-            voting_power: 100
+            pubkey: bitcoin::PublicKey::from_slice(&[
+                3, 148, 217, 3, 10, 128, 64, 14, 129, 125, 33, 213, 163, 104, 0, 227, 122, 136, 27,
+                45, 207, 44, 64, 24, 35, 166, 166, 118, 25, 12, 200, 183, 98,
+            ])
+            .unwrap(),
+            voting_power: 100,
         });
         assert_eq!(
             net.store.get(b"signatories").unwrap().unwrap(),
             SignatorySetSnapshot {
                 time: 1_000_000_000,
                 signatories: expected_signatories
-            }.encode().unwrap()
+            }
+            .encode()
+            .unwrap()
         );
     }
 
     #[test]
     #[should_panic(expected = "Merkle root not found for deposit transaction")]
     fn deposit_invalid_height() {
-        let tx = build_tx(vec![
-            build_txout(100_000_000, vec![].into())
-        ]);
-        let block = build_block(vec![ tx.clone() ]);
+        let tx = build_tx(vec![build_txout(100_000_000, vec![].into())]);
+        let block = build_block(vec![tx.clone()]);
         let mut net = MockNet::new(block.header.clone());
 
         let mut txids = HashSet::new();
@@ -411,7 +424,7 @@ mod tests {
             proof,
             tx: tx.clone(),
             block_index: 0,
-            recipients: vec![]
+            recipients: vec![],
         };
         let action = Action::Transaction(Transaction::Deposit(deposit));
 
@@ -421,10 +434,8 @@ mod tests {
     #[test]
     #[should_panic(expected = "Proof merkle root does not match chain")]
     fn deposit_invalid_proof() {
-        let tx = build_tx(vec![
-            build_txout(100_000_000, vec![].into())
-        ]);
-        let block = build_block(vec![ tx.clone() ]);
+        let tx = build_tx(vec![build_txout(100_000_000, vec![].into())]);
+        let block = build_block(vec![tx.clone()]);
         let mut net = MockNet::new(block.header.clone());
 
         let mut txids = HashSet::new();
@@ -437,7 +448,7 @@ mod tests {
             proof,
             tx: tx.clone(),
             block_index: 0,
-            recipients: vec![]
+            recipients: vec![],
         };
         let action = Action::Transaction(Transaction::Deposit(deposit));
 
@@ -447,10 +458,8 @@ mod tests {
     #[test]
     #[should_panic(expected = "Transaction does not contain any deposit outputs")]
     fn deposit_irrelevant() {
-        let tx = build_tx(vec![
-            build_txout(100_000_000, vec![].into())
-        ]);
-        let block = build_block(vec![ tx.clone() ]);
+        let tx = build_tx(vec![build_txout(100_000_000, vec![].into())]);
+        let block = build_block(vec![tx.clone()]);
         let mut net = MockNet::new(block.header.clone());
 
         let mut txids = HashSet::new();
@@ -462,7 +471,7 @@ mod tests {
             proof,
             tx: tx.clone(),
             block_index: 0,
-            recipients: vec![vec![123; 32]]
+            recipients: vec![vec![123; 32]],
         };
         let action = Action::Transaction(Transaction::Deposit(deposit));
 
@@ -473,16 +482,14 @@ mod tests {
     #[test]
     #[should_panic(expected = "Transaction was already processed")]
     fn deposit_duplicate() {
-        let tx = build_tx(vec![
-            build_txout(
-                100_000_000,
-                nomic_signatory_set::output_script(
-                    &signatories_from_validators(&mock_validator_set()).unwrap(),
-                    vec![123; 32]
-                )
-            )
-        ]);
-        let block = build_block(vec![ tx.clone() ]);
+        let tx = build_tx(vec![build_txout(
+            100_000_000,
+            nomic_signatory_set::output_script(
+                &signatories_from_validators(&mock_validator_set()).unwrap(),
+                vec![123; 32],
+            ),
+        )]);
+        let block = build_block(vec![tx.clone()]);
         let mut net = MockNet::new(block.header.clone());
 
         let mut txids = HashSet::new();
@@ -494,7 +501,7 @@ mod tests {
             proof,
             tx: tx.clone(),
             block_index: 0,
-            recipients: vec![vec![123; 32]]
+            recipients: vec![vec![123; 32]],
         };
         let action = Action::Transaction(Transaction::Deposit(deposit));
 
@@ -505,16 +512,14 @@ mod tests {
     #[test]
     #[should_panic(expected = "Consumed all recipients")]
     fn deposit_no_recipients() {
-        let tx = build_tx(vec![
-            build_txout(
-                100_000_000, 
-                nomic_signatory_set::output_script(
-                    &signatories_from_validators(&mock_validator_set()).unwrap(),
-                    vec![123; 32]
-                )
-            )
-        ]);
-        let block = build_block(vec![ tx.clone() ]);
+        let tx = build_tx(vec![build_txout(
+            100_000_000,
+            nomic_signatory_set::output_script(
+                &signatories_from_validators(&mock_validator_set()).unwrap(),
+                vec![123; 32],
+            ),
+        )]);
+        let block = build_block(vec![tx.clone()]);
         let mut net = MockNet::new(block.header.clone());
 
         let mut txids = HashSet::new();
@@ -526,7 +531,7 @@ mod tests {
             proof,
             tx: tx.clone(),
             block_index: 0,
-            recipients: vec![]
+            recipients: vec![],
         };
         let action = Action::Transaction(Transaction::Deposit(deposit));
 
@@ -535,16 +540,14 @@ mod tests {
 
     #[test]
     fn deposit_ok() {
-        let tx = build_tx(vec![
-            build_txout(
-                100_000_000, 
-                nomic_signatory_set::output_script(
-                    &signatories_from_validators(&mock_validator_set()).unwrap(),
-                    vec![123; 32]
-                )
-            )
-        ]);
-        let block = build_block(vec![ tx.clone() ]);
+        let tx = build_tx(vec![build_txout(
+            100_000_000,
+            nomic_signatory_set::output_script(
+                &signatories_from_validators(&mock_validator_set()).unwrap(),
+                vec![123; 32],
+            ),
+        )]);
+        let block = build_block(vec![tx.clone()]);
         let mut net = MockNet::new(block.header.clone());
 
         let mut txids = HashSet::new();
@@ -556,7 +559,7 @@ mod tests {
             proof,
             tx: tx.clone(),
             block_index: 0,
-            recipients: vec![vec![123; 32]]
+            recipients: vec![vec![123; 32]],
         };
         let action = Action::Transaction(Transaction::Deposit(deposit));
 
@@ -564,7 +567,13 @@ mod tests {
 
         // check recipient balance
         assert_eq!(
-            net.store.get(&[98, 97, 108, 97, 110, 99, 101, 115, 47, 123, 123, 123, 123, 123, 123, 123, 123,  123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123 ]).unwrap(),
+            net.store
+                .get(&[
+                    98, 97, 108, 97, 110, 99, 101, 115, 47, 123, 123, 123, 123, 123, 123, 123, 123,
+                    123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123,
+                    123, 123, 123, 123, 123, 123, 123, 123
+                ])
+                .unwrap(),
             Some(100_000_000u64.to_be_bytes().to_vec())
         );
     }

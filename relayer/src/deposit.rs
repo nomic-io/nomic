@@ -87,7 +87,7 @@ fn possible_bitcoin_addresses(
 pub fn relay_deposits(
     possible_recipients: Vec<Vec<u8>>,
     btc_rpc: &Client,
-    peg_client: &mut PegClient,
+    peg_client: &PegClient,
 ) -> Result<()> {
     let signatory_sets = peg_client.get_signatory_sets()?;
     for (address, recipient) in
