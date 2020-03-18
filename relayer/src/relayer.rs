@@ -99,15 +99,15 @@ pub fn start() {
         let btc_rpc = make_rpc_client().unwrap();
         let mut peg_client = PegClient::new("localhost:26657")?;
 
-        let new_addresses = address_pool.drain_addresses();
+        let new_addresses = address_pool
+            .drain_addresses()
+            .difference(&addresses)
+            .map(|address| address.to_vec())
+            .collect::<Vec<_>>();
         if !new_addresses.is_empty() {
-            let addresses_to_import = new_addresses.difference(&addresses);
-            debug!(
-                "Importing {} new addresses",
-                addresses_to_import.len()
-            );
-            import_addresses(&addresses_to_import, &btc_rpc)?;
-            addresses.extend(addresses_to_import);
+            debug!("Importing {} new addresses", new_addresses.len());
+            import_addresses(new_addresses.clone(), &btc_rpc, &peg_client)?;
+            addresses.extend(new_addresses);
         }
 
         relay_deposits(&addresses, &btc_rpc, &peg_client)?;
@@ -138,7 +138,6 @@ fn header_step() -> Result<()> {
     // Fetch linking headers
     let linking_headers = fetch_linking_headers(&btc_rpc, common_block_hash)?;
     // Build header transactions
-
     let header_transaction = build_header_transaction(&mut linking_headers.to_vec());
     // Broadcast header transactions
     broadcast_header_transaction(&peg_client, header_transaction)?;

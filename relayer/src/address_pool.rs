@@ -51,7 +51,7 @@ impl AddressPool {
         });
     }
 
-    pub fn drain_addresses(&self) -> Vec<Vec<u8>> {
+    pub fn drain_addresses(&self) -> HashSet<Vec<u8>> {
         self.addresses
             .lock()
             .unwrap()
