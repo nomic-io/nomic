@@ -2,12 +2,14 @@ mod tendermint;
 mod wallet;
 
 use clap::Clap;
-use log::info;
+use log::{info, debug};
 use nomic_chain::abci_server;
 use nomic_client::Client;
+use nomic_primitives::Result;
 use std::fs;
 use colored::*;
 use wallet::Wallet;
+use failure::bail;
 
 /// Command-line interface for interacting with the Nomic Bitcoin sidechain
 #[derive(Clap)]
@@ -105,6 +107,19 @@ fn main() {
             nomic_worker::generate();
         }
         SubCommand::Deposit(_) => {
+            fn submit_address(address: &[u8]) -> Result<()> {
+                let relayer = "http://localhost:8080";
+                debug!("Sending address to relayer: {}", relayer);
+                let client = reqwest::blocking::Client::new();
+                let res = client.post(format!("{}/addresses", relayer).as_str())
+                    .body(hex::encode(address))
+                    .send()?;
+                if res.status() != 200 {
+                    bail!("Error sending address to relayer: {}", res.status());
+                }
+                Ok(())
+            }
+
             let mut client = Client::new("localhost:26657").unwrap();
             let signatory_snapshot = client.get_signatory_set_snapshot().unwrap();
 
@@ -122,7 +137,7 @@ fn main() {
             let days_until_expiration = ((expiration - now) as f64 / (60 * 60 * 24) as f64)
                 .round() as usize;
 
-            // TODO: send address to relayers
+            submit_address(wallet.receive_address().as_slice()).unwrap();
 
             println!("YOUR DEPOSIT ADDRESS:");
             println!("{}", address.to_string().cyan().bold());

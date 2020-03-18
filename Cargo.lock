@@ -1438,6 +1438,7 @@ dependencies = [
  "clap 3.0.0-beta.1",
  "colored",
  "dirs",
+ "failure",
  "hex 0.4.2",
  "hex-literal",
  "is_executable",
@@ -2031,6 +2032,7 @@ name = "relayer"
 version = "0.1.0"
 dependencies = [
  "failure",
+ "hex 0.4.2",
  "log 0.4.8",
  "nomic-bitcoin",
  "nomic-client",
