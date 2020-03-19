@@ -118,17 +118,20 @@ fn main() {
         SubCommand::Deposit(_) => {
             default_log_level("warn");
             fn submit_address(address: &[u8]) -> Result<()> {
-                let relayer = "http://kep.io:8080";
-                debug!("Sending address to relayer: {}", relayer);
                 let client = reqwest::blocking::Client::new();
-                let res = client
-                    .post(format!("{}/addresses", relayer).as_str())
-                    .body(hex::encode(address))
-                    .send()?;
-                if res.status() != 200 {
-                    bail!("Error sending address to relayer: {}", res.status());
+                let relayer = "http://kep.io:8880";
+                debug!("Sending address to relayer: {}", relayer);
+                for _ in 0..15 {
+                    let res = client
+                        .post(format!("{}/addresses", relayer).as_str())
+                        .body(hex::encode(address))
+                        .send()?;
+
+                    if res.status() == 200 { return Ok(()); }
+                    debug!("Address pool request failed, retrying");
+                    std::thread::sleep(std::time::Duration::from_millis(200));
                 }
-                Ok(())
+                bail!("Failed to send address to relayer, maximum retries reached");
             }
 
             let mut client = Client::new("localhost:26657").unwrap();
