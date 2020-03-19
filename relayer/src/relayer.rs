@@ -98,7 +98,7 @@ pub fn start() {
 
     let mut deposit_step = || -> Result<()> {
         let btc_rpc = make_rpc_client().unwrap();
-        let mut peg_client = PegClient::new("localhost:26657")?;
+        let peg_client = PegClient::new("localhost:26657")?;
 
         let new_addresses = address_pool
             .drain_addresses()
@@ -121,7 +121,9 @@ pub fn start() {
     );
 
     std::thread::spawn(|| loop {
-        header_step();
+        if let Err(e) = header_step() {
+            debug!("Header relaying error: {:?}", e);
+        }
         std::thread::sleep(std::time::Duration::from_secs(1));
     });
     loop {
