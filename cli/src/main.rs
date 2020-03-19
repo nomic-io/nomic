@@ -119,20 +119,16 @@ fn main() {
             fn submit_address(address: &[u8]) -> Result<()> {
                 let relayer = "http://kep.io:8880";
                 debug!("Sending address to relayer: {}", relayer);
-                for _ in 0..15 {
-                    let client = reqwest::blocking::Client::new();
-                    let res = client
-                        .post(format!("{}/addresses", relayer).as_str())
-                        .body(hex::encode(address))
-                        .send()?;
+                let client = reqwest::blocking::Client::new();
+                let res = client
+                    .post(format!("{}/addresses/{}", relayer, hex::encode(address)).as_str())
+                    .send()?;
 
-                    if res.status() == 200 {
-                        return Ok(());
-                    }
-                    debug!("Address pool request failed, retrying");
-                    std::thread::sleep(std::time::Duration::from_millis(200));
+                if res.status() == 200 {
+                    return Ok(());
+                } else {
+                    bail!("Invalid request to the address pool: {}", res.status());
                 }
-                bail!("Failed to send address to relayer, maximum retries reached");
             }
 
             let mut client = Client::new("localhost:26657").unwrap();

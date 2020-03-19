@@ -8,9 +8,9 @@ pub struct AddressPool {
     addresses: Arc<Mutex<HashSet<Vec<u8>>>>,
 }
 
-#[post("/addresses", data = "<address>")]
+#[post("/addresses/<address>")]
 fn add_address(address: String, addresses: State<Arc<Mutex<HashSet<Vec<u8>>>>>) -> Status {
-    debug!("Incoming request to add address: {:?}", address);
+    debug!("Incoming request to add address: {:?}", &address);
     let address = match hex::decode(address) {
         Ok(address) => address,
         Err(_) => return Status::NotAcceptable,
