@@ -49,7 +49,7 @@ impl AddressPool {
             };
 
             let server = Server::new(handle_request);
-            let port = "8080";
+            let port = "8880";
             info!("Address pool server listening on port {}", &port);
             server.listen("0.0.0.0", port);
         });
