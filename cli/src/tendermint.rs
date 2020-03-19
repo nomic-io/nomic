@@ -129,6 +129,8 @@ pub fn start(nomic_home: &PathBuf) {
         .arg("node")
         .arg("--home")
         .arg(nomic_home.to_str().unwrap())
+        .arg("--p2p.persistent_peers")
+        .arg("55dbe332ece7aa8fc792f76be313eb72aefa3aee@kep.io:26656")
         .spawn()
         .expect("Failed to start Tendermint");
     info!("Spawned Tendermint child process");

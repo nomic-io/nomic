@@ -1,10 +1,27 @@
 use log::{debug, info};
-use simple_server::{Request, Response, ResponseBuilder, ResponseResult, Server};
+use rocket::http::Status;
+use rocket::State;
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 pub struct AddressPool {
     addresses: Arc<Mutex<HashSet<Vec<u8>>>>,
+}
+
+#[post("/addresses/<address>")]
+fn add_address(address: String, addresses: State<Arc<Mutex<HashSet<Vec<u8>>>>>) -> Status {
+    debug!("Incoming request to add address: {:?}", &address);
+    let address = match hex::decode(address) {
+        Ok(address) => address,
+        Err(_) => return Status::NotAcceptable,
+    };
+
+    if address.len() != 32 {
+        return Status::NotAcceptable;
+    }
+
+    addresses.lock().unwrap().insert(address);
+    Status::Ok
 }
 
 impl AddressPool {
@@ -18,40 +35,21 @@ impl AddressPool {
 
     fn spawn_server(&self) {
         let addresses = self.addresses.clone();
+        let port = 8880;
+        info!("Address pool server listening on port {}", &port);
         std::thread::spawn(move || {
-            let handle_request = move |req: Request<Vec<u8>>, mut res: ResponseBuilder| {
-                debug!("Incoming request: {:?}", req);
+            use rocket::config::{Config, Environment};
 
-                let mut response = |code: u16, message: &[u8]| {
-                    res.status(code);
-                    Ok(res.body(message.to_vec())?)
-                };
+            let config = Config::build(Environment::Production)
+                .address("0.0.0.0")
+                .port(port)
+                .finalize()
+                .unwrap();
 
-                if req.method() != "POST" {
-                    return response(401, b"");
-                }
-                if req.uri().to_string() != "/addresses" {
-                    return response(404, b"");
-                }
-
-                let body = req.body();
-                let address = match hex::decode(body) {
-                    Ok(address) => address,
-                    Err(_) => return response(400, b""),
-                };
-                if address.len() != 32 {
-                    return response(400, b"");
-                }
-
-                addresses.lock().unwrap().insert(address);
-
-                response(200, b"")
-            };
-
-            let server = Server::new(handle_request);
-            let port = "8080";
-            info!("Address pool server listening on port {}", &port);
-            server.listen("0.0.0.0", port);
+            rocket::custom(config)
+                .manage(addresses)
+                .mount("/", routes![add_address])
+                .launch();
         });
     }
 
