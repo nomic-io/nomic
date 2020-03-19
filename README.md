@@ -101,14 +101,6 @@ Now you can sync your full node:
 
 Note that this will use ~30GB of disk space, and will take a few hours (the speed depends on your CPU and bandwidth). Enjoy a cup of tea while you wait.
 
-If you'd like to reduce the amount of storage required, you can instead run the node in pruned mode by adding the `-prune=N` option where N is the amount of storage to use in MB. This doesn't make the sync any faster, it just saves disk space.
-
-Example, limiting to 2000MB:
-
-```bash
-./bitcoin-0.19.0.1/bin/bitcoind -testnet -prune=2000 -rpcuser=user -rpcpassword=pass
-```
-
 #### 4c. Start your Nomic relayer
 
 Once Bitcoin is synced, you can run the relayer:
