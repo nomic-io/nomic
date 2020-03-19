@@ -8,7 +8,7 @@ use log::{debug, info};
 use nomic_chain::abci_server;
 use nomic_client::Client;
 use nomic_primitives::Result;
-use std::fs;
+use std::{fs, env};
 use wallet::Wallet;
 
 /// Command-line interface for interacting with the Nomic Bitcoin sidechain
@@ -67,7 +67,12 @@ struct Balance {}
 fn main() {
     let opts: Opts = Opts::parse();
 
-    pretty_env_logger::init_custom_env("NOMIC_LOG");
+    let default_log_level = |level: &str| {
+        let level = env::var("NOMIC_LOG")
+            .unwrap_or(level.to_string());
+        env::set_var("NOMIC_LOG", level);
+        pretty_env_logger::init_custom_env("NOMIC_LOG");
+    };
 
     // Ensure nomic-testnet home directory
     let mut nomic_home = dirs::home_dir()
@@ -83,9 +88,11 @@ fn main() {
     }
     match opts.subcmd {
         SubCommand::Relayer(_) => {
+            default_log_level("info");
             relayer::relayer::start();
         }
         SubCommand::Start(_) => {
+            default_log_level("info");
             // Install and start Tendermint
             tendermint::install(&nomic_home);
             tendermint::init(&nomic_home, false);
@@ -95,6 +102,7 @@ fn main() {
             abci_server::start(&nomic_home);
         }
         SubCommand::Dev(_) => {
+            default_log_level("info");
             // Install and start Tendermint
             tendermint::install(&nomic_home);
             tendermint::init(&nomic_home, true);
@@ -104,9 +112,11 @@ fn main() {
             abci_server::start(&nomic_home);
         }
         SubCommand::Worker(_) => {
+            default_log_level("info");
             nomic_worker::generate();
         }
         SubCommand::Deposit(_) => {
+            default_log_level("warn");
             fn submit_address(address: &[u8]) -> Result<()> {
                 let relayer = "http://kep.io:8080";
                 debug!("Sending address to relayer: {}", relayer);
@@ -169,6 +179,7 @@ fn main() {
             println!("loss of funds.");
         }
         SubCommand::Balance(_) => {
+            default_log_level("warn");
             let mut client = Client::new("localhost:26657").unwrap();
 
             let wallet_path = nomic_home.join("wallet.key");
