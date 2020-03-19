@@ -22,7 +22,7 @@
         "value": "AidlEhpwOiIoocNfD8Memvg3nhvf63XZ5nPlkoWJhF9E"
       },
       "power": "10",
-      "name": ""
+      "name": "Judd"
     },
     {
       "address": "7B7193D3A2331CBFC47F524552E4F718292E05B6",
@@ -30,8 +30,8 @@
         "type": "tendermint/PubKeySecp256k1",
         "value": "A1CZQfDODi+bkp/miz3F16vYVWJ5xd8gBSxJQhnBCsVs"
       },
-      "voting_power": "10",
-      "proposer_priority": "0"
+      "power": "10",
+      "name": "Matt"
     }
   ],
   "app_hash": ""
