@@ -1,6 +1,6 @@
 {
-  "genesis_time": "2019-11-27T20:05:12.407135Z",
-  "chain_id": "nomic-sidechain-v0_0_5",
+  "genesis_time": "2020-03-18T23:35:35.914418403Z",
+  "chain_id": "nomic-sidechain-v0_2_0",
   "consensus_params": {
     "block": {
       "max_bytes": "22020096",
@@ -11,18 +11,27 @@
       "max_age": "100000"
     },
     "validator": {
-      "pub_key_types": ["ed25519"]
+      "pub_key_types": ["secp256k1"]
     }
   },
   "validators": [
     {
-      "address": "A85A9445795B5E8F0C0F61260B959D58B10A45EA",
+      "address": "457E8E91D044AE3C85C58F0C65E89CADDF8373D4",
       "pub_key": {
-        "type": "tendermint/PubKeyEd25519",
-        "value": "mcobVGU+QG/nJHrlUL3v06aIFbhSEhPJ+GApWjh411Q="
+        "type": "tendermint/PubKeySecp256k1",
+        "value": "AidlEhpwOiIoocNfD8Memvg3nhvf63XZ5nPlkoWJhF9E"
       },
       "power": "10",
       "name": ""
+    },
+    {
+      "address": "7B7193D3A2331CBFC47F524552E4F718292E05B6",
+      "pub_key": {
+        "type": "tendermint/PubKeySecp256k1",
+        "value": "A1CZQfDODi+bkp/miz3F16vYVWJ5xd8gBSxJQhnBCsVs"
+      },
+      "voting_power": "10",
+      "proposer_priority": "0"
     }
   ],
   "app_hash": ""
