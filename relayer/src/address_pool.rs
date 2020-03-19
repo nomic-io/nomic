@@ -1,5 +1,5 @@
 use log::{debug, info};
-use simple_server::{Request, Response, ResponseBuilder, ResponseResult, Server};
+use simple_server::{Request, ResponseBuilder, Server};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
