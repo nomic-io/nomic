@@ -8,7 +8,7 @@ use log::{debug, info};
 use nomic_chain::abci_server;
 use nomic_client::Client;
 use nomic_primitives::Result;
-use std::{fs, env};
+use std::{env, fs};
 use wallet::Wallet;
 
 /// Command-line interface for interacting with the Nomic Bitcoin sidechain
@@ -68,8 +68,7 @@ fn main() {
     let opts: Opts = Opts::parse();
 
     let default_log_level = |level: &str| {
-        let level = env::var("NOMIC_LOG")
-            .unwrap_or(level.to_string());
+        let level = env::var("NOMIC_LOG").unwrap_or(level.to_string());
         env::set_var("NOMIC_LOG", level);
         pretty_env_logger::init_custom_env("NOMIC_LOG");
     };
@@ -118,16 +117,18 @@ fn main() {
         SubCommand::Deposit(_) => {
             default_log_level("warn");
             fn submit_address(address: &[u8]) -> Result<()> {
-                let client = reqwest::blocking::Client::new();
                 let relayer = "http://kep.io:8880";
                 debug!("Sending address to relayer: {}", relayer);
                 for _ in 0..15 {
+                    let client = reqwest::blocking::Client::new();
                     let res = client
                         .post(format!("{}/addresses", relayer).as_str())
                         .body(hex::encode(address))
                         .send()?;
 
-                    if res.status() == 200 { return Ok(()); }
+                    if res.status() == 200 {
+                        return Ok(());
+                    }
                     debug!("Address pool request failed, retrying");
                     std::thread::sleep(std::time::Duration::from_millis(200));
                 }
