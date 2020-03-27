@@ -96,7 +96,7 @@ tar -xzf bitcoin-0.19.1-osx64.tar.gz
 Now you can sync your full node:
 
 ```bash
-./bitcoin-0.19.0.1/bin/bitcoind -testnet -rpcuser=user -rpcpassword=pass
+./bitcoin-0.19.1/bin/bitcoind -testnet -rpcuser=user -rpcpassword=pass
 ```
 
 Note that this will use ~30GB of disk space, and will take a few hours (the speed depends on your CPU and bandwidth). Enjoy a cup of tea while you wait.
