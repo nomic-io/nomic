@@ -13,14 +13,14 @@ pub fn mock_pubkey(byte: u8) -> PublicKey {
     privkey.public_key(&secp)
 }
 
-pub fn mock_signatory(key_byte: u8, voting_power: u32) -> Signatory {
+pub fn mock_signatory(key_byte: u8, voting_power: u64) -> Signatory {
     Signatory::new(mock_pubkey(key_byte), voting_power)
 }
 
 pub fn mock_signatory_set(count: usize) -> SignatorySet {
     let mut signatories = SignatorySet::new();
     for i in 1..=count {
-        signatories.set(mock_signatory(i as u8, i as u32));
+        signatories.set(mock_signatory(i as u8, i as u64));
     }
     signatories
 }

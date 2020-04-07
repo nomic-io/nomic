@@ -46,7 +46,7 @@ pub fn redeem_script(signatories: &SignatorySet, data: Vec<u8>) -> Script {
         bytes
     });
 
-    let two_thirds = signatories.total_voting_power() as u64 * 2 / 3;
+    let two_thirds = signatories.two_thirds_voting_power();
     bytes.extend(&greater_than_script(two_thirds as u32).into_bytes());
 
     bytes.extend(&data_script(data).into_bytes());

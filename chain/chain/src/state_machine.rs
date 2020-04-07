@@ -176,7 +176,7 @@ fn signatories_from_validators(validators: &BTreeMap<Vec<u8>, u64>) -> Result<Si
     let mut signatories = SignatorySet::new();
     for (key_bytes, voting_power) in validators.iter() {
         let key = bitcoin::PublicKey::from_slice(key_bytes.as_slice())?;
-        signatories.set(Signatory::new(key, *voting_power as u32));
+        signatories.set(Signatory::new(key, *voting_power));
     }
     Ok(signatories)
 }

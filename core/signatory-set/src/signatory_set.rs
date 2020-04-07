@@ -6,12 +6,12 @@ use std::collections::{BTreeSet, HashMap};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Signatory {
-    pub voting_power: u32,
+    pub voting_power: u64,
     pub pubkey: PublicKey,
 }
 
 impl Signatory {
-    pub fn new(pubkey: PublicKey, voting_power: u32) -> Self {
+    pub fn new(pubkey: PublicKey, voting_power: u64) -> Self {
         Signatory {
             pubkey,
             voting_power,
@@ -23,7 +23,7 @@ impl Signatory {
 pub struct SignatorySet {
     map: HashMap<PublicKey, Signatory>,
     set: BTreeSet<Signatory>,
-    total_voting_power: u32,
+    total_voting_power: u128,
 }
 
 impl SignatorySet {
@@ -35,14 +35,22 @@ impl SignatorySet {
         self.map.len()
     }
 
-    pub fn total_voting_power(&self) -> u32 {
+    pub fn total_voting_power(&self) -> u128 {
         self.total_voting_power
     }
 
+    pub fn two_thirds_voting_power(&self) -> u128 {
+        let vp2 = self.total_voting_power * 2;
+        // check mod 3 so we can ceil the division rather than flooring (it is
+        // safer for this to round up instead of down)
+        let rounding = if vp2 % 3 != 0 { 1 } else { 0 };
+        vp2 / 3 + rounding
+    }
+ 
     pub fn remove(&mut self, pubkey: &PublicKey) -> Option<Signatory> {
         self.map.remove(pubkey).map(|signatory| {
             self.set.remove(&signatory);
-            self.total_voting_power -= signatory.voting_power;
+            self.total_voting_power -= signatory.voting_power as u128;
             signatory
         })
     }
@@ -54,9 +62,7 @@ impl SignatorySet {
     }
 
     fn add(&mut self, signatory: Signatory) {
-        // TODO: ensure we don't overflow total_voting_power
-
-        self.total_voting_power += signatory.voting_power;
+        self.total_voting_power += signatory.voting_power as u128;
         self.map.insert(signatory.pubkey.clone(), signatory.clone());
         self.set.insert(signatory);
     }
@@ -69,7 +75,7 @@ impl SignatorySet {
 #[derive(Debug, Serialize, Deserialize)]
 struct SerializableSignatorySetSnapshot {
     time: u64,
-    signatories: Vec<(Vec<u8>, u32)>,
+    signatories: Vec<(Vec<u8>, u64)>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -175,12 +181,7 @@ mod tests {
         assert_eq!(
             snapshot.encode().unwrap(),
             vec![
-                123, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 33, 0, 0, 0, 0, 0, 0, 0, 3, 27,
-                132, 197, 86, 123, 18, 100, 64, 153, 93, 62, 213, 170, 186, 5, 101, 215, 30, 24,
-                52, 96, 72, 25, 255, 156, 23, 245, 233, 213, 221, 7, 143, 200, 0, 0, 0, 33, 0, 0,
-                0, 0, 0, 0, 0, 2, 77, 75, 108, 209, 54, 16, 50, 202, 155, 210, 174, 185, 217, 0,
-                170, 77, 69, 217, 234, 216, 10, 201, 66, 51, 116, 196, 81, 167, 37, 77, 7, 102,
-                100, 0, 0, 0
+                123, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 33, 0, 0, 0, 0, 0, 0, 0, 3, 27, 132, 197, 86, 123, 18, 100, 64, 153, 93, 62, 213, 170, 186, 5, 101, 215, 30, 24, 52, 96, 72, 25, 255, 156, 23, 245, 233, 213, 221, 7, 143, 200, 0, 0, 0, 0, 0, 0, 0, 33, 0, 0, 0, 0, 0, 0, 0, 2, 77, 75, 108, 209, 54, 16, 50, 202, 155, 210, 174, 185, 217, 0, 170, 77, 69, 217, 234, 216, 10, 201, 66, 51, 116, 196, 81, 167, 37, 77, 7, 102, 100, 0, 0, 0, 0, 0, 0, 0
             ]
         );
     }
@@ -197,11 +198,7 @@ mod tests {
         };
 
         let bytes = vec![
-            123, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 33, 0, 0, 0, 0, 0, 0, 0, 3, 27, 132,
-            197, 86, 123, 18, 100, 64, 153, 93, 62, 213, 170, 186, 5, 101, 215, 30, 24, 52, 96, 72,
-            25, 255, 156, 23, 245, 233, 213, 221, 7, 143, 200, 0, 0, 0, 33, 0, 0, 0, 0, 0, 0, 0, 2,
-            77, 75, 108, 209, 54, 16, 50, 202, 155, 210, 174, 185, 217, 0, 170, 77, 69, 217, 234,
-            216, 10, 201, 66, 51, 116, 196, 81, 167, 37, 77, 7, 102, 100, 0, 0, 0,
+            123, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 33, 0, 0, 0, 0, 0, 0, 0, 3, 27, 132, 197, 86, 123, 18, 100, 64, 153, 93, 62, 213, 170, 186, 5, 101, 215, 30, 24, 52, 96, 72, 25, 255, 156, 23, 245, 233, 213, 221, 7, 143, 200, 0, 0, 0, 0, 0, 0, 0, 33, 0, 0, 0, 0, 0, 0, 0, 2, 77, 75, 108, 209, 54, 16, 50, 202, 155, 210, 174, 185, 217, 0, 170, 77, 69, 217, 234, 216, 10, 201, 66, 51, 116, 196, 81, 167, 37, 77, 7, 102, 100, 0, 0, 0, 0, 0, 0, 0
         ];
         assert_eq!(
             SignatorySetSnapshot::decode(bytes.as_slice()).unwrap(),
