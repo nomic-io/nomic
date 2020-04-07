@@ -1,14 +1,11 @@
 use crate::spv::headercache::HeaderCache;
 use crate::Action;
 use bitcoin::Network::Testnet as bitcoin_network;
-use failure::bail;
+use failure::{bail, format_err};
 use nomic_bitcoin::{bitcoin, EnrichedHeader};
 use nomic_primitives::transaction::Transaction;
 use nomic_primitives::transaction::{
-    DepositTransaction,
-    HeaderTransaction,
-    TransferTransaction,
-    WorkProofTransaction
+    DepositTransaction, HeaderTransaction, TransferTransaction, WorkProofTransaction,
 };
 use nomic_primitives::{Error, Result};
 use nomic_signatory_set::{Signatory, SignatorySet, SignatorySetSnapshot};
@@ -81,7 +78,7 @@ fn handle_begin_block(
 fn handle_work_proof_tx(
     store: &mut dyn Store,
     validators: &mut BTreeMap<Vec<u8>, u64>,
-    tx: WorkProofTransaction
+    tx: WorkProofTransaction,
 ) -> Result<()> {
     let mut hasher = Sha256::new();
     hasher.input(&tx.public_key);
@@ -90,22 +87,23 @@ fn handle_work_proof_tx(
     let hash = hasher.result().to_vec();
     let work_proof_value = work(&hash);
 
-    if work_proof_value >= MIN_WORK {
-        // Make sure this proof hasn't been redeemed yet
-        let value_at_work_proof_hash = store.get(&hash).unwrap_or(None);
-        if let None = value_at_work_proof_hash {
-            // Grant voting power
-            let current_voting_power = *validators.get(&tx.public_key).unwrap_or(&(0 as u64));
-
-            validators.insert(tx.public_key, current_voting_power + work_proof_value);
-            // Write the redeemed hash to the store so it can't be replayed
-            store.put(hash.to_vec(), vec![0])?;
-        } else {
-            // TODO: return error
-            println!("duplicate work proof: {:?},\n\nHash: {:?}, \n\nValue stored at hash on store: {:?}", tx, hash, value_at_work_proof_hash);
-        }
+    if work_proof_value < MIN_WORK {
+        bail!("Proof has less than minimum work value")
     }
 
+    // Make sure this proof hasn't been redeemed yet
+    let value_at_work_proof_hash = store.get(&hash)?;
+    if let Some(_) = value_at_work_proof_hash {
+        bail!("Work proof has already been redeemed")
+    }
+
+    // Grant voting power
+    let current_voting_power = *validators.get(&tx.public_key).unwrap_or(&0);
+
+    validators.insert(tx.public_key, current_voting_power + work_proof_value);
+    // Write the redeemed hash to the store so it can't be replayed
+    store.put(hash.to_vec(), vec![0])?;
+    
     Ok(())
 }
 
