@@ -9,6 +9,7 @@ pub enum Transaction {
     Header(HeaderTransaction),
     WorkProof(WorkProofTransaction),
     Deposit(DepositTransaction),
+    Transfer(TransferTransaction),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -55,4 +56,14 @@ pub struct DepositTransaction {
     pub tx: bitcoin::Transaction,
     pub block_index: u32,
     pub recipients: Vec<Vec<u8>>,
+}
+
+/// Transfer coins from one account to another
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransferTransaction {
+    from: Vec<u8>,
+    to: Vec<u8>,
+    amount: u64,
+    signature: Vec<u8>,
+    nonce: u64,
 }
