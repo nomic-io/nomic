@@ -40,11 +40,9 @@ impl SignatorySet {
     }
 
     pub fn two_thirds_voting_power(&self) -> u128 {
-        let vp2 = self.total_voting_power * 2;
-        // check mod 3 so we can ceil the division rather than flooring (it is
-        // safer for this to round up instead of down)
-        let rounding = if vp2 % 3 != 0 { 1 } else { 0 };
-        vp2 / 3 + rounding
+        // it is safe that we round down since the script does a
+        // greater than comparison
+        self.total_voting_power * 2 / 3
     }
  
     pub fn remove(&mut self, pubkey: &PublicKey) -> Option<Signatory> {
@@ -151,6 +149,16 @@ mod tests {
         assert_eq!(set.total_voting_power(), 200);
         set.remove(&mock_pubkey(1));
         assert_eq!(set.total_voting_power(), 100);
+    }
+
+    #[test]
+    fn two_thirds_voting_power() {
+        let mut set = SignatorySet::new();
+        set.add(mock_signatory(1, 100));
+        set.add(mock_signatory(2, 100));
+        assert_eq!(set.two_thirds_voting_power(), 133);
+        set.remove(&mock_pubkey(1));
+        assert_eq!(set.two_thirds_voting_power(), 66);
     }
 
     #[test]

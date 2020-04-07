@@ -1,61 +1,68 @@
-use super::{Signatory, SignatorySet};
+use super::SignatorySet;
 use bitcoin_script::bitcoin_script as script;
 use nomic_bitcoin::bitcoin::Script;
 
 pub fn redeem_script(signatories: &SignatorySet, data: Vec<u8>) -> Script {
-    let first_signatory_script = |signatory: &Signatory| {
-        script! {
-            <signatory.pubkey> OP_CHECKSIG
-            OP_IF
-                <signatory.voting_power as i64>
-            OP_ELSE
-                0
-            OP_ENDIF
-        }
-    };
-
-    let nth_signatory_script = |signatory: &Signatory| {
-        script! {
-            OP_SWAP
-            <signatory.pubkey> OP_CHECKSIG
-            OP_IF
-                <signatory.voting_power as i64> OP_ADD
-            OP_ENDIF
-        }
-    };
-
-    let greater_than_script = |n: u32| {
-        script! {
-            <n as i64> OP_GREATERTHAN
-            OP_VERIFY
-        }
-    };
-
-    // put a 1 at the end so nobody can make an unspendable output
-    let data_script = |data: Vec<u8>| script!(<data> 1);
+    let truncation = get_truncation(signatories, 23);
 
     let mut iter = signatories.iter();
 
-    let first_signatory = iter
+    // first signatory
+    let signatory = iter
         .next()
         .expect("Cannot build script for empty signatory set");
-    let bytes = first_signatory_script(first_signatory).into_bytes();
+    let truncated_voting_power = signatory.voting_power >> truncation;
+    let script = script! {
+        <signatory.pubkey> OP_CHECKSIG
+        OP_IF <truncated_voting_power as i64>
+        OP_ELSE 0
+        OP_ENDIF
+    };
+    let mut bytes = script.into_bytes();
 
-    let mut bytes = iter.fold(bytes, |mut bytes, signatory| {
-        bytes.extend(&nth_signatory_script(signatory).into_bytes());
-        bytes
-    });
+    // all other signatories
+    for signatory in iter {
+        let truncated_voting_power = signatory.voting_power >> truncation;
+        let script = script! {
+            OP_SWAP
+            <signatory.pubkey> OP_CHECKSIG
+            OP_IF
+                <truncated_voting_power as i64> OP_ADD
+            OP_ENDIF
+        };
+        bytes.extend(&script.into_bytes());
+    }
 
-    let two_thirds = signatories.two_thirds_voting_power();
-    bytes.extend(&greater_than_script(two_thirds as u32).into_bytes());
+    // > 2/3 check
+    let truncated_two_thirds =
+        signatories.two_thirds_voting_power() >> truncation;
+    let script = script! {
+        <truncated_two_thirds as i64> OP_GREATERTHAN
+        OP_VERIFY
+    };
+    bytes.extend(&script.into_bytes());
 
-    bytes.extend(&data_script(data).into_bytes());
+    // depositor data commitment
+    // (has a 1 at the end so nobody can make an unspendable output)
+    let script = script!(<data> 1);
+    bytes.extend(&script.into_bytes());
 
     bytes.into()
 }
 
 pub fn output_script(signatories: &SignatorySet, data: Vec<u8>) -> Script {
     redeem_script(signatories, data).to_v0_p2wsh()
+}
+
+fn get_truncation(
+    signatories: &SignatorySet,
+    target_precision: u32
+) -> u32 {
+    // TODO: reduce precision more if there is no relative difference (to save
+    // space in script)
+    let vp = signatories.total_voting_power();
+    let vp_bits = 128 - vp.leading_zeros();
+    vp_bits.saturating_sub(target_precision)
 }
 
 #[cfg(test)]
@@ -72,37 +79,40 @@ mod tests {
 
     #[test]
     fn redeem_script_fixture() {
-        let script = redeem_script(&mock_signatory_set(4), vec![1, 2, 3]);
+        let mut signatories = SignatorySet::new();
+        signatories.set(mock_signatory(1, 5_000_000));
+        signatories.set(mock_signatory(2, 15_000_000));
+        signatories.set(mock_signatory(3, 20_000_000));
+        signatories.set(mock_signatory(4, 60_000_000));
+        let script = redeem_script(&signatories, vec![1, 2, 3]);
 
         assert_eq!(
             script,
             bitcoin_script! {
                 0x03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b OP_CHECKSIG
-                OP_IF
-                    4
-                OP_ELSE
-                    0
+                OP_IF 3750000
+                OP_ELSE 0
                 OP_ENDIF
 
                 OP_SWAP
                 0x02531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337 OP_CHECKSIG
                 OP_IF
-                    3 OP_ADD
+                    1250000 OP_ADD
                 OP_ENDIF
 
                 OP_SWAP
                 0x024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766 OP_CHECKSIG
                 OP_IF
-                    2 OP_ADD
+                    937500 OP_ADD
                 OP_ENDIF
 
                 OP_SWAP
                 0x031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f OP_CHECKSIG
                 OP_IF
-                    1 OP_ADD
+                    312500 OP_ADD
                 OP_ENDIF
 
-                6 OP_GREATERTHAN
+                4166666 OP_GREATERTHAN
                 OP_VERIFY
 
                 0x010203 1
@@ -112,15 +122,7 @@ mod tests {
         assert_eq!(
             script.into_bytes(),
             vec![
-                33, 3, 70, 39, 121, 173, 74, 173, 57, 81, 70, 20, 117, 26, 113, 8, 95, 47, 16, 225,
-                199, 165, 147, 228, 224, 48, 239, 181, 184, 114, 28, 229, 91, 11, 172, 99, 84, 103,
-                0, 104, 124, 33, 2, 83, 31, 230, 6, 129, 52, 80, 61, 39, 35, 19, 50, 39, 200, 103,
-                172, 143, 166, 200, 60, 83, 126, 154, 68, 195, 197, 189, 189, 203, 31, 227, 55,
-                172, 99, 83, 147, 104, 124, 33, 2, 77, 75, 108, 209, 54, 16, 50, 202, 155, 210,
-                174, 185, 217, 0, 170, 77, 69, 217, 234, 216, 10, 201, 66, 51, 116, 196, 81, 167,
-                37, 77, 7, 102, 172, 99, 82, 147, 104, 124, 33, 3, 27, 132, 197, 86, 123, 18, 100,
-                64, 153, 93, 62, 213, 170, 186, 5, 101, 215, 30, 24, 52, 96, 72, 25, 255, 156, 23,
-                245, 233, 213, 221, 7, 143, 172, 99, 81, 147, 104, 86, 160, 105, 3, 1, 2, 3, 81
+                33, 3, 70, 39, 121, 173, 74, 173, 57, 81, 70, 20, 117, 26, 113, 8, 95, 47, 16, 225, 199, 165, 147, 228, 224, 48, 239, 181, 184, 114, 28, 229, 91, 11, 172, 99, 3, 112, 56, 57, 103, 0, 104, 124, 33, 2, 83, 31, 230, 6, 129, 52, 80, 61, 39, 35, 19, 50, 39, 200, 103, 172, 143, 166, 200, 60, 83, 126, 154, 68, 195, 197, 189, 189, 203, 31, 227, 55, 172, 99, 3, 208, 18, 19, 147, 104, 124, 33, 2, 77, 75, 108, 209, 54, 16, 50, 202, 155, 210, 174, 185, 217, 0, 170, 77, 69, 217, 234, 216, 10, 201, 66, 51, 116, 196, 81, 167, 37, 77, 7, 102, 172, 99, 3, 28, 78, 14, 147, 104, 124, 33, 3, 27, 132, 197, 86, 123, 18, 100, 64, 153, 93, 62, 213, 170, 186, 5, 101, 215, 30, 24, 52, 96, 72, 25, 255, 156, 23, 245, 233, 213, 221, 7, 143, 172, 99, 3, 180, 196, 4, 147, 104, 3, 10, 148, 63, 160, 105, 3, 1, 2, 3, 81
             ]
         );
     }
@@ -142,5 +144,18 @@ mod tests {
                 30, 255, 94, 38, 110, 170, 206, 226, 103, 163, 195, 181, 207, 79, 11
             ]
         );
+    }
+
+    #[test]
+    fn truncation() {
+        // total less than target precision (10, 4 bits)
+        let mut signatories = SignatorySet::new();
+        signatories.set(mock_signatory(1, 10));
+        assert_eq!(get_truncation(&signatories, 23), 0);
+
+        // total greater than target precision (100M, 27 bits)
+        let mut signatories = SignatorySet::new();
+        signatories.set(mock_signatory(1, 100_000_000));
+        assert_eq!(get_truncation(&signatories, 23), 4);
     }
 }
