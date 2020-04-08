@@ -277,6 +277,12 @@ mod tests {
     use orga::{abci::messages::Header as TendermintHeader, MapStore};
     use protobuf::well_known_types::Timestamp;
     use std::collections::{BTreeMap, HashSet};
+    use lazy_static::lazy_static;
+    use secp256k1::{Secp256k1, SignOnly};
+
+    lazy_static! {
+        static ref SECP: Secp256k1<SignOnly> = Secp256k1::signing_only();
+    }
 
     fn mock_validator_set() -> BTreeMap<Vec<u8>, u64> {
         let mut vals = BTreeMap::new();
@@ -290,20 +296,27 @@ mod tests {
         vals
     }
 
-    #[derive(Default)]
     struct MockNet {
         store: MapStore,
         validators: BTreeMap<Vec<u8>, u64>,
+        btc_block: bitcoin::Block
     }
 
     impl MockNet {
-        fn new(initial_header: bitcoin::BlockHeader) -> Self {
+        fn new() -> Self {
+            let tx = build_tx(vec![build_txout(100_000_000, vec![].into())]);
+            let block = build_block(vec![tx.clone()]);
+            MockNet::with_btc_block(block)
+        }
+
+        fn with_btc_block(initial_block: bitcoin::Block) -> Self {
             let mut net = MockNet {
                 store: Default::default(),
                 validators: mock_validator_set(),
+                btc_block: initial_block.clone()
             };
             net.spv()
-                .add_header_raw(initial_header, 0)
+                .add_header_raw(initial_block.header, 0)
                 .expect("failed to create mock net");
 
             // initial beginblock
@@ -319,6 +332,16 @@ mod tests {
 
         fn spv(&mut self) -> HeaderCache {
             HeaderCache::new(bitcoin::Network::Regtest, &mut self.store)
+        }
+
+        fn create_btc_proof(&self) -> (
+            bitcoin::Transaction,
+            bitcoin::util::merkleblock::PartialMerkleTree
+         ) {
+            let tx = self.btc_block.txdata[0].clone();
+            let mut txids = HashSet::new();
+            txids.insert(tx.txid());
+            (tx, bitcoin::MerkleBlock::from_block(&self.btc_block, &txids).txn)
         }
     }
 
@@ -363,6 +386,20 @@ mod tests {
         bitcoin_encode::deserialize(proof_bytes.as_slice()).unwrap()
     }
 
+    fn create_keypair(byte: u8) -> (secp256k1::SecretKey, secp256k1::PublicKey) {
+        let privkey = secp256k1::SecretKey::from_slice(&[byte; 32]).unwrap();
+        let pubkey = secp256k1::PublicKey::from_secret_key(&SECP, &privkey);
+        (privkey, pubkey)
+    }
+
+    fn sign(tx: &mut TransferTransaction, privkey: secp256k1::SecretKey) {
+        let message = secp256k1::Message::from_slice(
+            tx.sighash().unwrap().as_slice()
+        ).unwrap();
+        let signature = SECP.sign(&message, &privkey);
+        tx.signature = signature.serialize_compact().to_vec();
+    }
+
     #[test]
     fn init() {
         let mut store = MapStore::new();
@@ -379,9 +416,7 @@ mod tests {
 
     #[test]
     fn begin_block() {
-        let tx = build_tx(vec![build_txout(100_000_000, vec![].into())]);
-        let block = build_block(vec![tx.clone()]);
-        let mut net = MockNet::new(block.header.clone());
+        let mut net = MockNet::new();
 
         // initial signatories
         let mut expected_signatories = SignatorySet::new();
@@ -474,18 +509,13 @@ mod tests {
     #[test]
     #[should_panic(expected = "Merkle root not found for deposit transaction")]
     fn deposit_invalid_height() {
-        let tx = build_tx(vec![build_txout(100_000_000, vec![].into())]);
-        let block = build_block(vec![tx.clone()]);
-        let mut net = MockNet::new(block.header.clone());
+        let mut net = MockNet::new();
 
-        let mut txids = HashSet::new();
-        txids.insert(tx.txid());
-        let proof = bitcoin::MerkleBlock::from_block(&block, &txids).txn;
-
+        let (tx, proof) = net.create_btc_proof();
         let deposit = DepositTransaction {
             height: 100,
             proof,
-            tx: tx.clone(),
+            tx,
             block_index: 0,
             recipients: vec![],
         };
@@ -497,19 +527,15 @@ mod tests {
     #[test]
     #[should_panic(expected = "Proof merkle root does not match chain")]
     fn deposit_invalid_proof() {
-        let tx = build_tx(vec![build_txout(100_000_000, vec![].into())]);
-        let block = build_block(vec![tx.clone()]);
-        let mut net = MockNet::new(block.header.clone());
+        let mut net = MockNet::new();
 
-        let mut txids = HashSet::new();
-        txids.insert(tx.txid());
-        let proof = bitcoin::MerkleBlock::from_block(&block, &txids).txn;
+        let (tx, proof) = net.create_btc_proof();
         let proof = invalidate_proof(proof);
 
         let deposit = DepositTransaction {
             height: 0,
             proof,
-            tx: tx.clone(),
+            tx,
             block_index: 0,
             recipients: vec![],
         };
@@ -521,24 +547,18 @@ mod tests {
     #[test]
     #[should_panic(expected = "Transaction does not contain any deposit outputs")]
     fn deposit_irrelevant() {
-        let tx = build_tx(vec![build_txout(100_000_000, vec![].into())]);
-        let block = build_block(vec![tx.clone()]);
-        let mut net = MockNet::new(block.header.clone());
+        let mut net = MockNet::new();
 
-        let mut txids = HashSet::new();
-        txids.insert(tx.txid());
-        let proof = bitcoin::MerkleBlock::from_block(&block, &txids).txn;
-
+        let (tx, proof) = net.create_btc_proof();
         let deposit = DepositTransaction {
             height: 0,
             proof,
-            tx: tx.clone(),
+            tx,
             block_index: 0,
             recipients: vec![vec![123; 32]],
         };
         let action = Action::Transaction(Transaction::Deposit(deposit));
 
-        run(&mut net.store, action.clone(), &mut net.validators).unwrap();
         run(&mut net.store, action, &mut net.validators).unwrap();
     }
 
@@ -553,16 +573,13 @@ mod tests {
             ),
         )]);
         let block = build_block(vec![tx.clone()]);
-        let mut net = MockNet::new(block.header.clone());
+        let mut net = MockNet::with_btc_block(block);
 
-        let mut txids = HashSet::new();
-        txids.insert(tx.txid());
-        let proof = bitcoin::MerkleBlock::from_block(&block, &txids).txn;
-
+        let (_, proof) = net.create_btc_proof();
         let deposit = DepositTransaction {
             height: 0,
             proof,
-            tx: tx.clone(),
+            tx,
             block_index: 0,
             recipients: vec![vec![123; 32]],
         };
@@ -583,16 +600,13 @@ mod tests {
             ),
         )]);
         let block = build_block(vec![tx.clone()]);
-        let mut net = MockNet::new(block.header.clone());
+        let mut net = MockNet::with_btc_block(block);
 
-        let mut txids = HashSet::new();
-        txids.insert(tx.txid());
-        let proof = bitcoin::MerkleBlock::from_block(&block, &txids).txn;
-
+        let (_, proof) = net.create_btc_proof();
         let deposit = DepositTransaction {
             height: 0,
             proof,
-            tx: tx.clone(),
+            tx,
             block_index: 0,
             recipients: vec![],
         };
@@ -611,16 +625,13 @@ mod tests {
             ),
         )]);
         let block = build_block(vec![tx.clone()]);
-        let mut net = MockNet::new(block.header.clone());
+        let mut net = MockNet::with_btc_block(block);
 
-        let mut txids = HashSet::new();
-        txids.insert(tx.txid());
-        let proof = bitcoin::MerkleBlock::from_block(&block, &txids).txn;
-
+        let (tx, proof) = net.create_btc_proof();
         let deposit = DepositTransaction {
             height: 0,
             proof,
-            tx: tx.clone(),
+            tx,
             block_index: 0,
             recipients: vec![vec![123; 32]],
         };
@@ -641,15 +652,9 @@ mod tests {
     #[test]
     #[should_panic(expected = "Transaction fee is too small")]
     fn transfer_insufficient_fee() {
-        let tx = build_tx(vec![build_txout(100_000_000, vec![].into())]);
-        let block = build_block(vec![tx.clone()]);
-        let mut net = MockNet::new(block.header.clone());
+        let mut net = MockNet::new();
 
-        use secp256k1::Secp256k1;
-        let secp = Secp256k1::new();
-        let sender_privkey = secp256k1::SecretKey::from_slice(&[1; 32]).unwrap();
-        let sender_pubkey = secp256k1::PublicKey::from_secret_key(&secp, &sender_privkey);
-
+        let (sender_privkey, sender_pubkey) = create_keypair(1);
         let sender_address = sender_pubkey.serialize().to_vec();
         let receiver_address = vec![124; 32];
 
@@ -666,11 +671,7 @@ mod tests {
             nonce: 0,
             fee_amount: 0
         };
-        let message = secp256k1::Message::from_slice(
-            tx.sighash().unwrap().as_slice()
-        ).unwrap();
-        let signature = secp.sign(&message, &sender_privkey);
-        tx.signature = signature.serialize_compact().to_vec();
+        sign(&mut tx, sender_privkey);
 
         let action = Action::Transaction(Transaction::Transfer(tx));
         run(&mut net.store, action, &mut net.validators).unwrap();
@@ -679,15 +680,9 @@ mod tests {
     #[test]
     #[should_panic(expected = "Account does not exist")]
     fn transfer_from_nonexistent_account() {
-        let tx = build_tx(vec![build_txout(100_000_000, vec![].into())]);
-        let block = build_block(vec![tx.clone()]);
-        let mut net = MockNet::new(block.header.clone());
+        let mut net = MockNet::new();
 
-        use secp256k1::Secp256k1;
-        let secp = Secp256k1::new();
-        let sender_privkey = secp256k1::SecretKey::from_slice(&[1; 32]).unwrap();
-        let sender_pubkey = secp256k1::PublicKey::from_secret_key(&secp, &sender_privkey);
-
+        let (sender_privkey, sender_pubkey) = create_keypair(1);
         let sender_address = sender_pubkey.serialize().to_vec();
         let receiver_address = vec![124; 32];
 
@@ -699,11 +694,7 @@ mod tests {
             nonce: 0,
             fee_amount: 1000
         };
-        let message = secp256k1::Message::from_slice(
-            tx.sighash().unwrap().as_slice()
-        ).unwrap();
-        let signature = secp.sign(&message, &sender_privkey);
-        tx.signature = signature.serialize_compact().to_vec();
+        sign(&mut tx, sender_privkey);
 
         let action = Action::Transaction(Transaction::Transfer(tx));
         run(&mut net.store, action, &mut net.validators).unwrap();
@@ -712,15 +703,9 @@ mod tests {
     #[test]
     #[should_panic(expected = "Insufficient balance in sender account")]
     fn transfer_insufficient_balance() {
-        let tx = build_tx(vec![build_txout(100_000_000, vec![].into())]);
-        let block = build_block(vec![tx.clone()]);
-        let mut net = MockNet::new(block.header.clone());
+        let mut net = MockNet::new();
 
-        use secp256k1::Secp256k1;
-        let secp = Secp256k1::new();
-        let sender_privkey = secp256k1::SecretKey::from_slice(&[1; 32]).unwrap();
-        let sender_pubkey = secp256k1::PublicKey::from_secret_key(&secp, &sender_privkey);
-
+        let (sender_privkey, sender_pubkey) = create_keypair(1);
         let sender_address = sender_pubkey.serialize().to_vec();
         let receiver_address = vec![124; 32];
 
@@ -737,11 +722,7 @@ mod tests {
             nonce: 0,
             fee_amount: 1000
         };
-        let message = secp256k1::Message::from_slice(
-            tx.sighash().unwrap().as_slice()
-        ).unwrap();
-        let signature = secp.sign(&message, &sender_privkey);
-        tx.signature = signature.serialize_compact().to_vec();
+        sign(&mut tx, sender_privkey);
 
         let action = Action::Transaction(Transaction::Transfer(tx));
         run(&mut net.store, action, &mut net.validators).unwrap();
@@ -750,15 +731,9 @@ mod tests {
     #[test]
     #[should_panic(expected = "Invalid account nonce for transaction")]
     fn transfer_invalid_nonce() {
-        let tx = build_tx(vec![build_txout(100_000_000, vec![].into())]);
-        let block = build_block(vec![tx.clone()]);
-        let mut net = MockNet::new(block.header.clone());
+        let mut net = MockNet::new();
 
-        use secp256k1::Secp256k1;
-        let secp = Secp256k1::new();
-        let sender_privkey = secp256k1::SecretKey::from_slice(&[1; 32]).unwrap();
-        let sender_pubkey = secp256k1::PublicKey::from_secret_key(&secp, &sender_privkey);
-
+        let (sender_privkey, sender_pubkey) = create_keypair(1);
         let sender_address = sender_pubkey.serialize().to_vec();
         let receiver_address = vec![124; 32];
 
@@ -775,11 +750,7 @@ mod tests {
             nonce: 0,
             fee_amount: 1000
         };
-        let message = secp256k1::Message::from_slice(
-            tx.sighash().unwrap().as_slice()
-        ).unwrap();
-        let signature = secp.sign(&message, &sender_privkey);
-        tx.signature = signature.serialize_compact().to_vec();
+        sign(&mut tx, sender_privkey);
 
         let action = Action::Transaction(Transaction::Transfer(tx));
         run(&mut net.store, action, &mut net.validators).unwrap();
@@ -788,15 +759,9 @@ mod tests {
     #[test]
     #[should_panic(expected = "Invalid signature")]
     fn transfer_invalid_signature() {
-        let tx = build_tx(vec![build_txout(100_000_000, vec![].into())]);
-        let block = build_block(vec![tx.clone()]);
-        let mut net = MockNet::new(block.header.clone());
+        let mut net = MockNet::new();
 
-        use secp256k1::Secp256k1;
-        let secp = Secp256k1::new();
-        let sender_privkey = secp256k1::SecretKey::from_slice(&[1; 32]).unwrap();
-        let sender_pubkey = secp256k1::PublicKey::from_secret_key(&secp, &sender_privkey);
-
+        let (sender_privkey, sender_pubkey) = create_keypair(1);
         let sender_address = sender_pubkey.serialize().to_vec();
         let receiver_address = vec![124; 32];
 
@@ -813,9 +778,8 @@ mod tests {
             nonce: 0,
             fee_amount: 1000
         };
-        let message = secp256k1::Message::from_slice(&[123; 32]).unwrap();
-        let signature = secp.sign(&message, &sender_privkey);
-        tx.signature = signature.serialize_compact().to_vec();
+        sign(&mut tx, sender_privkey);
+        tx.signature[10] ^= 1;
 
         let action = Action::Transaction(Transaction::Transfer(tx));
         run(&mut net.store, action, &mut net.validators).unwrap();
@@ -823,15 +787,9 @@ mod tests {
 
     #[test]
     fn transfer_ok() {
-        let tx = build_tx(vec![build_txout(100_000_000, vec![].into())]);
-        let block = build_block(vec![tx.clone()]);
-        let mut net = MockNet::new(block.header.clone());
+        let mut net = MockNet::new();
 
-        use secp256k1::Secp256k1;
-        let secp = Secp256k1::new();
-        let sender_privkey = secp256k1::SecretKey::from_slice(&[1; 32]).unwrap();
-        let sender_pubkey = secp256k1::PublicKey::from_secret_key(&secp, &sender_privkey);
-
+        let (sender_privkey, sender_pubkey) = create_keypair(1);
         let sender_address = sender_pubkey.serialize().to_vec();
         let receiver_address = vec![124; 32];
 
@@ -848,11 +806,7 @@ mod tests {
             nonce: 0,
             fee_amount: 1000
         };
-        let message = secp256k1::Message::from_slice(
-            tx.sighash().unwrap().as_slice()
-        ).unwrap();
-        let signature = secp.sign(&message, &sender_privkey);
-        tx.signature = signature.serialize_compact().to_vec();
+        sign(&mut tx, sender_privkey);
 
         let action = Action::Transaction(Transaction::Transfer(tx));
         run(&mut net.store, action, &mut net.validators).unwrap();
