@@ -11,5 +11,4 @@ failure = "0.1.7"
 bincode = "1.2.1"
 sha2 = "0.8.1"
 orga = { git = "https://github.com/nomic-io/orga" }
-
-
+secp256k1 = "0.17.2"
