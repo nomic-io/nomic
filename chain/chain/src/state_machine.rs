@@ -103,7 +103,7 @@ fn handle_work_proof_tx(
     validators.insert(tx.public_key, current_voting_power + work_proof_value);
     // Write the redeemed hash to the store so it can't be replayed
     store.put(hash.to_vec(), vec![0])?;
-    
+
     Ok(())
 }
 
@@ -167,13 +167,11 @@ fn handle_deposit_tx(store: &mut dyn Store, deposit_transaction: DepositTransact
                 nomic_signatory_set::output_script(signatory_set, recipient.to_vec());
             if txout.script_pubkey == expected_script {
                 // mint coins
-                let key = [b"balances/", recipient.as_slice()].concat();
-                let balance = store.get(key.as_slice())?.map_or(0, |bytes| {
-                    let bytes = bytes.as_slice().try_into().unwrap();
-                    u64::from_be_bytes(bytes)
-                });
-                let balance = balance + txout.value;
-                store.put(key, balance.to_be_bytes().to_vec())?;
+                let depositor_address = recipient.as_slice();
+                let mut depositor_account = Account::get(store, depositor_address)?
+                    .unwrap_or_default();
+                depositor_account.balance += txout.value;
+                Account::set(store, depositor_address, depositor_account)?;
 
                 contains_deposit_outputs = true;
                 break;
@@ -203,6 +201,7 @@ fn signatories_from_validators(validators: &BTreeMap<Vec<u8>, u64>) -> Result<Si
     Ok(signatories)
 }
 
+// TODO: this should be Action::InitChain
 /// Called once at genesis to write some data to the store.
 pub fn initialize(store: &mut dyn Store) -> Result<()> {
     // TODO: this should be an action
