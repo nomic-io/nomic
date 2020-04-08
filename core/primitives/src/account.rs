@@ -2,7 +2,7 @@ use crate::Result;
 use orga::Store;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default, PartialEq)]
 pub struct Account {
     pub nonce: u64,
     pub balance: u64,

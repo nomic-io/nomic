@@ -268,7 +268,7 @@ mod tests {
     use bitcoin::util::hash::bitcoin_merkle_root;
     use bitcoin::util::merkleblock::PartialMerkleTree;
     use bitcoin::Network::Testnet as bitcoin_network;
-    use nomic_primitives::transaction::*;
+    use nomic_primitives::{transaction::*, Account};
     use nomic_signatory_set::{Signatory, SignatorySet, SignatorySetSnapshot};
     use orga::Read;
     use orga::{abci::messages::Header as TendermintHeader, MapStore};
@@ -627,14 +627,11 @@ mod tests {
 
         // check recipient balance
         assert_eq!(
-            net.store
-                .get(&[
-                    98, 97, 108, 97, 110, 99, 101, 115, 47, 123, 123, 123, 123, 123, 123, 123, 123,
-                    123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123,
-                    123, 123, 123, 123, 123, 123, 123, 123
-                ])
-                .unwrap(),
-            Some(100_000_000u64.to_be_bytes().to_vec())
+            Account::get(&mut net.store, &[123; 32]).unwrap().unwrap(),
+            Account {
+                balance: 100_000_000,
+                nonce: 0
+            }
         );
     }
 }
