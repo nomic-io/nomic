@@ -146,4 +146,8 @@ impl Client {
         let account = Account::get(&mut self.remote_store, address)?.unwrap_or_default();
         Ok(account.balance)
     }
+
+    pub fn get_account(&mut self, address: &[u8]) -> OrgaResult<Account> {
+        Ok(Account::get(&mut self.remote_store, address)?.unwrap_or_default())
+    }
 }

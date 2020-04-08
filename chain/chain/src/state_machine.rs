@@ -40,7 +40,7 @@ pub fn run(
             Transaction::WorkProof(tx) => handle_work_proof_tx(store, validators, tx),
             Transaction::Header(tx) => handle_header_tx(store, tx),
             Transaction::Deposit(tx) => handle_deposit_tx(store, tx),
-            Transaction::Transfer(tx) => handle_transfer_tx(store, tx),
+            Transaction::Transfer(tx) => dbg!(handle_transfer_tx(store, tx)),
         },
     }
 }
@@ -196,8 +196,11 @@ fn handle_deposit_tx(store: &mut dyn Store, deposit_transaction: DepositTransact
 use nomic_primitives::Account;
 
 fn handle_transfer_tx(store: &mut dyn Store, tx: TransferTransaction) -> Result<()> {
+    if tx.from == tx.to {
+        bail!("Account cannot send to itself");
+    }
     if tx.fee_amount < 1000 {
-        bail!("Transaction fee is too small")
+        bail!("Transaction fee is too small");
     }
     // Retrieve sender account from store
     let maybe_sender_account = Account::get(store, &tx.from[..])?;
@@ -869,4 +872,6 @@ mod tests {
             }
         );
     }
+
+    // TODO: test for transfer to self
 }

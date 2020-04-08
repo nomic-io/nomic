@@ -8,9 +8,11 @@ pub struct Account {
     pub balance: u64,
 }
 
+
 fn store_key(address: &[u8]) -> Vec<u8> {
     [b"accounts/", address].concat()
 }
+
 impl Account {
     pub fn get(store: &mut dyn Store, address: &[u8]) -> Result<Option<Account>> {
         let account_key = store_key(address);
@@ -20,6 +22,7 @@ impl Account {
             .transpose()?;
         Ok(maybe_account)
     }
+
     pub fn set(store: &mut dyn Store, address: &[u8], account: Account) -> Result<()> {
         let account_key = store_key(address);
         let account_bytes = bincode::serialize(&account)?;

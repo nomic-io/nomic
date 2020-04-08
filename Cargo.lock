@@ -1490,6 +1490,7 @@ name = "nomic-cli"
 version = "0.1.0"
 dependencies = [
  "base64 0.12.0",
+ "bech32",
  "clap 3.0.0-beta.1",
  "colored",
  "dirs",
