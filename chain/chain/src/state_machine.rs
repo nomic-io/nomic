@@ -634,4 +634,239 @@ mod tests {
             }
         );
     }
+
+    #[test]
+    #[should_panic(expected = "Transaction fee is too small")]
+    fn transfer_insufficient_fee() {
+        let tx = build_tx(vec![build_txout(100_000_000, vec![].into())]);
+        let block = build_block(vec![tx.clone()]);
+        let mut net = MockNet::new(block.header.clone());
+
+        use secp256k1::Secp256k1;
+        let secp = Secp256k1::new();
+        let sender_privkey = secp256k1::SecretKey::from_slice(&[1; 32]).unwrap();
+        let sender_pubkey = secp256k1::PublicKey::from_secret_key(&secp, &sender_privkey);
+
+        let sender_address = sender_pubkey.serialize().to_vec();
+        let receiver_address = vec![124; 32];
+
+        Account::set(&mut net.store, sender_address.as_slice(), Account {
+            balance: 1234,
+            nonce: 0
+        }).unwrap();
+
+        let mut tx = TransferTransaction {
+            from: sender_address,
+            to: receiver_address.clone(),
+            signature: vec![],
+            amount: 100,
+            nonce: 0,
+            fee_amount: 0
+        };
+        let message = secp256k1::Message::from_slice(
+            tx.sighash().unwrap().as_slice()
+        ).unwrap();
+        let signature = secp.sign(&message, &sender_privkey);
+        tx.signature = signature.serialize_compact().to_vec();
+
+        let action = Action::Transaction(Transaction::Transfer(tx));
+        run(&mut net.store, action, &mut net.validators).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Account does not exist")]
+    fn transfer_from_nonexistent_account() {
+        let tx = build_tx(vec![build_txout(100_000_000, vec![].into())]);
+        let block = build_block(vec![tx.clone()]);
+        let mut net = MockNet::new(block.header.clone());
+
+        use secp256k1::Secp256k1;
+        let secp = Secp256k1::new();
+        let sender_privkey = secp256k1::SecretKey::from_slice(&[1; 32]).unwrap();
+        let sender_pubkey = secp256k1::PublicKey::from_secret_key(&secp, &sender_privkey);
+
+        let sender_address = sender_pubkey.serialize().to_vec();
+        let receiver_address = vec![124; 32];
+
+        let mut tx = TransferTransaction {
+            from: sender_address,
+            to: receiver_address.clone(),
+            signature: vec![],
+            amount: 100,
+            nonce: 0,
+            fee_amount: 1000
+        };
+        let message = secp256k1::Message::from_slice(
+            tx.sighash().unwrap().as_slice()
+        ).unwrap();
+        let signature = secp.sign(&message, &sender_privkey);
+        tx.signature = signature.serialize_compact().to_vec();
+
+        let action = Action::Transaction(Transaction::Transfer(tx));
+        run(&mut net.store, action, &mut net.validators).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Insufficient balance in sender account")]
+    fn transfer_insufficient_balance() {
+        let tx = build_tx(vec![build_txout(100_000_000, vec![].into())]);
+        let block = build_block(vec![tx.clone()]);
+        let mut net = MockNet::new(block.header.clone());
+
+        use secp256k1::Secp256k1;
+        let secp = Secp256k1::new();
+        let sender_privkey = secp256k1::SecretKey::from_slice(&[1; 32]).unwrap();
+        let sender_pubkey = secp256k1::PublicKey::from_secret_key(&secp, &sender_privkey);
+
+        let sender_address = sender_pubkey.serialize().to_vec();
+        let receiver_address = vec![124; 32];
+
+        Account::set(&mut net.store, sender_address.as_slice(), Account {
+            balance: 1234,
+            nonce: 0
+        }).unwrap();
+
+        let mut tx = TransferTransaction {
+            from: sender_address,
+            to: receiver_address.clone(),
+            signature: vec![],
+            amount: 300,
+            nonce: 0,
+            fee_amount: 1000
+        };
+        let message = secp256k1::Message::from_slice(
+            tx.sighash().unwrap().as_slice()
+        ).unwrap();
+        let signature = secp.sign(&message, &sender_privkey);
+        tx.signature = signature.serialize_compact().to_vec();
+
+        let action = Action::Transaction(Transaction::Transfer(tx));
+        run(&mut net.store, action, &mut net.validators).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid account nonce for transaction")]
+    fn transfer_invalid_nonce() {
+        let tx = build_tx(vec![build_txout(100_000_000, vec![].into())]);
+        let block = build_block(vec![tx.clone()]);
+        let mut net = MockNet::new(block.header.clone());
+
+        use secp256k1::Secp256k1;
+        let secp = Secp256k1::new();
+        let sender_privkey = secp256k1::SecretKey::from_slice(&[1; 32]).unwrap();
+        let sender_pubkey = secp256k1::PublicKey::from_secret_key(&secp, &sender_privkey);
+
+        let sender_address = sender_pubkey.serialize().to_vec();
+        let receiver_address = vec![124; 32];
+
+        Account::set(&mut net.store, sender_address.as_slice(), Account {
+            balance: 1234,
+            nonce: 100
+        }).unwrap();
+
+        let mut tx = TransferTransaction {
+            from: sender_address,
+            to: receiver_address.clone(),
+            signature: vec![],
+            amount: 100,
+            nonce: 0,
+            fee_amount: 1000
+        };
+        let message = secp256k1::Message::from_slice(
+            tx.sighash().unwrap().as_slice()
+        ).unwrap();
+        let signature = secp.sign(&message, &sender_privkey);
+        tx.signature = signature.serialize_compact().to_vec();
+
+        let action = Action::Transaction(Transaction::Transfer(tx));
+        run(&mut net.store, action, &mut net.validators).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid signature")]
+    fn transfer_invalid_signature() {
+        let tx = build_tx(vec![build_txout(100_000_000, vec![].into())]);
+        let block = build_block(vec![tx.clone()]);
+        let mut net = MockNet::new(block.header.clone());
+
+        use secp256k1::Secp256k1;
+        let secp = Secp256k1::new();
+        let sender_privkey = secp256k1::SecretKey::from_slice(&[1; 32]).unwrap();
+        let sender_pubkey = secp256k1::PublicKey::from_secret_key(&secp, &sender_privkey);
+
+        let sender_address = sender_pubkey.serialize().to_vec();
+        let receiver_address = vec![124; 32];
+
+        Account::set(&mut net.store, sender_address.as_slice(), Account {
+            balance: 1234,
+            nonce: 0
+        }).unwrap();
+
+        let mut tx = TransferTransaction {
+            from: sender_address,
+            to: receiver_address.clone(),
+            signature: vec![],
+            amount: 100,
+            nonce: 0,
+            fee_amount: 1000
+        };
+        let message = secp256k1::Message::from_slice(&[123; 32]).unwrap();
+        let signature = secp.sign(&message, &sender_privkey);
+        tx.signature = signature.serialize_compact().to_vec();
+
+        let action = Action::Transaction(Transaction::Transfer(tx));
+        run(&mut net.store, action, &mut net.validators).unwrap();
+    }
+
+    #[test]
+    fn transfer_ok() {
+        let tx = build_tx(vec![build_txout(100_000_000, vec![].into())]);
+        let block = build_block(vec![tx.clone()]);
+        let mut net = MockNet::new(block.header.clone());
+
+        use secp256k1::Secp256k1;
+        let secp = Secp256k1::new();
+        let sender_privkey = secp256k1::SecretKey::from_slice(&[1; 32]).unwrap();
+        let sender_pubkey = secp256k1::PublicKey::from_secret_key(&secp, &sender_privkey);
+
+        let sender_address = sender_pubkey.serialize().to_vec();
+        let receiver_address = vec![124; 32];
+
+        Account::set(&mut net.store, sender_address.as_slice(), Account {
+            balance: 1234,
+            nonce: 0
+        }).unwrap();
+
+        let mut tx = TransferTransaction {
+            from: sender_address.clone(),
+            to: receiver_address.clone(),
+            signature: vec![],
+            amount: 100,
+            nonce: 0,
+            fee_amount: 1000
+        };
+        let message = secp256k1::Message::from_slice(
+            tx.sighash().unwrap().as_slice()
+        ).unwrap();
+        let signature = secp.sign(&message, &sender_privkey);
+        tx.signature = signature.serialize_compact().to_vec();
+
+        let action = Action::Transaction(Transaction::Transfer(tx));
+        run(&mut net.store, action, &mut net.validators).unwrap();
+
+        assert_eq!(
+            Account::get(&mut net.store, &receiver_address).unwrap().unwrap(),
+            Account {
+                balance: 100,
+                nonce: 0
+            }
+        );
+        assert_eq!(
+            Account::get(&mut net.store, &sender_address).unwrap().unwrap(),
+            Account {
+                balance: 134,
+                nonce: 1
+            }
+        );
+    }
 }
