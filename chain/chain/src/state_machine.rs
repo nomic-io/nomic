@@ -2,6 +2,7 @@ use crate::spv::headercache::HeaderCache;
 use crate::Action;
 use bitcoin::Network::Testnet as bitcoin_network;
 use failure::{bail, format_err};
+use lazy_static::lazy_static;
 use nomic_bitcoin::{bitcoin, EnrichedHeader};
 use nomic_primitives::transaction::Transaction;
 use nomic_primitives::transaction::{
@@ -12,12 +13,17 @@ use nomic_signatory_set::{Signatory, SignatorySet, SignatorySetSnapshot};
 use nomic_work::work;
 use orga::abci::messages::Header;
 use orga::Store;
+use secp256k1::{Secp256k1, VerifyOnly};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 
 const MIN_WORK: u64 = 1 << 20;
 pub const SIGNATORY_CHANGE_INTERVAL: u64 = 60 * 60 * 24 * 7;
+
+lazy_static! {
+    static ref SECP: Secp256k1<VerifyOnly> = Secp256k1::verification_only();
+}
 
 /// Main entrypoint to the core bitcoin peg state machine.
 ///
@@ -187,8 +193,41 @@ fn handle_deposit_tx(store: &mut dyn Store, deposit_transaction: DepositTransact
     Ok(())
 }
 
+use nomic_primitives::Account;
+
 fn handle_transfer_tx(store: &mut dyn Store, tx: TransferTransaction) -> Result<()> {
-    unimplemented!();
+    if tx.fee_amount < 1000 {
+        bail!("Transaction fee is too small")
+    }
+    // Retrieve sender account from store
+    let maybe_sender_account = Account::get(store, &tx.from[..])?;
+    let mut sender_account = match maybe_sender_account {
+        Some(sender_account) => sender_account,
+        None => bail!("Account does not exist"),
+    };
+    // Check that the sender account has enough coins
+    if sender_account.balance < (tx.amount + tx.fee_amount) {
+        bail!("Insufficient balance in sender account");
+    }
+    // Verify the nonce
+    if tx.nonce != sender_account.nonce {
+        bail!("Invalid account nonce for transaction");
+    }
+    // Verify the signature
+    if !tx.verify_signature(&SECP)? {
+        bail!("Invalid signature");
+    }
+    // Increment sender's nonce
+    sender_account.nonce += 1;
+    // Subtract coins from sender
+    sender_account.balance -= tx.amount + tx.fee_amount;
+    // Fetch (and maybe create) recipient account
+    let mut recipient_account = Account::get(store, &tx.to[..])?.unwrap_or_default();
+    // Add coins to recipient
+    recipient_account.balance += tx.amount;
+    // Save updated accounts to store
+    Account::set(store, &tx.from[..], sender_account)?;
+    Account::set(store, &tx.to[..], recipient_account)?;
     Ok(())
 }
 

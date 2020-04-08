@@ -1541,6 +1541,8 @@ dependencies = [
  "bincode",
  "failure",
  "nomic-bitcoin",
+ "orga",
+ "secp256k1 0.17.2",
  "serde",
  "sha2 0.8.1",
 ]
