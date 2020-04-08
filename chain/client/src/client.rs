@@ -6,10 +6,12 @@ use failure::{bail, format_err};
 use nomic_bitcoin::bitcoin;
 use nomic_chain::{orga, spv};
 use nomic_primitives::transaction::{Transaction, WorkProofTransaction};
+use nomic_primitives::Account;
 use nomic_signatory_set::{SignatorySet, SignatorySetSnapshot};
 use orga::{
     abci::TendermintClient, merkstore::Client as MerkStoreClient, Read, Result as OrgaResult, Write,
 };
+
 
 use std::str::FromStr;
 use tendermint::rpc::Client as TendermintRpcClient;
@@ -141,14 +143,11 @@ impl Client {
     }
 
     pub fn get_balance(&mut self, address: &[u8]) -> OrgaResult<u64> {
-        let key = [b"balances/", address].concat();
-        let value = match self.remote_store.get(key.as_slice())? {
-            Some(value) => value,
-            None => return Ok(0),
-        };
+        let account = Account::get(&mut self.remote_store, address)?.unwrap_or_default();
+        Ok(account.balance)
+    }
 
-        let mut balance_bytes = [0; 8];
-        balance_bytes.copy_from_slice(value.as_slice());
-        Ok(u64::from_be_bytes(balance_bytes))
+    pub fn get_account(&mut self, address: &[u8]) -> OrgaResult<Account> {
+        Ok(Account::get(&mut self.remote_store, address)?.unwrap_or_default())
     }
 }

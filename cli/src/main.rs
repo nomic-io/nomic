@@ -4,7 +4,7 @@ mod wallet;
 use clap::Clap;
 use colored::*;
 use failure::bail;
-use log::{debug, info};
+use log::{debug, info, warn};
 use nomic_chain::abci_server;
 use nomic_client::Client;
 use nomic_primitives::Result;
@@ -44,6 +44,10 @@ enum SubCommand {
     /// Displays the balance in your sidechain account
     #[clap(name = "balance")]
     Balance(Balance),
+
+    /// Send coins to another address
+    #[clap(name = "send")]
+    Transfer(Transfer),
 }
 
 #[derive(Clap)]
@@ -63,6 +67,12 @@ struct Deposit {}
 
 #[derive(Clap)]
 struct Balance {}
+
+#[derive(Clap)]
+struct Transfer {
+    address: String,
+    amount: u64,
+}
 
 fn main() {
     let opts: Opts = Opts::parse();
@@ -85,6 +95,7 @@ fn main() {
     if let Err(_) = mkdir_result {
         // TODO: Panic if this error is anything except "directory already exists"
     }
+
     match opts.subcmd {
         SubCommand::Relayer(_) => {
             default_log_level("info");
@@ -148,7 +159,7 @@ fn main() {
             let days_until_expiration =
                 ((expiration - now) as f64 / (60 * 60 * 24) as f64).round() as usize;
 
-            submit_address(wallet.receive_address().as_slice()).unwrap();
+            submit_address(wallet.pubkey_bytes().as_slice()).unwrap();
 
             println!("YOUR DEPOSIT ADDRESS:");
             println!("{}", address.to_string().cyan().bold());
@@ -180,19 +191,43 @@ fn main() {
         }
         SubCommand::Balance(_) => {
             default_log_level("warn");
+
             let mut client = Client::new("localhost:26657").unwrap();
 
             let wallet_path = nomic_home.join("wallet.key");
             let wallet = Wallet::load_or_generate(wallet_path).unwrap();
 
-            let balance = client.get_balance(&wallet.receive_address()).unwrap();
+            let balance = client.get_balance(&wallet.pubkey_bytes()).unwrap();
             let balance = format!(
                 "{}.{:0>8}",
                 balance / 100_000_000,
                 (balance % 100_000_000).to_string()
             );
 
+            println!("YOUR ADDRESS: {}", wallet.receive_address().cyan().bold());
             println!("YOUR BALANCE: {} NBTC", balance.cyan().bold());
+        },
+        SubCommand::Transfer(transfer) => {
+            default_log_level("error");
+
+            let receiver_address = transfer.address;
+            let amount = transfer.amount;
+
+            let mut client = Client::new("localhost:26657").unwrap();
+             
+            let wallet_path = nomic_home.join("wallet.key");
+            let wallet = Wallet::load_or_generate(wallet_path).unwrap();
+
+            if let Err(err) = wallet.send(&mut client, receiver_address.as_str(), amount) {
+                // TODO: fix upstream response parsing in tendermint-rs, and fail if this errors
+                warn!("{}", err);
+            }
+            println!(
+                "Sent {} coins to {}.",
+                amount.to_string().cyan().bold(),
+                receiver_address.cyan().bold()
+            );
         }
     }
 }
+    

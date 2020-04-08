@@ -1,13 +1,19 @@
 use crate::spv::headercache::HeaderCache;
 use crate::Action;
 use bitcoin::Network::Testnet as bitcoin_network;
-use failure::bail;
+use failure::{bail, format_err};
+use lazy_static::lazy_static;
 use nomic_bitcoin::{bitcoin, EnrichedHeader};
 use nomic_primitives::transaction::Transaction;
+use nomic_primitives::transaction::{
+    DepositTransaction, HeaderTransaction, TransferTransaction, WorkProofTransaction,
+};
 use nomic_primitives::{Error, Result};
 use nomic_signatory_set::{Signatory, SignatorySet, SignatorySetSnapshot};
 use nomic_work::work;
+use orga::abci::messages::Header;
 use orga::Store;
+use secp256k1::{Secp256k1, VerifyOnly};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::convert::TryInto;
@@ -15,160 +21,216 @@ use std::convert::TryInto;
 const MIN_WORK: u64 = 1 << 20;
 pub const SIGNATORY_CHANGE_INTERVAL: u64 = 60 * 60 * 24 * 7;
 
+lazy_static! {
+    static ref SECP: Secp256k1<VerifyOnly> = Secp256k1::verification_only();
+}
+
 /// Main entrypoint to the core bitcoin peg state machine.
 ///
-/// This function implements the conventions set by Orga, though this may change as our core
-/// framework design settles.
+/// This function implements the conventions set by Orga, though this may change
+/// as our core framework design settles.
 pub fn run(
     store: &mut dyn Store,
     action: Action,
     validators: &mut BTreeMap<Vec<u8>, u64>,
 ) -> Result<()> {
     match action {
-        Action::BeginBlock(header) => {
-            match store.get(b"signatories")? {
-                None => {
-                    // init signatories/prev_signatories
-                    let snapshot = SignatorySetSnapshot {
-                        time: header.get_time().get_seconds() as u64,
-                        signatories: signatories_from_validators(validators)?,
-                    };
-                    let signatories_bytes = snapshot.encode()?;
-                    store.put(b"signatories".to_vec(), signatories_bytes.clone())?;
-                    store.put(b"prev_signatories".to_vec(), signatories_bytes)?;
-                }
-                Some(signatories_bytes) => {
-                    // check if signatories should be updated
-                    let signatory_time =
-                        SignatorySetSnapshot::decode(signatories_bytes.as_slice())?.time;
-                    let time = header.get_time().get_seconds() as u64;
-                    let elapsed = time - signatory_time;
-                    if elapsed >= SIGNATORY_CHANGE_INTERVAL {
-                        let snapshot = SignatorySetSnapshot {
-                            time,
-                            signatories: signatories_from_validators(validators)?,
-                        };
-                        let new_signatories_bytes = snapshot.encode()?;
-                        store.put(b"signatories".to_vec(), new_signatories_bytes)?;
-                        store.put(b"prev_signatories".to_vec(), signatories_bytes)?;
-                    }
-                }
+        Action::BeginBlock(header) => handle_begin_block(store, validators, header),
+        Action::Transaction(transaction) => match transaction {
+            Transaction::WorkProof(tx) => handle_work_proof_tx(store, validators, tx),
+            Transaction::Header(tx) => handle_header_tx(store, tx),
+            Transaction::Deposit(tx) => handle_deposit_tx(store, tx),
+            Transaction::Transfer(tx) => dbg!(handle_transfer_tx(store, tx)),
+        },
+    }
+}
+
+fn handle_begin_block(
+    store: &mut dyn Store,
+    validators: &BTreeMap<Vec<u8>, u64>,
+    header: Header,
+) -> Result<()> {
+    match store.get(b"signatories")? {
+        None => {
+            // init signatories/prev_signatories
+            let snapshot = SignatorySetSnapshot {
+                time: header.get_time().get_seconds() as u64,
+                signatories: signatories_from_validators(validators)?,
+            };
+            let signatories_bytes = snapshot.encode()?;
+            store.put(b"signatories".to_vec(), signatories_bytes.clone())?;
+            store.put(b"prev_signatories".to_vec(), signatories_bytes)?;
+        }
+        Some(signatories_bytes) => {
+            // check if signatories should be updated
+            let signatory_time = SignatorySetSnapshot::decode(signatories_bytes.as_slice())?.time;
+            let time = header.get_time().get_seconds() as u64;
+            let elapsed = time - signatory_time;
+            if elapsed >= SIGNATORY_CHANGE_INTERVAL {
+                let snapshot = SignatorySetSnapshot {
+                    time,
+                    signatories: signatories_from_validators(validators)?,
+                };
+                let new_signatories_bytes = snapshot.encode()?;
+                store.put(b"signatories".to_vec(), new_signatories_bytes)?;
+                store.put(b"prev_signatories".to_vec(), signatories_bytes)?;
             }
         }
-        Action::Transaction(transaction) => match transaction {
-            Transaction::WorkProof(work_transaction) => {
-                let mut hasher = Sha256::new();
-                hasher.input(&work_transaction.public_key);
-                let nonce_bytes = work_transaction.nonce.to_be_bytes();
-                hasher.input(&nonce_bytes);
-                let hash = hasher.result().to_vec();
-                let work_proof_value = work(&hash);
+    }
 
-                if work_proof_value >= MIN_WORK {
-                    // Make sure this proof hasn't been redeemed yet
-                    let value_at_work_proof_hash = store.get(&hash).unwrap_or(None);
-                    if let None = value_at_work_proof_hash {
-                        // Grant voting power
-                        let current_voting_power = *validators
-                            .get(&work_transaction.public_key)
-                            .unwrap_or(&(0 as u64));
+    Ok(())
+}
 
-                        validators.insert(
-                            work_transaction.public_key,
-                            current_voting_power + work_proof_value,
-                        );
-                        // Write the redeemed hash to the store so it can't be replayed
-                        store.put(hash.to_vec(), vec![0])?;
-                    } else {
-                        println!("duplicate work proof: {:?},\n\nHash: {:?}, \n\nValue stored at hash on store: {:?}", work_transaction, hash, value_at_work_proof_hash);
-                    }
-                }
-            }
-            Transaction::Header(header_transaction) => {
-                let mut header_cache = HeaderCache::new(bitcoin_network, store);
-                for header in header_transaction.block_headers {
-                    header_cache.add_header(&header)?;
-                }
-            }
+fn handle_work_proof_tx(
+    store: &mut dyn Store,
+    validators: &mut BTreeMap<Vec<u8>, u64>,
+    tx: WorkProofTransaction,
+) -> Result<()> {
+    let mut hasher = Sha256::new();
+    hasher.input(&tx.public_key);
+    let nonce_bytes = tx.nonce.to_be_bytes();
+    hasher.input(&nonce_bytes);
+    let hash = hasher.result().to_vec();
+    let work_proof_value = work(&hash);
 
-            Transaction::Deposit(deposit_transaction) => {
-                // Hash transaction and check for duplicate
-                let txid = deposit_transaction.tx.txid();
-                let tx_key = [b"tx/", txid.as_hash().as_ref()].concat();
-                if let Some(_) = store.get(tx_key.as_slice())? {
-                    bail!("Transaction was already processed");
-                }
+    if work_proof_value < MIN_WORK {
+        bail!("Proof has less than minimum work value")
+    }
 
-                // Fetch merkle root for this block by its height
-                let mut header_cache = HeaderCache::new(bitcoin_network, store);
-                let tx_height = deposit_transaction.height;
-                let header = header_cache.get_header_for_height(tx_height)?;
+    // Make sure this proof hasn't been redeemed yet
+    let value_at_work_proof_hash = store.get(&hash)?;
+    if let Some(_) = value_at_work_proof_hash {
+        bail!("Work proof has already been redeemed")
+    }
 
-                let header_merkle_root = match header {
-                    Some(header) => header.stored.header.merkle_root,
-                    None => bail!("Merkle root not found for deposit transaction"),
-                };
+    // Grant voting power
+    let current_voting_power = *validators.get(&tx.public_key).unwrap_or(&0);
 
-                // Verify proof against the merkle root
-                let proof = deposit_transaction.proof;
-                let mut txids = vec![txid];
-                let mut indexes = vec![deposit_transaction.block_index];
-                let proof_merkle_root = proof
-                    .extract_matches(&mut txids, &mut indexes)
-                    .map_err(Error::from)?;
+    validators.insert(tx.public_key, current_voting_power + work_proof_value);
+    // Write the redeemed hash to the store so it can't be replayed
+    store.put(hash.to_vec(), vec![0])?;
 
-                let proof_matches_chain_merkle_root = proof_merkle_root == header_merkle_root;
-                if !proof_matches_chain_merkle_root {
-                    bail!("Proof merkle root does not match chain");
-                }
+    Ok(())
+}
 
-                // Ensure tx contains deposit outputs
-                let signatory_sets = [
-                    SignatorySetSnapshot::decode(store.get(b"signatories")?.unwrap().as_slice())?
-                        .signatories,
-                    SignatorySetSnapshot::decode(
-                        store.get(b"prev_signatories")?.unwrap().as_slice(),
-                    )?
-                    .signatories,
-                ];
-                let mut recipients = deposit_transaction.recipients.iter().peekable();
-                let mut contains_deposit_outputs = false;
-                for txout in deposit_transaction.tx.output {
-                    let recipient = match recipients.peek() {
-                        Some(recipient) => recipient,
-                        None => bail!("Consumed all recipients"),
-                    };
-                    if recipient.len() != 32 {
-                        bail!("Recipient must be 32 bytes");
-                    }
-                    for signatory_set in signatory_sets.iter() {
-                        let expected_script =
-                            nomic_signatory_set::output_script(signatory_set, recipient.to_vec());
-                        if txout.script_pubkey == expected_script {
-                            // mint coins
-                            let key = [b"balances/", recipient.as_slice()].concat();
-                            let balance = store.get(key.as_slice())?.map_or(0, |bytes| {
-                                let bytes = bytes.as_slice().try_into().unwrap();
-                                u64::from_be_bytes(bytes)
-                            });
-                            let balance = balance + txout.value;
-                            store.put(key, balance.to_be_bytes().to_vec())?;
+fn handle_header_tx(store: &mut dyn Store, tx: HeaderTransaction) -> Result<()> {
+    let mut header_cache = HeaderCache::new(bitcoin_network, store);
+    for header in tx.block_headers {
+        header_cache.add_header(&header)?;
+    }
+    Ok(())
+}
 
-                            contains_deposit_outputs = true;
-                            break;
-                        }
-                    }
-                }
-                if !contains_deposit_outputs {
-                    bail!("Transaction does not contain any deposit outputs");
-                }
+fn handle_deposit_tx(store: &mut dyn Store, deposit_transaction: DepositTransaction) -> Result<()> {
+    // Hash transaction and check for duplicate
+    let txid = deposit_transaction.tx.txid();
+    let tx_key = [b"tx/", txid.as_hash().as_ref()].concat();
+    if let Some(_) = store.get(tx_key.as_slice())? {
+        bail!("Transaction was already processed");
+    }
 
-                // Deposit is valid, mark transaction as processed
-                store.put(tx_key, vec![])?;
-            }
-        },
+    // Fetch merkle root for this block by its height
+    let mut header_cache = HeaderCache::new(bitcoin_network, store);
+    let tx_height = deposit_transaction.height;
+    let header = header_cache.get_header_for_height(tx_height)?;
+
+    let header_merkle_root = match header {
+        Some(header) => header.stored.header.merkle_root,
+        None => bail!("Merkle root not found for deposit transaction"),
     };
 
+    // Verify proof against the merkle root
+    let proof = deposit_transaction.proof;
+    let mut txids = vec![txid];
+    let mut indexes = vec![deposit_transaction.block_index];
+    let proof_merkle_root = proof
+        .extract_matches(&mut txids, &mut indexes)
+        .map_err(Error::from)?;
+
+    let proof_matches_chain_merkle_root = proof_merkle_root == header_merkle_root;
+    if !proof_matches_chain_merkle_root {
+        bail!("Proof merkle root does not match chain");
+    }
+
+    // Ensure tx contains deposit outputs
+    let signatory_sets = [
+        SignatorySetSnapshot::decode(store.get(b"signatories")?.unwrap().as_slice())?.signatories,
+        SignatorySetSnapshot::decode(store.get(b"prev_signatories")?.unwrap().as_slice())?
+            .signatories,
+    ];
+    let mut recipients = deposit_transaction.recipients.iter().peekable();
+    let mut contains_deposit_outputs = false;
+    for txout in deposit_transaction.tx.output {
+        let recipient = match recipients.peek() {
+            Some(recipient) => recipient,
+            None => bail!("Consumed all recipients"),
+        };
+        if recipient.len() != 32 {
+            bail!("Recipient must be 32 bytes");
+        }
+        for signatory_set in signatory_sets.iter() {
+            let expected_script =
+                nomic_signatory_set::output_script(signatory_set, recipient.to_vec());
+            if txout.script_pubkey == expected_script {
+                // mint coins
+                let depositor_address = recipient.as_slice();
+                let mut depositor_account = Account::get(store, depositor_address)?
+                    .unwrap_or_default();
+                depositor_account.balance += txout.value;
+                Account::set(store, depositor_address, depositor_account)?;
+
+                contains_deposit_outputs = true;
+                break;
+            }
+        }
+    }
+    if !contains_deposit_outputs {
+        bail!("Transaction does not contain any deposit outputs");
+    }
+
+    // Deposit is valid, mark transaction as processed
+    store.put(tx_key, vec![])?;
+    Ok(())
+}
+
+use nomic_primitives::Account;
+
+fn handle_transfer_tx(store: &mut dyn Store, tx: TransferTransaction) -> Result<()> {
+    if tx.from == tx.to {
+        bail!("Account cannot send to itself");
+    }
+    if tx.fee_amount < 1000 {
+        bail!("Transaction fee is too small");
+    }
+    // Retrieve sender account from store
+    let maybe_sender_account = Account::get(store, &tx.from[..])?;
+    let mut sender_account = match maybe_sender_account {
+        Some(sender_account) => sender_account,
+        None => bail!("Account does not exist"),
+    };
+    // Check that the sender account has enough coins
+    if sender_account.balance < (tx.amount + tx.fee_amount) {
+        bail!("Insufficient balance in sender account");
+    }
+    // Verify the nonce
+    if tx.nonce != sender_account.nonce {
+        bail!("Invalid account nonce for transaction");
+    }
+    // Verify the signature
+    if !tx.verify_signature(&SECP)? {
+        bail!("Invalid signature");
+    }
+    // Increment sender's nonce
+    sender_account.nonce += 1;
+    // Subtract coins from sender
+    sender_account.balance -= tx.amount + tx.fee_amount;
+    // Fetch (and maybe create) recipient account
+    let mut recipient_account = Account::get(store, &tx.to[..])?.unwrap_or_default();
+    // Add coins to recipient
+    recipient_account.balance += tx.amount;
+    // Save updated accounts to store
+    Account::set(store, &tx.from[..], sender_account)?;
+    Account::set(store, &tx.to[..], recipient_account)?;
     Ok(())
 }
 
@@ -176,11 +238,12 @@ fn signatories_from_validators(validators: &BTreeMap<Vec<u8>, u64>) -> Result<Si
     let mut signatories = SignatorySet::new();
     for (key_bytes, voting_power) in validators.iter() {
         let key = bitcoin::PublicKey::from_slice(key_bytes.as_slice())?;
-        signatories.set(Signatory::new(key, *voting_power as u32));
+        signatories.set(Signatory::new(key, *voting_power));
     }
     Ok(signatories)
 }
 
+// TODO: this should be Action::InitChain
 /// Called once at genesis to write some data to the store.
 pub fn initialize(store: &mut dyn Store) -> Result<()> {
     // TODO: this should be an action
@@ -208,7 +271,7 @@ mod tests {
     use bitcoin::util::hash::bitcoin_merkle_root;
     use bitcoin::util::merkleblock::PartialMerkleTree;
     use bitcoin::Network::Testnet as bitcoin_network;
-    use nomic_primitives::transaction::*;
+    use nomic_primitives::{transaction::*, Account};
     use nomic_signatory_set::{Signatory, SignatorySet, SignatorySetSnapshot};
     use orga::Read;
     use orga::{abci::messages::Header as TendermintHeader, MapStore};
@@ -567,14 +630,248 @@ mod tests {
 
         // check recipient balance
         assert_eq!(
-            net.store
-                .get(&[
-                    98, 97, 108, 97, 110, 99, 101, 115, 47, 123, 123, 123, 123, 123, 123, 123, 123,
-                    123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 123,
-                    123, 123, 123, 123, 123, 123, 123, 123
-                ])
-                .unwrap(),
-            Some(100_000_000u64.to_be_bytes().to_vec())
+            Account::get(&mut net.store, &[123; 32]).unwrap().unwrap(),
+            Account {
+                balance: 100_000_000,
+                nonce: 0
+            }
         );
     }
+
+    #[test]
+    #[should_panic(expected = "Transaction fee is too small")]
+    fn transfer_insufficient_fee() {
+        let tx = build_tx(vec![build_txout(100_000_000, vec![].into())]);
+        let block = build_block(vec![tx.clone()]);
+        let mut net = MockNet::new(block.header.clone());
+
+        use secp256k1::Secp256k1;
+        let secp = Secp256k1::new();
+        let sender_privkey = secp256k1::SecretKey::from_slice(&[1; 32]).unwrap();
+        let sender_pubkey = secp256k1::PublicKey::from_secret_key(&secp, &sender_privkey);
+
+        let sender_address = sender_pubkey.serialize().to_vec();
+        let receiver_address = vec![124; 32];
+
+        Account::set(&mut net.store, sender_address.as_slice(), Account {
+            balance: 1234,
+            nonce: 0
+        }).unwrap();
+
+        let mut tx = TransferTransaction {
+            from: sender_address,
+            to: receiver_address.clone(),
+            signature: vec![],
+            amount: 100,
+            nonce: 0,
+            fee_amount: 0
+        };
+        let message = secp256k1::Message::from_slice(
+            tx.sighash().unwrap().as_slice()
+        ).unwrap();
+        let signature = secp.sign(&message, &sender_privkey);
+        tx.signature = signature.serialize_compact().to_vec();
+
+        let action = Action::Transaction(Transaction::Transfer(tx));
+        run(&mut net.store, action, &mut net.validators).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Account does not exist")]
+    fn transfer_from_nonexistent_account() {
+        let tx = build_tx(vec![build_txout(100_000_000, vec![].into())]);
+        let block = build_block(vec![tx.clone()]);
+        let mut net = MockNet::new(block.header.clone());
+
+        use secp256k1::Secp256k1;
+        let secp = Secp256k1::new();
+        let sender_privkey = secp256k1::SecretKey::from_slice(&[1; 32]).unwrap();
+        let sender_pubkey = secp256k1::PublicKey::from_secret_key(&secp, &sender_privkey);
+
+        let sender_address = sender_pubkey.serialize().to_vec();
+        let receiver_address = vec![124; 32];
+
+        let mut tx = TransferTransaction {
+            from: sender_address,
+            to: receiver_address.clone(),
+            signature: vec![],
+            amount: 100,
+            nonce: 0,
+            fee_amount: 1000
+        };
+        let message = secp256k1::Message::from_slice(
+            tx.sighash().unwrap().as_slice()
+        ).unwrap();
+        let signature = secp.sign(&message, &sender_privkey);
+        tx.signature = signature.serialize_compact().to_vec();
+
+        let action = Action::Transaction(Transaction::Transfer(tx));
+        run(&mut net.store, action, &mut net.validators).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Insufficient balance in sender account")]
+    fn transfer_insufficient_balance() {
+        let tx = build_tx(vec![build_txout(100_000_000, vec![].into())]);
+        let block = build_block(vec![tx.clone()]);
+        let mut net = MockNet::new(block.header.clone());
+
+        use secp256k1::Secp256k1;
+        let secp = Secp256k1::new();
+        let sender_privkey = secp256k1::SecretKey::from_slice(&[1; 32]).unwrap();
+        let sender_pubkey = secp256k1::PublicKey::from_secret_key(&secp, &sender_privkey);
+
+        let sender_address = sender_pubkey.serialize().to_vec();
+        let receiver_address = vec![124; 32];
+
+        Account::set(&mut net.store, sender_address.as_slice(), Account {
+            balance: 1234,
+            nonce: 0
+        }).unwrap();
+
+        let mut tx = TransferTransaction {
+            from: sender_address,
+            to: receiver_address.clone(),
+            signature: vec![],
+            amount: 300,
+            nonce: 0,
+            fee_amount: 1000
+        };
+        let message = secp256k1::Message::from_slice(
+            tx.sighash().unwrap().as_slice()
+        ).unwrap();
+        let signature = secp.sign(&message, &sender_privkey);
+        tx.signature = signature.serialize_compact().to_vec();
+
+        let action = Action::Transaction(Transaction::Transfer(tx));
+        run(&mut net.store, action, &mut net.validators).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid account nonce for transaction")]
+    fn transfer_invalid_nonce() {
+        let tx = build_tx(vec![build_txout(100_000_000, vec![].into())]);
+        let block = build_block(vec![tx.clone()]);
+        let mut net = MockNet::new(block.header.clone());
+
+        use secp256k1::Secp256k1;
+        let secp = Secp256k1::new();
+        let sender_privkey = secp256k1::SecretKey::from_slice(&[1; 32]).unwrap();
+        let sender_pubkey = secp256k1::PublicKey::from_secret_key(&secp, &sender_privkey);
+
+        let sender_address = sender_pubkey.serialize().to_vec();
+        let receiver_address = vec![124; 32];
+
+        Account::set(&mut net.store, sender_address.as_slice(), Account {
+            balance: 1234,
+            nonce: 100
+        }).unwrap();
+
+        let mut tx = TransferTransaction {
+            from: sender_address,
+            to: receiver_address.clone(),
+            signature: vec![],
+            amount: 100,
+            nonce: 0,
+            fee_amount: 1000
+        };
+        let message = secp256k1::Message::from_slice(
+            tx.sighash().unwrap().as_slice()
+        ).unwrap();
+        let signature = secp.sign(&message, &sender_privkey);
+        tx.signature = signature.serialize_compact().to_vec();
+
+        let action = Action::Transaction(Transaction::Transfer(tx));
+        run(&mut net.store, action, &mut net.validators).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid signature")]
+    fn transfer_invalid_signature() {
+        let tx = build_tx(vec![build_txout(100_000_000, vec![].into())]);
+        let block = build_block(vec![tx.clone()]);
+        let mut net = MockNet::new(block.header.clone());
+
+        use secp256k1::Secp256k1;
+        let secp = Secp256k1::new();
+        let sender_privkey = secp256k1::SecretKey::from_slice(&[1; 32]).unwrap();
+        let sender_pubkey = secp256k1::PublicKey::from_secret_key(&secp, &sender_privkey);
+
+        let sender_address = sender_pubkey.serialize().to_vec();
+        let receiver_address = vec![124; 32];
+
+        Account::set(&mut net.store, sender_address.as_slice(), Account {
+            balance: 1234,
+            nonce: 0
+        }).unwrap();
+
+        let mut tx = TransferTransaction {
+            from: sender_address,
+            to: receiver_address.clone(),
+            signature: vec![],
+            amount: 100,
+            nonce: 0,
+            fee_amount: 1000
+        };
+        let message = secp256k1::Message::from_slice(&[123; 32]).unwrap();
+        let signature = secp.sign(&message, &sender_privkey);
+        tx.signature = signature.serialize_compact().to_vec();
+
+        let action = Action::Transaction(Transaction::Transfer(tx));
+        run(&mut net.store, action, &mut net.validators).unwrap();
+    }
+
+    #[test]
+    fn transfer_ok() {
+        let tx = build_tx(vec![build_txout(100_000_000, vec![].into())]);
+        let block = build_block(vec![tx.clone()]);
+        let mut net = MockNet::new(block.header.clone());
+
+        use secp256k1::Secp256k1;
+        let secp = Secp256k1::new();
+        let sender_privkey = secp256k1::SecretKey::from_slice(&[1; 32]).unwrap();
+        let sender_pubkey = secp256k1::PublicKey::from_secret_key(&secp, &sender_privkey);
+
+        let sender_address = sender_pubkey.serialize().to_vec();
+        let receiver_address = vec![124; 32];
+
+        Account::set(&mut net.store, sender_address.as_slice(), Account {
+            balance: 1234,
+            nonce: 0
+        }).unwrap();
+
+        let mut tx = TransferTransaction {
+            from: sender_address.clone(),
+            to: receiver_address.clone(),
+            signature: vec![],
+            amount: 100,
+            nonce: 0,
+            fee_amount: 1000
+        };
+        let message = secp256k1::Message::from_slice(
+            tx.sighash().unwrap().as_slice()
+        ).unwrap();
+        let signature = secp.sign(&message, &sender_privkey);
+        tx.signature = signature.serialize_compact().to_vec();
+
+        let action = Action::Transaction(Transaction::Transfer(tx));
+        run(&mut net.store, action, &mut net.validators).unwrap();
+
+        assert_eq!(
+            Account::get(&mut net.store, &receiver_address).unwrap().unwrap(),
+            Account {
+                balance: 100,
+                nonce: 0
+            }
+        );
+        assert_eq!(
+            Account::get(&mut net.store, &sender_address).unwrap().unwrap(),
+            Account {
+                balance: 134,
+                nonce: 1
+            }
+        );
+    }
+
+    // TODO: test for transfer to self
 }

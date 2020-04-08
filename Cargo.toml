@@ -12,3 +12,6 @@ members = [
     "scripts/make-checkpoint-header"
 ]
 
+[profile.release]
+overflow-checks = true
+
