@@ -1,11 +1,5 @@
 mod error;
+mod account;
 pub use error::*;
+pub use account::Account;
 pub mod transaction;
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
-}

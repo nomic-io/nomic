@@ -8,5 +8,7 @@ edition = "2018"
 nomic-bitcoin = { path = "../bitcoin" }
 serde = { version= "1.0.104", features = ["derive"] }
 failure = "0.1.7"
+bincode = "1.2.1"
+sha2 = "0.8.1"
 
 

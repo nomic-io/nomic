@@ -1470,6 +1470,7 @@ dependencies = [
  "bincode",
  "byteorder",
  "failure",
+ "lazy_static",
  "merk",
  "nomic-bitcoin",
  "nomic-primitives",
@@ -1477,6 +1478,7 @@ dependencies = [
  "nomic-work",
  "orga",
  "protobuf",
+ "secp256k1 0.17.2",
  "serde",
  "serde_derive",
  "serde_json",
@@ -1536,9 +1538,11 @@ dependencies = [
 name = "nomic-primitives"
 version = "0.1.0"
 dependencies = [
+ "bincode",
  "failure",
  "nomic-bitcoin",
  "serde",
+ "sha2 0.8.1",
 ]
 
 [[package]]
