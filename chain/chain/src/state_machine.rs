@@ -1,7 +1,7 @@
 use crate::spv::headercache::HeaderCache;
 use crate::Action;
 use bitcoin::Network::Testnet as bitcoin_network;
-use failure::{bail, format_err};
+use failure::bail;
 use lazy_static::lazy_static;
 use nomic_bitcoin::{bitcoin, EnrichedHeader};
 use nomic_primitives::transaction::Transaction;
@@ -16,7 +16,6 @@ use orga::Store;
 use secp256k1::{Secp256k1, VerifyOnly};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
-use std::convert::TryInto;
 
 const MIN_WORK: u64 = 1 << 20;
 pub const SIGNATORY_CHANGE_INTERVAL: u64 = 60 * 60 * 24 * 7;
@@ -174,8 +173,8 @@ fn handle_deposit_tx(store: &mut dyn Store, deposit_transaction: DepositTransact
             if txout.script_pubkey == expected_script {
                 // mint coins
                 let depositor_address = recipient.as_slice();
-                let mut depositor_account = Account::get(store, depositor_address)?
-                    .unwrap_or_default();
+                let mut depositor_account =
+                    Account::get(store, depositor_address)?.unwrap_or_default();
                 depositor_account.balance += txout.value;
                 Account::set(store, depositor_address, depositor_account)?;
 
@@ -271,14 +270,14 @@ mod tests {
     use bitcoin::util::hash::bitcoin_merkle_root;
     use bitcoin::util::merkleblock::PartialMerkleTree;
     use bitcoin::Network::Testnet as bitcoin_network;
-    use nomic_primitives::{transaction::*, Account};
+    use lazy_static::lazy_static;
+    use nomic_primitives::Account;
     use nomic_signatory_set::{Signatory, SignatorySet, SignatorySetSnapshot};
     use orga::Read;
     use orga::{abci::messages::Header as TendermintHeader, MapStore};
     use protobuf::well_known_types::Timestamp;
-    use std::collections::{BTreeMap, HashSet};
-    use lazy_static::lazy_static;
     use secp256k1::{Secp256k1, SignOnly};
+    use std::collections::{BTreeMap, HashSet};
 
     lazy_static! {
         static ref SECP: Secp256k1<SignOnly> = Secp256k1::signing_only();
@@ -299,7 +298,7 @@ mod tests {
     struct MockNet {
         store: MapStore,
         validators: BTreeMap<Vec<u8>, u64>,
-        btc_block: bitcoin::Block
+        btc_block: bitcoin::Block,
     }
 
     impl MockNet {
@@ -313,7 +312,7 @@ mod tests {
             let mut net = MockNet {
                 store: Default::default(),
                 validators: mock_validator_set(),
-                btc_block: initial_block.clone()
+                btc_block: initial_block.clone(),
             };
             net.spv()
                 .add_header_raw(initial_block.header, 0)
@@ -334,14 +333,19 @@ mod tests {
             HeaderCache::new(bitcoin::Network::Regtest, &mut self.store)
         }
 
-        fn create_btc_proof(&self) -> (
+        fn create_btc_proof(
+            &self,
+        ) -> (
             bitcoin::Transaction,
-            bitcoin::util::merkleblock::PartialMerkleTree
-         ) {
+            bitcoin::util::merkleblock::PartialMerkleTree,
+        ) {
             let tx = self.btc_block.txdata[0].clone();
             let mut txids = HashSet::new();
             txids.insert(tx.txid());
-            (tx, bitcoin::MerkleBlock::from_block(&self.btc_block, &txids).txn)
+            (
+                tx,
+                bitcoin::MerkleBlock::from_block(&self.btc_block, &txids).txn,
+            )
         }
     }
 
@@ -393,9 +397,7 @@ mod tests {
     }
 
     fn sign(tx: &mut TransferTransaction, privkey: secp256k1::SecretKey) {
-        let message = secp256k1::Message::from_slice(
-            tx.sighash().unwrap().as_slice()
-        ).unwrap();
+        let message = secp256k1::Message::from_slice(tx.sighash().unwrap().as_slice()).unwrap();
         let signature = SECP.sign(&message, &privkey);
         tx.signature = signature.serialize_compact().to_vec();
     }
@@ -658,10 +660,15 @@ mod tests {
         let sender_address = sender_pubkey.serialize().to_vec();
         let receiver_address = vec![124; 32];
 
-        Account::set(&mut net.store, sender_address.as_slice(), Account {
-            balance: 1234,
-            nonce: 0
-        }).unwrap();
+        Account::set(
+            &mut net.store,
+            sender_address.as_slice(),
+            Account {
+                balance: 1234,
+                nonce: 0,
+            },
+        )
+        .unwrap();
 
         let mut tx = TransferTransaction {
             from: sender_address,
@@ -669,7 +676,7 @@ mod tests {
             signature: vec![],
             amount: 100,
             nonce: 0,
-            fee_amount: 0
+            fee_amount: 0,
         };
         sign(&mut tx, sender_privkey);
 
@@ -692,7 +699,7 @@ mod tests {
             signature: vec![],
             amount: 100,
             nonce: 0,
-            fee_amount: 1000
+            fee_amount: 1000,
         };
         sign(&mut tx, sender_privkey);
 
@@ -709,10 +716,15 @@ mod tests {
         let sender_address = sender_pubkey.serialize().to_vec();
         let receiver_address = vec![124; 32];
 
-        Account::set(&mut net.store, sender_address.as_slice(), Account {
-            balance: 1234,
-            nonce: 0
-        }).unwrap();
+        Account::set(
+            &mut net.store,
+            sender_address.as_slice(),
+            Account {
+                balance: 1234,
+                nonce: 0,
+            },
+        )
+        .unwrap();
 
         let mut tx = TransferTransaction {
             from: sender_address,
@@ -720,7 +732,7 @@ mod tests {
             signature: vec![],
             amount: 300,
             nonce: 0,
-            fee_amount: 1000
+            fee_amount: 1000,
         };
         sign(&mut tx, sender_privkey);
 
@@ -737,10 +749,15 @@ mod tests {
         let sender_address = sender_pubkey.serialize().to_vec();
         let receiver_address = vec![124; 32];
 
-        Account::set(&mut net.store, sender_address.as_slice(), Account {
-            balance: 1234,
-            nonce: 100
-        }).unwrap();
+        Account::set(
+            &mut net.store,
+            sender_address.as_slice(),
+            Account {
+                balance: 1234,
+                nonce: 100,
+            },
+        )
+        .unwrap();
 
         let mut tx = TransferTransaction {
             from: sender_address,
@@ -748,7 +765,7 @@ mod tests {
             signature: vec![],
             amount: 100,
             nonce: 0,
-            fee_amount: 1000
+            fee_amount: 1000,
         };
         sign(&mut tx, sender_privkey);
 
@@ -765,10 +782,15 @@ mod tests {
         let sender_address = sender_pubkey.serialize().to_vec();
         let receiver_address = vec![124; 32];
 
-        Account::set(&mut net.store, sender_address.as_slice(), Account {
-            balance: 1234,
-            nonce: 0
-        }).unwrap();
+        Account::set(
+            &mut net.store,
+            sender_address.as_slice(),
+            Account {
+                balance: 1234,
+                nonce: 0,
+            },
+        )
+        .unwrap();
 
         let mut tx = TransferTransaction {
             from: sender_address,
@@ -776,7 +798,7 @@ mod tests {
             signature: vec![],
             amount: 100,
             nonce: 0,
-            fee_amount: 1000
+            fee_amount: 1000,
         };
         sign(&mut tx, sender_privkey);
         tx.signature[10] ^= 1;
@@ -793,10 +815,15 @@ mod tests {
         let sender_address = sender_pubkey.serialize().to_vec();
         let receiver_address = vec![124; 32];
 
-        Account::set(&mut net.store, sender_address.as_slice(), Account {
-            balance: 1234,
-            nonce: 0
-        }).unwrap();
+        Account::set(
+            &mut net.store,
+            sender_address.as_slice(),
+            Account {
+                balance: 1234,
+                nonce: 0,
+            },
+        )
+        .unwrap();
 
         let mut tx = TransferTransaction {
             from: sender_address.clone(),
@@ -804,7 +831,7 @@ mod tests {
             signature: vec![],
             amount: 100,
             nonce: 0,
-            fee_amount: 1000
+            fee_amount: 1000,
         };
         sign(&mut tx, sender_privkey);
 
@@ -812,14 +839,18 @@ mod tests {
         run(&mut net.store, action, &mut net.validators).unwrap();
 
         assert_eq!(
-            Account::get(&mut net.store, &receiver_address).unwrap().unwrap(),
+            Account::get(&mut net.store, &receiver_address)
+                .unwrap()
+                .unwrap(),
             Account {
                 balance: 100,
                 nonce: 0
             }
         );
         assert_eq!(
-            Account::get(&mut net.store, &sender_address).unwrap().unwrap(),
+            Account::get(&mut net.store, &sender_address)
+                .unwrap()
+                .unwrap(),
             Account {
                 balance: 134,
                 nonce: 1

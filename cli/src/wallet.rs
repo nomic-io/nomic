@@ -4,7 +4,7 @@ use nomic_bitcoin::bitcoin;
 use nomic_client::Client;
 use nomic_primitives::Result;
 use nomic_signatory_set::SignatorySet;
-use secp256k1::{PublicKey, Secp256k1, SecretKey, SignOnly};
+use secp256k1::{Secp256k1, SecretKey, SignOnly};
 use failure::bail;
 use std::fs;
 use std::path::Path;
