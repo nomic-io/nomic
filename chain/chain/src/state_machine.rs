@@ -39,7 +39,7 @@ pub fn run(
             Transaction::WorkProof(tx) => handle_work_proof_tx(store, validators, tx),
             Transaction::Header(tx) => handle_header_tx(store, tx),
             Transaction::Deposit(tx) => handle_deposit_tx(store, tx),
-            Transaction::Transfer(tx) => dbg!(handle_transfer_tx(store, tx)),
+            Transaction::Transfer(tx) => handle_transfer_tx(store, tx),
         },
     }
 }
