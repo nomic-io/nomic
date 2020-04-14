@@ -31,6 +31,8 @@ lazy_static! {
 #[state]
 struct State {
     redeemed_work_hashes: Set<[u8; 32]>,
+    signatories: Value<SignatorySetSnapshot>,
+    prev_signatories: Value<SignatorySetSnapshot>,
 }
 
 /// Main entrypoint to the core bitcoin peg state machine.
@@ -44,45 +46,42 @@ pub fn run<S: Store>(
 ) -> Result<()> {
     let state = State::wrap_store(&mut store)?;
     match action {
-        Action::BeginBlock(header) => handle_begin_block(store, validators, header),
+        Action::BeginBlock(header) => handle_begin_block(&mut state, validators, header),
         Action::Transaction(transaction) => match transaction {
             Transaction::WorkProof(tx) => handle_work_proof_tx(&mut state, validators, tx),
-            Transaction::Header(tx) => handle_header_tx(store, tx),
-            Transaction::Deposit(tx) => handle_deposit_tx(store, tx),
-            Transaction::Transfer(tx) => handle_transfer_tx(store, tx),
+            Transaction::Header(tx) => handle_header_tx(&mut state, tx),
+            Transaction::Deposit(tx) => handle_deposit_tx(&mut state, tx),
+            Transaction::Transfer(tx) => handle_transfer_tx(&mut state, tx),
         },
     }
 }
 
 fn handle_begin_block<S: Store>(
-    store: S,
+    state: &mut State<S>,
     validators: &BTreeMap<Vec<u8>, u64>,
     header: Header,
 ) -> Result<()> {
-    match store.get(b"signatories")? {
+    match state.signatories.maybe_get()? {
         None => {
             // init signatories/prev_signatories
-            let snapshot = SignatorySetSnapshot {
+            let signatories = SignatorySetSnapshot {
                 time: header.get_time().get_seconds() as u64,
                 signatories: signatories_from_validators(validators)?,
             };
-            let signatories_bytes = snapshot.encode()?;
-            store.put(b"signatories".to_vec(), signatories_bytes.clone())?;
-            store.put(b"prev_signatories".to_vec(), signatories_bytes)?;
+            state.signatories.set(signatories.clone())?;
+            state.prev_signatories.set(signatories)?;
         }
-        Some(signatories_bytes) => {
+        Some(signatories) => {
             // check if signatories should be updated
-            let signatory_time = SignatorySetSnapshot::decode(signatories_bytes.as_slice())?.time;
-            let time = header.get_time().get_seconds() as u64;
-            let elapsed = time - signatory_time;
+            let now = header.get_time().get_seconds() as u64;
+            let elapsed = now - signatories.time;
             if elapsed >= SIGNATORY_CHANGE_INTERVAL {
-                let snapshot = SignatorySetSnapshot {
-                    time,
+                let new_signatories = SignatorySetSnapshot {
+                    time: now,
                     signatories: signatories_from_validators(validators)?,
                 };
-                let new_signatories_bytes = snapshot.encode()?;
-                store.put(b"signatories".to_vec(), new_signatories_bytes)?;
-                store.put(b"prev_signatories".to_vec(), signatories_bytes)?;
+                state.signatories.set(new_signatories)?;
+                state.prev_signatories.set(signatories)?;
             }
         }
     }
