@@ -13,6 +13,10 @@ use nomic_signatory_set::{Signatory, SignatorySet, SignatorySetSnapshot};
 use nomic_work::work;
 use orga::abci::messages::Header;
 use orga::Store;
+use orga::{
+    collections::{Deque, Set},
+    state, Value, WrapStore,
+};
 use secp256k1::{Secp256k1, VerifyOnly};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -24,19 +28,25 @@ lazy_static! {
     static ref SECP: Secp256k1<VerifyOnly> = Secp256k1::verification_only();
 }
 
+#[state]
+struct State {
+    redeemed_work_hashes: Set<[u8; 32]>,
+}
+
 /// Main entrypoint to the core bitcoin peg state machine.
 ///
 /// This function implements the conventions set by Orga, though this may change
 /// as our core framework design settles.
-pub fn run(
-    store: &mut dyn Store,
+pub fn run<S: Store>(
+    store: S,
     action: Action,
     validators: &mut BTreeMap<Vec<u8>, u64>,
 ) -> Result<()> {
+    let state = State::wrap_store(&mut store)?;
     match action {
         Action::BeginBlock(header) => handle_begin_block(store, validators, header),
         Action::Transaction(transaction) => match transaction {
-            Transaction::WorkProof(tx) => handle_work_proof_tx(store, validators, tx),
+            Transaction::WorkProof(tx) => handle_work_proof_tx(&mut state, validators, tx),
             Transaction::Header(tx) => handle_header_tx(store, tx),
             Transaction::Deposit(tx) => handle_deposit_tx(store, tx),
             Transaction::Transfer(tx) => handle_transfer_tx(store, tx),
@@ -44,8 +54,8 @@ pub fn run(
     }
 }
 
-fn handle_begin_block(
-    store: &mut dyn Store,
+fn handle_begin_block<S: Store>(
+    store: S,
     validators: &BTreeMap<Vec<u8>, u64>,
     header: Header,
 ) -> Result<()> {
@@ -80,8 +90,8 @@ fn handle_begin_block(
     Ok(())
 }
 
-fn handle_work_proof_tx(
-    store: &mut dyn Store,
+fn handle_work_proof_tx<S: Store>(
+    state: &mut State<S>,
     validators: &mut BTreeMap<Vec<u8>, u64>,
     tx: WorkProofTransaction,
 ) -> Result<()> {
@@ -89,7 +99,7 @@ fn handle_work_proof_tx(
     hasher.input(&tx.public_key);
     let nonce_bytes = tx.nonce.to_be_bytes();
     hasher.input(&nonce_bytes);
-    let hash = hasher.result().to_vec();
+    let hash: [u8; 32] = hasher.result().into();
     let work_proof_value = work(&hash);
 
     if work_proof_value < MIN_WORK {
@@ -97,8 +107,7 @@ fn handle_work_proof_tx(
     }
 
     // Make sure this proof hasn't been redeemed yet
-    let value_at_work_proof_hash = store.get(&hash)?;
-    if let Some(_) = value_at_work_proof_hash {
+    if state.redeemed_work_hashes.contains(hash)? {
         bail!("Work proof has already been redeemed")
     }
 
@@ -107,20 +116,20 @@ fn handle_work_proof_tx(
 
     validators.insert(tx.public_key, current_voting_power + work_proof_value);
     // Write the redeemed hash to the store so it can't be replayed
-    store.put(hash.to_vec(), vec![0])?;
+    state.redeemed_work_hashes.insert(hash)?;
 
     Ok(())
 }
 
-fn handle_header_tx(store: &mut dyn Store, tx: HeaderTransaction) -> Result<()> {
-    let mut header_cache = HeaderCache::new(bitcoin_network, store);
+fn handle_header_tx<S: Store>(store: S, tx: HeaderTransaction) -> Result<()> {
+    let mut header_cache = HeaderCache::new(bitcoin_network, &mut store);
     for header in tx.block_headers {
         header_cache.add_header(&header)?;
     }
     Ok(())
 }
 
-fn handle_deposit_tx(store: &mut dyn Store, deposit_transaction: DepositTransaction) -> Result<()> {
+fn handle_deposit_tx<S: Store>(store: S, deposit_transaction: DepositTransaction) -> Result<()> {
     // Hash transaction and check for duplicate
     let txid = deposit_transaction.tx.txid();
     let tx_key = [b"tx/", txid.as_hash().as_ref()].concat();
@@ -129,7 +138,7 @@ fn handle_deposit_tx(store: &mut dyn Store, deposit_transaction: DepositTransact
     }
 
     // Fetch merkle root for this block by its height
-    let mut header_cache = HeaderCache::new(bitcoin_network, store);
+    let mut header_cache = HeaderCache::new(bitcoin_network, &mut store);
     let tx_height = deposit_transaction.height;
     let header = header_cache.get_header_for_height(tx_height)?;
 
@@ -174,9 +183,9 @@ fn handle_deposit_tx(store: &mut dyn Store, deposit_transaction: DepositTransact
                 // mint coins
                 let depositor_address = recipient.as_slice();
                 let mut depositor_account =
-                    Account::get(store, depositor_address)?.unwrap_or_default();
+                    Account::get(&mut store, depositor_address)?.unwrap_or_default();
                 depositor_account.balance += txout.value;
-                Account::set(store, depositor_address, depositor_account)?;
+                Account::set(&mut store, depositor_address, depositor_account)?;
 
                 contains_deposit_outputs = true;
                 break;
@@ -194,7 +203,7 @@ fn handle_deposit_tx(store: &mut dyn Store, deposit_transaction: DepositTransact
 
 use nomic_primitives::Account;
 
-fn handle_transfer_tx(store: &mut dyn Store, tx: TransferTransaction) -> Result<()> {
+fn handle_transfer_tx<S: Store>(store: S, tx: TransferTransaction) -> Result<()> {
     if tx.from == tx.to {
         bail!("Account cannot send to itself");
     }
@@ -202,7 +211,7 @@ fn handle_transfer_tx(store: &mut dyn Store, tx: TransferTransaction) -> Result<
         bail!("Transaction fee is too small");
     }
     // Retrieve sender account from store
-    let maybe_sender_account = Account::get(store, &tx.from[..])?;
+    let maybe_sender_account = Account::get(&mut store, &tx.from[..])?;
     let mut sender_account = match maybe_sender_account {
         Some(sender_account) => sender_account,
         None => bail!("Account does not exist"),
@@ -224,12 +233,12 @@ fn handle_transfer_tx(store: &mut dyn Store, tx: TransferTransaction) -> Result<
     // Subtract coins from sender
     sender_account.balance -= tx.amount + tx.fee_amount;
     // Fetch (and maybe create) recipient account
-    let mut recipient_account = Account::get(store, &tx.to[..])?.unwrap_or_default();
+    let mut recipient_account = Account::get(&mut store, &tx.to[..])?.unwrap_or_default();
     // Add coins to recipient
     recipient_account.balance += tx.amount;
     // Save updated accounts to store
-    Account::set(store, &tx.from[..], sender_account)?;
-    Account::set(store, &tx.to[..], recipient_account)?;
+    Account::set(&mut store, &tx.from[..], sender_account)?;
+    Account::set(&mut store, &tx.to[..], recipient_account)?;
     Ok(())
 }
 
@@ -244,10 +253,10 @@ fn signatories_from_validators(validators: &BTreeMap<Vec<u8>, u64>) -> Result<Si
 
 // TODO: this should be Action::InitChain
 /// Called once at genesis to write some data to the store.
-pub fn initialize(store: &mut dyn Store) -> Result<()> {
+pub fn initialize<S: Store>(store: S) -> Result<()> {
     // TODO: this should be an action
     let checkpoint = get_checkpoint_header();
-    let mut header_cache = HeaderCache::new(bitcoin_network, store);
+    let mut header_cache = HeaderCache::new(bitcoin_network, &mut store);
 
     header_cache
         .add_header_raw(checkpoint.header, checkpoint.height)
