@@ -1,6 +1,7 @@
 use bitcoin::PublicKey;
 use nomic_bitcoin::bitcoin;
 use nomic_primitives::Result;
+use orga::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
 
@@ -121,6 +122,27 @@ impl SignatorySetSnapshot {
     }
 }
 
+use std::io::{Read, Write};
+impl Encode for SignatorySetSnapshot {
+    fn encode_into<W: Write>(&self, dest: &mut W) -> Result<()> {
+        let bytes = SignatorySetSnapshot::encode(self)?;
+        dest.write_all(bytes.as_slice())?;
+        Ok(())
+    }
+
+    fn encoding_length(&self) -> Result<usize> {
+        let bytes = SignatorySetSnapshot::encode(self)?;
+        Ok(bytes.len())
+    }
+}
+
+impl Decode for SignatorySetSnapshot {
+    fn decode<R: Read>(mut input: R) -> Result<Self> {
+        let mut buf = vec![];
+        input.read_to_end(&mut buf)?;
+        SignatorySetSnapshot::decode(buf.as_slice())
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
