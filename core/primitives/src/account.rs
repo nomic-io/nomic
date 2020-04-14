@@ -8,7 +8,6 @@ pub struct Account {
     pub balance: u64,
 }
 
-
 fn store_key(address: &[u8]) -> Vec<u8> {
     [b"accounts/", address].concat()
 }

@@ -1,5 +1,5 @@
-mod error;
 mod account;
-pub use error::*;
+mod error;
 pub use account::Account;
+pub use error::*;
 pub mod transaction;

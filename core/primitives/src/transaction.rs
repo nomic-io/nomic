@@ -1,10 +1,10 @@
+use crate::error::Result;
 use bitcoin::consensus::encode::{deserialize, serialize};
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::BlockHeader;
 use nomic_bitcoin::bitcoin;
-use serde::{de::Deserializer, ser::SerializeSeq, Deserialize, Serialize, Serializer};
-use crate::error::Result;
 use secp256k1::{Secp256k1, VerifyOnly};
+use serde::{de::Deserializer, ser::SerializeSeq, Deserialize, Serialize, Serializer};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Transaction {
@@ -110,11 +110,18 @@ mod tests {
             amount: 123,
             signature: vec![1, 2, 3, 4],
             nonce: 5,
-            fee_amount: 1000
+            fee_amount: 1000,
         };
 
-        assert_eq!(tx.sighash_input().unwrap(), vec![
-            33, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 33, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 123, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 232, 3, 0, 0, 0, 0, 0, 0
-        ]);
+        assert_eq!(
+            tx.sighash_input().unwrap(),
+            vec![
+                33, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 33, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2,
+                2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+                123, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 232, 3,
+                0, 0, 0, 0, 0, 0
+            ]
+        );
     }
 }

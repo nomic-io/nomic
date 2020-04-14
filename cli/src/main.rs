@@ -206,7 +206,7 @@ fn main() {
 
             println!("YOUR ADDRESS: {}", wallet.receive_address().cyan().bold());
             println!("YOUR BALANCE: {} NBTC", balance.cyan().bold());
-        },
+        }
         SubCommand::Transfer(transfer) => {
             default_log_level("error");
 
@@ -214,7 +214,7 @@ fn main() {
             let amount = transfer.amount;
 
             let mut client = Client::new("localhost:26657").unwrap();
-             
+
             let wallet_path = nomic_home.join("wallet.key");
             let wallet = Wallet::load_or_generate(wallet_path).unwrap();
 
@@ -230,4 +230,3 @@ fn main() {
         }
     }
 }
-    

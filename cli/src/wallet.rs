@@ -1,11 +1,11 @@
 use bech32::{FromBase32, ToBase32};
+use failure::bail;
 use log::info;
 use nomic_bitcoin::bitcoin;
 use nomic_client::Client;
 use nomic_primitives::Result;
 use nomic_signatory_set::SignatorySet;
 use secp256k1::{Secp256k1, SecretKey, SignOnly};
-use failure::bail;
 use std::fs;
 use std::path::Path;
 
@@ -59,10 +59,7 @@ impl Wallet {
     }
 
     pub fn send(&self, client: &mut Client, address: &str, amount: u64) -> Result<()> {
-        use nomic_primitives::transaction::{
-            Transaction,
-            TransferTransaction
-        };
+        use nomic_primitives::transaction::{Transaction, TransferTransaction};
 
         let sender_address = self.pubkey_bytes();
 

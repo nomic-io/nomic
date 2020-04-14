@@ -12,7 +12,6 @@ use orga::{
     abci::TendermintClient, merkstore::Client as MerkStoreClient, Read, Result as OrgaResult, Write,
 };
 
-
 use std::str::FromStr;
 use tendermint::rpc::Client as TendermintRpcClient;
 
