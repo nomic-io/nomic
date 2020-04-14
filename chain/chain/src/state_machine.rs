@@ -1,5 +1,6 @@
 use crate::spv::headercache::HeaderCache;
 use crate::Action;
+use bitcoin::hashes::Hash;
 use bitcoin::Network::Testnet as bitcoin_network;
 use failure::bail;
 use lazy_static::lazy_static;
@@ -14,7 +15,7 @@ use nomic_work::work;
 use orga::abci::messages::Header;
 use orga::Store;
 use orga::{
-    collections::{Deque, Set},
+    collections::{Deque, Map, Set},
     state, Value, WrapStore,
 };
 use secp256k1::{Secp256k1, VerifyOnly};
@@ -33,6 +34,8 @@ struct State {
     redeemed_work_hashes: Set<[u8; 32]>,
     signatories: Value<SignatorySetSnapshot>,
     prev_signatories: Value<SignatorySetSnapshot>,
+    processed_deposit_txids: Set<[u8; 32]>,
+    accounts: Map<[u8; 32], Account>,
 }
 
 /// Main entrypoint to the core bitcoin peg state machine.
@@ -49,8 +52,8 @@ pub fn run<S: Store>(
         Action::BeginBlock(header) => handle_begin_block(&mut state, validators, header),
         Action::Transaction(transaction) => match transaction {
             Transaction::WorkProof(tx) => handle_work_proof_tx(&mut state, validators, tx),
-            Transaction::Header(tx) => handle_header_tx(&mut state, tx),
-            Transaction::Deposit(tx) => handle_deposit_tx(&mut state, tx),
+            Transaction::Header(tx) => handle_header_tx(&mut store, tx),
+            Transaction::Deposit(tx) => handle_deposit_tx(&mut store, tx),
             Transaction::Transfer(tx) => handle_transfer_tx(&mut state, tx),
         },
     }
@@ -129,10 +132,13 @@ fn handle_header_tx<S: Store>(store: S, tx: HeaderTransaction) -> Result<()> {
 }
 
 fn handle_deposit_tx<S: Store>(store: S, deposit_transaction: DepositTransaction) -> Result<()> {
+    let state = State::wrap_store(&mut store)?;
     // Hash transaction and check for duplicate
     let txid = deposit_transaction.tx.txid();
-    let tx_key = [b"tx/", txid.as_hash().as_ref()].concat();
-    if let Some(_) = store.get(tx_key.as_slice())? {
+    if state
+        .processed_deposit_txids
+        .contains(txid.as_hash().into_inner())?
+    {
         bail!("Transaction was already processed");
     }
 
@@ -159,11 +165,11 @@ fn handle_deposit_tx<S: Store>(store: S, deposit_transaction: DepositTransaction
         bail!("Proof merkle root does not match chain");
     }
 
+    let state = State::wrap_store(&mut store)?;
     // Ensure tx contains deposit outputs
     let signatory_sets = [
-        SignatorySetSnapshot::decode(store.get(b"signatories")?.unwrap().as_slice())?.signatories,
-        SignatorySetSnapshot::decode(store.get(b"prev_signatories")?.unwrap().as_slice())?
-            .signatories,
+        state.signatories.get()?.signatories,
+        state.prev_signatories.get()?.signatories,
     ];
     let mut recipients = deposit_transaction.recipients.iter().peekable();
     let mut contains_deposit_outputs = false;
@@ -180,11 +186,13 @@ fn handle_deposit_tx<S: Store>(store: S, deposit_transaction: DepositTransaction
                 nomic_signatory_set::output_script(signatory_set, recipient.to_vec());
             if txout.script_pubkey == expected_script {
                 // mint coins
-                let depositor_address = recipient.as_slice();
+                let depositor_address = unsafe_slice_to_array(recipient.as_slice());
                 let mut depositor_account =
-                    Account::get(&mut store, depositor_address)?.unwrap_or_default();
+                    state.accounts.get(depositor_address)?.unwrap_or_default();
                 depositor_account.balance += txout.value;
-                Account::set(&mut store, depositor_address, depositor_account)?;
+                state
+                    .accounts
+                    .insert(depositor_address, depositor_account)?;
 
                 contains_deposit_outputs = true;
                 break;
@@ -196,21 +204,36 @@ fn handle_deposit_tx<S: Store>(store: S, deposit_transaction: DepositTransaction
     }
 
     // Deposit is valid, mark transaction as processed
-    store.put(tx_key, vec![])?;
+    let state = State::wrap_store(&mut store)?;
+    state
+        .processed_deposit_txids
+        .insert(txid.as_hash().into_inner())?;
     Ok(())
 }
 
+fn unsafe_slice_to_array(slice: &[u8]) -> [u8; 32] {
+    // warning: only call this with a slice of length 32
+    let mut buf = [0; 32];
+    buf.copy_from_slice(slice);
+    buf
+}
 use nomic_primitives::Account;
 
-fn handle_transfer_tx<S: Store>(store: S, tx: TransferTransaction) -> Result<()> {
+fn handle_transfer_tx<S: Store>(state: &mut State<S>, tx: TransferTransaction) -> Result<()> {
     if tx.from == tx.to {
         bail!("Account cannot send to itself");
     }
     if tx.fee_amount < 1000 {
         bail!("Transaction fee is too small");
     }
+    if tx.from.len() != 32 {
+        bail!("Invalid sender address");
+    }
+    if tx.to.len() != 32 {
+        bail!("Invalid recipient address");
+    }
     // Retrieve sender account from store
-    let maybe_sender_account = Account::get(&mut store, &tx.from[..])?;
+    let maybe_sender_account = state.accounts.get(unsafe_slice_to_array(&tx.from[..]))?;
     let mut sender_account = match maybe_sender_account {
         Some(sender_account) => sender_account,
         None => bail!("Account does not exist"),
@@ -232,12 +255,19 @@ fn handle_transfer_tx<S: Store>(store: S, tx: TransferTransaction) -> Result<()>
     // Subtract coins from sender
     sender_account.balance -= tx.amount + tx.fee_amount;
     // Fetch (and maybe create) recipient account
-    let mut recipient_account = Account::get(&mut store, &tx.to[..])?.unwrap_or_default();
+    let mut recipient_account = state
+        .accounts
+        .get(unsafe_slice_to_array(&tx.to[..]))?
+        .unwrap_or_default();
     // Add coins to recipient
     recipient_account.balance += tx.amount;
     // Save updated accounts to store
-    Account::set(&mut store, &tx.from[..], sender_account)?;
-    Account::set(&mut store, &tx.to[..], recipient_account)?;
+    state
+        .accounts
+        .insert(unsafe_slice_to_array(&tx.from[..]), sender_account);
+    state
+        .accounts
+        .insert(unsafe_slice_to_array(&tx.to[..]), recipient_account);
     Ok(())
 }
 
