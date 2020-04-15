@@ -20,7 +20,7 @@ impl Signatory {
     }
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub struct SignatorySet {
     map: HashMap<PublicKey, Signatory>,
     set: BTreeSet<Signatory>,
@@ -77,7 +77,7 @@ struct SerializableSignatorySetSnapshot {
     signatories: Vec<(Vec<u8>, u64)>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SignatorySetSnapshot {
     pub time: u64,
     pub signatories: SignatorySet,
