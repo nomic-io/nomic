@@ -29,13 +29,15 @@ lazy_static! {
     static ref SECP: Secp256k1<VerifyOnly> = Secp256k1::verification_only();
 }
 
+pub type Address = [u8; 33];
+
 #[state]
 pub struct State {
     pub redeemed_work_hashes: Set<[u8; 32]>,
     pub signatories: Value<SignatorySetSnapshot>,
     pub prev_signatories: Value<SignatorySetSnapshot>,
     pub processed_deposit_txids: Set<[u8; 32]>,
-    pub accounts: Map<[u8; 32], Account>,
+    pub accounts: Map<Address, Account>,
 }
 
 /// Main entrypoint to the core bitcoin peg state machine.
@@ -181,15 +183,15 @@ fn handle_deposit_tx<S: Store>(
             Some(recipient) => recipient,
             None => bail!("Consumed all recipients"),
         };
-        if recipient.len() != 32 {
-            bail!("Recipient must be 32 bytes");
+        if recipient.len() != 33 {
+            bail!("Recipient must be 33 bytes");
         }
         for signatory_set in signatory_sets.iter() {
             let expected_script =
                 nomic_signatory_set::output_script(signatory_set, recipient.to_vec());
             if txout.script_pubkey == expected_script {
                 // mint coins
-                let depositor_address = unsafe_slice_to_array(recipient.as_slice());
+                let depositor_address = unsafe_slice_to_address(recipient.as_slice());
                 let mut depositor_account =
                     state.accounts.get(depositor_address)?.unwrap_or_default();
                 depositor_account.balance += txout.value;
@@ -214,9 +216,9 @@ fn handle_deposit_tx<S: Store>(
     Ok(())
 }
 
-fn unsafe_slice_to_array(slice: &[u8]) -> [u8; 32] {
+fn unsafe_slice_to_address(slice: &[u8]) -> Address {
     // warning: only call this with a slice of length 32
-    let mut buf = [0; 32];
+    let mut buf: Address = [0; 33];
     buf.copy_from_slice(slice);
     buf
 }
@@ -229,14 +231,14 @@ fn handle_transfer_tx<S: Store>(state: &mut State<S>, tx: TransferTransaction) -
     if tx.fee_amount < 1000 {
         bail!("Transaction fee is too small");
     }
-    if tx.from.len() != 32 {
+    if tx.from.len() != 33 {
         bail!("Invalid sender address");
     }
-    if tx.to.len() != 32 {
+    if tx.to.len() != 33 {
         bail!("Invalid recipient address");
     }
     // Retrieve sender account from store
-    let maybe_sender_account = state.accounts.get(unsafe_slice_to_array(&tx.from[..]))?;
+    let maybe_sender_account = state.accounts.get(unsafe_slice_to_address(&tx.from[..]))?;
     let mut sender_account = match maybe_sender_account {
         Some(sender_account) => sender_account,
         None => bail!("Account does not exist"),
@@ -260,17 +262,17 @@ fn handle_transfer_tx<S: Store>(state: &mut State<S>, tx: TransferTransaction) -
     // Fetch (and maybe create) recipient account
     let mut recipient_account = state
         .accounts
-        .get(unsafe_slice_to_array(&tx.to[..]))?
+        .get(unsafe_slice_to_address(&tx.to[..]))?
         .unwrap_or_default();
     // Add coins to recipient
     recipient_account.balance += tx.amount;
     // Save updated accounts to store
     state
         .accounts
-        .insert(unsafe_slice_to_array(&tx.from[..]), sender_account);
+        .insert(unsafe_slice_to_address(&tx.from[..]), sender_account)?;
     state
         .accounts
-        .insert(unsafe_slice_to_array(&tx.to[..]), recipient_account);
+        .insert(unsafe_slice_to_address(&tx.to[..]), recipient_account)?;
     Ok(())
 }
 
@@ -460,6 +462,7 @@ mod tests {
     #[test]
     fn begin_block() {
         let mut net = MockNet::new();
+        let mut state = State::wrap_store(&mut net.store).unwrap();
 
         // initial signatories
         let mut expected_signatories = SignatorySet::new();
@@ -472,13 +475,11 @@ mod tests {
             voting_power: 100,
         });
         assert_eq!(
-            net.store.get(b"signatories").unwrap().unwrap(),
+            state.signatories.get().unwrap(),
             SignatorySetSnapshot {
                 time: 123,
                 signatories: expected_signatories
             }
-            .encode()
-            .unwrap()
         );
 
         // changed validator set, should be same sig set
@@ -504,14 +505,14 @@ mod tests {
             .unwrap(),
             voting_power: 100,
         });
+
+        let state = State::wrap_store(&mut net.store).unwrap();
         assert_eq!(
-            net.store.get(b"signatories").unwrap().unwrap(),
+            state.signatories.get().unwrap(),
             SignatorySetSnapshot {
                 time: 123,
                 signatories: expected_signatories
             }
-            .encode()
-            .unwrap()
         );
 
         // lots of time has passed, signatory set should be updated
@@ -522,6 +523,7 @@ mod tests {
         let action = Action::BeginBlock(header);
         run(&mut net.store, action, &mut net.validators).unwrap();
         let mut expected_signatories = SignatorySet::new();
+        let state = State::wrap_store(&mut net.store).unwrap();
         expected_signatories.set(Signatory {
             pubkey: bitcoin::PublicKey::from_slice(&[
                 2, 120, 15, 192, 99, 177, 43, 235, 23, 134, 193, 123, 205, 196, 253, 121, 49, 80,
@@ -539,13 +541,11 @@ mod tests {
             voting_power: 100,
         });
         assert_eq!(
-            net.store.get(b"signatories").unwrap().unwrap(),
+            state.signatories.get().unwrap(),
             SignatorySetSnapshot {
                 time: 1_000_000_000,
                 signatories: expected_signatories
             }
-            .encode()
-            .unwrap()
         );
     }
 
@@ -598,7 +598,7 @@ mod tests {
             proof,
             tx,
             block_index: 0,
-            recipients: vec![vec![123; 32]],
+            recipients: vec![vec![123; 33]],
         };
         let action = Action::Transaction(Transaction::Deposit(deposit));
 
@@ -612,7 +612,7 @@ mod tests {
             100_000_000,
             nomic_signatory_set::output_script(
                 &signatories_from_validators(&mock_validator_set()).unwrap(),
-                vec![123; 32],
+                vec![123; 33],
             ),
         )]);
         let block = build_block(vec![tx.clone()]);
@@ -624,7 +624,7 @@ mod tests {
             proof,
             tx,
             block_index: 0,
-            recipients: vec![vec![123; 32]],
+            recipients: vec![vec![123; 33]],
         };
         let action = Action::Transaction(Transaction::Deposit(deposit));
 
@@ -639,7 +639,7 @@ mod tests {
             100_000_000,
             nomic_signatory_set::output_script(
                 &signatories_from_validators(&mock_validator_set()).unwrap(),
-                vec![123; 32],
+                vec![123; 33],
             ),
         )]);
         let block = build_block(vec![tx.clone()]);
@@ -664,7 +664,7 @@ mod tests {
             100_000_000,
             nomic_signatory_set::output_script(
                 &signatories_from_validators(&mock_validator_set()).unwrap(),
-                vec![123; 32],
+                vec![123; 33],
             ),
         )]);
 
@@ -677,7 +677,7 @@ mod tests {
             proof,
             tx,
             block_index: 0,
-            recipients: vec![vec![123; 32]],
+            recipients: vec![vec![123; 33]],
         };
         let action = Action::Transaction(Transaction::Deposit(deposit));
 
@@ -685,7 +685,7 @@ mod tests {
         let state = State::wrap_store(net.store).unwrap();
         // check recipient balance
         assert_eq!(
-            state.accounts.get([123; 32]).unwrap().unwrap(),
+            state.accounts.get([123; 33]).unwrap().unwrap(),
             Account {
                 balance: 100_000_000,
                 nonce: 0
@@ -700,13 +700,13 @@ mod tests {
 
         let (sender_privkey, sender_pubkey) = create_keypair(1);
         let sender_address = sender_pubkey.serialize().to_vec();
-        let receiver_address = vec![124; 32];
+        let receiver_address = vec![124; 33];
 
         let mut state = State::wrap_store(&mut net.store).unwrap();
         state
             .accounts
             .insert(
-                unsafe_slice_to_array(sender_address.as_slice()),
+                unsafe_slice_to_address(sender_address.as_slice()),
                 Account {
                     balance: 1234,
                     nonce: 0,
@@ -735,7 +735,7 @@ mod tests {
 
         let (sender_privkey, sender_pubkey) = create_keypair(1);
         let sender_address = sender_pubkey.serialize().to_vec();
-        let receiver_address = vec![124; 32];
+        let receiver_address = vec![124; 33];
 
         let mut tx = TransferTransaction {
             from: sender_address,
@@ -758,13 +758,13 @@ mod tests {
 
         let (sender_privkey, sender_pubkey) = create_keypair(1);
         let sender_address = sender_pubkey.serialize().to_vec();
-        let receiver_address = vec![124; 32];
+        let receiver_address = vec![124; 33];
 
         let mut state = State::wrap_store(&mut net.store).unwrap();
         state
             .accounts
             .insert(
-                unsafe_slice_to_array(sender_address.as_slice()),
+                unsafe_slice_to_address(sender_address.as_slice()),
                 Account {
                     balance: 1234,
                     nonce: 0,
@@ -793,13 +793,13 @@ mod tests {
 
         let (sender_privkey, sender_pubkey) = create_keypair(1);
         let sender_address = sender_pubkey.serialize().to_vec();
-        let receiver_address = vec![124; 32];
+        let receiver_address = vec![124; 33];
 
         let mut state = State::wrap_store(&mut net.store).unwrap();
         state
             .accounts
             .insert(
-                unsafe_slice_to_array(sender_address.as_slice()),
+                unsafe_slice_to_address(sender_address.as_slice()),
                 Account {
                     balance: 1234,
                     nonce: 100,
@@ -828,13 +828,13 @@ mod tests {
 
         let (sender_privkey, sender_pubkey) = create_keypair(1);
         let sender_address = sender_pubkey.serialize().to_vec();
-        let receiver_address = vec![124; 32];
+        let receiver_address = vec![124; 33];
 
         let mut state = State::wrap_store(&mut net.store).unwrap();
         state
             .accounts
             .insert(
-                unsafe_slice_to_array(sender_address.as_slice()),
+                unsafe_slice_to_address(sender_address.as_slice()),
                 Account {
                     balance: 1234,
                     nonce: 0,
@@ -863,13 +863,13 @@ mod tests {
 
         let (sender_privkey, sender_pubkey) = create_keypair(1);
         let sender_address = sender_pubkey.serialize().to_vec();
-        let receiver_address = vec![124; 32];
+        let receiver_address = vec![124; 33];
 
         let mut state = State::wrap_store(&mut net.store).unwrap();
         state
             .accounts
             .insert(
-                unsafe_slice_to_array(sender_address.as_slice()),
+                unsafe_slice_to_address(sender_address.as_slice()),
                 Account {
                     balance: 1234,
                     nonce: 0,
@@ -894,7 +894,7 @@ mod tests {
         assert_eq!(
             state
                 .accounts
-                .get(unsafe_slice_to_array(&receiver_address[..]))
+                .get(unsafe_slice_to_address(&receiver_address[..]))
                 .unwrap()
                 .unwrap(),
             Account {
@@ -905,7 +905,7 @@ mod tests {
         assert_eq!(
             state
                 .accounts
-                .get(unsafe_slice_to_array(&sender_address[..]))
+                .get(unsafe_slice_to_address(&sender_address[..]))
                 .unwrap()
                 .unwrap(),
             Account {
