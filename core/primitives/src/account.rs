@@ -1,5 +1,5 @@
 use crate::Result;
-use orga::{Decode, Encode, Store};
+use orga::{Decode, Encode};
 use std::io::{Read, Write};
 
 #[derive(Debug, Default, PartialEq)]

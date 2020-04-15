@@ -15,7 +15,7 @@ use nomic_work::work;
 use orga::abci::messages::Header;
 use orga::Store;
 use orga::{
-    collections::{Deque, Map, Set},
+    collections::{Map, Set},
     state, Value, WrapStore,
 };
 use secp256k1::{Secp256k1, VerifyOnly};
@@ -316,7 +316,6 @@ mod tests {
     use lazy_static::lazy_static;
     use nomic_primitives::Account;
     use nomic_signatory_set::{Signatory, SignatorySet, SignatorySetSnapshot};
-    use orga::Read;
     use orga::{abci::messages::Header as TendermintHeader, MapStore, WrapStore};
     use protobuf::well_known_types::Timestamp;
     use secp256k1::{Secp256k1, SignOnly};
@@ -462,7 +461,7 @@ mod tests {
     #[test]
     fn begin_block() {
         let mut net = MockNet::new();
-        let mut state = State::wrap_store(&mut net.store).unwrap();
+        let state = State::wrap_store(&mut net.store).unwrap();
 
         // initial signatories
         let mut expected_signatories = SignatorySet::new();

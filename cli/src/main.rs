@@ -1,3 +1,4 @@
+#![allow(unused_braces)]
 mod tendermint;
 mod wallet;
 
@@ -51,22 +52,22 @@ enum SubCommand {
 }
 
 #[derive(Clap)]
-struct Start {}
+struct Start;
 
 #[derive(Clap)]
-struct Dev {}
+struct Dev;
 
 #[derive(Clap)]
-struct Relayer {}
+struct Relayer;
 
 #[derive(Clap)]
-struct Worker {}
+struct Worker;
 
 #[derive(Clap)]
-struct Deposit {}
+struct Deposit;
 
 #[derive(Clap)]
-struct Balance {}
+struct Balance;
 
 #[derive(Clap)]
 struct Transfer {
