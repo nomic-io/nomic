@@ -30,12 +30,12 @@ lazy_static! {
 }
 
 #[state]
-struct State {
-    redeemed_work_hashes: Set<[u8; 32]>,
-    signatories: Value<SignatorySetSnapshot>,
-    prev_signatories: Value<SignatorySetSnapshot>,
-    processed_deposit_txids: Set<[u8; 32]>,
-    accounts: Map<[u8; 32], Account>,
+pub struct State {
+    pub redeemed_work_hashes: Set<[u8; 32]>,
+    pub signatories: Value<SignatorySetSnapshot>,
+    pub prev_signatories: Value<SignatorySetSnapshot>,
+    pub processed_deposit_txids: Set<[u8; 32]>,
+    pub accounts: Map<[u8; 32], Account>,
 }
 
 /// Main entrypoint to the core bitcoin peg state machine.
