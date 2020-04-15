@@ -4,12 +4,13 @@ use bitcoin::Network::Testnet as bitcoin_network;
 use failure::{bail, format_err};
 
 use nomic_bitcoin::bitcoin;
-use nomic_chain::{orga, spv};
+use nomic_chain::{orga, spv, State};
 use nomic_primitives::transaction::{Transaction, WorkProofTransaction};
 use nomic_primitives::Account;
 use nomic_signatory_set::{SignatorySet, SignatorySetSnapshot};
 use orga::{
-    abci::TendermintClient, merkstore::Client as MerkStoreClient, Read, Result as OrgaResult, Write,
+    abci::TendermintClient, merkstore::Client as MerkStoreClient, Read, Result as OrgaResult,
+    WrapStore, Write,
 };
 
 use std::str::FromStr;
@@ -46,16 +47,19 @@ impl Write for RemoteStore {
 
 pub struct Client {
     pub tendermint_rpc: TendermintRpcClient,
+    state: State<RemoteStore>,
     remote_store: RemoteStore,
 }
 
 impl Client {
     pub fn new(tendermint_rpc_address: &str) -> Result<Self> {
-        let address = tendermint::net::Address::from_str(tendermint_rpc_address).unwrap();
-        let tendermint_rpc = TendermintRpcClient::new(&address).unwrap();
+        let address = tendermint::net::Address::from_str(tendermint_rpc_address)?;
+        let tendermint_rpc = TendermintRpcClient::new(&address)?;
         let remote_store = RemoteStore::new(tendermint_rpc_address);
 
+        let state = State::wrap_store(RemoteStore::new(tendermint_rpc_address))?;
         Ok(Client {
+            state,
             tendermint_rpc,
             remote_store,
         })
@@ -142,11 +146,22 @@ impl Client {
     }
 
     pub fn get_balance(&mut self, address: &[u8]) -> OrgaResult<u64> {
-        let account = Account::get(&mut self.remote_store, address)?.unwrap_or_default();
+        let account = self.get_account(address)?;
         Ok(account.balance)
     }
 
     pub fn get_account(&mut self, address: &[u8]) -> OrgaResult<Account> {
-        Ok(Account::get(&mut self.remote_store, address)?.unwrap_or_default())
+        Ok(self
+            .state
+            .accounts
+            .get(unsafe_slice_to_array(address))?
+            .unwrap_or_default())
     }
+}
+
+fn unsafe_slice_to_array(slice: &[u8]) -> [u8; 32] {
+    // warning: only call this with a slice of length 32
+    let mut buf = [0; 32];
+    buf.copy_from_slice(slice);
+    buf
 }
