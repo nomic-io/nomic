@@ -43,11 +43,11 @@ struct State {
 /// This function implements the conventions set by Orga, though this may change
 /// as our core framework design settles.
 pub fn run<S: Store>(
-    store: S,
+    mut store: S,
     action: Action,
     validators: &mut BTreeMap<Vec<u8>, u64>,
 ) -> Result<()> {
-    let state = State::wrap_store(&mut store)?;
+    let mut state = State::wrap_store(&mut store)?;
     match action {
         Action::BeginBlock(header) => handle_begin_block(&mut state, validators, header),
         Action::Transaction(transaction) => match transaction {
@@ -123,7 +123,7 @@ fn handle_work_proof_tx<S: Store>(
     Ok(())
 }
 
-fn handle_header_tx<S: Store>(store: S, tx: HeaderTransaction) -> Result<()> {
+fn handle_header_tx<S: Store>(mut store: S, tx: HeaderTransaction) -> Result<()> {
     let mut header_cache = HeaderCache::new(bitcoin_network, &mut store);
     for header in tx.block_headers {
         header_cache.add_header(&header)?;
@@ -131,7 +131,10 @@ fn handle_header_tx<S: Store>(store: S, tx: HeaderTransaction) -> Result<()> {
     Ok(())
 }
 
-fn handle_deposit_tx<S: Store>(store: S, deposit_transaction: DepositTransaction) -> Result<()> {
+fn handle_deposit_tx<S: Store>(
+    mut store: S,
+    deposit_transaction: DepositTransaction,
+) -> Result<()> {
     let state = State::wrap_store(&mut store)?;
     // Hash transaction and check for duplicate
     let txid = deposit_transaction.tx.txid();
@@ -165,7 +168,7 @@ fn handle_deposit_tx<S: Store>(store: S, deposit_transaction: DepositTransaction
         bail!("Proof merkle root does not match chain");
     }
 
-    let state = State::wrap_store(&mut store)?;
+    let mut state = State::wrap_store(&mut store)?;
     // Ensure tx contains deposit outputs
     let signatory_sets = [
         state.signatories.get()?.signatories,
@@ -204,7 +207,7 @@ fn handle_deposit_tx<S: Store>(store: S, deposit_transaction: DepositTransaction
     }
 
     // Deposit is valid, mark transaction as processed
-    let state = State::wrap_store(&mut store)?;
+    let mut state = State::wrap_store(&mut store)?;
     state
         .processed_deposit_txids
         .insert(txid.as_hash().into_inner())?;
@@ -282,7 +285,7 @@ fn signatories_from_validators(validators: &BTreeMap<Vec<u8>, u64>) -> Result<Si
 
 // TODO: this should be Action::InitChain
 /// Called once at genesis to write some data to the store.
-pub fn initialize<S: Store>(store: S) -> Result<()> {
+pub fn initialize<S: Store>(mut store: S) -> Result<()> {
     // TODO: this should be an action
     let checkpoint = get_checkpoint_header();
     let mut header_cache = HeaderCache::new(bitcoin_network, &mut store);
@@ -312,7 +315,7 @@ mod tests {
     use nomic_primitives::Account;
     use nomic_signatory_set::{Signatory, SignatorySet, SignatorySetSnapshot};
     use orga::Read;
-    use orga::{abci::messages::Header as TendermintHeader, MapStore};
+    use orga::{abci::messages::Header as TendermintHeader, MapStore, WrapStore};
     use protobuf::well_known_types::Timestamp;
     use secp256k1::{Secp256k1, SignOnly};
     use std::collections::{BTreeMap, HashSet};
@@ -664,6 +667,7 @@ mod tests {
                 vec![123; 32],
             ),
         )]);
+
         let block = build_block(vec![tx.clone()]);
         let mut net = MockNet::with_btc_block(block);
 
@@ -678,10 +682,10 @@ mod tests {
         let action = Action::Transaction(Transaction::Deposit(deposit));
 
         run(&mut net.store, action.clone(), &mut net.validators).unwrap();
-
+        let state = State::wrap_store(net.store).unwrap();
         // check recipient balance
         assert_eq!(
-            Account::get(&mut net.store, &[123; 32]).unwrap().unwrap(),
+            state.accounts.get([123; 32]).unwrap().unwrap(),
             Account {
                 balance: 100_000_000,
                 nonce: 0
@@ -698,15 +702,17 @@ mod tests {
         let sender_address = sender_pubkey.serialize().to_vec();
         let receiver_address = vec![124; 32];
 
-        Account::set(
-            &mut net.store,
-            sender_address.as_slice(),
-            Account {
-                balance: 1234,
-                nonce: 0,
-            },
-        )
-        .unwrap();
+        let mut state = State::wrap_store(&mut net.store).unwrap();
+        state
+            .accounts
+            .insert(
+                unsafe_slice_to_array(sender_address.as_slice()),
+                Account {
+                    balance: 1234,
+                    nonce: 0,
+                },
+            )
+            .unwrap();
 
         let mut tx = TransferTransaction {
             from: sender_address,
@@ -754,15 +760,17 @@ mod tests {
         let sender_address = sender_pubkey.serialize().to_vec();
         let receiver_address = vec![124; 32];
 
-        Account::set(
-            &mut net.store,
-            sender_address.as_slice(),
-            Account {
-                balance: 1234,
-                nonce: 0,
-            },
-        )
-        .unwrap();
+        let mut state = State::wrap_store(&mut net.store).unwrap();
+        state
+            .accounts
+            .insert(
+                unsafe_slice_to_array(sender_address.as_slice()),
+                Account {
+                    balance: 1234,
+                    nonce: 0,
+                },
+            )
+            .unwrap();
 
         let mut tx = TransferTransaction {
             from: sender_address,
@@ -787,15 +795,17 @@ mod tests {
         let sender_address = sender_pubkey.serialize().to_vec();
         let receiver_address = vec![124; 32];
 
-        Account::set(
-            &mut net.store,
-            sender_address.as_slice(),
-            Account {
-                balance: 1234,
-                nonce: 100,
-            },
-        )
-        .unwrap();
+        let mut state = State::wrap_store(&mut net.store).unwrap();
+        state
+            .accounts
+            .insert(
+                unsafe_slice_to_array(sender_address.as_slice()),
+                Account {
+                    balance: 1234,
+                    nonce: 100,
+                },
+            )
+            .unwrap();
 
         let mut tx = TransferTransaction {
             from: sender_address,
@@ -820,15 +830,17 @@ mod tests {
         let sender_address = sender_pubkey.serialize().to_vec();
         let receiver_address = vec![124; 32];
 
-        Account::set(
-            &mut net.store,
-            sender_address.as_slice(),
-            Account {
-                balance: 1234,
-                nonce: 0,
-            },
-        )
-        .unwrap();
+        let mut state = State::wrap_store(&mut net.store).unwrap();
+        state
+            .accounts
+            .insert(
+                unsafe_slice_to_array(sender_address.as_slice()),
+                Account {
+                    balance: 1234,
+                    nonce: 0,
+                },
+            )
+            .unwrap();
 
         let mut tx = TransferTransaction {
             from: sender_address,
@@ -853,15 +865,17 @@ mod tests {
         let sender_address = sender_pubkey.serialize().to_vec();
         let receiver_address = vec![124; 32];
 
-        Account::set(
-            &mut net.store,
-            sender_address.as_slice(),
-            Account {
-                balance: 1234,
-                nonce: 0,
-            },
-        )
-        .unwrap();
+        let mut state = State::wrap_store(&mut net.store).unwrap();
+        state
+            .accounts
+            .insert(
+                unsafe_slice_to_array(sender_address.as_slice()),
+                Account {
+                    balance: 1234,
+                    nonce: 0,
+                },
+            )
+            .unwrap();
 
         let mut tx = TransferTransaction {
             from: sender_address.clone(),
@@ -876,8 +890,11 @@ mod tests {
         let action = Action::Transaction(Transaction::Transfer(tx));
         run(&mut net.store, action, &mut net.validators).unwrap();
 
+        let state = State::wrap_store(&mut net.store).unwrap();
         assert_eq!(
-            Account::get(&mut net.store, &receiver_address)
+            state
+                .accounts
+                .get(unsafe_slice_to_array(&receiver_address[..]))
                 .unwrap()
                 .unwrap(),
             Account {
@@ -886,7 +903,9 @@ mod tests {
             }
         );
         assert_eq!(
-            Account::get(&mut net.store, &sender_address)
+            state
+                .accounts
+                .get(unsafe_slice_to_array(&sender_address[..]))
                 .unwrap()
                 .unwrap(),
             Account {
