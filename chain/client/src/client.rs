@@ -123,26 +123,14 @@ impl Client {
     }
 
     pub fn get_signatory_sets(&self) -> OrgaResult<Vec<SignatorySet>> {
-        let store = &self.remote_store;
-        let get_signatory_set = |key| {
-            let signatory_set_bytes = match store.get(key)? {
-                Some(bytes) => bytes,
-                None => bail!("Signatory set was not available in the store"),
-            };
-            Ok(SignatorySetSnapshot::decode(&signatory_set_bytes)?.signatories)
-        };
-
         Ok(vec![
-            get_signatory_set(b"signatories")?,
-            get_signatory_set(b"prev_signatories")?,
+            self.state.signatories.get()?.signatories,
+            self.state.prev_signatories.get()?.signatories,
         ])
     }
 
     pub fn get_signatory_set_snapshot(&mut self) -> OrgaResult<SignatorySetSnapshot> {
-        let bytes = self.remote_store.get(b"signatories")?.ok_or(format_err!(
-            "Signatory set snapshot was not available in the store"
-        ))?;
-        SignatorySetSnapshot::decode(bytes.as_slice())
+        Ok(self.state.signatories.get()?)
     }
 
     pub fn get_balance(&mut self, address: &[u8]) -> OrgaResult<u64> {
@@ -154,14 +142,15 @@ impl Client {
         Ok(self
             .state
             .accounts
-            .get(unsafe_slice_to_array(address))?
+            .get(unsafe_slice_to_address(address))?
             .unwrap_or_default())
     }
 }
 
-fn unsafe_slice_to_array(slice: &[u8]) -> [u8; 32] {
+type Address = [u8; 33];
+fn unsafe_slice_to_address(slice: &[u8]) -> Address {
     // warning: only call this with a slice of length 32
-    let mut buf = [0; 32];
+    let mut buf = [0; 33];
     buf.copy_from_slice(slice);
     buf
 }
