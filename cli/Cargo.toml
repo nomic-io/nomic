@@ -27,7 +27,7 @@ rand = "0.6"
 hex = "0.4.2"
 colored = "1.9.3"
 bech32 = "0.7.2"
-failure = "0.1.7"
+failure = "=0.1.6"
 
 [dependencies.log]
 version = "0.4.8"
