@@ -6,6 +6,7 @@ use nomic_client::Client;
 use nomic_primitives::Result;
 use nomic_signatory_set::SignatorySet;
 use secp256k1::{Secp256k1, SecretKey, SignOnly};
+use nomic_primitives::transaction::Sighash;
 use std::fs;
 use std::path::Path;
 
