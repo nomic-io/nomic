@@ -16,6 +16,7 @@ pub struct EnrichedHeader {
     pub header: BlockHeader,
 }
 
+#[derive(Clone)]
 pub struct Script(pub bitcoin::Script);
 
 impl From<bitcoin::Script> for Script {
@@ -49,7 +50,7 @@ impl Decode for Script {
     }
 }
 
-#[derive(Encode, Decode)]
+#[derive(Clone, Encode, Decode)]
 pub struct Outpoint {
     txid: [u8; 32],
     index: u32,

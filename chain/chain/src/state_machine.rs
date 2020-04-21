@@ -27,14 +27,16 @@ use std::collections::BTreeMap;
 const MIN_WORK: u64 = 1 << 20;
 pub const SIGNATORY_CHANGE_INTERVAL: u64 = 60 * 60 * 24 * 7;
 pub const CHECKPOINT_INTERVAL: u64 = 60 * 60 * 24;
+pub const CHECKPOINT_FEE_AMOUNT: u64 = 10_000;
 
 lazy_static! {
     static ref SECP: Secp256k1<VerifyOnly> = Secp256k1::verification_only();
 }
 
-#[derive(Encode, Decode)]
+#[derive(Clone, Encode, Decode)]
 pub struct Utxo {
     outpoint: nomic_bitcoin::Outpoint,
+    value: u64,
     signatory_set_index: u64,
     data: Vec<u8>,
 }
@@ -43,6 +45,50 @@ pub struct FinalizedCheckpoint {
     utxos: Vec<Utxo>,
     withdrawals: Vec<Withdrawal>,
     signatory_set: SignatorySetSnapshot,
+}
+
+impl FinalizedCheckpoint {
+    fn to_tx<S: Store>(&self, state: &State<S>) -> Result<bitcoin::Transaction> {
+        let inputs = self
+            .utxos
+            .iter()
+            .map(|utxo| bitcoin::TxIn {
+                previous_output: utxo.outpoint.clone().into(),
+                script_sig: vec![].into(),
+                sequence: u32::MAX,
+                witness: vec![],
+            })
+            .collect();
+
+        let mut outputs: Vec<_> = self
+            .withdrawals
+            .iter()
+            .map(|withdrawal| withdrawal.clone().into()) // resolves to type T
+            .collect();
+
+        let input_amount = self.utxos.iter().fold(0, |sum, utxo| utxo.value + sum);
+        let output_amount = self
+            .withdrawals
+            .iter()
+            .fold(0, |sum, withdrawal| withdrawal.value + sum);
+        // TODO: calculate fee based on final tx size
+        let change_amount = input_amount - output_amount - CHECKPOINT_FEE_AMOUNT;
+        let change_script =
+            nomic_signatory_set::output_script(&state.current_signatory_set()?.signatories, vec![]);
+        outputs.push(bitcoin::TxOut {
+            value: change_amount,
+            script_pubkey: change_script,
+        });
+
+        let tx = bitcoin::Transaction {
+            version: 2,
+            lock_time: 0,
+            input: inputs,
+            output: outputs,
+        };
+
+        Ok(tx)
+    }
 }
 
 impl Encode for FinalizedCheckpoint {
@@ -116,9 +162,6 @@ pub struct ActiveCheckpoint {
     pub utxos: Deque<Utxo>,
     pub withdrawals: Deque<Withdrawal>,
 }
-// - move utxos/withdrawals into active checkpoint when checkpoint process is triggered, set is_active = true
-// - handle signatory signatures
-//   - move active checkpoint to finalized when 2/3 reached
 
 /// Main entrypoint to the core bitcoin peg state machine.
 ///
@@ -308,6 +351,7 @@ fn handle_deposit_tx<S: Store>(
                 .into(),
                 signatory_set_index: signatory_set_index as u64,
                 data: recipient.to_vec(),
+                value: txout.value,
             };
             state.utxos.push_back(utxo)?;
 
