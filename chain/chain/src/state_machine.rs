@@ -10,7 +10,7 @@ use nomic_primitives::transaction::{
     DepositTransaction, HeaderTransaction, Sighash, SignatureTransaction, TransferTransaction,
     WithdrawalTransaction, WorkProofTransaction,
 };
-use nomic_primitives::{Account, Withdrawal};
+use nomic_primitives::{Account, Address, Signature, Withdrawal};
 use nomic_primitives::{Error, Result};
 use nomic_signatory_set::{Signatory, SignatorySet, SignatorySetSnapshot};
 use nomic_work::work;
@@ -30,8 +30,6 @@ pub const SIGNATORY_CHANGE_INTERVAL: u64 = 60 * 60 * 24 * 7;
 lazy_static! {
     static ref SECP: Secp256k1<VerifyOnly> = Secp256k1::verification_only();
 }
-
-pub type Address = [u8; 33];
 
 #[derive(Encode, Decode)]
 pub struct Utxo {
@@ -98,12 +96,23 @@ pub struct State {
     pub pending_withdrawals: Deque<Withdrawal>,
     pub utxos: Deque<Utxo>,
     pub finalized_checkpoint: Value<Checkpoint>,
+    pub active_checkpoint: ActiveCheckpoint,
 }
 
 impl<S: Store> State<S> {
     pub fn current_signatory_set(&self) -> Result<SignatorySetSnapshot> {
         Ok(self.signatory_sets.back()?.unwrap())
     }
+}
+
+#[state]
+pub struct ActiveCheckpoint {
+    pub is_active: Value<bool>,
+    pub signatures: Map<u16, Signature>,
+    pub signed_voting_power: Value<u64>,
+    pub signatory_set: Value<SignatorySetSnapshot>,
+    pub utxos: Deque<Withdrawal>,
+    pub withdrawals: Deque<Withdrawal>,
 }
 
 /// Main entrypoint to the core bitcoin peg state machine.
