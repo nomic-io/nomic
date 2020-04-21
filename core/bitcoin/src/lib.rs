@@ -3,7 +3,10 @@ pub use bitcoincore_rpc;
 
 use std::io::{Read, Write};
 
-use bitcoin::{hashes::Hash, BlockHeader};
+use bitcoin::{
+    hashes::{sha256d::Hash as Sha2Hash, Hash},
+    BlockHeader,
+};
 use orga::{Decode, Encode, Result};
 use serde::{Deserialize, Serialize};
 
@@ -57,6 +60,15 @@ impl From<bitcoin::OutPoint> for Outpoint {
         Outpoint {
             txid: outpoint.txid.as_hash().into_inner(),
             index: outpoint.vout,
+        }
+    }
+}
+
+impl From<Outpoint> for bitcoin::OutPoint {
+    fn from(outpoint: Outpoint) -> Self {
+        bitcoin::OutPoint {
+            txid: Sha2Hash::from_inner(outpoint.txid).into(),
+            vout: outpoint.index,
         }
     }
 }
