@@ -45,3 +45,18 @@ impl Decode for Script {
         Ok(Script(script))
     }
 }
+
+#[derive(Encode, Decode)]
+pub struct Outpoint {
+    txid: [u8; 32],
+    index: u32,
+}
+
+impl From<bitcoin::OutPoint> for Outpoint {
+    fn from(outpoint: bitcoin::OutPoint) -> Self {
+        Outpoint {
+            txid: outpoint.txid.as_hash().into_inner(),
+            index: outpoint.vout,
+        }
+    }
+}
