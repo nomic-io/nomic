@@ -5,9 +5,10 @@ use bitcoin::Network::Testnet as bitcoin_network;
 use failure::bail;
 use lazy_static::lazy_static;
 use nomic_bitcoin::{bitcoin, EnrichedHeader};
+use nomic_primitives::{Withdrawal, Account};
 use nomic_primitives::transaction::Transaction;
 use nomic_primitives::transaction::{
-    DepositTransaction, HeaderTransaction, TransferTransaction, WorkProofTransaction,
+    DepositTransaction, HeaderTransaction, TransferTransaction, WorkProofTransaction, WithdrawalTransaction, SignatureTransaction, Sighash
 };
 use nomic_primitives::{Error, Result};
 use nomic_signatory_set::{Signatory, SignatorySet, SignatorySetSnapshot};
@@ -21,6 +22,7 @@ use orga::{
 use secp256k1::{Secp256k1, VerifyOnly};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
+
 
 const MIN_WORK: u64 = 1 << 20;
 pub const SIGNATORY_CHANGE_INTERVAL: u64 = 60 * 60 * 24 * 7;
@@ -38,6 +40,7 @@ pub struct State {
     pub prev_signatories: Value<SignatorySetSnapshot>,
     pub processed_deposit_txids: Set<[u8; 32]>,
     pub accounts: Map<Address, Account>,
+    pub pending_withdrawals: Deque<Withdrawal>,
 }
 
 /// Main entrypoint to the core bitcoin peg state machine.
@@ -57,6 +60,8 @@ pub fn run<S: Store>(
             Transaction::Header(tx) => handle_header_tx(&mut store, tx),
             Transaction::Deposit(tx) => handle_deposit_tx(&mut store, tx),
             Transaction::Transfer(tx) => handle_transfer_tx(&mut state, tx),
+            Transaction::Withdrawal(tx) => handle_withdrawal_tx(&mut state, tx),
+            Transaction::Signature(tx) => handle_signature_tx(&mut state, tx),
         },
     }
 }
@@ -222,7 +227,6 @@ fn unsafe_slice_to_address(slice: &[u8]) -> Address {
     buf.copy_from_slice(slice);
     buf
 }
-use nomic_primitives::Account;
 
 fn handle_transfer_tx<S: Store>(state: &mut State<S>, tx: TransferTransaction) -> Result<()> {
     if tx.from == tx.to {
@@ -276,6 +280,47 @@ fn handle_transfer_tx<S: Store>(state: &mut State<S>, tx: TransferTransaction) -
     Ok(())
 }
 
+fn handle_withdrawal_tx<S: Store>(state: &mut State<S>, tx: WithdrawalTransaction) -> Result<()> {
+    if tx.from.len() != 33 {
+        bail!("Invalid sender address");
+    }
+    let maybe_sender_account = state.accounts.get(unsafe_slice_to_address(&tx.from[..]))?;
+    let mut sender_account = match maybe_sender_account {
+        Some(sender_account) => sender_account,
+        None => bail!("Account does not exist"),
+    };
+
+    if sender_account.balance < tx.amount {
+        bail!("Insufficient balance in sender account");
+    }
+
+    // Verify the nonce
+    if tx.nonce != sender_account.nonce {
+        bail!("Invalid account nonce for withdrawal transaction");
+    }
+    // Verify signature
+    if !tx.verify_signature(&SECP)? {
+        bail!("Invalid signature");
+    }
+
+    sender_account.nonce += 1;
+
+    sender_account.balance -= tx.amount;
+    state.accounts.insert(unsafe_slice_to_address(&tx.from[..]), sender_account);
+    
+    use nomic_bitcoin::Script;
+    // Push withdrawal to pending withdrawals deque
+    let withdrawal = Withdrawal {
+        value: tx.amount,
+        script: Script(tx.to),
+
+    };
+    Ok(state.pending_withdrawals.push_back(withdrawal)?)
+    
+}
+fn handle_signature_tx<S: Store>(state: &mut State<S>, tx: SignatureTransaction) -> Result<()> {
+    bail!("Unimplemented transaction type")
+}
 fn signatories_from_validators(validators: &BTreeMap<Vec<u8>, u64>) -> Result<SignatorySet> {
     let mut signatories = SignatorySet::new();
     for (key_bytes, voting_power) in validators.iter() {
@@ -438,12 +483,12 @@ mod tests {
         (privkey, pubkey)
     }
 
-    fn sign(tx: &mut TransferTransaction, privkey: secp256k1::SecretKey) {
+    fn sign<S: Sighash>(tx: &mut S, privkey: secp256k1::SecretKey) -> Vec<u8> {
         let message = secp256k1::Message::from_slice(tx.sighash().unwrap().as_slice()).unwrap();
         let signature = SECP.sign(&message, &privkey);
-        tx.signature = signature.serialize_compact().to_vec();
+        signature.serialize_compact().to_vec()
     }
-
+   
     #[test]
     fn init() {
         let mut store = MapStore::new();
@@ -721,7 +766,8 @@ mod tests {
             nonce: 0,
             fee_amount: 0,
         };
-        sign(&mut tx, sender_privkey);
+        let sig = sign(&mut tx, sender_privkey);
+        tx.signature = sig;
 
         let action = Action::Transaction(Transaction::Transfer(tx));
         run(&mut net.store, action, &mut net.validators).unwrap();
@@ -744,7 +790,8 @@ mod tests {
             nonce: 0,
             fee_amount: 1000,
         };
-        sign(&mut tx, sender_privkey);
+        let sig = sign(&mut tx, sender_privkey);
+        tx.signature = sig;
 
         let action = Action::Transaction(Transaction::Transfer(tx));
         run(&mut net.store, action, &mut net.validators).unwrap();
@@ -779,7 +826,8 @@ mod tests {
             nonce: 0,
             fee_amount: 1000,
         };
-        sign(&mut tx, sender_privkey);
+        let sig = sign(&mut tx, sender_privkey);
+        tx.signature = sig;
 
         let action = Action::Transaction(Transaction::Transfer(tx));
         run(&mut net.store, action, &mut net.validators).unwrap();
@@ -814,7 +862,8 @@ mod tests {
             nonce: 0,
             fee_amount: 1000,
         };
-        sign(&mut tx, sender_privkey);
+        let sig = sign(&mut tx, sender_privkey);
+        tx.signature = sig;
 
         let action = Action::Transaction(Transaction::Transfer(tx));
         run(&mut net.store, action, &mut net.validators).unwrap();
@@ -849,7 +898,8 @@ mod tests {
             nonce: 0,
             fee_amount: 1000,
         };
-        sign(&mut tx, sender_privkey);
+        let sig = sign(&mut tx, sender_privkey);
+        tx.signature = sig;
         tx.signature[10] ^= 1;
 
         let action = Action::Transaction(Transaction::Transfer(tx));
@@ -884,7 +934,8 @@ mod tests {
             nonce: 0,
             fee_amount: 1000,
         };
-        sign(&mut tx, sender_privkey);
+        let sig = sign(&mut tx, sender_privkey);
+        tx.signature = sig;
 
         let action = Action::Transaction(Transaction::Transfer(tx));
         run(&mut net.store, action, &mut net.validators).unwrap();
@@ -913,6 +964,177 @@ mod tests {
             }
         );
     }
-
     // TODO: test for transfer to self
+
+    #[test]
+    fn withdrawal_ok() {
+        let mut net = MockNet::new();
+
+        let (sender_privkey, sender_pubkey) = create_keypair(1);
+        let sender_address = sender_pubkey.serialize().to_vec();
+
+        let mut state = State::wrap_store(&mut net.store).unwrap();
+        state
+            .accounts
+            .insert(
+                unsafe_slice_to_address(sender_address.as_slice()),
+                Account {
+                    balance: 1234,
+                    nonce: 0,
+                },
+            )
+            .unwrap(); 
+            
+        let mut tx = WithdrawalTransaction {
+            from: sender_address.clone(),
+            to: bitcoin::Script::from(vec![123]),
+            amount: 1000,
+            signature: vec![],
+            nonce: 0,
+        };
+        let sig = sign(&mut tx, sender_privkey);
+        tx.signature = sig;
+        let action = Action::Transaction(Transaction::Withdrawal(tx));
+        run(&mut net.store, action, &mut net.validators).unwrap();
+
+        let state = State::wrap_store(&mut net.store).unwrap();
+        assert_eq!(
+            state
+                .accounts
+                .get(unsafe_slice_to_address(&sender_address[..]))
+                .unwrap()
+                .unwrap(),
+            Account {
+                balance: 234,
+                nonce: 1,
+            });
+        assert_eq!(
+            state
+                .pending_withdrawals
+                .get(0)
+                .unwrap().value, 1000);
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid signature")]
+    fn withdrawal_invalid_signature() {
+        let mut net = MockNet::new();
+
+        let (sender_privkey, sender_pubkey) = create_keypair(1);
+        let sender_address = sender_pubkey.serialize().to_vec();
+
+        let mut state = State::wrap_store(&mut net.store).unwrap();
+        state
+            .accounts
+            .insert(
+                unsafe_slice_to_address(sender_address.as_slice()),
+                Account {
+                    balance: 1234,
+                    nonce: 0,
+                },
+            )
+            .unwrap(); 
+            
+        let mut tx = WithdrawalTransaction {
+            from: sender_address.clone(),
+            to: bitcoin::Script::from(vec![123]),
+            amount: 1000,
+            signature: vec![],
+            nonce: 0,
+        };
+        let sig = sign(&mut tx, sender_privkey);
+        tx.signature = sig;
+        tx.signature[10] ^= 1;
+        let action = Action::Transaction(Transaction::Withdrawal(tx));
+        run(&mut net.store, action, &mut net.validators).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid account nonce for withdrawal transaction")]
+    fn withdrawal_invalid_nonce() {
+        let mut net = MockNet::new();
+
+        let (sender_privkey, sender_pubkey) = create_keypair(1);
+        let sender_address = sender_pubkey.serialize().to_vec();
+
+        let mut state = State::wrap_store(&mut net.store).unwrap();
+        state
+            .accounts
+            .insert(
+                unsafe_slice_to_address(sender_address.as_slice()),
+                Account {
+                    balance: 1234,
+                    nonce: 100,
+                },
+            )
+            .unwrap(); 
+            
+        let mut tx = WithdrawalTransaction {
+            from: sender_address.clone(),
+            to: bitcoin::Script::from(vec![123]),
+            amount: 1000,
+            signature: vec![],
+            nonce: 0,
+        };
+        let sig = sign(&mut tx, sender_privkey);
+        tx.signature = sig;
+        let action = Action::Transaction(Transaction::Withdrawal(tx));
+        run(&mut net.store, action, &mut net.validators).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Insufficient balance in sender account")]
+    fn withdrawal_insufficient_balance() {
+        let mut net = MockNet::new();
+
+        let (sender_privkey, sender_pubkey) = create_keypair(1);
+        let sender_address = sender_pubkey.serialize().to_vec();
+
+        let mut state = State::wrap_store(&mut net.store).unwrap();
+        state
+            .accounts
+            .insert(
+                unsafe_slice_to_address(sender_address.as_slice()),
+                Account {
+                    balance: 1234,
+                    nonce: 0,
+                },
+            )
+            .unwrap(); 
+            
+        let mut tx = WithdrawalTransaction {
+            from: sender_address.clone(),
+            to: bitcoin::Script::from(vec![123]),
+            amount: 2000,
+            signature: vec![],
+            nonce: 0,
+        };
+        let sig = sign(&mut tx, sender_privkey);
+        tx.signature = sig;
+        let action = Action::Transaction(Transaction::Withdrawal(tx));
+        run(&mut net.store, action, &mut net.validators).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Account does not exist")]
+    fn withdrawal_from_nonexistent_account() {
+        let mut net = MockNet::new();
+
+        let (sender_privkey, sender_pubkey) = create_keypair(1);
+        let sender_address = sender_pubkey.serialize().to_vec();
+
+        let mut state = State::wrap_store(&mut net.store).unwrap();
+      
+        let mut tx = WithdrawalTransaction {
+            from: sender_address.clone(),
+            to: bitcoin::Script::from(vec![123]),
+            amount: 1000,
+            signature: vec![],
+            nonce: 0,
+        };
+        let sig = sign(&mut tx, sender_privkey);
+        tx.signature = sig;
+        let action = Action::Transaction(Transaction::Withdrawal(tx));
+        run(&mut net.store, action, &mut net.validators).unwrap();
+    }
 }

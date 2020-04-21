@@ -7,8 +7,8 @@ edition = "2018"
 [dependencies]
 nomic-bitcoin = { path = "../bitcoin" }
 serde = { version= "1.0.104", features = ["derive"] }
-failure = "0.1.7"
+failure = "=0.1.6"
 bincode = "1.2.1"
 sha2 = "0.8.1"
-orga = { git = "https://github.com/nomic-io/orga", rev = "ec61d9f63ebcc65e3012c943bbcf7eeb0351e4f6" }
+orga = { path  = "../../../orga" }
 secp256k1 = "0.17.2"
