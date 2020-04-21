@@ -26,6 +26,7 @@ use std::collections::BTreeMap;
 
 const MIN_WORK: u64 = 1 << 20;
 pub const SIGNATORY_CHANGE_INTERVAL: u64 = 60 * 60 * 24 * 7;
+pub const CHECKPOINT_INTERVAL: u64 = 60 * 60 * 24;
 
 lazy_static! {
     static ref SECP: Secp256k1<VerifyOnly> = Secp256k1::verification_only();
@@ -38,13 +39,13 @@ pub struct Utxo {
     data: Vec<u8>,
 }
 
-pub struct Checkpoint {
+pub struct FinalizedCheckpoint {
     utxos: Vec<Utxo>,
     withdrawals: Vec<Withdrawal>,
     signatory_set: SignatorySetSnapshot,
 }
 
-impl Encode for Checkpoint {
+impl Encode for FinalizedCheckpoint {
     fn encode_into<W: std::io::Write>(&self, mut dest: &mut W) -> Result<()> {
         (self.utxos.len() as u32).encode_into(&mut dest)?;
         self.utxos.encode_into(&mut dest)?;
@@ -63,7 +64,7 @@ impl Encode for Checkpoint {
     }
 }
 
-impl Decode for Checkpoint {
+impl Decode for FinalizedCheckpoint {
     fn decode<R: std::io::Read>(mut input: R) -> Result<Self> {
         let utxo_len: u32 = Decode::decode(&mut input)?;
         let mut utxos = Vec::with_capacity(utxo_len as usize);
@@ -77,7 +78,7 @@ impl Decode for Checkpoint {
             withdrawals.push(Decode::decode(&mut input)?);
         }
 
-        Ok(Checkpoint {
+        Ok(FinalizedCheckpoint {
             utxos,
             withdrawals,
             signatory_set: Decode::decode(input)?,
@@ -95,7 +96,8 @@ pub struct State {
     pub processed_deposit_txids: Set<[u8; 32]>,
     pub pending_withdrawals: Deque<Withdrawal>,
     pub utxos: Deque<Utxo>,
-    pub finalized_checkpoint: Value<Checkpoint>,
+    pub finalized_checkpoint: Value<FinalizedCheckpoint>,
+    pub last_checkpoint_time: Value<u64>,
     pub active_checkpoint: ActiveCheckpoint,
 }
 
@@ -111,9 +113,12 @@ pub struct ActiveCheckpoint {
     pub signatures: Map<u16, Signature>,
     pub signed_voting_power: Value<u64>,
     pub signatory_set: Value<SignatorySetSnapshot>,
-    pub utxos: Deque<Withdrawal>,
+    pub utxos: Deque<Utxo>,
     pub withdrawals: Deque<Withdrawal>,
 }
+// - move utxos/withdrawals into active checkpoint when checkpoint process is triggered, set is_active = true
+// - handle signatory signatures
+//   - move active checkpoint to finalized when 2/3 reached
 
 /// Main entrypoint to the core bitcoin peg state machine.
 ///
@@ -143,18 +148,19 @@ fn handle_begin_block<S: Store>(
     validators: &BTreeMap<Vec<u8>, u64>,
     header: Header,
 ) -> Result<()> {
+    let now = header.get_time().get_seconds() as u64;
+
     match state.signatory_sets.back()? {
         None => {
             // init signatories at start of chain
             let signatories = SignatorySetSnapshot {
-                time: header.get_time().get_seconds() as u64,
+                time: now,
                 signatories: signatories_from_validators(validators)?,
             };
             state.signatory_sets.push_back(signatories)?;
         }
         Some(signatories) => {
             // check if signatories should be updated
-            let now = header.get_time().get_seconds() as u64;
             let elapsed = now - signatories.time;
             if elapsed >= SIGNATORY_CHANGE_INTERVAL {
                 let new_signatories = SignatorySetSnapshot {
@@ -163,6 +169,26 @@ fn handle_begin_block<S: Store>(
                 };
                 state.signatory_sets.push_back(new_signatories)?;
             }
+        }
+    }
+
+    let time_since_last_checkpoint = now - state.last_checkpoint_time.get_or_default()?;
+    if time_since_last_checkpoint > CHECKPOINT_INTERVAL {
+        let active_checkpoint = &mut state.active_checkpoint;
+        if active_checkpoint.is_active.get_or_default()? {
+            return Ok(());
+        }
+
+        state.active_checkpoint.is_active.set(true)?;
+
+        while !state.utxos.is_empty() {
+            let utxo = state.utxos.pop_front()?.unwrap();
+            state.active_checkpoint.utxos.push_back(utxo)?;
+        }
+
+        while !state.pending_withdrawals.is_empty() {
+            let withdrawal = state.pending_withdrawals.pop_front()?.unwrap();
+            state.active_checkpoint.withdrawals.push_back(withdrawal)?;
         }
     }
 
