@@ -123,14 +123,15 @@ impl Client {
     }
 
     pub fn get_signatory_sets(&self) -> OrgaResult<Vec<SignatorySet>> {
-        Ok(vec![
-            self.state.signatories.get()?.signatories,
-            self.state.prev_signatories.get()?.signatories,
-        ])
+        self.state
+            .signatory_sets
+            .iter()
+            .map(|snapshot| snapshot.map(|snapshot| snapshot.signatories))
+            .collect()
     }
 
     pub fn get_signatory_set_snapshot(&mut self) -> OrgaResult<SignatorySetSnapshot> {
-        Ok(self.state.signatories.get()?)
+        self.state.current_signatory_set()
     }
 
     pub fn get_balance(&mut self, address: &[u8]) -> OrgaResult<u64> {

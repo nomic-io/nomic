@@ -18,7 +18,7 @@ use orga::abci::messages::Header;
 use orga::Store;
 use orga::{
     collections::{Deque, Map, Set},
-    state, Decode, Encode, Value, WrapStore,
+    state, Decode, Encode, WrapStore,
 };
 use secp256k1::{Secp256k1, VerifyOnly};
 use sha2::{Digest, Sha256};
@@ -46,11 +46,16 @@ pub struct State {
     pub redeemed_work_hashes: Set<[u8; 32]>,
 
     // Peg state
-    pub signatories: Value<SignatorySetSnapshot>,
-    pub prev_signatories: Value<SignatorySetSnapshot>,
+    pub signatory_sets: Deque<SignatorySetSnapshot>,
     pub processed_deposit_txids: Set<[u8; 32]>,
     pub pending_withdrawals: Deque<Withdrawal>,
     pub utxos: Deque<Utxo>,
+}
+
+impl<S: Store> State<S> {
+    pub fn current_signatory_set(&self) -> Result<SignatorySetSnapshot> {
+        Ok(self.signatory_sets.back()?.unwrap())
+    }
 }
 
 /// Main entrypoint to the core bitcoin peg state machine.
@@ -81,15 +86,14 @@ fn handle_begin_block<S: Store>(
     validators: &BTreeMap<Vec<u8>, u64>,
     header: Header,
 ) -> Result<()> {
-    match state.signatories.maybe_get()? {
+    match state.signatory_sets.back()? {
         None => {
-            // init signatories/prev_signatories
+            // init signatories at start of chain
             let signatories = SignatorySetSnapshot {
                 time: header.get_time().get_seconds() as u64,
                 signatories: signatories_from_validators(validators)?,
             };
-            state.signatories.set(signatories.clone())?;
-            state.prev_signatories.set(signatories)?;
+            state.signatory_sets.push_back(signatories)?;
         }
         Some(signatories) => {
             // check if signatories should be updated
@@ -100,8 +104,7 @@ fn handle_begin_block<S: Store>(
                     time: now,
                     signatories: signatories_from_validators(validators)?,
                 };
-                state.signatories.set(new_signatories)?;
-                state.prev_signatories.set(signatories)?;
+                state.signatory_sets.push_back(new_signatories)?;
             }
         }
     }
@@ -187,13 +190,9 @@ fn handle_deposit_tx<S: Store>(
 
     let mut state = State::wrap_store(&mut store)?;
     // Ensure tx contains deposit outputs
-    let signatory_sets = [
-        state.signatories.get()?.signatories,
-        state.prev_signatories.get()?.signatories,
-    ];
     let mut recipients = deposit_transaction.recipients.iter().peekable();
     let mut contains_deposit_outputs = false;
-    for txout in deposit_transaction.tx.output {
+    for (i, txout) in deposit_transaction.tx.output.iter().enumerate() {
         let recipient = match recipients.peek() {
             Some(recipient) => recipient,
             None => bail!("Consumed all recipients"),
@@ -201,24 +200,36 @@ fn handle_deposit_tx<S: Store>(
         if recipient.len() != 33 {
             bail!("Recipient must be 33 bytes");
         }
-        for signatory_set in signatory_sets.iter() {
+        for (signatory_set_index, signatory_set) in state.signatory_sets.iter().enumerate() {
+            let signatory_set = signatory_set?;
             let expected_script =
-                nomic_signatory_set::output_script(signatory_set, recipient.to_vec());
-            if txout.script_pubkey == expected_script {
-                // mint coins
-                let depositor_address = unsafe_slice_to_address(recipient.as_slice());
-                let mut depositor_account =
-                    state.accounts.get(depositor_address)?.unwrap_or_default();
-                depositor_account.balance += txout.value;
-                state
-                    .accounts
-                    .insert(depositor_address, depositor_account)?;
-
-                // Add UTXO to state
-
-                contains_deposit_outputs = true;
-                break;
+                nomic_signatory_set::output_script(&signatory_set.signatories, recipient.to_vec());
+            if txout.script_pubkey != expected_script {
+                continue;
             }
+
+            // mint coins
+            let depositor_address = unsafe_slice_to_address(recipient.as_slice());
+            let mut depositor_account = state.accounts.get(depositor_address)?.unwrap_or_default();
+            depositor_account.balance += txout.value;
+            state
+                .accounts
+                .insert(depositor_address, depositor_account)?;
+
+            // Add UTXO to state
+            let utxo = Utxo {
+                outpoint: bitcoin::OutPoint {
+                    txid: deposit_transaction.tx.txid(),
+                    vout: i as u32,
+                }
+                .into(),
+                signatory_set_index: signatory_set_index as u64,
+                data: recipient.to_vec(),
+            };
+            state.utxos.push_back(utxo)?;
+
+            contains_deposit_outputs = true;
+            break;
         }
     }
     if !contains_deposit_outputs {
@@ -530,7 +541,7 @@ mod tests {
             voting_power: 100,
         });
         assert_eq!(
-            state.signatories.get().unwrap(),
+            state.current_signatory_set().unwrap(),
             SignatorySetSnapshot {
                 time: 123,
                 signatories: expected_signatories
@@ -563,7 +574,7 @@ mod tests {
 
         let state = State::wrap_store(&mut net.store).unwrap();
         assert_eq!(
-            state.signatories.get().unwrap(),
+            state.current_signatory_set().unwrap(),
             SignatorySetSnapshot {
                 time: 123,
                 signatories: expected_signatories
@@ -596,7 +607,7 @@ mod tests {
             voting_power: 100,
         });
         assert_eq!(
-            state.signatories.get().unwrap(),
+            state.current_signatory_set().unwrap(),
             SignatorySetSnapshot {
                 time: 1_000_000_000,
                 signatories: expected_signatories
