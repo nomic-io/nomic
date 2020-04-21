@@ -5,24 +5,24 @@ use bitcoin::Network::Testnet as bitcoin_network;
 use failure::bail;
 use lazy_static::lazy_static;
 use nomic_bitcoin::{bitcoin, EnrichedHeader};
-use nomic_primitives::{Withdrawal, Account};
 use nomic_primitives::transaction::Transaction;
 use nomic_primitives::transaction::{
-    DepositTransaction, HeaderTransaction, TransferTransaction, WorkProofTransaction, WithdrawalTransaction, SignatureTransaction, Sighash
+    DepositTransaction, HeaderTransaction, Sighash, SignatureTransaction, TransferTransaction,
+    WithdrawalTransaction, WorkProofTransaction,
 };
+use nomic_primitives::{Account, Withdrawal};
 use nomic_primitives::{Error, Result};
 use nomic_signatory_set::{Signatory, SignatorySet, SignatorySetSnapshot};
 use nomic_work::work;
 use orga::abci::messages::Header;
 use orga::Store;
 use orga::{
-    collections::{Map, Set},
+    collections::{Deque, Map, Set},
     state, Value, WrapStore,
 };
 use secp256k1::{Secp256k1, VerifyOnly};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
-
 
 const MIN_WORK: u64 = 1 << 20;
 pub const SIGNATORY_CHANGE_INTERVAL: u64 = 60 * 60 * 24 * 7;
@@ -306,17 +306,17 @@ fn handle_withdrawal_tx<S: Store>(state: &mut State<S>, tx: WithdrawalTransactio
     sender_account.nonce += 1;
 
     sender_account.balance -= tx.amount;
-    state.accounts.insert(unsafe_slice_to_address(&tx.from[..]), sender_account);
-    
+    state
+        .accounts
+        .insert(unsafe_slice_to_address(&tx.from[..]), sender_account);
+
     use nomic_bitcoin::Script;
     // Push withdrawal to pending withdrawals deque
     let withdrawal = Withdrawal {
         value: tx.amount,
         script: Script(tx.to),
-
     };
     Ok(state.pending_withdrawals.push_back(withdrawal)?)
-    
 }
 fn handle_signature_tx<S: Store>(state: &mut State<S>, tx: SignatureTransaction) -> Result<()> {
     bail!("Unimplemented transaction type")
@@ -488,7 +488,7 @@ mod tests {
         let signature = SECP.sign(&message, &privkey);
         signature.serialize_compact().to_vec()
     }
-   
+
     #[test]
     fn init() {
         let mut store = MapStore::new();
@@ -983,8 +983,8 @@ mod tests {
                     nonce: 0,
                 },
             )
-            .unwrap(); 
-            
+            .unwrap();
+
         let mut tx = WithdrawalTransaction {
             from: sender_address.clone(),
             to: bitcoin::Script::from(vec![123]),
@@ -1007,12 +1007,9 @@ mod tests {
             Account {
                 balance: 234,
                 nonce: 1,
-            });
-        assert_eq!(
-            state
-                .pending_withdrawals
-                .get(0)
-                .unwrap().value, 1000);
+            }
+        );
+        assert_eq!(state.pending_withdrawals.get(0).unwrap().value, 1000);
     }
 
     #[test]
@@ -1033,8 +1030,8 @@ mod tests {
                     nonce: 0,
                 },
             )
-            .unwrap(); 
-            
+            .unwrap();
+
         let mut tx = WithdrawalTransaction {
             from: sender_address.clone(),
             to: bitcoin::Script::from(vec![123]),
@@ -1067,8 +1064,8 @@ mod tests {
                     nonce: 100,
                 },
             )
-            .unwrap(); 
-            
+            .unwrap();
+
         let mut tx = WithdrawalTransaction {
             from: sender_address.clone(),
             to: bitcoin::Script::from(vec![123]),
@@ -1100,8 +1097,8 @@ mod tests {
                     nonce: 0,
                 },
             )
-            .unwrap(); 
-            
+            .unwrap();
+
         let mut tx = WithdrawalTransaction {
             from: sender_address.clone(),
             to: bitcoin::Script::from(vec![123]),
@@ -1124,7 +1121,7 @@ mod tests {
         let sender_address = sender_pubkey.serialize().to_vec();
 
         let mut state = State::wrap_store(&mut net.store).unwrap();
-      
+
         let mut tx = WithdrawalTransaction {
             from: sender_address.clone(),
             to: bitcoin::Script::from(vec![123]),
