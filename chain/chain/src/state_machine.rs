@@ -18,7 +18,7 @@ use orga::abci::messages::Header;
 use orga::Store;
 use orga::{
     collections::{Deque, Map, Set},
-    state, Decode, Encode, WrapStore,
+    state, Decode, Encode, Value, WrapStore,
 };
 use secp256k1::{Secp256k1, VerifyOnly};
 use sha2::{Digest, Sha256};
@@ -40,6 +40,53 @@ pub struct Utxo {
     data: Vec<u8>,
 }
 
+pub struct Checkpoint {
+    utxos: Vec<Utxo>,
+    withdrawals: Vec<Withdrawal>,
+    signatory_set: SignatorySetSnapshot,
+}
+
+impl Encode for Checkpoint {
+    fn encode_into<W: std::io::Write>(&self, mut dest: &mut W) -> Result<()> {
+        (self.utxos.len() as u32).encode_into(&mut dest)?;
+        self.utxos.encode_into(&mut dest)?;
+
+        (self.withdrawals.len() as u32).encode_into(&mut dest)?;
+        self.withdrawals.encode_into(&mut dest)?;
+
+        self.signatory_set.encode_into(dest)
+    }
+
+    fn encoding_length(&self) -> Result<usize> {
+        Ok(4 + self.utxos.encoding_length()?
+            + 4
+            + self.withdrawals.encoding_length()?
+            + self.signatory_set.encoding_length()?)
+    }
+}
+
+impl Decode for Checkpoint {
+    fn decode<R: std::io::Read>(mut input: R) -> Result<Self> {
+        let utxo_len: u32 = Decode::decode(&mut input)?;
+        let mut utxos = Vec::with_capacity(utxo_len as usize);
+        for _ in 0..utxo_len {
+            utxos.push(Decode::decode(&mut input)?);
+        }
+
+        let withdrawal_len: u32 = Decode::decode(&mut input)?;
+        let mut withdrawals = Vec::with_capacity(withdrawal_len as usize);
+        for _ in 0..withdrawal_len {
+            withdrawals.push(Decode::decode(&mut input)?);
+        }
+
+        Ok(Checkpoint {
+            utxos,
+            withdrawals,
+            signatory_set: Decode::decode(input)?,
+        })
+    }
+}
+
 #[state]
 pub struct State {
     pub accounts: Map<Address, Account>,
@@ -50,6 +97,7 @@ pub struct State {
     pub processed_deposit_txids: Set<[u8; 32]>,
     pub pending_withdrawals: Deque<Withdrawal>,
     pub utxos: Deque<Utxo>,
+    pub finalized_checkpoint: Value<Checkpoint>,
 }
 
 impl<S: Store> State<S> {
