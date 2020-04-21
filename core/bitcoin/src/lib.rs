@@ -3,8 +3,8 @@ pub use bitcoincore_rpc;
 
 use std::io::{Read, Write};
 
-use bitcoin::BlockHeader;
-use orga::{Result, Encode, Decode};
+use bitcoin::{hashes::Hash, BlockHeader};
+use orga::{Decode, Encode, Result};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]

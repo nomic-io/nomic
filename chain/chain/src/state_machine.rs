@@ -18,7 +18,7 @@ use orga::abci::messages::Header;
 use orga::Store;
 use orga::{
     collections::{Deque, Map, Set},
-    state, Value, WrapStore,
+    state, Decode, Encode, Value, WrapStore,
 };
 use secp256k1::{Secp256k1, VerifyOnly};
 use sha2::{Digest, Sha256};
@@ -33,14 +33,24 @@ lazy_static! {
 
 pub type Address = [u8; 33];
 
+#[derive(Encode, Decode)]
+pub struct Utxo {
+    outpoint: nomic_bitcoin::Outpoint,
+    signatory_set_index: u64,
+    data: Vec<u8>,
+}
+
 #[state]
 pub struct State {
+    pub accounts: Map<Address, Account>,
     pub redeemed_work_hashes: Set<[u8; 32]>,
+
+    // Peg state
     pub signatories: Value<SignatorySetSnapshot>,
     pub prev_signatories: Value<SignatorySetSnapshot>,
     pub processed_deposit_txids: Set<[u8; 32]>,
-    pub accounts: Map<Address, Account>,
     pub pending_withdrawals: Deque<Withdrawal>,
+    pub utxos: Deque<Utxo>,
 }
 
 /// Main entrypoint to the core bitcoin peg state machine.
@@ -204,6 +214,8 @@ fn handle_deposit_tx<S: Store>(
                     .accounts
                     .insert(depositor_address, depositor_account)?;
 
+                // Add UTXO to state
+
                 contains_deposit_outputs = true;
                 break;
             }
@@ -214,7 +226,6 @@ fn handle_deposit_tx<S: Store>(
     }
 
     // Deposit is valid, mark transaction as processed
-    let mut state = State::wrap_store(&mut store)?;
     state
         .processed_deposit_txids
         .insert(txid.as_hash().into_inner())?;
@@ -308,7 +319,7 @@ fn handle_withdrawal_tx<S: Store>(state: &mut State<S>, tx: WithdrawalTransactio
     sender_account.balance -= tx.amount;
     state
         .accounts
-        .insert(unsafe_slice_to_address(&tx.from[..]), sender_account);
+        .insert(unsafe_slice_to_address(&tx.from[..]), sender_account)?;
 
     use nomic_bitcoin::Script;
     // Push withdrawal to pending withdrawals deque
@@ -1119,8 +1130,6 @@ mod tests {
 
         let (sender_privkey, sender_pubkey) = create_keypair(1);
         let sender_address = sender_pubkey.serialize().to_vec();
-
-        let mut state = State::wrap_store(&mut net.store).unwrap();
 
         let mut tx = WithdrawalTransaction {
             from: sender_address.clone(),
