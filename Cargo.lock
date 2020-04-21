@@ -1673,6 +1673,7 @@ dependencies = [
  "failure",
  "merk",
  "orga-macros",
+ "seq-macro",
  "tendermint",
 ]
 
@@ -2345,6 +2346,12 @@ dependencies = [
  "core-foundation-sys",
  "libc",
 ]
+
+[[package]]
+name = "seq-macro"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe8b1572b87a097efaf491e45617f25c8e3e9e530beb3e9b81d5e82f9821e843"
 
 [[package]]
 name = "serde"

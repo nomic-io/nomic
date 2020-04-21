@@ -1,7 +1,7 @@
 use bitcoin::PublicKey;
 use nomic_bitcoin::bitcoin;
 use nomic_primitives::Result;
-use orga::{Decode, Encode};
+use orga::{Decode, Encode, Terminated};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
 
@@ -143,6 +143,9 @@ impl Decode for SignatorySetSnapshot {
         SignatorySetSnapshot::decode(buf.as_slice())
     }
 }
+
+impl !Terminated for SignatorySetSnapshot {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
