@@ -1,5 +1,4 @@
 use crate::error::Result;
-use crate::{Address, Signature};
 use bitcoin::consensus::encode::{deserialize, serialize};
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::BlockHeader;
@@ -74,7 +73,7 @@ pub struct WithdrawalTransaction {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SignatureTransaction {
-    pub signature: Vec<u8>,
+    pub signatures: Vec<Vec<u8>>,
     pub signatory_index: u16,
 }
 
@@ -93,7 +92,7 @@ fn verify_signature<S: Sighash>(
     secp: &Secp256k1<VerifyOnly>,
     signature: &[u8],
     pubkey: &[u8],
-    tx: &S
+    tx: &S,
 ) -> Result<bool> {
     use secp256k1::{Message, PublicKey, Signature};
     let sighash = Message::from_slice(tx.sighash()?.as_slice())?;
@@ -108,22 +107,12 @@ fn verify_signature<S: Sighash>(
 
 impl TransferTransaction {
     pub fn verify_signature(&self, secp: &Secp256k1<VerifyOnly>) -> Result<bool> {
-        verify_signature(
-            secp,
-            self.signature.as_slice(),
-            self.from.as_slice(),
-            self
-        )
+        verify_signature(secp, self.signature.as_slice(), self.from.as_slice(), self)
     }
 }
 impl WithdrawalTransaction {
     pub fn verify_signature(&self, secp: &Secp256k1<VerifyOnly>) -> Result<bool> {
-        verify_signature(
-            secp,
-            self.signature.as_slice(),
-            self.from.as_slice(),
-            self
-        )
+        verify_signature(secp, self.signature.as_slice(), self.from.as_slice(), self)
     }
 }
 pub trait Sighash {
@@ -135,8 +124,6 @@ pub trait Sighash {
         hasher.input(self.sighash_input()?.as_slice());
         Ok(hasher.result().to_vec())
     }
-
-   
 }
 
 impl Sighash for TransferTransaction {

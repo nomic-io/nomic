@@ -7,7 +7,7 @@ use lazy_static::lazy_static;
 use nomic_bitcoin::{bitcoin, EnrichedHeader};
 use nomic_primitives::transaction::Transaction;
 use nomic_primitives::transaction::{
-    DepositTransaction, HeaderTransaction, Sighash, SignatureTransaction, TransferTransaction,
+    DepositTransaction, HeaderTransaction, SignatureTransaction, TransferTransaction,
     WithdrawalTransaction, WorkProofTransaction,
 };
 use nomic_primitives::{Account, Address, Signature, Withdrawal};
@@ -41,40 +41,80 @@ pub struct Utxo {
     data: Vec<u8>,
 }
 
+#[state]
 pub struct FinalizedCheckpoint {
-    utxos: Vec<Utxo>,
-    withdrawals: Vec<Withdrawal>,
-    signatory_set: SignatorySetSnapshot,
+    pub withdrawals: Deque<Withdrawal>,
+    pub signatory_set_index: Value<u64>,
+    pub utxos: Deque<Utxo>,
+    pub signatures: Deque<Option<Vec<Signature>>>,
 }
 
-impl FinalizedCheckpoint {
-    fn to_tx<S: Store>(&self, state: &State<S>) -> Result<bitcoin::Transaction> {
+#[state]
+pub struct State {
+    pub accounts: Map<Address, Account>,
+    pub redeemed_work_hashes: Set<[u8; 32]>,
+
+    // Peg state
+    pub signatory_sets: Deque<SignatorySetSnapshot>,
+    pub processed_deposit_txids: Set<[u8; 32]>,
+    pub pending_withdrawals: Deque<Withdrawal>,
+    pub utxos: Deque<Utxo>,
+    pub finalized_checkpoint: FinalizedCheckpoint,
+    pub last_checkpoint_time: Value<u64>,
+    pub active_checkpoint: ActiveCheckpoint,
+}
+
+impl<S: Store> State<S> {
+    pub fn current_signatory_set(&self) -> Result<SignatorySetSnapshot> {
+        Ok(self.signatory_sets.back()?.unwrap())
+    }
+
+    pub fn active_checkpoint_tx(&self) -> Result<bitcoin::Transaction> {
+        // TODO: don't prune utxos, support spending from older signatory set
+        let current_signatory_set_index = self
+            .signatory_sets
+            .fixed_index(self.signatory_sets.len() - 1);
+
+        let mut input_amount = 0;
+        let mut output_amount = 0;
+
         let inputs = self
+            .active_checkpoint
             .utxos
             .iter()
-            .map(|utxo| bitcoin::TxIn {
-                previous_output: utxo.outpoint.clone().into(),
-                script_sig: vec![].into(),
-                sequence: u32::MAX,
-                witness: vec![],
+            .filter(|utxo| match utxo {
+                Err(_) => true,
+                Ok(utxo) => utxo.signatory_set_index == current_signatory_set_index,
             })
-            .collect();
+            .map(|utxo| {
+                utxo.map(|utxo| {
+                    input_amount += utxo.value;
+                    bitcoin::TxIn {
+                        previous_output: utxo.outpoint.clone().into(),
+                        script_sig: vec![].into(),
+                        sequence: u32::MAX,
+                        witness: vec![],
+                    }
+                })
+            })
+            .collect::<Result<_>>()?;
 
         let mut outputs: Vec<_> = self
+            .active_checkpoint
             .withdrawals
             .iter()
-            .map(|withdrawal| withdrawal.clone().into()) // resolves to type T
-            .collect();
+            .map(|w| {
+                w.map(|withdrawal| {
+                    output_amount += withdrawal.value;
+                    withdrawal.clone().into()
+                })
+            })
+            .collect::<Result<_>>()?;
 
-        let input_amount = self.utxos.iter().fold(0, |sum, utxo| utxo.value + sum);
-        let output_amount = self
-            .withdrawals
-            .iter()
-            .fold(0, |sum, withdrawal| withdrawal.value + sum);
         // TODO: calculate fee based on final tx size
         let change_amount = input_amount - output_amount - CHECKPOINT_FEE_AMOUNT;
         let change_script =
-            nomic_signatory_set::output_script(&state.current_signatory_set()?.signatories, vec![]);
+            nomic_signatory_set::output_script(&self.current_signatory_set()?.signatories, vec![]);
         outputs.push(bitcoin::TxOut {
             value: change_amount,
             script_pubkey: change_script,
@@ -91,74 +131,12 @@ impl FinalizedCheckpoint {
     }
 }
 
-impl Encode for FinalizedCheckpoint {
-    fn encode_into<W: std::io::Write>(&self, mut dest: &mut W) -> Result<()> {
-        (self.utxos.len() as u32).encode_into(&mut dest)?;
-        self.utxos.encode_into(&mut dest)?;
-
-        (self.withdrawals.len() as u32).encode_into(&mut dest)?;
-        self.withdrawals.encode_into(&mut dest)?;
-
-        self.signatory_set.encode_into(dest)
-    }
-
-    fn encoding_length(&self) -> Result<usize> {
-        Ok(4 + self.utxos.encoding_length()?
-            + 4
-            + self.withdrawals.encoding_length()?
-            + self.signatory_set.encoding_length()?)
-    }
-}
-
-impl Decode for FinalizedCheckpoint {
-    fn decode<R: std::io::Read>(mut input: R) -> Result<Self> {
-        let utxo_len: u32 = Decode::decode(&mut input)?;
-        let mut utxos = Vec::with_capacity(utxo_len as usize);
-        for _ in 0..utxo_len {
-            utxos.push(Decode::decode(&mut input)?);
-        }
-
-        let withdrawal_len: u32 = Decode::decode(&mut input)?;
-        let mut withdrawals = Vec::with_capacity(withdrawal_len as usize);
-        for _ in 0..withdrawal_len {
-            withdrawals.push(Decode::decode(&mut input)?);
-        }
-
-        Ok(FinalizedCheckpoint {
-            utxos,
-            withdrawals,
-            signatory_set: Decode::decode(input)?,
-        })
-    }
-}
-
-#[state]
-pub struct State {
-    pub accounts: Map<Address, Account>,
-    pub redeemed_work_hashes: Set<[u8; 32]>,
-
-    // Peg state
-    pub signatory_sets: Deque<SignatorySetSnapshot>,
-    pub processed_deposit_txids: Set<[u8; 32]>,
-    pub pending_withdrawals: Deque<Withdrawal>,
-    pub utxos: Deque<Utxo>,
-    pub finalized_checkpoint: Value<FinalizedCheckpoint>,
-    pub last_checkpoint_time: Value<u64>,
-    pub active_checkpoint: ActiveCheckpoint,
-}
-
-impl<S: Store> State<S> {
-    pub fn current_signatory_set(&self) -> Result<SignatorySetSnapshot> {
-        Ok(self.signatory_sets.back()?.unwrap())
-    }
-}
-
 #[state]
 pub struct ActiveCheckpoint {
     pub is_active: Value<bool>,
-    pub signatures: Map<u16, Signature>,
+    pub signatures: Deque<Option<Vec<Signature>>>,
     pub signed_voting_power: Value<u64>,
-    pub signatory_set: Value<SignatorySetSnapshot>,
+    pub signatory_set_index: Value<u64>,
     pub utxos: Deque<Utxo>,
     pub withdrawals: Deque<Withdrawal>,
 }
@@ -224,15 +202,23 @@ fn handle_begin_block<S: Store>(
 
         state.active_checkpoint.is_active.set(true)?;
 
-        while !state.utxos.is_empty() {
-            let utxo = state.utxos.pop_front()?.unwrap();
-            state.active_checkpoint.utxos.push_back(utxo)?;
+        let signatories = state.current_signatory_set()?.signatories;
+        for _ in 0..signatories.len() {
+            state.active_checkpoint.signatures.push_back(None)?;
         }
 
-        while !state.pending_withdrawals.is_empty() {
-            let withdrawal = state.pending_withdrawals.pop_front()?.unwrap();
-            state.active_checkpoint.withdrawals.push_back(withdrawal)?;
-        }
+        let signatory_set_index = state
+            .signatory_sets
+            .fixed_index(state.signatory_sets.len() - 1);
+        state
+            .active_checkpoint
+            .signatory_set_index
+            .set(signatory_set_index)?;
+
+        state.utxos.drain_into(&mut state.active_checkpoint.utxos)?;
+        state
+            .pending_withdrawals
+            .drain_into(&mut state.active_checkpoint.withdrawals)?;
     }
 
     Ok(())
@@ -326,6 +312,7 @@ fn handle_deposit_tx<S: Store>(
         if recipient.len() != 33 {
             bail!("Recipient must be 33 bytes");
         }
+        // TODO: specify_signatory_set_index in tx rather than iterating
         for (signatory_set_index, signatory_set) in state.signatory_sets.iter().enumerate() {
             let signatory_set = signatory_set?;
             let expected_script =
@@ -373,6 +360,13 @@ fn handle_deposit_tx<S: Store>(
 fn unsafe_slice_to_address(slice: &[u8]) -> Address {
     // warning: only call this with a slice of length 32
     let mut buf: Address = [0; 33];
+    buf.copy_from_slice(slice);
+    buf
+}
+
+fn unsafe_slice_to_signature(slice: &[u8]) -> Signature {
+    // warning: only call this with a slice of length 64
+    let mut buf: Signature = [0; 64];
     buf.copy_from_slice(slice);
     buf
 }
@@ -468,8 +462,101 @@ fn handle_withdrawal_tx<S: Store>(state: &mut State<S>, tx: WithdrawalTransactio
     Ok(state.pending_withdrawals.push_back(withdrawal)?)
 }
 fn handle_signature_tx<S: Store>(state: &mut State<S>, tx: SignatureTransaction) -> Result<()> {
-    bail!("Unimplemented transaction type")
+    if !state.active_checkpoint.is_active.get()? {
+        bail!("No checkpoint in progress");
+    }
+
+    if tx.signatures.len() != state.active_checkpoint.utxos.len() as usize {
+        bail!("Number of signatures does not match number of inputs");
+    }
+    let sigs: Vec<_> = tx
+        .signatures
+        .iter()
+        .map(|sig| {
+            if sig.len() != 64 {
+                bail!("Invalid signature")
+            } else {
+                Ok(unsafe_slice_to_signature(sig.as_slice()))
+            }
+        })
+        .collect::<Result<_>>()?;
+
+    let signatory_index = tx.signatory_index;
+    let btc_tx = state.active_checkpoint_tx()?;
+
+    // if state.active_checkpoint.signatures.contains(signatory_index)? {
+    //     bail!("Signatory has already signed");
+    // }
+    let signatory_set_index = state.active_checkpoint.signatory_set_index.get()?;
+    let signatories = state.signatory_sets.get(signatory_set_index)?.signatories;
+    if signatory_index as usize >= signatories.len() {
+        bail!("Signatory index out of bounds");
+    }
+    let signatory = signatories
+        .iter()
+        .take(signatory_index as usize)
+        .next()
+        .unwrap();
+    let pubkey = signatory.pubkey.key;
+
+    // Verify signatures
+    for (i, signature) in sigs.iter().enumerate() {
+        let utxo = state.active_checkpoint.utxos.get(i as u64)?;
+        let signatories = state
+            .signatory_sets
+            .get_fixed(utxo.signatory_set_index)?
+            .signatories;
+        let script = nomic_signatory_set::output_script(&signatories, utxo.data);
+        let sighash = btc_tx.signature_hash(i, &script, bitcoin::SigHashType::All.as_u32());
+
+        let message = secp256k1::Message::from_slice(sighash.as_ref())?;
+        let signature = secp256k1::Signature::from_compact(&signature[..])?;
+        SECP.verify(&message, &signature, &pubkey)?;
+    }
+
+    // Increment signed voting power
+    let mut signed_voting_power = state
+        .active_checkpoint
+        .signed_voting_power
+        .get_or_default()?;
+    signed_voting_power += signatory.voting_power;
+
+    state
+        .active_checkpoint
+        .signatures
+        .set(signatory_index as u64, Some(sigs))?;
+
+    // If >2/3, finalize checkpoint, clear active_checkpoint fields, update last checkpoint time
+    if signed_voting_power as u128 > signatories.two_thirds_voting_power() {
+        state.finalized_checkpoint.utxos.clear()?;
+        state.finalized_checkpoint.withdrawals.clear()?;
+        state.finalized_checkpoint.signatures.clear()?;
+
+        state
+            .active_checkpoint
+            .utxos
+            .drain_into(&mut state.finalized_checkpoint.utxos)?;
+        state
+            .active_checkpoint
+            .withdrawals
+            .drain_into(&mut state.finalized_checkpoint.withdrawals)?;
+        state
+            .active_checkpoint
+            .signatures
+            .drain_into(&mut state.finalized_checkpoint.signatures)?;
+
+        state.active_checkpoint.is_active.set(false)?;
+        state.active_checkpoint.signed_voting_power.set(0)?;
+    } else {
+        state
+            .active_checkpoint
+            .signed_voting_power
+            .set(signed_voting_power)?;
+    }
+
+    Ok(())
 }
+
 fn signatories_from_validators(validators: &BTreeMap<Vec<u8>, u64>) -> Result<SignatorySet> {
     let mut signatories = SignatorySet::new();
     for (key_bytes, voting_power) in validators.iter() {
@@ -508,9 +595,10 @@ mod tests {
     use bitcoin::util::merkleblock::PartialMerkleTree;
     use bitcoin::Network::Testnet as bitcoin_network;
     use lazy_static::lazy_static;
-    use nomic_primitives::Account;
+    use nomic_primitives::{transaction::Sighash, Account};
     use nomic_signatory_set::{Signatory, SignatorySet, SignatorySetSnapshot};
     use orga::{abci::messages::Header as TendermintHeader, MapStore, WrapStore};
+
     use protobuf::well_known_types::Timestamp;
     use secp256k1::{Secp256k1, SignOnly};
     use std::collections::{BTreeMap, HashSet};
