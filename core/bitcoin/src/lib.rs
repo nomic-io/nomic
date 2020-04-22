@@ -52,8 +52,8 @@ impl Decode for Script {
 
 #[derive(Clone, Encode, Decode)]
 pub struct Outpoint {
-    txid: [u8; 32],
-    index: u32,
+    pub txid: [u8; 32],
+    pub index: u32,
 }
 
 impl From<bitcoin::OutPoint> for Outpoint {

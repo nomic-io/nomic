@@ -551,6 +551,16 @@ fn handle_signature_tx<S: Store>(state: &mut State<S>, tx: SignatureTransaction)
 
         state.active_checkpoint.is_active.set(false)?;
         state.active_checkpoint.signed_voting_power.set(0)?;
+
+        state.utxos.push_back(Utxo {
+            outpoint: nomic_bitcoin::Outpoint {
+                txid: btc_tx.txid().as_hash().into_inner(),
+                index: btc_tx.output.len() as u32 - 1,
+            },
+            value: btc_tx.output.last().unwrap().value,
+            signatory_set_index: state.active_checkpoint.signatory_set_index.get()?,
+            data: vec![],
+        })?;
     } else {
         state
             .active_checkpoint
