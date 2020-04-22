@@ -129,6 +129,92 @@ impl<S: Store> State<S> {
 
         Ok(tx)
     }
+
+    pub fn has_finalized_checkpoint(&self) -> bool {
+        !self.finalized_checkpoint.utxos.is_empty()
+    }
+
+    pub fn finalized_checkpoint_tx(&self) -> Result<bitcoin::Transaction> {
+        if !self.has_finalized_checkpoint() {
+            bail!("No finalized checkpoint");
+        }
+
+        let mut input_amount = 0;
+        let mut output_amount = 0;
+
+        let signatory_set_index = self.finalized_checkpoint.signatory_set_index.get()?;
+        let signatories = self
+            .signatory_sets
+            .get_fixed(signatory_set_index)?
+            .signatories;
+
+        let inputs = self
+            .finalized_checkpoint
+            .utxos
+            .iter()
+            .filter(|utxo| match utxo {
+                Err(_) => true,
+                Ok(utxo) => utxo.signatory_set_index == signatory_set_index,
+            })
+            .enumerate()
+            .map(|(i, utxo)| {
+                utxo.map(|utxo| {
+                    input_amount += utxo.value;
+
+                    let mut witness: Vec<_> = self
+                        .finalized_checkpoint
+                        .signatures
+                        .iter()
+                        .map(|sigs| {
+                            sigs.map(|maybe_sigs| {
+                                maybe_sigs.map_or(vec![], |sigs| sigs[i].to_vec())
+                            })
+                        })
+                        .collect::<Result<_>>()?;
+
+                    let redeem_script = nomic_signatory_set::redeem_script(&signatories, utxo.data);
+                    witness.push(redeem_script.to_bytes());
+
+                    Ok(bitcoin::TxIn {
+                        previous_output: utxo.outpoint.clone().into(),
+                        script_sig: vec![].into(),
+                        sequence: u32::MAX,
+                        witness,
+                    })
+                })?
+            })
+            .collect::<Result<_>>()?;
+
+        let mut outputs: Vec<_> = self
+            .active_checkpoint
+            .withdrawals
+            .iter()
+            .map(|w| {
+                w.map(|withdrawal| {
+                    output_amount += withdrawal.value;
+                    withdrawal.clone().into()
+                })
+            })
+            .collect::<Result<_>>()?;
+
+        // TODO: calculate fee based on final tx size
+        let change_amount = input_amount - output_amount - CHECKPOINT_FEE_AMOUNT;
+        let change_script =
+            nomic_signatory_set::output_script(&self.current_signatory_set()?.signatories, vec![]);
+        outputs.push(bitcoin::TxOut {
+            value: change_amount,
+            script_pubkey: change_script,
+        });
+
+        let tx = bitcoin::Transaction {
+            version: 2,
+            lock_time: 0,
+            input: inputs,
+            output: outputs,
+        };
+
+        Ok(tx)
+    }
 }
 
 #[state]
@@ -490,7 +576,10 @@ fn handle_signature_tx<S: Store>(state: &mut State<S>, tx: SignatureTransaction)
     let btc_tx = state.active_checkpoint_tx()?;
 
     let signatory_set_index = state.active_checkpoint.signatory_set_index.get()?;
-    let signatories = state.signatory_sets.get(signatory_set_index)?.signatories;
+    let signatories = state
+        .signatory_sets
+        .get_fixed(signatory_set_index)?
+        .signatories;
     if signatory_index as usize >= signatories.len() {
         bail!("Signatory index out of bounds");
     }
