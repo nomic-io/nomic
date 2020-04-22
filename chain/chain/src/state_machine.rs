@@ -195,8 +195,13 @@ fn handle_begin_block<S: Store>(
 
     let time_since_last_checkpoint = now - state.last_checkpoint_time.get_or_default()?;
     if time_since_last_checkpoint > CHECKPOINT_INTERVAL {
-        let active_checkpoint = &mut state.active_checkpoint;
-        if active_checkpoint.is_active.get_or_default()? {
+        state.last_checkpoint_time.set(now)?;
+
+        if state.utxos.is_empty() {
+            return Ok(());
+        }
+
+        if state.active_checkpoint.is_active.get_or_default()? {
             return Ok(());
         }
 
@@ -462,7 +467,7 @@ fn handle_withdrawal_tx<S: Store>(state: &mut State<S>, tx: WithdrawalTransactio
     Ok(state.pending_withdrawals.push_back(withdrawal)?)
 }
 fn handle_signature_tx<S: Store>(state: &mut State<S>, tx: SignatureTransaction) -> Result<()> {
-    if !state.active_checkpoint.is_active.get()? {
+    if !state.active_checkpoint.is_active.get_or_default()? {
         bail!("No checkpoint in progress");
     }
 
@@ -474,7 +479,7 @@ fn handle_signature_tx<S: Store>(state: &mut State<S>, tx: SignatureTransaction)
         .iter()
         .map(|sig| {
             if sig.len() != 64 {
-                bail!("Invalid signature")
+                bail!("Invalid signature length")
             } else {
                 Ok(unsafe_slice_to_signature(sig.as_slice()))
             }
@@ -484,6 +489,11 @@ fn handle_signature_tx<S: Store>(state: &mut State<S>, tx: SignatureTransaction)
     let signatory_index = tx.signatory_index;
     let btc_tx = state.active_checkpoint_tx()?;
 
+    let signatory_set_index = state.active_checkpoint.signatory_set_index.get()?;
+    let signatories = state.signatory_sets.get(signatory_set_index)?.signatories;
+    if signatory_index as usize >= signatories.len() {
+        bail!("Signatory index out of bounds");
+    }
     if let Some(_) = state
         .active_checkpoint
         .signatures
@@ -491,14 +501,9 @@ fn handle_signature_tx<S: Store>(state: &mut State<S>, tx: SignatureTransaction)
     {
         bail!("Signatory has already signed");
     }
-    let signatory_set_index = state.active_checkpoint.signatory_set_index.get()?;
-    let signatories = state.signatory_sets.get(signatory_set_index)?.signatories;
-    if signatory_index as usize >= signatories.len() {
-        bail!("Signatory index out of bounds");
-    }
     let signatory = signatories
         .iter()
-        .take(signatory_index as usize)
+        .skip(signatory_index as usize)
         .next()
         .unwrap();
     let pubkey = signatory.pubkey.key;
@@ -614,29 +619,26 @@ mod tests {
     use orga::{abci::messages::Header as TendermintHeader, MapStore, WrapStore};
 
     use protobuf::well_known_types::Timestamp;
-    use secp256k1::{Secp256k1, SignOnly};
+    use secp256k1::{Secp256k1, SecretKey, SignOnly};
     use std::collections::{BTreeMap, HashSet};
 
     lazy_static! {
         static ref SECP: Secp256k1<SignOnly> = Secp256k1::signing_only();
     }
 
-    fn mock_validator_set() -> BTreeMap<Vec<u8>, u64> {
+    fn mock_validator_set() -> (BTreeMap<Vec<u8>, u64>, Vec<SecretKey>) {
+        let (val_privkey, val_pubkey) = create_keypair(1);
+        let val_address = val_pubkey.serialize().to_vec();
         let mut vals = BTreeMap::new();
-        vals.insert(
-            vec![
-                3, 148, 217, 3, 10, 128, 64, 14, 129, 125, 33, 213, 163, 104, 0, 227, 122, 136, 27,
-                45, 207, 44, 64, 24, 35, 166, 166, 118, 25, 12, 200, 183, 98,
-            ],
-            100,
-        );
-        vals
+        vals.insert(val_address, 100);
+        (vals, vec![val_privkey])
     }
 
     struct MockNet {
         store: MapStore,
         validators: BTreeMap<Vec<u8>, u64>,
         btc_block: bitcoin::Block,
+        validator_privkeys: Vec<SecretKey>,
     }
 
     impl MockNet {
@@ -647,10 +649,12 @@ mod tests {
         }
 
         fn with_btc_block(initial_block: bitcoin::Block) -> Self {
+            let validators = mock_validator_set();
             let mut net = MockNet {
                 store: Default::default(),
-                validators: mock_validator_set(),
+                validators: validators.0,
                 btc_block: initial_block.clone(),
+                validator_privkeys: validators.1,
             };
             net.spv()
                 .add_header_raw(initial_block.header, 0)
@@ -684,6 +688,39 @@ mod tests {
                 tx,
                 bitcoin::MerkleBlock::from_block(&self.btc_block, &txids).txn,
             )
+        }
+
+        fn with_active_checkpoint() -> MockNet {
+            let tx = build_tx(vec![build_txout(
+                100_000_000,
+                nomic_signatory_set::output_script(
+                    &signatories_from_validators(&mock_validator_set().0).unwrap(),
+                    vec![123; 33],
+                ),
+            )]);
+
+            let block = build_block(vec![tx.clone()]);
+            let mut net = MockNet::with_btc_block(block);
+
+            let (tx, proof) = net.create_btc_proof();
+            let deposit = DepositTransaction {
+                height: 0,
+                proof,
+                tx,
+                block_index: 0,
+                recipients: vec![vec![123; 33]],
+            };
+            let action = Action::Transaction(Transaction::Deposit(deposit));
+            run(&mut net.store, action.clone(), &mut net.validators).unwrap();
+
+            let mut header: orga::abci::messages::Header = Default::default();
+            let mut timestamp = Timestamp::new();
+            timestamp.set_seconds(super::CHECKPOINT_INTERVAL as i64 * 2);
+            header.set_time(timestamp);
+            let action = Action::BeginBlock(header);
+            run(&mut net.store, action.clone(), &mut net.validators).unwrap();
+
+            net
         }
     }
 
@@ -760,13 +797,10 @@ mod tests {
         let state = State::wrap_store(&mut net.store).unwrap();
 
         // initial signatories
+        let validator_pubkey = mock_validator_set().0.into_iter().next().unwrap().0;
         let mut expected_signatories = SignatorySet::new();
         expected_signatories.set(Signatory {
-            pubkey: bitcoin::PublicKey::from_slice(&[
-                3, 148, 217, 3, 10, 128, 64, 14, 129, 125, 33, 213, 163, 104, 0, 227, 122, 136, 27,
-                45, 207, 44, 64, 24, 35, 166, 166, 118, 25, 12, 200, 183, 98,
-            ])
-            .unwrap(),
+            pubkey: bitcoin::PublicKey::from_slice(validator_pubkey.as_slice()).unwrap(),
             voting_power: 100,
         });
         assert_eq!(
@@ -793,11 +827,7 @@ mod tests {
         run(&mut net.store, action, &mut net.validators).unwrap();
         let mut expected_signatories = SignatorySet::new();
         expected_signatories.set(Signatory {
-            pubkey: bitcoin::PublicKey::from_slice(&[
-                3, 148, 217, 3, 10, 128, 64, 14, 129, 125, 33, 213, 163, 104, 0, 227, 122, 136, 27,
-                45, 207, 44, 64, 24, 35, 166, 166, 118, 25, 12, 200, 183, 98,
-            ])
-            .unwrap(),
+            pubkey: bitcoin::PublicKey::from_slice(validator_pubkey.as_slice()).unwrap(),
             voting_power: 100,
         });
 
@@ -828,11 +858,7 @@ mod tests {
             voting_power: 555,
         });
         expected_signatories.set(Signatory {
-            pubkey: bitcoin::PublicKey::from_slice(&[
-                3, 148, 217, 3, 10, 128, 64, 14, 129, 125, 33, 213, 163, 104, 0, 227, 122, 136, 27,
-                45, 207, 44, 64, 24, 35, 166, 166, 118, 25, 12, 200, 183, 98,
-            ])
-            .unwrap(),
+            pubkey: bitcoin::PublicKey::from_slice(validator_pubkey.as_slice()).unwrap(),
             voting_power: 100,
         });
         assert_eq!(
@@ -906,7 +932,7 @@ mod tests {
         let tx = build_tx(vec![build_txout(
             100_000_000,
             nomic_signatory_set::output_script(
-                &signatories_from_validators(&mock_validator_set()).unwrap(),
+                &signatories_from_validators(&mock_validator_set().0).unwrap(),
                 vec![123; 33],
             ),
         )]);
@@ -933,7 +959,7 @@ mod tests {
         let tx = build_tx(vec![build_txout(
             100_000_000,
             nomic_signatory_set::output_script(
-                &signatories_from_validators(&mock_validator_set()).unwrap(),
+                &signatories_from_validators(&mock_validator_set().0).unwrap(),
                 vec![123; 33],
             ),
         )]);
@@ -958,7 +984,7 @@ mod tests {
         let tx = build_tx(vec![build_txout(
             100_000_000,
             nomic_signatory_set::output_script(
-                &signatories_from_validators(&mock_validator_set()).unwrap(),
+                &signatories_from_validators(&mock_validator_set().0).unwrap(),
                 vec![123; 33],
             ),
         )]);
@@ -1382,5 +1408,113 @@ mod tests {
         tx.signature = sig;
         let action = Action::Transaction(Transaction::Withdrawal(tx));
         run(&mut net.store, action, &mut net.validators).unwrap();
+    }
+
+    // Signature tx tests
+    #[test]
+    #[should_panic(expected = "No checkpoint in progress")]
+    fn signatory_signature_no_active_checkpoint() {
+        let mut net = MockNet::new();
+        let tx = SignatureTransaction {
+            signatures: vec![],
+            signatory_index: 0,
+        };
+        let action = Action::Transaction(Transaction::Signature(tx));
+        run(&mut net.store, action, &mut net.validators).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Number of signatures does not match number of inputs")]
+    fn signatory_signature_incorrect_signature_count() {
+        let mut net = MockNet::with_active_checkpoint();
+
+        let tx = SignatureTransaction {
+            signatures: vec![],
+            signatory_index: 0,
+        };
+        let action = Action::Transaction(Transaction::Signature(tx));
+        run(&mut net.store, action, &mut net.validators).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid signature length")]
+    fn signatory_invalid_signature_length() {
+        let mut net = MockNet::with_active_checkpoint();
+
+        let tx = SignatureTransaction {
+            signatures: vec![vec![1, 2, 3]],
+            signatory_index: 0,
+        };
+        let action = Action::Transaction(Transaction::Signature(tx));
+        run(&mut net.store, action, &mut net.validators).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Signatory index out of bounds")]
+    fn signatory_invalid_signatory_index() {
+        let mut net = MockNet::with_active_checkpoint();
+
+        let tx = SignatureTransaction {
+            signatures: vec![vec![123; 64]],
+            signatory_index: 123,
+        };
+        let action = Action::Transaction(Transaction::Signature(tx));
+        run(&mut net.store, action, &mut net.validators).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "IncorrectSignature")]
+    fn signatory_invalid_signature() {
+        let mut net = MockNet::with_active_checkpoint();
+
+        let tx = SignatureTransaction {
+            signatures: vec![vec![123; 64]],
+            signatory_index: 0,
+        };
+        let action = Action::Transaction(Transaction::Signature(tx));
+        run(&mut net.store, action, &mut net.validators).unwrap();
+    }
+
+    #[test]
+    fn signatory_ok() {
+        let mut net = MockNet::with_active_checkpoint();
+
+        let state = State::wrap_store(&mut net.store).unwrap();
+        assert!(state.active_checkpoint.is_active.get().unwrap());
+        assert_eq!(state.utxos.len(), 0);
+
+        let utxo = state.active_checkpoint.utxos.get(0).unwrap();
+        let signatories = state.signatory_sets.get_fixed(0).unwrap().signatories;
+        let btc_tx = state.active_checkpoint_tx().unwrap();
+        let script = nomic_signatory_set::output_script(&signatories, utxo.data);
+        let sighash = btc_tx
+            .signature_hash(0, &script, bitcoin::SigHashType::All.as_u32())
+            .as_hash()
+            .into_inner();
+
+        let message = secp256k1::Message::from_slice(&sighash[..]).unwrap();
+        let privkey = &net.validator_privkeys[0];
+        let mut sig = SECP.sign(&message, privkey).serialize_compact().to_vec();
+
+        let tx = SignatureTransaction {
+            signatures: vec![sig],
+            signatory_index: 0,
+        };
+        let action = Action::Transaction(Transaction::Signature(tx));
+        run(&mut net.store, action, &mut net.validators).unwrap();
+
+        let state = State::wrap_store(&mut net.store).unwrap();
+        assert_eq!(state.utxos.len(), 1);
+        assert!(!state.active_checkpoint.is_active.get().unwrap());
+        assert_eq!(state.active_checkpoint.utxos.len(), 0);
+        assert_eq!(state.active_checkpoint.withdrawals.len(), 0);
+        assert_eq!(
+            state.active_checkpoint.signed_voting_power.get().unwrap(),
+            0
+        );
+        assert_eq!(state.active_checkpoint.signatures.len(), 0);
+        assert_eq!(state.finalized_checkpoint.signatures.len(), 1);
+        assert_eq!(state.finalized_checkpoint.utxos.len(), 1);
+        assert_eq!(state.finalized_checkpoint.withdrawals.len(), 0);
     }
 }
