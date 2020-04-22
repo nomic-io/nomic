@@ -484,9 +484,13 @@ fn handle_signature_tx<S: Store>(state: &mut State<S>, tx: SignatureTransaction)
     let signatory_index = tx.signatory_index;
     let btc_tx = state.active_checkpoint_tx()?;
 
-    // if state.active_checkpoint.signatures.contains(signatory_index)? {
-    //     bail!("Signatory has already signed");
-    // }
+    if let Some(_) = state
+        .active_checkpoint
+        .signatures
+        .get(signatory_index as u64)?
+    {
+        bail!("Signatory has already signed");
+    }
     let signatory_set_index = state.active_checkpoint.signatory_set_index.get()?;
     let signatories = state.signatory_sets.get(signatory_set_index)?.signatories;
     if signatory_index as usize >= signatories.len() {
