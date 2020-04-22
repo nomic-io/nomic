@@ -13,10 +13,12 @@ use orga::{
     WrapStore, Write,
 };
 
+use std::cell::{RefCell, RefMut};
+use std::ops::DerefMut;
 use std::str::FromStr;
 use tendermint::rpc::Client as TendermintRpcClient;
 
-struct RemoteStore {
+pub struct RemoteStore {
     merk_store_client: MerkStoreClient<TendermintClient>,
 }
 
@@ -47,32 +49,26 @@ impl Write for RemoteStore {
 
 pub struct Client {
     pub tendermint_rpc: TendermintRpcClient,
-    state: State<RemoteStore>,
-    remote_store: RemoteStore,
+    store: RefCell<RemoteStore>,
 }
 
 impl Client {
     pub fn new(tendermint_rpc_address: &str) -> Result<Self> {
         let address = tendermint::net::Address::from_str(tendermint_rpc_address)?;
         let tendermint_rpc = TendermintRpcClient::new(&address)?;
-        let remote_store = RemoteStore::new(tendermint_rpc_address);
+        let store = RemoteStore::new(tendermint_rpc_address);
 
-        let state = State::wrap_store(RemoteStore::new(tendermint_rpc_address))?;
         Ok(Client {
-            state,
             tendermint_rpc,
-            remote_store,
+            store: RefCell::new(store),
         })
     }
 
+    pub fn state<'a>(&'a self) -> OrgaResult<State<RefMut<'a, RemoteStore>>> {
+        State::wrap_store(self.store.borrow_mut())
+    }
+
     /// Transmit a transaction the peg state machine.
-    ///
-    /// In this mock implementation, the transaction is wrapped in a peg action and then
-    /// immediately evaluated against the client's store.
-    ///
-    /// In the future, the transaction will be serialized and broadcasted to the network, and the
-    /// state machine abci host will be responsible for wrapping the transaction in the appropriate Action
-    /// enum variant.
     pub fn send(
         &self,
         transaction: Transaction,
@@ -86,9 +82,10 @@ impl Client {
     }
 
     /// Get the Bitcoin headers currently used by the peg zone's on-chain SPV client.
-    pub fn get_bitcoin_block_hashes(&mut self) -> Result<Vec<Hash>> {
-        let store = &mut self.remote_store;
-        let mut header_cache = spv::headercache::HeaderCache::new(bitcoin_network, store);
+    pub fn get_bitcoin_block_hashes(&self) -> Result<Vec<Hash>> {
+        let mut store = self.store.borrow_mut();
+        let mut header_cache =
+            spv::headercache::HeaderCache::new(bitcoin_network, store.deref_mut());
         let trunk = header_cache.load_trunk();
 
         match trunk {
@@ -100,7 +97,7 @@ impl Client {
     /// Create and broadcast a transaction which reedems a golden nonce, granting voting power to
     /// the provided validator public key.
     pub fn submit_work_proof(
-        &mut self,
+        &self,
         public_key: &[u8],
         nonce: u64,
     ) -> Result<tendermint::rpc::endpoint::broadcast::tx_commit::Response> {
@@ -111,9 +108,10 @@ impl Client {
         self.send(work_transaction)
     }
 
-    pub fn get_bitcoin_tip(&mut self) -> OrgaResult<bitcoin::BlockHeader> {
-        let store = &mut self.remote_store;
-        let mut header_cache = spv::headercache::HeaderCache::new(bitcoin_network, store);
+    pub fn get_bitcoin_tip(&self) -> OrgaResult<bitcoin::BlockHeader> {
+        let mut store = self.store.borrow_mut();
+        let mut header_cache =
+            spv::headercache::HeaderCache::new(bitcoin_network, store.deref_mut());
         let maybe_tip = header_cache.tip()?;
         if let Some(tip) = maybe_tip {
             Ok(tip.stored.header)
@@ -123,29 +121,33 @@ impl Client {
     }
 
     pub fn get_signatory_sets(&self) -> OrgaResult<Vec<SignatorySet>> {
-        self.state
+        self.state()?
             .signatory_sets
             .iter()
             .map(|snapshot| snapshot.map(|snapshot| snapshot.signatories))
             .collect()
     }
 
-    pub fn get_signatory_set_snapshot(&mut self) -> OrgaResult<SignatorySetSnapshot> {
-        self.state.current_signatory_set()
+    pub fn get_signatory_set_snapshot(&self) -> OrgaResult<SignatorySetSnapshot> {
+        self.state()?.current_signatory_set()
     }
 
-    pub fn get_balance(&mut self, address: &[u8]) -> OrgaResult<u64> {
+    pub fn get_balance(&self, address: &[u8]) -> OrgaResult<u64> {
         let account = self.get_account(address)?;
         Ok(account.balance)
     }
 
-    pub fn get_account(&mut self, address: &[u8]) -> OrgaResult<Account> {
+    pub fn get_account(&self, address: &[u8]) -> OrgaResult<Account> {
         Ok(self
-            .state
+            .state()?
             .accounts
             .get(unsafe_slice_to_address(address))?
             .unwrap_or_default())
     }
+
+    // pub fn get_finalized_checkpoint_tx(&mut self) -> OrgaResult<Option<bitcoin::Transaction>> {
+    //     if self.state()?.has_finalized_checkpoint() {}
+    // }
 }
 
 type Address = [u8; 33];

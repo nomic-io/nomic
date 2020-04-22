@@ -7,7 +7,7 @@ use sha2::{Digest, Sha256};
 const MIN_WORK: u64 = 1 << 20;
 
 pub fn generate() {
-    let mut rpc = PegClient::new("localhost:26657").unwrap();
+    let rpc = PegClient::new("localhost:26657").unwrap();
     let pub_key_bytes = rpc
         .tendermint_rpc
         .status()

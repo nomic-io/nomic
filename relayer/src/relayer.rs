@@ -134,7 +134,7 @@ pub fn start() {
 
 fn header_step() -> Result<()> {
     let btc_rpc = make_rpc_client().unwrap();
-    let mut peg_client = PegClient::new("localhost:26657")?;
+    let peg_client = PegClient::new("localhost:26657")?;
 
     // Fetch peg hashes
     let peg_hashes = peg_client.get_bitcoin_block_hashes()?;

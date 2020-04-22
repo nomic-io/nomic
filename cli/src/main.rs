@@ -143,7 +143,7 @@ fn main() {
                 }
             }
 
-            let mut client = Client::new("localhost:26657").unwrap();
+            let client = Client::new("localhost:26657").unwrap();
             let signatory_snapshot = client.get_signatory_set_snapshot().unwrap();
 
             let wallet_path = nomic_home.join("wallet.key");
@@ -193,7 +193,7 @@ fn main() {
         SubCommand::Balance(_) => {
             default_log_level("warn");
 
-            let mut client = Client::new("localhost:26657").unwrap();
+            let client = Client::new("localhost:26657").unwrap();
 
             let wallet_path = nomic_home.join("wallet.key");
             let wallet = Wallet::load_or_generate(wallet_path).unwrap();
