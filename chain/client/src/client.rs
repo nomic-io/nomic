@@ -145,9 +145,23 @@ impl Client {
             .unwrap_or_default())
     }
 
-    // pub fn get_finalized_checkpoint_tx(&mut self) -> OrgaResult<Option<bitcoin::Transaction>> {
-    //     if self.state()?.has_finalized_checkpoint() {}
-    // }
+    pub fn get_finalized_checkpoint_tx(&self) -> OrgaResult<Option<bitcoin::Transaction>> {
+        let state = self.state()?;
+        if state.has_finalized_checkpoint() {
+            Ok(Some(state.finalized_checkpoint_tx()?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn get_active_checkpoint_tx(&self) -> OrgaResult<Option<bitcoin::Transaction>> {
+        let state = self.state()?;
+        if state.active_checkpoint.is_active.get_or_default()? {
+            Ok(Some(state.active_checkpoint_tx()?))
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 type Address = [u8; 33];
