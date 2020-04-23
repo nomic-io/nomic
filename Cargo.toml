@@ -5,6 +5,7 @@ members = [
     "core/primitives",
     "chain/client",
     "chain/chain",
+    "signatory",
     "core/work",
     "core/signatory-set",
     "core/bitcoin",
