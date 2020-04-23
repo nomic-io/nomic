@@ -35,10 +35,10 @@ lazy_static! {
 
 #[derive(Clone, Encode, Decode)]
 pub struct Utxo {
-    outpoint: nomic_bitcoin::Outpoint,
-    value: u64,
-    signatory_set_index: u64,
-    data: Vec<u8>,
+    pub outpoint: nomic_bitcoin::Outpoint,
+    pub value: u64,
+    pub signatory_set_index: u64,
+    pub data: Vec<u8>,
 }
 
 #[state]
