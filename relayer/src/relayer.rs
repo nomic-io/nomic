@@ -4,7 +4,7 @@ use crate::Result;
 use bitcoin::hash_types::BlockHash as Hash;
 use bitcoincore_rpc::{Auth, Client, RpcApi};
 use failure::bail;
-use log::{debug, info};
+use log::{debug, error, info};
 use nomic_bitcoin::{bitcoin, bitcoincore_rpc};
 use nomic_client::Client as PegClient;
 use nomic_primitives::transaction::{HeaderTransaction, Transaction};
@@ -126,6 +126,14 @@ pub fn start() {
         }
         std::thread::sleep(std::time::Duration::from_secs(1));
     });
+
+    std::thread::spawn(|| loop {
+        if let Err(e) = checkpoint_step() {
+            error!("Checkpoint relaying error: {:?}", e);
+        }
+        std::thread::sleep(std::time::Duration::from_secs(60));
+    });
+
     loop {
         deposit_step().unwrap();
         std::thread::sleep(std::time::Duration::from_secs(1));
@@ -146,6 +154,20 @@ fn header_step() -> Result<()> {
     let header_transaction = build_header_transaction(&mut linking_headers.to_vec());
     // Broadcast header transactions
     broadcast_header_transaction(&peg_client, header_transaction)?;
+
+    Ok(())
+}
+
+fn checkpoint_step() -> Result<()> {
+    let btc_rpc = make_rpc_client().unwrap();
+    let peg_client = PegClient::new("localhost:26657")?;
+
+    let btc_tx = match peg_client.get_finalized_checkpoint_tx()? {
+        None => return Ok(()),
+        Some(btc_tx) => btc_tx,
+    };
+
+    btc_rpc.send_raw_transaction(&btc_tx)?;
 
     Ok(())
 }
