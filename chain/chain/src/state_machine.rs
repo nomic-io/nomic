@@ -26,8 +26,8 @@ use std::collections::BTreeMap;
 
 const MIN_WORK: u64 = 1 << 20;
 pub const SIGNATORY_CHANGE_INTERVAL: u64 = 60 * 60 * 24 * 7;
-pub const CHECKPOINT_INTERVAL: u64 = 60 * 60 * 24;
-pub const CHECKPOINT_FEE_AMOUNT: u64 = 10_000;
+pub const CHECKPOINT_INTERVAL: u64 = 60 * 60;
+pub const CHECKPOINT_FEE_AMOUNT: u64 = 1_000;
 
 lazy_static! {
     static ref SECP: Secp256k1<VerifyOnly> = Secp256k1::verification_only();
