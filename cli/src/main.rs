@@ -18,6 +18,10 @@ use wallet::Wallet;
 struct Opts {
     #[clap(subcommand)]
     subcmd: SubCommand,
+
+    /// Use a local chain in development mode
+    #[clap(short = "d", long = "dev")]
+    dev: bool,
 }
 
 #[derive(Clap)]
@@ -34,10 +38,6 @@ enum SubCommand {
     #[clap(name = "worker")]
     Worker(Worker),
 
-    /// Start a local testnet for development
-    #[clap(name = "dev")]
-    Dev(Dev),
-
     /// Deposit Bitcoin into your sidechain account
     #[clap(name = "deposit")]
     Deposit(Deposit),
@@ -53,9 +53,6 @@ enum SubCommand {
 
 #[derive(Clap)]
 struct Start;
-
-#[derive(Clap)]
-struct Dev;
 
 #[derive(Clap)]
 struct Relayer;
@@ -87,7 +84,7 @@ fn main() {
     // Ensure nomic-testnet home directory
     let mut nomic_home = dirs::home_dir()
         .unwrap_or(std::env::current_dir().expect("Failed to create Nomic home directory"));
-    if let SubCommand::Dev(_) = opts.subcmd {
+    if opts.dev {
         nomic_home.push(".nomic-dev");
     } else {
         nomic_home.push(".nomic-testnet");
@@ -106,21 +103,21 @@ fn main() {
             default_log_level("info");
             // Install and start Tendermint
             tendermint::install(&nomic_home);
-            tendermint::init(&nomic_home, false);
+            tendermint::init(&nomic_home, opts.dev);
             tendermint::start(&nomic_home);
+
             // Start the ABCI server
             info!("Starting ABCI server");
-            abci_server::start(&nomic_home);
-        }
-        SubCommand::Dev(_) => {
-            default_log_level("info");
-            // Install and start Tendermint
-            tendermint::install(&nomic_home);
-            tendermint::init(&nomic_home, true);
-            tendermint::start(&nomic_home);
-            // Start the ABCI server
-            info!("Starting ABCI server");
-            abci_server::start(&nomic_home);
+            let nomic_home_abci = nomic_home.clone();
+            std::thread::spawn(move || {
+                abci_server::start(nomic_home_abci);
+            });
+
+            // Start the signatory process
+            // TODO: poll until the node is caught up
+            std::thread::sleep(std::time::Duration::from_secs(10));
+            info!("Starting signatory process");
+            nomic_signatory::start(nomic_home).unwrap();
         }
         SubCommand::Worker(_) => {
             default_log_level("info");
@@ -128,12 +125,12 @@ fn main() {
         }
         SubCommand::Deposit(_) => {
             default_log_level("warn");
-            fn submit_address(address: &[u8]) -> Result<()> {
-                let relayer = "http://kep.io:8880";
-                debug!("Sending address to relayer: {}", relayer);
+            fn submit_address(address: &[u8], relayer_host: &str) -> Result<()> {
+                // TODO: send address to multiple relayers
+                debug!("Sending address to relayer: {}", relayer_host);
                 let client = reqwest::blocking::Client::new();
                 let res = client
-                    .post(format!("{}/addresses/{}", relayer, hex::encode(address)).as_str())
+                    .post(format!("{}/addresses/{}", relayer_host, hex::encode(address)).as_str())
                     .send()?;
 
                 if res.status() == 200 {
@@ -160,7 +157,12 @@ fn main() {
             let days_until_expiration =
                 ((expiration - now) as f64 / (60 * 60 * 24) as f64).round() as usize;
 
-            submit_address(wallet.pubkey_bytes().as_slice()).unwrap();
+            let relayer = if opts.dev {
+                "http://localhost:8880"
+            } else {
+                "http://kep.io:8880"
+            };
+            submit_address(wallet.pubkey_bytes().as_slice(), relayer).unwrap();
 
             println!("YOUR DEPOSIT ADDRESS:");
             println!("{}", address.to_string().cyan().bold());
