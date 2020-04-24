@@ -21,7 +21,10 @@ pub fn start<P: AsRef<Path>>(nomic_home: P) -> Result<()> {
         .join("priv_validator_key.json");
     let priv_key_json = fs::read_to_string(key_path)?;
     let priv_key_json: serde_json::Value = serde_json::from_str(&priv_key_json)?;
-    let priv_key_str = priv_key_json["priv_key"]["value"].to_string();
+    let priv_key_value = &priv_key_json["priv_key"]["value"];
+    let priv_key_str = priv_key_value
+        .as_str()
+        .expect("Invalid Tendermint private key");
     let priv_key = SecretKey::from_slice(base64::decode(priv_key_str)?.as_slice())?;
 
     let pub_key = secp256k1::PublicKey::from_secret_key(&SECP, &priv_key);
