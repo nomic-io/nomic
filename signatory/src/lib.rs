@@ -1,4 +1,5 @@
 use lazy_static::lazy_static;
+use log::info;
 use nomic_bitcoin::bitcoin;
 use nomic_client::Client;
 use nomic_primitives::{transaction::Transaction, Result};
@@ -22,6 +23,9 @@ pub fn start<P: AsRef<Path>>(nomic_home: P) -> Result<()> {
     let priv_key_json: serde_json::Value = serde_json::from_str(&priv_key_json)?;
     let priv_key_str = priv_key_json["priv_key"]["value"].to_string();
     let priv_key = SecretKey::from_slice(base64::decode(priv_key_str)?.as_slice())?;
+
+    let pub_key = secp256k1::PublicKey::from_secret_key(&SECP, &priv_key);
+    println!("signatory pub key: {:?}", &pub_key.serialize()[..]);
 
     loop {
         try_sign(&client, &priv_key)?;
@@ -59,6 +63,8 @@ fn try_sign(client: &Client, priv_key: &SecretKey) -> Result<()> {
         None => return Ok(()),
         Some(index) => index,
     };
+
+    info!("Signing active checkpoint tx: {:?}", &btc_tx);
 
     let utxos: Vec<_> = client
         .state()?
