@@ -4,7 +4,7 @@ use std::env;
 use std::fs;
 use std::path::Path;
 
-const BITCOIN_START_HEIGHT: usize = 1667232;
+const BITCOIN_START_HEIGHT: usize = 1721664;
 fn make_rpc_client() -> Result<Client, RpcError> {
     let rpc_user = env::var("BTC_RPC_USER").unwrap();
     let rpc_pass = env::var("BTC_RPC_PASS").unwrap();
