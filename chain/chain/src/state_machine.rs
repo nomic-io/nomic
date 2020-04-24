@@ -26,7 +26,7 @@ use std::collections::BTreeMap;
 
 const MIN_WORK: u64 = 1 << 20;
 pub const SIGNATORY_CHANGE_INTERVAL: u64 = 60 * 60 * 24 * 7;
-pub const CHECKPOINT_INTERVAL: u64 = 60 * 60;
+pub const CHECKPOINT_INTERVAL: u64 = 60 * 5;
 pub const CHECKPOINT_FEE_AMOUNT: u64 = 1_000;
 
 lazy_static! {
@@ -142,7 +142,10 @@ impl<S: Store> State<S> {
         let mut input_amount = 0;
         let mut output_amount = 0;
 
-        let signatory_set_index = self.finalized_checkpoint.signatory_set_index.get()?;
+        let signatory_set_index = self
+            .finalized_checkpoint
+            .signatory_set_index
+            .get_or_default()?;
         let signatories = self
             .signatory_sets
             .get_fixed(signatory_set_index)?
@@ -167,7 +170,16 @@ impl<S: Store> State<S> {
                         .iter()
                         .map(|sigs| {
                             sigs.map(|maybe_sigs| {
-                                maybe_sigs.map_or(vec![], |sigs| sigs[i].to_vec())
+                                maybe_sigs.map_or(vec![], |sigs| {
+                                    let sig =
+                                        secp256k1::Signature::from_compact(&sigs[i][..]).unwrap();
+                                    let mut der_sig = sig.serialize_der().to_vec();
+                                    der_sig.push(
+                                        bitcoin::blockdata::transaction::SigHashType::All.as_u32()
+                                            as u8,
+                                    );
+                                    der_sig
+                                })
                             })
                         })
                         .collect::<Result<_>>()?;
@@ -604,7 +616,7 @@ fn handle_signature_tx<S: Store>(state: &mut State<S>, tx: SignatureTransaction)
             .signatory_sets
             .get_fixed(utxo.signatory_set_index)?
             .signatories;
-        let script = nomic_signatory_set::output_script(&signatories, utxo.data);
+        let script = nomic_signatory_set::redeem_script(&signatories, utxo.data);
         let sighash = btc_tx.signature_hash(i, &script, bitcoin::SigHashType::All.as_u32());
 
         let message = secp256k1::Message::from_slice(sighash.as_ref())?;
@@ -645,6 +657,7 @@ fn handle_signature_tx<S: Store>(state: &mut State<S>, tx: SignatureTransaction)
 
         state.active_checkpoint.is_active.set(false)?;
         state.active_checkpoint.signed_voting_power.set(0)?;
+        // state.active_checkpoint.signed_voting_power.set(0)?;
 
         state.utxos.push_back(Utxo {
             outpoint: nomic_bitcoin::Outpoint {
