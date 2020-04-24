@@ -1479,6 +1479,7 @@ dependencies = [
  "nomic-chain",
  "nomic-client",
  "nomic-primitives",
+ "nomic-signatory",
  "nomic-signatory-set",
  "nomic-worker",
  "pretty_env_logger",
@@ -1522,6 +1523,21 @@ dependencies = [
  "secp256k1 0.17.2",
  "serde",
  "sha2 0.8.1",
+]
+
+[[package]]
+name = "nomic-signatory"
+version = "0.1.0"
+dependencies = [
+ "base64 0.12.0",
+ "lazy_static",
+ "log 0.4.8",
+ "nomic-bitcoin",
+ "nomic-client",
+ "nomic-primitives",
+ "nomic-signatory-set",
+ "secp256k1 0.17.2",
+ "serde_json",
 ]
 
 [[package]]
@@ -2419,21 +2435,6 @@ checksum = "7fdf1b9db47230893d76faad238fd6097fd6d6a9245cd7a4d90dbd639536bbd2"
 
 [[package]]
 name = "signatory"
-version = "0.1.0"
-dependencies = [
- "base64 0.12.0",
- "lazy_static",
- "log 0.4.8",
- "nomic-bitcoin",
- "nomic-client",
- "nomic-primitives",
- "nomic-signatory-set",
- "secp256k1 0.17.2",
- "serde_json",
-]
-
-[[package]]
-name = "signatory"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92785dea71e4d1d2b2c5dceee9cdaf809a177e3865b29d246b0314f4ecc110b0"
@@ -2454,7 +2455,7 @@ dependencies = [
  "digest 0.8.1",
  "ed25519-dalek",
  "sha2 0.8.1",
- "signatory 0.12.0",
+ "signatory",
 ]
 
 [[package]]
@@ -2622,7 +2623,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.8.1",
- "signatory 0.12.0",
+ "signatory",
  "signatory-dalek",
  "subtle",
  "subtle-encoding",

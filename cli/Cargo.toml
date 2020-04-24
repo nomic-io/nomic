@@ -12,6 +12,7 @@ relayer = { path = "../relayer" }
 nomic-bitcoin = { path = "../core/bitcoin" }
 nomic-chain = { path = "../chain/chain" }
 nomic-client = { path = "../chain/client" }
+nomic-signatory = { path = "../signatory" }
 nomic-primitives = { path = "../core/primitives" }
 nomic-signatory-set = { path = "../core/signatory-set" }
 nomic-worker = { path = "../worker" }

@@ -1,5 +1,5 @@
 [package]
-name = "signatory"
+name = "nomic-signatory"
 version = "0.1.0"
 authors = ["The Nomic Team <hello@nomic.io>"]
 edition = "2018"
