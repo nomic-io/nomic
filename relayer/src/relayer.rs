@@ -128,9 +128,10 @@ pub fn start() {
     });
 
     std::thread::spawn(|| loop {
-        if let Err(e) = checkpoint_step() {
-            error!("Checkpoint relaying error: {:?}", e);
-        }
+        checkpoint_step().unwrap();
+        // if let Err(e) = checkpoint_step() {
+        //     error!("Checkpoint relaying error: {:?}", e);
+        // }
         std::thread::sleep(std::time::Duration::from_secs(60));
     });
 
@@ -166,7 +167,7 @@ fn checkpoint_step() -> Result<()> {
         None => return Ok(()),
         Some(btc_tx) => btc_tx,
     };
-
+    println!("btc tx: {:?}", &btc_tx);
     btc_rpc.send_raw_transaction(&btc_tx)?;
 
     Ok(())

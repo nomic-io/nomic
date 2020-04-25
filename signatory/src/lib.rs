@@ -81,7 +81,11 @@ fn try_sign(client: &Client, priv_key: &SecretKey) -> Result<()> {
         .enumerate()
         .map(|(i, utxo)| {
             let script = nomic_signatory_set::redeem_script(&signatories, utxo.data.clone());
-            let sighash = btc_tx.signature_hash(i, &script, bitcoin::SigHashType::All.as_u32());
+            let sighash = bitcoin::util::bip143::SighashComponents::new(&btc_tx).sighash_all(
+                &btc_tx.input[i],
+                &script,
+                utxo.value,
+            );
             let message = secp256k1::Message::from_slice(&sighash[..])?;
             let sig = SECP.sign(&message, &priv_key);
             Ok(sig.serialize_compact().to_vec())

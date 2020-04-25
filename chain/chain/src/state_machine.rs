@@ -168,21 +168,21 @@ impl<S: Store> State<S> {
                         .finalized_checkpoint
                         .signatures
                         .iter()
-                        .map(|sigs| {
-                            sigs.map(|maybe_sigs| {
-                                maybe_sigs.map_or(vec![], |sigs| {
-                                    let sig =
-                                        secp256k1::Signature::from_compact(&sigs[i][..]).unwrap();
-                                    let mut der_sig = sig.serialize_der().to_vec();
-                                    der_sig.push(
-                                        bitcoin::blockdata::transaction::SigHashType::All.as_u32()
-                                            as u8,
-                                    );
-                                    der_sig
-                                })
+                        .collect::<Result<Vec<_>>>()? // TODO: implement DoubleEndedIterator for Deque Iter
+                        .iter()
+                        .rev()
+                        .map(|maybe_sigs| {
+                            maybe_sigs.as_ref().map_or(vec![], |sigs| {
+                                let sig = secp256k1::Signature::from_compact(&sigs[i][..]).unwrap();
+                                let mut sig = sig.serialize_der().to_vec();
+                                sig.push(
+                                    bitcoin::blockdata::transaction::SigHashType::All.as_u32()
+                                        as u8,
+                                );
+                                sig
                             })
                         })
-                        .collect::<Result<_>>()?;
+                        .collect();
 
                     let redeem_script = nomic_signatory_set::redeem_script(&signatories, utxo.data);
                     witness.push(redeem_script.to_bytes());
@@ -616,8 +616,13 @@ fn handle_signature_tx<S: Store>(state: &mut State<S>, tx: SignatureTransaction)
             .signatory_sets
             .get_fixed(utxo.signatory_set_index)?
             .signatories;
+
         let script = nomic_signatory_set::redeem_script(&signatories, utxo.data);
-        let sighash = btc_tx.signature_hash(i, &script, bitcoin::SigHashType::All.as_u32());
+        let sighash = bitcoin::util::bip143::SighashComponents::new(&btc_tx).sighash_all(
+            &btc_tx.input[i],
+            &script,
+            utxo.value,
+        );
 
         let message = secp256k1::Message::from_slice(sighash.as_ref())?;
         let signature = secp256k1::Signature::from_compact(&signature[..])?;

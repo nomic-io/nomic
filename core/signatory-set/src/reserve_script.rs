@@ -38,7 +38,7 @@ pub fn redeem_script(signatories: &SignatorySet, data: Vec<u8>) -> Script {
     bytes.extend(&script.into_bytes());
 
     // depositor data commitment
-    let script = script!(<data> OP_SWAP);
+    let script = script!(<data> OP_DROP);
     bytes.extend(&script.into_bytes());
 
     bytes.into()
