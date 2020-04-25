@@ -49,6 +49,10 @@ enum SubCommand {
     /// Send coins to another address
     #[clap(name = "send")]
     Transfer(Transfer),
+
+    /// Withdraw coins to a Bitcoin address
+    #[clap(name = "withdraw")]
+    Withdraw(Withdraw),
 }
 
 #[derive(Clap)]
@@ -69,6 +73,12 @@ struct Balance;
 #[derive(Clap)]
 struct Transfer {
     address: String,
+    amount: u64,
+}
+
+#[derive(Clap)]
+struct Withdraw {
+    bitcoin_address: String,
     amount: u64,
 }
 
@@ -201,11 +211,7 @@ fn main() {
             let wallet = Wallet::load_or_generate(wallet_path).unwrap();
 
             let balance = client.get_balance(&wallet.pubkey_bytes()).unwrap();
-            let balance = format!(
-                "{}.{:0>8}",
-                balance / 100_000_000,
-                (balance % 100_000_000).to_string()
-            );
+            let balance = format_amount(balance);
 
             println!("YOUR ADDRESS: {}", wallet.receive_address().cyan().bold());
             println!("YOUR BALANCE: {} NBTC", balance.cyan().bold());
@@ -227,9 +233,39 @@ fn main() {
             }
             println!(
                 "Sent {} coins to {}.",
-                amount.to_string().cyan().bold(),
+                // TODO: format amount
+                format_amount(amount).cyan().bold(),
                 receiver_address.cyan().bold()
             );
         }
+
+        SubCommand::Withdraw(withdrawal) => {
+            let mut client = Client::new("localhost:26657").unwrap();
+            let wallet_path = nomic_home.join("wallet.key");
+            let wallet = Wallet::load_or_generate(wallet_path).unwrap();
+
+            if let Err(err) = wallet.withdraw(
+                &mut client,
+                withdrawal.bitcoin_address.as_str(),
+                withdrawal.amount,
+            ) {
+                // TODO: fix upstream response parsing in tendermint-rs, and fail if this errors
+                warn!("{}", err);
+            }
+
+            println!(
+                "Withdrew {} Bitcoin to {}.",
+                format_amount(withdrawal.amount).cyan().bold(),
+                withdrawal.bitcoin_address
+            );
+        }
     }
+}
+
+fn format_amount(amount: u64) -> String {
+    format!(
+        "{}.{:0>8}",
+        amount / 100_000_000,
+        (amount % 100_000_000).to_string()
+    )
 }

@@ -3,10 +3,10 @@ use failure::bail;
 use log::info;
 use nomic_bitcoin::bitcoin;
 use nomic_client::Client;
+use nomic_primitives::transaction::Sighash;
 use nomic_primitives::Result;
 use nomic_signatory_set::SignatorySet;
 use secp256k1::{Secp256k1, SecretKey, SignOnly};
-use nomic_primitives::transaction::Sighash;
 use std::fs;
 use std::path::Path;
 
@@ -85,6 +85,31 @@ impl Wallet {
         tx.signature = signature.serialize_compact().to_vec();
 
         client.send(Transaction::Transfer(tx))?;
+        Ok(())
+    }
+
+    pub fn withdraw(&self, client: &mut Client, bitcoin_address: &str, amount: u64) -> Result<()> {
+        use nomic_primitives::transaction::{Transaction, WithdrawalTransaction};
+
+        let address: bitcoin::Address = bitcoin_address.parse()?;
+        let script = address.script_pubkey();
+
+        let sender_address = self.pubkey_bytes();
+        let account = client.get_account(sender_address.as_slice())?;
+
+        let mut tx = WithdrawalTransaction {
+            from: sender_address,
+            to: script,
+            amount,
+            signature: vec![],
+            nonce: account.nonce,
+        };
+
+        let message = secp256k1::Message::from_slice(tx.sighash()?.as_slice()).unwrap();
+        let signature = self.secp.sign(&message, &self.privkey);
+        tx.signature = signature.serialize_compact().to_vec();
+
+        client.send(Transaction::Withdrawal(tx))?;
         Ok(())
     }
 }
