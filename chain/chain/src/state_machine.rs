@@ -198,7 +198,7 @@ impl<S: Store> State<S> {
             .collect::<Result<_>>()?;
 
         let mut outputs: Vec<_> = self
-            .active_checkpoint
+            .finalized_checkpoint
             .withdrawals
             .iter()
             .map(|w| {
