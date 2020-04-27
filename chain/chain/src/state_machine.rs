@@ -25,7 +25,7 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
 const MIN_WORK: u64 = 1 << 20;
-pub const SIGNATORY_CHANGE_INTERVAL: u64 = 60 * 60 * 24 * 7;
+pub const SIGNATORY_CHANGE_INTERVAL: u64 = 60 * 15;
 pub const CHECKPOINT_INTERVAL: u64 = 60 * 5;
 pub const CHECKPOINT_FEE_AMOUNT: u64 = 1_000;
 
@@ -69,35 +69,39 @@ impl<S: Store> State<S> {
         Ok(self.signatory_sets.back()?.unwrap())
     }
 
-    pub fn active_checkpoint_tx(&self) -> Result<bitcoin::Transaction> {
+    pub fn active_utxos(&self) -> Result<Vec<Utxo>> {
         // TODO: don't prune utxos, support spending from older signatory set
         let current_signatory_set_index = self
             .signatory_sets
             .fixed_index(self.signatory_sets.len() - 1);
 
-        let mut input_amount = 0;
-        let mut output_amount = 0;
-
-        let inputs = self
-            .active_checkpoint
+        self.active_checkpoint
             .utxos
             .iter()
             .filter(|utxo| match utxo {
                 Err(_) => true,
                 Ok(utxo) => utxo.signatory_set_index == current_signatory_set_index,
             })
+            .collect()
+    }
+
+    pub fn active_checkpoint_tx(&self) -> Result<bitcoin::Transaction> {
+        let mut input_amount = 0;
+        let mut output_amount = 0;
+
+        let inputs = self
+            .active_utxos()?
+            .into_iter()
             .map(|utxo| {
-                utxo.map(|utxo| {
-                    input_amount += utxo.value;
-                    bitcoin::TxIn {
-                        previous_output: utxo.outpoint.clone().into(),
-                        script_sig: vec![].into(),
-                        sequence: u32::MAX,
-                        witness: vec![],
-                    }
-                })
+                input_amount += utxo.value;
+                bitcoin::TxIn {
+                    previous_output: utxo.outpoint.clone().into(),
+                    script_sig: vec![].into(),
+                    sequence: u32::MAX,
+                    witness: vec![],
+                }
             })
-            .collect::<Result<_>>()?;
+            .collect();
 
         let mut outputs: Vec<_> = self
             .active_checkpoint
