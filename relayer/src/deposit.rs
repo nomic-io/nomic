@@ -91,7 +91,10 @@ pub fn relay_deposits(
 ) -> Result<()> {
     let signatory_sets = peg_client.get_signatory_sets()?;
     let recipients = possible_recipients.iter().cloned().collect();
-    for (address, recipient) in possible_bitcoin_addresses(signatory_sets, recipients) {
+    let possible_addresses = possible_bitcoin_addresses(signatory_sets, recipients)
+        .into_iter()
+        .rev();
+    for (address, recipient) in possible_addresses {
         let btc_deposit_txs = scan_for_deposits(btc_rpc, address)?;
         let recipients = &[recipient];
         btc_deposit_txs
