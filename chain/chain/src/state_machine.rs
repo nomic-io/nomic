@@ -69,6 +69,21 @@ impl<S: Store> State<S> {
         Ok(self.signatory_sets.back()?.unwrap())
     }
 
+    pub fn pending_utxos(&self) -> Result<Vec<Utxo>> {
+        // TODO: don't prune utxos, support spending from older signatory set
+        let current_signatory_set_index = self
+            .signatory_sets
+            .fixed_index(self.signatory_sets.len() - 1);
+
+        self.utxos
+            .iter()
+            .filter(|utxo| match utxo {
+                Err(_) => true,
+                Ok(utxo) => utxo.signatory_set_index == current_signatory_set_index,
+            })
+            .collect()
+    }
+
     pub fn active_utxos(&self) -> Result<Vec<Utxo>> {
         // TODO: don't prune utxos, support spending from older signatory set
         let current_signatory_set_index = self
