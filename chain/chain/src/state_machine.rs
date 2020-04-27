@@ -25,7 +25,7 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
 const MIN_WORK: u64 = 1 << 20;
-pub const SIGNATORY_CHANGE_INTERVAL: u64 = 60 * 15;
+pub const SIGNATORY_CHANGE_INTERVAL: u64 = 8;
 pub const CHECKPOINT_INTERVAL: u64 = 60 * 5;
 pub const CHECKPOINT_FEE_AMOUNT: u64 = 1_000;
 
@@ -47,6 +47,18 @@ pub struct FinalizedCheckpoint {
     pub signatory_set_index: Value<u64>,
     pub utxos: Deque<Utxo>,
     pub signatures: Deque<Option<Vec<Signature>>>,
+    pub next_signatory_set: Value<Option<SignatorySetSnapshot>>
+}
+
+#[state]
+pub struct ActiveCheckpoint {
+    pub is_active: Value<bool>,
+    pub signatures: Deque<Option<Vec<Signature>>>,
+    pub signed_voting_power: Value<u64>,
+    pub signatory_set_index: Value<u64>,
+    pub utxos: Deque<Utxo>,
+    pub withdrawals: Deque<Withdrawal>,
+    pub next_signatory_set: Value<Option<SignatorySetSnapshot>>
 }
 
 #[state]
@@ -62,6 +74,7 @@ pub struct State {
     pub finalized_checkpoint: FinalizedCheckpoint,
     pub last_checkpoint_time: Value<u64>,
     pub active_checkpoint: ActiveCheckpoint,
+    pub checkpoint_index: Value<u64>,
 }
 
 impl<S: Store> State<S> {
@@ -104,6 +117,15 @@ impl<S: Store> State<S> {
         let mut input_amount = 0;
         let mut output_amount = 0;
 
+        let signatory_set_index = self
+            .finalized_checkpoint
+            .signatory_set_index
+            .get_or_default()?;
+        let signatories = self
+            .signatory_sets
+            .get_fixed(signatory_set_index)?
+            .signatories;
+
         let inputs = self
             .active_utxos()?
             .into_iter()
@@ -132,8 +154,13 @@ impl<S: Store> State<S> {
 
         // TODO: calculate fee based on final tx size
         let change_amount = input_amount - output_amount - CHECKPOINT_FEE_AMOUNT;
+        let next_signatory_set = self.active_checkpoint.next_signatory_set.get()?;
+        let change_signatories = match next_signatory_set {
+            Some(next_snapshot) => next_snapshot.signatories,
+            None => signatories
+        };
         let change_script =
-            nomic_signatory_set::output_script(&self.current_signatory_set()?.signatories, vec![]);
+            nomic_signatory_set::output_script(&change_signatories, vec![]);
         outputs.push(bitcoin::TxOut {
             value: change_amount,
             script_pubkey: change_script,
@@ -230,8 +257,13 @@ impl<S: Store> State<S> {
 
         // TODO: calculate fee based on final tx size
         let change_amount = input_amount - output_amount - CHECKPOINT_FEE_AMOUNT;
+        let next_signatory_set = self.finalized_checkpoint.next_signatory_set.get()?;
+        let change_signatories = match next_signatory_set {
+            Some(next_snapshot) => next_snapshot.signatories,
+            None => signatories
+        };
         let change_script =
-            nomic_signatory_set::output_script(&self.current_signatory_set()?.signatories, vec![]);
+            nomic_signatory_set::output_script(&change_signatories, vec![]);
         outputs.push(bitcoin::TxOut {
             value: change_amount,
             script_pubkey: change_script,
@@ -246,16 +278,6 @@ impl<S: Store> State<S> {
 
         Ok(tx)
     }
-}
-
-#[state]
-pub struct ActiveCheckpoint {
-    pub is_active: Value<bool>,
-    pub signatures: Deque<Option<Vec<Signature>>>,
-    pub signed_voting_power: Value<u64>,
-    pub signatory_set_index: Value<u64>,
-    pub utxos: Deque<Utxo>,
-    pub withdrawals: Deque<Withdrawal>,
 }
 
 /// Main entrypoint to the core bitcoin peg state machine.
@@ -288,26 +310,13 @@ fn handle_begin_block<S: Store>(
 ) -> Result<()> {
     let now = header.get_time().get_seconds() as u64;
 
-    match state.signatory_sets.back()? {
-        None => {
-            // init signatories at start of chain
-            let signatories = SignatorySetSnapshot {
-                time: now,
-                signatories: signatories_from_validators(validators)?,
-            };
-            state.signatory_sets.push_back(signatories)?;
-        }
-        Some(signatories) => {
-            // check if signatories should be updated
-            let elapsed = now - signatories.time;
-            if elapsed >= SIGNATORY_CHANGE_INTERVAL {
-                let new_signatories = SignatorySetSnapshot {
-                    time: now,
-                    signatories: signatories_from_validators(validators)?,
-                };
-                state.signatory_sets.push_back(new_signatories)?;
-            }
-        }
+    if let None = state.signatory_sets.back()? {
+        // init signatories at start of chain
+        let signatories = SignatorySetSnapshot {
+            time: now,
+            signatories: signatories_from_validators(validators)?,
+        };
+        state.signatory_sets.push_back(signatories)?;
     }
 
     let time_since_last_checkpoint = now - state.last_checkpoint_time.get_or_default()?;
@@ -321,6 +330,10 @@ fn handle_begin_block<S: Store>(
         if state.active_checkpoint.is_active.get_or_default()? {
             return Ok(());
         }
+
+        // Starting checkpoint process
+        let checkpoint_index = state.checkpoint_index.get_or_default()?;
+        state.checkpoint_index.set(checkpoint_index + 1)?;
 
         state.active_checkpoint.is_active.set(true)?;
 
@@ -341,6 +354,16 @@ fn handle_begin_block<S: Store>(
         state
             .pending_withdrawals
             .drain_into(&mut state.active_checkpoint.withdrawals)?;
+
+        // Check if this checkpoint should cause a signatory set transition
+        if checkpoint_index % SIGNATORY_CHANGE_INTERVAL == 0 {
+            let new_signatories = SignatorySetSnapshot {
+                time: now,
+                signatories: signatories_from_validators(validators)?,
+            };
+            
+            state.active_checkpoint.next_signatory_set.set(Some(new_signatories))?;
+        }
     }
 
     Ok(())
@@ -662,6 +685,10 @@ fn handle_signature_tx<S: Store>(state: &mut State<S>, tx: SignatureTransaction)
 
     // If >2/3, finalize checkpoint, clear active_checkpoint fields, update last checkpoint time
     if signed_voting_power as u128 > signatories.two_thirds_voting_power() {
+        if let Some(new_signatories) = state.active_checkpoint.next_signatory_set.get()? {
+            state.signatory_sets.push_back(new_signatories)?;
+        }
+
         state.finalized_checkpoint.utxos.clear()?;
         state.finalized_checkpoint.withdrawals.clear()?;
         state.finalized_checkpoint.signatures.clear()?;
@@ -681,7 +708,11 @@ fn handle_signature_tx<S: Store>(state: &mut State<S>, tx: SignatureTransaction)
 
         state.active_checkpoint.is_active.set(false)?;
         state.active_checkpoint.signed_voting_power.set(0)?;
-        // state.active_checkpoint.signed_voting_power.set(0)?;
+
+        state.finalized_checkpoint.next_signatory_set.set(
+            state.active_checkpoint.next_signatory_set.get()?
+        )?;
+        state.active_checkpoint.next_signatory_set.set(None)?;
 
         state.utxos.push_back(Utxo {
             outpoint: nomic_bitcoin::Outpoint {
