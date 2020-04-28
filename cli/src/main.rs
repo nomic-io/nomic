@@ -157,14 +157,14 @@ fn main() {
             let wallet = Wallet::load_or_generate(wallet_path).unwrap();
             let address = wallet.deposit_address(&signatory_snapshot.signatories);
 
-            use nomic_chain::state_machine::{SIGNATORY_CHANGE_INTERVAL, CHECKPOINT_INTERVAL};
+            use nomic_chain::state_machine::{CHECKPOINT_INTERVAL, SIGNATORY_CHANGE_INTERVAL};
             use std::time::{SystemTime, UNIX_EPOCH};
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs();
-            let expiration = signatory_snapshot.time +
-                SIGNATORY_CHANGE_INTERVAL * CHECKPOINT_INTERVAL;
+            let expiration =
+                signatory_snapshot.time + SIGNATORY_CHANGE_INTERVAL * CHECKPOINT_INTERVAL;
             let days_until_expiration =
                 ((expiration.saturating_sub(now)) as f64 / (60 * 60 * 24) as f64).round() as usize;
 
