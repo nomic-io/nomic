@@ -10,5 +10,5 @@ serde = { version= "1.0.104", features = ["derive"] }
 failure = "=0.1.6"
 bincode = "1.2.1"
 sha2 = "0.8.1"
-orga = { path  = "../../../orga" }
+orga = { git = "https://github.com/nomic-io/orga", rev = "d7328eebc36c65479cfddcd15e86c1fc25291525" }
 secp256k1 = "0.17.2"
