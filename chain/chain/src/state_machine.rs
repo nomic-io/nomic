@@ -321,7 +321,7 @@ fn handle_begin_block<S: Store>(
     if time_since_last_checkpoint > CHECKPOINT_INTERVAL {
         state.last_checkpoint_time.set(now)?;
 
-        if state.utxos.is_empty() {
+        if state.pending_utxos()?.is_empty() {
             return Ok(());
         }
 
