@@ -250,7 +250,12 @@ impl<S: Store> State<S> {
 
         // TODO: calculate fee based on final tx size
         let change_amount = input_amount - output_amount - CHECKPOINT_FEE_AMOUNT;
-        let change_script = nomic_signatory_set::output_script(&signatories, vec![]);
+        let next_signatory_set = self.finalized_checkpoint.next_signatory_set.get_or_default()?;
+        let change_signatories = match next_signatory_set {
+            Some(next_snapshot) => next_snapshot.signatories,
+            None => signatories,
+        };
+        let change_script = nomic_signatory_set::output_script(&change_signatories, vec![]);
         outputs.push(bitcoin::TxOut {
             value: change_amount,
             script_pubkey: change_script,
