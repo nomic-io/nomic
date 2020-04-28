@@ -47,7 +47,7 @@ pub struct FinalizedCheckpoint {
     pub signatory_set_index: Value<u64>,
     pub utxos: Deque<Utxo>,
     pub signatures: Deque<Option<Vec<Signature>>>,
-    pub next_signatory_set: Value<Option<SignatorySetSnapshot>>
+    pub next_signatory_set: Value<Option<SignatorySetSnapshot>>,
 }
 
 #[state]
@@ -58,7 +58,7 @@ pub struct ActiveCheckpoint {
     pub signatory_set_index: Value<u64>,
     pub utxos: Deque<Utxo>,
     pub withdrawals: Deque<Withdrawal>,
-    pub next_signatory_set: Value<Option<SignatorySetSnapshot>>
+    pub next_signatory_set: Value<Option<SignatorySetSnapshot>>,
 }
 
 #[state]
@@ -157,10 +157,9 @@ impl<S: Store> State<S> {
         let next_signatory_set = self.active_checkpoint.next_signatory_set.get()?;
         let change_signatories = match next_signatory_set {
             Some(next_snapshot) => next_snapshot.signatories,
-            None => signatories
+            None => signatories,
         };
-        let change_script =
-            nomic_signatory_set::output_script(&change_signatories, vec![]);
+        let change_script = nomic_signatory_set::output_script(&change_signatories, vec![]);
         outputs.push(bitcoin::TxOut {
             value: change_amount,
             script_pubkey: change_script,
@@ -260,10 +259,9 @@ impl<S: Store> State<S> {
         let next_signatory_set = self.finalized_checkpoint.next_signatory_set.get()?;
         let change_signatories = match next_signatory_set {
             Some(next_snapshot) => next_snapshot.signatories,
-            None => signatories
+            None => signatories,
         };
-        let change_script =
-            nomic_signatory_set::output_script(&change_signatories, vec![]);
+        let change_script = nomic_signatory_set::output_script(&change_signatories, vec![]);
         outputs.push(bitcoin::TxOut {
             value: change_amount,
             script_pubkey: change_script,
@@ -332,8 +330,8 @@ fn handle_begin_block<S: Store>(
         }
 
         // Starting checkpoint process
-        let checkpoint_index = state.checkpoint_index.get_or_default()?;
-        state.checkpoint_index.set(checkpoint_index + 1)?;
+        let checkpoint_index = state.checkpoint_index.get_or_default()? + 1;
+        state.checkpoint_index.set(checkpoint_index)?;
 
         state.active_checkpoint.is_active.set(true)?;
 
@@ -361,8 +359,11 @@ fn handle_begin_block<S: Store>(
                 time: now,
                 signatories: signatories_from_validators(validators)?,
             };
-            
-            state.active_checkpoint.next_signatory_set.set(Some(new_signatories))?;
+
+            state
+                .active_checkpoint
+                .next_signatory_set
+                .set(Some(new_signatories))?;
         }
     }
 
@@ -709,9 +710,10 @@ fn handle_signature_tx<S: Store>(state: &mut State<S>, tx: SignatureTransaction)
         state.active_checkpoint.is_active.set(false)?;
         state.active_checkpoint.signed_voting_power.set(0)?;
 
-        state.finalized_checkpoint.next_signatory_set.set(
-            state.active_checkpoint.next_signatory_set.get()?
-        )?;
+        state
+            .finalized_checkpoint
+            .next_signatory_set
+            .set(state.active_checkpoint.next_signatory_set.get()?)?;
         state.active_checkpoint.next_signatory_set.set(None)?;
 
         state.utxos.push_back(Utxo {
@@ -720,7 +722,9 @@ fn handle_signature_tx<S: Store>(state: &mut State<S>, tx: SignatureTransaction)
                 index: btc_tx.output.len() as u32 - 1,
             },
             value: btc_tx.output.last().unwrap().value,
-            signatory_set_index: state.active_checkpoint.signatory_set_index.get()?,
+            signatory_set_index: state
+                .signatory_sets
+                .fixed_index(state.signatory_sets.len() - 1),
             data: vec![],
         })?;
     } else {
