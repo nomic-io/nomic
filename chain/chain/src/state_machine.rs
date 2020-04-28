@@ -187,18 +187,8 @@ impl<S: Store> State<S> {
         let mut input_amount = 0;
         let mut output_amount = 0;
 
-        let maybe_next_snapshot = self
-            .finalized_checkpoint
-            .next_signatory_set
-            .get_or_default()?;
-        let final_sig_set_index = self.finalized_checkpoint.signatory_set_index.get_or_default()?;
-        let (signatories, sig_set_index) = match maybe_next_snapshot {
-            Some(next_snapshot) => (next_snapshot.signatories, final_sig_set_index + 1),
-            None => {
-                let signatories = self.signatory_sets.get(final_sig_set_index)?.signatories;
-                (signatories, final_sig_set_index)
-            }
-        };
+        let sig_set_index = self.finalized_checkpoint.signatory_set_index.get_or_default()?;
+        let signatories = self.signatory_sets.get(sig_set_index)?.signatories;
 
         let inputs = self
             .finalized_checkpoint
