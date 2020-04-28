@@ -118,7 +118,7 @@ impl<S: Store> State<S> {
         let mut output_amount = 0;
 
         let signatory_set_index = self
-            .finalized_checkpoint
+            .active_checkpoint
             .signatory_set_index
             .get_or_default()?;
         let signatories = self
