@@ -14,9 +14,9 @@ use std::path::Path;
 struct App;
 
 impl Application for App {
-    fn init_chain(
+    fn init_chain<S: Store>(
         &self,
-        store: &mut dyn Store,
+        mut store: S,
         req: RequestInitChain,
     ) -> OrgaResult<ResponseInitChain> {
         let mut validators = BTreeMap::<Vec<u8>, u64>::new();
@@ -26,21 +26,21 @@ impl Application for App {
             validators.insert(pub_key, power);
         }
 
-        write_validators(store, validators)?;
-        initialize(store)?;
+        write_validators(&mut store, validators)?;
+        initialize(&mut store)?;
 
         Ok(ResponseInitChain::new())
     }
 
-    fn check_tx(&self, store: &mut dyn Store, req: RequestCheckTx) -> OrgaResult<ResponseCheckTx> {
+    fn check_tx<S: Store>(&self, mut store: S, req: RequestCheckTx) -> OrgaResult<ResponseCheckTx> {
         let tx = serde_json::from_slice::<Transaction>(req.get_tx());
-        let mut validators = read_validators(store);
+        let mut validators = read_validators(&mut store);
 
         match tx {
-            Ok(tx) => match run(store, Action::Transaction(tx), &mut validators) {
+            Ok(tx) => match run(&mut store, Action::Transaction(tx), &mut validators) {
                 Ok(_execution_result) => {
                     // TODO: Don't write validators back to store if they haven't changed
-                    write_validators(store, validators)?;
+                    write_validators(&mut store, validators)?;
                     let mut res = ResponseCheckTx::new();
                     res.set_data(vec![]);
                     Ok(res)
@@ -53,17 +53,17 @@ impl Application for App {
         }
     }
 
-    fn deliver_tx(
+    fn deliver_tx<S: Store>(
         &self,
-        store: &mut dyn Store,
+        mut store: S,
         req: RequestDeliverTx,
     ) -> OrgaResult<ResponseDeliverTx> {
         let tx = serde_json::from_slice::<Transaction>(req.get_tx());
-        let mut validators = read_validators(store);
+        let mut validators = read_validators(&mut store);
         match tx {
-            Ok(tx) => match run(store, Action::Transaction(tx), &mut validators) {
+            Ok(tx) => match run(&mut store, Action::Transaction(tx), &mut validators) {
                 Ok(_execution_result) => {
-                    write_validators(store, validators)?;
+                    write_validators(&mut store, validators)?;
                     let mut res = ResponseDeliverTx::new();
                     res.set_data(vec![]);
                     Ok(res)
@@ -75,24 +75,20 @@ impl Application for App {
         }
     }
 
-    fn begin_block(
+    fn begin_block<S: Store>(
         &self,
-        store: &mut dyn Store,
+        mut store: S,
         req: RequestBeginBlock,
     ) -> OrgaResult<ResponseBeginBlock> {
         let header = req.get_header().clone();
         let action = Action::BeginBlock(header);
-        let mut validators = read_validators(store);
-        run(store, action, &mut validators)?;
-        write_validators(store, validators)?;
+        let mut validators = read_validators(&mut store);
+        run(&mut store, action, &mut validators)?;
+        write_validators(&mut store, validators)?;
         Ok(Default::default())
     }
 
-    fn end_block(
-        &self,
-        store: &mut dyn Store,
-        _req: RequestEndBlock,
-    ) -> OrgaResult<ResponseEndBlock> {
+    fn end_block<S: Store>(&self, store: S, _req: RequestEndBlock) -> OrgaResult<ResponseEndBlock> {
         let validators = read_validators(store);
         let mut validator_updates: Vec<ValidatorUpdate> = Vec::new();
         for (pub_key_bytes, power) in validators {
@@ -111,12 +107,12 @@ impl Application for App {
     }
 }
 
-fn write_validators(store: &mut dyn Store, validators: BTreeMap<Vec<u8>, u64>) -> OrgaResult<()> {
+fn write_validators<S: Store>(mut store: S, validators: BTreeMap<Vec<u8>, u64>) -> OrgaResult<()> {
     let validator_map_bytes =
         bincode::serialize(&validators).expect("Failed to serialize validator map");
     store.put(b"validators".to_vec(), validator_map_bytes)
 }
-fn read_validators(store: &mut dyn Store) -> BTreeMap<Vec<u8>, u64> {
+fn read_validators<S: Store>(store: S) -> BTreeMap<Vec<u8>, u64> {
     let validator_map_bytes = store
         .get(b"validators")
         .expect("Failed to read validator map bytes from store")

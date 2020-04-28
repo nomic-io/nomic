@@ -1,3 +1,4 @@
+#![allow(unused_braces)]
 mod tendermint;
 mod wallet;
 
@@ -17,6 +18,10 @@ use wallet::Wallet;
 struct Opts {
     #[clap(subcommand)]
     subcmd: SubCommand,
+
+    /// Use a local chain in development mode
+    #[clap(short = "d", long = "dev")]
+    dev: bool,
 }
 
 #[derive(Clap)]
@@ -33,10 +38,6 @@ enum SubCommand {
     #[clap(name = "worker")]
     Worker(Worker),
 
-    /// Start a local testnet for development
-    #[clap(name = "dev")]
-    Dev(Dev),
-
     /// Deposit Bitcoin into your sidechain account
     #[clap(name = "deposit")]
     Deposit(Deposit),
@@ -48,29 +49,36 @@ enum SubCommand {
     /// Send coins to another address
     #[clap(name = "send")]
     Transfer(Transfer),
+
+    /// Withdraw coins to a Bitcoin address
+    #[clap(name = "withdraw")]
+    Withdraw(Withdraw),
 }
 
 #[derive(Clap)]
-struct Start {}
+struct Start;
 
 #[derive(Clap)]
-struct Dev {}
+struct Relayer;
 
 #[derive(Clap)]
-struct Relayer {}
+struct Worker;
 
 #[derive(Clap)]
-struct Worker {}
+struct Deposit;
 
 #[derive(Clap)]
-struct Deposit {}
-
-#[derive(Clap)]
-struct Balance {}
+struct Balance;
 
 #[derive(Clap)]
 struct Transfer {
     address: String,
+    amount: u64,
+}
+
+#[derive(Clap)]
+struct Withdraw {
+    bitcoin_address: String,
     amount: u64,
 }
 
@@ -86,7 +94,7 @@ fn main() {
     // Ensure nomic-testnet home directory
     let mut nomic_home = dirs::home_dir()
         .unwrap_or(std::env::current_dir().expect("Failed to create Nomic home directory"));
-    if let SubCommand::Dev(_) = opts.subcmd {
+    if opts.dev {
         nomic_home.push(".nomic-dev");
     } else {
         nomic_home.push(".nomic-testnet");
@@ -105,21 +113,21 @@ fn main() {
             default_log_level("info");
             // Install and start Tendermint
             tendermint::install(&nomic_home);
-            tendermint::init(&nomic_home, false);
+            tendermint::init(&nomic_home, opts.dev);
             tendermint::start(&nomic_home);
+
             // Start the ABCI server
             info!("Starting ABCI server");
-            abci_server::start(&nomic_home);
-        }
-        SubCommand::Dev(_) => {
-            default_log_level("info");
-            // Install and start Tendermint
-            tendermint::install(&nomic_home);
-            tendermint::init(&nomic_home, true);
-            tendermint::start(&nomic_home);
-            // Start the ABCI server
-            info!("Starting ABCI server");
-            abci_server::start(&nomic_home);
+            let nomic_home_abci = nomic_home.clone();
+            std::thread::spawn(move || {
+                abci_server::start(nomic_home_abci);
+            });
+
+            // Start the signatory process
+            // TODO: poll until the node is caught up
+            std::thread::sleep(std::time::Duration::from_secs(10));
+            info!("Starting signatory process");
+            nomic_signatory::start(nomic_home).unwrap();
         }
         SubCommand::Worker(_) => {
             default_log_level("info");
@@ -127,12 +135,12 @@ fn main() {
         }
         SubCommand::Deposit(_) => {
             default_log_level("warn");
-            fn submit_address(address: &[u8]) -> Result<()> {
-                let relayer = "http://kep.io:8880";
-                debug!("Sending address to relayer: {}", relayer);
+            fn submit_address(address: &[u8], relayer_host: &str) -> Result<()> {
+                // TODO: send address to multiple relayers
+                debug!("Sending address to relayer: {}", relayer_host);
                 let client = reqwest::blocking::Client::new();
                 let res = client
-                    .post(format!("{}/addresses/{}", relayer, hex::encode(address)).as_str())
+                    .post(format!("{}/addresses/{}", relayer_host, hex::encode(address)).as_str())
                     .send()?;
 
                 if res.status() == 200 {
@@ -142,24 +150,30 @@ fn main() {
                 }
             }
 
-            let mut client = Client::new("localhost:26657").unwrap();
+            let client = Client::new("localhost:26657").unwrap();
             let signatory_snapshot = client.get_signatory_set_snapshot().unwrap();
 
             let wallet_path = nomic_home.join("wallet.key");
             let wallet = Wallet::load_or_generate(wallet_path).unwrap();
             let address = wallet.deposit_address(&signatory_snapshot.signatories);
 
-            use nomic_chain::state_machine::SIGNATORY_CHANGE_INTERVAL;
+            use nomic_chain::state_machine::{CHECKPOINT_INTERVAL, SIGNATORY_CHANGE_INTERVAL};
             use std::time::{SystemTime, UNIX_EPOCH};
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs();
-            let expiration = signatory_snapshot.time + SIGNATORY_CHANGE_INTERVAL;
+            let expiration =
+                signatory_snapshot.time + SIGNATORY_CHANGE_INTERVAL * CHECKPOINT_INTERVAL;
             let days_until_expiration =
-                ((expiration - now) as f64 / (60 * 60 * 24) as f64).round() as usize;
+                ((expiration.saturating_sub(now)) as f64 / (60 * 60 * 24) as f64).round() as usize;
 
-            submit_address(wallet.pubkey_bytes().as_slice()).unwrap();
+            let relayer = if opts.dev {
+                "http://localhost:8880"
+            } else {
+                "http://kep.io:8880"
+            };
+            submit_address(wallet.pubkey_bytes().as_slice(), relayer).unwrap();
 
             println!("YOUR DEPOSIT ADDRESS:");
             println!("{}", address.to_string().cyan().bold());
@@ -192,21 +206,17 @@ fn main() {
         SubCommand::Balance(_) => {
             default_log_level("warn");
 
-            let mut client = Client::new("localhost:26657").unwrap();
+            let client = Client::new("localhost:26657").unwrap();
 
             let wallet_path = nomic_home.join("wallet.key");
             let wallet = Wallet::load_or_generate(wallet_path).unwrap();
 
             let balance = client.get_balance(&wallet.pubkey_bytes()).unwrap();
-            let balance = format!(
-                "{}.{:0>8}",
-                balance / 100_000_000,
-                (balance % 100_000_000).to_string()
-            );
+            let balance = format_amount(balance);
 
             println!("YOUR ADDRESS: {}", wallet.receive_address().cyan().bold());
             println!("YOUR BALANCE: {} NBTC", balance.cyan().bold());
-        },
+        }
         SubCommand::Transfer(transfer) => {
             default_log_level("error");
 
@@ -214,7 +224,7 @@ fn main() {
             let amount = transfer.amount;
 
             let mut client = Client::new("localhost:26657").unwrap();
-             
+
             let wallet_path = nomic_home.join("wallet.key");
             let wallet = Wallet::load_or_generate(wallet_path).unwrap();
 
@@ -224,10 +234,39 @@ fn main() {
             }
             println!(
                 "Sent {} coins to {}.",
-                amount.to_string().cyan().bold(),
+                // TODO: format amount
+                format_amount(amount).cyan().bold(),
                 receiver_address.cyan().bold()
+            );
+        }
+
+        SubCommand::Withdraw(withdrawal) => {
+            let mut client = Client::new("localhost:26657").unwrap();
+            let wallet_path = nomic_home.join("wallet.key");
+            let wallet = Wallet::load_or_generate(wallet_path).unwrap();
+
+            if let Err(err) = wallet.withdraw(
+                &mut client,
+                withdrawal.bitcoin_address.as_str(),
+                withdrawal.amount,
+            ) {
+                // TODO: fix upstream response parsing in tendermint-rs, and fail if this errors
+                warn!("{}", err);
+            }
+
+            println!(
+                "Withdrew {} Bitcoin to {}.",
+                format_amount(withdrawal.amount).cyan().bold(),
+                withdrawal.bitcoin_address
             );
         }
     }
 }
-    
+
+fn format_amount(amount: u64) -> String {
+    format!(
+        "{}.{:0>8}",
+        amount / 100_000_000,
+        (amount % 100_000_000).to_string()
+    )
+}

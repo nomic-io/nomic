@@ -1,6 +1,7 @@
 use bitcoin::PublicKey;
 use nomic_bitcoin::bitcoin;
 use nomic_primitives::Result;
+use orga::{Decode, Encode, Terminated};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
 
@@ -19,7 +20,7 @@ impl Signatory {
     }
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub struct SignatorySet {
     map: HashMap<PublicKey, Signatory>,
     set: BTreeSet<Signatory>,
@@ -44,7 +45,7 @@ impl SignatorySet {
         // greater than comparison
         self.total_voting_power * 2 / 3
     }
- 
+
     pub fn remove(&mut self, pubkey: &PublicKey) -> Option<Signatory> {
         self.map.remove(pubkey).map(|signatory| {
             self.set.remove(&signatory);
@@ -76,7 +77,7 @@ struct SerializableSignatorySetSnapshot {
     signatories: Vec<(Vec<u8>, u64)>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SignatorySetSnapshot {
     pub time: u64,
     pub signatories: SignatorySet,
@@ -120,6 +121,30 @@ impl SignatorySetSnapshot {
         bincode::serialize(&serializable).map_err(|err| failure::format_err!("{}", err))
     }
 }
+
+use std::io::{Read, Write};
+impl Encode for SignatorySetSnapshot {
+    fn encode_into<W: Write>(&self, dest: &mut W) -> Result<()> {
+        let bytes = SignatorySetSnapshot::encode(self)?;
+        dest.write_all(bytes.as_slice())?;
+        Ok(())
+    }
+
+    fn encoding_length(&self) -> Result<usize> {
+        let bytes = SignatorySetSnapshot::encode(self)?;
+        Ok(bytes.len())
+    }
+}
+
+impl Decode for SignatorySetSnapshot {
+    fn decode<R: Read>(mut input: R) -> Result<Self> {
+        let mut buf = vec![];
+        input.read_to_end(&mut buf)?;
+        SignatorySetSnapshot::decode(buf.as_slice())
+    }
+}
+
+impl !Terminated for SignatorySetSnapshot {}
 
 #[cfg(test)]
 mod tests {
@@ -189,7 +214,12 @@ mod tests {
         assert_eq!(
             snapshot.encode().unwrap(),
             vec![
-                123, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 33, 0, 0, 0, 0, 0, 0, 0, 3, 27, 132, 197, 86, 123, 18, 100, 64, 153, 93, 62, 213, 170, 186, 5, 101, 215, 30, 24, 52, 96, 72, 25, 255, 156, 23, 245, 233, 213, 221, 7, 143, 200, 0, 0, 0, 0, 0, 0, 0, 33, 0, 0, 0, 0, 0, 0, 0, 2, 77, 75, 108, 209, 54, 16, 50, 202, 155, 210, 174, 185, 217, 0, 170, 77, 69, 217, 234, 216, 10, 201, 66, 51, 116, 196, 81, 167, 37, 77, 7, 102, 100, 0, 0, 0, 0, 0, 0, 0
+                123, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 33, 0, 0, 0, 0, 0, 0, 0, 3, 27,
+                132, 197, 86, 123, 18, 100, 64, 153, 93, 62, 213, 170, 186, 5, 101, 215, 30, 24,
+                52, 96, 72, 25, 255, 156, 23, 245, 233, 213, 221, 7, 143, 200, 0, 0, 0, 0, 0, 0, 0,
+                33, 0, 0, 0, 0, 0, 0, 0, 2, 77, 75, 108, 209, 54, 16, 50, 202, 155, 210, 174, 185,
+                217, 0, 170, 77, 69, 217, 234, 216, 10, 201, 66, 51, 116, 196, 81, 167, 37, 77, 7,
+                102, 100, 0, 0, 0, 0, 0, 0, 0
             ]
         );
     }
@@ -206,7 +236,12 @@ mod tests {
         };
 
         let bytes = vec![
-            123, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 33, 0, 0, 0, 0, 0, 0, 0, 3, 27, 132, 197, 86, 123, 18, 100, 64, 153, 93, 62, 213, 170, 186, 5, 101, 215, 30, 24, 52, 96, 72, 25, 255, 156, 23, 245, 233, 213, 221, 7, 143, 200, 0, 0, 0, 0, 0, 0, 0, 33, 0, 0, 0, 0, 0, 0, 0, 2, 77, 75, 108, 209, 54, 16, 50, 202, 155, 210, 174, 185, 217, 0, 170, 77, 69, 217, 234, 216, 10, 201, 66, 51, 116, 196, 81, 167, 37, 77, 7, 102, 100, 0, 0, 0, 0, 0, 0, 0
+            123, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 33, 0, 0, 0, 0, 0, 0, 0, 3, 27, 132,
+            197, 86, 123, 18, 100, 64, 153, 93, 62, 213, 170, 186, 5, 101, 215, 30, 24, 52, 96, 72,
+            25, 255, 156, 23, 245, 233, 213, 221, 7, 143, 200, 0, 0, 0, 0, 0, 0, 0, 33, 0, 0, 0, 0,
+            0, 0, 0, 2, 77, 75, 108, 209, 54, 16, 50, 202, 155, 210, 174, 185, 217, 0, 170, 77, 69,
+            217, 234, 216, 10, 201, 66, 51, 116, 196, 81, 167, 37, 77, 7, 102, 100, 0, 0, 0, 0, 0,
+            0, 0,
         ];
         assert_eq!(
             SignatorySetSnapshot::decode(bytes.as_slice()).unwrap(),

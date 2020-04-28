@@ -1,4 +1,5 @@
 #![feature(proc_macro_hygiene)]
+#![feature(negative_impls)]
 
 mod error;
 mod reserve_script;

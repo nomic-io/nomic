@@ -1,7 +1,7 @@
 use crate::Result;
 use bitcoin::Network::Testnet as bitcoin_network;
 use bitcoincore_rpc::{Client, RpcApi};
-use log::warn;
+use log::{debug, warn};
 use nomic_bitcoin::{bitcoin, bitcoincore_rpc};
 use nomic_client::Client as PegClient;
 use nomic_primitives::transaction::{DepositTransaction, Transaction};
@@ -91,7 +91,10 @@ pub fn relay_deposits(
 ) -> Result<()> {
     let signatory_sets = peg_client.get_signatory_sets()?;
     let recipients = possible_recipients.iter().cloned().collect();
-    for (address, recipient) in possible_bitcoin_addresses(signatory_sets, recipients) {
+    let possible_addresses = possible_bitcoin_addresses(signatory_sets, recipients)
+        .into_iter()
+        .rev();
+    for (address, recipient) in possible_addresses {
         let btc_deposit_txs = scan_for_deposits(btc_rpc, address)?;
         let recipients = &[recipient];
         btc_deposit_txs
@@ -114,10 +117,14 @@ pub fn import_addresses(
     btc_rpc: &Client,
     peg_client: &PegClient,
 ) -> Result<()> {
+    debug!("Getting signatory sets");
     let signatory_sets = peg_client.get_signatory_sets()?;
+    debug!("Got signatory sets");
     let recipients = possible_recipients.into_iter().collect();
+    debug!("Deriving possible bitcoin addresses");
     for (address, _) in possible_bitcoin_addresses(signatory_sets, recipients) {
         btc_rpc.import_address(&address, None, Some(false), None)?;
     }
+    debug!("Imported bitcoin addresses");
     Ok(())
 }

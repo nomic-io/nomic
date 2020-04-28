@@ -16,7 +16,7 @@ fn add_address(address: String, addresses: State<Arc<Mutex<HashSet<Vec<u8>>>>>) 
         Err(_) => return Status::NotAcceptable,
     };
 
-    if address.len() != 32 {
+    if address.len() != 33 {
         return Status::NotAcceptable;
     }
 
