@@ -69,14 +69,9 @@ fn try_sign(client: &Client, priv_key: &SecretKey) -> Result<()> {
 
     info!("Signing active checkpoint tx: {:?}", &btc_tx);
 
-    let utxos: Vec<_> = client
+    let signatures = client
         .state()?
-        .active_checkpoint
-        .utxos
-        .iter()
-        .collect::<Result<_>>()?;
-
-    let signatures = utxos
+        .active_utxos()?
         .iter()
         .enumerate()
         .map(|(i, utxo)| {
