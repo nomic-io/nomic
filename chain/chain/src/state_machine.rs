@@ -154,7 +154,7 @@ impl<S: Store> State<S> {
 
         // TODO: calculate fee based on final tx size
         let change_amount = input_amount - output_amount - CHECKPOINT_FEE_AMOUNT;
-        let next_signatory_set = self.active_checkpoint.next_signatory_set.get()?;
+        let next_signatory_set = self.active_checkpoint.next_signatory_set.get_or_default()?;
         let change_signatories = match next_signatory_set {
             Some(next_snapshot) => next_snapshot.signatories,
             None => signatories,
@@ -187,14 +187,18 @@ impl<S: Store> State<S> {
         let mut input_amount = 0;
         let mut output_amount = 0;
 
-        let signatory_set_index = self
+        let maybe_next_snapshot = self
             .finalized_checkpoint
-            .signatory_set_index
+            .next_signatory_set
             .get_or_default()?;
-        let signatories = self
-            .signatory_sets
-            .get_fixed(signatory_set_index)?
-            .signatories;
+        let final_sig_set_index = self.finalized_checkpoint.signatory_set_index.get()?;
+        let (signatories, sig_set_index) = match maybe_next_snapshot {
+            Some(next_snapshot) => (next_snapshot.signatories, final_sig_set_index + 1),
+            None => {
+                let signatories = self.signatory_sets.get(final_sig_set_index)?.signatories;
+                (signatories, final_sig_set_index)
+            }
+        };
 
         let inputs = self
             .finalized_checkpoint
@@ -202,7 +206,7 @@ impl<S: Store> State<S> {
             .iter()
             .filter(|utxo| match utxo {
                 Err(_) => true,
-                Ok(utxo) => utxo.signatory_set_index == signatory_set_index,
+                Ok(utxo) => utxo.signatory_set_index == sig_set_index,
             })
             .enumerate()
             .map(|(i, utxo)| {
@@ -256,12 +260,7 @@ impl<S: Store> State<S> {
 
         // TODO: calculate fee based on final tx size
         let change_amount = input_amount - output_amount - CHECKPOINT_FEE_AMOUNT;
-        let next_signatory_set = self.finalized_checkpoint.next_signatory_set.get()?;
-        let change_signatories = match next_signatory_set {
-            Some(next_snapshot) => next_snapshot.signatories,
-            None => signatories,
-        };
-        let change_script = nomic_signatory_set::output_script(&change_signatories, vec![]);
+        let change_script = nomic_signatory_set::output_script(&signatories, vec![]);
         outputs.push(bitcoin::TxOut {
             value: change_amount,
             script_pubkey: change_script,
@@ -686,7 +685,11 @@ fn handle_signature_tx<S: Store>(state: &mut State<S>, tx: SignatureTransaction)
 
     // If >2/3, finalize checkpoint, clear active_checkpoint fields, update last checkpoint time
     if signed_voting_power as u128 > signatories.two_thirds_voting_power() {
-        if let Some(new_signatories) = state.active_checkpoint.next_signatory_set.get()? {
+        if let Some(new_signatories) = state
+            .active_checkpoint
+            .next_signatory_set
+            .get_or_default()?
+        {
             state.signatory_sets.push_back(new_signatories)?;
         }
 
@@ -710,10 +713,12 @@ fn handle_signature_tx<S: Store>(state: &mut State<S>, tx: SignatureTransaction)
         state.active_checkpoint.is_active.set(false)?;
         state.active_checkpoint.signed_voting_power.set(0)?;
 
-        state
-            .finalized_checkpoint
-            .next_signatory_set
-            .set(state.active_checkpoint.next_signatory_set.get()?)?;
+        state.finalized_checkpoint.next_signatory_set.set(
+            state
+                .active_checkpoint
+                .next_signatory_set
+                .get_or_default()?,
+        )?;
         state.active_checkpoint.next_signatory_set.set(None)?;
 
         state.utxos.push_back(Utxo {
