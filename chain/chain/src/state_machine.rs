@@ -4,6 +4,7 @@ use bitcoin::hashes::Hash;
 use bitcoin::Network::Testnet as bitcoin_network;
 use failure::bail;
 use lazy_static::lazy_static;
+use log::info;
 use nomic_bitcoin::{bitcoin, EnrichedHeader};
 use nomic_primitives::transaction::Transaction;
 use nomic_primitives::transaction::{
@@ -185,7 +186,10 @@ impl<S: Store> State<S> {
         let mut input_amount = 0;
         let mut output_amount = 0;
 
-        let sig_set_index = self.finalized_checkpoint.signatory_set_index.get_or_default()?;
+        let sig_set_index = self
+            .finalized_checkpoint
+            .signatory_set_index
+            .get_or_default()?;
         let signatories = self.signatory_sets.get(sig_set_index)?.signatories;
 
         let inputs = self
@@ -248,7 +252,10 @@ impl<S: Store> State<S> {
 
         // TODO: calculate fee based on final tx size
         let change_amount = input_amount - output_amount - CHECKPOINT_FEE_AMOUNT;
-        let next_signatory_set = self.finalized_checkpoint.next_signatory_set.get_or_default()?;
+        let next_signatory_set = self
+            .finalized_checkpoint
+            .next_signatory_set
+            .get_or_default()?;
         let change_signatories = match next_signatory_set {
             Some(next_snapshot) => next_snapshot.signatories,
             None => signatories,
@@ -288,7 +295,7 @@ pub fn run<S: Store>(
             Transaction::Deposit(tx) => handle_deposit_tx(&mut store, tx),
             Transaction::Transfer(tx) => handle_transfer_tx(&mut state, tx),
             Transaction::Withdrawal(tx) => handle_withdrawal_tx(&mut state, tx),
-            Transaction::Signature(tx) => handle_signature_tx(&mut state, tx),
+            Transaction::Signature(tx) => dbg!(handle_signature_tx(&mut state, tx)),
         },
     }
 }
@@ -600,11 +607,12 @@ fn handle_withdrawal_tx<S: Store>(state: &mut State<S>, tx: WithdrawalTransactio
     Ok(state.pending_withdrawals.push_back(withdrawal)?)
 }
 fn handle_signature_tx<S: Store>(state: &mut State<S>, tx: SignatureTransaction) -> Result<()> {
+    info!("signatures: {:?}", tx.signatures);
     if !state.active_checkpoint.is_active.get_or_default()? {
         bail!("No checkpoint in progress");
     }
 
-    if tx.signatures.len() != state.active_checkpoint.utxos.len() as usize {
+    if tx.signatures.len() != state.active_utxos()?.len() {
         bail!("Number of signatures does not match number of inputs");
     }
     let sigs: Vec<_> = tx
@@ -621,6 +629,7 @@ fn handle_signature_tx<S: Store>(state: &mut State<S>, tx: SignatureTransaction)
 
     let signatory_index = tx.signatory_index;
     let btc_tx = state.active_checkpoint_tx()?;
+    info!("received signature for btc_tx: {:?}", &btc_tx);
 
     let signatory_set_index = state.active_checkpoint.signatory_set_index.get()?;
     let signatories = state
@@ -706,9 +715,10 @@ fn handle_signature_tx<S: Store>(state: &mut State<S>, tx: SignatureTransaction)
         state.active_checkpoint.is_active.set(false)?;
         state.active_checkpoint.signed_voting_power.set(0)?;
 
-        state.finalized_checkpoint.signatory_set_index.set(
-            state.active_checkpoint.signatory_set_index.get()?
-        )?;
+        state
+            .finalized_checkpoint
+            .signatory_set_index
+            .set(state.active_checkpoint.signatory_set_index.get()?)?;
         state.finalized_checkpoint.next_signatory_set.set(
             state
                 .active_checkpoint
