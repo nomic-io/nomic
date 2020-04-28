@@ -25,8 +25,8 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
 const MIN_WORK: u64 = 1 << 20;
-pub const SIGNATORY_CHANGE_INTERVAL: u64 = 8;
-pub const CHECKPOINT_INTERVAL: u64 = 60 * 5;
+pub const SIGNATORY_CHANGE_INTERVAL: u64 = 4;
+pub const CHECKPOINT_INTERVAL: u64 = 60 * 2;
 pub const CHECKPOINT_FEE_AMOUNT: u64 = 1_000;
 
 lazy_static! {
@@ -191,7 +191,7 @@ impl<S: Store> State<S> {
             .finalized_checkpoint
             .next_signatory_set
             .get_or_default()?;
-        let final_sig_set_index = self.finalized_checkpoint.signatory_set_index.get()?;
+        let final_sig_set_index = self.finalized_checkpoint.signatory_set_index.get_or_default()?;
         let (signatories, sig_set_index) = match maybe_next_snapshot {
             Some(next_snapshot) => (next_snapshot.signatories, final_sig_set_index + 1),
             None => {
@@ -713,6 +713,9 @@ fn handle_signature_tx<S: Store>(state: &mut State<S>, tx: SignatureTransaction)
         state.active_checkpoint.is_active.set(false)?;
         state.active_checkpoint.signed_voting_power.set(0)?;
 
+        state.finalized_checkpoint.signatory_set_index.set(
+            state.active_checkpoint.signatory_set_index.get()?
+        )?;
         state.finalized_checkpoint.next_signatory_set.set(
             state
                 .active_checkpoint
