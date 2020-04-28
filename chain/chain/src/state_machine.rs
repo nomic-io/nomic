@@ -99,16 +99,14 @@ impl<S: Store> State<S> {
 
     pub fn active_utxos(&self) -> Result<Vec<Utxo>> {
         // TODO: don't prune utxos, support spending from older signatory set
-        let current_signatory_set_index = self
-            .signatory_sets
-            .fixed_index(self.signatory_sets.len() - 1);
+        let signatory_set_index = self.active_checkpoint.signatory_set_index.get()?;
 
         self.active_checkpoint
             .utxos
             .iter()
             .filter(|utxo| match utxo {
                 Err(_) => true,
-                Ok(utxo) => utxo.signatory_set_index == current_signatory_set_index,
+                Ok(utxo) => utxo.signatory_set_index == signatory_set_index,
             })
             .collect()
     }
