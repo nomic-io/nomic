@@ -457,39 +457,39 @@ fn handle_deposit_tx<S: Store>(
         if recipient.len() != 33 {
             bail!("Recipient must be 33 bytes");
         }
-        // TODO: specify_signatory_set_index in tx rather than iterating
-        for (signatory_set_index, signatory_set) in state.signatory_sets.iter().enumerate() {
-            let signatory_set = signatory_set?;
-            let expected_script =
-                nomic_signatory_set::output_script(&signatory_set.signatories, recipient.to_vec());
-            if txout.script_pubkey != expected_script {
-                continue;
-            }
-
-            // mint coins
-            let depositor_address = unsafe_slice_to_address(recipient.as_slice());
-            let mut depositor_account = state.accounts.get(depositor_address)?.unwrap_or_default();
-            depositor_account.balance += txout.value;
-            state
-                .accounts
-                .insert(depositor_address, depositor_account)?;
-
-            // Add UTXO to state
-            let utxo = Utxo {
-                outpoint: bitcoin::OutPoint {
-                    txid: deposit_transaction.tx.txid(),
-                    vout: i as u32,
-                }
-                .into(),
-                signatory_set_index: signatory_set_index as u64,
-                data: recipient.to_vec(),
-                value: txout.value,
-            };
-            state.utxos.push_back(utxo)?;
-
-            contains_deposit_outputs = true;
-            break;
+        // TODO: support older signatory sets
+        let signatory_set_index = state.signatory_sets.fixed_index(
+            state.signatory_sets.len() - 1
+        );
+        let signatory_set = state.current_signatory_set()?;
+        let expected_script =
+            nomic_signatory_set::output_script(&signatory_set.signatories, recipient.to_vec());
+        if txout.script_pubkey != expected_script {
+            continue;
         }
+
+        // mint coins
+        let depositor_address = unsafe_slice_to_address(recipient.as_slice());
+        let mut depositor_account = state.accounts.get(depositor_address)?.unwrap_or_default();
+        depositor_account.balance += txout.value;
+        state
+            .accounts
+            .insert(depositor_address, depositor_account)?;
+
+        // Add UTXO to state
+        let utxo = Utxo {
+            outpoint: bitcoin::OutPoint {
+                txid: deposit_transaction.tx.txid(),
+                vout: i as u32,
+            }
+            .into(),
+            signatory_set_index: signatory_set_index as u64,
+            data: recipient.to_vec(),
+            value: txout.value,
+        };
+        state.utxos.push_back(utxo)?;
+
+        contains_deposit_outputs = true;
     }
     if !contains_deposit_outputs {
         bail!("Transaction does not contain any deposit outputs");
