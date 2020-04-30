@@ -4,7 +4,7 @@ use crate::Result;
 use bitcoin::hash_types::BlockHash as Hash;
 use bitcoincore_rpc::{Auth, Client, RpcApi};
 use failure::bail;
-use log::{debug, error, info};
+use log::{debug, info};
 use nomic_bitcoin::{bitcoin, bitcoincore_rpc};
 use nomic_client::Client as PegClient;
 use nomic_primitives::transaction::{HeaderTransaction, Transaction};

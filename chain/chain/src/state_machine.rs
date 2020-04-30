@@ -48,7 +48,7 @@ pub fn run<S: Store>(
 
 // TODO: this should be Action::InitChain
 /// Called once at genesis to write some data to the store.
-pub fn initialize<S: Store>(mut store: S) -> Result<()> {
+pub fn initialize<S: Store>(store: S) -> Result<()> {
     let mut state = State::wrap_store(store)?;
     peg::handlers::initialize(&mut state.peg)
 }

@@ -413,7 +413,6 @@ mod tests {
     use bitcoin::Network::Testnet as bitcoin_network;
     use lazy_static::lazy_static;
     use nomic_bitcoin::bitcoin;
-    use nomic_primitives::transaction::*;
     use nomic_primitives::Account;
     use nomic_signatory_set::{Signatory, SignatorySet, SignatorySetSnapshot};
     use orga::{abci::messages::Header as TendermintHeader, MapStore, WrapStore};
@@ -495,7 +494,7 @@ mod tests {
         header.set_time(timestamp);
         super::begin_block(&mut state, &mut net.validators, header).unwrap();
         let mut expected_signatories = SignatorySet::new();
-        let mut state = PegState::wrap_store(&mut net.store).unwrap();
+        let state = PegState::wrap_store(&mut net.store).unwrap();
         expected_signatories.set(Signatory {
             pubkey: bitcoin::PublicKey::from_slice(&[
                 2, 120, 15, 192, 99, 177, 43, 235, 23, 134, 193, 123, 205, 196, 253, 121, 49, 80,
@@ -876,7 +875,7 @@ mod tests {
 
         let message = secp256k1::Message::from_slice(&sighash[..]).unwrap();
         let privkey = &net.validator_privkeys[0];
-        let mut sig = SECP.sign(&message, privkey).serialize_compact().to_vec();
+        let sig = SECP.sign(&message, privkey).serialize_compact().to_vec();
 
         let tx = SignatureTransaction {
             signatures: vec![sig],
@@ -884,7 +883,7 @@ mod tests {
         };
         signature_tx(&mut state, tx).unwrap();
 
-        let mut state = PegState::wrap_store(&mut net.store).unwrap();
+        let state = PegState::wrap_store(&mut net.store).unwrap();
         assert_eq!(state.utxos.len(), 1);
         assert!(!state.active_checkpoint.is_active.get().unwrap());
         assert_eq!(state.active_checkpoint.utxos.len(), 0);
