@@ -157,7 +157,7 @@ fn main() {
             let wallet = Wallet::load_or_generate(wallet_path).unwrap();
             let address = wallet.deposit_address(&signatory_snapshot.signatories);
 
-            use nomic_chain::state_machine::{CHECKPOINT_INTERVAL, SIGNATORY_CHANGE_INTERVAL};
+            use nomic_chain::peg::{CHECKPOINT_INTERVAL, SIGNATORY_CHANGE_INTERVAL};
             use std::time::{SystemTime, UNIX_EPOCH};
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)

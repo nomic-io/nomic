@@ -44,11 +44,13 @@ fn try_sign(client: &Client, priv_key: &SecretKey) -> Result<()> {
 
     let signatory_set_index = client
         .state()?
+        .peg
         .active_checkpoint
         .signatory_set_index
         .get()?;
     let signatories = client
         .state()?
+        .peg
         .signatory_sets
         .get_fixed(signatory_set_index)?
         .signatories;
@@ -71,6 +73,7 @@ fn try_sign(client: &Client, priv_key: &SecretKey) -> Result<()> {
 
     let signatures = client
         .state()?
+        .peg
         .active_utxos()?
         .iter()
         .enumerate()

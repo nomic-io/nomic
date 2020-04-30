@@ -122,6 +122,7 @@ impl Client {
 
     pub fn get_signatory_sets(&self) -> OrgaResult<Vec<SignatorySet>> {
         self.state()?
+            .peg
             .signatory_sets
             .iter()
             .map(|snapshot| snapshot.map(|snapshot| snapshot.signatories))
@@ -129,7 +130,7 @@ impl Client {
     }
 
     pub fn get_signatory_set_snapshot(&self) -> OrgaResult<SignatorySetSnapshot> {
-        self.state()?.current_signatory_set()
+        self.state()?.peg.current_signatory_set()
     }
 
     pub fn get_balance(&self, address: &[u8]) -> OrgaResult<u64> {
@@ -147,8 +148,8 @@ impl Client {
 
     pub fn get_finalized_checkpoint_tx(&self) -> OrgaResult<Option<bitcoin::Transaction>> {
         let state = self.state()?;
-        if state.has_finalized_checkpoint() {
-            Ok(Some(state.finalized_checkpoint_tx()?))
+        if state.peg.has_finalized_checkpoint() {
+            Ok(Some(state.peg.finalized_checkpoint_tx()?))
         } else {
             Ok(None)
         }
@@ -156,8 +157,8 @@ impl Client {
 
     pub fn get_active_checkpoint_tx(&self) -> OrgaResult<Option<bitcoin::Transaction>> {
         let state = self.state()?;
-        if state.active_checkpoint.is_active.get_or_default()? {
-            Ok(Some(state.active_checkpoint_tx()?))
+        if state.peg.active_checkpoint.is_active.get_or_default()? {
+            Ok(Some(state.peg.active_checkpoint_tx()?))
         } else {
             Ok(None)
         }
