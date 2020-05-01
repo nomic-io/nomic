@@ -1,5 +1,5 @@
 use super::{State as PegState, Utxo};
-use super::{CHECKPOINT_INTERVAL, SIGNATORY_CHANGE_INTERVAL};
+use super::{CHECKPOINT_INTERVAL, CHECKPOINT_MINIMUM_VALUE, SIGNATORY_CHANGE_INTERVAL};
 use crate::{accounts::State as AccountState, spv::headercache::HeaderCache, SECP};
 use bitcoin::hashes::Hash;
 use bitcoin::Network::Testnet as bitcoin_network;
@@ -146,6 +146,11 @@ pub fn begin_block<S: Store>(
         }
 
         if state.active_checkpoint.is_active.get_or_default()? {
+            return Ok(());
+        }
+
+        let utxo_total_value: u64 = state.pending_utxos()?.iter().map(|utxo| utxo.value).sum();
+        if utxo_total_value < CHECKPOINT_MINIMUM_VALUE {
             return Ok(());
         }
 
