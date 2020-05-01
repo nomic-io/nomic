@@ -14,7 +14,7 @@ use wallet::Wallet;
 
 /// Command-line interface for interacting with the Nomic Bitcoin sidechain
 #[derive(Clap)]
-#[clap(version = "0.1.0")]
+#[clap(version = "0.2.0")]
 struct Opts {
     #[clap(subcommand)]
     subcmd: SubCommand,
@@ -27,7 +27,7 @@ struct Opts {
 #[derive(Clap)]
 enum SubCommand {
     /// Relays data between a local Bitcoin full node and the sidechain
-    #[clap(name = "relayer", version = "0.1.0")]
+    #[clap(name = "relayer")]
     Relayer(Relayer),
 
     /// Starts a sidechain full node
