@@ -76,8 +76,7 @@ impl Client {
 
         let rpc = &self.tendermint_rpc;
         let tx = tendermint::abci::Transaction::new(tx_bytes);
-        rpc.broadcast_tx_commit(tx)
-            .map_err(|e| failure::err_msg(format!("Tendermint RPC error: {}", e)))
+        Ok(rpc.broadcast_tx_commit(tx)?)
     }
 
     /// Get the Bitcoin headers currently used by the peg zone's on-chain SPV client.

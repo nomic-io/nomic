@@ -1,7 +1,7 @@
 use lazy_static::lazy_static;
 use log::info;
 use nomic_bitcoin::bitcoin;
-use nomic_client::Client;
+use nomic_client::{Client, RpcError};
 use nomic_primitives::{transaction::Transaction, Result};
 use secp256k1::{Secp256k1, SecretKey, SignOnly};
 use std::fs;
@@ -96,8 +96,12 @@ fn try_sign(client: &Client, priv_key: &SecretKey) -> Result<()> {
     };
 
     if let Err(err) = client.send(Transaction::Signature(tx)) {
-        log::debug!("error sending signature tx: {}", err);
+        let err: RpcError = err.downcast()?;
+        if err.message() == "tx already exists in cache" {
+            return Ok(());
+        }
+        Err(err.into())
+    } else {
+        Ok(())
     }
-
-    Ok(())
 }
