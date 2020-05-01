@@ -79,6 +79,18 @@ impl Client {
         Ok(rpc.broadcast_tx_commit(tx)?)
     }
 
+    /// Transmit a transaction the peg state machine without blocking.
+    pub fn send_async(
+        &self,
+        transaction: Transaction,
+    ) -> Result<tendermint::rpc::endpoint::broadcast::tx_async::Response> {
+        let tx_bytes = serde_json::to_vec(&transaction).unwrap();
+
+        let rpc = &self.tendermint_rpc;
+        let tx = tendermint::abci::Transaction::new(tx_bytes);
+        Ok(rpc.broadcast_tx_async(tx)?)
+    }
+
     /// Get the Bitcoin headers currently used by the peg zone's on-chain SPV client.
     pub fn get_bitcoin_block_hashes(&self) -> Result<Vec<Hash>> {
         let mut store = self.store.borrow_mut();
@@ -98,12 +110,12 @@ impl Client {
         &self,
         public_key: &[u8],
         nonce: u64,
-    ) -> Result<tendermint::rpc::endpoint::broadcast::tx_commit::Response> {
+    ) -> Result<tendermint::rpc::endpoint::broadcast::tx_async::Response> {
         let work_transaction = Transaction::WorkProof(WorkProofTransaction {
             public_key: public_key.to_vec(),
             nonce,
         });
-        self.send(work_transaction)
+        self.send_async(work_transaction)
     }
 
     pub fn get_bitcoin_tip(&self) -> OrgaResult<bitcoin::BlockHeader> {
