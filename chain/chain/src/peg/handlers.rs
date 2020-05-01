@@ -490,17 +490,18 @@ mod tests {
         }
 
         // validator set change
-        net.validators.insert(
-            new_val_pubkey.serialize().to_vec(),
-            555,
-        );
+        net.validators
+            .insert(new_val_pubkey.serialize().to_vec(), 555);
 
         next_checkpoint(&mut net);
 
         // last checkpoint should not have changed signatory set yet
         let mut expected_signatories = SignatorySet::new();
         expected_signatories.set(Signatory {
-            pubkey: bitcoin::PublicKey { key: old_val_pubkey, compressed: true },
+            pubkey: bitcoin::PublicKey {
+                key: old_val_pubkey,
+                compressed: true,
+            },
             voting_power: 100,
         });
         assert_eq!(
@@ -515,7 +516,10 @@ mod tests {
 
         // now signatory set should be updated
         expected_signatories.set(Signatory {
-            pubkey: bitcoin::PublicKey { key: new_val_pubkey, compressed: true },
+            pubkey: bitcoin::PublicKey {
+                key: new_val_pubkey,
+                compressed: true,
+            },
             voting_power: 555,
         });
         assert_eq!(
@@ -889,34 +893,29 @@ mod tests {
     fn signatory_sign(state: &mut PegState<&mut MapStore>, priv_key: &secp256k1::SecretKey) {
         let btc_tx = state.active_checkpoint_tx().unwrap();
 
-        let signatory_set_index = state
-            .active_checkpoint
-            .signatory_set_index
-            .get()
-            .unwrap();
+        let signatory_set_index = state.active_checkpoint.signatory_set_index.get().unwrap();
         let signatories = state
             .signatory_sets
             .get_fixed(signatory_set_index)
             .unwrap()
             .signatories;
 
-        let signatures = state
-            .active_utxos()
-            .unwrap()
-            .iter()
-            .enumerate()
-            .map(|(i, utxo)| {
-                let script = nomic_signatory_set::redeem_script(&signatories, utxo.data.clone());
-                let sighash = bitcoin::util::bip143::SighashComponents::new(&btc_tx).sighash_all(
-                    &btc_tx.input[i],
-                    &script,
-                    utxo.value,
-                );
-                let message = secp256k1::Message::from_slice(&sighash[..]).unwrap();
-                let sig = SECP.sign(&message, &priv_key);
-                sig.serialize_compact().to_vec()
-            })
-            .collect();
+        let signatures =
+            state
+                .active_utxos()
+                .unwrap()
+                .iter()
+                .enumerate()
+                .map(|(i, utxo)| {
+                    let script =
+                        nomic_signatory_set::redeem_script(&signatories, utxo.data.clone());
+                    let sighash = bitcoin::util::bip143::SighashComponents::new(&btc_tx)
+                        .sighash_all(&btc_tx.input[i], &script, utxo.value);
+                    let message = secp256k1::Message::from_slice(&sighash[..]).unwrap();
+                    let sig = SECP.sign(&message, &priv_key);
+                    sig.serialize_compact().to_vec()
+                })
+                .collect();
 
         let tx = nomic_primitives::transaction::SignatureTransaction {
             signatures,
