@@ -50,7 +50,7 @@ impl Decode for Script {
     }
 }
 
-#[derive(Clone, Encode, Decode)]
+#[derive(Clone, Debug, Encode, Decode)]
 pub struct Outpoint {
     pub txid: [u8; 32],
     pub index: u32,

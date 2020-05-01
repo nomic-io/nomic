@@ -2,7 +2,6 @@ use crate::Result;
 use bitcoin::hash_types::BlockHash as Hash;
 use bitcoin::Network::Testnet as bitcoin_network;
 use failure::bail;
-
 use nomic_bitcoin::bitcoin;
 use nomic_chain::{orga, spv, State};
 use nomic_primitives::transaction::{Transaction, WorkProofTransaction};
@@ -77,8 +76,19 @@ impl Client {
 
         let rpc = &self.tendermint_rpc;
         let tx = tendermint::abci::Transaction::new(tx_bytes);
-        rpc.broadcast_tx_commit(tx)
-            .map_err(|e| failure::err_msg(format!("Tendermint RPC error: {}", e)))
+        Ok(rpc.broadcast_tx_commit(tx)?)
+    }
+
+    /// Transmit a transaction the peg state machine without blocking.
+    pub fn send_async(
+        &self,
+        transaction: Transaction,
+    ) -> Result<tendermint::rpc::endpoint::broadcast::tx_async::Response> {
+        let tx_bytes = serde_json::to_vec(&transaction).unwrap();
+
+        let rpc = &self.tendermint_rpc;
+        let tx = tendermint::abci::Transaction::new(tx_bytes);
+        Ok(rpc.broadcast_tx_async(tx)?)
     }
 
     /// Get the Bitcoin headers currently used by the peg zone's on-chain SPV client.
@@ -100,12 +110,12 @@ impl Client {
         &self,
         public_key: &[u8],
         nonce: u64,
-    ) -> Result<tendermint::rpc::endpoint::broadcast::tx_commit::Response> {
+    ) -> Result<tendermint::rpc::endpoint::broadcast::tx_async::Response> {
         let work_transaction = Transaction::WorkProof(WorkProofTransaction {
             public_key: public_key.to_vec(),
             nonce,
         });
-        self.send(work_transaction)
+        self.send_async(work_transaction)
     }
 
     pub fn get_bitcoin_tip(&self) -> OrgaResult<bitcoin::BlockHeader> {
@@ -122,6 +132,7 @@ impl Client {
 
     pub fn get_signatory_sets(&self) -> OrgaResult<Vec<SignatorySet>> {
         self.state()?
+            .peg
             .signatory_sets
             .iter()
             .map(|snapshot| snapshot.map(|snapshot| snapshot.signatories))
@@ -129,7 +140,7 @@ impl Client {
     }
 
     pub fn get_signatory_set_snapshot(&self) -> OrgaResult<SignatorySetSnapshot> {
-        self.state()?.current_signatory_set()
+        self.state()?.peg.current_signatory_set()
     }
 
     pub fn get_balance(&self, address: &[u8]) -> OrgaResult<u64> {
@@ -147,8 +158,8 @@ impl Client {
 
     pub fn get_finalized_checkpoint_tx(&self) -> OrgaResult<Option<bitcoin::Transaction>> {
         let state = self.state()?;
-        if state.has_finalized_checkpoint() {
-            Ok(Some(state.finalized_checkpoint_tx()?))
+        if state.peg.has_finalized_checkpoint() {
+            Ok(Some(state.peg.finalized_checkpoint_tx()?))
         } else {
             Ok(None)
         }
@@ -156,8 +167,8 @@ impl Client {
 
     pub fn get_active_checkpoint_tx(&self) -> OrgaResult<Option<bitcoin::Transaction>> {
         let state = self.state()?;
-        if state.active_checkpoint.is_active.get_or_default()? {
-            Ok(Some(state.active_checkpoint_tx()?))
+        if state.peg.active_checkpoint.is_active.get_or_default()? {
+            Ok(Some(state.peg.active_checkpoint_tx()?))
         } else {
             Ok(None)
         }

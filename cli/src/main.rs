@@ -5,7 +5,7 @@ mod wallet;
 use clap::Clap;
 use colored::*;
 use failure::bail;
-use log::{debug, info, warn};
+use log::{debug, info};
 use nomic_chain::abci_server;
 use nomic_client::Client;
 use nomic_primitives::Result;
@@ -157,7 +157,7 @@ fn main() {
             let wallet = Wallet::load_or_generate(wallet_path).unwrap();
             let address = wallet.deposit_address(&signatory_snapshot.signatories);
 
-            use nomic_chain::state_machine::{CHECKPOINT_INTERVAL, SIGNATORY_CHANGE_INTERVAL};
+            use nomic_chain::peg::{CHECKPOINT_INTERVAL, SIGNATORY_CHANGE_INTERVAL};
             use std::time::{SystemTime, UNIX_EPOCH};
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -218,7 +218,7 @@ fn main() {
             println!("YOUR BALANCE: {} NBTC", balance.cyan().bold());
         }
         SubCommand::Transfer(transfer) => {
-            default_log_level("error");
+            default_log_level("warn");
 
             let receiver_address = transfer.address;
             let amount = transfer.amount;
@@ -229,18 +229,21 @@ fn main() {
             let wallet = Wallet::load_or_generate(wallet_path).unwrap();
 
             if let Err(err) = wallet.send(&mut client, receiver_address.as_str(), amount) {
-                // TODO: fix upstream response parsing in tendermint-rs, and fail if this errors
-                warn!("{}", err);
+                let err: nomic_client::RpcError = err.downcast().unwrap();
+                if err.message() != "tx already exists in cache" {
+                    panic!(err);
+                }
             }
             println!(
                 "Sent {} coins to {}.",
-                // TODO: format amount
                 format_amount(amount).cyan().bold(),
                 receiver_address.cyan().bold()
             );
         }
 
         SubCommand::Withdraw(withdrawal) => {
+            default_log_level("warn");
+
             let mut client = Client::new("localhost:26657").unwrap();
             let wallet_path = nomic_home.join("wallet.key");
             let wallet = Wallet::load_or_generate(wallet_path).unwrap();
@@ -250,8 +253,10 @@ fn main() {
                 withdrawal.bitcoin_address.as_str(),
                 withdrawal.amount,
             ) {
-                // TODO: fix upstream response parsing in tendermint-rs, and fail if this errors
-                warn!("{}", err);
+                let err: nomic_client::RpcError = err.downcast().unwrap();
+                if err.message() != "tx already exists in cache" {
+                    panic!(err);
+                }
             }
 
             println!(

@@ -1,4 +1,4 @@
-use log::{debug, info};
+use log::info;
 use nomic_client::Client as PegClient;
 use nomic_work::work;
 use rand::random;
@@ -21,10 +21,8 @@ pub fn generate() {
         let work_value = try_nonce(&pub_key_bytes, nonce);
         if work_value >= MIN_WORK {
             info!("Generated {} voting power", work_value);
-            let submission_result = rpc.submit_work_proof(&pub_key_bytes.to_vec(), nonce);
-            if let Err(e) = submission_result {
-                debug!("Failed to submit a work proof. Error: {}", e);
-            }
+            rpc.submit_work_proof(&pub_key_bytes.to_vec(), nonce)
+                .expect("Failed to submit work proof");
         }
         nonce += 1;
     }
