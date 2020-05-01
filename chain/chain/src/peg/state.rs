@@ -21,7 +21,7 @@ pub struct State {
     pub headers: Wrapper,
 }
 
-#[derive(Clone, Encode, Decode)]
+#[derive(Clone, Debug, Encode, Decode)]
 pub struct Utxo {
     pub outpoint: nomic_bitcoin::Outpoint,
     pub value: u64,

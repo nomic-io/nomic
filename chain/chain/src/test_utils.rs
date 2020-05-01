@@ -1,14 +1,12 @@
-use super::state_machine::*;
 use crate::peg::handlers::signatories_from_validators;
 use crate::spv::headercache::HeaderCache;
-use crate::Action;
 use bitcoin::consensus::encode as bitcoin_encode;
 use bitcoin::util::hash::bitcoin_merkle_root;
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use lazy_static::lazy_static;
 use nomic_bitcoin::bitcoin;
 use nomic_primitives::{
-    transaction::{DepositTransaction, Sighash, Transaction},
+    transaction::{DepositTransaction, Sighash},
     Account, Address,
 };
 use orga::{abci::messages::Header as TendermintHeader, MapStore, Store, WrapStore};
@@ -62,7 +60,7 @@ impl MockNet {
         // initial beginblock
         let mut header: TendermintHeader = Default::default();
         let mut timestamp = Timestamp::new();
-        timestamp.set_seconds(123);
+        timestamp.set_seconds(0);
         header.set_time(timestamp);
 
         crate::peg::handlers::begin_block(&mut state, &mut net.validators, header).unwrap();
@@ -96,8 +94,11 @@ impl MockNet {
 
         let block = build_block(vec![tx.clone()]);
         let mut net = MockNet::with_btc_block(block);
-
         let (tx, proof) = net.create_btc_proof();
+        
+        let mut peg_state = crate::peg::State::wrap_store(&mut net.store).unwrap();
+        let mut account_state = crate::accounts::State::wrap_store(&mut net.store2).unwrap();
+
         let deposit = DepositTransaction {
             height: 0,
             proof,
@@ -105,15 +106,14 @@ impl MockNet {
             block_index: 0,
             recipients: vec![vec![123; 33]],
         };
-        let action = Action::Transaction(Transaction::Deposit(deposit));
-        run(&mut net.store, action.clone(), &mut net.validators).unwrap();
+        
+        crate::peg::handlers::deposit_tx(&mut peg_state, &mut account_state, deposit.clone()).unwrap();
 
         let mut header: orga::abci::messages::Header = Default::default();
         let mut timestamp = Timestamp::new();
         timestamp.set_seconds(super::peg::CHECKPOINT_INTERVAL as i64 * 2);
         header.set_time(timestamp);
-        let action = Action::BeginBlock(header);
-        run(&mut net.store, action.clone(), &mut net.validators).unwrap();
+        crate::peg::handlers::begin_block(&mut peg_state, &mut net.validators, header).unwrap();
 
         net
     }

@@ -439,78 +439,89 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn begin_block() {
-        let mut net = MockNet::new();
-        let mut state = PegState::wrap_store(&mut net.store).unwrap();
+        let mut net = MockNet::with_active_checkpoint();
 
-        // initial signatories
-        let validator_pubkey = mock_validator_set().0.into_iter().next().unwrap().0;
-        let mut expected_signatories = SignatorySet::new();
-        expected_signatories.set(Signatory {
-            pubkey: bitcoin::PublicKey::from_slice(validator_pubkey.as_slice()).unwrap(),
-            voting_power: 100,
-        });
-        assert_eq!(
-            state.current_signatory_set().unwrap(),
-            SignatorySetSnapshot {
-                time: 123,
-                signatories: expected_signatories
-            }
-        );
+        let (old_val_privkey, old_val_pubkey) = create_keypair(1);
+        let (_, new_val_pubkey) = create_keypair(2);
 
-        // changed validator set, should be same sig set
+        fn get_state<'a>(net: &'a mut MockNet) -> PegState<&'a mut MapStore> {
+            PegState::wrap_store(&mut net.store).unwrap()
+        }
+
+        {
+            let mut state = get_state(&mut net);
+
+            // initial signatories
+            let validator_pubkey = mock_validator_set().0.into_iter().next().unwrap().0;
+            let mut expected_signatories = SignatorySet::new();
+            expected_signatories.set(Signatory {
+                pubkey: bitcoin::PublicKey::from_slice(validator_pubkey.as_slice()).unwrap(),
+                voting_power: 100,
+            });
+            assert_eq!(
+                state.current_signatory_set().unwrap(),
+                SignatorySetSnapshot {
+                    time: 0,
+                    signatories: expected_signatories
+                }
+            );
+
+            signatory_sign(&mut state, &old_val_privkey);
+        }
+
+        const TEST_START_TIME: u64 = 100_000_000;
+        let mut time = TEST_START_TIME as i64;
+        let mut next_checkpoint = |net: &mut MockNet| {
+            let mut state = PegState::wrap_store(&mut net.store).unwrap();
+
+            let mut header: TendermintHeader = Default::default();
+            let mut timestamp = Timestamp::new();
+            timestamp.set_seconds(time);
+            time += CHECKPOINT_INTERVAL as i64 + 1;
+            header.set_time(timestamp);
+            super::begin_block(&mut state, &mut net.validators, header).unwrap();
+
+            signatory_sign(&mut state, &old_val_privkey);
+        };
+
+        for _ in 0..SIGNATORY_CHANGE_INTERVAL - 3 {
+            next_checkpoint(&mut net);
+        }
+
+        // validator set change
         net.validators.insert(
-            vec![
-                2, 120, 15, 192, 99, 177, 43, 235, 23, 134, 193, 123, 205, 196, 253, 121, 49, 80,
-                163, 93, 230, 224, 193, 88, 89, 18, 15, 145, 105, 217, 229, 114, 148,
-            ],
+            new_val_pubkey.serialize().to_vec(),
             555,
         );
-        let mut header: TendermintHeader = Default::default();
-        let mut timestamp = Timestamp::new();
-        timestamp.set_seconds(456);
-        header.set_time(timestamp);
-        super::begin_block(&mut state, &mut net.validators, header).unwrap();
+
+        next_checkpoint(&mut net);
+
+        // last checkpoint should not have changed signatory set yet
         let mut expected_signatories = SignatorySet::new();
         expected_signatories.set(Signatory {
-            pubkey: bitcoin::PublicKey::from_slice(validator_pubkey.as_slice()).unwrap(),
+            pubkey: bitcoin::PublicKey { key: old_val_pubkey, compressed: true },
             voting_power: 100,
         });
-
-        let mut state = PegState::wrap_store(&mut net.store).unwrap();
         assert_eq!(
-            state.current_signatory_set().unwrap(),
+            get_state(&mut net).current_signatory_set().unwrap(),
             SignatorySetSnapshot {
-                time: 123,
-                signatories: expected_signatories
+                time: 0,
+                signatories: expected_signatories.clone()
             }
         );
 
-        // lots of time has passed, signatory set should be updated
-        let mut header: TendermintHeader = Default::default();
-        let mut timestamp = Timestamp::new();
-        timestamp.set_seconds(1_000_000_000);
-        header.set_time(timestamp);
-        super::begin_block(&mut state, &mut net.validators, header).unwrap();
-        let mut expected_signatories = SignatorySet::new();
-        let state = PegState::wrap_store(&mut net.store).unwrap();
+        next_checkpoint(&mut net);
+
+        // now signatory set should be updated
         expected_signatories.set(Signatory {
-            pubkey: bitcoin::PublicKey::from_slice(&[
-                2, 120, 15, 192, 99, 177, 43, 235, 23, 134, 193, 123, 205, 196, 253, 121, 49, 80,
-                163, 93, 230, 224, 193, 88, 89, 18, 15, 145, 105, 217, 229, 114, 148,
-            ])
-            .unwrap(),
+            pubkey: bitcoin::PublicKey { key: new_val_pubkey, compressed: true },
             voting_power: 555,
         });
-        expected_signatories.set(Signatory {
-            pubkey: bitcoin::PublicKey::from_slice(validator_pubkey.as_slice()).unwrap(),
-            voting_power: 100,
-        });
         assert_eq!(
-            state.current_signatory_set().unwrap(),
+            get_state(&mut net).current_signatory_set().unwrap(),
             SignatorySetSnapshot {
-                time: 1_000_000_000,
+                time: TEST_START_TIME + (SIGNATORY_CHANGE_INTERVAL - 2) * (CHECKPOINT_INTERVAL + 1),
                 signatories: expected_signatories
             }
         );
@@ -800,7 +811,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     #[should_panic(expected = "Number of signatures does not match number of inputs")]
     fn signatory_signature_incorrect_signature_count() {
         let mut net = MockNet::with_active_checkpoint();
@@ -814,7 +824,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     #[should_panic(expected = "Invalid signature length")]
     fn signatory_invalid_signature_length() {
         let mut net = MockNet::with_active_checkpoint();
@@ -828,7 +837,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     #[should_panic(expected = "Signatory index out of bounds")]
     fn signatory_invalid_signatory_index() {
         let mut net = MockNet::with_active_checkpoint();
@@ -842,7 +850,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     #[should_panic(expected = "IncorrectSignature")]
     fn signatory_invalid_signature() {
         let mut net = MockNet::with_active_checkpoint();
@@ -856,7 +863,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn signatory_ok() {
         let mut net = MockNet::with_active_checkpoint();
 
@@ -864,26 +870,8 @@ mod tests {
         assert!(state.active_checkpoint.is_active.get().unwrap());
         assert_eq!(state.utxos.len(), 0);
 
-        let utxo = state.active_checkpoint.utxos.get(0).unwrap();
-        let signatories = state.signatory_sets.get_fixed(0).unwrap().signatories;
-        let btc_tx = state.active_checkpoint_tx().unwrap();
-        let script = nomic_signatory_set::output_script(&signatories, utxo.data);
-        let sighash = btc_tx
-            .signature_hash(0, &script, bitcoin::SigHashType::All.as_u32())
-            .as_hash()
-            .into_inner();
+        signatory_sign(&mut state, &net.validator_privkeys[0]);
 
-        let message = secp256k1::Message::from_slice(&sighash[..]).unwrap();
-        let privkey = &net.validator_privkeys[0];
-        let sig = SECP.sign(&message, privkey).serialize_compact().to_vec();
-
-        let tx = SignatureTransaction {
-            signatures: vec![sig],
-            signatory_index: 0,
-        };
-        signature_tx(&mut state, tx).unwrap();
-
-        let state = PegState::wrap_store(&mut net.store).unwrap();
         assert_eq!(state.utxos.len(), 1);
         assert!(!state.active_checkpoint.is_active.get().unwrap());
         assert_eq!(state.active_checkpoint.utxos.len(), 0);
@@ -896,5 +884,45 @@ mod tests {
         assert_eq!(state.finalized_checkpoint.signatures.len(), 1);
         assert_eq!(state.finalized_checkpoint.utxos.len(), 1);
         assert_eq!(state.finalized_checkpoint.withdrawals.len(), 0);
+    }
+
+    fn signatory_sign(state: &mut PegState<&mut MapStore>, priv_key: &secp256k1::SecretKey) {
+        let btc_tx = state.active_checkpoint_tx().unwrap();
+
+        let signatory_set_index = state
+            .active_checkpoint
+            .signatory_set_index
+            .get()
+            .unwrap();
+        let signatories = state
+            .signatory_sets
+            .get_fixed(signatory_set_index)
+            .unwrap()
+            .signatories;
+
+        let signatures = state
+            .active_utxos()
+            .unwrap()
+            .iter()
+            .enumerate()
+            .map(|(i, utxo)| {
+                let script = nomic_signatory_set::redeem_script(&signatories, utxo.data.clone());
+                let sighash = bitcoin::util::bip143::SighashComponents::new(&btc_tx).sighash_all(
+                    &btc_tx.input[i],
+                    &script,
+                    utxo.value,
+                );
+                let message = secp256k1::Message::from_slice(&sighash[..]).unwrap();
+                let sig = SECP.sign(&message, &priv_key);
+                sig.serialize_compact().to_vec()
+            })
+            .collect();
+
+        let tx = nomic_primitives::transaction::SignatureTransaction {
+            signatures,
+            signatory_index: 0,
+        };
+
+        signature_tx(state, tx).unwrap();
     }
 }
