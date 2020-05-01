@@ -1,6 +1,6 @@
 {
-  "genesis_time": "2020-03-18T23:35:35.914418403Z",
-  "chain_id": "nomic-sidechain-v0_2_0",
+  "genesis_time": "2020-05-01T05:35:35.914418403Z",
+  "chain_id": "nomic-testnet-3",
   "consensus_params": {
     "block": {
       "max_bytes": "22020096",
@@ -16,19 +16,19 @@
   },
   "validators": [
     {
-      "address": "457E8E91D044AE3C85C58F0C65E89CADDF8373D4",
+      "address": "BC21BFC3987AED84AEB0F90CED74F0474BC79725",
       "pub_key": {
         "type": "tendermint/PubKeySecp256k1",
-        "value": "AidlEhpwOiIoocNfD8Memvg3nhvf63XZ5nPlkoWJhF9E"
+        "value": "AruYDQl3eAEf5mAEl+CwtEYxX1yYCbYUQlAfuhmYOQ+F"
       },
       "power": "10",
       "name": "Judd"
     },
     {
-      "address": "7B7193D3A2331CBFC47F524552E4F718292E05B6",
+      "address": "0C039237E65F6A90077555E79E34909B4931B23B",
       "pub_key": {
         "type": "tendermint/PubKeySecp256k1",
-        "value": "A1CZQfDODi+bkp/miz3F16vYVWJ5xd8gBSxJQhnBCsVs"
+        "value": "A6Z8oaQECIGazCBUbsVxY3DdsezJNogKVP4x+1S4m2is"
       },
       "power": "10",
       "name": "Matt"
