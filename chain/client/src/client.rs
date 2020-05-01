@@ -2,7 +2,6 @@ use crate::Result;
 use bitcoin::hash_types::BlockHash as Hash;
 use bitcoin::Network::Testnet as bitcoin_network;
 use failure::bail;
-
 use nomic_bitcoin::bitcoin;
 use nomic_chain::{orga, spv, State};
 use nomic_primitives::transaction::{Transaction, WorkProofTransaction};

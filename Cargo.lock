@@ -173,20 +173,6 @@ dependencies = [
 
 [[package]]
 name = "bitcoin"
-version = "0.19.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fd1353f2950c2ca1b67032a8984ef6cf4a732dd757cbb32b6dcc2825a9e56a3"
-dependencies = [
- "bech32",
- "bitcoin_hashes",
- "byteorder",
- "hex 0.3.2",
- "secp256k1 0.12.0",
- "serde",
-]
-
-[[package]]
-name = "bitcoin"
 version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a32c9d2fa897cfbb0db45d71e3d2838666194abc4828c0f994e4b5c3bf85ba4"
@@ -194,7 +180,7 @@ dependencies = [
  "bech32",
  "bitcoin_hashes",
  "hex 0.3.2",
- "secp256k1 0.17.2",
+ "secp256k1",
  "serde",
 ]
 
@@ -204,7 +190,7 @@ version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "984eb439281137a0cb3fbae399fc85ee473a3aeb1e5305c4868096c368d06476"
 dependencies = [
- "bitcoin 0.23.0",
+ "bitcoin",
  "hex 0.4.2",
  "lazy_static",
  "proc-macro-error",
@@ -223,42 +209,13 @@ dependencies = [
 
 [[package]]
 name = "bitcoincore-rpc"
-version = "0.8.0-rc1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dccfa1a1851ead31758939818ec2b70a22301916fbf74d65546e4197e9a09dee"
-dependencies = [
- "bitcoin 0.19.2",
- "bitcoincore-rpc-json 0.8.0-rc1",
- "hex 0.3.2",
- "jsonrpc",
- "log 0.4.8",
- "num-bigint",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "bitcoincore-rpc"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0f41f59566728c0940ca4032d3b3c51089ddeed32f3b2071d80c285394861dc7"
 dependencies = [
- "bitcoincore-rpc-json 0.9.1",
+ "bitcoincore-rpc-json",
  "jsonrpc",
  "log 0.4.8",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "bitcoincore-rpc-json"
-version = "0.8.0-rc1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33bfa722d94b369b35dfa9354d2bbfbd89a5cdeb37c149e67ec2ac125d95519a"
-dependencies = [
- "bitcoin 0.19.2",
- "hex 0.3.2",
- "num-bigint",
  "serde",
  "serde_json",
 ]
@@ -269,7 +226,7 @@ version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42c8db224907013dc662cc5fecb35f853051dce42dd14d00dd82b42f4d82ff46"
 dependencies = [
- "bitcoin 0.23.0",
+ "bitcoin",
  "hex 0.3.2",
  "num-bigint",
  "serde",
@@ -1425,8 +1382,8 @@ dependencies = [
 name = "nomic-bitcoin"
 version = "0.1.0"
 dependencies = [
- "bitcoin 0.23.0",
- "bitcoincore-rpc 0.9.1",
+ "bitcoin",
+ "bitcoincore-rpc",
  "orga",
  "serde",
 ]
@@ -1447,7 +1404,7 @@ dependencies = [
  "nomic-work",
  "orga",
  "protobuf",
- "secp256k1 0.17.2",
+ "secp256k1",
  "serde",
  "serde_derive",
  "serde_json",
@@ -1479,7 +1436,7 @@ dependencies = [
  "rand 0.6.5",
  "relayer",
  "reqwest",
- "secp256k1 0.17.2",
+ "secp256k1",
  "sha2 0.8.1",
  "zip",
 ]
@@ -1490,7 +1447,6 @@ version = "0.1.0"
 dependencies = [
  "base64 0.11.0",
  "bincode",
- "bitcoincore-rpc 0.8.0-rc1",
  "failure",
  "hex 0.4.2",
  "nomic-bitcoin",
@@ -1502,7 +1458,7 @@ dependencies = [
  "serde",
  "serde_derive",
  "serde_json",
- "tendermint",
+ "tendermint 0.10.0 (git+https://github.com/nomic-io/tendermint-rs)",
 ]
 
 [[package]]
@@ -1513,7 +1469,7 @@ dependencies = [
  "failure",
  "nomic-bitcoin",
  "orga",
- "secp256k1 0.17.2",
+ "secp256k1",
  "serde",
  "sha2 0.8.1",
 ]
@@ -1529,7 +1485,7 @@ dependencies = [
  "nomic-client",
  "nomic-primitives",
  "nomic-signatory-set",
- "secp256k1 0.17.2",
+ "secp256k1",
  "serde_json",
 ]
 
@@ -1538,13 +1494,13 @@ name = "nomic-signatory-set"
 version = "0.1.0"
 dependencies = [
  "bincode",
- "bitcoin 0.23.0",
+ "bitcoin",
  "bitcoin-script",
  "failure",
  "nomic-bitcoin",
  "nomic-primitives",
  "orga",
- "secp256k1 0.17.2",
+ "secp256k1",
  "serde",
  "serde_json",
 ]
@@ -1659,7 +1615,7 @@ dependencies = [
  "merk",
  "orga-macros",
  "seq-macro",
- "tendermint",
+ "tendermint 0.10.0 (git+https://github.com/interchainio/tendermint-rs?rev=0b9450ddcd00a6ed39c8c6b0931ef9c8e6c86e4b)",
 ]
 
 [[package]]
@@ -2121,7 +2077,7 @@ dependencies = [
  "nomic-signatory-set",
  "rocket",
  "simple-server",
- "tendermint",
+ "tendermint 0.10.0 (git+https://github.com/interchainio/tendermint-rs?rev=0b9450ddcd00a6ed39c8c6b0931ef9c8e6c86e4b)",
 ]
 
 [[package]]
@@ -2301,16 +2257,6 @@ name = "scopeguard"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
-
-[[package]]
-name = "secp256k1"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4070f3906e65249228094cf97b04a90799fba04468190bbbcfa812309cf86e32"
-dependencies = [
- "cc",
- "libc",
-]
 
 [[package]]
 name = "secp256k1"
@@ -2606,6 +2552,32 @@ dependencies = [
  "redox_syscall",
  "remove_dir_all",
  "winapi 0.3.8",
+]
+
+[[package]]
+name = "tendermint"
+version = "0.10.0"
+source = "git+https://github.com/nomic-io/tendermint-rs#f4ad216239472dfc8b442f305dc325a6d1f1023e"
+dependencies = [
+ "bytes 0.4.12",
+ "chrono",
+ "ed25519-dalek",
+ "failure",
+ "hyper 0.10.16",
+ "prost-amino",
+ "prost-amino-derive",
+ "rand_os",
+ "serde",
+ "serde_json",
+ "sha2 0.8.1",
+ "signatory",
+ "signatory-dalek",
+ "subtle",
+ "subtle-encoding",
+ "tai64",
+ "toml 0.5.6",
+ "uuid",
+ "zeroize 1.1.0",
 ]
 
 [[package]]
