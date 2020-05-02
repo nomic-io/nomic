@@ -93,9 +93,9 @@ impl Client {
 
     /// Get the Bitcoin headers currently used by the peg zone's on-chain SPV client.
     pub fn get_bitcoin_block_hashes(&self) -> Result<Vec<Hash>> {
-        let mut store = self.store.borrow_mut();
+        let state = &mut self.state()?.peg.headers;
         let mut header_cache =
-            spv::headercache::HeaderCache::new(bitcoin_network, store.deref_mut());
+            spv::headercache::HeaderCache::new(bitcoin_network, state);
         let trunk = header_cache.load_trunk();
 
         match trunk {
