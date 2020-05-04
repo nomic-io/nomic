@@ -73,13 +73,13 @@ struct Balance;
 #[derive(Clap)]
 struct Transfer {
     address: String,
-    amount: u64,
+    amount: f64,
 }
 
 #[derive(Clap)]
 struct Withdraw {
     bitcoin_address: String,
-    amount: u64,
+    amount: f64,
 }
 
 fn main() {
@@ -242,7 +242,7 @@ fn main() {
             default_log_level("warn");
 
             let receiver_address = transfer.address;
-            let amount = transfer.amount;
+            let amount = to_satoshis(transfer.amount);
 
             let mut client = Client::new("localhost:26657").unwrap();
 
@@ -265,15 +265,15 @@ fn main() {
         SubCommand::Withdraw(withdrawal) => {
             default_log_level("warn");
 
+            let amount = to_satoshis(withdrawal.amount);
+
             let mut client = Client::new("localhost:26657").unwrap();
             let wallet_path = nomic_home.join("wallet.key");
             let wallet = Wallet::load_or_generate(wallet_path).unwrap();
 
-            if let Err(err) = wallet.withdraw(
-                &mut client,
-                withdrawal.bitcoin_address.as_str(),
-                withdrawal.amount,
-            ) {
+            if let Err(err) =
+                wallet.withdraw(&mut client, withdrawal.bitcoin_address.as_str(), amount)
+            {
                 let err: nomic_client::RpcError = err.downcast().unwrap();
                 if err.message() != "tx already exists in cache" {
                     panic!(err);
@@ -282,17 +282,30 @@ fn main() {
 
             println!(
                 "Withdrew {} Bitcoin to {}.",
-                format_amount(withdrawal.amount).cyan().bold(),
+                format_amount(amount).cyan().bold(),
                 withdrawal.bitcoin_address
             );
         }
     }
 }
 
+const COIN: u64 = 100_000_000;
+
 fn format_amount(amount: u64) -> String {
-    format!(
-        "{}.{:0>8}",
-        amount / 100_000_000,
-        (amount % 100_000_000).to_string()
-    )
+    format!("{}.{:0>8}", amount / COIN, (amount % COIN).to_string())
+}
+
+fn to_satoshis(amount: f64) -> u64 {
+    (amount * COIN as f64).round() as u64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_to_satoshis() {
+        assert_eq!(to_satoshis(0.00000012), 12);
+        assert_eq!(to_satoshis(100.0), 10_000_000_000);
+    }
 }
