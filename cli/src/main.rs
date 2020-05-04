@@ -124,8 +124,13 @@ fn main() {
             });
 
             // Start the signatory process
-            // TODO: poll until the node is caught up
-            std::thread::sleep(std::time::Duration::from_secs(10));
+            loop {
+                // poll until RPC is available
+                if let Ok(_) = Client::new("localhost:26657") {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
             info!("Starting signatory process");
             nomic_signatory::start(nomic_home).unwrap();
         }
