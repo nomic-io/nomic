@@ -168,11 +168,30 @@ fn main() {
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs();
-            let expiration =
-                signatory_snapshot.time + SIGNATORY_CHANGE_INTERVAL * CHECKPOINT_INTERVAL;
-            let days_until_expiration =
-                ((expiration.saturating_sub(now)) as f64 / (60 * 60 * 24) as f64).round() as usize;
+            let last_checkpoint_time = client
+                .state()
+                .unwrap()
+                .peg
+                .last_checkpoint_time
+                .get()
+                .unwrap();
+            let checkpoint_index = client.state().unwrap().peg.checkpoint_index.get().unwrap();
+            let checkpoints_until_change =
+                SIGNATORY_CHANGE_INTERVAL - (checkpoint_index % SIGNATORY_CHANGE_INTERVAL);
+            let time_until_change =
+                checkpoints_until_change * CHECKPOINT_INTERVAL - (now - last_checkpoint_time);
+            let hours_until_expiration =
+                (time_until_change as f64 / (60.0 * 60.0)).round() as usize;
+            let minutes_until_expiration = (time_until_change as f64 / 60.0).round() as usize;
 
+            if minutes_until_expiration <= 60 {
+                let message = format!(
+                    "The signatory set is currently changing. Try this command again in {} minutes.",
+                    minutes_until_expiration.to_string().bold()
+                );
+                println!("{}", message.yellow());
+                return;
+            }
             let relayer = if opts.dev {
                 "http://localhost:8880"
             } else {
@@ -187,9 +206,9 @@ fn main() {
             println!(
                 "{}",
                 format!(
-                    "{} day{} from now",
-                    days_until_expiration,
-                    if days_until_expiration == 1 { "" } else { "s" }
+                    "{} hour{} from now",
+                    hours_until_expiration,
+                    if hours_until_expiration == 1 { "" } else { "s" }
                 )
                 .red()
                 .bold()
@@ -201,12 +220,6 @@ fn main() {
                 "you can check your balance with `{}`.",
                 "nomic balance".blue().italic()
             );
-            println!();
-            println!(
-                "{} send to this address after it expires or you will risk",
-                "DO NOT".red().bold()
-            );
-            println!("loss of funds.");
         }
         SubCommand::Balance(_) => {
             default_log_level("warn");
@@ -219,8 +232,11 @@ fn main() {
             let balance = client.get_balance(&wallet.pubkey_bytes()).unwrap();
             let balance = format_amount(balance);
 
-            println!("YOUR ADDRESS: {}", wallet.receive_address().cyan().bold());
-            println!("YOUR BALANCE: {} NBTC", balance.cyan().bold());
+            println!("YOUR NOMIC ADDRESS:");
+            println!("{}", wallet.receive_address().cyan().bold());
+            println!();
+            println!("YOUR BALANCE:");
+            println!("{} NBTC", balance.cyan().bold());
         }
         SubCommand::Transfer(transfer) => {
             default_log_level("warn");
