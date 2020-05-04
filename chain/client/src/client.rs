@@ -76,7 +76,15 @@ impl Client {
 
         let rpc = &self.tendermint_rpc;
         let tx = tendermint::abci::Transaction::new(tx_bytes);
-        Ok(rpc.broadcast_tx_commit(tx)?)
+
+        let res = rpc.broadcast_tx_commit(tx)?;
+        if res.check_tx.code.is_err() {
+            bail!(res.check_tx.log);
+        } else if res.deliver_tx.code.is_err() {
+            bail!(res.deliver_tx.log);
+        } else {
+            Ok(res)
+        }
     }
 
     /// Transmit a transaction the peg state machine without blocking.
@@ -94,8 +102,7 @@ impl Client {
     /// Get the Bitcoin headers currently used by the peg zone's on-chain SPV client.
     pub fn get_bitcoin_block_hashes(&self) -> Result<Vec<Hash>> {
         let state = &mut self.state()?.peg.headers;
-        let mut header_cache =
-            spv::headercache::HeaderCache::new(bitcoin_network, state);
+        let mut header_cache = spv::headercache::HeaderCache::new(bitcoin_network, state);
         let trunk = header_cache.load_trunk();
 
         match trunk {
