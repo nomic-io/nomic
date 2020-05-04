@@ -19,6 +19,7 @@ pub struct State {
     pub active_checkpoint: ActiveCheckpoint,
     pub checkpoint_index: Value<u64>,
     pub headers: Wrapper,
+    pub finalized_checkpoint_txs: Deque<Vec<u8>>,
 }
 
 #[derive(Clone, Debug, Encode, Decode)]
