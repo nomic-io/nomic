@@ -175,7 +175,7 @@ fn main() {
                 .last_checkpoint_time
                 .get()
                 .unwrap();
-            let checkpoint_index = client.state().unwrap().peg.checkpoint_index.get().unwrap();
+            let checkpoint_index = client.state().unwrap().peg.checkpoint_index.get_or_default().unwrap();
             let checkpoints_until_change =
                 SIGNATORY_CHANGE_INTERVAL - (checkpoint_index % SIGNATORY_CHANGE_INTERVAL);
             let time_until_change =
