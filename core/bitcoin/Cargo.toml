@@ -8,6 +8,6 @@ edition = "2018"
 bitcoin = { version = "0.23.0", features = ["use-serde"] }
 bitcoincore-rpc = "0.9.0"
 serde = { version = "1.0.104", features = ["derive"] }
-orga = { git = "https://github.com/nomic-io/orga", rev = "2498df8f5e7871b61cd7c0812ee1b6b3a80569be" }
+orga = { git = "https://github.com/nomic-io/orga", rev = "0759a5f9933e792f2a61179f29727051c4ebab4d" }
 
 
