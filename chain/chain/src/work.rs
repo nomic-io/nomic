@@ -35,8 +35,9 @@ pub mod handlers {
 
         // Grant voting power
         let current_voting_power = *validators.get(&tx.public_key).unwrap_or(&0);
+        let new_voting_power = work_proof_value / MIN_WORK;
 
-        validators.insert(tx.public_key, current_voting_power + work_proof_value);
+        validators.insert(tx.public_key, current_voting_power + new_voting_power);
         // Write the redeemed hash to the store so it can't be replayed
         redeemed_work_hashes.insert(hash)?;
 
