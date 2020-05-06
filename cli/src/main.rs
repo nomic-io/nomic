@@ -179,7 +179,7 @@ fn main() {
             let checkpoints_until_change =
                 SIGNATORY_CHANGE_INTERVAL - (checkpoint_index % SIGNATORY_CHANGE_INTERVAL);
             let time_until_change =
-                checkpoints_until_change * CHECKPOINT_INTERVAL - (now - last_checkpoint_time);
+                (checkpoints_until_change * CHECKPOINT_INTERVAL).saturating_sub(now - last_checkpoint_time);
             let hours_until_expiration =
                 (time_until_change as f64 / (60.0 * 60.0)).round() as usize;
             let minutes_until_expiration = (time_until_change as f64 / 60.0).round() as usize;
