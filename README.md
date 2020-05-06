@@ -29,15 +29,15 @@ Download the binary from Github with wget, then give it executable permissions.
 
 ```bash
 # on Linux (x86_64)
-wget -O nomic https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.1.1/nomic-x86_64-linux
+wget -O nomic https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.2.0/nomic-x86_64-linux
 chmod +x nomic
 
 # on Linux (arm64)
-wget -O nomic https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.1.1/nomic-arm64-linux
+wget -O nomic https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.2.0/nomic-arm64-linux
 chmod +x nomic
 
 # on macOS
-wget -O nomic https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.1.1/nomic-x86_64-macos
+wget -O nomic https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.2.0/nomic-x86_64-macos
 chmod +x nomic
 ```
 
@@ -155,6 +155,33 @@ cargo install --path cli
 
 This will take a few minutes. Once it's done, you'll have a `nomic` command.
 
-## Next Steps
+## Deposits, Withdrawals, and Transfers
 
-In the future, validator nodes like yours will also be responsible for helping manage the network's Bitcoin reserves. Stay tuned as the Nomic sidechain develops, and join the discussion in the [Telegram channel](https://t.me/nomicbtc)!
+After your full node is running, try depositing some testnet Bitcoin with:
+
+```bash
+nomic deposit
+```
+
+The funds will show up in your sidechain account after your Bitcoin transaction has 2 confirmations.
+
+After depositing some Bitcoin, check your balance with:
+```bash
+nomic balance
+```
+
+Now send some coins to another address with:
+
+```bash
+nomic send <nomic-address> <amount>
+```
+
+Finally, withdraw some coins back to a testnet Bitcoin address with:
+
+```bash
+nomic withdraw <btc-address> <amount>
+```
+
+## Join the Telegram Chat
+
+Stay tuned as the Nomic sidechain develops, and join the discussion in the [Telegram channel](https://t.me/nomicbtc)!
