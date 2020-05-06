@@ -72,7 +72,7 @@ impl<S: Store> State<S> {
 
     pub fn active_utxos(&self) -> Result<Vec<Utxo>> {
         // TODO: don't prune utxos, support spending from older signatory set
-        let signatory_set_index = self.active_checkpoint.signatory_set_index.get()?;
+        let signatory_set_index = self.active_checkpoint.signatory_set_index.get_or_default()?;
 
         self.active_checkpoint
             .utxos
