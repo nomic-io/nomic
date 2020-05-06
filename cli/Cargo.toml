@@ -1,7 +1,7 @@
 [package]
 name = "nomic-cli"
-version = "0.1.0"
-authors = ["Judd <kepzorz@gmail.com>"]
+version = "0.2.0"
+authors = ["The Nomic Team <hello@nomic.io>"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

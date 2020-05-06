@@ -14,7 +14,7 @@ use wallet::Wallet;
 
 /// Command-line interface for interacting with the Nomic Bitcoin sidechain
 #[derive(Clap)]
-#[clap(version = "0.1.0")]
+#[clap(version = "0.2.0")]
 struct Opts {
     #[clap(subcommand)]
     subcmd: SubCommand,
@@ -27,7 +27,7 @@ struct Opts {
 #[derive(Clap)]
 enum SubCommand {
     /// Relays data between a local Bitcoin full node and the sidechain
-    #[clap(name = "relayer", version = "0.1.0")]
+    #[clap(name = "relayer")]
     Relayer(Relayer),
 
     /// Starts a sidechain full node
@@ -73,13 +73,13 @@ struct Balance;
 #[derive(Clap)]
 struct Transfer {
     address: String,
-    amount: u64,
+    amount: f64,
 }
 
 #[derive(Clap)]
 struct Withdraw {
     bitcoin_address: String,
-    amount: u64,
+    amount: f64,
 }
 
 fn main() {
@@ -124,8 +124,13 @@ fn main() {
             });
 
             // Start the signatory process
-            // TODO: poll until the node is caught up
-            std::thread::sleep(std::time::Duration::from_secs(10));
+            loop {
+                // poll until RPC is available
+                if let Ok(_) = Client::new("localhost:26657") {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
             info!("Starting signatory process");
             nomic_signatory::start(nomic_home).unwrap();
         }
@@ -163,11 +168,30 @@ fn main() {
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs();
-            let expiration =
-                signatory_snapshot.time + SIGNATORY_CHANGE_INTERVAL * CHECKPOINT_INTERVAL;
-            let days_until_expiration =
-                ((expiration.saturating_sub(now)) as f64 / (60 * 60 * 24) as f64).round() as usize;
+            let last_checkpoint_time = client
+                .state()
+                .unwrap()
+                .peg
+                .last_checkpoint_time
+                .get()
+                .unwrap();
+            let checkpoint_index = client.state().unwrap().peg.checkpoint_index.get_or_default().unwrap();
+            let checkpoints_until_change =
+                SIGNATORY_CHANGE_INTERVAL - (checkpoint_index % SIGNATORY_CHANGE_INTERVAL);
+            let time_until_change =
+                (checkpoints_until_change * CHECKPOINT_INTERVAL).saturating_sub(now - last_checkpoint_time);
+            let hours_until_expiration =
+                (time_until_change as f64 / (60.0 * 60.0)).round() as usize;
+            let minutes_until_expiration = (time_until_change as f64 / 60.0).round() as usize;
 
+            if minutes_until_expiration <= 60 {
+                let message = format!(
+                    "The signatory set is currently changing. Try this command again in {} minutes.",
+                    minutes_until_expiration.to_string().bold()
+                );
+                println!("{}", message.yellow());
+                return;
+            }
             let relayer = if opts.dev {
                 "http://localhost:8880"
             } else {
@@ -182,9 +206,9 @@ fn main() {
             println!(
                 "{}",
                 format!(
-                    "{} day{} from now",
-                    days_until_expiration,
-                    if days_until_expiration == 1 { "" } else { "s" }
+                    "{} hour{} from now",
+                    hours_until_expiration,
+                    if hours_until_expiration == 1 { "" } else { "s" }
                 )
                 .red()
                 .bold()
@@ -196,12 +220,6 @@ fn main() {
                 "you can check your balance with `{}`.",
                 "nomic balance".blue().italic()
             );
-            println!();
-            println!(
-                "{} send to this address after it expires or you will risk",
-                "DO NOT".red().bold()
-            );
-            println!("loss of funds.");
         }
         SubCommand::Balance(_) => {
             default_log_level("warn");
@@ -214,14 +232,17 @@ fn main() {
             let balance = client.get_balance(&wallet.pubkey_bytes()).unwrap();
             let balance = format_amount(balance);
 
-            println!("YOUR ADDRESS: {}", wallet.receive_address().cyan().bold());
-            println!("YOUR BALANCE: {} NBTC", balance.cyan().bold());
+            println!("YOUR NOMIC ADDRESS:");
+            println!("{}", wallet.receive_address().cyan().bold());
+            println!();
+            println!("YOUR BALANCE:");
+            println!("{} NBTC", balance.cyan().bold());
         }
         SubCommand::Transfer(transfer) => {
             default_log_level("warn");
 
             let receiver_address = transfer.address;
-            let amount = transfer.amount;
+            let amount = to_satoshis(transfer.amount);
 
             let mut client = Client::new("localhost:26657").unwrap();
 
@@ -244,15 +265,15 @@ fn main() {
         SubCommand::Withdraw(withdrawal) => {
             default_log_level("warn");
 
+            let amount = to_satoshis(withdrawal.amount);
+
             let mut client = Client::new("localhost:26657").unwrap();
             let wallet_path = nomic_home.join("wallet.key");
             let wallet = Wallet::load_or_generate(wallet_path).unwrap();
 
-            if let Err(err) = wallet.withdraw(
-                &mut client,
-                withdrawal.bitcoin_address.as_str(),
-                withdrawal.amount,
-            ) {
+            if let Err(err) =
+                wallet.withdraw(&mut client, withdrawal.bitcoin_address.as_str(), amount)
+            {
                 let err: nomic_client::RpcError = err.downcast().unwrap();
                 if err.message() != "tx already exists in cache" {
                     panic!(err);
@@ -261,17 +282,30 @@ fn main() {
 
             println!(
                 "Withdrew {} Bitcoin to {}.",
-                format_amount(withdrawal.amount).cyan().bold(),
+                format_amount(amount).cyan().bold(),
                 withdrawal.bitcoin_address
             );
         }
     }
 }
 
+const COIN: u64 = 100_000_000;
+
 fn format_amount(amount: u64) -> String {
-    format!(
-        "{}.{:0>8}",
-        amount / 100_000_000,
-        (amount % 100_000_000).to_string()
-    )
+    format!("{}.{:0>8}", amount / COIN, (amount % COIN).to_string())
+}
+
+fn to_satoshis(amount: f64) -> u64 {
+    (amount * COIN as f64).round() as u64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_to_satoshis() {
+        assert_eq!(to_satoshis(0.00000012), 12);
+        assert_eq!(to_satoshis(100.0), 10_000_000_000);
+    }
 }

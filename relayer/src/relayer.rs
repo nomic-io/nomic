@@ -167,8 +167,15 @@ fn checkpoint_step() -> Result<()> {
         None => return Ok(()),
         Some(btc_tx) => btc_tx,
     };
-    println!("btc tx: {:?}", &btc_tx);
-    btc_rpc.send_raw_transaction(&btc_tx)?;
+
+    println!("relaying checkpoint to bitcoin: {:?}", &btc_tx);
+
+    if let Err(err) = btc_rpc.send_raw_transaction(&btc_tx) {
+        // TODO: downcast into something better
+        if err.to_string() != "JSON-RPC error: RPC error response: RpcError { code: -27, message: \"Transaction already in block chain\", data: None }" {
+            return Err(err.into())
+        }
+    }
 
     Ok(())
 }

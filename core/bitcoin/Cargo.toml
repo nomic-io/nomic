@@ -1,13 +1,13 @@
 [package]
 name = "nomic-bitcoin"
 version = "0.1.0"
-authors = ["Judd <kepzorz@gmail.com>"]
+authors = ["The Nomic Team <hello@nomic.io>"]
 edition = "2018"
 
 [dependencies]
 bitcoin = { version = "0.23.0", features = ["use-serde"] }
 bitcoincore-rpc = "0.9.0"
 serde = { version = "1.0.104", features = ["derive"] }
-orga = { git = "https://github.com/nomic-io/orga", rev = "2498df8f5e7871b61cd7c0812ee1b6b3a80569be" }
+orga = { git = "https://github.com/nomic-io/orga", rev = "7761f6e2cbcb0bb6acd96f1cc91c56b38e2eda39" }
 
 

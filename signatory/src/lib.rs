@@ -97,6 +97,7 @@ fn try_sign(client: &Client, priv_key: &SecretKey) -> Result<()> {
 
     if let Err(err) = client.send(Transaction::Signature(tx)) {
         let err: RpcError = err.downcast()?;
+        dbg!(&err);
         if err.message() == "tx already exists in cache" {
             return Ok(());
         }

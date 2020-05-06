@@ -19,6 +19,7 @@ pub struct State {
     pub active_checkpoint: ActiveCheckpoint,
     pub checkpoint_index: Value<u64>,
     pub headers: Wrapper,
+    pub finalized_checkpoint_txs: Deque<Vec<u8>>,
 }
 
 #[derive(Clone, Debug, Encode, Decode)]
@@ -71,7 +72,7 @@ impl<S: Store> State<S> {
 
     pub fn active_utxos(&self) -> Result<Vec<Utxo>> {
         // TODO: don't prune utxos, support spending from older signatory set
-        let signatory_set_index = self.active_checkpoint.signatory_set_index.get()?;
+        let signatory_set_index = self.active_checkpoint.signatory_set_index.get_or_default()?;
 
         self.active_checkpoint
             .utxos

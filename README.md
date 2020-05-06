@@ -29,16 +29,16 @@ Download the binary from Github with wget, then give it executable permissions.
 
 ```bash
 # on Linux (x86_64)
-wget -O nomic https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.1.1/nomic-x86_64-linux
-chmod +x nomic
+wget https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.2.0/nomic-x86_64-linux-0.2.0.tar.gz
+tar -xf ./nomic-x86_64-linux-0.2.0.tar.gz
 
 # on Linux (arm64)
-wget -O nomic https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.1.1/nomic-arm64-linux
-chmod +x nomic
+wget https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.2.0/nomic-arm64-linux-0.2.0.tar.gz
+tar -xf ./nomic-arm64-linux-0.2.0.tar.gz
 
 # on macOS
-wget -O nomic https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.1.1/nomic-x86_64-macos
-chmod +x nomic
+wget https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.2.0/nomic-x86_64-macos-0.2.0.tar.gz
+tar -xf ./nomic-x86_64-macos-0.2.0.tar.gz
 ```
 
 Or you can [build from source](#self-build-instructions)
@@ -48,7 +48,7 @@ Or you can [build from source](#self-build-instructions)
 You can start your node by running:
 
 ```bash
-nomic start
+./nomic start
 ```
 
 This will run the Nomic state machine and a consensus process (powered by [Tendermint](https://github.com/tendermint/tendermint)), and will automatically connect to other nodes in the network.
@@ -64,7 +64,7 @@ To gain voting power on the Nomic sidechain, full nodes must mine [hashcash](htt
 To mine, run:
 
 ```bash
-nomic worker
+./nomic worker
 ```
 
 You can watch your voting power increase at [http://localhost:26657/status](http://localhost:26657/status). You're now a validator on the Nomic sidechain! Keep your node running to help ensure stability of the network.
@@ -106,7 +106,7 @@ Note that this will use ~30GB of disk space, and will take a few hours (the spee
 Once Bitcoin is synced, you can run the relayer:
 
 ```bash
-nomic relayer
+./nomic relayer
 ```
 
 Now any time a new Bitcoin block gets mined, your node will broadcast it to the sidechain. Your node will also relay relevant Bitcoin transactions.
@@ -155,6 +155,33 @@ cargo install --path cli
 
 This will take a few minutes. Once it's done, you'll have a `nomic` command.
 
-## Next Steps
+## Deposits, Withdrawals, and Transfers
 
-In the future, validator nodes like yours will also be responsible for helping manage the network's Bitcoin reserves. Stay tuned as the Nomic sidechain develops, and join the discussion in the [Telegram channel](https://t.me/nomicbtc)!
+After your full node is running, try depositing some testnet Bitcoin with:
+
+```bash
+./nomic deposit
+```
+
+The funds will show up in your sidechain account after your Bitcoin transaction has 2 confirmations.
+
+After depositing some Bitcoin, check your balance with:
+```bash
+./nomic balance
+```
+
+Now send some coins to another address with:
+
+```bash
+./nomic send <nomic-address> <amount>
+```
+
+Finally, withdraw some coins back to a testnet Bitcoin address with:
+
+```bash
+./nomic withdraw <btc-address> <amount>
+```
+
+## Join the Telegram Chat
+
+Stay tuned as the Nomic sidechain develops, and join the discussion in the [Telegram channel](https://t.me/nomicbtc)!

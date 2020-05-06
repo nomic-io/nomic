@@ -1,6 +1,7 @@
 use super::{State as PegState, Utxo};
 use super::{CHECKPOINT_INTERVAL, CHECKPOINT_MINIMUM_VALUE, SIGNATORY_CHANGE_INTERVAL};
 use crate::{accounts::State as AccountState, spv::headercache::HeaderCache, SECP};
+use bitcoin::consensus::encode::Encodable;
 use bitcoin::hashes::Hash;
 use bitcoin::Network::Testnet as bitcoin_network;
 use failure::bail;
@@ -375,6 +376,12 @@ pub fn signature_tx<S: Store>(state: &mut PegState<S>, tx: SignatureTransaction)
                 .fixed_index(state.signatory_sets.len() - 1),
             data: vec![],
         })?;
+
+        let mut raw_tx = vec![];
+        state
+            .finalized_checkpoint_tx()?
+            .consensus_encode(&mut raw_tx)?;
+        state.finalized_checkpoint_txs.push_back(raw_tx)?;
     } else {
         state
             .active_checkpoint
