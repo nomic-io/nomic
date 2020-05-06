@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.2.0] - 2020-05-06
+
+### Added
+
+- Added full Bitcoin peg system - the validators of the network now coordinate to sign Bitcoin transactions and manage reserves of BTC.
+  - Nodes now run a signatory process which automatically signs Bitcoin transactions.
+  - Relayers now scan Nomic for checkpoint transactions to relay to the Bitcoin network.
+- Added `nomic withdraw` CLI command, which deducts NBTC from the wallet and pays out BTC on the Bitcoin mainchain.
+- Added `nomic send` CLI command, which transfers coins from one account to another.
+
+### Changed
+
+- Nomic CLI commands now use the `--dev` flag for testing against a local network.
+- CLI commands now denominate amounts in Bitcoin rather than Satoshis.
+- Voting power units are now scaled down by the minimum work amount (`2^20`).
+
+### Bug Fixes
+
+- Changed encoding of voting power in the Bitcoin reserve script to prevent overflowing 32-bit values. ([#47](https://github.com/nomic-io/nomic/pull/47))
+
 ## [0.1.1] - 2020-03-18
 
 ### Added
