@@ -11,24 +11,26 @@
       "max_age": "100000"
     },
     "validator": {
-      "pub_key_types": ["secp256k1"]
+      "pub_key_types": [
+        "secp256k1"
+      ]
     }
   },
   "validators": [
     {
-      "address": "BC21BFC3987AED84AEB0F90CED74F0474BC79725",
+      "address": "113E9858D6D5981EB94572400BE2D832ECA53517",
       "pub_key": {
         "type": "tendermint/PubKeySecp256k1",
-        "value": "AruYDQl3eAEf5mAEl+CwtEYxX1yYCbYUQlAfuhmYOQ+F"
+        "value": "Akt76L0rIGP4ssou5NJopl1xzTohPJuwJs+eXviWGmKE"
       },
       "power": "10",
       "name": "Judd"
     },
     {
-      "address": "0C039237E65F6A90077555E79E34909B4931B23B",
+      "address": "854C302C5393CEA307F5FF87800ADE02A2C32F04",
       "pub_key": {
         "type": "tendermint/PubKeySecp256k1",
-        "value": "A6Z8oaQECIGazCBUbsVxY3DdsezJNogKVP4x+1S4m2is"
+        "value": "AyINqK2BpngvYzwNm2e41ZooUw8sSYn46mlY3++SzI+c"
       },
       "power": "10",
       "name": "Matt"
