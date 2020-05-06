@@ -7,7 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-orga = { git = "https://github.com/nomic-io/orga", rev = "0759a5f9933e792f2a61179f29727051c4ebab4d", features = ["merk", "abci"] }
+orga = { git = "https://github.com/nomic-io/orga", rev = "7761f6e2cbcb0bb6acd96f1cc91c56b38e2eda39", features = ["merk", "abci"] }
 nomic-primitives = { path = "../../core/primitives" }
 nomic-work = { path = "../../core/work" }
 nomic-bitcoin = { path = "../../core/bitcoin" }
@@ -17,7 +17,7 @@ serde = { version = "1.0.100", features = [ "derive" ] }
 serde_derive = "1.0.100"
 bincode = "1.2.0"
 serde_json = "1.0.46"
-merk = "1.0.0"
+merk = { git = " https://github.com/nomic-io/merk", rev="114f5a2415bb2ce5e51501d4eb2a56e5726708a6" }
 sha2 = "0.8.0"
 failure = "=0.1.6"
 secp256k1 = "0.17.2"
