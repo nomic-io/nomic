@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.1] - 2020-05-20
+
+### Bug Fixes
+
+- Fixed signatory process crashing on Tendermint RPC errors.
+
 ## [0.2.0] - 2020-05-06
 
 ### Added

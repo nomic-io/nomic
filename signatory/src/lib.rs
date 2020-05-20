@@ -1,5 +1,5 @@
 use lazy_static::lazy_static;
-use log::info;
+use log::{warn, info};
 use nomic_bitcoin::bitcoin;
 use nomic_client::{Client, RpcError};
 use nomic_primitives::{transaction::Transaction, Result};
@@ -31,7 +31,9 @@ pub fn start<P: AsRef<Path>>(nomic_home: P) -> Result<()> {
     println!("signatory pub key: {:?}", &pub_key.serialize()[..]);
 
     loop {
-        try_sign(&client, &priv_key)?;
+        if let Err(err) = try_sign(&client, &priv_key) {
+            warn!("signatory failed: \"{}\", will retry", err);
+        }
         sleep(Duration::from_secs(60));
     }
 }
