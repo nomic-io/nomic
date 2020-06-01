@@ -14,7 +14,7 @@ use wallet::Wallet;
 
 /// Command-line interface for interacting with the Nomic Bitcoin sidechain
 #[derive(Clap)]
-#[clap(version = "0.2.1")]
+#[clap(version = "0.2.2")]
 struct Opts {
     #[clap(subcommand)]
     subcmd: SubCommand,

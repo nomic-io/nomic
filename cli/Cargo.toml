@@ -1,6 +1,6 @@
 [package]
 name = "nomic-cli"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["The Nomic Team <hello@nomic.io>"]
 edition = "2018"
 

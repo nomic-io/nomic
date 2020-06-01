@@ -1412,7 +1412,7 @@ dependencies = [
 
 [[package]]
 name = "nomic-cli"
-version = "0.2.0"
+version = "0.2.2"
 dependencies = [
  "base64 0.12.1",
  "bech32",
