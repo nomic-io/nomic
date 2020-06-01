@@ -1,6 +1,6 @@
 {
   "genesis_time": "2020-05-01T05:35:35.914418403Z",
-  "chain_id": "nomic-testnet-3",
+  "chain_id": "nomic-testnet-3-1",
   "consensus_params": {
     "block": {
       "max_bytes": "22020096",
