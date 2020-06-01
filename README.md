@@ -29,16 +29,16 @@ Download the binary from Github with wget, then give it executable permissions.
 
 ```bash
 # on Linux (x86_64)
-wget https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.2.1/nomic-x86_64-linux-0.2.1.tar.gz
-tar -xf ./nomic-x86_64-linux-0.2.1.tar.gz
+wget https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.2.2/nomic-x86_64-linux-0.2.2.tar.gz
+tar -xf ./nomic-x86_64-linux-0.2.2.tar.gz
 
 # on Linux (arm64)
-wget https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.2.1/nomic-arm64-linux-0.2.1.tar.gz
-tar -xf ./nomic-arm64-linux-0.2.1.tar.gz
+wget https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.2.2/nomic-arm64-linux-0.2.2.tar.gz
+tar -xf ./nomic-arm64-linux-0.2.2.tar.gz
 
 # on macOS
-wget https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.2.1/nomic-x86_64-macos-0.2.1.tar.gz
-tar -xf ./nomic-x86_64-macos-0.2.1.tar.gz
+wget https://github.com/nomic-io/rust-bitcoin-peg/releases/download/v0.2.2/nomic-x86_64-macos-0.2.2.tar.gz
+tar -xf ./nomic-x86_64-macos-0.2.2.tar.gz
 ```
 
 Or you can [build from source](#self-build-instructions)
