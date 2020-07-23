@@ -5,7 +5,6 @@ extern crate rocket;
 pub mod chain;
 pub mod cli;
 pub mod core;
-mod main;
 pub mod relayer;
 pub mod signatory;
 pub mod worker;

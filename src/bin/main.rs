@@ -1,11 +1,11 @@
-use crate::chain::chain::abci_server;
-use crate::chain::client::Client;
-use crate::cli::wallet::Wallet;
-use crate::Result;
 use clap::Clap;
 use colored::*;
 use failure::bail;
 use log::{debug, info};
+use nomic::chain::chain::abci_server;
+use nomic::chain::client::Client;
+use nomic::cli::wallet::Wallet;
+use nomic::Result;
 use std::{env, fs};
 
 /// Command-line interface for interacting with the Nomic Bitcoin sidechain
@@ -103,14 +103,14 @@ pub fn main() {
     match opts.subcmd {
         SubCommand::Relayer(_) => {
             default_log_level("info");
-            crate::relayer::relayer::start();
+            nomic::relayer::relayer::start();
         }
         SubCommand::Start(_) => {
             default_log_level("info");
             // Install and start Tendermint
-            crate::cli::tendermint::install(&nomic_home);
-            crate::cli::tendermint::init(&nomic_home, opts.dev);
-            crate::cli::tendermint::start(&nomic_home);
+            nomic::cli::tendermint::install(&nomic_home);
+            nomic::cli::tendermint::init(&nomic_home, opts.dev);
+            nomic::cli::tendermint::start(&nomic_home);
 
             // Start the ABCI server
             info!("Starting ABCI server");
@@ -128,11 +128,11 @@ pub fn main() {
                 std::thread::sleep(std::time::Duration::from_secs(1));
             }
             info!("Starting signatory process");
-            crate::signatory::start(nomic_home).unwrap();
+            nomic::signatory::start(nomic_home).unwrap();
         }
         SubCommand::Worker(_) => {
             default_log_level("info");
-            crate::worker::generate();
+            nomic::worker::generate();
         }
         SubCommand::Deposit(_) => {
             default_log_level("warn");
@@ -158,7 +158,7 @@ pub fn main() {
             let wallet = Wallet::load_or_generate(wallet_path).unwrap();
             let address = wallet.deposit_address(&signatory_snapshot.signatories);
 
-            use crate::chain::chain::peg::{CHECKPOINT_INTERVAL, SIGNATORY_CHANGE_INTERVAL};
+            use nomic::chain::chain::peg::{CHECKPOINT_INTERVAL, SIGNATORY_CHANGE_INTERVAL};
             use std::time::{SystemTime, UNIX_EPOCH};
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -252,7 +252,7 @@ pub fn main() {
             let wallet = Wallet::load_or_generate(wallet_path).unwrap();
 
             if let Err(err) = wallet.send(&mut client, receiver_address.as_str(), amount) {
-                let err: crate::chain::client::RpcError = err.downcast().unwrap();
+                let err: nomic::chain::client::RpcError = err.downcast().unwrap();
                 if err.message() != "tx already exists in cache" {
                     panic!(err);
                 }
@@ -276,7 +276,7 @@ pub fn main() {
             if let Err(err) =
                 wallet.withdraw(&mut client, withdrawal.bitcoin_address.as_str(), amount)
             {
-                let err: crate::chain::client::RpcError = err.downcast().unwrap();
+                let err: nomic::chain::client::RpcError = err.downcast().unwrap();
                 if err.message() != "tx already exists in cache" {
                     panic!(err);
                 }
