@@ -1,18 +1,44 @@
-[workspace]
-members = [
-    "cli",
-    "relayer",
-    "core/primitives",
-    "chain/client",
-    "chain/chain",
-    "signatory",
-    "core/work",
-    "core/signatory-set",
-    "core/bitcoin",
-    "worker",
-    "scripts/make-checkpoint-header"
-]
+[package]
+name = "nomic"
+version = "0.2.1"
+authors = [ "The Nomic Team <hello@nomic.io>" ]
+edition = "2018"
 
-[profile.release]
-overflow-checks = true
+[dependencies]
+base64 = "0.12.0"
+bech32 = "0.7.2"
+bincode = "1.2.1"
+bitcoin = { version = "0.23.0", features = [ "use-serde" ] }
+bitcoin-script = "0.1.1"
+bitcoincore-rpc = "0.9.0"
+byteorder = "1.3.2"
+clap = { git = "https://github.com/clap-rs/clap/" }
+colored = "1.9.3"
+dirs = "2.0.2"
+failure = "=0.1.6"
+hex = "0.4.2"
+hex-literal = "0.2.1"
+is_executable = "0.1.2"
+lazy_static = "1.4.0"
+log = "0.4.8"
+merk = { git = " https://github.com/nomic-io/merk", rev = "114f5a2415bb2ce5e51501d4eb2a56e5726708a6" }
+orga = { path = "../orga", features = [ "merk", "abci" ] }
+pretty_env_logger = "0.4.0"
+rand = "0.7.2"
+reqwest = { version = "0.10.3", features = [ "blocking", "json" ] }
+rocket = "0.4.5"
+secp256k1 = "=0.17.2"
+serde = { version = "1.0.104", features = [ "derive" ] }
+serde_derive = "1.0.100"
+serde_json = "1.0.48"
+sha2 = "0.8.1"
+simple-server = "0.4.0"
+tendermint-rpc = { version = "0.15.0", features = ["client"] }
+zip = "0.5.5"
 
+[dev-dependencies]
+protobuf = "2.10.1"
+
+[[bin]]
+name = "nomic"
+path = "src/cli/main.rs"
