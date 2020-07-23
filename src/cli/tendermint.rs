@@ -116,7 +116,7 @@ pub fn init(nomic_home: &PathBuf, dev_mode: bool) {
         );
         genesis
     } else {
-        include_str!("../../config/genesis.json").to_string()
+        include_str!("../config/genesis.json").to_string()
     };
     debug!("genesis.json: {}", genesis_str);
     info!("Writing genesis to '{:?}'", genesis_path);

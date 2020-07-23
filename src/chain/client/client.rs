@@ -4,8 +4,10 @@ use crate::core::bitcoin::bitcoin;
 use crate::core::primitives::transaction::{Transaction, WorkProofTransaction};
 use crate::core::primitives::Account;
 use crate::core::signatory_set::{SignatorySet, SignatorySetSnapshot};
+use crate::Result;
 use bitcoin::hash_types::BlockHash as Hash;
 use bitcoin::Network::Testnet as bitcoin_network;
+use blocking::block_on;
 use failure::bail;
 use orga::{
     abci::TendermintClient, merkstore::Client as MerkStoreClient, Read, Result as OrgaResult,
@@ -53,8 +55,9 @@ pub struct Client {
 
 impl Client {
     pub fn new(tendermint_rpc_address: &str) -> Result<Self> {
-        let address = tendermint::net::Address::from_str(tendermint_rpc_address)?;
-        let tendermint_rpc = TendermintRpcClient::new(&address)?;
+        let address = tendermint::net::Address::from_str(tendermint_rpc_address)
+            .map_err(|_| failure::format_err!("Invalid Tendermint RPC address"))?;
+        let tendermint_rpc = TendermintRpcClient::new(address);
         let store = RemoteStore::new(tendermint_rpc_address);
 
         Ok(Client {
@@ -71,13 +74,13 @@ impl Client {
     pub fn send(
         &self,
         transaction: Transaction,
-    ) -> Result<tendermint::rpc::endpoint::broadcast::tx_commit::Response> {
+    ) -> Result<tendermint_rpc::endpoint::broadcast::tx_commit::Response> {
         let tx_bytes = serde_json::to_vec(&transaction).unwrap();
 
         let rpc = &self.tendermint_rpc;
         let tx = tendermint::abci::Transaction::new(tx_bytes);
 
-        let res = rpc.broadcast_tx_commit(tx)?;
+        let res = block_on(rpc.broadcast_tx_commit(tx))?;
         if res.check_tx.code.is_err() {
             bail!(res.check_tx.log);
         } else if res.deliver_tx.code.is_err() {
@@ -91,12 +94,12 @@ impl Client {
     pub fn send_async(
         &self,
         transaction: Transaction,
-    ) -> Result<tendermint::rpc::endpoint::broadcast::tx_async::Response> {
+    ) -> Result<tendermint_rpc::endpoint::broadcast::tx_async::Response> {
         let tx_bytes = serde_json::to_vec(&transaction).unwrap();
 
         let rpc = &self.tendermint_rpc;
         let tx = tendermint::abci::Transaction::new(tx_bytes);
-        Ok(rpc.broadcast_tx_async(tx)?)
+        Ok(block_on(rpc.broadcast_tx_async(tx))?)
     }
 
     /// Get the Bitcoin headers currently used by the peg zone's on-chain SPV client.
@@ -117,7 +120,7 @@ impl Client {
         &self,
         public_key: &[u8],
         nonce: u64,
-    ) -> Result<tendermint::rpc::endpoint::broadcast::tx_async::Response> {
+    ) -> Result<tendermint_rpc::endpoint::broadcast::tx_async::Response> {
         let work_transaction = Transaction::WorkProof(WorkProofTransaction {
             public_key: public_key.to_vec(),
             nonce,

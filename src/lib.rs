@@ -1,10 +1,11 @@
 #![feature(proc_macro_hygiene, decl_macro)]
-#![feature(proc_macro_hygiene)]
 #![feature(negative_impls)]
 #[macro_use]
 extern crate rocket;
 pub mod chain;
+pub mod cli;
 pub mod core;
+mod main;
 pub mod relayer;
 pub mod signatory;
 pub mod worker;

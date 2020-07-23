@@ -1,16 +1,12 @@
-#![allow(unused_braces)]
-mod tendermint;
-mod wallet;
-
 use crate::chain::chain::abci_server;
 use crate::chain::client::Client;
-use crate::core::primitives::Result;
+use crate::cli::wallet::Wallet;
+use crate::Result;
 use clap::Clap;
 use colored::*;
 use failure::bail;
 use log::{debug, info};
 use std::{env, fs};
-use wallet::Wallet;
 
 /// Command-line interface for interacting with the Nomic Bitcoin sidechain
 #[derive(Clap)]
@@ -20,7 +16,7 @@ struct Opts {
     subcmd: SubCommand,
 
     /// Use a local chain in development mode
-    #[clap(short = "d", long = "dev")]
+    #[clap(long = "dev")]
     dev: bool,
 }
 
@@ -82,7 +78,7 @@ struct Withdraw {
     amount: f64,
 }
 
-fn main() {
+pub fn main() {
     let opts: Opts = Opts::parse();
 
     let default_log_level = |level: &str| {
@@ -107,14 +103,14 @@ fn main() {
     match opts.subcmd {
         SubCommand::Relayer(_) => {
             default_log_level("info");
-            relayer::relayer::start();
+            crate::relayer::relayer::start();
         }
         SubCommand::Start(_) => {
             default_log_level("info");
             // Install and start Tendermint
-            tendermint::install(&nomic_home);
-            tendermint::init(&nomic_home, opts.dev);
-            tendermint::start(&nomic_home);
+            crate::cli::tendermint::install(&nomic_home);
+            crate::cli::tendermint::init(&nomic_home, opts.dev);
+            crate::cli::tendermint::start(&nomic_home);
 
             // Start the ABCI server
             info!("Starting ABCI server");
@@ -132,11 +128,11 @@ fn main() {
                 std::thread::sleep(std::time::Duration::from_secs(1));
             }
             info!("Starting signatory process");
-            nomic_signatory::start(nomic_home).unwrap();
+            crate::signatory::start(nomic_home).unwrap();
         }
         SubCommand::Worker(_) => {
             default_log_level("info");
-            crate::core::worker::generate();
+            crate::worker::generate();
         }
         SubCommand::Deposit(_) => {
             default_log_level("warn");

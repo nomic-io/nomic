@@ -1,5 +1,6 @@
 use crate::chain::client::Client as PegClient;
 use crate::core::work::work;
+use blocking::block_on;
 use log::info;
 use rand::random;
 use sha2::{Digest, Sha256};
@@ -8,9 +9,7 @@ const MIN_WORK: u64 = 1 << 20;
 
 pub fn generate() {
     let rpc = PegClient::new("localhost:26657").unwrap();
-    let pub_key_bytes = rpc
-        .tendermint_rpc
-        .status()
+    let pub_key_bytes = block_on(rpc.tendermint_rpc.status())
         .expect("Unable to connect to tendermint RPC")
         .validator_info
         .pub_key
