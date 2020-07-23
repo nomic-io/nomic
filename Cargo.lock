@@ -1822,6 +1822,7 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.1.0"
+source = "git+https://github.com/nomic-io/orga?rev=cd254b46204b71dd8487f4456d27ca948ae3bc87#cd254b46204b71dd8487f4456d27ca948ae3bc87"
 dependencies = [
  "abci2",
  "blocking",
@@ -1838,6 +1839,7 @@ dependencies = [
 [[package]]
 name = "orga-macros"
 version = "0.1.0"
+source = "git+https://github.com/nomic-io/orga?rev=cd254b46204b71dd8487f4456d27ca948ae3bc87#cd254b46204b71dd8487f4456d27ca948ae3bc87"
 dependencies = [
  "proc-macro2 1.0.19",
  "quote 1.0.7",

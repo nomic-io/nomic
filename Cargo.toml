@@ -22,8 +22,8 @@ hex-literal = "0.2.1"
 is_executable = "0.1.2"
 lazy_static = "1.4.0"
 log = "0.4.8"
-merk = { git = " https://github.com/nomic-io/merk", rev = "114f5a2415bb2ce5e51501d4eb2a56e5726708a6" }
-orga = { path = "../orga", features = [ "merk", "abci" ] }
+merk = { git = "https://github.com/nomic-io/merk", rev = "114f5a2415bb2ce5e51501d4eb2a56e5726708a6" }
+orga = { git = "https://github.com/nomic-io/orga" , rev= "cd254b46204b71dd8487f4456d27ca948ae3bc87", features = [ "merk", "abci" ] }
 pretty_env_logger = "0.4.0"
 rand = "=0.6"
 reqwest = { version = "0.10.3", features = [ "blocking", "json" ] }
@@ -43,4 +43,4 @@ protobuf = "2.10.1"
 
 [[bin]]
 name = "nomic-cli"
-path = "src/cli/main.rs"
+path = "src/bin/main.rs"
