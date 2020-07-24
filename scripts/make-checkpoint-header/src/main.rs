@@ -1,5 +1,5 @@
+use crate::core::bitcoin::{bitcoincore_rpc, EnrichedHeader};
 use bitcoincore_rpc::{Auth, Client, Error as RpcError, RpcApi};
-use nomic_bitcoin::{bitcoincore_rpc, EnrichedHeader};
 use std::env;
 use std::fs;
 use std::path::Path;
