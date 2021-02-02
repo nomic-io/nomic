@@ -3,6 +3,7 @@ name = "nomic"
 version = "0.2.1"
 authors = [ "The Nomic Team <hello@nomic.io>" ]
 edition = "2018"
+license = "MIT"
 
 [dependencies]
 base64 = "0.12.0"
