@@ -1,3 +1,9 @@
 target
 **/target/
 merk.db/
+
+
+# Added by cargo
+
+/target
+Cargo.lock
