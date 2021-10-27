@@ -71,7 +71,6 @@ mod test {
     use bitcoin_hashes::hex::FromHex;
     use bitcoin_hashes::sha256d::Hash;
     use chrono::{TimeZone, Utc};
-    use std::time::{Duration, UNIX_EPOCH};
 
     #[test]
     fn primitive_adapter_encode_decode() {
@@ -98,6 +97,6 @@ mod test {
         let decoded_adapter: BitcoinPrimitiveAdapter<BlockHeader> =
             Decode::decode(encoded_adapter.as_slice()).unwrap();
 
-        assert_eq!(decoded_adapter.inner, header);
+        assert_eq!(*decoded_adapter, header);
     }
 }
