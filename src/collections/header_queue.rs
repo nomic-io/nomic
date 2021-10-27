@@ -63,3 +63,41 @@ impl<T: Decodable> Decode for BitcoinPrimitiveAdapter<T> {
 }
 
 pub struct HeaderQueue {}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use bitcoin::BlockHash;
+    use bitcoin_hashes::hex::FromHex;
+    use bitcoin_hashes::sha256d::Hash;
+    use chrono::{TimeZone, Utc};
+    use std::time::{Duration, UNIX_EPOCH};
+
+    #[test]
+    fn primitive_adapter_encode_decode() {
+        let stamp = Utc.ymd(2009, 1, 10).and_hms(11, 39, 0);
+
+        //Bitcoin block 42
+        let header = BlockHeader {
+            version: 1,
+            prev_blockhash: BlockHash::from_hash(
+                Hash::from_hex("00000000ad2b48c7032b6d7d4f2e19e54d79b1c159f5599056492f2cd7bb528b")
+                    .unwrap(),
+            ),
+            merkle_root: "27c4d937dca276fb2b61e579902e8a876fd5b5abc17590410ced02d5a9f8e483"
+                .parse()
+                .unwrap(),
+            time: stamp.timestamp() as u32,
+            bits: 486_604_799,
+            nonce: 3_600_650_283,
+        };
+
+        let adapter = BitcoinPrimitiveAdapter { inner: header };
+        let encoded_adapter = adapter.encode().unwrap();
+
+        let decoded_adapter: BitcoinPrimitiveAdapter<BlockHeader> =
+            Decode::decode(encoded_adapter.as_slice()).unwrap();
+
+        assert_eq!(decoded_adapter.inner, header);
+    }
+}
