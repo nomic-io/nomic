@@ -7,3 +7,4 @@ edition = "2018"
 [dependencies]
 bitcoin = "0.27.1"
 orga = { git = "https://github.com/nomic-io/orga.git", rev = "9493479eeebcc39bf6b1e638f2c870104af50ed6" }
+ed = { git = "https://github.com/nomic-io/ed.git", rev = "8afe42d158e526e76508a9ea97232c4e23747f5c" }
