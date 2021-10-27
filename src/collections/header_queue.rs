@@ -5,11 +5,11 @@ use orga::collections::Deque;
 use std::io::{Read, Write};
 use std::ops::{Deref, DerefMut};
 
-struct BitcoinAdapter<T> {
+struct BitcoinPrimitiveAdapter<T> {
     inner: T,
 }
 
-impl<T> Deref for BitcoinAdapter<T> {
+impl<T> Deref for BitcoinPrimitiveAdapter<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -17,13 +17,13 @@ impl<T> Deref for BitcoinAdapter<T> {
     }
 }
 
-impl<T> DerefMut for BitcoinAdapter<T> {
+impl<T> DerefMut for BitcoinPrimitiveAdapter<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
 }
 
-impl<T: Encodable> Encode for BitcoinAdapter<T> {
+impl<T: Encodable> Encode for BitcoinPrimitiveAdapter<T> {
     fn encode(&self) -> ed::Result<Vec<u8>> {
         let mut dest: Vec<u8> = Vec::new();
         self.encode_into(&mut dest)?;
@@ -48,7 +48,7 @@ impl<T: Encodable> Encode for BitcoinAdapter<T> {
     }
 }
 
-impl<T: Decodable> Decode for BitcoinAdapter<T> {
+impl<T: Decodable> Decode for BitcoinPrimitiveAdapter<T> {
     fn decode<R: Read>(input: R) -> ed::Result<Self> {
         let decoded_bytes = Decodable::consensus_decode(input);
         match decoded_bytes {
