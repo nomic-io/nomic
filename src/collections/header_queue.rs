@@ -33,9 +33,7 @@ impl<T: Encodable> Encode for BitcoinPrimitiveAdapter<T> {
     fn encode_into<W: Write>(&self, dest: &mut W) -> ed::Result<()> {
         match self.inner.consensus_encode(dest) {
             Ok(_) => Ok(()),
-            Err(e) => {
-                return Err(e.into());
-            }
+            Err(e) => Err(e.into()),
         }
     }
 
