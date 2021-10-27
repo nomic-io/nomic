@@ -5,3 +5,5 @@ authors = [ "The Nomic Team <hello@nomic.io>" ]
 edition = "2018"
 
 [dependencies]
+bitcoin = "0.27.1"
+orga = { git = "https://github.com/nomic-io/orga.git", rev = "9493479eeebcc39bf6b1e638f2c870104af50ed6" }
