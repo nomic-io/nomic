@@ -1,43 +1,58 @@
 use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::consensus::{Decodable, Encodable};
-use ed::{Decode, Encode};
 use orga::collections::Deque;
+use orga::encoding::Result as EncodingResult;
+use orga::prelude::*;
+use orga::state::State;
+use orga::store::Store;
 use std::io::{Read, Write};
 use std::ops::{Deref, DerefMut};
 
-struct BitcoinPrimitiveAdapter<T> {
-    inner: T,
+pub struct HeaderAdapter {
+    inner: BlockHeader,
 }
 
-impl<T> Deref for BitcoinPrimitiveAdapter<T> {
-    type Target = T;
+impl State for HeaderAdapter {
+    type Encoding = Self;
+
+    fn create(_: Store, data: Self::Encoding) -> orga::Result<Self> {
+        Ok(data)
+    }
+
+    fn flush(self) -> orga::Result<Self::Encoding> {
+        Ok(self)
+    }
+}
+
+impl Deref for HeaderAdapter {
+    type Target = BlockHeader;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
-impl<T> DerefMut for BitcoinPrimitiveAdapter<T> {
+impl DerefMut for HeaderAdapter {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
 }
 
-impl<T: Encodable> Encode for BitcoinPrimitiveAdapter<T> {
-    fn encode(&self) -> ed::Result<Vec<u8>> {
+impl Encode for HeaderAdapter {
+    fn encode(&self) -> EncodingResult<Vec<u8>> {
         let mut dest: Vec<u8> = Vec::new();
         self.encode_into(&mut dest)?;
         Ok(dest)
     }
 
-    fn encode_into<W: Write>(&self, dest: &mut W) -> ed::Result<()> {
+    fn encode_into<W: Write>(&self, dest: &mut W) -> EncodingResult<()> {
         match self.inner.consensus_encode(dest) {
             Ok(_) => Ok(()),
             Err(e) => Err(e.into()),
         }
     }
 
-    fn encoding_length(&self) -> ed::Result<usize> {
+    fn encoding_length(&self) -> EncodingResult<usize> {
         let mut _dest: Vec<u8> = Vec::new();
         match self.inner.consensus_encode(_dest) {
             Ok(inner) => Ok(inner),
@@ -46,8 +61,8 @@ impl<T: Encodable> Encode for BitcoinPrimitiveAdapter<T> {
     }
 }
 
-impl<T: Decodable> Decode for BitcoinPrimitiveAdapter<T> {
-    fn decode<R: Read>(input: R) -> ed::Result<Self> {
+impl Decode for HeaderAdapter {
+    fn decode<R: Read>(input: R) -> EncodingResult<Self> {
         let decoded_bytes = Decodable::consensus_decode(input);
         match decoded_bytes {
             Ok(inner) => Ok(Self { inner }),
@@ -62,7 +77,16 @@ impl<T: Decodable> Decode for BitcoinPrimitiveAdapter<T> {
     }
 }
 
-pub struct HeaderQueue {}
+#[derive(State)]
+pub struct WrappedHeader {
+    height: u32,
+    header: HeaderAdapter,
+}
+
+#[derive(State)]
+pub struct HeaderQueue {
+    inner: Deque<WrappedHeader>,
+}
 
 #[cfg(test)]
 mod test {
@@ -91,11 +115,10 @@ mod test {
             nonce: 3_600_650_283,
         };
 
-        let adapter = BitcoinPrimitiveAdapter { inner: header };
+        let adapter = HeaderAdapter { inner: header };
         let encoded_adapter = adapter.encode().unwrap();
 
-        let decoded_adapter: BitcoinPrimitiveAdapter<BlockHeader> =
-            Decode::decode(encoded_adapter.as_slice()).unwrap();
+        let decoded_adapter: HeaderAdapter = Decode::decode(encoded_adapter.as_slice()).unwrap();
 
         assert_eq!(*decoded_adapter, header);
     }
