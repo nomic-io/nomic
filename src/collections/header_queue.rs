@@ -1,3 +1,4 @@
+use crate::error::{Error, Result};
 use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::consensus::{Decodable, Encodable};
 use orga::collections::Deque;
@@ -6,7 +7,7 @@ use orga::prelude::*;
 use orga::state::State;
 use orga::store::Store;
 use std::io::{Read, Write};
-use std::ops::{Deref, DerefMut};
+use std::ops::{Add, AddAssign, Deref, DerefMut, Sub, SubAssign};
 
 #[derive(Clone)]
 pub struct HeaderAdapter(BlockHeader);
@@ -204,16 +205,108 @@ pub struct WrappedHeader {
 }
 
 #[derive(State)]
+pub struct WorkHeader {
+    chain_work: Uint256,
+    header: WrappedHeader,
+}
+
+#[derive(State)]
 pub struct HeaderQueue {
-    inner: Deque<WrappedHeader>,
+    deque: Deque<WorkHeader>,
+    current_work: Uint256,
+    trusted_header: WrappedHeader,
 }
 
 impl HeaderQueue {
-    fn add<T>(&mut self, headers: T) -> Result<()>
+    pub fn add<T>(&mut self, headers: T) -> Result<()>
     where
         T: IntoIterator<Item = WrappedHeader>,
     {
+        let headers: Vec<WrappedHeader> = headers.into_iter().collect();
+        let current_height = self.height()?;
+
+        let first = match headers.first() {
+            Some(inner) => inner,
+            //not sure if this should return an error or just be a no-op
+            None => {
+                return Err(Error::Header("Passed header list empty".into()));
+            }
+        };
+
+        let first_height = first.height;
+
+        let last = match headers.last() {
+            Some(inner) => inner,
+            //not sure if this should return an error or just be a no-op
+            None => {
+                return Err(Error::Header("Passed header list empty".into()));
+            }
+        };
+
+        if first_height > current_height + 1 {
+            return Err(Error::Header(
+                "Start of headers is ahead of chain tip.".into(),
+            ));
+        }
+
+        if last.height <= current_height {
+            return Err(Error::Header("New tip is behind current tip.".into()));
+        }
+
+        if first_height <= current_height {
+            let passed_headers_work = headers.iter().fold(Uint256::default(), |work, header| {
+                work + header.header.work().into()
+            });
+
+            let reorg_index = first_height - 1 - self.trusted_header.height;
+            //get the corresponding header from the deque and find its work
+            let prev_chain_work = match self.deque.get(reorg_index as u64)? {
+                Some(inner) => inner.chain_work.clone(),
+                None => {
+                    return Err(Error::Header(
+                        "No header exists at calculated reorg index".into(),
+                    ))
+                }
+            };
+
+            if prev_chain_work + passed_headers_work > self.current_work {
+                let last_index = last.height - self.trusted_header.height;
+                for _ in 0..(last_index - reorg_index) {
+                    let header_work = match self.deque.pop_back()? {
+                        Some(inner) => inner.chain_work.clone(),
+                        None => {
+                            //might actually want to error out here
+                            //doesn't really make sense that all of the things would be pulled out
+                            //of the reorg
+                            break;
+                        }
+                    };
+
+                    self.current_work -= header_work;
+                }
+
+                for item in headers {
+                    let header_work = item.header.work();
+                    let work_header = WorkHeader {
+                        chain_work: self.current_work.clone() + header_work.into(),
+                        header: item,
+                    };
+
+                    self.deque.push_front(work_header.into())?;
+                    self.current_work += header_work.into()
+                }
+            }
+        }
+
+        //should probably also have some idea of pruning the tree here
         Ok(())
+    }
+
+    fn height(&self) -> Result<u32> {
+        match self.deque.back()? {
+            Some(inner) => Ok((*inner).header.height),
+            None => Ok(0),
+        }
     }
 }
 
