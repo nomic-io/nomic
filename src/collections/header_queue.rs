@@ -77,7 +77,114 @@ impl Decode for HeaderAdapter {
     }
 }
 
-#[derive(State)]
+#[derive(Clone)]
+pub struct Uint256(bitcoin::util::uint::Uint256);
+
+impl Default for Uint256 {
+    fn default() -> Self {
+        Uint256(Default::default())
+    }
+}
+
+impl Terminated for Uint256 {}
+
+impl From<bitcoin::util::uint::Uint256> for Uint256 {
+    fn from(value: bitcoin::util::uint::Uint256) -> Self {
+        Uint256(value)
+    }
+}
+
+impl Add for Uint256 {
+    type Output = Uint256;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+
+impl AddAssign for Uint256 {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = Self(self.0 + rhs.0);
+    }
+}
+impl Sub for Uint256 {
+    type Output = Uint256;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self(self.0 - rhs.0)
+    }
+}
+
+impl SubAssign for Uint256 {
+    fn sub_assign(&mut self, rhs: Self) {
+        *self = Self(self.0 - rhs.0);
+    }
+}
+
+impl PartialEq for Uint256 {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl PartialOrd for Uint256 {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        bitcoin::util::uint::Uint256::partial_cmp(&self.0, &other.0)
+    }
+}
+
+impl Encode for Uint256 {
+    fn encode(&self) -> EncodingResult<Vec<u8>> {
+        let mut dest: Vec<u8> = Vec::new();
+        self.encode_into(&mut dest)?;
+        Ok(dest)
+    }
+
+    fn encode_into<W: Write>(&self, dest: &mut W) -> EncodingResult<()> {
+        match self.0.consensus_encode(dest) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    fn encoding_length(&self) -> EncodingResult<usize> {
+        let mut _dest: Vec<u8> = Vec::new();
+        match self.0.consensus_encode(_dest) {
+            Ok(inner) => Ok(inner),
+            Err(e) => Err(e.into()),
+        }
+    }
+}
+
+impl Decode for Uint256 {
+    fn decode<R: Read>(input: R) -> EncodingResult<Self> {
+        let decoded_bytes = Decodable::consensus_decode(input);
+        match decoded_bytes {
+            Ok(inner) => Ok(Self(inner)),
+            Err(_) => {
+                let std_e = std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "Failed to decode bitcoin primitive",
+                );
+                Err(std_e.into())
+            }
+        }
+    }
+}
+
+impl State for Uint256 {
+    type Encoding = Self;
+
+    fn create(_: Store, data: Self::Encoding) -> orga::Result<Self> {
+        Ok(data)
+    }
+
+    fn flush(self) -> orga::Result<Self::Encoding> {
+        Ok(self)
+    }
+}
+
+#[derive(Clone, State)]
 pub struct WrappedHeader {
     height: u32,
     header: HeaderAdapter,
