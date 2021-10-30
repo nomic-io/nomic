@@ -1,4 +1,5 @@
 pub mod collections;
+pub mod error;
 
 #[cfg(test)]
 mod tests {
