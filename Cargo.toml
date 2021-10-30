@@ -7,6 +7,7 @@ edition = "2018"
 [dependencies]
 bitcoin = "0.27.1"
 orga = { git = "https://github.com/nomic-io/orga.git", rev = "9493479eeebcc39bf6b1e638f2c870104af50ed6" }
+thiserror = "1.0.30"
 
 [dev-dependencies]
 chrono = "0.4.0"
