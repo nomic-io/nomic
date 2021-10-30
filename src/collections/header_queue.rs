@@ -8,8 +8,21 @@ use orga::store::Store;
 use std::io::{Read, Write};
 use std::ops::{Deref, DerefMut};
 
-pub struct HeaderAdapter {
-    inner: BlockHeader,
+#[derive(Clone)]
+pub struct HeaderAdapter(BlockHeader);
+
+//need to make sure that this doesn't cause any issues after the state is reset from the store
+impl Default for HeaderAdapter {
+    fn default() -> Self {
+        HeaderAdapter(BlockHeader {
+            version: Default::default(),
+            prev_blockhash: Default::default(),
+            merkle_root: Default::default(),
+            time: Default::default(),
+            bits: Default::default(),
+            nonce: Default::default(),
+        })
+    }
 }
 
 impl State for HeaderAdapter {
@@ -28,13 +41,13 @@ impl Deref for HeaderAdapter {
     type Target = BlockHeader;
 
     fn deref(&self) -> &Self::Target {
-        &self.inner
+        &self.0
     }
 }
 
 impl DerefMut for HeaderAdapter {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
+        &mut self.0
     }
 }
 
@@ -46,7 +59,7 @@ impl Encode for HeaderAdapter {
     }
 
     fn encode_into<W: Write>(&self, dest: &mut W) -> EncodingResult<()> {
-        match self.inner.consensus_encode(dest) {
+        match self.0.consensus_encode(dest) {
             Ok(_) => Ok(()),
             Err(e) => Err(e.into()),
         }
@@ -54,7 +67,7 @@ impl Encode for HeaderAdapter {
 
     fn encoding_length(&self) -> EncodingResult<usize> {
         let mut _dest: Vec<u8> = Vec::new();
-        match self.inner.consensus_encode(_dest) {
+        match self.0.consensus_encode(_dest) {
             Ok(inner) => Ok(inner),
             Err(e) => Err(e.into()),
         }
@@ -65,7 +78,7 @@ impl Decode for HeaderAdapter {
     fn decode<R: Read>(input: R) -> EncodingResult<Self> {
         let decoded_bytes = Decodable::consensus_decode(input);
         match decoded_bytes {
-            Ok(inner) => Ok(Self { inner }),
+            Ok(inner) => Ok(Self(inner)),
             Err(_) => {
                 let std_e = std::io::Error::new(
                     std::io::ErrorKind::Other,
@@ -231,7 +244,7 @@ mod test {
             nonce: 3_600_650_283,
         };
 
-        let adapter = HeaderAdapter { inner: header };
+        let adapter = HeaderAdapter(header);
         let encoded_adapter = adapter.encode().unwrap();
 
         let decoded_adapter: HeaderAdapter = Decode::decode(encoded_adapter.as_slice()).unwrap();
@@ -257,10 +270,10 @@ mod test {
             nonce: 3_600_650_283,
         };
 
-        let adapter = HeaderAdapter { inner: header };
+        let adapter = HeaderAdapter(header);
 
         let header_list = [WrappedHeader {
-            height: 0,
+            height: 1,
             header: adapter,
         }];
 
@@ -268,10 +281,10 @@ mod test {
         let mut q = HeaderQueue::create(store, Default::default()).unwrap();
         q.add(header_list).unwrap();
 
-        let adapter = HeaderAdapter { inner: header };
+        let adapter = HeaderAdapter(header);
 
         let header_list = vec![WrappedHeader {
-            height: 0,
+            height: 1,
             header: adapter,
         }];
 
