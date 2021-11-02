@@ -256,11 +256,35 @@ impl HeaderQueue {
         }
 
         if first_height <= current_height {
+            let reorg_index = first_height - 1 - self.trusted_header.height;
+
+            let first_removal_hash = match self.deque.get((reorg_index + 1) as u64)? {
+                Some(inner) => inner.header.header.block_hash(),
+                None => {
+                    return Err(Error::Header(
+                        "No header exists after calculated reorg index".into(),
+                    ));
+                }
+            };
+
+            let first_passed_hash = match headers.get(0) {
+                Some(inner) => inner.header.block_hash(),
+                None => {
+                    return Err(Error::Header(
+                        "Passed header list does not contain any headers. Could not calculate block hash".into()
+                    ));
+                }
+            };
+
+            if first_removal_hash == first_passed_hash {
+                return Err(Error::Header(
+                    "Reorg rebroadcasting existing longest work chain".into(),
+                ));
+            }
+
             let passed_headers_work = headers.iter().fold(Uint256::default(), |work, header| {
                 work + header.header.work().into()
             });
-
-            let reorg_index = first_height - 1 - self.trusted_header.height;
             //get the corresponding header from the deque and find its work
             let prev_chain_work = match self.deque.get(reorg_index as u64)? {
                 Some(inner) => inner.chain_work.clone(),
@@ -299,6 +323,7 @@ impl HeaderQueue {
                 }
             }
         }
+
         //need to make sure this isn't a ake reorg
         //but not entirely sure what that means here
         //means not rebroadcast the exact same chain as a reorg
@@ -307,6 +332,9 @@ impl HeaderQueue {
         //should probably also have some idea of pruning the tree here
         //
 
+        //to verify that this isn't a fake reorg, all we have to do is verify that the hash of the
+        //first passed header is not the same as the first removed header from the reorg
+        //prune header queue
         while self.length() > MAX_LENGTH {
             let header = match self.deque.pop_front()? {
                 Some(inner) => inner.header.header.clone(),
