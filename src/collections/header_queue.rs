@@ -9,6 +9,8 @@ use orga::store::Store;
 use std::io::{Read, Write};
 use std::ops::{Add, AddAssign, Deref, DerefMut, Sub, SubAssign};
 
+const MAX_LENGTH: u64 = 2000;
+
 #[derive(Clone)]
 pub struct HeaderAdapter(BlockHeader);
 
@@ -297,9 +299,33 @@ impl HeaderQueue {
                 }
             }
         }
-
+        //need to make sure this isn't a ake reorg
+        //but not entirely sure what that means here
+        //means not rebroadcast the exact same chain as a reorg
+        //
+        //aparently this means that there are not blocks that are already in the chain
         //should probably also have some idea of pruning the tree here
+        //
+
+        while self.length() > MAX_LENGTH {
+            let header = match self.deque.pop_front()? {
+                Some(inner) => inner.header.header.clone(),
+                None => {
+                    //again, this is a weird break. This shouldn't be hitting an empty queue ever
+                    //here, so this may actually need to errror out instead of just breaking from
+                    //the loop
+                    break;
+                }
+            };
+
+            self.current_work -= header.work().into();
+        }
+
         Ok(())
+    }
+
+    fn length(&self) -> u64 {
+        self.deque.len()
     }
 
     fn height(&self) -> Result<u32> {
