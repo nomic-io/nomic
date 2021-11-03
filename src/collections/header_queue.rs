@@ -285,7 +285,7 @@ impl HeaderQueue {
             let passed_headers_work = headers.iter().fold(Uint256::default(), |work, header| {
                 work + header.header.work().into()
             });
-            //get the corresponding header from the deque and find its work
+
             let prev_chain_work = match self.deque.get(reorg_index as u64)? {
                 Some(inner) => inner.chain_work.clone(),
                 None => {
@@ -301,9 +301,6 @@ impl HeaderQueue {
                     let header_work = match self.deque.pop_back()? {
                         Some(inner) => inner.chain_work.clone(),
                         None => {
-                            //might actually want to error out here
-                            //doesn't really make sense that all of the things would be pulled out
-                            //of the reorg
                             break;
                         }
                     };
@@ -324,24 +321,10 @@ impl HeaderQueue {
             }
         }
 
-        //need to make sure this isn't a ake reorg
-        //but not entirely sure what that means here
-        //means not rebroadcast the exact same chain as a reorg
-        //
-        //aparently this means that there are not blocks that are already in the chain
-        //should probably also have some idea of pruning the tree here
-        //
-
-        //to verify that this isn't a fake reorg, all we have to do is verify that the hash of the
-        //first passed header is not the same as the first removed header from the reorg
-        //prune header queue
         while self.length() > MAX_LENGTH {
             let header = match self.deque.pop_front()? {
                 Some(inner) => inner.header.header.clone(),
                 None => {
-                    //again, this is a weird break. This shouldn't be hitting an empty queue ever
-                    //here, so this may actually need to errror out instead of just breaking from
-                    //the loop
                     break;
                 }
             };
