@@ -228,24 +228,22 @@ impl HeaderQueue {
         let current_height = self.height()?;
 
         let first = match headers.first() {
-            Some(inner) => inner,
+            Some(inner) => inner.clone(),
             //not sure if this should return an error or just be a no-op
             None => {
                 return Err(Error::Header("Passed header list empty".into()));
             }
         };
-
-        let first_height = first.height;
 
         let last = match headers.last() {
-            Some(inner) => inner,
+            Some(inner) => inner.clone(),
             //not sure if this should return an error or just be a no-op
             None => {
                 return Err(Error::Header("Passed header list empty".into()));
             }
         };
 
-        if first_height > current_height + 1 {
+        if first.height > current_height + 1 {
             return Err(Error::Header(
                 "Start of headers is ahead of chain tip.".into(),
             ));
@@ -255,70 +253,8 @@ impl HeaderQueue {
             return Err(Error::Header("New tip is behind current tip.".into()));
         }
 
-        if first_height <= current_height {
-            let reorg_index = first_height - 1 - self.trusted_header.height;
-
-            let first_removal_hash = match self.deque.get((reorg_index + 1) as u64)? {
-                Some(inner) => inner.header.header.block_hash(),
-                None => {
-                    return Err(Error::Header(
-                        "No header exists after calculated reorg index".into(),
-                    ));
-                }
-            };
-
-            let first_passed_hash = match headers.get(0) {
-                Some(inner) => inner.header.block_hash(),
-                None => {
-                    return Err(Error::Header(
-                        "Passed header list does not contain any headers. Could not calculate block hash".into()
-                    ));
-                }
-            };
-
-            if first_removal_hash == first_passed_hash {
-                return Err(Error::Header(
-                    "Reorg rebroadcasting existing longest work chain".into(),
-                ));
-            }
-
-            let passed_headers_work = headers.iter().fold(Uint256::default(), |work, header| {
-                work + header.header.work().into()
-            });
-
-            let prev_chain_work = match self.deque.get(reorg_index as u64)? {
-                Some(inner) => inner.chain_work.clone(),
-                None => {
-                    return Err(Error::Header(
-                        "No header exists at calculated reorg index".into(),
-                    ))
-                }
-            };
-
-            if prev_chain_work + passed_headers_work > self.current_work {
-                let last_index = last.height - self.trusted_header.height;
-                for _ in 0..(last_index - reorg_index) {
-                    let header_work = match self.deque.pop_back()? {
-                        Some(inner) => inner.chain_work.clone(),
-                        None => {
-                            break;
-                        }
-                    };
-
-                    self.current_work -= header_work;
-                }
-
-                for item in headers {
-                    let header_work = item.header.work();
-                    let work_header = WorkHeader {
-                        chain_work: self.current_work.clone() + header_work.into(),
-                        header: item,
-                    };
-
-                    self.deque.push_front(work_header.into())?;
-                    self.current_work += header_work.into()
-                }
-            }
+        if first.height <= current_height {
+            self.reorg(headers, &first.height, &last.height)?;
         }
 
         while self.length() > MAX_LENGTH {
@@ -330,6 +266,79 @@ impl HeaderQueue {
             };
 
             self.current_work -= header.work().into();
+        }
+
+        Ok(())
+    }
+
+    fn reorg(
+        &mut self,
+        headers: Vec<WrappedHeader>,
+        first_height: &u32,
+        last_height: &u32,
+    ) -> Result<()> {
+        let reorg_index = first_height - 1 - self.trusted_header.height;
+
+        let first_removal_hash = match self.deque.get((reorg_index + 1) as u64)? {
+            Some(inner) => inner.header.header.block_hash(),
+            None => {
+                return Err(Error::Header(
+                    "No header exists after calculated reorg index".into(),
+                ));
+            }
+        };
+
+        let first_passed_hash = match headers.get(0) {
+            Some(inner) => inner.header.block_hash(),
+            None => {
+                return Err(Error::Header(
+                    "Passed header list does not contain any headers. Could not calculate block hash".into()
+                ));
+            }
+        };
+
+        if first_removal_hash == first_passed_hash {
+            return Err(Error::Header(
+                "Reorg rebroadcasting existing longest work chain".into(),
+            ));
+        }
+
+        let passed_headers_work = headers.iter().fold(Uint256::default(), |work, header| {
+            work + header.header.work().into()
+        });
+
+        let prev_chain_work = match self.deque.get(reorg_index as u64)? {
+            Some(inner) => inner.chain_work.clone(),
+            None => {
+                return Err(Error::Header(
+                    "No header exists at calculated reorg index".into(),
+                ))
+            }
+        };
+
+        if prev_chain_work + passed_headers_work > self.current_work {
+            let last_index = last_height - self.trusted_header.height;
+            for _ in 0..(last_index - reorg_index) {
+                let header_work = match self.deque.pop_back()? {
+                    Some(inner) => inner.chain_work.clone(),
+                    None => {
+                        break;
+                    }
+                };
+
+                self.current_work -= header_work;
+            }
+
+            for item in headers {
+                let header_work = item.header.work();
+                let work_header = WorkHeader {
+                    chain_work: self.current_work.clone() + header_work.into(),
+                    header: item,
+                };
+
+                self.deque.push_front(work_header.into())?;
+                self.current_work += header_work.into()
+            }
         }
 
         Ok(())
