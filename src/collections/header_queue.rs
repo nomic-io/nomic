@@ -93,7 +93,7 @@ impl Decode for HeaderAdapter {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct Uint256(bitcoin::util::uint::Uint256);
 
 impl Default for Uint256 {
@@ -123,6 +123,7 @@ impl AddAssign for Uint256 {
         *self = Self(self.0 + rhs.0);
     }
 }
+
 impl Sub for Uint256 {
     type Output = Uint256;
 
@@ -134,18 +135,6 @@ impl Sub for Uint256 {
 impl SubAssign for Uint256 {
     fn sub_assign(&mut self, rhs: Self) {
         *self = Self(self.0 - rhs.0);
-    }
-}
-
-impl PartialEq for Uint256 {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
-impl PartialOrd for Uint256 {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        bitcoin::util::uint::Uint256::partial_cmp(&self.0, &other.0)
     }
 }
 
