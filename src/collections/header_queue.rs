@@ -11,7 +11,7 @@ use std::ops::{Add, AddAssign, Deref, DerefMut, Sub, SubAssign};
 
 const MAX_LENGTH: u64 = 2000;
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct HeaderAdapter(BlockHeader);
 
 //need to make sure that this doesn't cause any issues after the state is reset from the store
@@ -93,7 +93,7 @@ impl Decode for HeaderAdapter {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Uint256(bitcoin::util::uint::Uint256);
 
 impl Default for Uint256 {
@@ -200,13 +200,13 @@ impl State for Uint256 {
     }
 }
 
-#[derive(Clone, State)]
+#[derive(Clone, Debug, PartialEq, State)]
 pub struct WrappedHeader {
     height: u32,
     header: HeaderAdapter,
 }
 
-#[derive(State)]
+#[derive(Debug, State)]
 pub struct WorkHeader {
     chain_work: Uint256,
     header: WrappedHeader,
