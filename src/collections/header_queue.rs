@@ -20,7 +20,6 @@ const TARGET_TIMESPAN: u32 = RETARGET_INTERVAL * TARGET_SPACING;
 #[derive(Clone, Debug, PartialEq)]
 pub struct HeaderAdapter(BlockHeader);
 
-//need to make sure that this doesn't cause any issues after the state is reset from the store
 impl Default for HeaderAdapter {
     fn default() -> Self {
         HeaderAdapter(BlockHeader {
@@ -294,7 +293,6 @@ impl HeaderQueue {
 
         let first = match headers.first() {
             Some(inner) => inner.clone(),
-            //not sure if this should return an error or just be a no-op
             None => {
                 return Err(Error::Header("Passed header list empty".into()));
             }
@@ -302,7 +300,6 @@ impl HeaderQueue {
 
         let last = match headers.last() {
             Some(inner) => inner.clone(),
-            //not sure if this should return an error or just be a no-op
             None => {
                 return Err(Error::Header("Passed header list empty".into()));
             }
