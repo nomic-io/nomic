@@ -526,6 +526,18 @@ impl HeaderQueue {
             None => Ok(0),
         }
     }
+
+    fn get_by_height(&self, height: u32) -> Result<Option<WorkHeader>> {
+        let initial_height = match self.deque.front()? {
+            Some(inner) => inner.height(),
+            None => return Err(Error::Header("Queue does not contain any headers".into())),
+        };
+
+        match self.deque.get((height - initial_height) as u64)? {
+            Some(inner) => Ok(Some((*inner).clone())),
+            None => Ok(None),
+        }
+    }
 }
 
 #[cfg(test)]
