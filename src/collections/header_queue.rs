@@ -13,9 +13,6 @@ use std::ops::{Add, AddAssign, Deref, DerefMut, Div, Mul, Sub, SubAssign};
 
 const MAX_LENGTH: u64 = 2000;
 const MAX_TIME_INCREASE: u32 = 8 * 60 * 60;
-const RETARGET_INTERVAL: u32 = 2016;
-const TARGET_SPACING: u32 = 10 * 60;
-const TARGET_TIMESPAN: u32 = RETARGET_INTERVAL * TARGET_SPACING;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct HeaderAdapter(BlockHeader);
@@ -364,6 +361,19 @@ impl HeaderQueue {
             self.reorg(headers.clone(), &first.height, &last.height)?;
         }
 
+        self.verify_headers(&headers)?;
+
+        for item in headers {
+            let header_work = item.work();
+            let work_header = WorkHeader {
+                chain_work: self.current_work.clone() + header_work.clone(),
+                header: item,
+            };
+
+            self.deque.push_back(work_header.into())?;
+            self.current_work += header_work
+        }
+
         while self.length() > MAX_LENGTH {
             let header = match self.deque.pop_front()? {
                 Some(inner) => inner,
@@ -374,12 +384,10 @@ impl HeaderQueue {
 
             self.current_work -= header.work();
         }
-
-        self.verify_headers(headers)?;
         Ok(())
     }
 
-    fn verify_headers(&self, headers: Vec<WrappedHeader>) -> Result<()> {
+    fn verify_headers(&self, headers: &Vec<WrappedHeader>) -> Result<()> {
         //need case to pull out last element of deque to verify the first header in the list
         for (i, header) in headers[1..].iter().enumerate() {
             let previous_header = match headers.get(i - 1) {
@@ -461,17 +469,6 @@ impl HeaderQueue {
                 };
 
                 self.current_work -= header_work;
-            }
-
-            for item in headers {
-                let header_work = item.work();
-                let work_header = WorkHeader {
-                    chain_work: self.current_work.clone() + header_work.clone(),
-                    header: item,
-                };
-
-                self.deque.push_front(work_header.into())?;
-                self.current_work += header_work
             }
         }
 
