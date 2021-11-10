@@ -313,18 +313,18 @@ impl HeaderQueue {
         }
 
         if first.height <= current_height {
-            self.reorg(headers, &first.height, &last.height)?;
+            self.reorg(headers.clone(), &first.height, &last.height)?;
         }
 
         while self.length() > MAX_LENGTH {
             let header = match self.deque.pop_front()? {
-                Some(inner) => inner.header.header.clone(),
+                Some(inner) => inner,
                 None => {
                     break;
                 }
             };
 
-            self.current_work -= header.work().into();
+            self.current_work -= header.work();
         }
 
         self.verify_headers(headers)?;
@@ -449,10 +449,10 @@ impl HeaderQueue {
         first_height: &u32,
         last_height: &u32,
     ) -> Result<()> {
-        let reorg_index = first_height - 1 - self.trusted_header.height;
+        let reorg_index = first_height - 1 - self.trusted_header.height();
 
         let first_removal_hash = match self.deque.get((reorg_index + 1) as u64)? {
-            Some(inner) => inner.header.header.block_hash(),
+            Some(inner) => inner.block_hash(),
             None => {
                 return Err(Error::Header(
                     "No header exists after calculated reorg index".into(),
@@ -461,7 +461,7 @@ impl HeaderQueue {
         };
 
         let first_passed_hash = match headers.get(0) {
-            Some(inner) => inner.header.block_hash(),
+            Some(inner) => inner.block_hash(),
             None => {
                 return Err(Error::Header(
                     "Passed header list does not contain any headers. Could not calculate block hash".into()
@@ -475,9 +475,9 @@ impl HeaderQueue {
             ));
         }
 
-        let passed_headers_work = headers.iter().fold(Uint256::default(), |work, header| {
-            work + header.header.work().into()
-        });
+        let passed_headers_work = headers
+            .iter()
+            .fold(Uint256::default(), |work, header| work + header.work());
 
         let prev_chain_work = match self.deque.get(reorg_index as u64)? {
             Some(inner) => inner.chain_work.clone(),
@@ -489,7 +489,7 @@ impl HeaderQueue {
         };
 
         if prev_chain_work + passed_headers_work > self.current_work {
-            let last_index = last_height - self.trusted_header.height;
+            let last_index = last_height - self.trusted_header.height();
             for _ in 0..(last_index - reorg_index) {
                 let header_work = match self.deque.pop_back()? {
                     Some(inner) => inner.chain_work.clone(),
@@ -502,9 +502,9 @@ impl HeaderQueue {
             }
 
             for item in headers {
-                let header_work = item.header.work();
+                let header_work = item.work();
                 let work_header = WorkHeader {
-                    chain_work: self.current_work.clone() + header_work.into(),
+                    chain_work: self.current_work.clone() + header_work.clone().into(),
                     header: item,
                 };
 
@@ -522,7 +522,7 @@ impl HeaderQueue {
 
     fn height(&self) -> Result<u32> {
         match self.deque.back()? {
-            Some(inner) => Ok((*inner).header.height),
+            Some(inner) => Ok((*inner).height()),
             None => Ok(0),
         }
     }
