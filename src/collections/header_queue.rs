@@ -132,6 +132,22 @@ impl Sub for Uint256 {
     }
 }
 
+impl Mul for Uint256 {
+    type Output = Uint256;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        Self(self.0 * rhs.0)
+    }
+}
+
+impl Div for Uint256 {
+    type Output = Uint256;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        Self(self.0 / rhs.0)
+    }
+}
+
 impl SubAssign for Uint256 {
     fn sub_assign(&mut self, rhs: Self) {
         *self = Self(self.0 - rhs.0);
