@@ -211,10 +211,70 @@ pub struct WrappedHeader {
     header: HeaderAdapter,
 }
 
-#[derive(Debug, State)]
+impl WrappedHeader {
+    fn time(&self) -> u32 {
+        self.header.time
+    }
+
+    fn target(&self) -> Uint256 {
+        Uint256(self.header.target())
+    }
+
+    fn block_hash(&self) -> BlockHash {
+        self.header.block_hash()
+    }
+
+    fn prev_blockhash(&self) -> BlockHash {
+        self.header.prev_blockhash
+    }
+
+    fn work(&self) -> Uint256 {
+        Uint256(self.header.work())
+    }
+
+    fn height(&self) -> u32 {
+        self.height
+    }
+
+    fn validate_pow(&self, required_target: &Uint256) -> Result<BlockHash> {
+        Ok(self.header.validate_pow(&required_target.0)?)
+    }
+}
+
+#[derive(Clone, Debug, State)]
 pub struct WorkHeader {
     chain_work: Uint256,
     header: WrappedHeader,
+}
+
+impl WorkHeader {
+    fn time(&self) -> u32 {
+        self.header.time()
+    }
+
+    fn target(&self) -> Uint256 {
+        self.header.target()
+    }
+
+    fn block_hash(&self) -> BlockHash {
+        self.header.block_hash()
+    }
+
+    fn prev_blockhash(&self) -> BlockHash {
+        self.header.prev_blockhash()
+    }
+
+    fn work(&self) -> Uint256 {
+        self.header.work()
+    }
+
+    fn height(&self) -> u32 {
+        self.header.height()
+    }
+
+    fn validate_pow(&self, required_target: &Uint256) -> Result<BlockHash> {
+        Ok(self.header.validate_pow(required_target)?)
+    }
 }
 
 #[derive(State)]
