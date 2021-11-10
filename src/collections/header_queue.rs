@@ -384,10 +384,11 @@ impl HeaderQueue {
 
             self.current_work -= header.work();
         }
+
         Ok(())
     }
 
-    fn verify_headers(&self, headers: &Vec<WrappedHeader>) -> Result<()> {
+    fn verify_headers(&self, headers: &[WrappedHeader]) -> Result<()> {
         //need case to pull out last element of deque to verify the first header in the list
         for (i, header) in headers[1..].iter().enumerate() {
             let previous_header = match headers.get(i - 1) {
@@ -486,7 +487,7 @@ impl HeaderQueue {
         }
     }
 
-    fn get_by_height(&self, height: u32) -> Result<Option<WorkHeader>> {
+    pub fn get_by_height(&self, height: u32) -> Result<Option<WorkHeader>> {
         let initial_height = match self.deque.front()? {
             Some(inner) => inner.height(),
             None => return Err(Error::Header("Queue does not contain any headers".into())),
