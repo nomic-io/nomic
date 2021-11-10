@@ -12,6 +12,10 @@ use std::io::{Read, Write};
 use std::ops::{Add, AddAssign, Deref, DerefMut, Div, Mul, Sub, SubAssign};
 
 const MAX_LENGTH: u64 = 2000;
+const MAX_TIME_INCREASE: u32 = 8 * 60 * 60;
+const RETARGET_INTERVAL: u32 = 2016;
+const TARGET_SPACING: u32 = 10 * 60;
+const TARGET_TIMESPAN: u32 = RETARGET_INTERVAL * TARGET_SPACING;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct HeaderAdapter(BlockHeader);
