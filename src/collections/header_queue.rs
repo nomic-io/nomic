@@ -495,12 +495,12 @@ impl HeaderQueue {
             for item in headers {
                 let header_work = item.work();
                 let work_header = WorkHeader {
-                    chain_work: self.current_work.clone() + header_work.clone().into(),
+                    chain_work: self.current_work.clone() + header_work.clone(),
                     header: item,
                 };
 
                 self.deque.push_front(work_header.into())?;
-                self.current_work += header_work.into()
+                self.current_work += header_work
             }
         }
 
