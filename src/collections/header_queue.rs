@@ -327,6 +327,119 @@ impl HeaderQueue {
             self.current_work -= header.work().into();
         }
 
+        self.verify_headers(headers)?;
+        Ok(())
+    }
+
+    fn verify_headers(&self, headers: Vec<WrappedHeader>) -> Result<()> {
+        for (i, header) in headers[1..].iter().enumerate() {
+            let previous_header = match headers.get(i - 1) {
+                Some(inner) => inner,
+                None => {
+                    return Err(Error::Header("No previous header exists".into()));
+                }
+            };
+
+            if header.height() != previous_header.height() + 1 {
+                return Err(Error::Header("Non-consecutive headers passed".into()));
+            }
+
+            if header.prev_blockhash() != previous_header.block_hash() {
+                return Err(Error::Header(
+                    "Passed header references incorrect previous block hash".into(),
+                ));
+            }
+
+            for i in 0..=11 {
+                let mut prev_stamps: Vec<u32> = Vec::with_capacity(11);
+                let last_index = self.length() - 1;
+
+                for j in 0..=(11 - i) {
+                    let current_item = match self.deque.get(last_index - j)? {
+                        Some(inner) => inner,
+                        //if there are less than 11 elements in the deque,
+                        //push the first item onto the queue
+                        None => match self.deque.front()? {
+                            Some(inner) => inner,
+                            None => {
+                                return Err(Error::Header(
+                                    "Deque does not contain any elements".into(),
+                                ))
+                            }
+                        },
+                    };
+                    prev_stamps.push(current_item.time());
+                }
+
+                for j in 0..i {
+                    let current_item = match self.deque.get(j)? {
+                        Some(inner) => inner,
+                        None => {
+                            return Err(Error::Header(
+                                "Passed header collection does not contain enough headers".into(),
+                            ));
+                        }
+                    };
+
+                    prev_stamps.push(current_item.time());
+                }
+
+                prev_stamps.sort_unstable();
+
+                let median_stamp = match prev_stamps.get(6) {
+                    Some(inner) => inner,
+                    None => {
+                        return Err(Error::Header("Median timestamp does not exist".into()));
+                    }
+                };
+
+                if header.time() <= *median_stamp {
+                    return Err(Error::Header("Header contains an invalid timestamp".into()));
+                }
+
+                if max(header.time(), previous_header.time())
+                    - min(header.time(), previous_header.time())
+                    > MAX_TIME_INCREASE
+                {
+                    return Err(Error::Header(
+                        "Timestamp is too far ahead of previous timestamp".into(),
+                    ));
+                }
+                let max_target = Uint256(BlockHeader::u256_from_compact_target(0x1d00ffff));
+                let prev_target = previous_header.target();
+
+                let target = if header.height() % RETARGET_INTERVAL == 0 {
+                    let prev_retarget_block = match self
+                        .get_by_height(header.height() - RETARGET_INTERVAL)?
+                    {
+                        Some(inner) => inner,
+                        None => {
+                            return Err(Error::Header("No previous retarget block exists".into()));
+                        }
+                    };
+
+                    let mut time_span = previous_header.time() - prev_retarget_block.time();
+
+                    time_span = max(time_span, TARGET_TIMESPAN / 4);
+                    time_span = min(time_span, TARGET_TIMESPAN * 4);
+                    let time_span_256 = Uint256(BlockHeader::u256_from_compact_target(time_span));
+                    let target_span_256 =
+                        Uint256(BlockHeader::u256_from_compact_target(TARGET_TIMESPAN));
+
+                    let mut target = (prev_target * time_span_256) / target_span_256;
+
+                    if target > max_target {
+                        target = max_target;
+                    }
+
+                    target
+                } else {
+                    prev_target
+                };
+
+                header.validate_pow(&target)?;
+            }
+        }
         Ok(())
     }
 
