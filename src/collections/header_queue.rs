@@ -1,13 +1,15 @@
 use crate::error::{Error, Result};
 use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::consensus::{Decodable, Encodable};
+use bitcoin::BlockHash;
 use orga::collections::Deque;
 use orga::encoding::Result as EncodingResult;
 use orga::prelude::*;
 use orga::state::State;
 use orga::store::Store;
+use std::cmp::{max, min};
 use std::io::{Read, Write};
-use std::ops::{Add, AddAssign, Deref, DerefMut, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Deref, DerefMut, Div, Mul, Sub, SubAssign};
 
 const MAX_LENGTH: u64 = 2000;
 
