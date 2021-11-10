@@ -96,12 +96,6 @@ impl Decode for HeaderAdapter {
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct Uint256(bitcoin::util::uint::Uint256);
 
-impl Default for Uint256 {
-    fn default() -> Self {
-        Uint256(Default::default())
-    }
-}
-
 impl Terminated for Uint256 {}
 
 impl From<bitcoin::util::uint::Uint256> for Uint256 {
