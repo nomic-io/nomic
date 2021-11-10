@@ -98,7 +98,7 @@ impl Decode for HeaderAdapter {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Default, Clone, PartialEq, PartialOrd)]
 pub struct Uint256(bitcoin::util::uint::Uint256);
 
 impl Terminated for Uint256 {}
