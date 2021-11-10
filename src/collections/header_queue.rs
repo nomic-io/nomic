@@ -390,7 +390,14 @@ impl HeaderQueue {
 
     fn verify_headers(&self, headers: &[WrappedHeader]) -> Result<()> {
         //need case to pull out last element of deque to verify the first header in the list
-        for (i, header) in headers[1..].iter().enumerate() {
+        let deque_last = match self.get_by_height(self.height()?)? {
+            Some(inner) => vec![inner.header],
+            None => return Err(Error::Header("No previous header exists on deque".into())),
+        };
+
+        let headers: Vec<&WrappedHeader> = deque_last.iter().chain(headers.iter()).collect();
+
+        for (i, header) in headers.iter().enumerate() {
             let previous_header = match headers.get(i - 1) {
                 Some(inner) => inner,
                 None => {
