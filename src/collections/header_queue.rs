@@ -415,7 +415,10 @@ impl HeaderQueue {
                 ));
             }
 
-            header.validate_time(previous_header, self)?;
+            if self.deque.len() >= 6 {
+                header.validate_time(previous_header, self)?;
+            }
+
             header.validate_pow(&header.target())?;
         }
         Ok(())
