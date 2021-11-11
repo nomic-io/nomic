@@ -215,6 +215,10 @@ pub struct WrappedHeader {
 }
 
 impl WrappedHeader {
+    fn new(header: HeaderAdapter, height: u32) -> Self {
+        WrappedHeader { height, header }
+    }
+
     fn time(&self) -> u32 {
         self.header.time
     }
