@@ -7,6 +7,7 @@ use orga::encoding::Result as EncodingResult;
 use orga::prelude::*;
 use orga::state::State;
 use orga::store::Store;
+use orga::Result as OrgaResult;
 use std::cmp::{max, min};
 use std::io::{Read, Write};
 use std::ops::{Add, AddAssign, Deref, DerefMut, Div, Mul, Sub, SubAssign};
@@ -16,7 +17,6 @@ const MAX_TIME_INCREASE: u32 = 8 * 60 * 60;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct HeaderAdapter(BlockHeader);
-
 impl Default for HeaderAdapter {
     fn default() -> Self {
         HeaderAdapter(BlockHeader {
@@ -318,11 +318,42 @@ impl WorkHeader {
     }
 }
 
-#[derive(State)]
 pub struct HeaderQueue {
     deque: Deque<WorkHeader>,
     current_work: Uint256,
     trusted_header: WrappedHeader,
+}
+
+impl State for HeaderQueue {
+    type Encoding = (
+        <Deque<WorkHeader> as State>::Encoding,
+        <Uint256 as State>::Encoding,
+        <WrappedHeader as State>::Encoding,
+    );
+    fn create(store: Store, data: Self::Encoding) -> OrgaResult<Self> {
+        Ok(Self {
+            deque: State::create(store.sub(&[0]), data.0)?,
+            current_work: State::create(store.sub(&[1]), data.1)?,
+            trusted_header: State::create(store.sub(&[2]), data.2)?,
+        })
+    }
+    fn flush(self) -> OrgaResult<Self::Encoding> {
+        Ok((
+            State::<DefaultBackingStore>::flush(self.deque)?,
+            State::<DefaultBackingStore>::flush(self.current_work)?,
+            State::<DefaultBackingStore>::flush(self.trusted_header)?,
+        ))
+    }
+}
+
+impl From<HeaderQueue> for <HeaderQueue as State>::Encoding {
+    fn from(value: HeaderQueue) -> Self {
+        (
+            value.deque.into(),
+            value.current_work.into(),
+            value.trusted_header.into(),
+        )
+    }
 }
 
 impl HeaderQueue {
