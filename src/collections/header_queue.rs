@@ -14,6 +14,13 @@ use std::ops::{Add, AddAssign, Deref, DerefMut, Div, Mul, Sub, SubAssign};
 
 const MAX_LENGTH: u64 = 2000;
 const MAX_TIME_INCREASE: u32 = 8 * 60 * 60;
+const ENCODED_TRUSTED_HEADER: [u8; 80] = [
+    1, 0, 0, 0, 139, 82, 187, 215, 44, 47, 73, 86, 144, 89, 245, 89, 193, 177, 121, 77, 229, 25,
+    46, 79, 125, 109, 43, 3, 199, 72, 43, 173, 0, 0, 0, 0, 131, 228, 248, 169, 213, 2, 237, 12, 65,
+    144, 117, 193, 171, 181, 213, 111, 135, 138, 46, 144, 121, 229, 97, 43, 251, 118, 162, 220, 55,
+    217, 196, 39, 65, 221, 104, 73, 255, 255, 0, 29, 43, 144, 157, 214,
+];
+const TRUSTED_HEIGHT: u32 = 42;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct HeaderAdapter(BlockHeader);
@@ -330,13 +337,29 @@ impl State for HeaderQueue {
         <Uint256 as State>::Encoding,
         <WrappedHeader as State>::Encoding,
     );
+
     fn create(store: Store, data: Self::Encoding) -> OrgaResult<Self> {
-        Ok(Self {
+        let mut queue = Self {
             deque: State::create(store.sub(&[0]), data.0)?,
             current_work: State::create(store.sub(&[1]), data.1)?,
             trusted_header: State::create(store.sub(&[2]), data.2)?,
-        })
+        };
+
+        let decoded_adapter: HeaderAdapter = Decode::decode(ENCODED_TRUSTED_HEADER.as_slice())?;
+        let wrapped_header = WrappedHeader {
+            header: decoded_adapter,
+            height: TRUSTED_HEIGHT,
+        };
+        let work_header = WorkHeader {
+            header: wrapped_header.clone(),
+            chain_work: wrapped_header.work(),
+        };
+
+        queue.deque.push_front(work_header.into())?;
+
+        Ok(queue)
     }
+
     fn flush(self) -> OrgaResult<Self::Encoding> {
         Ok((
             State::<DefaultBackingStore>::flush(self.deque)?,
@@ -427,9 +450,8 @@ impl HeaderQueue {
         };
 
         let headers: Vec<&WrappedHeader> = deque_last.iter().chain(headers.iter()).collect();
-
-        for (i, header) in headers.iter().enumerate() {
-            let previous_header = match headers.get(i - 1) {
+        for (i, header) in headers[1..].iter().enumerate() {
+            let previous_header = match headers.get(i) {
                 Some(inner) => inner,
                 None => {
                     return Err(Error::Header("No previous header exists".into()));
@@ -449,7 +471,6 @@ impl HeaderQueue {
             if self.deque.len() >= 6 {
                 header.validate_time(previous_header, self)?;
             }
-
             header.validate_pow(&header.target())?;
         }
         Ok(())
@@ -544,18 +565,19 @@ impl HeaderQueue {
 #[cfg(test)]
 mod test {
     use super::*;
+    use bitcoin::consensus::deserialize;
+    use bitcoin::hash_types::TxMerkleNode;
     use bitcoin::BlockHash;
-    use bitcoin_hashes::hex::FromHex;
+    use bitcoin_hashes::hex::{FromHex, ToHex};
     use bitcoin_hashes::sha256d::Hash;
     use chrono::{TimeZone, Utc};
 
     #[test]
     fn primitive_adapter_encode_decode() {
-        let stamp = Utc.ymd(2009, 1, 10).and_hms(11, 39, 0);
-
+        let stamp = Utc.ymd(2009, 1, 10).and_hms(17, 39, 13);
         //Bitcoin block 42
         let header = BlockHeader {
-            version: 1,
+            version: 0x1,
             prev_blockhash: BlockHash::from_hash(
                 Hash::from_hex("00000000ad2b48c7032b6d7d4f2e19e54d79b1c159f5599056492f2cd7bb528b")
                     .unwrap(),
@@ -578,26 +600,27 @@ mod test {
 
     #[test]
     fn add_into_iterator() {
-        let stamp = Utc.ymd(2009, 1, 10).and_hms(11, 39, 0);
+        let stamp = Utc.ymd(2009, 1, 10).and_hms(17, 44, 37);
 
         let header = BlockHeader {
-            version: 1,
+            version: 0x1,
             prev_blockhash: BlockHash::from_hash(
-                Hash::from_hex("00000000ad2b48c7032b6d7d4f2e19e54d79b1c159f5599056492f2cd7bb528b")
+                Hash::from_hex("00000000314e90489514c787d615cea50003af2023796ccdd085b6bcc1fa28f5")
                     .unwrap(),
             ),
-            merkle_root: "27c4d937dca276fb2b61e579902e8a876fd5b5abc17590410ced02d5a9f8e483"
-                .parse()
-                .unwrap(),
+            merkle_root: TxMerkleNode::from_hash(
+                Hash::from_hex("2f5c03ce19e9a855ac93087a1b68fe6592bcf4bd7cbb9c1ef264d886a785894e")
+                    .unwrap(),
+            ),
             time: stamp.timestamp() as u32,
             bits: 486_604_799,
-            nonce: 3_600_650_283,
+            nonce: 2_093_702_200,
         };
 
         let adapter = HeaderAdapter(header);
 
         let header_list = [WrappedHeader {
-            height: 1,
+            height: 43,
             header: adapter,
         }];
 
@@ -608,7 +631,7 @@ mod test {
         let adapter = HeaderAdapter(header);
 
         let header_list = vec![WrappedHeader {
-            height: 1,
+            height: 43,
             header: adapter,
         }];
 
