@@ -404,17 +404,6 @@ impl HeaderQueue {
 
         self.verify_headers(&headers)?;
 
-        for item in headers {
-            let header_work = item.work();
-            let work_header = WorkHeader {
-                chain_work: self.current_work.clone() + header_work.clone(),
-                header: item,
-            };
-
-            self.deque.push_back(work_header.into())?;
-            self.current_work += header_work
-        }
-
         while self.length() > MAX_LENGTH {
             let header = match self.deque.pop_front()? {
                 Some(inner) => inner,
@@ -425,11 +414,10 @@ impl HeaderQueue {
 
             self.current_work -= header.work();
         }
-
         Ok(())
     }
 
-    fn verify_headers(&self, headers: &[WrappedHeader]) -> Result<()> {
+    fn verify_headers(&mut self, headers: &[WrappedHeader]) -> Result<()> {
         //need case to pull out last element of deque to verify the first header in the list
         let deque_last = match self.get_by_height(self.height()?)? {
             Some(inner) => vec![inner.header],
@@ -437,7 +425,9 @@ impl HeaderQueue {
         };
 
         let headers: Vec<&WrappedHeader> = deque_last.iter().chain(headers.iter()).collect();
+
         for (i, header) in headers[1..].iter().enumerate() {
+            let header = *header;
             let previous_header = match headers.get(i) {
                 Some(inner) => inner,
                 None => {
@@ -455,11 +445,24 @@ impl HeaderQueue {
                 ));
             }
 
-            if self.deque.len() >= 6 {
+            println!("length: {:?}", self.deque.len());
+
+            if self.deque.len() >= 5 {
                 header.validate_time(previous_header, self)?;
             }
+
             header.validate_pow(&header.target())?;
+
+            let header_work = header.work();
+            let work_header = WorkHeader {
+                chain_work: self.current_work.clone() + header_work.clone(),
+                header: header.clone(),
+            };
+
+            self.deque.push_back(work_header.into())?;
+            self.current_work += header_work
         }
+
         Ok(())
     }
 
