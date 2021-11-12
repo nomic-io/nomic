@@ -97,8 +97,9 @@ jobs:
             command: llvm-cov
             args: --all-features --workspace --lcov --output-path lcov.info
       - name: Upload to codecov.io
-        uses: codecov/codecov-action@v1
+        uses: codecov/codecov-action@v2
         with:
+            token: ${{ secrets.CODECOV_TOKEN }}
             files: lcov.info
             fail_ci_if_error: true
 
