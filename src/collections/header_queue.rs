@@ -361,7 +361,7 @@ impl From<HeaderQueue> for <HeaderQueue as State>::Encoding {
     fn from(value: HeaderQueue) -> Self {
         (
             value.deque.into(),
-            value.current_work.into(),
+            value.current_work,
             value.trusted_header.into(),
         )
     }
