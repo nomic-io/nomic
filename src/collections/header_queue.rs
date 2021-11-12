@@ -447,8 +447,6 @@ impl HeaderQueue {
                 ));
             }
 
-            println!("length: {:?}", self.deque.len());
-
             if self.deque.len() >= 5 {
                 header.validate_time(previous_header, self)?;
             }
