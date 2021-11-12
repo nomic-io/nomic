@@ -24,6 +24,7 @@ const TRUSTED_HEIGHT: u32 = 42;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct HeaderAdapter(BlockHeader);
+
 impl Default for HeaderAdapter {
     fn default() -> Self {
         HeaderAdapter(BlockHeader {
@@ -284,6 +285,7 @@ impl WrappedHeader {
                 "Timestamp is too far ahead of previous timestamp".into(),
             ));
         }
+
         Ok(())
     }
 }
@@ -416,6 +418,7 @@ impl HeaderQueue {
 
             self.current_work -= header.work();
         }
+
         Ok(())
     }
 
