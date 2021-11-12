@@ -332,17 +332,19 @@ impl State for HeaderQueue {
             trusted_header: State::create(store.sub(&[2]), data.2)?,
         };
 
-        let decoded_adapter: HeaderAdapter = Decode::decode(ENCODED_TRUSTED_HEADER.as_slice())?;
-        let wrapped_header = WrappedHeader {
-            header: decoded_adapter,
-            height: TRUSTED_HEIGHT,
-        };
-        let work_header = WorkHeader {
-            header: wrapped_header.clone(),
-            chain_work: wrapped_header.work(),
-        };
+        if queue.height().unwrap() == 0 {
+            let decoded_adapter: HeaderAdapter = Decode::decode(ENCODED_TRUSTED_HEADER.as_slice())?;
+            let wrapped_header = WrappedHeader {
+                header: decoded_adapter,
+                height: TRUSTED_HEIGHT,
+            };
+            let work_header = WorkHeader {
+                header: wrapped_header.clone(),
+                chain_work: wrapped_header.work(),
+            };
 
-        queue.deque.push_front(work_header.into())?;
+            queue.deque.push_front(work_header.into())?;
+        }
 
         Ok(queue)
     }
