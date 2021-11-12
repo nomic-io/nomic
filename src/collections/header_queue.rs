@@ -297,6 +297,10 @@ pub struct WorkHeader {
 }
 
 impl WorkHeader {
+    fn new(header: WrappedHeader, chain_work: Uint256) -> WorkHeader {
+        WorkHeader { header, chain_work }
+    }
+
     fn time(&self) -> u32 {
         self.header.time()
     }
@@ -336,15 +340,8 @@ impl State for HeaderQueue {
 
         if queue.height().unwrap() == 0 {
             let decoded_adapter: HeaderAdapter = Decode::decode(ENCODED_TRUSTED_HEADER.as_slice())?;
-            let wrapped_header = WrappedHeader {
-                header: decoded_adapter,
-                height: TRUSTED_HEIGHT,
-            };
-            let work_header = WorkHeader {
-                header: wrapped_header.clone(),
-                chain_work: wrapped_header.work(),
-            };
-
+            let wrapped_header = WrappedHeader::new(decoded_adapter, TRUSTED_HEIGHT);
+            let work_header = WorkHeader::new(wrapped_header.clone(), wrapped_header.work());
             queue.deque.push_front(work_header.into())?;
         }
 
@@ -458,14 +455,10 @@ impl HeaderQueue {
 
             header.validate_pow(&header.target())?;
 
-            let header_work = header.work();
-            let work_header = WorkHeader {
-                chain_work: self.current_work.clone() + header_work.clone(),
-                header: header.clone(),
-            };
-
+            let chain_work = self.current_work.clone() + header.work();
+            let work_header = WorkHeader::new(header.clone(), chain_work);
             self.deque.push_back(work_header.into())?;
-            self.current_work += header_work
+            self.current_work += header.work();
         }
 
         Ok(())
@@ -749,22 +742,14 @@ mod test {
 
         let adapter = HeaderAdapter(header);
 
-        let header_list = [WrappedHeader {
-            height: 43,
-            header: adapter,
-        }];
-
+        let header_list = [WrappedHeader::new(adapter, 43)];
         let store = Store::new(Shared::new(MapStore::new()));
         let mut q = HeaderQueue::create(store, Default::default()).unwrap();
         q.add(header_list).unwrap();
 
         let adapter = HeaderAdapter(header);
 
-        let header_list = vec![WrappedHeader {
-            height: 43,
-            header: adapter,
-        }];
-
+        let header_list = vec![WrappedHeader::new(adapter, 43)];
         let store = Store::new(Shared::new(MapStore::new()));
         let mut q = HeaderQueue::create(store, Default::default()).unwrap();
         q.add(header_list).unwrap();
