@@ -57,7 +57,7 @@ jobs:
       with:
           command: test
           args: --verbose
-
+      
   test-all-features:
     runs-on: ubuntu-latest
     steps:
@@ -97,7 +97,7 @@ jobs:
     - name: Upload to codecov.io
       uses: codecov/codecov-action@v1
       with:
-          fail_ci_if_error: true    
+          fail_ci_if_error: true
 
   format:
     runs-on: ubuntu-latest
@@ -132,19 +132,4 @@ jobs:
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
         args: --all-features
-
-  benches:
-    runs-on: ubuntu-latest
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v2
-    - name: Use Nightly
-      uses: actions-rs/toolchain@v1
-      with:
-          toolchain: nightly
-          override: true
-    - name: Run Benches
-      uses: actions-rs/cargo@v1
-      with:
-          command: bench
 
