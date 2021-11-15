@@ -328,10 +328,6 @@ impl WorkHeader {
     fn height(&self) -> u32 {
         self.header.height()
     }
-
-    fn bits(&self) -> u32 {
-        self.header.bits()
-    }
 }
 
 pub struct HeaderQueue {
@@ -469,7 +465,7 @@ impl HeaderQueue {
             let target = self.calculate_target(header, previous_header)?;
             header.validate_pow(&target)?;
 
-            let chain_work = self.current_work.clone() + header.work();
+            let chain_work = self.current_work + header.work();
             let work_header = WorkHeader::new(header.clone(), chain_work);
             self.deque.push_back(work_header.into())?;
             self.current_work += header.work();
@@ -483,7 +479,7 @@ impl HeaderQueue {
         header: &WrappedHeader,
         previous_header: &WrappedHeader,
     ) -> Result<Uint256> {
-        let mut ret_span = Uint256::default();
+        let ret_span;
 
         if header.height() % 2016 == 0 && header.height() > 2016 {
             let prev_retarget = match self.get_by_height(header.height() - 2016)? {
@@ -562,7 +558,7 @@ impl HeaderQueue {
             .fold(Uint256::default(), |work, header| work + header.work());
 
         let prev_chain_work = match self.deque.get(reorg_index as u64)? {
-            Some(inner) => inner.chain_work.clone(),
+            Some(inner) => inner.chain_work,
             None => {
                 return Err(Error::Header(
                     "No header exists at calculated reorg index".into(),
@@ -574,7 +570,7 @@ impl HeaderQueue {
             let last_index = last_height - self.trusted_header.height();
             for _ in 0..(last_index - reorg_index) {
                 let header_work = match self.deque.pop_back()? {
-                    Some(inner) => inner.chain_work.clone(),
+                    Some(inner) => inner.chain_work,
                     None => {
                         break;
                     }
