@@ -333,27 +333,25 @@ impl WorkHeader {
 pub struct HeaderQueue {
     deque: Deque<WorkHeader>,
     current_work: Uint256,
-    trusted_header: WrappedHeader,
 }
 
 impl State for HeaderQueue {
     type Encoding = (
         <Deque<WorkHeader> as State>::Encoding,
         <Uint256 as State>::Encoding,
-        <WrappedHeader as State>::Encoding,
     );
 
     fn create(store: Store, data: Self::Encoding) -> OrgaResult<Self> {
         let mut queue = Self {
             deque: State::create(store.sub(&[0]), data.0)?,
             current_work: State::create(store.sub(&[1]), data.1)?,
-            trusted_header: State::create(store.sub(&[2]), data.2)?,
         };
 
         if queue.height().unwrap() == 0 {
             let decoded_adapter: HeaderAdapter = Decode::decode(ENCODED_TRUSTED_HEADER.as_slice())?;
             let wrapped_header = WrappedHeader::new(decoded_adapter, TRUSTED_HEIGHT);
             let work_header = WorkHeader::new(wrapped_header.clone(), wrapped_header.work());
+            queue.current_work = work_header.work();
             queue.deque.push_front(work_header.into())?;
         }
 
@@ -364,18 +362,13 @@ impl State for HeaderQueue {
         Ok((
             State::<DefaultBackingStore>::flush(self.deque)?,
             State::<DefaultBackingStore>::flush(self.current_work)?,
-            State::<DefaultBackingStore>::flush(self.trusted_header)?,
         ))
     }
 }
 
 impl From<HeaderQueue> for <HeaderQueue as State>::Encoding {
     fn from(value: HeaderQueue) -> Self {
-        (
-            value.deque.into(),
-            value.current_work,
-            value.trusted_header.into(),
-        )
+        (value.deque.into(), value.current_work)
     }
 }
 
@@ -527,7 +520,13 @@ impl HeaderQueue {
         first_height: &u32,
         last_height: &u32,
     ) -> Result<()> {
-        let reorg_index = first_height - 1 - self.trusted_header.height();
+        let first_deque_height = match self.deque.front()? {
+            Some(inner) => inner.header.height(),
+            None => {
+                return Err(Error::Header("No previous header exists on deque".into()));
+            }
+        };
+        let reorg_index = first_height - 1 - first_deque_height;
 
         let first_removal_hash = match self.deque.get((reorg_index + 1) as u64)? {
             Some(inner) => inner.block_hash(),
@@ -567,7 +566,7 @@ impl HeaderQueue {
         };
 
         if prev_chain_work + passed_headers_work > self.current_work {
-            let last_index = last_height - self.trusted_header.height();
+            let last_index = last_height - first_deque_height;
             for _ in 0..(last_index - reorg_index) {
                 let header_work = match self.deque.pop_back()? {
                     Some(inner) => inner.chain_work,
