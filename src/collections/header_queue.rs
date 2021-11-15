@@ -21,6 +21,10 @@ const ENCODED_TRUSTED_HEADER: [u8; 80] = [
     217, 196, 39, 65, 221, 104, 73, 255, 255, 0, 29, 43, 144, 157, 214,
 ];
 const TRUSTED_HEIGHT: u32 = 42;
+const RETARGET_INTERVAL: u32 = 2016;
+const TARGET_SPACING: u32 = 10 * 60;
+const TARGET_TIMESPAN: u32 = RETARGET_INTERVAL * TARGET_SPACING;
+const MAX_TARGET: u32 = 0x1d00ffff;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct HeaderAdapter(BlockHeader);
@@ -103,7 +107,7 @@ impl Decode for HeaderAdapter {
     }
 }
 
-#[derive(Debug, Default, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd)]
 pub struct Uint256(bitcoin::util::uint::Uint256);
 
 impl Terminated for Uint256 {}
@@ -244,6 +248,14 @@ impl WrappedHeader {
         self.height
     }
 
+    fn bits(&self) -> u32 {
+        self.header.bits
+    }
+
+    fn u256_from_compact(compact: u32) -> Uint256 {
+        Uint256(BlockHeader::u256_from_compact_target(compact))
+    }
+
     fn validate_pow(&self, required_target: &Uint256) -> Result<BlockHash> {
         Ok(self.header.validate_pow(&required_target.0)?)
     }
@@ -315,6 +327,10 @@ impl WorkHeader {
 
     fn height(&self) -> u32 {
         self.header.height()
+    }
+
+    fn bits(&self) -> u32 {
+        self.header.bits()
     }
 }
 
@@ -405,7 +421,7 @@ impl HeaderQueue {
 
         self.verify_headers(&headers)?;
 
-        while self.length() > MAX_LENGTH {
+        while self.height()? as u64 > MAX_LENGTH {
             let header = match self.deque.pop_front()? {
                 Some(inner) => inner,
                 None => {
@@ -450,7 +466,8 @@ impl HeaderQueue {
                 header.validate_time(previous_header, self)?;
             }
 
-            header.validate_pow(&header.target())?;
+            let target = self.calculate_target(header, previous_header)?;
+            header.validate_pow(&target)?;
 
             let chain_work = self.current_work.clone() + header.work();
             let work_header = WorkHeader::new(header.clone(), chain_work);
@@ -459,6 +476,53 @@ impl HeaderQueue {
         }
 
         Ok(())
+    }
+
+    fn calculate_target(
+        &self,
+        header: &WrappedHeader,
+        previous_header: &WrappedHeader,
+    ) -> Result<Uint256> {
+        let mut ret_span = Uint256::default();
+
+        if header.height() % 2016 == 0 && header.height() > 2016 {
+            let prev_retarget = match self.get_by_height(header.height() - 2016)? {
+                Some(inner) => inner.time(),
+                None => {
+                    return Err(Error::Header(
+                        "No previous retargeting header exists".into(),
+                    ));
+                }
+            };
+
+            let prev_retarget_256 = WrappedHeader::u256_from_compact(prev_retarget);
+
+            let mut timespan = WrappedHeader::u256_from_compact(header.time() - prev_retarget);
+            let target_timespan = WrappedHeader::u256_from_compact(TARGET_TIMESPAN);
+            let four_256 = WrappedHeader::u256_from_compact(4);
+
+            if timespan > target_timespan * four_256 {
+                timespan = target_timespan * four_256;
+            }
+
+            if timespan < target_timespan / four_256 {
+                timespan = target_timespan / four_256;
+            }
+
+            ret_span = prev_retarget_256 * timespan / target_timespan;
+        } else if header.bits() != previous_header.bits() {
+            return Err(Error::Header(
+                "Passed header references incorrect previous bits".into(),
+            ));
+        } else {
+            ret_span = header.target();
+        }
+
+        if ret_span > WrappedHeader::u256_from_compact(MAX_TARGET) {
+            Ok(WrappedHeader::u256_from_compact(MAX_TARGET))
+        } else {
+            Ok(ret_span)
+        }
     }
 
     fn reorg(
