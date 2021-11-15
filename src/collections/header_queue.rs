@@ -811,4 +811,32 @@ mod test {
         let mut q = HeaderQueue::create(store, Default::default()).unwrap();
         q.add(header_list).unwrap();
     }
+
+    #[test]
+    #[should_panic(expected = "Passed header references incorrect previous bits")]
+    fn add_wrong_bits_non_retarget() {
+        let stamp = Utc.ymd(2009, 1, 10).and_hms(17, 44, 37);
+
+        let header = BlockHeader {
+            version: 0x1,
+            prev_blockhash: BlockHash::from_hash(
+                Hash::from_hex("00000000314e90489514c787d615cea50003af2023796ccdd085b6bcc1fa28f5")
+                    .unwrap(),
+            ),
+            merkle_root: TxMerkleNode::from_hash(
+                Hash::from_hex("2f5c03ce19e9a855ac93087a1b68fe6592bcf4bd7cbb9c1ef264d886a785894e")
+                    .unwrap(),
+            ),
+            time: stamp.timestamp() as u32,
+            bits: 486_604_420,
+            nonce: 2_093_702_200,
+        };
+
+        let adapter = HeaderAdapter(header);
+
+        let header_list = [WrappedHeader::new(adapter, 43)];
+        let store = Store::new(Shared::new(MapStore::new()));
+        let mut q = HeaderQueue::create(store, Default::default()).unwrap();
+        q.add(header_list).unwrap();
+    }
 }
