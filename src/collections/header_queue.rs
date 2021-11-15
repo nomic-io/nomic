@@ -604,6 +604,27 @@ impl HeaderQueue {
             None => Ok(None),
         }
     }
+
+    #[cfg(test)]
+    fn test_create(
+        store: Store,
+        data: <Self as State>::Encoding,
+        trusted_header: [u8; 80],
+        trusted_height: u32,
+    ) -> OrgaResult<Self> {
+        let mut queue = Self {
+            deque: State::create(store.sub(&[0]), data.0)?,
+            current_work: State::create(store.sub(&[1]), data.1)?,
+        };
+        let decoded_adapter: HeaderAdapter = Decode::decode(trusted_header.as_slice())?;
+        let wrapped_header = WrappedHeader::new(decoded_adapter, trusted_height);
+        let work_header = WorkHeader::new(wrapped_header.clone(), wrapped_header.work());
+
+        queue.current_work = wrapped_header.work();
+        queue.deque.push_front(work_header.into())?;
+
+        Ok(queue)
+    }
 }
 
 #[cfg(test)]
@@ -784,9 +805,18 @@ mod test {
             WrappedHeader::new(HeaderAdapter(header_48), 48),
             WrappedHeader::new(HeaderAdapter(header_49), 49),
         ];
+        // Bitcoin block 42
+        let trusted_header = [
+            1, 0, 0, 0, 139, 82, 187, 215, 44, 47, 73, 86, 144, 89, 245, 89, 193, 177, 121, 77,
+            229, 25, 46, 79, 125, 109, 43, 3, 199, 72, 43, 173, 0, 0, 0, 0, 131, 228, 248, 169,
+            213, 2, 237, 12, 65, 144, 117, 193, 171, 181, 213, 111, 135, 138, 46, 144, 121, 229,
+            97, 43, 251, 118, 162, 220, 55, 217, 196, 39, 65, 221, 104, 73, 255, 255, 0, 29, 43,
+            144, 157, 214,
+        ];
 
         let store = Store::new(Shared::new(MapStore::new()));
-        let mut q = HeaderQueue::create(store, Default::default()).unwrap();
+        let mut q =
+            HeaderQueue::test_create(store, Default::default(), trusted_header, 42).unwrap();
         q.add(header_list).unwrap();
     }
 
