@@ -616,6 +616,19 @@ mod test {
     use chrono::{TimeZone, Utc};
 
     #[test]
+    fn create() {
+        let store = Store::new(Shared::new(MapStore::new()));
+        let q = HeaderQueue::create(store, Default::default()).unwrap();
+
+        let decoded_adapter: HeaderAdapter =
+            Decode::decode(ENCODED_TRUSTED_HEADER.as_slice()).unwrap();
+        let wrapped_header = WrappedHeader::new(decoded_adapter, TRUSTED_HEIGHT);
+
+        assert_eq!(q.height().unwrap(), wrapped_header.height());
+        assert_eq!(q.current_work, wrapped_header.work());
+    }
+
+    #[test]
     fn primitive_adapter_encode_decode() {
         let stamp = Utc.ymd(2009, 1, 10).and_hms(17, 39, 13);
         //Bitcoin block 42
