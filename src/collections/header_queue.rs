@@ -474,7 +474,7 @@ impl HeaderQueue {
     ) -> Result<Uint256> {
         let ret_span;
 
-        if header.height() % 2016 == 0 && header.height() > 2016 {
+        if header.height() % 2016 == 0 {
             let prev_retarget = match self.get_by_height(header.height() - 2016)? {
                 Some(inner) => inner.time(),
                 None => {
