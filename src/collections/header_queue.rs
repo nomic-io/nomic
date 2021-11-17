@@ -657,15 +657,13 @@ mod test {
             nonce: 2_093_702_200,
         };
 
-        let adapter = Adapter { inner: header };
-
+        let adapter = Adapter::new(header);
         let header_list = [WrappedHeader::new(adapter, 43)];
         let store = Store::new(Shared::new(MapStore::new()));
         let mut q = HeaderQueue::create(store, Default::default()).unwrap();
         q.add(header_list).unwrap();
 
-        let adapter = Adapter { inner: header };
-
+        let adapter = Adapter::new(header);
         let header_list = vec![WrappedHeader::new(adapter, 43)];
         let store = Store::new(Shared::new(MapStore::new()));
         let mut q = HeaderQueue::create(store, Default::default()).unwrap();
@@ -692,8 +690,7 @@ mod test {
             nonce: 2_093_702_200,
         };
 
-        let adapter = Adapter { inner: header };
-
+        let adapter = Adapter::new(header);
         let header_list = [WrappedHeader::new(adapter, 43)];
         let store = Store::new(Shared::new(MapStore::new()));
         let mut q = HeaderQueue::create(store, Default::default()).unwrap();
