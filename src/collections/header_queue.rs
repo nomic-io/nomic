@@ -1,6 +1,7 @@
 use crate::error::{Error, Result};
 use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::consensus::{Decodable, Encodable};
+use bitcoin::util::uint::Uint256;
 use bitcoin::BlockHash;
 use orga::collections::Deque;
 use orga::encoding::Result as EncodingResult;
@@ -27,9 +28,27 @@ const TARGET_TIMESPAN: u32 = RETARGET_INTERVAL * TARGET_SPACING;
 const MAX_TARGET: u32 = 0x1d00ffff;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct HeaderAdapter(BlockHeader);
+pub struct Adapter<T> {
+    inner: T,
+}
 
-impl State for HeaderAdapter {
+impl<T> Adapter<T> {
+    pub fn new(inner: T) -> Self {
+        Self { inner }
+    }
+}
+
+impl<T: Default> Default for Adapter<T> {
+    fn default() -> Self {
+        Self {
+            inner: Default::default(),
+        }
+    }
+}
+
+impl<T> Terminated for Adapter<T> {}
+
+impl<T: Encodable + Decodable> State for Adapter<T> {
     type Encoding = Self;
 
     fn create(_: Store, data: Self::Encoding) -> orga::Result<Self> {
@@ -41,21 +60,21 @@ impl State for HeaderAdapter {
     }
 }
 
-impl Deref for HeaderAdapter {
-    type Target = BlockHeader;
+impl<T> Deref for Adapter<T> {
+    type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.inner
     }
 }
 
-impl DerefMut for HeaderAdapter {
+impl<T> DerefMut for Adapter<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+        &mut self.inner
     }
 }
 
-impl Encode for HeaderAdapter {
+impl<T: Encodable> Encode for Adapter<T> {
     fn encode(&self) -> EncodingResult<Vec<u8>> {
         let mut dest: Vec<u8> = Vec::new();
         self.encode_into(&mut dest)?;
@@ -63,7 +82,7 @@ impl Encode for HeaderAdapter {
     }
 
     fn encode_into<W: Write>(&self, dest: &mut W) -> EncodingResult<()> {
-        match self.0.consensus_encode(dest) {
+        match self.inner.consensus_encode(dest) {
             Ok(_) => Ok(()),
             Err(e) => Err(e.into()),
         }
@@ -71,18 +90,18 @@ impl Encode for HeaderAdapter {
 
     fn encoding_length(&self) -> EncodingResult<usize> {
         let mut _dest: Vec<u8> = Vec::new();
-        match self.0.consensus_encode(_dest) {
+        match self.inner.consensus_encode(_dest) {
             Ok(inner) => Ok(inner),
             Err(e) => Err(e.into()),
         }
     }
 }
 
-impl Decode for HeaderAdapter {
+impl<T: Decodable> Decode for Adapter<T> {
     fn decode<R: Read>(input: R) -> EncodingResult<Self> {
         let decoded_bytes = Decodable::consensus_decode(input);
         match decoded_bytes {
-            Ok(inner) => Ok(Self(inner)),
+            Ok(inner) => Ok(Self { inner }),
             Err(_) => {
                 let std_e = std::io::Error::new(
                     std::io::ErrorKind::Other,
@@ -91,123 +110,17 @@ impl Decode for HeaderAdapter {
                 Err(std_e.into())
             }
         }
-    }
-}
-
-#[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd)]
-pub struct Uint256(bitcoin::util::uint::Uint256);
-
-impl Terminated for Uint256 {}
-
-impl From<bitcoin::util::uint::Uint256> for Uint256 {
-    fn from(value: bitcoin::util::uint::Uint256) -> Self {
-        Uint256(value)
-    }
-}
-
-impl Add for Uint256 {
-    type Output = Uint256;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Self(self.0 + rhs.0)
-    }
-}
-
-impl AddAssign for Uint256 {
-    fn add_assign(&mut self, rhs: Self) {
-        *self = Self(self.0 + rhs.0);
-    }
-}
-
-impl Sub for Uint256 {
-    type Output = Uint256;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        Self(self.0 - rhs.0)
-    }
-}
-
-impl Mul for Uint256 {
-    type Output = Uint256;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        Self(self.0 * rhs.0)
-    }
-}
-
-impl Div for Uint256 {
-    type Output = Uint256;
-
-    fn div(self, rhs: Self) -> Self::Output {
-        Self(self.0 / rhs.0)
-    }
-}
-
-impl SubAssign for Uint256 {
-    fn sub_assign(&mut self, rhs: Self) {
-        *self = Self(self.0 - rhs.0);
-    }
-}
-
-impl Encode for Uint256 {
-    fn encode(&self) -> EncodingResult<Vec<u8>> {
-        let mut dest: Vec<u8> = Vec::new();
-        self.encode_into(&mut dest)?;
-        Ok(dest)
-    }
-
-    fn encode_into<W: Write>(&self, dest: &mut W) -> EncodingResult<()> {
-        match self.0.consensus_encode(dest) {
-            Ok(_) => Ok(()),
-            Err(e) => Err(e.into()),
-        }
-    }
-
-    fn encoding_length(&self) -> EncodingResult<usize> {
-        let mut _dest: Vec<u8> = Vec::new();
-        match self.0.consensus_encode(_dest) {
-            Ok(inner) => Ok(inner),
-            Err(e) => Err(e.into()),
-        }
-    }
-}
-
-impl Decode for Uint256 {
-    fn decode<R: Read>(input: R) -> EncodingResult<Self> {
-        let decoded_bytes = Decodable::consensus_decode(input);
-        match decoded_bytes {
-            Ok(inner) => Ok(Self(inner)),
-            Err(_) => {
-                let std_e = std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "Failed to decode bitcoin primitive",
-                );
-                Err(std_e.into())
-            }
-        }
-    }
-}
-
-impl State for Uint256 {
-    type Encoding = Self;
-
-    fn create(_: Store, data: Self::Encoding) -> orga::Result<Self> {
-        Ok(data)
-    }
-
-    fn flush(self) -> orga::Result<Self::Encoding> {
-        Ok(self)
     }
 }
 
 #[derive(Clone, Debug, PartialEq, State)]
 pub struct WrappedHeader {
     height: u32,
-    header: HeaderAdapter,
+    header: Adapter<BlockHeader>,
 }
 
 impl WrappedHeader {
-    fn new(header: HeaderAdapter, height: u32) -> Self {
+    fn new(header: Adapter<BlockHeader>, height: u32) -> Self {
         WrappedHeader { height, header }
     }
 
@@ -216,7 +129,7 @@ impl WrappedHeader {
     }
 
     fn target(&self) -> Uint256 {
-        Uint256(self.header.target())
+        self.header.target()
     }
 
     fn block_hash(&self) -> BlockHash {
@@ -228,7 +141,7 @@ impl WrappedHeader {
     }
 
     fn work(&self) -> Uint256 {
-        Uint256(self.header.work())
+        self.header.work()
     }
 
     fn height(&self) -> u32 {
@@ -240,11 +153,11 @@ impl WrappedHeader {
     }
 
     fn u256_from_compact(compact: u32) -> Uint256 {
-        Uint256(BlockHeader::u256_from_compact_target(compact))
+        BlockHeader::u256_from_compact_target(compact)
     }
 
     fn validate_pow(&self, required_target: &Uint256) -> Result<BlockHash> {
-        Ok(self.header.validate_pow(&required_target.0)?)
+        Ok(self.header.validate_pow(&required_target)?)
     }
 
     fn validate_time(&self, previous_header: &WrappedHeader, queue: &HeaderQueue) -> Result<()> {
@@ -291,13 +204,16 @@ impl WrappedHeader {
 
 #[derive(Clone, Debug, State)]
 pub struct WorkHeader {
-    chain_work: Uint256,
+    chain_work: Adapter<Uint256>,
     header: WrappedHeader,
 }
 
 impl WorkHeader {
     fn new(header: WrappedHeader, chain_work: Uint256) -> WorkHeader {
-        WorkHeader { header, chain_work }
+        WorkHeader {
+            header,
+            chain_work: Adapter::new(chain_work),
+        }
     }
 
     fn time(&self) -> u32 {
@@ -319,13 +235,13 @@ impl WorkHeader {
 
 pub struct HeaderQueue {
     deque: Deque<WorkHeader>,
-    current_work: Uint256,
+    current_work: Adapter<Uint256>,
 }
 
 impl State for HeaderQueue {
     type Encoding = (
         <Deque<WorkHeader> as State>::Encoding,
-        <Uint256 as State>::Encoding,
+        <Adapter<Uint256> as State>::Encoding,
     );
 
     fn create(store: Store, data: Self::Encoding) -> OrgaResult<Self> {
@@ -335,10 +251,11 @@ impl State for HeaderQueue {
         };
 
         if queue.height().unwrap() == 0 {
-            let decoded_adapter: HeaderAdapter = Decode::decode(ENCODED_TRUSTED_HEADER.as_slice())?;
+            let decoded_adapter: Adapter<BlockHeader> =
+                Decode::decode(ENCODED_TRUSTED_HEADER.as_slice())?;
             let wrapped_header = WrappedHeader::new(decoded_adapter, TRUSTED_HEIGHT);
             let work_header = WorkHeader::new(wrapped_header.clone(), wrapped_header.work());
-            queue.current_work = work_header.work();
+            queue.current_work = Adapter::new(work_header.work());
             queue.deque.push_front(work_header.into())?;
         }
 
@@ -404,8 +321,8 @@ impl HeaderQueue {
                     break;
                 }
             };
-
-            self.current_work -= header.work();
+            let current_work = *self.current_work - header.work();
+            self.current_work = Adapter::new(current_work);
         }
 
         Ok(())
@@ -445,10 +362,11 @@ impl HeaderQueue {
             let target = self.calculate_target(header, previous_header)?;
             header.validate_pow(&target)?;
 
-            let chain_work = self.current_work + header.work();
+            let chain_work = *self.current_work + header.work();
             let work_header = WorkHeader::new(header.clone(), chain_work);
             self.deque.push_back(work_header.into())?;
-            self.current_work += header.work();
+            let current_work = *self.current_work + header.work();
+            self.current_work = Adapter::new(current_work);
         }
 
         Ok(())
@@ -544,7 +462,7 @@ impl HeaderQueue {
             .fold(Uint256::default(), |work, header| work + header.work());
 
         let prev_chain_work = match self.deque.get(reorg_index as u64)? {
-            Some(inner) => inner.chain_work,
+            Some(inner) => inner.chain_work.clone(),
             None => {
                 return Err(Error::Header(
                     "No header exists at calculated reorg index".into(),
@@ -552,17 +470,18 @@ impl HeaderQueue {
             }
         };
 
-        if prev_chain_work + passed_headers_work > self.current_work {
+        if *prev_chain_work + passed_headers_work > *self.current_work {
             let last_index = last_height - first_deque_height;
             for _ in 0..(last_index - reorg_index) {
                 let header_work = match self.deque.pop_back()? {
-                    Some(inner) => inner.chain_work,
+                    Some(inner) => *inner.chain_work,
                     None => {
                         break;
                     }
                 };
 
-                self.current_work -= header_work;
+                let current_work = *self.current_work - header_work;
+                self.current_work = Adapter::new(current_work);
             }
         }
 
@@ -603,11 +522,11 @@ impl HeaderQueue {
             deque: State::create(store.sub(&[0]), data.0)?,
             current_work: State::create(store.sub(&[1]), data.1)?,
         };
-        let decoded_adapter: HeaderAdapter = Decode::decode(trusted_header.as_slice())?;
+        let decoded_adapter: Adapter<BlockHeader> = Decode::decode(trusted_header.as_slice())?;
         let wrapped_header = WrappedHeader::new(decoded_adapter, trusted_height);
         let work_header = WorkHeader::new(wrapped_header.clone(), wrapped_header.work());
 
-        queue.current_work = wrapped_header.work();
+        queue.current_work = Adapter::new(wrapped_header.work());
         queue.deque.push_front(work_header.into())?;
 
         Ok(queue)
@@ -628,12 +547,12 @@ mod test {
         let store = Store::new(Shared::new(MapStore::new()));
         let q = HeaderQueue::create(store, Default::default()).unwrap();
 
-        let decoded_adapter: HeaderAdapter =
+        let decoded_adapter: Adapter<BlockHeader> =
             Decode::decode(ENCODED_TRUSTED_HEADER.as_slice()).unwrap();
         let wrapped_header = WrappedHeader::new(decoded_adapter, TRUSTED_HEIGHT);
 
         assert_eq!(q.height().unwrap(), wrapped_header.height());
-        assert_eq!(q.current_work, wrapped_header.work());
+        assert_eq!(*q.current_work, wrapped_header.work());
     }
 
     #[test]
@@ -654,10 +573,11 @@ mod test {
             nonce: 3_600_650_283,
         };
 
-        let adapter = HeaderAdapter(header);
+        let adapter = Adapter::new(header);
         let encoded_adapter = adapter.encode().unwrap();
 
-        let decoded_adapter: HeaderAdapter = Decode::decode(encoded_adapter.as_slice()).unwrap();
+        let decoded_adapter: Adapter<BlockHeader> =
+            Decode::decode(encoded_adapter.as_slice()).unwrap();
 
         assert_eq!(*decoded_adapter, header);
     }
@@ -784,13 +704,13 @@ mod test {
         };
 
         let header_list = [
-            WrappedHeader::new(HeaderAdapter(header_43), 43),
-            WrappedHeader::new(HeaderAdapter(header_44), 44),
-            WrappedHeader::new(HeaderAdapter(header_45), 45),
-            WrappedHeader::new(HeaderAdapter(header_46), 46),
-            WrappedHeader::new(HeaderAdapter(header_47), 47),
-            WrappedHeader::new(HeaderAdapter(header_48), 48),
-            WrappedHeader::new(HeaderAdapter(header_49), 49),
+            WrappedHeader::new(Adapter::new(header_43), 43),
+            WrappedHeader::new(Adapter::new(header_44), 44),
+            WrappedHeader::new(Adapter::new(header_45), 45),
+            WrappedHeader::new(Adapter::new(header_46), 46),
+            WrappedHeader::new(Adapter::new(header_47), 47),
+            WrappedHeader::new(Adapter::new(header_48), 48),
+            WrappedHeader::new(Adapter::new(header_49), 49),
         ];
         // Bitcoin block 42
         let trusted_header = [
@@ -826,14 +746,14 @@ mod test {
             nonce: 2_093_702_200,
         };
 
-        let adapter = HeaderAdapter(header);
+        let adapter = Adapter { inner: header };
 
         let header_list = [WrappedHeader::new(adapter, 43)];
         let store = Store::new(Shared::new(MapStore::new()));
         let mut q = HeaderQueue::create(store, Default::default()).unwrap();
         q.add(header_list).unwrap();
 
-        let adapter = HeaderAdapter(header);
+        let adapter = Adapter { inner: header };
 
         let header_list = vec![WrappedHeader::new(adapter, 43)];
         let store = Store::new(Shared::new(MapStore::new()));
@@ -861,7 +781,7 @@ mod test {
             nonce: 2_093_702_200,
         };
 
-        let adapter = HeaderAdapter(header);
+        let adapter = Adapter { inner: header };
 
         let header_list = [WrappedHeader::new(adapter, 43)];
         let store = Store::new(Shared::new(MapStore::new()));
