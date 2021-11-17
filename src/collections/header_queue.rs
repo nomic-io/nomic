@@ -29,19 +29,6 @@ const MAX_TARGET: u32 = 0x1d00ffff;
 #[derive(Clone, Debug, PartialEq)]
 pub struct HeaderAdapter(BlockHeader);
 
-impl Default for HeaderAdapter {
-    fn default() -> Self {
-        HeaderAdapter(BlockHeader {
-            version: Default::default(),
-            prev_blockhash: Default::default(),
-            merkle_root: Default::default(),
-            time: Default::default(),
-            bits: Default::default(),
-            nonce: Default::default(),
-        })
-    }
-}
-
 impl State for HeaderAdapter {
     type Encoding = Self;
 
