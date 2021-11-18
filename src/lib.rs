@@ -1,2 +1,2 @@
-pub mod collections;
+pub mod bitcoin;
 pub mod error;

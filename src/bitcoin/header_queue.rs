@@ -1,4 +1,4 @@
-use crate::collections::Adapter;
+use crate::bitcoin::adapter::Adapter;
 use crate::error::{Error, Result};
 use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::util::uint::Uint256;
