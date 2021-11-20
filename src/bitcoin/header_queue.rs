@@ -110,9 +110,37 @@ impl WorkHeader {
     }
 }
 
+#[derive(Clone)]
+pub struct Config {
+    pub max_length: u64,
+    pub max_time_increase: u32,
+    pub trusted_height: u32,
+    pub retarget_interval: u32,
+    pub target_spacing: u32,
+    pub target_timespan: u32,
+    pub max_target: u32,
+    pub encoded_trusted_header: [u8; 80],
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            max_length: MAX_LENGTH,
+            max_time_increase: MAX_TIME_INCREASE,
+            trusted_height: TRUSTED_HEIGHT,
+            retarget_interval: RETARGET_INTERVAL,
+            target_spacing: TARGET_SPACING,
+            target_timespan: TARGET_TIMESPAN,
+            max_target: MAX_TARGET,
+            encoded_trusted_header: ENCODED_TRUSTED_HEADER,
+        }
+    }
+}
+
 pub struct HeaderQueue {
     deque: Deque<WorkHeader>,
     current_work: Adapter<Uint256>,
+    config: Config,
 }
 
 impl State for HeaderQueue {
@@ -125,12 +153,13 @@ impl State for HeaderQueue {
         let mut queue = Self {
             deque: State::create(store.sub(&[0]), data.0)?,
             current_work: State::create(store.sub(&[1]), data.1)?,
+            config: Config::default(),
         };
 
         if queue.height().unwrap() == 0 {
             let decoded_adapter: Adapter<BlockHeader> =
-                Decode::decode(ENCODED_TRUSTED_HEADER.as_slice())?;
-            let wrapped_header = WrappedHeader::new(decoded_adapter, TRUSTED_HEIGHT);
+                Decode::decode(queue.config.encoded_trusted_header.as_slice())?;
+            let wrapped_header = WrappedHeader::new(decoded_adapter, queue.config.trusted_height);
             let work_header = WorkHeader::new(wrapped_header.clone(), wrapped_header.work());
             queue.current_work = Adapter::new(work_header.work());
             queue.deque.push_front(work_header.into())?;
@@ -140,10 +169,7 @@ impl State for HeaderQueue {
     }
 
     fn flush(self) -> OrgaResult<Self::Encoding> {
-        Ok((
-            State::<DefaultBackingStore>::flush(self.deque)?,
-            State::<DefaultBackingStore>::flush(self.current_work)?,
-        ))
+        Ok((State::flush(self.deque)?, State::flush(self.current_work)?))
     }
 }
 
@@ -191,7 +217,7 @@ impl HeaderQueue {
 
         self.verify_headers(&headers)?;
 
-        while self.height()? as u64 > MAX_LENGTH {
+        while self.height()? as u64 > self.config.max_length {
             let header = match self.deque.pop_front()? {
                 Some(inner) => inner,
                 None => {
@@ -269,7 +295,7 @@ impl HeaderQueue {
             let prev_retarget_256 = WrappedHeader::u256_from_compact(prev_retarget);
 
             let mut timespan = WrappedHeader::u256_from_compact(header.time() - prev_retarget);
-            let target_timespan = WrappedHeader::u256_from_compact(TARGET_TIMESPAN);
+            let target_timespan = WrappedHeader::u256_from_compact(self.config.target_timespan);
             let four_256 = WrappedHeader::u256_from_compact(4);
 
             if timespan > target_timespan * four_256 {
@@ -289,8 +315,8 @@ impl HeaderQueue {
             ret_span = header.target();
         }
 
-        if ret_span > WrappedHeader::u256_from_compact(MAX_TARGET) {
-            Ok(WrappedHeader::u256_from_compact(MAX_TARGET))
+        if ret_span > WrappedHeader::u256_from_compact(self.config.max_target) {
+            Ok(WrappedHeader::u256_from_compact(self.config.max_target))
         } else {
             Ok(ret_span)
         }
@@ -401,7 +427,7 @@ impl HeaderQueue {
 
         if max(current_header.time(), previous_header.time())
             - min(current_header.time(), previous_header.time())
-            > MAX_TIME_INCREASE
+            > self.config.max_time_increase
         {
             return Err(Error::Header(
                 "Timestamp is too far ahead of previous timestamp".into(),
@@ -438,15 +464,16 @@ impl HeaderQueue {
     fn test_create(
         store: Store,
         data: <Self as State>::Encoding,
-        trusted_header: [u8; 80],
-        trusted_height: u32,
+        config: Config,
     ) -> OrgaResult<Self> {
         let mut queue = Self {
             deque: State::create(store.sub(&[0]), data.0)?,
             current_work: State::create(store.sub(&[1]), data.1)?,
+            config: config.clone(),
         };
-        let decoded_adapter: Adapter<BlockHeader> = Decode::decode(trusted_header.as_slice())?;
-        let wrapped_header = WrappedHeader::new(decoded_adapter, trusted_height);
+        let decoded_adapter: Adapter<BlockHeader> =
+            Decode::decode(config.encoded_trusted_header.as_slice())?;
+        let wrapped_header = WrappedHeader::new(decoded_adapter, config.trusted_height);
         let work_header = WorkHeader::new(wrapped_header.clone(), wrapped_header.work());
 
         queue.current_work = Adapter::new(wrapped_header.work());
@@ -644,9 +671,24 @@ mod test {
             144, 157, 214,
         ];
 
+        let test_config = Config {
+            max_length: 2000,
+            max_time_increase: 8 * 60 * 60,
+            trusted_height: 42,
+            retarget_interval: 2016,
+            target_spacing: 10 * 60,
+            target_timespan: 2016 * (10 * 60),
+            max_target: 0x1d00ffff,
+            encoded_trusted_header: [
+                1, 0, 0, 0, 139, 82, 187, 215, 44, 47, 73, 86, 144, 89, 245, 89, 193, 177, 121, 77,
+                229, 25, 46, 79, 125, 109, 43, 3, 199, 72, 43, 173, 0, 0, 0, 0, 131, 228, 248, 169,
+                213, 2, 237, 12, 65, 144, 117, 193, 171, 181, 213, 111, 135, 138, 46, 144, 121,
+                229, 97, 43, 251, 118, 162, 220, 55, 217, 196, 39, 65, 221, 104, 73, 255, 255, 0,
+                29, 43, 144, 157, 214,
+            ],
+        };
         let store = Store::new(Shared::new(MapStore::new()));
-        let mut q =
-            HeaderQueue::test_create(store, Default::default(), trusted_header, 42).unwrap();
+        let mut q = HeaderQueue::test_create(store, Default::default(), test_config).unwrap();
         q.add(header_list).unwrap();
     }
 
