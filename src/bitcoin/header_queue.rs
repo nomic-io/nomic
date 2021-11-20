@@ -70,47 +70,6 @@ impl WrappedHeader {
     fn validate_pow(&self, required_target: &Uint256) -> Result<BlockHash> {
         Ok(self.header.validate_pow(&required_target)?)
     }
-
-    fn validate_time(&self, previous_header: &WrappedHeader, queue: &HeaderQueue) -> Result<()> {
-        let mut prev_stamps: Vec<u32> = Vec::with_capacity(11);
-        for i in 0..=11 {
-            let last_index = queue.length() - 1;
-            let mut index = 0;
-
-            if last_index >= i {
-                index = last_index - i;
-            }
-
-            let current_item = match queue.deque.get(index)? {
-                Some(inner) => inner,
-                None => return Err(Error::Header("Deque does not contain any elements".into())),
-            };
-            prev_stamps.push(current_item.time());
-        }
-
-        prev_stamps.sort_unstable();
-
-        let median_stamp = match prev_stamps.get(6) {
-            Some(inner) => inner,
-            None => {
-                return Err(Error::Header("Median timestamp does not exist".into()));
-            }
-        };
-
-        if self.time() <= *median_stamp {
-            return Err(Error::Header("Header contains an invalid timestamp".into()));
-        }
-
-        if max(self.time(), previous_header.time()) - min(self.time(), previous_header.time())
-            > MAX_TIME_INCREASE
-        {
-            return Err(Error::Header(
-                "Timestamp is too far ahead of previous timestamp".into(),
-            ));
-        }
-
-        Ok(())
-    }
 }
 
 #[derive(Clone, Debug, State)]
@@ -267,7 +226,7 @@ impl HeaderQueue {
             }
 
             if self.deque.len() >= 6 {
-                header.validate_time(previous_header, self)?;
+                self.validate_time(header, previous_header)?;
             }
 
             let target = self.calculate_target(header, previous_header)?;
@@ -394,6 +353,52 @@ impl HeaderQueue {
                 let current_work = *self.current_work - header_work;
                 self.current_work = Adapter::new(current_work);
             }
+        }
+
+        Ok(())
+    }
+
+    fn validate_time(
+        &self,
+        current_header: &WrappedHeader,
+        previous_header: &WrappedHeader,
+    ) -> Result<()> {
+        let mut prev_stamps: Vec<u32> = Vec::with_capacity(11);
+        for i in 0..=11 {
+            let last_index = self.length() - 1;
+            let mut index = 0;
+
+            if last_index >= i {
+                index = last_index - i;
+            }
+
+            let current_item = match self.deque.get(index)? {
+                Some(inner) => inner,
+                None => return Err(Error::Header("Deque does not contain any elements".into())),
+            };
+            prev_stamps.push(current_item.time());
+        }
+
+        prev_stamps.sort_unstable();
+
+        let median_stamp = match prev_stamps.get(6) {
+            Some(inner) => inner,
+            None => {
+                return Err(Error::Header("Median timestamp does not exist".into()));
+            }
+        };
+
+        if current_header.time() <= *median_stamp {
+            return Err(Error::Header("Header contains an invalid timestamp".into()));
+        }
+
+        if max(current_header.time(), previous_header.time())
+            - min(current_header.time(), previous_header.time())
+            > MAX_TIME_INCREASE
+        {
+            return Err(Error::Header(
+                "Timestamp is too far ahead of previous timestamp".into(),
+            ));
         }
 
         Ok(())
