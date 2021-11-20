@@ -35,6 +35,13 @@ impl WrappedHeader {
         WrappedHeader { height, header }
     }
 
+    pub fn from_header(header: &BlockHeader, height: u32) -> Self {
+        WrappedHeader {
+            height,
+            header: Adapter::new(header.clone()),
+        }
+    }
+
     fn time(&self) -> u32 {
         self.header.time
     }
