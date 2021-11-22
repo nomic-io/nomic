@@ -266,7 +266,7 @@ impl HeaderQueue {
                 self.validate_time(header, previous_header)?;
             }
 
-            let target = self.calculate_target(header, previous_header)?;
+            let target = self.get_next_target(header, previous_header)?;
             header.validate_pow(&target)?;
 
             let chain_work = *self.current_work + header.work();
@@ -279,15 +279,55 @@ impl HeaderQueue {
         Ok(())
     }
 
-    fn calculate_target(
+    fn get_next_target(
         &self,
         header: &WrappedHeader,
         previous_header: &WrappedHeader,
     ) -> Result<Uint256> {
-        let ret_span;
+        if header.height() % self.config.retarget_interval != 0 {
+            if self.config.min_difficulty_blocks {
+                if header.time() > previous_header.time() + self.config.target_spacing * 2 {
+                    return Ok(WrappedHeader::u256_from_compact(self.config.max_target));
+                } else {
+                    let mut current_header_index = previous_header.height();
+                    let mut current_header = previous_header.to_owned();
 
-        if header.height() % 2016 == 0 {
-            let prev_retarget = match self.get_by_height(header.height() - 2016)? {
+                    while current_header_index > 0
+                        && current_header_index % self.config.retarget_interval != 0
+                        && current_header.bits() == self.config.max_target
+                    {
+                        current_header = match self.get_by_height(current_header_index)? {
+                            Some(inner) => inner.header.clone(),
+                            None => {
+                                return Err(Error::Header("No previous header exists".into()));
+                            }
+                        };
+
+                        current_header_index -= 1;
+                    }
+
+                    return Ok(WrappedHeader::u256_from_compact(current_header.bits()));
+                }
+            }
+
+            if header.bits() != previous_header.bits() {
+                return Err(Error::Header(
+                    "Passed header references incorrect previous bits".into(),
+                ));
+            }
+            return Ok(WrappedHeader::u256_from_compact(previous_header.bits()));
+        }
+
+        self.calculate_next_target(previous_header)
+    }
+
+    fn calculate_next_target(&self, header: &WrappedHeader) -> Result<Uint256> {
+        if !self.config.retargeting {
+            return Ok(WrappedHeader::u256_from_compact(header.bits()));
+        }
+
+        let prev_retarget =
+            match self.get_by_height(header.height() - self.config.retarget_interval)? {
                 Some(inner) => inner.time(),
                 None => {
                     return Err(Error::Header(
@@ -296,34 +336,21 @@ impl HeaderQueue {
                 }
             };
 
-            let prev_retarget_256 = WrappedHeader::u256_from_compact(prev_retarget);
+        let prev_retarget_256 = WrappedHeader::u256_from_compact(prev_retarget);
 
-            let mut timespan = WrappedHeader::u256_from_compact(header.time() - prev_retarget);
-            let target_timespan = WrappedHeader::u256_from_compact(self.config.target_timespan);
-            let four_256 = WrappedHeader::u256_from_compact(4);
+        let mut timespan = WrappedHeader::u256_from_compact(header.time() - prev_retarget);
+        let target_timespan = WrappedHeader::u256_from_compact(self.config.target_timespan);
+        let four_256 = WrappedHeader::u256_from_compact(4);
 
-            if timespan > target_timespan * four_256 {
-                timespan = target_timespan * four_256;
-            }
-
-            if timespan < target_timespan / four_256 {
-                timespan = target_timespan / four_256;
-            }
-
-            ret_span = prev_retarget_256 * timespan / target_timespan;
-        } else if header.bits() != previous_header.bits() {
-            return Err(Error::Header(
-                "Passed header references incorrect previous bits".into(),
-            ));
-        } else {
-            ret_span = header.target();
+        if timespan > target_timespan * four_256 {
+            timespan = target_timespan * four_256;
         }
 
-        if ret_span > WrappedHeader::u256_from_compact(self.config.max_target) {
-            Ok(WrappedHeader::u256_from_compact(self.config.max_target))
-        } else {
-            Ok(ret_span)
+        if timespan < target_timespan / four_256 {
+            timespan = target_timespan / four_256;
         }
+
+        Ok(prev_retarget_256 * timespan / target_timespan)
     }
 
     fn reorg(
