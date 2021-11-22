@@ -119,7 +119,9 @@ pub struct Config {
     pub target_spacing: u32,
     pub target_timespan: u32,
     pub max_target: u32,
-    pub encoded_trusted_header: [u8; 80],
+    pub encoded_trusted_header: Vec<u8>,
+    pub retargeting: bool,
+    pub min_difficulty_blocks: bool,
 }
 
 impl Default for Config {
@@ -132,7 +134,9 @@ impl Default for Config {
             target_spacing: TARGET_SPACING,
             target_timespan: TARGET_TIMESPAN,
             max_target: MAX_TARGET,
-            encoded_trusted_header: ENCODED_TRUSTED_HEADER,
+            encoded_trusted_header: ENCODED_TRUSTED_HEADER.into(),
+            retargeting: true,
+            min_difficulty_blocks: false,
         }
     }
 }
@@ -140,7 +144,7 @@ impl Default for Config {
 pub struct HeaderQueue {
     deque: Deque<WorkHeader>,
     current_work: Adapter<Uint256>,
-    config: Config,
+    pub config: Config,
 }
 
 impl State for HeaderQueue {
@@ -679,7 +683,9 @@ mod test {
             target_spacing: 10 * 60,
             target_timespan: 2016 * (10 * 60),
             max_target: 0x1d00ffff,
-            encoded_trusted_header: [
+            retargeting: true,
+            min_difficulty_blocks: false,
+            encoded_trusted_header: vec![
                 1, 0, 0, 0, 139, 82, 187, 215, 44, 47, 73, 86, 144, 89, 245, 89, 193, 177, 121, 77,
                 229, 25, 46, 79, 125, 109, 43, 3, 199, 72, 43, 173, 0, 0, 0, 0, 131, 228, 248, 169,
                 213, 2, 237, 12, 65, 144, 117, 193, 171, 181, 213, 111, 135, 138, 46, 144, 121,
