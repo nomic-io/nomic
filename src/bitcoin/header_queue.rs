@@ -31,7 +31,7 @@ pub struct WrappedHeader {
 }
 
 impl WrappedHeader {
-    fn new(header: Adapter<BlockHeader>, height: u32) -> Self {
+    pub fn new(header: Adapter<BlockHeader>, height: u32) -> Self {
         WrappedHeader { height, header }
     }
 
@@ -42,35 +42,35 @@ impl WrappedHeader {
         }
     }
 
-    fn time(&self) -> u32 {
+    pub fn time(&self) -> u32 {
         self.header.time
     }
 
-    fn target(&self) -> Uint256 {
+    pub fn target(&self) -> Uint256 {
         self.header.target()
     }
 
-    fn block_hash(&self) -> BlockHash {
+    pub fn block_hash(&self) -> BlockHash {
         self.header.block_hash()
     }
 
-    fn prev_blockhash(&self) -> BlockHash {
+    pub fn prev_blockhash(&self) -> BlockHash {
         self.header.prev_blockhash
     }
 
-    fn work(&self) -> Uint256 {
+    pub fn work(&self) -> Uint256 {
         self.header.work()
     }
 
-    fn height(&self) -> u32 {
+    pub fn height(&self) -> u32 {
         self.height
     }
 
-    fn bits(&self) -> u32 {
+    pub fn bits(&self) -> u32 {
         self.header.bits
     }
 
-    fn u256_from_compact(compact: u32) -> Uint256 {
+    pub fn u256_from_compact(compact: u32) -> Uint256 {
         BlockHeader::u256_from_compact_target(compact)
     }
 
@@ -86,7 +86,7 @@ pub struct WorkHeader {
 }
 
 impl WorkHeader {
-    fn new(header: WrappedHeader, chain_work: Uint256) -> WorkHeader {
+    pub fn new(header: WrappedHeader, chain_work: Uint256) -> WorkHeader {
         WorkHeader {
             header,
             chain_work: Adapter::new(chain_work),
@@ -101,11 +101,11 @@ impl WorkHeader {
         self.header.block_hash()
     }
 
-    fn work(&self) -> Uint256 {
+    pub fn work(&self) -> Uint256 {
         self.header.work()
     }
 
-    fn height(&self) -> u32 {
+    pub fn height(&self) -> u32 {
         self.header.height()
     }
 }
@@ -441,7 +441,7 @@ impl HeaderQueue {
         self.deque.len()
     }
 
-    fn height(&self) -> Result<u32> {
+    pub fn height(&self) -> Result<u32> {
         match self.deque.back()? {
             Some(inner) => Ok((*inner).height()),
             None => Ok(0),
@@ -461,7 +461,7 @@ impl HeaderQueue {
     }
 
     #[cfg(test)]
-    fn test_create(
+    pub fn test_create(
         store: Store,
         data: <Self as State>::Encoding,
         config: Config,
