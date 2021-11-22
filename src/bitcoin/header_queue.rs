@@ -38,7 +38,7 @@ impl WrappedHeader {
     pub fn from_header(header: &BlockHeader, height: u32) -> Self {
         WrappedHeader {
             height,
-            header: Adapter::new(header.clone()),
+            header: Adapter::new(*header),
         }
     }
 
@@ -75,7 +75,7 @@ impl WrappedHeader {
     }
 
     fn validate_pow(&self, required_target: &Uint256) -> Result<BlockHash> {
-        Ok(self.header.validate_pow(&required_target)?)
+        Ok(self.header.validate_pow(required_target)?)
     }
 }
 
@@ -692,14 +692,6 @@ mod test {
             WrappedHeader::new(Adapter::new(header_47), 47),
             WrappedHeader::new(Adapter::new(header_48), 48),
             WrappedHeader::new(Adapter::new(header_49), 49),
-        ];
-        // Bitcoin block 42
-        let trusted_header = [
-            1, 0, 0, 0, 139, 82, 187, 215, 44, 47, 73, 86, 144, 89, 245, 89, 193, 177, 121, 77,
-            229, 25, 46, 79, 125, 109, 43, 3, 199, 72, 43, 173, 0, 0, 0, 0, 131, 228, 248, 169,
-            213, 2, 237, 12, 65, 144, 117, 193, 171, 181, 213, 111, 135, 138, 46, 144, 121, 229,
-            97, 43, 251, 118, 162, 220, 55, 217, 196, 39, 65, 221, 104, 73, 255, 255, 0, 29, 43,
-            144, 157, 214,
         ];
 
         let test_config = Config {
