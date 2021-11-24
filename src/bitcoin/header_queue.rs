@@ -268,7 +268,7 @@ impl HeaderQueue {
                 ));
             }
 
-            if self.deque.len() >= 6 {
+            if self.deque.len() >= 11 {
                 self.validate_time(header, previous_header)?;
             }
 
@@ -425,15 +425,11 @@ impl HeaderQueue {
         previous_header: &WrappedHeader,
     ) -> Result<()> {
         let mut prev_stamps: Vec<u32> = Vec::with_capacity(11);
-        for i in 0..=11 {
-            let last_index = self.length() - 1;
-            let mut index = 0;
 
-            if last_index >= i {
-                index = last_index - i;
-            }
+        for i in 0..11 {
+            let index = self.height()? - i;
 
-            let current_item = match self.deque.get(index)? {
+            let current_item = match self.get_by_height(index as u32)? {
                 Some(inner) => inner,
                 None => return Err(Error::Header("Deque does not contain any elements".into())),
             };
@@ -442,7 +438,7 @@ impl HeaderQueue {
 
         prev_stamps.sort_unstable();
 
-        let median_stamp = match prev_stamps.get(6) {
+        let median_stamp = match prev_stamps.get(5) {
             Some(inner) => inner,
             None => {
                 return Err(Error::Header("Median timestamp does not exist".into()));
