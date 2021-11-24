@@ -483,7 +483,6 @@ impl HeaderQueue {
         }
     }
 
-    #[cfg(test)]
     pub fn test_create(
         store: Store,
         data: <Self as State>::Encoding,
