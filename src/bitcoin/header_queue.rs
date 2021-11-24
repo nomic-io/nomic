@@ -332,6 +332,9 @@ impl HeaderQueue {
             return Ok(WrappedHeader::u256_from_compact(header.bits()));
         }
 
+        if header.height() < self.config.retarget_interval {
+            return Err(Error::Header("Invalid trusted header. Trusted header have height which is a multiple of the retarget interval".into()));
+        }
         let prev_retarget =
             match self.get_by_height(header.height() - self.config.retarget_interval)? {
                 Some(inner) => inner.time(),
