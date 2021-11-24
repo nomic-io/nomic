@@ -222,7 +222,7 @@ impl HeaderQueue {
         }
 
         if first.height <= current_height {
-            self.reorg(headers.clone(), &first.height, &last.height)?;
+            self.reorg(headers.clone(), first.height)?;
         }
 
         self.verify_headers(&headers)?;
@@ -348,32 +348,21 @@ impl HeaderQueue {
         let target_timespan = WrappedHeader::u256_from_compact(self.config.target_timespan);
         let four_256 = WrappedHeader::u256_from_compact(4);
 
-        if timespan > target_timespan * four_256 {
-            timespan = target_timespan * four_256;
-        }
-
         if timespan < target_timespan / four_256 {
             timespan = target_timespan / four_256;
+        }
+
+        if timespan > target_timespan * four_256 {
+            timespan = target_timespan * four_256;
         }
 
         Ok(prev_retarget_256 * timespan / target_timespan)
     }
 
-    fn reorg(
-        &mut self,
-        headers: Vec<WrappedHeader>,
-        first_height: &u32,
-        last_height: &u32,
-    ) -> Result<()> {
-        let first_deque_height = match self.deque.front()? {
-            Some(inner) => inner.header.height(),
-            None => {
-                return Err(Error::Header("No previous header exists on deque".into()));
-            }
-        };
-        let reorg_index = first_height - 1 - first_deque_height;
+    fn reorg(&mut self, headers: Vec<WrappedHeader>, first_height: u32) -> Result<()> {
+        let reorg_index = first_height - 1;
 
-        let first_removal_hash = match self.deque.get((reorg_index + 1) as u64)? {
+        let first_removal_hash = match self.get_by_height(first_height)? {
             Some(inner) => inner.block_hash(),
             None => {
                 return Err(Error::Header(
@@ -401,7 +390,7 @@ impl HeaderQueue {
             .iter()
             .fold(Uint256::default(), |work, header| work + header.work());
 
-        let prev_chain_work = match self.deque.get(reorg_index as u64)? {
+        let prev_chain_work = match self.get_by_height(reorg_index)? {
             Some(inner) => inner.chain_work.clone(),
             None => {
                 return Err(Error::Header(
@@ -411,8 +400,7 @@ impl HeaderQueue {
         };
 
         if *prev_chain_work + passed_headers_work > *self.current_work {
-            let last_index = last_height - first_deque_height;
-            for _ in 0..(last_index - reorg_index) {
+            for _ in 0..(self.height()? - reorg_index) {
                 let header_work = match self.deque.pop_back()? {
                     Some(inner) => *inner.chain_work,
                     None => {
@@ -423,8 +411,11 @@ impl HeaderQueue {
                 let current_work = *self.current_work - header_work;
                 self.current_work = Adapter::new(current_work);
             }
+        } else {
+            return Err(Error::Header(
+                "Passed headers initiating reorg are not highest work chain".into(),
+            ));
         }
-
         Ok(())
     }
 
