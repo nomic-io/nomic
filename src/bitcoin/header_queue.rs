@@ -394,7 +394,7 @@ impl HeaderQueue {
             .fold(Uint256::default(), |work, header| work + header.work());
 
         let prev_chain_work = match self.get_by_height(reorg_index)? {
-            Some(inner) => inner.chain_work.clone(),
+            Some(inner) => inner.chain_work,
             None => {
                 return Err(Error::Header(
                     "No header exists at calculated reorg index".into(),
