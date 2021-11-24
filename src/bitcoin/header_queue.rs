@@ -207,7 +207,7 @@ impl HeaderQueue {
         let last = match headers.last() {
             Some(inner) => inner.clone(),
             None => {
-                return Err(Error::Header("Passed header list empty".into()));
+                unreachable!();
             }
         };
 
