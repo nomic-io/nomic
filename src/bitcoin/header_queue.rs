@@ -464,10 +464,6 @@ impl HeaderQueue {
         Ok(())
     }
 
-    fn length(&self) -> u64 {
-        self.deque.len()
-    }
-
     pub fn height(&self) -> Result<u32> {
         match self.deque.back()? {
             Some(inner) => Ok((*inner).height()),
