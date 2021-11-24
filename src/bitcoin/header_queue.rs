@@ -7,6 +7,7 @@ use orga::collections::Deque;
 use orga::prelude::*;
 use orga::state::State;
 use orga::store::Store;
+use orga::Error as OrgaError;
 use orga::Result as OrgaResult;
 use std::cmp::{max, min};
 
@@ -160,7 +161,12 @@ impl State for HeaderQueue {
             config: Config::default(),
         };
 
-        if queue.height().unwrap() == 0 {
+        let height = match queue.height() {
+            Ok(height) => height,
+            Err(err) => return Err(OrgaError::App(err.to_string())),
+        };
+
+        if height == 0 {
             let decoded_adapter: Adapter<BlockHeader> =
                 Decode::decode(queue.config.encoded_trusted_header.as_slice())?;
             let wrapped_header = WrappedHeader::new(decoded_adapter, queue.config.trusted_height);
