@@ -484,6 +484,12 @@ impl HeaderQueue {
             None => return Err(Error::Header("Queue does not contain any headers".into())),
         };
 
+        if height < initial_height {
+            return Err(Error::Header(
+                "Passed index is greater than initial height. Referenced header does not exist on the Header Queue".into(),
+            ));
+        }
+
         match self.deque.get((height - initial_height) as u64)? {
             Some(inner) => Ok(Some((*inner).clone())),
             None => Ok(None),
