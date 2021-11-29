@@ -230,7 +230,7 @@ impl HeaderQueue {
 
         self.verify_headers(&headers)?;
 
-        while self.height()? as u64 > self.config.max_length {
+        while self.len() > self.config.max_length {
             let header = match self.deque.pop_front()? {
                 Some(inner) => inner,
                 None => {
@@ -472,6 +472,10 @@ impl HeaderQueue {
             Some(inner) => Ok((*inner).height()),
             None => Ok(0),
         }
+    }
+
+    pub fn len(&self) -> u64 {
+        self.deque.len()
     }
 
     pub fn get_by_height(&self, height: u32) -> Result<Option<WorkHeader>> {
