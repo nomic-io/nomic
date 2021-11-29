@@ -6,9 +6,13 @@ edition = "2018"
 
 [dependencies]
 bitcoin = "0.27.1"
-orga = { git = "https://github.com/nomic-io/orga.git", rev = "9493479eeebcc39bf6b1e638f2c870104af50ed6" }
+bitcoind = { version = "0.21.0", features = ["22_0"] }
+bitcoincore-rpc = "0.14.0"
+orga = { git = "https://github.com/nomic-io/orga.git", branch = "deque-push-insert" }
 thiserror = "1.0.30"
 
 [dev-dependencies]
 chrono = "0.4.0"
 bitcoin_hashes = "0.10.0"
+serde_json = "1.0.68"
+serde = "1.0.130"
