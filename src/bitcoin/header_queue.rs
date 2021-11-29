@@ -222,6 +222,9 @@ impl HeaderQueue {
         }
 
         if first.height <= current_height {
+            if first.height < self.config.trusted_height {
+                return Err(Error::Header("New tip is behind trusted tip.".into()));
+            }
             self.reorg(headers.clone(), first.height)?;
         }
 
