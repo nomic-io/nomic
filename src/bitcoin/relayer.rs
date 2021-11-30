@@ -1,5 +1,4 @@
-#[cfg(test)]
-use crate::bitcoin::header_queue::Config;
+use crate::bitcoin::header_queue::Config as HeaderQueueConfig;
 use crate::bitcoin::header_queue::{HeaderQueue, WrappedHeader};
 use crate::error::{Error, Result};
 use bitcoincore_rpc::{Client, RpcApi};
@@ -7,12 +6,27 @@ use orga::state::State;
 use orga::store::Store;
 use orga::Result as OrgaResult;
 
-//relayer should hold a headerqueue and an rpc client
-//should constantly be listening for new headers
-//maybe the headers should be batched and passed to the header queue
-//
-
 const SEEK_BATCH_SIZE: u32 = 100;
+
+pub enum Network {
+    Regtest,
+    Testnet,
+    Mainnet,
+}
+
+pub struct Config {
+    network: Network,
+    header_queue_config: HeaderQueueConfig,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            network: Network::Regtest,
+            header_queue_config: HeaderQueueConfig::default(),
+        }
+    }
+}
 
 pub struct Relayer {
     header_queue: HeaderQueue,
@@ -113,14 +127,13 @@ impl Relayer {
         Ok(tip_height as u32)
     }
 
-    #[cfg(test)]
-    pub fn test_create(
+    pub fn with_conf(
         store: Store,
         data: <Self as State>::Encoding,
         config: Config,
     ) -> Result<Self> {
         let mut relayer = Relayer::create(store.clone(), data.clone())?;
-        let header_queue = HeaderQueue::test_create(store, data, config)?;
+        let header_queue = HeaderQueue::with_conf(store, data, config.header_queue_config)?;
         relayer.header_queue = header_queue;
         Ok(relayer)
     }
@@ -150,9 +163,9 @@ mod tests {
 
         let encoded_header = Encode::encode(&Adapter::new(trusted_header)).unwrap();
         let mut config: Config = Default::default();
-        config.encoded_trusted_header = encoded_header;
-        config.trusted_height = 30;
-        config.retargeting = false;
+        config.header_queue_config.encoded_trusted_header = encoded_header;
+        config.header_queue_config.trusted_height = 30;
+        config.header_queue_config.retargeting = false;
 
         bitcoind.client.generate_to_address(100, &address).unwrap();
         let tip_hash = bitcoind.client.get_best_block_hash().unwrap();
@@ -163,7 +176,7 @@ mod tests {
 
         let store = Store::new(Shared::new(MapStore::new()));
 
-        let mut relayer = Relayer::test_create(store, Default::default(), config).unwrap();
+        let mut relayer = Relayer::with_conf(store, Default::default(), config).unwrap();
         relayer.rpc_client(rpc_client);
         relayer.seek_to_tip().unwrap();
         let height = relayer.height().unwrap();
@@ -186,9 +199,9 @@ mod tests {
 
         let encoded_header = Encode::encode(&Adapter::new(trusted_header)).unwrap();
         let mut config: Config = Default::default();
-        config.encoded_trusted_header = encoded_header;
-        config.trusted_height = 30;
-        config.retargeting = false;
+        config.header_queue_config.encoded_trusted_header = encoded_header;
+        config.header_queue_config.trusted_height = 30;
+        config.header_queue_config.retargeting = false;
 
         bitcoind
             .client
@@ -197,7 +210,7 @@ mod tests {
 
         let store = Store::new(Shared::new(MapStore::new()));
 
-        let mut relayer = Relayer::test_create(store, Default::default(), config).unwrap();
+        let mut relayer = Relayer::with_conf(store, Default::default(), config).unwrap();
         relayer.rpc_client(rpc_client);
         relayer.seek_to_tip().unwrap();
         let height = relayer.height().unwrap();
