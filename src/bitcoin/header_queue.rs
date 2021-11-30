@@ -496,7 +496,7 @@ impl HeaderQueue {
         }
     }
 
-    pub fn test_create(
+    pub fn with_conf(
         store: Store,
         data: <Self as State>::Encoding,
         config: Config,
@@ -717,7 +717,7 @@ mod test {
             ],
         };
         let store = Store::new(Shared::new(MapStore::new()));
-        let mut q = HeaderQueue::test_create(store, Default::default(), test_config).unwrap();
+        let mut q = HeaderQueue::with_conf(store, Default::default(), test_config).unwrap();
         q.add(header_list).unwrap();
     }
 
