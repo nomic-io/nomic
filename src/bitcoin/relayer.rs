@@ -54,9 +54,51 @@ impl Relayer {
             _ => {}
         }
 
-        self.seek_to_tip()?;
+        self.wait_for_trusted_header()?;
+        self.listen()?;
+    }
 
-        Ok(self)
+    fn wait_for_trusted_header(&mut self) -> Result<()> {
+        loop {
+            let rpc_client = self.rpc_client.as_ref().unwrap();
+            let tip_hash = rpc_client.get_best_block_hash()?;
+            let tip_height = rpc_client.get_block_info(&tip_hash)?.height;
+            if (tip_height as u32) < self.header_queue.config.trusted_height {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            } else {
+                break;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn listen(&mut self) -> Result<!> {
+        loop {
+            let rpc_client = self.rpc_client.as_ref().unwrap();
+            let tip_hash = rpc_client.get_best_block_hash()?;
+            let tip_height = rpc_client.get_block_info(&tip_hash)?.height;
+            if tip_height as u32 > self.height()? {
+                self.seek_to_tip()?;
+            } else {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+        }
+    }
+
+    pub fn bounded_listen(&mut self, num_blocks: u32) -> Result<()> {
+        for _ in 0..num_blocks {
+            let rpc_client = self.rpc_client.as_ref().unwrap();
+            let tip_hash = rpc_client.get_best_block_hash()?;
+            let tip_height = rpc_client.get_block_info(&tip_hash)?.height;
+            if tip_height as u32 > self.height()? {
+                self.seek_to_tip()?;
+            } else {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+        }
+
+        Ok(())
     }
 
     fn seek_to_tip(&mut self) -> Result<()> {
