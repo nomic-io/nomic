@@ -44,7 +44,7 @@ impl Relayer {
         self.header_queue.height()
     }
 
-    pub fn start(&mut self) -> Result<&Self> {
+    pub fn start(&mut self) -> Result<!> {
         match self.rpc_client {
             None => {
                 return Err(Error::Relayer(
