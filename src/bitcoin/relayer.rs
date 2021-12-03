@@ -126,6 +126,7 @@ impl Relayer {
                 Ok(hash) => hash,
                 Err(_) => break,
             };
+
             let header = rpc_client.get_block_header(&hash)?;
             let height = rpc_client.get_block_header_info(&hash)?.height;
             let wrapped_header = WrappedHeader::from_header(&header, height as u32);
@@ -191,11 +192,6 @@ mod tests {
         config.retargeting = false;
 
         bitcoind.client.generate_to_address(100, &address).unwrap();
-        let tip_hash = bitcoind.client.get_best_block_hash().unwrap();
-        println!(
-            "{:?}",
-            bitcoind.client.get_block_header_info(&tip_hash).unwrap()
-        );
 
         let store = Store::new(Shared::new(MapStore::new()));
 
