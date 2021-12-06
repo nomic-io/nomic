@@ -11,8 +11,8 @@ use orga::Error as OrgaError;
 use orga::Result as OrgaResult;
 use std::cmp::{max, min};
 
-const MAX_LENGTH: u64 = 2000;
-const MAX_TIME_INCREASE: u32 = 8 * 60 * 60;
+const MAX_LENGTH: u64 = 4032;
+const MAX_TIME_INCREASE: u32 = 2 * 60 * 60;
 const TRUSTED_HEIGHT: u32 = 42;
 const RETARGET_INTERVAL: u32 = 2016;
 const TARGET_SPACING: u32 = 10 * 60;
