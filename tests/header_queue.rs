@@ -60,11 +60,8 @@ fn reorg() {
 
         let tip_hash = node_1.client.get_best_block_hash().unwrap();
         let tip_header = node_1.client.get_block_header(&tip_hash).unwrap();
-        let tip_height = node_1
-            .client
-            .get_block_header_info(&tip_hash)
-            .unwrap()
-            .height;
+        let tip_height_info = node_1.client.get_block_header_info(&tip_hash).unwrap();
+        let tip_height = tip_height_info.height;
 
         headers.push(WrappedHeader::from_header(&tip_header, tip_height as u32));
     }
@@ -86,11 +83,8 @@ fn reorg() {
 
     let tip_hash = node_1.client.get_best_block_hash().unwrap();
     let tip_header = node_1.client.get_block_header(&tip_hash).unwrap();
-    let tip_height = node_1
-        .client
-        .get_block_header_info(&tip_hash)
-        .unwrap()
-        .height;
+    let tip_header_info = node_1.client.get_block_header_info(&tip_hash).unwrap();
+    let tip_height = tip_header_info.height;
 
     header_queue
         .add([WrappedHeader::from_header(&tip_header, tip_height as u32)])
@@ -102,11 +96,8 @@ fn reorg() {
 
         let tip_hash = node_2.client.get_best_block_hash().unwrap();
         let tip_header = node_2.client.get_block_header(&tip_hash).unwrap();
-        let tip_height = node_2
-            .client
-            .get_block_header_info(&tip_hash)
-            .unwrap()
-            .height;
+        let tip_header_info = node_2.client.get_block_header_info(&tip_hash).unwrap();
+        let tip_height = tip_header_info.height;
 
         headers.push(WrappedHeader::from_header(&tip_header, tip_height as u32));
     }
@@ -159,11 +150,8 @@ fn reorg_competing_chain_similar() {
 
         let tip_hash = node_1.client.get_best_block_hash().unwrap();
         let tip_header = node_1.client.get_block_header(&tip_hash).unwrap();
-        let tip_height = node_1
-            .client
-            .get_block_header_info(&tip_hash)
-            .unwrap()
-            .height;
+        let tip_header_info = node_1.client.get_block_header_info(&tip_hash).unwrap();
+        let tip_height = tip_header_info.height;
 
         headers.push(WrappedHeader::from_header(&tip_header, tip_height as u32));
     }
@@ -184,11 +172,8 @@ fn reorg_competing_chain_similar() {
 
         let tip_hash = node_1.client.get_best_block_hash().unwrap();
         let tip_header = node_1.client.get_block_header(&tip_hash).unwrap();
-        let tip_height = node_1
-            .client
-            .get_block_header_info(&tip_hash)
-            .unwrap()
-            .height;
+        let tip_header_info = node_1.client.get_block_header_info(&tip_hash).unwrap();
+        let tip_height = tip_header_info.height;
 
         headers.push(WrappedHeader::from_header(&tip_header, tip_height as u32));
     }
@@ -204,11 +189,8 @@ fn reorg_competing_chain_similar() {
 
         let tip_hash = node_2.client.get_best_block_hash().unwrap();
         let tip_header = node_2.client.get_block_header(&tip_hash).unwrap();
-        let tip_height = node_2
-            .client
-            .get_block_header_info(&tip_hash)
-            .unwrap()
-            .height;
+        let tip_header_info = node_2.client.get_block_header_info(&tip_hash).unwrap();
+        let tip_height = tip_header_info.height;
 
         headers.push(WrappedHeader::from_header(&tip_header, tip_height as u32));
     }
@@ -261,11 +243,8 @@ fn reorg_deep() {
 
         let tip_hash = node_1.client.get_best_block_hash().unwrap();
         let tip_header = node_1.client.get_block_header(&tip_hash).unwrap();
-        let tip_height = node_1
-            .client
-            .get_block_header_info(&tip_hash)
-            .unwrap()
-            .height;
+        let tip_header_info = node_1.client.get_block_header_info(&tip_hash).unwrap();
+        let tip_height = tip_header_info.height;
 
         headers.push(WrappedHeader::from_header(&tip_header, tip_height as u32));
     }
@@ -289,11 +268,8 @@ fn reorg_deep() {
 
         let tip_hash = node_1.client.get_best_block_hash().unwrap();
         let tip_header = node_1.client.get_block_header(&tip_hash).unwrap();
-        let tip_height = node_1
-            .client
-            .get_block_header_info(&tip_hash)
-            .unwrap()
-            .height;
+        let tip_header_info = node_1.client.get_block_header_info(&tip_hash).unwrap();
+        let tip_height = tip_header_info.height;
 
         headers.push(WrappedHeader::from_header(&tip_header, tip_height as u32));
     }
@@ -305,11 +281,8 @@ fn reorg_deep() {
 
         let tip_hash = node_2.client.get_best_block_hash().unwrap();
         let tip_header = node_2.client.get_block_header(&tip_hash).unwrap();
-        let tip_height = node_2
-            .client
-            .get_block_header_info(&tip_hash)
-            .unwrap()
-            .height;
+        let tip_header_info = node_2.client.get_block_header_info(&tip_hash).unwrap();
+        let tip_height = tip_header_info.height;
 
         headers.push(WrappedHeader::from_header(&tip_header, tip_height as u32));
     }
