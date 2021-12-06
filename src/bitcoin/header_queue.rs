@@ -293,7 +293,7 @@ impl HeaderQueue {
         header: &WrappedHeader,
         previous_header: &WrappedHeader,
     ) -> Result<Uint256> {
-        if header.height() % self.config.retarget_interval != 0 {
+        if header.height() + 1 % self.config.retarget_interval != 0 {
             if self.config.min_difficulty_blocks {
                 if header.time() > previous_header.time() + self.config.target_spacing * 2 {
                     return Ok(WrappedHeader::u256_from_compact(self.config.max_target));
