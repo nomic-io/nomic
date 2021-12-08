@@ -272,7 +272,7 @@ impl HeaderQueue {
             }
 
             if self.deque.len() >= 11 {
-                self.validate_time(header, previous_header)?;
+                self.validate_time(header)?;
             }
 
             let target = self.get_next_target(header, previous_header)?;
@@ -425,11 +425,7 @@ impl HeaderQueue {
         Ok(())
     }
 
-    fn validate_time(
-        &self,
-        current_header: &WrappedHeader,
-        previous_header: &WrappedHeader,
-    ) -> Result<()> {
+    fn validate_time(&self, current_header: &WrappedHeader) -> Result<()> {
         let mut prev_stamps: Vec<u32> = Vec::with_capacity(11);
 
         for i in 0..11 {
