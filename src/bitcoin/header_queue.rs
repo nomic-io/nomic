@@ -74,6 +74,18 @@ impl WrappedHeader {
         BlockHeader::u256_from_compact_target(compact)
     }
 
+    pub fn compact_target_from_u256(target: &Uint256) -> u32 {
+        BlockHeader::compact_target_from_u256(&target)
+    }
+
+    fn u32_to_u256(value: u32) -> Uint256 {
+        let bytes = value.to_be_bytes();
+        let mut buffer = [0u8; 32];
+        buffer[32 - bytes.len()..].copy_from_slice(&bytes);
+
+        Uint256::from_be_bytes(buffer)
+    }
+
     fn validate_pow(&self, required_target: &Uint256) -> Result<BlockHash> {
         Ok(self.header.validate_pow(required_target)?)
     }
