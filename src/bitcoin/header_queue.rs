@@ -772,7 +772,7 @@ mod test {
     }
 
     #[test]
-    #[should_panic(expected = "Passed header references incorrect previous bits")]
+    #[should_panic(expected = "Bitcoin(BlockBadTarget)")]
     fn add_wrong_bits_non_retarget() {
         let stamp = Utc.ymd(2009, 1, 10).and_hms(17, 44, 37);
 
