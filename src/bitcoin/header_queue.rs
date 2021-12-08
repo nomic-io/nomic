@@ -473,14 +473,14 @@ impl HeaderQueue {
             return Err(Error::Header("Header contains an invalid timestamp".into()));
         }
 
-        if max(current_header.time(), previous_header.time())
-            - min(current_header.time(), previous_header.time())
-            > self.config.max_time_increase
-        {
-            return Err(Error::Header(
-                "Timestamp is too far ahead of previous timestamp".into(),
-            ));
-        }
+        // if max(current_header.time(), previous_header.time())
+        //     - min(current_header.time(), previous_header.time())
+        //     > self.config.max_time_increase
+        // {
+        //     return Err(Error::Header(
+        //         "Timestamp is too far ahead of previous timestamp".into(),
+        //     ));
+        // }
 
         Ok(())
     }
