@@ -9,7 +9,6 @@ use orga::state::State;
 use orga::store::Store;
 use orga::Error as OrgaError;
 use orga::Result as OrgaResult;
-use std::cmp::{max, min};
 
 const MAX_LENGTH: u64 = 4032;
 const MAX_TIME_INCREASE: u32 = 2 * 60 * 60;
@@ -293,7 +292,7 @@ impl HeaderQueue {
         header: &WrappedHeader,
         previous_header: &WrappedHeader,
     ) -> Result<Uint256> {
-        if header.height() + 1 % self.config.retarget_interval != 0 {
+        if header.height() % self.config.retarget_interval != 0 {
             if self.config.min_difficulty_blocks {
                 if header.time() > previous_header.time() + self.config.target_spacing * 2 {
                     return Ok(WrappedHeader::u256_from_compact(self.config.max_target));
@@ -319,18 +318,22 @@ impl HeaderQueue {
                 }
             }
 
-            if header.bits() != previous_header.bits() {
-                return Err(Error::Header(
-                    "Passed header references incorrect previous bits".into(),
-                ));
-            }
             return Ok(WrappedHeader::u256_from_compact(previous_header.bits()));
         }
 
-        self.calculate_next_target(previous_header)
+        let first_reorg_height = header.height() - self.config.retarget_interval;
+
+        println!("Calculating next target. Height: {}", header.height());
+        println!("Expected target: {}", header.target());
+
+        self.calculate_next_target(previous_header, first_reorg_height)
     }
 
-    fn calculate_next_target(&self, header: &WrappedHeader) -> Result<Uint256> {
+    fn calculate_next_target(
+        &self,
+        header: &WrappedHeader,
+        first_reorg_height: u32,
+    ) -> Result<Uint256> {
         if !self.config.retargeting {
             return Ok(WrappedHeader::u256_from_compact(header.bits()));
         }
@@ -338,31 +341,38 @@ impl HeaderQueue {
         if header.height() < self.config.retarget_interval {
             return Err(Error::Header("Invalid trusted header. Trusted header have height which is a multiple of the retarget interval".into()));
         }
-        let prev_retarget =
-            match self.get_by_height(header.height() - self.config.retarget_interval)? {
-                Some(inner) => inner.time(),
-                None => {
-                    return Err(Error::Header(
-                        "No previous retargeting header exists".into(),
-                    ));
-                }
-            };
 
-        let prev_retarget_256 = WrappedHeader::u256_from_compact(prev_retarget);
+        let prev_retarget = match self.get_by_height(first_reorg_height)? {
+            Some(inner) => inner.time(),
+            None => {
+                return Err(Error::Header(
+                    "No previous retargeting header exists".into(),
+                ));
+            }
+        };
 
-        let mut timespan = WrappedHeader::u256_from_compact(header.time() - prev_retarget);
-        let target_timespan = WrappedHeader::u256_from_compact(self.config.target_timespan);
-        let four_256 = WrappedHeader::u256_from_compact(4);
+        let mut timespan = header.time() - prev_retarget;
 
-        if timespan < target_timespan / four_256 {
-            timespan = target_timespan / four_256;
+        if timespan < self.config.target_timespan / 4 {
+            timespan = self.config.target_timespan / 4;
         }
 
-        if timespan > target_timespan * four_256 {
-            timespan = target_timespan * four_256;
+        if timespan > self.config.target_timespan * 4 {
+            timespan = self.config.target_timespan * 4;
         }
 
-        Ok(prev_retarget_256 * timespan / target_timespan)
+        let target_timespan = WrappedHeader::u32_to_u256(self.config.target_timespan);
+        let timespan = WrappedHeader::u32_to_u256(timespan);
+
+        let target = header.target() * timespan / target_timespan;
+        let target_u32 = BlockHeader::compact_target_from_u256(&target);
+        let target = WrappedHeader::u256_from_compact(target_u32);
+
+        if target > WrappedHeader::u256_from_compact(self.config.max_target) {
+            Ok(WrappedHeader::u256_from_compact(self.config.max_target))
+        } else {
+            Ok(target)
+        }
     }
 
     fn reorg(&mut self, headers: Vec<WrappedHeader>, first_height: u32) -> Result<()> {
