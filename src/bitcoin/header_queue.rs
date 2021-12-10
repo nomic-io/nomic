@@ -335,9 +335,6 @@ impl HeaderQueue {
 
         let first_reorg_height = header.height() - self.config.retarget_interval;
 
-        println!("Calculating next target. Height: {}", header.height());
-        println!("Expected target: {}", header.target());
-
         self.calculate_next_target(previous_header, first_reorg_height)
     }
 
