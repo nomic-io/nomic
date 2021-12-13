@@ -45,7 +45,7 @@ impl Relayer {
     }
 
     pub fn start(&mut self) -> Result<!> {
-        if let None = self.rpc_client {
+        if self.rpc_client.is_none() {
             return Err(Error::Relayer(
                 "No rpc client provided to relayer".to_string(),
             ));
