@@ -1,3 +1,5 @@
+use bitcoin::consensus::Decodable;
+use bitcoin::BlockHeader;
 use bitcoincore_rpc::Error as RpcError;
 use bitcoincore_rpc::RpcApi;
 use bitcoind::BitcoinD;
@@ -9,6 +11,7 @@ use nomic::bitcoin::header_queue::HeaderQueue;
 use nomic::bitcoin::header_queue::WrappedHeader;
 use orga::encoding::Encode;
 use orga::store::{MapStore, Shared, Store};
+use std::fs;
 
 fn into_json<T>(val: T) -> Result<bitcoincore_rpc::jsonrpc::serde_json::Value, RpcError>
 where
@@ -287,7 +290,42 @@ fn reorg_deep() {
         headers.push(WrappedHeader::from_header(&tip_header, tip_height as u32));
     }
 
-    header_queue.add(headers).unwrap();
+    header_queue.add(headers.into()).unwrap();
 
     assert_eq!(header_queue.height().unwrap(), 1011);
+}
+
+#[test]
+#[ignore]
+fn mainnet_from_file() {
+    let block_data = fs::read("tests/data/block-data").unwrap();
+
+    let headers: Vec<BlockHeader> = block_data
+        .chunks(80)
+        .map(|chunk| BlockHeader::consensus_decode(chunk).unwrap())
+        .collect();
+
+    let first_encoded_header = headers.get(2016).unwrap();
+
+    let mut config: Config = Default::default();
+    config.encoded_trusted_header = Encode::encode(&Adapter::new(first_encoded_header)).unwrap();
+    config.trusted_height = 2016;
+
+    let store = Store::new(Shared::new(MapStore::new()));
+    let mut header_queue = HeaderQueue::test_create(store, Default::default(), config).unwrap();
+
+    let mut add_headers = Vec::new();
+    for i in 2017..headers.len() - 1 {
+        let header = headers.get(i).unwrap();
+
+        if i % 100000 == 0 {
+            header_queue.add(add_headers.clone().into()).unwrap();
+            add_headers.clear();
+            add_headers.push(WrappedHeader::from_header(header, i as u32));
+        } else {
+            add_headers.push(WrappedHeader::from_header(header, i as u32));
+        }
+    }
+
+    header_queue.add(add_headers.into()).unwrap();
 }
