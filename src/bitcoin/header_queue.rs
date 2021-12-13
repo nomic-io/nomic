@@ -15,16 +15,16 @@ use orga::Result as OrgaResult;
 
 const MAX_LENGTH: u64 = 4032;
 const MAX_TIME_INCREASE: u32 = 2 * 60 * 60;
-const TRUSTED_HEIGHT: u32 = 42;
+const TRUSTED_HEIGHT: u32 = 709_632;
 const RETARGET_INTERVAL: u32 = 2016;
 const TARGET_SPACING: u32 = 10 * 60;
 const TARGET_TIMESPAN: u32 = RETARGET_INTERVAL * TARGET_SPACING;
 const MAX_TARGET: u32 = 0x1d00ffff;
 const ENCODED_TRUSTED_HEADER: [u8; 80] = [
-    1, 0, 0, 0, 139, 82, 187, 215, 44, 47, 73, 86, 144, 89, 245, 89, 193, 177, 121, 77, 229, 25,
-    46, 79, 125, 109, 43, 3, 199, 72, 43, 173, 0, 0, 0, 0, 131, 228, 248, 169, 213, 2, 237, 12, 65,
-    144, 117, 193, 171, 181, 213, 111, 135, 138, 46, 144, 121, 229, 97, 43, 251, 118, 162, 220, 55,
-    217, 196, 39, 65, 221, 104, 73, 255, 255, 0, 29, 43, 144, 157, 214,
+    4, 0, 32, 32, 204, 188, 198, 116, 105, 62, 248, 117, 28, 147, 156, 14, 109, 71, 40, 221, 230,
+    46, 36, 252, 18, 55, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 119, 236, 20, 71, 55, 95, 198, 128, 41, 171,
+    122, 133, 253, 105, 137, 197, 211, 19, 81, 182, 25, 232, 7, 9, 222, 104, 32, 8, 16, 59, 218,
+    106, 111, 155, 144, 97, 234, 105, 12, 23, 2, 115, 15, 84,
 ];
 
 #[derive(Clone, Debug, Decode, Encode, PartialEq, State, Query)]
@@ -833,16 +833,35 @@ mod test {
             nonce: 2_093_702_200,
         };
 
+        let test_config = Config {
+            max_length: 2000,
+            max_time_increase: 8 * 60 * 60,
+            trusted_height: 42,
+            retarget_interval: 2016,
+            target_spacing: 10 * 60,
+            target_timespan: 2016 * (10 * 60),
+            max_target: 0x1d00ffff,
+            retargeting: true,
+            min_difficulty_blocks: false,
+            encoded_trusted_header: vec![
+                1, 0, 0, 0, 139, 82, 187, 215, 44, 47, 73, 86, 144, 89, 245, 89, 193, 177, 121, 77,
+                229, 25, 46, 79, 125, 109, 43, 3, 199, 72, 43, 173, 0, 0, 0, 0, 131, 228, 248, 169,
+                213, 2, 237, 12, 65, 144, 117, 193, 171, 181, 213, 111, 135, 138, 46, 144, 121,
+                229, 97, 43, 251, 118, 162, 220, 55, 217, 196, 39, 65, 221, 104, 73, 255, 255, 0,
+                29, 43, 144, 157, 214,
+            ],
+        };
+
         let adapter = Adapter::new(header);
         let header_list = [WrappedHeader::new(adapter, 43)];
         let store = Store::new(Shared::new(MapStore::new()));
-        let mut q = HeaderQueue::create(store, Default::default()).unwrap();
+        let mut q = HeaderQueue::with_conf(store, Default::default(), test_config.clone()).unwrap();
         q.add_into_iter(header_list).unwrap();
 
         let adapter = Adapter::new(header);
         let header_list = vec![WrappedHeader::new(adapter, 43)];
         let store = Store::new(Shared::new(MapStore::new()));
-        let mut q = HeaderQueue::create(store, Default::default()).unwrap();
+        let mut q = HeaderQueue::with_conf(store, Default::default(), test_config).unwrap();
         q.add_into_iter(header_list).unwrap();
     }
 
@@ -866,10 +885,29 @@ mod test {
             nonce: 2_093_702_200,
         };
 
+        let test_config = Config {
+            max_length: 2000,
+            max_time_increase: 8 * 60 * 60,
+            trusted_height: 42,
+            retarget_interval: 2016,
+            target_spacing: 10 * 60,
+            target_timespan: 2016 * (10 * 60),
+            max_target: 0x1d00ffff,
+            retargeting: true,
+            min_difficulty_blocks: false,
+            encoded_trusted_header: vec![
+                1, 0, 0, 0, 139, 82, 187, 215, 44, 47, 73, 86, 144, 89, 245, 89, 193, 177, 121, 77,
+                229, 25, 46, 79, 125, 109, 43, 3, 199, 72, 43, 173, 0, 0, 0, 0, 131, 228, 248, 169,
+                213, 2, 237, 12, 65, 144, 117, 193, 171, 181, 213, 111, 135, 138, 46, 144, 121,
+                229, 97, 43, 251, 118, 162, 220, 55, 217, 196, 39, 65, 221, 104, 73, 255, 255, 0,
+                29, 43, 144, 157, 214,
+            ],
+        };
+
         let adapter = Adapter::new(header);
         let header_list = [WrappedHeader::new(adapter, 43)];
         let store = Store::new(Shared::new(MapStore::new()));
-        let mut q = HeaderQueue::create(store, Default::default()).unwrap();
+        let mut q = HeaderQueue::with_conf(store, Default::default(), test_config).unwrap();
         q.add_into_iter(header_list).unwrap();
     }
 }
