@@ -558,6 +558,10 @@ impl HeaderQueue {
         self.deque.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.deque.is_empty()
+    }
+
     #[query]
     pub fn get(&self, height: u32) -> WorkHeader {
         self.get_by_height(height).unwrap().unwrap()
