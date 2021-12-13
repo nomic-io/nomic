@@ -3,8 +3,11 @@ use crate::error::{Error, Result};
 use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::util::uint::Uint256;
 use bitcoin::BlockHash;
+use orga::call::Call;
 use orga::collections::Deque;
+use orga::encoding as ed;
 use orga::prelude::*;
+use orga::query::Query;
 use orga::state::State;
 use orga::store::Store;
 use orga::Error as OrgaError;
@@ -24,7 +27,7 @@ const ENCODED_TRUSTED_HEADER: [u8; 80] = [
     217, 196, 39, 65, 221, 104, 73, 255, 255, 0, 29, 43, 144, 157, 214,
 ];
 
-#[derive(Clone, Debug, PartialEq, State)]
+#[derive(Clone, Debug, Decode, Encode, PartialEq, State, Query)]
 pub struct WrappedHeader {
     height: u32,
     header: Adapter<BlockHeader>,
@@ -91,10 +94,63 @@ impl WrappedHeader {
     }
 }
 
-#[derive(Clone, Debug, State)]
+pub struct HeaderList(Vec<WrappedHeader>);
+
+impl From<Vec<WrappedHeader>> for HeaderList {
+    fn from(headers: Vec<WrappedHeader>) -> Self {
+        HeaderList(headers)
+    }
+}
+
+impl From<HeaderList> for Vec<WrappedHeader> {
+    fn from(headers: HeaderList) -> Self {
+        headers.0
+    }
+}
+
+impl Encode for HeaderList {
+    fn encode_into<W: std::io::Write>(&self, dest: &mut W) -> orga::encoding::Result<()> {
+        // TODO: emit a more suitable error
+        if self.0.len() >= 256 {
+            return Err(orga::encoding::Error::UnexpectedByte(0));
+        }
+        dest.write_all(&[self.0.len() as u8])?;
+        self.0.encode_into(dest)
+    }
+
+    fn encoding_length(&self) -> orga::encoding::Result<usize> {
+        Ok(1 + self.0.encoding_length()?)
+    }
+}
+
+impl Decode for HeaderList {
+    fn decode<R: std::io::Read>(mut reader: R) -> orga::encoding::Result<Self> {
+        let mut len = [0u8];
+        reader.read_exact(&mut len[..])?;
+        let len = len[0] as usize;
+
+        let mut headers = Vec::with_capacity(len);
+        for _ in 0..len {
+            headers.push(WrappedHeader::decode(&mut reader)?);
+        }
+        Ok(HeaderList(headers))
+    }
+}
+
+impl Terminated for HeaderList {}
+
+#[derive(Clone, Debug, Decode, Encode, State)]
 pub struct WorkHeader {
     chain_work: Adapter<Uint256>,
     header: WrappedHeader,
+}
+
+impl Query for WorkHeader {
+    type Query = ();
+
+    fn query(&self, _query: ()) -> OrgaResult<()> {
+        Ok(())
+    }
 }
 
 impl WorkHeader {
@@ -153,10 +209,11 @@ impl Default for Config {
     }
 }
 
+#[derive(Call, Query)]
 pub struct HeaderQueue {
     deque: Deque<WorkHeader>,
     current_work: Adapter<Uint256>,
-    pub config: Config,
+    config: Config,
 }
 
 impl State for HeaderQueue {
@@ -200,8 +257,16 @@ impl From<HeaderQueue> for <HeaderQueue as State>::Encoding {
     }
 }
 
+impl Terminated for HeaderQueue {}
+
 impl HeaderQueue {
-    pub fn add<T>(&mut self, headers: T) -> Result<()>
+    #[call]
+    pub fn add(&mut self, headers: HeaderList) -> Result<()> {
+        let headers: Vec<_> = headers.into();
+        self.add_into_iter(headers)
+    }
+
+    pub fn add_into_iter<T>(&mut self, headers: T) -> Result<()>
     where
         T: IntoIterator<Item = WrappedHeader>,
     {
@@ -493,6 +558,11 @@ impl HeaderQueue {
         self.deque.len()
     }
 
+    #[query]
+    pub fn get(&self, height: u32) -> WorkHeader {
+        self.get_by_height(height).unwrap().unwrap()
+    }
+
     pub fn get_by_height(&self, height: u32) -> Result<Option<WorkHeader>> {
         let initial_height = match self.deque.front()? {
             Some(inner) => inner.height(),
@@ -733,7 +803,7 @@ mod test {
         };
         let store = Store::new(Shared::new(MapStore::new()));
         let mut q = HeaderQueue::test_create(store, Default::default(), test_config).unwrap();
-        q.add(header_list).unwrap();
+        q.add_into_iter(header_list).unwrap();
     }
 
     #[test]
@@ -759,13 +829,13 @@ mod test {
         let header_list = [WrappedHeader::new(adapter, 43)];
         let store = Store::new(Shared::new(MapStore::new()));
         let mut q = HeaderQueue::create(store, Default::default()).unwrap();
-        q.add(header_list).unwrap();
+        q.add_into_iter(header_list).unwrap();
 
         let adapter = Adapter::new(header);
         let header_list = vec![WrappedHeader::new(adapter, 43)];
         let store = Store::new(Shared::new(MapStore::new()));
         let mut q = HeaderQueue::create(store, Default::default()).unwrap();
-        q.add(header_list).unwrap();
+        q.add_into_iter(header_list).unwrap();
     }
 
     #[test]
@@ -792,6 +862,6 @@ mod test {
         let header_list = [WrappedHeader::new(adapter, 43)];
         let store = Store::new(Shared::new(MapStore::new()));
         let mut q = HeaderQueue::create(store, Default::default()).unwrap();
-        q.add(header_list).unwrap();
+        q.add_into_iter(header_list).unwrap();
     }
 }
