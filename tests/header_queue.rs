@@ -66,7 +66,7 @@ fn reorg() {
         headers.push(WrappedHeader::from_header(&tip_header, tip_height as u32));
     }
 
-    header_queue.add(headers).unwrap();
+    header_queue.add(headers.into()).unwrap();
 
     node_2
         .client
@@ -87,7 +87,7 @@ fn reorg() {
     let tip_height = tip_header_info.height;
 
     header_queue
-        .add([WrappedHeader::from_header(&tip_header, tip_height as u32)])
+        .add(vec![WrappedHeader::from_header(&tip_header, tip_height as u32)].into())
         .unwrap();
 
     let mut headers = Vec::with_capacity(5);
@@ -102,7 +102,7 @@ fn reorg() {
         headers.push(WrappedHeader::from_header(&tip_header, tip_height as u32));
     }
 
-    header_queue.add(headers).unwrap();
+    header_queue.add(headers.into()).unwrap();
 
     assert_eq!(header_queue.height().unwrap(), 16);
 }
@@ -156,7 +156,7 @@ fn reorg_competing_chain_similar() {
         headers.push(WrappedHeader::from_header(&tip_header, tip_height as u32));
     }
 
-    header_queue.add(headers).unwrap();
+    header_queue.add(headers.into()).unwrap();
 
     node_2
         .client
@@ -178,7 +178,7 @@ fn reorg_competing_chain_similar() {
         headers.push(WrappedHeader::from_header(&tip_header, tip_height as u32));
     }
 
-    header_queue.add(headers).unwrap();
+    header_queue.add(headers.into()).unwrap();
 
     let mut headers = Vec::with_capacity(5);
     for _ in 0..2 {
@@ -195,7 +195,7 @@ fn reorg_competing_chain_similar() {
         headers.push(WrappedHeader::from_header(&tip_header, tip_height as u32));
     }
 
-    header_queue.add(headers).unwrap();
+    header_queue.add(headers.into()).unwrap();
 
     assert_eq!(header_queue.height().unwrap(), 13);
 }
@@ -249,7 +249,7 @@ fn reorg_deep() {
         headers.push(WrappedHeader::from_header(&tip_header, tip_height as u32));
     }
 
-    header_queue.add(headers).unwrap();
+    header_queue.add(headers.into()).unwrap();
 
     node_2
         .client
@@ -274,7 +274,7 @@ fn reorg_deep() {
         headers.push(WrappedHeader::from_header(&tip_header, tip_height as u32));
     }
 
-    header_queue.add(headers).unwrap();
+    header_queue.add(headers.into()).unwrap();
     let mut headers = Vec::with_capacity(1000);
     for _ in 0..1000 {
         node_2.client.generate_to_address(1, &bob_address).unwrap();
