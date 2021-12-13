@@ -1,8 +1,19 @@
 [package]
 name = "nomic"
-version = "0.1.0"
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+version = "1.0.0"
+authors = [ "The Nomic Team <hello@nomic.io>" ]
+edition = "2018"
 
 [dependencies]
+bitcoin = "0.27.1"
+bitcoind = { version = "0.21.0", features = ["22_0"] }
+bitcoincore-rpc = "0.14.0"
+orga = { git = "https://github.com/nomic-io/orga.git", branch = "deque-push-insert" }
+thiserror = "1.0.30"
+ed = { git = "https://github.com/nomic-io/ed.git", rev = "6d327abacf0c6068ceaed36fb67410ae65f2abbe"}
+
+[dev-dependencies]
+chrono = "0.4.0"
+bitcoin_hashes = "0.10.0"
+serde_json = "1.0.68"
+serde = "1.0.130"
