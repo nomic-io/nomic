@@ -13,6 +13,7 @@ thiserror = "1.0.30"
 ed = { git = "https://github.com/nomic-io/ed.git", rev = "6d327abacf0c6068ceaed36fb67410ae65f2abbe"}
 clap = { version = "3.0.0-rc.4", features = ["derive"] }
 tokio = { version = "1.14.0", features = ["full"] }
+base64 = "0.13.0"
 
 [dev-dependencies]
 chrono = "0.4.0"

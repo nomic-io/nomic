@@ -1,10 +1,11 @@
 #![feature(trivial_bounds)]
 #![allow(incomplete_features)]
 #![feature(specialization)]
+#![feature(async_closure)]
 
 use clap::Parser;
 use orga::prelude::*;
-use app::App;
+use app::*;
 
 mod app;
 mod bitcoin;
@@ -12,8 +13,13 @@ mod error;
 
 const NETWORK_NAME: &str = "guccinet";
 
-pub fn rpc_client() -> TendermintClient<App> {
+pub fn rpc_client() -> TendermintClient<app::App> {
     TendermintClient::new("http://localhost:26657").unwrap()
+}
+
+
+fn my_address() -> Address {
+    load_keypair().unwrap().public.to_bytes().into()
 }
 
 #[derive(Parser, Debug)]
@@ -31,6 +37,9 @@ pub enum Command {
     Balance(BalanceCmd),
     Delegations(DelegationsCmd),
     Delegate(DelegateCmd),
+    Declare(DeclareCmd),
+    Unbond(UnbondCmd),
+    Claim(ClaimCmd),
 }
 
 impl Command {
@@ -42,7 +51,10 @@ impl Command {
             Send(cmd) => cmd.run().await,
             Balance(cmd) => cmd.run().await,
             Delegate(cmd) => cmd.run().await,
+            Declare(cmd) => cmd.run().await,
             Delegations(cmd) => cmd.run().await,
+            Unbond(cmd) => cmd.run().await,
+            Claim(cmd) => cmd.run().await,
         }
     }
 }
@@ -54,7 +66,7 @@ pub struct InitCmd {}
 impl InitCmd {
     async fn run(&self) -> Result<()> {
         tokio::task::spawn_blocking(|| {
-            Node::<App>::new(NETWORK_NAME);
+            Node::<app::App>::new(NETWORK_NAME);
         })
         .await
         .map_err(|err| orga::Error::App(err.to_string()))?;
@@ -68,7 +80,7 @@ pub struct StartCmd {}
 impl StartCmd {
     async fn run(&self) -> Result<()> {
         tokio::task::spawn_blocking(|| {
-            Node::<App>::new(NETWORK_NAME)
+            Node::<app::App>::new(NETWORK_NAME)
                 .with_genesis(include_bytes!("../genesis.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
@@ -88,16 +100,10 @@ pub struct SendCmd {
 
 impl SendCmd {
     async fn run(&self) -> Result<()> {
-        todo!()
-    }
-}
-
-#[derive(Parser, Debug)]
-pub struct DelegationsCmd;
-
-impl DelegationsCmd {
-    async fn run(&self) -> Result<()> {
-        todo!()
+        rpc_client()
+            .accounts
+            .transfer(self.to_addr, self.amount.into())
+            .await
     }
 }
 
@@ -106,19 +112,141 @@ pub struct BalanceCmd;
 
 impl BalanceCmd {
     async fn run(&self) -> Result<()> {
-        todo!()
+        let address = my_address();
+        let client = rpc_client();
+        type AppQuery = <InnerApp as Query>::Query;
+        type AcctQuery = <Accounts<Gucci> as Query>::Query;
+
+        let q = AppQuery::FieldAccounts(AcctQuery::MethodBalance(address, vec![]));
+        let balance: u64 = client
+            .query(q, |state| state.accounts.balance(address))
+            .await?
+            .into();
+
+        println!("address: {}", address);
+        println!("balance: {} GUCCI", balance);
+
+        Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct DelegationsCmd;
+
+impl DelegationsCmd {
+    async fn run(&self) -> Result<()> {
+        let address = my_address();
+
+        type AppQuery = <InnerApp as Query>::Query;
+        type StakingQuery = <Staking<Gucci> as Query>::Query;
+
+        let delegations = rpc_client()
+            .query(AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![])), |state| {
+                state.staking.delegations(address)
+            })
+            .await?;
+
+        println!(
+            "delegated to {} validator{}",
+            delegations.len(),
+            if delegations.len() == 1 { "" } else { "s" }
+        );
+        for (validator, delegation) in delegations {
+            let staked: u64 = delegation.staked.into();
+            let liquid: u64 = delegation.liquid.into();
+            println!("- {}: staked={} FRESH, liquid={} FRESH", validator, staked, liquid);
+        }
+
+        Ok(())
     }
 }
 
 #[derive(Parser, Debug)]
 pub struct DelegateCmd {
-    validator_addr: String,
+    validator_addr: Address,
     amount: u64,
 }
 
 impl DelegateCmd {
     async fn run(&self) -> Result<()> {
-        todo!()
+        rpc_client()
+            .pay_from(async move |mut client| client.accounts.take_as_funding(self.amount.into()).await)
+            .staking
+            .delegate_from_self(self.validator_addr, self.amount.into())
+            .await
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct DeclareCmd {
+    consensus_key: String,
+    amount: u64,
+}
+
+impl DeclareCmd {
+    async fn run(&self) -> Result<()> {
+        use std::convert::TryInto;
+        let consensus_key: [u8; 32] = base64::decode(&self.consensus_key)
+            .map_err(|_| orga::Error::App("invalid consensus key".to_string()))?
+            .try_into()
+            .map_err(|_| orga::Error::App("invalid consensus key".to_string()))?;
+        let consensus_key: Address = consensus_key.into();
+
+        rpc_client()
+            .pay_from(async move |mut client| client.accounts.take_as_funding(self.amount.into()).await)
+            .staking
+            .declare_self(consensus_key, self.amount.into())
+            .await
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct UnbondCmd {
+    validator_addr: Address,
+    amount: u64,
+}
+
+impl UnbondCmd {
+    async fn run(&self) -> Result<()> {
+        rpc_client()
+            .staking
+            .unbond_self(self.validator_addr, self.amount.into())
+            .await
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct ClaimCmd;
+
+impl ClaimCmd {
+    async fn run(&self) -> Result<()> {
+        let address = my_address();
+
+        type AppQuery = <InnerApp as Query>::Query;
+        type StakingQuery = <Staking<Gucci> as Query>::Query;
+
+        let delegations = rpc_client()
+            .query(AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![])), |state| {
+                state.staking.delegations(address)
+            })
+            .await?;
+
+        for (validator, delegation) in delegations {
+            let liquid: u64 = delegation.liquid.into();
+            if liquid == 0 {
+                continue;
+            }
+
+            rpc_client()
+                .pay_from(async move |mut client| client.staking.take_as_funding(validator, delegation.liquid).await)
+                .accounts
+                .give_from_funding(liquid.into())
+                .await?;
+
+            println!("claimed {} GUCCI from {}", liquid, validator);
+        }
+
+        Ok(())
     }
 }
 
