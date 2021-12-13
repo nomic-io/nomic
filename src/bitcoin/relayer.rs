@@ -6,7 +6,7 @@ use orga::state::State;
 use orga::store::Store;
 use orga::Result as OrgaResult;
 
-const SEEK_BATCH_SIZE: u32 = 100;
+const SEEK_BATCH_SIZE: u32 = 255;
 
 pub struct Relayer {
     header_queue: HeaderQueue,
@@ -62,7 +62,7 @@ impl Relayer {
         loop {
             let rpc_client = self.rpc_client.as_ref().unwrap();
             let tip_hash = rpc_client.get_best_block_hash()?;
-            let tip_height = rpc_client.get_block_info(&tip_hash)?.height;
+            let tip_height = rpc_client.get_block_header_info(&tip_hash)?.height;
             if (tip_height as u32) < self.header_queue.trusted_height() {
                 std::thread::sleep(std::time::Duration::from_secs(1));
             } else {
@@ -77,7 +77,7 @@ impl Relayer {
         loop {
             let rpc_client = self.rpc_client.as_ref().unwrap();
             let tip_hash = rpc_client.get_best_block_hash()?;
-            let tip_height = rpc_client.get_block_info(&tip_hash)?.height;
+            let tip_height = rpc_client.get_block_header_info(&tip_hash)?.height;
             if tip_height as u32 > self.height()? {
                 self.seek_to_tip()?;
             } else {
@@ -90,7 +90,7 @@ impl Relayer {
         for _ in 0..num_blocks {
             let rpc_client = self.rpc_client.as_ref().unwrap();
             let tip_hash = rpc_client.get_best_block_hash()?;
-            let tip_height = rpc_client.get_block_info(&tip_hash)?.height;
+            let tip_height = rpc_client.get_block_header_info(&tip_hash)?.height;
             if tip_height as u32 > self.height()? {
                 self.seek_to_tip()?;
             } else {
