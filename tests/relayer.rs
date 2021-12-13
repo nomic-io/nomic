@@ -1,7 +1,7 @@
 use bitcoincore_rpc::{Auth, Client, RpcApi};
 use bitcoind::BitcoinD;
 use nomic::bitcoin::adapter::Adapter;
-use nomic::bitcoin::header_queue::Config;
+use nomic::bitcoin::header_queue::{Config, HeaderQueue};
 use nomic::bitcoin::relayer::Relayer;
 use orga::encoding::Encode;
 use orga::store::{MapStore, Shared, Store};
@@ -32,11 +32,10 @@ fn relayer() {
 
     let store = Store::new(Shared::new(MapStore::new()));
 
-    let mut relayer = Relayer::with_conf(store, Default::default(), config).unwrap();
-
-    relayer.rpc_client(rpc_client);
-    relayer.bounded_listen(10).unwrap();
-    let height = relayer.height().unwrap();
+    let mut header_queue = HeaderQueue::with_conf(store, Default::default(), config).unwrap();
+    let relayer = Relayer::new(rpc_client);
+    relayer.bounded_listen(10, &mut header_queue).unwrap();
+    let height = header_queue.height().unwrap();
 
     assert_eq!(height, 42);
 }

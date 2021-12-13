@@ -9,58 +9,24 @@ use orga::Result as OrgaResult;
 const SEEK_BATCH_SIZE: u32 = 255;
 
 pub struct Relayer {
-    header_queue: HeaderQueue,
-    rpc_client: Option<Client>,
-}
-
-impl State for Relayer {
-    type Encoding = <HeaderQueue as State>::Encoding;
-
-    fn create(store: Store, data: Self::Encoding) -> OrgaResult<Self> {
-        Ok(Relayer {
-            header_queue: HeaderQueue::create(store, data)?,
-            rpc_client: None,
-        })
-    }
-
-    fn flush(self) -> OrgaResult<Self::Encoding> {
-        self.header_queue.flush()
-    }
-}
-
-impl From<Relayer> for <Relayer as State>::Encoding {
-    fn from(relayer: Relayer) -> Self {
-        relayer.header_queue.into()
-    }
+    rpc_client: Client,
 }
 
 impl Relayer {
-    pub fn rpc_client(&mut self, client: Client) -> &Self {
-        self.rpc_client = Some(client);
-        self
+    pub fn new(client: Client) -> Self {
+        Relayer { rpc_client: client }
     }
 
-    pub fn height(&self) -> Result<u32> {
-        self.header_queue.height()
+    pub fn start(&self, header_queue: &mut HeaderQueue) -> Result<!> {
+        self.wait_for_trusted_header(header_queue)?;
+        self.listen(header_queue)?;
     }
 
-    pub fn start(&mut self) -> Result<!> {
-        if self.rpc_client.is_none() {
-            return Err(Error::Relayer(
-                "No rpc client provided to relayer".to_string(),
-            ));
-        }
-
-        self.wait_for_trusted_header()?;
-        self.listen()?;
-    }
-
-    fn wait_for_trusted_header(&mut self) -> Result<()> {
+    fn wait_for_trusted_header(&self, header_queue: &HeaderQueue) -> Result<()> {
         loop {
-            let rpc_client = self.rpc_client.as_ref().unwrap();
-            let tip_hash = rpc_client.get_best_block_hash()?;
-            let tip_height = rpc_client.get_block_header_info(&tip_hash)?.height;
-            if (tip_height as u32) < self.header_queue.trusted_height() {
+            let tip_hash = self.rpc_client.get_best_block_hash()?;
+            let tip_height = self.rpc_client.get_block_header_info(&tip_hash)?.height;
+            if (tip_height as u32) < header_queue.trusted_height() {
                 std::thread::sleep(std::time::Duration::from_secs(1));
             } else {
                 break;
@@ -70,26 +36,24 @@ impl Relayer {
         Ok(())
     }
 
-    fn listen(&mut self) -> Result<!> {
+    fn listen(&self, header_queue: &mut HeaderQueue) -> Result<!> {
         loop {
-            let rpc_client = self.rpc_client.as_ref().unwrap();
-            let tip_hash = rpc_client.get_best_block_hash()?;
-            let tip_height = rpc_client.get_block_header_info(&tip_hash)?.height;
-            if tip_height as u32 > self.height()? {
-                self.seek_to_tip()?;
+            let tip_hash = self.rpc_client.get_best_block_hash()?;
+            let tip_height = self.rpc_client.get_block_header_info(&tip_hash)?.height;
+            if tip_height as u32 > header_queue.height()? {
+                self.seek_to_tip(header_queue)?;
             } else {
                 std::thread::sleep(std::time::Duration::from_secs(1));
             }
         }
     }
 
-    pub fn bounded_listen(&mut self, num_blocks: u32) -> Result<()> {
+    pub fn bounded_listen(&self, num_blocks: u32, header_queue: &mut HeaderQueue) -> Result<()> {
         for _ in 0..num_blocks {
-            let rpc_client = self.rpc_client.as_ref().unwrap();
-            let tip_hash = rpc_client.get_best_block_hash()?;
-            let tip_height = rpc_client.get_block_header_info(&tip_hash)?.height;
-            if tip_height as u32 > self.height()? {
-                self.seek_to_tip()?;
+            let tip_hash = self.rpc_client.get_best_block_hash()?;
+            let tip_height = self.rpc_client.get_block_header_info(&tip_hash)?.height;
+            if tip_height as u32 > header_queue.height()? {
+                self.seek_to_tip(header_queue)?;
             } else {
                 std::thread::sleep(std::time::Duration::from_secs(1));
             }
@@ -98,34 +62,32 @@ impl Relayer {
         Ok(())
     }
 
-    fn seek_to_tip(&mut self) -> Result<()> {
+    fn seek_to_tip(&self, header_queue: &mut HeaderQueue) -> Result<()> {
         let tip_height = self.get_rpc_height()?;
-        while self.header_queue.height()? < tip_height {
-            let headers = self.get_header_batch(SEEK_BATCH_SIZE)?;
-            self.header_queue.add(headers.into())?;
+        while header_queue.height()? < tip_height {
+            let headers = self.get_header_batch(SEEK_BATCH_SIZE, header_queue)?;
+            header_queue.add(headers.into())?;
         }
         Ok(())
     }
 
-    fn get_header_batch(&self, batch_size: u32) -> Result<Vec<WrappedHeader>> {
-        let rpc_client = match self.rpc_client {
-            Some(ref client) => client,
-            None => {
-                return Err(Error::Relayer(
-                    "No rpc client provided to relayer".to_string(),
-                ));
-            }
-        };
-
+    fn get_header_batch(
+        &self,
+        batch_size: u32,
+        header_queue: &HeaderQueue,
+    ) -> Result<Vec<WrappedHeader>> {
         let mut headers = Vec::with_capacity(batch_size as usize);
         for i in 1..=batch_size {
-            let hash = match rpc_client.get_block_hash((self.header_queue.height()? + i) as u64) {
+            let hash = match self
+                .rpc_client
+                .get_block_hash((header_queue.height()? + i) as u64)
+            {
                 Ok(hash) => hash,
                 Err(_) => break,
             };
 
-            let header = rpc_client.get_block_header(&hash)?;
-            let height = rpc_client.get_block_header_info(&hash)?.height;
+            let header = self.rpc_client.get_block_header(&hash)?;
+            let height = self.rpc_client.get_block_header_info(&hash)?.height;
             let wrapped_header = WrappedHeader::from_header(&header, height as u32);
             headers.push(wrapped_header);
         }
@@ -134,29 +96,10 @@ impl Relayer {
     }
 
     fn get_rpc_height(&self) -> Result<u32> {
-        let rpc_client = match self.rpc_client {
-            Some(ref client) => client,
-            None => {
-                return Err(Error::Relayer(
-                    "No rpc client provided to relayer".to_string(),
-                ));
-            }
-        };
-        let tip_hash = rpc_client.get_best_block_hash()?;
-        let tip_height = rpc_client.get_block_header_info(&tip_hash)?.height;
+        let tip_hash = self.rpc_client.get_best_block_hash()?;
+        let tip_height = self.rpc_client.get_block_header_info(&tip_hash)?.height;
 
         Ok(tip_height as u32)
-    }
-
-    pub fn with_conf(
-        store: Store,
-        data: <Self as State>::Encoding,
-        config: Config,
-    ) -> Result<Self> {
-        let mut relayer = Relayer::create(store.clone(), data.clone())?;
-        let header_queue = HeaderQueue::with_conf(store, data, config)?;
-        relayer.header_queue = header_queue;
-        Ok(relayer)
     }
 }
 
@@ -192,10 +135,10 @@ mod tests {
 
         let store = Store::new(Shared::new(MapStore::new()));
 
-        let mut relayer = Relayer::with_conf(store, Default::default(), config).unwrap();
-        relayer.rpc_client(rpc_client);
-        relayer.seek_to_tip().unwrap();
-        let height = relayer.height().unwrap();
+        let mut header_queue = HeaderQueue::with_conf(store, Default::default(), config).unwrap();
+        let relayer = Relayer::new(rpc_client);
+        relayer.seek_to_tip(&mut header_queue).unwrap();
+        let height = header_queue.height().unwrap();
 
         assert_eq!(height, 130);
     }
@@ -226,10 +169,10 @@ mod tests {
 
         let store = Store::new(Shared::new(MapStore::new()));
 
-        let mut relayer = Relayer::with_conf(store, Default::default(), config).unwrap();
-        relayer.rpc_client(rpc_client);
-        relayer.seek_to_tip().unwrap();
-        let height = relayer.height().unwrap();
+        let mut header_queue = HeaderQueue::with_conf(store, Default::default(), config).unwrap();
+        let relayer = Relayer::new(rpc_client);
+        relayer.seek_to_tip(&mut header_queue).unwrap();
+        let height = header_queue.height().unwrap();
 
         assert_eq!(height, 72);
     }
