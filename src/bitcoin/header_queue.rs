@@ -209,7 +209,7 @@ impl Default for Config {
     }
 }
 
-#[derive(Call, Query)]
+#[derive(Call, Query, Client)]
 pub struct HeaderQueue {
     deque: Deque<WorkHeader>,
     current_work: Adapter<Uint256>,
@@ -261,9 +261,10 @@ impl Terminated for HeaderQueue {}
 
 impl HeaderQueue {
     #[call]
-    pub fn add(&mut self, headers: HeaderList) -> Result<()> {
+    pub fn add(&mut self, headers: HeaderList) -> OrgaResult<()> {
         let headers: Vec<_> = headers.into();
         self.add_into_iter(headers)
+            .map_err(|err| OrgaError::App(err.to_string()))
     }
 
     pub fn add_into_iter<T>(&mut self, headers: T) -> Result<()>

@@ -1,12 +1,18 @@
 #![feature(trivial_bounds)]
-#![feature(min_specialization)]
+#![allow(incomplete_features)]
+#![feature(specialization)]
 
 use clap::Parser;
 use orga::prelude::*;
+use app::App;
+
+mod app;
+mod bitcoin;
+mod error;
 
 const NETWORK_NAME: &str = "guccinet";
 
-fn rpc_client() -> TendermintClient<App> {
+pub fn rpc_client() -> TendermintClient<App> {
     TendermintClient::new("http://localhost:26657").unwrap()
 }
 

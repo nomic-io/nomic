@@ -1,6 +1,7 @@
+#![feature(trivial_bounds)]
 #![allow(incomplete_features)]
 #![feature(specialization)]
-#![feature(trivial_bounds)]
 
+pub mod app;
 pub mod bitcoin;
 pub mod error;
