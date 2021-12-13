@@ -45,13 +45,10 @@ impl Relayer {
     }
 
     pub fn start(&mut self) -> Result<!> {
-        match self.rpc_client {
-            None => {
-                return Err(Error::Relayer(
-                    "No rpc client provided to relayer".to_string(),
-                ));
-            }
-            _ => {}
+        if let None = self.rpc_client {
+            return Err(Error::Relayer(
+                "No rpc client provided to relayer".to_string(),
+            ));
         }
 
         self.wait_for_trusted_header()?;
