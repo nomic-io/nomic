@@ -10,6 +10,7 @@ bitcoind = { version = "0.21.0", features = ["22_0"] }
 bitcoincore-rpc = "0.14.0"
 orga = { git = "https://github.com/nomic-io/orga.git", branch = "deque-push-insert" }
 thiserror = "1.0.30"
+ed = { git = "https://github.com/nomic-io/ed.git", rev = "6d327abacf0c6068ceaed36fb67410ae65f2abbe"}
 
 [dev-dependencies]
 chrono = "0.4.0"
