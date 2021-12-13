@@ -3,16 +3,18 @@ use crate::error::{Error, Result};
 use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::util::uint::Uint256;
 use bitcoin::BlockHash;
+use orga::call::Call;
 use orga::collections::Deque;
+use orga::encoding as ed;
 use orga::prelude::*;
+use orga::query::Query;
 use orga::state::State;
 use orga::store::Store;
 use orga::Error as OrgaError;
 use orga::Result as OrgaResult;
-use std::cmp::{max, min};
 
-const MAX_LENGTH: u64 = 2000;
-const MAX_TIME_INCREASE: u32 = 8 * 60 * 60;
+const MAX_LENGTH: u64 = 4032;
+const MAX_TIME_INCREASE: u32 = 2 * 60 * 60;
 const TRUSTED_HEIGHT: u32 = 42;
 const RETARGET_INTERVAL: u32 = 2016;
 const TARGET_SPACING: u32 = 10 * 60;
@@ -25,7 +27,7 @@ const ENCODED_TRUSTED_HEADER: [u8; 80] = [
     217, 196, 39, 65, 221, 104, 73, 255, 255, 0, 29, 43, 144, 157, 214,
 ];
 
-#[derive(Clone, Debug, PartialEq, State)]
+#[derive(Clone, Debug, Decode, Encode, PartialEq, State, Query)]
 pub struct WrappedHeader {
     height: u32,
     header: Adapter<BlockHeader>,
@@ -75,15 +77,80 @@ impl WrappedHeader {
         BlockHeader::u256_from_compact_target(compact)
     }
 
+    pub fn compact_target_from_u256(target: &Uint256) -> u32 {
+        BlockHeader::compact_target_from_u256(target)
+    }
+
+    fn u32_to_u256(value: u32) -> Uint256 {
+        let bytes = value.to_be_bytes();
+        let mut buffer = [0u8; 32];
+        buffer[32 - bytes.len()..].copy_from_slice(&bytes);
+
+        Uint256::from_be_bytes(buffer)
+    }
+
     fn validate_pow(&self, required_target: &Uint256) -> Result<BlockHash> {
         Ok(self.header.validate_pow(required_target)?)
     }
 }
 
-#[derive(Clone, Debug, State)]
+pub struct HeaderList(Vec<WrappedHeader>);
+
+impl From<Vec<WrappedHeader>> for HeaderList {
+    fn from(headers: Vec<WrappedHeader>) -> Self {
+        HeaderList(headers)
+    }
+}
+
+impl From<HeaderList> for Vec<WrappedHeader> {
+    fn from(headers: HeaderList) -> Self {
+        headers.0
+    }
+}
+
+impl Encode for HeaderList {
+    fn encode_into<W: std::io::Write>(&self, dest: &mut W) -> orga::encoding::Result<()> {
+        // TODO: emit a more suitable error
+        if self.0.len() >= 256 {
+            return Err(orga::encoding::Error::UnexpectedByte(0));
+        }
+        dest.write_all(&[self.0.len() as u8])?;
+        self.0.encode_into(dest)
+    }
+
+    fn encoding_length(&self) -> orga::encoding::Result<usize> {
+        Ok(1 + self.0.encoding_length()?)
+    }
+}
+
+impl Decode for HeaderList {
+    fn decode<R: std::io::Read>(mut reader: R) -> orga::encoding::Result<Self> {
+        let mut len = [0u8];
+        reader.read_exact(&mut len[..])?;
+        let len = len[0] as usize;
+
+        let mut headers = Vec::with_capacity(len);
+        for _ in 0..len {
+            headers.push(WrappedHeader::decode(&mut reader)?);
+        }
+        Ok(HeaderList(headers))
+    }
+}
+
+impl Terminated for HeaderList {}
+
+#[derive(Clone, Debug, Decode, Encode, State)]
 pub struct WorkHeader {
     chain_work: Adapter<Uint256>,
     header: WrappedHeader,
+}
+
+impl Query for WorkHeader {
+    type Query = ();
+
+    fn query(&self, _query: ()) -> OrgaResult<()> {
+        Ok(())
+    }
 }
 
 impl WorkHeader {
@@ -142,10 +209,11 @@ impl Default for Config {
     }
 }
 
+#[derive(Call, Query)]
 pub struct HeaderQueue {
     deque: Deque<WorkHeader>,
     current_work: Adapter<Uint256>,
-    pub config: Config,
+    config: Config,
 }
 
 impl State for HeaderQueue {
@@ -189,8 +257,16 @@ impl From<HeaderQueue> for <HeaderQueue as State>::Encoding {
     }
 }
 
+impl Terminated for HeaderQueue {}
+
 impl HeaderQueue {
-    pub fn add<T>(&mut self, headers: T) -> Result<()>
+    #[call]
+    pub fn add(&mut self, headers: HeaderList) -> Result<()> {
+        let headers: Vec<_> = headers.into();
+        self.add_into_iter(headers)
+    }
+
+    pub fn add_into_iter<T>(&mut self, headers: T) -> Result<()>
     where
         T: IntoIterator<Item = WrappedHeader>,
     {
@@ -272,7 +348,7 @@ impl HeaderQueue {
             }
 
             if self.deque.len() >= 11 {
-                self.validate_time(header, previous_header)?;
+                self.validate_time(header)?;
             }
 
             let target = self.get_next_target(header, previous_header)?;
@@ -319,18 +395,19 @@ impl HeaderQueue {
                 }
             }
 
-            if header.bits() != previous_header.bits() {
-                return Err(Error::Header(
-                    "Passed header references incorrect previous bits".into(),
-                ));
-            }
             return Ok(WrappedHeader::u256_from_compact(previous_header.bits()));
         }
 
-        self.calculate_next_target(previous_header)
+        let first_reorg_height = header.height() - self.config.retarget_interval;
+
+        self.calculate_next_target(previous_header, first_reorg_height)
     }
 
-    fn calculate_next_target(&self, header: &WrappedHeader) -> Result<Uint256> {
+    fn calculate_next_target(
+        &self,
+        header: &WrappedHeader,
+        first_reorg_height: u32,
+    ) -> Result<Uint256> {
         if !self.config.retargeting {
             return Ok(WrappedHeader::u256_from_compact(header.bits()));
         }
@@ -338,31 +415,38 @@ impl HeaderQueue {
         if header.height() < self.config.retarget_interval {
             return Err(Error::Header("Invalid trusted header. Trusted header have height which is a multiple of the retarget interval".into()));
         }
-        let prev_retarget =
-            match self.get_by_height(header.height() - self.config.retarget_interval)? {
-                Some(inner) => inner.time(),
-                None => {
-                    return Err(Error::Header(
-                        "No previous retargeting header exists".into(),
-                    ));
-                }
-            };
 
-        let prev_retarget_256 = WrappedHeader::u256_from_compact(prev_retarget);
+        let prev_retarget = match self.get_by_height(first_reorg_height)? {
+            Some(inner) => inner.time(),
+            None => {
+                return Err(Error::Header(
+                    "No previous retargeting header exists".into(),
+                ));
+            }
+        };
 
-        let mut timespan = WrappedHeader::u256_from_compact(header.time() - prev_retarget);
-        let target_timespan = WrappedHeader::u256_from_compact(self.config.target_timespan);
-        let four_256 = WrappedHeader::u256_from_compact(4);
+        let mut timespan = header.time() - prev_retarget;
 
-        if timespan < target_timespan / four_256 {
-            timespan = target_timespan / four_256;
+        if timespan < self.config.target_timespan / 4 {
+            timespan = self.config.target_timespan / 4;
         }
 
-        if timespan > target_timespan * four_256 {
-            timespan = target_timespan * four_256;
+        if timespan > self.config.target_timespan * 4 {
+            timespan = self.config.target_timespan * 4;
         }
 
-        Ok(prev_retarget_256 * timespan / target_timespan)
+        let target_timespan = WrappedHeader::u32_to_u256(self.config.target_timespan);
+        let timespan = WrappedHeader::u32_to_u256(timespan);
+
+        let target = header.target() * timespan / target_timespan;
+        let target_u32 = BlockHeader::compact_target_from_u256(&target);
+        let target = WrappedHeader::u256_from_compact(target_u32);
+
+        if target > WrappedHeader::u256_from_compact(self.config.max_target) {
+            Ok(WrappedHeader::u256_from_compact(self.config.max_target))
+        } else {
+            Ok(target)
+        }
     }
 
     fn reorg(&mut self, headers: Vec<WrappedHeader>, first_height: u32) -> Result<()> {
@@ -425,11 +509,7 @@ impl HeaderQueue {
         Ok(())
     }
 
-    fn validate_time(
-        &self,
-        current_header: &WrappedHeader,
-        previous_header: &WrappedHeader,
-    ) -> Result<()> {
+    fn validate_time(&self, current_header: &WrappedHeader) -> Result<()> {
         let mut prev_stamps: Vec<u32> = Vec::with_capacity(11);
 
         for i in 0..11 {
@@ -455,14 +535,14 @@ impl HeaderQueue {
             return Err(Error::Header("Header contains an invalid timestamp".into()));
         }
 
-        if max(current_header.time(), previous_header.time())
-            - min(current_header.time(), previous_header.time())
-            > self.config.max_time_increase
-        {
-            return Err(Error::Header(
-                "Timestamp is too far ahead of previous timestamp".into(),
-            ));
-        }
+        // if max(current_header.time(), previous_header.time())
+        //     - min(current_header.time(), previous_header.time())
+        //     > self.config.max_time_increase
+        // {
+        //     return Err(Error::Header(
+        //         "Timestamp is too far ahead of previous timestamp".into(),
+        //     ));
+        // }
 
         Ok(())
     }
@@ -476,6 +556,15 @@ impl HeaderQueue {
 
     pub fn len(&self) -> u64 {
         self.deque.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.deque.is_empty()
+    }
+
+    #[query]
+    pub fn get(&self, height: u32) -> WorkHeader {
+        self.get_by_height(height).unwrap().unwrap()
     }
 
     pub fn get_by_height(&self, height: u32) -> Result<Option<WorkHeader>> {
@@ -744,17 +833,17 @@ mod test {
         let header_list = [WrappedHeader::new(adapter, 43)];
         let store = Store::new(Shared::new(MapStore::new()));
         let mut q = HeaderQueue::create(store, Default::default()).unwrap();
-        q.add(header_list).unwrap();
+        q.add_into_iter(header_list).unwrap();
 
         let adapter = Adapter::new(header);
         let header_list = vec![WrappedHeader::new(adapter, 43)];
         let store = Store::new(Shared::new(MapStore::new()));
         let mut q = HeaderQueue::create(store, Default::default()).unwrap();
-        q.add(header_list).unwrap();
+        q.add_into_iter(header_list).unwrap();
     }
 
     #[test]
-    #[should_panic(expected = "Passed header references incorrect previous bits")]
+    #[should_panic(expected = "Bitcoin(BlockBadTarget)")]
     fn add_wrong_bits_non_retarget() {
         let stamp = Utc.ymd(2009, 1, 10).and_hms(17, 44, 37);
 
@@ -777,6 +866,6 @@ mod test {
         let header_list = [WrappedHeader::new(adapter, 43)];
         let store = Store::new(Shared::new(MapStore::new()));
         let mut q = HeaderQueue::create(store, Default::default()).unwrap();
-        q.add(header_list).unwrap();
+        q.add_into_iter(header_list).unwrap();
     }
 }
