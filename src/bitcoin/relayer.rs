@@ -1,10 +1,7 @@
 use crate::bitcoin::header_queue::Config;
 use crate::bitcoin::header_queue::{HeaderQueue, WrappedHeader};
-use crate::error::{Error, Result};
+use crate::error::Result;
 use bitcoincore_rpc::{Client, RpcApi};
-use orga::state::State;
-use orga::store::Store;
-use orga::Result as OrgaResult;
 
 const SEEK_BATCH_SIZE: u32 = 255;
 
