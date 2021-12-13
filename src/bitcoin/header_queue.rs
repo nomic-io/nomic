@@ -585,6 +585,10 @@ impl HeaderQueue {
         }
     }
 
+    pub fn trusted_height(&self) -> u32 {
+        self.config.trusted_height
+    }
+
     pub fn with_conf(
         store: Store,
         data: <Self as State>::Encoding,
@@ -777,7 +781,7 @@ mod test {
             nonce: 3_014_810_412,
         };
 
-        let header_list = [
+        let header_list = vec![
             WrappedHeader::new(Adapter::new(header_43), 43),
             WrappedHeader::new(Adapter::new(header_44), 44),
             WrappedHeader::new(Adapter::new(header_45), 45),
@@ -807,7 +811,7 @@ mod test {
         };
         let store = Store::new(Shared::new(MapStore::new()));
         let mut q = HeaderQueue::with_conf(store, Default::default(), test_config).unwrap();
-        q.add(header_list).unwrap();
+        q.add(header_list.into()).unwrap();
     }
 
     #[test]

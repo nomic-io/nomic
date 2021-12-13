@@ -312,7 +312,7 @@ fn mainnet_from_file() {
     config.trusted_height = 2016;
 
     let store = Store::new(Shared::new(MapStore::new()));
-    let mut header_queue = HeaderQueue::test_create(store, Default::default(), config).unwrap();
+    let mut header_queue = HeaderQueue::with_conf(store, Default::default(), config).unwrap();
 
     let mut add_headers = Vec::new();
     for i in 2017..headers.len() - 1 {

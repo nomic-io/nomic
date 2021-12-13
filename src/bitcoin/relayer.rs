@@ -63,7 +63,7 @@ impl Relayer {
             let rpc_client = self.rpc_client.as_ref().unwrap();
             let tip_hash = rpc_client.get_best_block_hash()?;
             let tip_height = rpc_client.get_block_info(&tip_hash)?.height;
-            if (tip_height as u32) < self.header_queue.config.trusted_height {
+            if (tip_height as u32) < self.header_queue.trusted_height() {
                 std::thread::sleep(std::time::Duration::from_secs(1));
             } else {
                 break;
@@ -105,7 +105,7 @@ impl Relayer {
         let tip_height = self.get_rpc_height()?;
         while self.header_queue.height()? < tip_height {
             let headers = self.get_header_batch(SEEK_BATCH_SIZE)?;
-            self.header_queue.add(headers)?;
+            self.header_queue.add(headers.into())?;
         }
         Ok(())
     }
