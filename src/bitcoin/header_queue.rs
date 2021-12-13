@@ -78,7 +78,7 @@ impl WrappedHeader {
     }
 
     pub fn compact_target_from_u256(target: &Uint256) -> u32 {
-        BlockHeader::compact_target_from_u256(&target)
+        BlockHeader::compact_target_from_u256(target)
     }
 
     fn u32_to_u256(value: u32) -> Uint256 {
