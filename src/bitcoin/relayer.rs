@@ -1,4 +1,3 @@
-use crate::bitcoin::header_queue::Config;
 use crate::bitcoin::header_queue::{HeaderQueue, WrappedHeader};
 use crate::error::Result;
 use bitcoincore_rpc::{Client, RpcApi};
@@ -104,10 +103,11 @@ impl Relayer {
 mod tests {
     use super::*;
     use crate::bitcoin::adapter::Adapter;
+    use crate::bitcoin::header_queue::Config;
     use bitcoincore_rpc::Auth;
     use bitcoind::BitcoinD;
     use orga::encoding::Encode;
-    use orga::store::{MapStore, Shared};
+    use orga::store::{MapStore, Shared, Store};
 
     #[test]
     fn relayer_seek() {
