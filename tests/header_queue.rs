@@ -52,7 +52,7 @@ fn reorg() {
     config.retargeting = false;
 
     let store = Store::new(Shared::new(MapStore::new()));
-    let mut header_queue = HeaderQueue::test_create(store, Default::default(), config).unwrap();
+    let mut header_queue = HeaderQueue::with_conf(store, Default::default(), config).unwrap();
 
     let mut headers = Vec::with_capacity(11);
     for _ in 0..10 {
@@ -142,7 +142,7 @@ fn reorg_competing_chain_similar() {
     config.retargeting = false;
 
     let store = Store::new(Shared::new(MapStore::new()));
-    let mut header_queue = HeaderQueue::test_create(store, Default::default(), config).unwrap();
+    let mut header_queue = HeaderQueue::with_conf(store, Default::default(), config).unwrap();
 
     let mut headers = Vec::with_capacity(11);
     for _ in 0..10 {
@@ -235,7 +235,7 @@ fn reorg_deep() {
     config.retargeting = false;
 
     let store = Store::new(Shared::new(MapStore::new()));
-    let mut header_queue = HeaderQueue::test_create(store, Default::default(), config).unwrap();
+    let mut header_queue = HeaderQueue::with_conf(store, Default::default(), config).unwrap();
 
     let mut headers = Vec::with_capacity(10);
     for _ in 0..10 {
@@ -312,7 +312,7 @@ fn mainnet_from_file() {
     config.trusted_height = 2016;
 
     let store = Store::new(Shared::new(MapStore::new()));
-    let mut header_queue = HeaderQueue::test_create(store, Default::default(), config).unwrap();
+    let mut header_queue = HeaderQueue::with_conf(store, Default::default(), config).unwrap();
 
     let mut add_headers = Vec::new();
     for i in 2017..headers.len() - 1 {
