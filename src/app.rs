@@ -29,7 +29,7 @@ impl BeginBlock for InnerApp {
 
         if self.staking.staked() > 0 {
             let divisor: Amount = 1_000_000.into();
-            let reward = (self.staking.staked() / divisor)?.amount();
+            let reward = (self.staking.staked() / divisor)?.amount()?;
             self.staking.give(reward.into())?;
         }
 
