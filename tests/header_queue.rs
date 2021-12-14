@@ -51,7 +51,7 @@ fn reorg() {
     config.trusted_height = tip_height as u32;
     config.retargeting = false;
 
-    let store = Store::new(Shared::new(MapStore::new()));
+    let store = Store::new(Shared::new(MapStore::new()).into());
     let mut header_queue = HeaderQueue::with_conf(store, Default::default(), config).unwrap();
 
     let mut headers = Vec::with_capacity(11);
@@ -141,7 +141,7 @@ fn reorg_competing_chain_similar() {
     config.trusted_height = tip_height as u32;
     config.retargeting = false;
 
-    let store = Store::new(Shared::new(MapStore::new()));
+    let store = Store::new(Shared::new(MapStore::new()).into());
     let mut header_queue = HeaderQueue::with_conf(store, Default::default(), config).unwrap();
 
     let mut headers = Vec::with_capacity(11);
@@ -234,7 +234,7 @@ fn reorg_deep() {
     config.trusted_height = tip_height as u32;
     config.retargeting = false;
 
-    let store = Store::new(Shared::new(MapStore::new()));
+    let store = Store::new(Shared::new(MapStore::new()).into());
     let mut header_queue = HeaderQueue::with_conf(store, Default::default(), config).unwrap();
 
     let mut headers = Vec::with_capacity(10);
@@ -311,7 +311,7 @@ fn mainnet_from_file() {
     config.encoded_trusted_header = Encode::encode(&Adapter::new(first_encoded_header)).unwrap();
     config.trusted_height = 2016;
 
-    let store = Store::new(Shared::new(MapStore::new()));
+    let store = Store::new(Shared::new(MapStore::new()).into());
     let mut header_queue = HeaderQueue::with_conf(store, Default::default(), config).unwrap();
 
     let mut add_headers = Vec::new();

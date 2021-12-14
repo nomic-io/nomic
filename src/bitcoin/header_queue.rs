@@ -621,7 +621,7 @@ mod test {
 
     #[test]
     fn create() {
-        let store = Store::new(Shared::new(MapStore::new()));
+        let store = Store::new(Shared::new(MapStore::new()).into());
         let q = HeaderQueue::create(store, Default::default()).unwrap();
 
         let decoded_adapter: Adapter<BlockHeader> =
@@ -808,7 +808,7 @@ mod test {
                 29, 43, 144, 157, 214,
             ],
         };
-        let store = Store::new(Shared::new(MapStore::new()));
+        let store = Store::new(Shared::new(MapStore::new()).into());
         let mut q = HeaderQueue::with_conf(store, Default::default(), test_config).unwrap();
         q.add(header_list.into()).unwrap();
     }
@@ -853,13 +853,13 @@ mod test {
 
         let adapter = Adapter::new(header);
         let header_list = [WrappedHeader::new(adapter, 43)];
-        let store = Store::new(Shared::new(MapStore::new()));
+        let store = Store::new(Shared::new(MapStore::new()).into());
         let mut q = HeaderQueue::with_conf(store, Default::default(), test_config.clone()).unwrap();
         q.add_into_iter(header_list).unwrap();
 
         let adapter = Adapter::new(header);
         let header_list = vec![WrappedHeader::new(adapter, 43)];
-        let store = Store::new(Shared::new(MapStore::new()));
+        let store = Store::new(Shared::new(MapStore::new()).into());
         let mut q = HeaderQueue::with_conf(store, Default::default(), test_config).unwrap();
         q.add_into_iter(header_list).unwrap();
     }
@@ -905,7 +905,7 @@ mod test {
 
         let adapter = Adapter::new(header);
         let header_list = [WrappedHeader::new(adapter, 43)];
-        let store = Store::new(Shared::new(MapStore::new()));
+        let store = Store::new(Shared::new(MapStore::new()).into());
         let mut q = HeaderQueue::with_conf(store, Default::default(), test_config).unwrap();
         q.add_into_iter(header_list).unwrap();
     }
