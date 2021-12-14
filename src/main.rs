@@ -4,11 +4,11 @@
 #![feature(async_closure)]
 #![feature(never_type)]
 
+use crate::bitcoin::relayer::Relayer;
+use app::*;
+use bitcoincore_rpc::{Auth, Client as BtcClient};
 use clap::Parser;
 use orga::prelude::*;
-use app::*;
-use bitcoincore_rpc::{Client as BtcClient, Auth};
-use crate::bitcoin::relayer::Relayer;
 
 mod app;
 mod bitcoin;
@@ -62,7 +62,6 @@ impl Command {
         }
     }
 }
-
 
 #[derive(Parser, Debug)]
 pub struct InitCmd {}
@@ -145,9 +144,10 @@ impl DelegationsCmd {
         type StakingQuery = <Staking<Gucci> as Query>::Query;
 
         let delegations = app_client()
-            .query(AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![])), |state| {
-                state.staking.delegations(address)
-            })
+            .query(
+                AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![])),
+                |state| state.staking.delegations(address),
+            )
             .await?;
 
         println!(
@@ -158,7 +158,10 @@ impl DelegationsCmd {
         for (validator, delegation) in delegations {
             let staked: u64 = delegation.staked.into();
             let liquid: u64 = delegation.liquid.into();
-            println!("- {}: staked={} FRESH, liquid={} FRESH", validator, staked, liquid);
+            println!(
+                "- {}: staked={} FRESH, liquid={} FRESH",
+                validator, staked, liquid
+            );
         }
 
         Ok(())
@@ -174,7 +177,9 @@ pub struct DelegateCmd {
 impl DelegateCmd {
     async fn run(&self) -> Result<()> {
         app_client()
-            .pay_from(async move |mut client| client.accounts.take_as_funding(self.amount.into()).await)
+            .pay_from(async move |mut client| {
+                client.accounts.take_as_funding(self.amount.into()).await
+            })
             .staking
             .delegate_from_self(self.validator_addr, self.amount.into())
             .await
@@ -197,7 +202,9 @@ impl DeclareCmd {
         let consensus_key: Address = consensus_key.into();
 
         app_client()
-            .pay_from(async move |mut client| client.accounts.take_as_funding(self.amount.into()).await)
+            .pay_from(async move |mut client| {
+                client.accounts.take_as_funding(self.amount.into()).await
+            })
             .staking
             .declare_self(consensus_key, self.amount.into())
             .await
@@ -230,9 +237,10 @@ impl ClaimCmd {
         type StakingQuery = <Staking<Gucci> as Query>::Query;
 
         let delegations = app_client()
-            .query(AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![])), |state| {
-                state.staking.delegations(address)
-            })
+            .query(
+                AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![])),
+                |state| state.staking.delegations(address),
+            )
             .await?;
 
         for (validator, delegation) in delegations {
@@ -242,7 +250,12 @@ impl ClaimCmd {
             }
 
             app_client()
-                .pay_from(async move |mut client| client.staking.take_as_funding(validator, delegation.liquid).await)
+                .pay_from(async move |mut client| {
+                    client
+                        .staking
+                        .take_as_funding(validator, delegation.liquid)
+                        .await
+                })
                 .accounts
                 .give_from_funding(liquid.into())
                 .await?;

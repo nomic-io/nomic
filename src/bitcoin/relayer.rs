@@ -1,8 +1,8 @@
-use crate::bitcoin::header_queue::{HeaderQueue, WrappedHeader, HeaderList};
+use crate::app::InnerApp;
+use crate::bitcoin::header_queue::{HeaderList, HeaderQueue, WrappedHeader};
 use crate::error::Result;
 use bitcoincore_rpc::{Client as BtcClient, RpcApi};
 use orga::prelude::*;
-use crate::app::InnerApp;
 use orga::Result as OrgaResult;
 
 const SEEK_BATCH_SIZE: u32 = 10;
@@ -19,29 +19,32 @@ type HeaderQueueQuery = <HeaderQueue as Query>::Query;
 
 impl Relayer {
     pub fn new(btc_client: BtcClient, app_client: AppClient) -> Self {
-        Relayer { btc_client, app_client }
+        Relayer {
+            btc_client,
+            app_client,
+        }
     }
 
     async fn app_height(&self) -> OrgaResult<u32> {
-        self.app_client.query(
-            AppQuery::FieldBtcHeaders(HeaderQueueQuery::MethodHeight(vec![])),
-            |state| Ok(state.btc_headers.height().unwrap()),
-        ).await
+        self.app_client
+            .query(
+                AppQuery::FieldBtcHeaders(HeaderQueueQuery::MethodHeight(vec![])),
+                |state| Ok(state.btc_headers.height().unwrap()),
+            )
+            .await
     }
 
     async fn app_trusted_height(&self) -> OrgaResult<u32> {
-        self.app_client.query(
-            AppQuery::FieldBtcHeaders(HeaderQueueQuery::MethodTrustedHeight(vec![])),
-            |state| Ok(state.btc_headers.trusted_height()),
-        ).await
+        self.app_client
+            .query(
+                AppQuery::FieldBtcHeaders(HeaderQueueQuery::MethodTrustedHeight(vec![])),
+                |state| Ok(state.btc_headers.trusted_height()),
+            )
+            .await
     }
 
     async fn app_add(&mut self, headers: HeaderList) -> OrgaResult<()> {
-        self
-            .app_client
-            .btc_headers
-            .add(headers)
-            .await
+        self.app_client.btc_headers.add(headers).await
     }
 
     pub async fn start(&mut self) -> Result<!> {
@@ -68,7 +71,11 @@ impl Relayer {
         loop {
             let tip_hash = self.btc_client.get_best_block_hash()?;
             let tip_height = self.btc_client.get_block_header_info(&tip_hash)?.height;
-            println!("relayer listen: btc={}, app={}", tip_height, self.app_height().await?);
+            println!(
+                "relayer listen: btc={}, app={}",
+                tip_height,
+                self.app_height().await?
+            );
             if tip_height as u32 > self.app_height().await? {
                 self.seek_to_tip().await?;
             } else {
@@ -104,10 +111,7 @@ impl Relayer {
         Ok(())
     }
 
-    async fn get_header_batch(
-        &self,
-        batch_size: u32,
-    ) -> Result<Vec<WrappedHeader>> {
+    async fn get_header_batch(&self, batch_size: u32) -> Result<Vec<WrappedHeader>> {
         let mut headers = Vec::with_capacity(batch_size as usize);
         for i in 1..=batch_size {
             let hash = match self
@@ -157,7 +161,8 @@ mod tests {
 
         let bitcoind_url = bitcoind.rpc_url();
         let bitcoin_cookie_file = bitcoind.params.cookie_file.clone();
-        let rpc_client = BtcClient::new(&bitcoind_url, Auth::CookieFile(bitcoin_cookie_file)).unwrap();
+        let rpc_client =
+            BtcClient::new(&bitcoind_url, Auth::CookieFile(bitcoin_cookie_file)).unwrap();
 
         let encoded_header = Encode::encode(&Adapter::new(trusted_header)).unwrap();
         let mut config: Config = Default::default();
@@ -188,7 +193,8 @@ mod tests {
 
         let bitcoind_url = bitcoind.rpc_url();
         let bitcoin_cookie_file = bitcoind.params.cookie_file.clone();
-        let rpc_client = BtcClient::new(&bitcoind_url, Auth::CookieFile(bitcoin_cookie_file)).unwrap();
+        let rpc_client =
+            BtcClient::new(&bitcoind_url, Auth::CookieFile(bitcoin_cookie_file)).unwrap();
 
         let encoded_header = Encode::encode(&Adapter::new(trusted_header)).unwrap();
         let mut config: Config = Default::default();
