@@ -159,7 +159,7 @@ impl DelegationsCmd {
             let staked: u64 = delegation.staked.into();
             let liquid: u64 = delegation.liquid.into();
             println!(
-                "- {}: staked={} FRESH, liquid={} FRESH",
+                "- {}: staked={} GUCCI, liquid={} GUCCI",
                 validator, staked, liquid
             );
         }
@@ -245,9 +245,10 @@ impl ClaimCmd {
 
         for (validator, delegation) in delegations {
             let liquid: u64 = delegation.liquid.into();
-            if liquid == 0 {
+            if liquid <= 1 {
                 continue;
             }
+            let liquid = liquid - 1;
 
             app_client()
                 .pay_from(async move |mut client| {
