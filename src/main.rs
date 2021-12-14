@@ -2,10 +2,13 @@
 #![allow(incomplete_features)]
 #![feature(specialization)]
 #![feature(async_closure)]
+#![feature(never_type)]
 
 use clap::Parser;
 use orga::prelude::*;
 use app::*;
+use bitcoincore_rpc::{Client as BtcClient, Auth, RpcApi};
+use crate::bitcoin::relayer::Relayer;
 
 mod app;
 mod bitcoin;
@@ -13,10 +16,9 @@ mod error;
 
 const NETWORK_NAME: &str = "guccinet";
 
-pub fn rpc_client() -> TendermintClient<app::App> {
+pub fn app_client() -> TendermintClient<app::App> {
     TendermintClient::new("http://localhost:26657").unwrap()
 }
-
 
 fn my_address() -> Address {
     load_keypair().unwrap().public.to_bytes().into()
@@ -40,6 +42,7 @@ pub enum Command {
     Declare(DeclareCmd),
     Unbond(UnbondCmd),
     Claim(ClaimCmd),
+    Relayer(RelayerCmd),
 }
 
 impl Command {
@@ -55,6 +58,7 @@ impl Command {
             Delegations(cmd) => cmd.run().await,
             Unbond(cmd) => cmd.run().await,
             Claim(cmd) => cmd.run().await,
+            Relayer(cmd) => cmd.run().await,
         }
     }
 }
@@ -100,7 +104,7 @@ pub struct SendCmd {
 
 impl SendCmd {
     async fn run(&self) -> Result<()> {
-        rpc_client()
+        app_client()
             .accounts
             .transfer(self.to_addr, self.amount.into())
             .await
@@ -113,7 +117,7 @@ pub struct BalanceCmd;
 impl BalanceCmd {
     async fn run(&self) -> Result<()> {
         let address = my_address();
-        let client = rpc_client();
+        let client = app_client();
         type AppQuery = <InnerApp as Query>::Query;
         type AcctQuery = <Accounts<Gucci> as Query>::Query;
 
@@ -140,7 +144,7 @@ impl DelegationsCmd {
         type AppQuery = <InnerApp as Query>::Query;
         type StakingQuery = <Staking<Gucci> as Query>::Query;
 
-        let delegations = rpc_client()
+        let delegations = app_client()
             .query(AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![])), |state| {
                 state.staking.delegations(address)
             })
@@ -169,7 +173,7 @@ pub struct DelegateCmd {
 
 impl DelegateCmd {
     async fn run(&self) -> Result<()> {
-        rpc_client()
+        app_client()
             .pay_from(async move |mut client| client.accounts.take_as_funding(self.amount.into()).await)
             .staking
             .delegate_from_self(self.validator_addr, self.amount.into())
@@ -192,7 +196,7 @@ impl DeclareCmd {
             .map_err(|_| orga::Error::App("invalid consensus key".to_string()))?;
         let consensus_key: Address = consensus_key.into();
 
-        rpc_client()
+        app_client()
             .pay_from(async move |mut client| client.accounts.take_as_funding(self.amount.into()).await)
             .staking
             .declare_self(consensus_key, self.amount.into())
@@ -208,7 +212,7 @@ pub struct UnbondCmd {
 
 impl UnbondCmd {
     async fn run(&self) -> Result<()> {
-        rpc_client()
+        app_client()
             .staking
             .unbond_self(self.validator_addr, self.amount.into())
             .await
@@ -225,7 +229,7 @@ impl ClaimCmd {
         type AppQuery = <InnerApp as Query>::Query;
         type StakingQuery = <Staking<Gucci> as Query>::Query;
 
-        let delegations = rpc_client()
+        let delegations = app_client()
             .query(AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![])), |state| {
                 state.staking.delegations(address)
             })
@@ -237,7 +241,7 @@ impl ClaimCmd {
                 continue;
             }
 
-            rpc_client()
+            app_client()
                 .pay_from(async move |mut client| client.staking.take_as_funding(validator, delegation.liquid).await)
                 .accounts
                 .give_from_funding(liquid.into())
@@ -247,6 +251,23 @@ impl ClaimCmd {
         }
 
         Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct RelayerCmd {
+    btc_rpc_user: String,
+    btc_rpc_pass: String,
+}
+
+impl RelayerCmd {
+    async fn run(&self) -> Result<()> {
+        let auth = Auth::UserPass(self.btc_rpc_user.clone(), self.btc_rpc_pass.clone());
+        let btc_rpc = BtcClient::new("http://127.0.0.1:8332", auth).unwrap();
+
+        println!("starting relayer");
+        let mut relayer = Relayer::new(btc_rpc, app_client());
+        relayer.start().await.unwrap();
     }
 }
 
