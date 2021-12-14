@@ -77,6 +77,7 @@ impl Relayer {
         }
     }
 
+    #[cfg(test)]
     pub async fn bounded_listen(&mut self, num_blocks: u32) -> Result<()> {
         for _ in 0..num_blocks {
             let tip_hash = self.btc_client.get_best_block_hash()?;

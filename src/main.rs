@@ -7,7 +7,7 @@
 use clap::Parser;
 use orga::prelude::*;
 use app::*;
-use bitcoincore_rpc::{Client as BtcClient, Auth, RpcApi};
+use bitcoincore_rpc::{Client as BtcClient, Auth};
 use crate::bitcoin::relayer::Relayer;
 
 mod app;
