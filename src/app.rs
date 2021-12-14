@@ -19,7 +19,20 @@ impl InitChain for InnerApp {
                 .parse()
                 .unwrap(),
             100_000_000_000.into(),
-        )
+        )?;
+        self.accounts.deposit(
+            "nomic1lwgt239mwclgepyuwdpe2qqf6nalxdt3pj0teh6l0fdrd2ssl74qvww96r"
+                .parse()
+                .unwrap(),
+            100_000_000_000.into(),
+        )?;
+        self.accounts.deposit(
+            "nomic1gzw7mjms49mpaccemvl60awdpe8prta48947tx2cvy5lymwcaets96gm4h"
+                .parse()
+                .unwrap(),
+            100_000_000_000.into(),
+        )?;
+        Ok(())
     }
 }
 
@@ -28,7 +41,7 @@ impl BeginBlock for InnerApp {
         self.staking.begin_block(ctx)?;
 
         if self.staking.staked() > 0 {
-            let divisor: Amount = 1_000_000.into();
+            let divisor: Amount = 50_000.into();
             let reward = (self.staking.staked() / divisor)?.amount()?;
             self.staking.give(reward.into())?;
         }
