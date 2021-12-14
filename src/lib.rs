@@ -1,3 +1,4 @@
+#![feature(never_type)]
 #![allow(incomplete_features)]
 #![feature(specialization)]
 #![feature(trivial_bounds)]
