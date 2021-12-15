@@ -68,7 +68,7 @@ sudo apt install build-essential libssl-dev pkg-config clang
 # clone
 git clone https://github.com/nomic-io/nomic.git nomic && cd nomic
 
-# build and install, adding a `fresh` command to your PATH
+# build and install, adding a `nomic` command to your PATH
 cargo install --path .
 ```
 
