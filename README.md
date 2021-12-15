@@ -71,7 +71,7 @@ Ask the Nomic team for some coins in the Telegram and include your address.
 Once you have received coins, you can declare your node as a valigator and
 delegate to yourself with:
 
-```bash
+```
 nomic declare <validator_address> <amount>
 ```
 
