@@ -56,7 +56,7 @@ seeds = "094500829f3711befae32e7c7f7a40bd9ff3a748@159.89.232.28:26656"
 ### 3. Run your node
 
 ```bash
-nomic init
+nomic start
 ```
 
 This will run the Nomic state machine and a Tendermint process.
@@ -68,7 +68,7 @@ which has an active full node).
 
 Ask the Nomic team for some coins in the Telegram and include your address.
 
-Once you have received coins, you can declare your node as a valigator and
+Once you have received coins, you can declare your node as a validator and
 delegate to yourself with:
 
 ```
