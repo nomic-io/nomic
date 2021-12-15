@@ -23,7 +23,7 @@ const MAX_TARGET: u32 = 0x1d00ffff;
 const ENCODED_TRUSTED_HEADER: [u8; 80] = [
     4, 0, 32, 32, 204, 188, 198, 116, 105, 62, 248, 117, 28, 147, 156, 14, 109, 71, 40, 221, 230,
     46, 36, 252, 18, 55, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 119, 236, 20, 71, 55, 95, 198, 128, 41, 171,
-    122, 133, 253, 105, 137, 197, 211, 19, 81, 182, 25, 232, 7, 9, 222, 104, 32, 8, 16, 59, 218,
+    122, 133, 253, 105, 137, 197, 211, 19, 81, 182, 25, 232, 247, 9, 222, 104, 32, 8, 16, 59, 218,
     106, 111, 155, 144, 97, 234, 105, 12, 23, 2, 115, 15, 84,
 ];
 
@@ -209,7 +209,7 @@ impl Default for Config {
     }
 }
 
-#[derive(Call, Query)]
+#[derive(Call, Query, Client)]
 pub struct HeaderQueue {
     deque: Deque<WorkHeader>,
     current_work: Adapter<Uint256>,
@@ -261,9 +261,10 @@ impl Terminated for HeaderQueue {}
 
 impl HeaderQueue {
     #[call]
-    pub fn add(&mut self, headers: HeaderList) -> Result<()> {
+    pub fn add(&mut self, headers: HeaderList) -> OrgaResult<()> {
         let headers: Vec<_> = headers.into();
         self.add_into_iter(headers)
+            .map_err(|err| OrgaError::App(err.to_string()))
     }
 
     pub fn add_into_iter<T>(&mut self, headers: T) -> Result<()>
@@ -395,7 +396,7 @@ impl HeaderQueue {
                 }
             }
 
-            return Ok(WrappedHeader::u256_from_compact(previous_header.bits()));
+            return Ok(previous_header.target());
         }
 
         let first_reorg_height = header.height() - self.config.retarget_interval;
@@ -547,6 +548,7 @@ impl HeaderQueue {
         Ok(())
     }
 
+    #[query]
     pub fn height(&self) -> Result<u32> {
         match self.deque.back()? {
             Some(inner) => Ok((*inner).height()),
@@ -563,10 +565,6 @@ impl HeaderQueue {
     }
 
     #[query]
-    pub fn get(&self, height: u32) -> WorkHeader {
-        self.get_by_height(height).unwrap().unwrap()
-    }
-
     pub fn get_by_height(&self, height: u32) -> Result<Option<WorkHeader>> {
         let initial_height = match self.deque.front()? {
             Some(inner) => inner.height(),
@@ -585,6 +583,7 @@ impl HeaderQueue {
         }
     }
 
+    #[query]
     pub fn trusted_height(&self) -> u32 {
         self.config.trusted_height
     }
@@ -622,7 +621,7 @@ mod test {
 
     #[test]
     fn create() {
-        let store = Store::new(Shared::new(MapStore::new()));
+        let store = Store::new(Shared::new(MapStore::new()).into());
         let q = HeaderQueue::create(store, Default::default()).unwrap();
 
         let decoded_adapter: Adapter<BlockHeader> =
@@ -809,7 +808,7 @@ mod test {
                 29, 43, 144, 157, 214,
             ],
         };
-        let store = Store::new(Shared::new(MapStore::new()));
+        let store = Store::new(Shared::new(MapStore::new()).into());
         let mut q = HeaderQueue::with_conf(store, Default::default(), test_config).unwrap();
         q.add(header_list.into()).unwrap();
     }
@@ -854,13 +853,13 @@ mod test {
 
         let adapter = Adapter::new(header);
         let header_list = [WrappedHeader::new(adapter, 43)];
-        let store = Store::new(Shared::new(MapStore::new()));
+        let store = Store::new(Shared::new(MapStore::new()).into());
         let mut q = HeaderQueue::with_conf(store, Default::default(), test_config.clone()).unwrap();
         q.add_into_iter(header_list).unwrap();
 
         let adapter = Adapter::new(header);
         let header_list = vec![WrappedHeader::new(adapter, 43)];
-        let store = Store::new(Shared::new(MapStore::new()));
+        let store = Store::new(Shared::new(MapStore::new()).into());
         let mut q = HeaderQueue::with_conf(store, Default::default(), test_config).unwrap();
         q.add_into_iter(header_list).unwrap();
     }
@@ -906,7 +905,7 @@ mod test {
 
         let adapter = Adapter::new(header);
         let header_list = [WrappedHeader::new(adapter, 43)];
-        let store = Store::new(Shared::new(MapStore::new()));
+        let store = Store::new(Shared::new(MapStore::new()).into());
         let mut q = HeaderQueue::with_conf(store, Default::default(), test_config).unwrap();
         q.add_into_iter(header_list).unwrap();
     }

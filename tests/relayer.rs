@@ -1,4 +1,6 @@
-use bitcoincore_rpc::{Auth, Client, RpcApi};
+#![cfg(todo)]
+
+use bitcoincore_rpc::{Auth, Client as BtcClient, RpcApi};
 use bitcoind::BitcoinD;
 use nomic::bitcoin::adapter::Adapter;
 use nomic::bitcoin::header_queue::{Config, HeaderQueue};
@@ -17,7 +19,7 @@ fn relayer() {
 
     let bitcoind_url = bitcoind.rpc_url();
     let bitcoin_cookie_file = bitcoind.params.cookie_file.clone();
-    let rpc_client = Client::new(&bitcoind_url, Auth::CookieFile(bitcoin_cookie_file)).unwrap();
+    let rpc_client = BtcClient::new(&bitcoind_url, Auth::CookieFile(bitcoin_cookie_file)).unwrap();
 
     let encoded_header = Encode::encode(&Adapter::new(trusted_header)).unwrap();
     let mut config: Config = Default::default();
