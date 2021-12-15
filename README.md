@@ -4,6 +4,41 @@
 
 Nomic Bitcoin Bridge testnet v0.3.0 (codename "gucci")
 
+## Guccinet
+
+In this testnet, we've added two core featues: staking and Bitcoin integration.
+
+### Full staking
+
+Nomic now uses Orga's new high-performance staking module, which provides a staking experience similar to what you'd expect from a Cosmos SDK chain.
+
+Our implementation carefully avoids iteration where possible, so paying block rewards or slashing a million delegators is an O(1) operation.
+
+Offline validators are now automatically jailed.
+
+The following commands are now available via the CLI:
+
+```
+$ nomic claim        # Claim all available rewards from your delegations          
+$ nomic declare      # Declare your node as a validator
+$ nomic delegate     # Delegate coins to a validator     
+$ nomic delegations  # List your delegations
+$ nomic unbond       # Unbond coins from a validator
+```
+
+### Bitcoin integration
+
+Bitcoin block headers are now tracked by our on-chain Bitcoin SPV module.
+
+All full nodes will verify Bitcoin headers, but full nodes may optionally also run a relayer to report new Bitcoin block headers to the network:
+
+```
+$ nomic relayer
+```
+
+In the near future, we'll enable Bitcoin deposits and withdrawals in this module.
+
+
 ## Validator setup guide
 
 This guide will walk you through setting up a validator for the Nomic Bitcoin Bridge testnet.
