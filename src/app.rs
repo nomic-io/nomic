@@ -1,3 +1,4 @@
+#[cfg(full)]
 use crate::bitcoin::header_queue::HeaderQueue;
 use orga::prelude::*;
 
@@ -9,25 +10,14 @@ impl Symbol for Gucci {}
 pub struct InnerApp {
     pub accounts: Accounts<Gucci>,
     pub staking: Staking<Gucci>,
-    pub btc_headers: HeaderQueue,
+    // pub btc_headers: HeaderQueue,
 }
 
+#[cfg(full)]
 impl InitChain for InnerApp {
     fn init_chain(&mut self, _ctx: &InitChainCtx) -> Result<()> {
         self.accounts.deposit(
-            "nomic1cg4t0gpmgn944jpa0dlxa9ke7hz94vajk0qkkasdwhp7e074jx2qktweh2"
-                .parse()
-                .unwrap(),
-            100_000_000_000.into(),
-        )?;
-        self.accounts.deposit(
-            "nomic1lwgt239mwclgepyuwdpe2qqf6nalxdt3pj0teh6l0fdrd2ssl74qvww96r"
-                .parse()
-                .unwrap(),
-            100_000_000_000.into(),
-        )?;
-        self.accounts.deposit(
-            "nomic1gzw7mjms49mpaccemvl60awdpe8prta48947tx2cvy5lymwcaets96gm4h"
+            "nomic18m73q0542w8vlt0s23sazy62hq6tfnl9pjpslh"
                 .parse()
                 .unwrap(),
             100_000_000_000.into(),
@@ -36,6 +26,7 @@ impl InitChain for InnerApp {
     }
 }
 
+#[cfg(full)]
 impl BeginBlock for InnerApp {
     fn begin_block(&mut self, ctx: &BeginBlockCtx) -> Result<()> {
         self.staking.begin_block(ctx)?;

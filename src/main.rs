@@ -4,7 +4,7 @@
 #![feature(async_closure)]
 #![feature(never_type)]
 
-use crate::bitcoin::relayer::Relayer;
+// use crate::bitcoin::relayer::Relayer;
 use app::*;
 use bitcoincore_rpc::{Auth, Client as BtcClient};
 use clap::Parser;
@@ -21,7 +21,7 @@ pub fn app_client() -> TendermintClient<app::App> {
 }
 
 fn my_address() -> Address {
-    load_keypair().unwrap().public.to_bytes().into()
+    Address::from_pubkey(load_keypair().unwrap().public.to_bytes())
 }
 
 #[derive(Parser, Debug)]
@@ -116,6 +116,8 @@ pub struct BalanceCmd;
 impl BalanceCmd {
     async fn run(&self) -> Result<()> {
         let address = my_address();
+        println!("address: {}", address);
+
         let client = app_client();
         type AppQuery = <InnerApp as Query>::Query;
         type AcctQuery = <Accounts<Gucci> as Query>::Query;
@@ -126,7 +128,6 @@ impl BalanceCmd {
             .await?
             .into();
 
-        println!("address: {}", address);
         println!("balance: {} GUCCI", balance);
 
         Ok(())
@@ -199,7 +200,6 @@ impl DeclareCmd {
             .map_err(|_| orga::Error::App("invalid consensus key".to_string()))?
             .try_into()
             .map_err(|_| orga::Error::App("invalid consensus key".to_string()))?;
-        let consensus_key: Address = consensus_key.into();
 
         app_client()
             .pay_from(async move |mut client| {
@@ -276,12 +276,13 @@ pub struct RelayerCmd {
 
 impl RelayerCmd {
     async fn run(&self) -> Result<()> {
-        let auth = Auth::UserPass(self.btc_rpc_user.clone(), self.btc_rpc_pass.clone());
-        let btc_rpc = BtcClient::new("http://127.0.0.1:8332", auth).unwrap();
+        unimplemented!()
+        // let auth = Auth::UserPass(self.btc_rpc_user.clone(), self.btc_rpc_pass.clone());
+        // let btc_rpc = BtcClient::new("http://127.0.0.1:8332", auth).unwrap();
 
-        println!("starting relayer");
-        let mut relayer = Relayer::new(btc_rpc, app_client());
-        relayer.start().await.unwrap();
+        // println!("starting relayer");
+        // let mut relayer = Relayer::new(btc_rpc, app_client());
+        // relayer.start().await.unwrap();
     }
 }
 
