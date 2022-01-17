@@ -13,7 +13,7 @@ pub struct InnerApp {
     // pub btc_headers: HeaderQueue,
 }
 
-#[cfg(full)]
+#[cfg(feature = "full")]
 impl InitChain for InnerApp {
     fn init_chain(&mut self, _ctx: &InitChainCtx) -> Result<()> {
         self.accounts.deposit(
@@ -26,14 +26,14 @@ impl InitChain for InnerApp {
     }
 }
 
-#[cfg(full)]
+#[cfg(feature = "full")]
 impl BeginBlock for InnerApp {
     fn begin_block(&mut self, ctx: &BeginBlockCtx) -> Result<()> {
         self.staking.begin_block(ctx)?;
 
-        if self.staking.staked() > 0 {
+        if self.staking.staked()? > 0 {
             let divisor: Amount = 50_000.into();
-            let reward = (self.staking.staked() / divisor)?.amount()?;
+            let reward = (self.staking.staked()? / divisor)?.amount()?;
             self.staking.give(reward.into())?;
         }
 

@@ -104,39 +104,41 @@ pub async fn delegations(addr: String) -> Array{
 
 #[wasm_bindgen]
 pub async fn claim() {
-    let mut client: WebClient<App> = WebClient::new();
-    let address = my_address();
+    todo!();
 
-    type AppQuery = <InnerApp as Query>::Query;
-    type StakingQuery = <Staking<Gucci> as Query>::Query;
+    // let mut client: WebClient<App> = WebClient::new();
+    // let address = my_address();
 
-    let delegations = client
-        .query(
-            AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![])),
-            |state| state.staking.delegations(address),
-        )
-        .await
-        .unwrap();
+    // type AppQuery = <InnerApp as Query>::Query;
+    // type StakingQuery = <Staking<Gucci> as Query>::Query;
 
-    for (validator, delegation) in delegations {
-        let liquid: u64 = delegation.liquid.into();
-        if liquid <= 1 {
-            continue;
-        }
-        let liquid = liquid - 1;
+    // let delegations = client
+    //     .query(
+    //         AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![])),
+    //         |state| state.staking.delegations(address),
+    //     )
+    //     .await
+    //     .unwrap();
 
-        client
-            .pay_from(async move |mut client| {
-                client
-                    .staking
-                    .take_as_funding(validator, delegation.liquid)
-                    .await
-            })
-            .accounts
-            .give_from_funding(liquid.into())
-            .await
-            .unwrap();
-    }
+    // for (validator, delegation) in delegations {
+    //     let liquid: u64 = delegation.liquid.into();
+    //     if liquid <= 1 {
+    //         continue;
+    //     }
+    //     let liquid = liquid - 1;
+
+    //     client
+    //         .pay_from(async move |mut client| {
+    //             client
+    //                 .staking
+    //                 .take_as_funding(validator, delegation.liquid)
+    //                 .await
+    //         })
+    //         .accounts
+    //         .give_from_funding(liquid.into())
+    //         .await
+    //         .unwrap();
+    // }
 }
 
 #[wasm_bindgen]
@@ -164,13 +166,11 @@ pub async fn unbond(validator_addr: String, amount: u64) {
         .unwrap();
 }
 
-pub fn my_address() -> Address {
-    Address::from_pubkey(load_keypair().unwrap().public.to_bytes())
-}
-
 #[wasm_bindgen(js_name = getAddress)]
-pub fn get_address() -> String {
-    my_address().to_string()
+pub async fn get_address() -> String {
+    let signer = nomic::orga::plugins::keplr::Signer::new();
+    // TODO
+    "unimplemented".to_string()
 }
 
 pub struct WebClient<T: Client<WebAdapter<T>>> {

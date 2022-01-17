@@ -9,6 +9,7 @@ use app::*;
 use bitcoincore_rpc::{Auth, Client as BtcClient};
 use clap::Parser;
 use orga::prelude::*;
+use serde::{Serialize, Deserialize};
 
 mod app;
 mod bitcoin;
@@ -21,7 +22,9 @@ pub fn app_client() -> TendermintClient<app::App> {
 }
 
 fn my_address() -> Address {
-    Address::from_pubkey(load_keypair().unwrap().public.to_bytes())
+    let privkey = load_privkey().unwrap();
+    let pubkey = secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &privkey);
+    Address::from_pubkey(pubkey.serialize())
 }
 
 #[derive(Parser, Debug)]
@@ -84,9 +87,10 @@ impl StartCmd {
     async fn run(&self) -> Result<()> {
         tokio::task::spawn_blocking(|| {
             Node::<app::App>::new(NETWORK_NAME)
-                .with_genesis(include_bytes!("../genesis.json"))
+                //.with_genesis(include_bytes!("../genesis.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
+		.reset()
                 .run()
         })
         .await
@@ -191,6 +195,19 @@ impl DelegateCmd {
 pub struct DeclareCmd {
     consensus_key: String,
     amount: u64,
+    commission_rate: Decimal,
+    moniker: String,
+    website: String,
+    identity: String,
+    details: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct DeclareInfo {
+    moniker: String,
+    website: String,
+    identity: String,
+    details: String,
 }
 
 impl DeclareCmd {
@@ -200,13 +217,28 @@ impl DeclareCmd {
             .map_err(|_| orga::Error::App("invalid consensus key".to_string()))?
             .try_into()
             .map_err(|_| orga::Error::App("invalid consensus key".to_string()))?;
+            
+        let info = DeclareInfo {
+            moniker: self.moniker.clone(),
+            website: self.website.clone(),
+            identity: self.identity.clone(),
+            details: self.details.clone(),
+        };
+        let info_json = serde_json::to_string(&info)
+            .map_err(|_| orga::Error::App("invalid json".to_string()))?;
+        let info_bytes = info_json.as_bytes().to_vec();
 
         app_client()
             .pay_from(async move |mut client| {
                 client.accounts.take_as_funding(self.amount.into()).await
             })
             .staking
-            .declare_self(consensus_key, self.amount.into())
+            .declare_self(
+                consensus_key,
+                self.commission_rate,
+                self.amount.into(),
+                info_bytes.into(),
+            )
             .await
     }
 }
