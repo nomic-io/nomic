@@ -185,7 +185,7 @@ pub async fn claim() {
             .pay_from(async move |mut client| {
                 client
                     .staking
-                    .take_as_funding(validator, delegation.liquid + MIN_FEE)
+                    .take_as_funding(validator, (Amount::new(MIN_FEE) + delegation.liquid).result().unwrap())
                     .await
             })
             .accounts
