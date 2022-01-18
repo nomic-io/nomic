@@ -21,6 +21,9 @@ pub fn main() -> std::result::Result<(), JsValue> {
 pub async fn transfer(to_addr: String, amount: u64) {
     let mut client: WebClient<App> = WebClient::new();
     client
+        .pay_from(async move |mut client| {
+            client.accounts.take_as_funding(MIN_FEE.into()).await
+        })
         .accounts
         .transfer(
             to_addr.parse().unwrap(),
@@ -68,15 +71,22 @@ pub async fn reward_balance(addr: String) -> u64 {
         .sum::<u64>()
 }
 
+#[wasm_bindgen]
+pub struct UnbondInfo {
+    start_seconds: u64,
+    amount: u64,
+}
+
 #[wasm_bindgen(getter_with_clone)]
 pub struct Delegation {
     pub address: String,
     pub staked: u64,
     pub liquid: u64,
+    pub unbonding: Vec<JsValue>,
 }
 
 #[wasm_bindgen]
-pub async fn delegations(addr: String) -> Array{
+pub async fn delegations(addr: String) -> Array {
     let mut client: WebClient<App> = WebClient::new();
     let address = addr.parse().unwrap();
 
@@ -97,48 +107,92 @@ pub async fn delegations(addr: String) -> Array{
             address: address.to_string(),
             staked: delegation.staked.into(),
             liquid: delegation.liquid.into(),
+            unbonding: delegation.unbonding.iter().map(|u| UnbondInfo {
+                start_seconds: u.start_seconds as u64,
+                amount: u.amount.into(),
+            }).map(JsValue::from).collect(),
         })
         .map(JsValue::from)
         .collect()
 }
 
+#[wasm_bindgen(getter_with_clone)]
+pub struct ValidatorQueryInfo {
+    pub jailed: bool,
+    pub address: String,
+    pub commission: String,
+    #[wasm_bindgen(js_name = inActiveSet)]
+    pub in_active_set: bool,
+    pub info: String,
+    #[wasm_bindgen(js_name = amountStaked)]
+    pub amount_staked: u64,
+}
+
+#[wasm_bindgen(js_name = allValidators)]
+pub async fn all_validators() -> Array {
+    let mut client: WebClient<App> = WebClient::new();
+
+    type AppQuery = <InnerApp as Query>::Query;
+    type StakingQuery = <Staking<Gucci> as Query>::Query;
+
+    let validators = client
+        .query(
+            AppQuery::FieldStaking(StakingQuery::MethodAllValidators(vec![])),
+            |state| state.staking.all_validators(),
+        )
+        .await
+        .unwrap();
+
+    validators
+        .iter()
+        .map(|v| ValidatorQueryInfo {
+            jailed: v.jailed,
+            address: v.address.to_string(),
+            commission: v.commission.to_string(),
+            in_active_set: v.in_active_set,
+            info: String::from_utf8(v.info.bytes.clone()).unwrap_or(String::new()),
+            amount_staked: v.amount_staked.into(),
+        })
+        .map(JsValue::from)
+        .collect()
+}
+
+
 #[wasm_bindgen]
 pub async fn claim() {
-    todo!();
+    let mut client: WebClient<App> = WebClient::new();
+    let address = get_address().await.parse().unwrap();
 
-    // let mut client: WebClient<App> = WebClient::new();
-    // let address = my_address();
+    type AppQuery = <InnerApp as Query>::Query;
+    type StakingQuery = <Staking<Gucci> as Query>::Query;
 
-    // type AppQuery = <InnerApp as Query>::Query;
-    // type StakingQuery = <Staking<Gucci> as Query>::Query;
+    let delegations = client
+        .query(
+            AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![])),
+            |state| state.staking.delegations(address),
+        )
+        .await
+        .unwrap();
 
-    // let delegations = client
-    //     .query(
-    //         AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![])),
-    //         |state| state.staking.delegations(address),
-    //     )
-    //     .await
-    //     .unwrap();
+    for (validator, delegation) in delegations {
+        let liquid: u64 = delegation.liquid.into();
+        if liquid <= 1 {
+            continue;
+        }
+        let liquid = liquid - 1;
 
-    // for (validator, delegation) in delegations {
-    //     let liquid: u64 = delegation.liquid.into();
-    //     if liquid <= 1 {
-    //         continue;
-    //     }
-    //     let liquid = liquid - 1;
-
-    //     client
-    //         .pay_from(async move |mut client| {
-    //             client
-    //                 .staking
-    //                 .take_as_funding(validator, delegation.liquid)
-    //                 .await
-    //         })
-    //         .accounts
-    //         .give_from_funding(liquid.into())
-    //         .await
-    //         .unwrap();
-    // }
+        client
+            .pay_from(async move |mut client| {
+                client
+                    .staking
+                    .take_as_funding(validator, delegation.liquid + MIN_FEE)
+                    .await
+            })
+            .accounts
+            .give_from_funding(liquid.into())
+            .await
+            .unwrap();
+    }
 }
 
 #[wasm_bindgen]
@@ -147,7 +201,7 @@ pub async fn delegate(to_addr: String, amount: u64) {
     let to_addr = to_addr.parse().unwrap();
     client
         .pay_from(async move |mut client| {
-            client.accounts.take_as_funding(amount.into()).await
+            client.accounts.take_as_funding((amount + MIN_FEE).into()).await
         })
         .staking
         .delegate_from_self(to_addr, amount.into())
@@ -160,6 +214,9 @@ pub async fn unbond(validator_addr: String, amount: u64) {
     let mut client: WebClient<App> = WebClient::new();
     let validator_addr = validator_addr.parse().unwrap();
     client
+        .pay_from(async move |mut client| {
+            client.accounts.take_as_funding(MIN_FEE.into()).await
+        })
         .staking
         .unbond_self(validator_addr, amount.into())
         .await
@@ -169,8 +226,7 @@ pub async fn unbond(validator_addr: String, amount: u64) {
 #[wasm_bindgen(js_name = getAddress)]
 pub async fn get_address() -> String {
     let signer = nomic::orga::plugins::keplr::Signer::new();
-    // TODO
-    "unimplemented".to_string()
+    signer.address().await
 }
 
 pub struct WebClient<T: Client<WebAdapter<T>>> {

@@ -107,6 +107,9 @@ pub struct SendCmd {
 impl SendCmd {
     async fn run(&self) -> Result<()> {
         app_client()
+            .pay_from(async move |mut client| {
+                client.accounts.take_as_funding(MIN_FEE.into()).await
+            })
             .accounts
             .transfer(self.to_addr, self.amount.into())
             .await
@@ -229,7 +232,7 @@ impl DeclareCmd {
 
         app_client()
             .pay_from(async move |mut client| {
-                client.accounts.take_as_funding(self.amount.into()).await
+                client.accounts.take_as_funding((self.amount + MIN_FEE).into()).await
             })
             .staking
             .declare_self(
