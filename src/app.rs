@@ -50,4 +50,4 @@ impl EndBlock for InnerApp {
     }
 }
 
-pub type App = DefaultPlugins<InnerApp>;
+pub type App = DefaultPlugins<Gucci, InnerApp>;
