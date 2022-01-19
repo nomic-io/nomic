@@ -46,7 +46,6 @@ pub enum Command {
     Declare(DeclareCmd),
     Unbond(UnbondCmd),
     Claim(ClaimCmd),
-    Relayer(RelayerCmd),
 }
 
 impl Command {
@@ -63,7 +62,6 @@ impl Command {
             Validators(cmd) => cmd.run().await,
             Unbond(cmd) => cmd.run().await,
             Claim(cmd) => cmd.run().await,
-            Relayer(cmd) => cmd.run().await,
         }
     }
 }
@@ -284,6 +282,12 @@ pub struct UnbondCmd {
 impl UnbondCmd {
     async fn run(&self) -> Result<()> {
         app_client()
+            .pay_from(async move |mut client| {
+                client
+                    .accounts
+                    .take_as_funding(MIN_FEE.into())
+                    .await
+            })
             .staking
             .unbond_self(self.validator_addr, self.amount.into())
             .await
@@ -295,58 +299,13 @@ pub struct ClaimCmd;
 
 impl ClaimCmd {
     async fn run(&self) -> Result<()> {
-        let address = my_address();
-
-        type AppQuery = <InnerApp as Query>::Query;
-        type StakingQuery = <Staking<Gucci> as Query>::Query;
-
-        let delegations = app_client()
-            .query(
-                AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![])),
-                |state| state.staking.delegations(address),
-            )
-            .await?;
-
-        for (validator, delegation) in delegations {
-            let liquid: u64 = delegation.liquid.into();
-            if liquid <= 1 {
-                continue;
-            }
-            let liquid = liquid - 1;
-
-            app_client()
-                .pay_from(async move |mut client| {
-                    client
-                        .staking
-                        .take_as_funding(validator, delegation.liquid)
-                        .await
-                })
-                .accounts
-                .give_from_funding(liquid.into())
-                .await?;
-
-            println!("claimed {} GUCCI from {}", liquid, validator);
-        }
-
-        Ok(())
-    }
-}
-
-#[derive(Parser, Debug)]
-pub struct RelayerCmd {
-    btc_rpc_user: String,
-    btc_rpc_pass: String,
-}
-
-impl RelayerCmd {
-    async fn run(&self) -> Result<()> {
-        unimplemented!()
-        // let auth = Auth::UserPass(self.btc_rpc_user.clone(), self.btc_rpc_pass.clone());
-        // let btc_rpc = BtcClient::new("http://127.0.0.1:8332", auth).unwrap();
-
-        // println!("starting relayer");
-        // let mut relayer = Relayer::new(btc_rpc, app_client());
-        // relayer.start().await.unwrap();
+        app_client()
+            .pay_from(async move |mut client| {
+                client.staking.claim_all().await
+            })
+            .accounts
+            .give_from_funding_all()
+            .await
     }
 }
 
