@@ -9,7 +9,7 @@ use app::*;
 use bitcoincore_rpc::{Auth, Client as BtcClient};
 use clap::Parser;
 use orga::prelude::*;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 mod app;
 mod bitcoin;
@@ -41,6 +41,7 @@ pub enum Command {
     Send(SendCmd),
     Balance(BalanceCmd),
     Delegations(DelegationsCmd),
+    Validators(ValidatorsCmd),
     Delegate(DelegateCmd),
     Declare(DeclareCmd),
     Unbond(UnbondCmd),
@@ -59,6 +60,7 @@ impl Command {
             Delegate(cmd) => cmd.run().await,
             Declare(cmd) => cmd.run().await,
             Delegations(cmd) => cmd.run().await,
+            Validators(cmd) => cmd.run().await,
             Unbond(cmd) => cmd.run().await,
             Claim(cmd) => cmd.run().await,
             Relayer(cmd) => cmd.run().await,
@@ -107,9 +109,7 @@ pub struct SendCmd {
 impl SendCmd {
     async fn run(&self) -> Result<()> {
         app_client()
-            .pay_from(async move |mut client| {
-                client.accounts.take_as_funding(MIN_FEE.into()).await
-            })
+            .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
             .accounts
             .transfer(self.to_addr, self.amount.into())
             .await
@@ -165,10 +165,37 @@ impl DelegationsCmd {
         for (validator, delegation) in delegations {
             let staked: u64 = delegation.staked.into();
             let liquid: u64 = delegation.liquid.into();
+            if staked + liquid == 0 {
+                continue;
+            }
             println!(
                 "- {}: staked={} GUCCI, liquid={} GUCCI",
                 validator, staked, liquid
             );
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct ValidatorsCmd;
+
+impl ValidatorsCmd {
+    async fn run(&self) -> Result<()> {
+        type AppQuery = <InnerApp as Query>::Query;
+        type StakingQuery = <Staking<Gucci> as Query>::Query;
+
+        let validators = app_client()
+            .query(
+                AppQuery::FieldStaking(StakingQuery::MethodAllValidators(vec![])),
+                |state| state.staking.all_validators(),
+            )
+            .await?;
+
+        for validator in validators {
+            let info: DeclareInfo = serde_json::from_slice(validator.info.bytes.as_slice()).unwrap();
+            println!("- {}\n\tVOTING POWER: {}\n\tMONIKER: {}\n\tDETAILS: {}", validator.address, validator.amount_staked, info.moniker, info.details);
         }
 
         Ok(())
@@ -185,7 +212,7 @@ impl DelegateCmd {
     async fn run(&self) -> Result<()> {
         app_client()
             .pay_from(async move |mut client| {
-                client.accounts.take_as_funding(self.amount.into()).await
+                client.accounts.take_as_funding((self.amount + MIN_FEE).into()).await
             })
             .staking
             .delegate_from_self(self.validator_addr, self.amount.into())
@@ -219,7 +246,7 @@ impl DeclareCmd {
             .map_err(|_| orga::Error::App("invalid consensus key".to_string()))?
             .try_into()
             .map_err(|_| orga::Error::App("invalid consensus key".to_string()))?;
-            
+
         let info = DeclareInfo {
             moniker: self.moniker.clone(),
             website: self.website.clone(),
@@ -232,7 +259,10 @@ impl DeclareCmd {
 
         app_client()
             .pay_from(async move |mut client| {
-                client.accounts.take_as_funding((self.amount + MIN_FEE).into()).await
+                client
+                    .accounts
+                    .take_as_funding((self.amount + MIN_FEE).into())
+                    .await
             })
             .staking
             .declare_self(
