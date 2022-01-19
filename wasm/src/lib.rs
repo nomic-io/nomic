@@ -161,38 +161,15 @@ pub async fn all_validators() -> Array {
 #[wasm_bindgen]
 pub async fn claim() {
     let mut client: WebClient<App> = WebClient::new();
-    let address = get_address().await.parse().unwrap();
-
-    type AppQuery = <InnerApp as Query>::Query;
-    type StakingQuery = <Staking<Gucci> as Query>::Query;
-
-    let delegations = client
-        .query(
-            AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![])),
-            |state| state.staking.delegations(address),
-        )
+    
+    client
+        .pay_from(async move |mut client| {
+            client.staking.claim_all().await
+        })
+        .accounts
+        .give_from_funding_all()
         .await
         .unwrap();
-
-    for (validator, delegation) in delegations {
-        let liquid: u64 = delegation.liquid.into();
-        if liquid <= 1 {
-            continue;
-        }
-        let liquid = liquid - 1;
-
-        client
-            .pay_from(async move |mut client| {
-                client
-                    .staking
-                    .take_as_funding(validator, (Amount::new(MIN_FEE) + delegation.liquid).result().unwrap())
-                    .await
-            })
-            .accounts
-            .give_from_funding(liquid.into())
-            .await
-            .unwrap();
-    }
 }
 
 #[wasm_bindgen]
