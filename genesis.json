@@ -1,6 +1,6 @@
 {
-  "genesis_time": "2022-01-19T22:31:55.198542075Z",
-  "chain_id": "stakenet-rc0",
+  "genesis_time": "2022-01-20T01:19:21.873741929Z",
+  "chain_id": "stakenet-rc1",
   "initial_height": "0",
   "consensus_params": {
     "block": {
@@ -22,10 +22,10 @@
   },
   "validators": [
     {
-      "address": "14C50919C903675FB556200D178D908236012BFA",
+      "address": "C4BA6A3D6F592F02E18C33105553927615942499",
       "pub_key": {
         "type": "tendermint/PubKeyEd25519",
-        "value": "+VgxFnJLk1V6OiIZZIdyiiCBzfHh4VOx3dH2/WQ82mI="
+        "value": "DDJ2Rg2x+Ice5mnAndxZgdK/fZUDfH8gVBohGCDdZF8="
       },
       "power": "10",
       "name": ""
