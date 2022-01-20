@@ -1,6 +1,6 @@
 {
-  "genesis_time": "2022-01-20T01:19:21.873741929Z",
-  "chain_id": "stakenet-rc1",
+  "genesis_time": "2022-01-20T01:25:47.43326438Z",
+  "chain_id": "nomic-stakenet-rc2",
   "initial_height": "0",
   "consensus_params": {
     "block": {
@@ -22,10 +22,10 @@
   },
   "validators": [
     {
-      "address": "C4BA6A3D6F592F02E18C33105553927615942499",
+      "address": "79033DB779DD62598F349B5E697C26C583A7448F",
       "pub_key": {
         "type": "tendermint/PubKeyEd25519",
-        "value": "DDJ2Rg2x+Ice5mnAndxZgdK/fZUDfH8gVBohGCDdZF8="
+        "value": "vCCGBqycYcNr521qLEmt2+SaX8DB0jsreTtTsa2I9RA="
       },
       "power": "10",
       "name": ""
