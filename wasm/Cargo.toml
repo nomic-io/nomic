@@ -1,6 +1,6 @@
 [package]
 name = "nomic-wasm"
-version = "0.2.0"
+version = "0.2.3"
 authors = ["The wasm-bindgen Developers"]
 edition = "2018"
 
@@ -34,4 +34,5 @@ features = [
   'RequestInit',
   'RequestMode',
   'Response',
+  'Location',
 ]

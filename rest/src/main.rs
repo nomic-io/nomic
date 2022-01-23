@@ -30,11 +30,7 @@ async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
             {
                 "denom": "unom",
                 "amount": balance,
-            },
-            {
-                "denom": "unbtc",
-                "amount": "69420000000"
-            },
+            }
         ]
     }))
 }

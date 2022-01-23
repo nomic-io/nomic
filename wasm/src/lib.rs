@@ -246,10 +246,13 @@ impl<T: Client<WebAdapter<T>> + Query + State> WebClient<T> {
 
         let window = web_sys::window().unwrap();
 
+        let location = window.location();
+        let rest_server = format!("{}//{}:{}", location.protocol().unwrap(), location.hostname().unwrap(), 8000);
+
         let mut opts = RequestInit::new();
         opts.method("GET");
         opts.mode(RequestMode::Cors);
-        let url = format!("http://localhost:8000/query/{}", query);
+        let url = format!("{}/query/{}", rest_server, query);
     
         let request = Request::new_with_str_and_init(&url, &opts).unwrap();
 
@@ -309,11 +312,14 @@ where
 
         let window = web_sys::window().unwrap();
 
+        let location = window.location();
+        let rest_server = format!("{}//{}:{}", location.protocol().unwrap(), location.hostname().unwrap(), 8000);
+
         let mut opts = RequestInit::new();
         opts.method("POST");
         opts.body(Some(&tx.into()));
         opts.mode(RequestMode::Cors);
-        let url = "http://localhost:8000/txs";
+        let url = format!("{}/txs", rest_server);
     
         let request = Request::new_with_str_and_init(&url, &opts).unwrap();
 
