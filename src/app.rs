@@ -1,4 +1,8 @@
 use orga::prelude::*;
+use orga::Error;
+use std::convert::TryInto;
+
+pub type App = DefaultPlugins<Gucci, InnerApp>;
 
 #[derive(State, Debug, Clone)]
 pub struct Gucci(());
@@ -8,46 +12,109 @@ impl Symbol for Gucci {}
 pub struct InnerApp {
     pub accounts: Accounts<Gucci>,
     pub staking: Staking<Gucci>,
+    pub atom_airdrop: Airdrop<Gucci>,
 }
 
 #[cfg(feature = "full")]
-impl InitChain for InnerApp {
-    fn init_chain(&mut self, _ctx: &InitChainCtx) -> Result<()> {
-        self.staking.set_min_self_delegation(100_000);
-        self.staking.set_max_validators(3);
-        self.accounts.allow_transfers(true);
+mod abci {
+    use super::*;
 
-        self.accounts.deposit(
-            "nomic1ns0gwwx7pp0f3gdhal5t77msvdkj6trgu2mdek"
-                .parse()
-                .unwrap(),
-            100_000_000_000.into(),
-        )?;
+    impl InitChain for InnerApp {
+        fn init_chain(&mut self, ctx: &InitChainCtx) -> Result<()> {
+            self.staking.set_min_self_delegation(100_000);
+            self.staking.set_max_validators(3);
+            self.accounts.allow_transfers(true);
 
-        Ok(())
+            self.accounts.init_chain(ctx)?;
+            self.staking.init_chain(ctx)?;
+            self.atom_airdrop.init_chain(ctx)?;
+
+            self.accounts.deposit(
+                "nomic1ns0gwwx7pp0f3gdhal5t77msvdkj6trgu2mdek"
+                    .parse()
+                    .unwrap(),
+                100_000_000_000.into(),
+            )?;
+
+            Ok(())
+        }
+    }
+
+    impl BeginBlock for InnerApp {
+        fn begin_block(&mut self, ctx: &BeginBlockCtx) -> Result<()> {
+            self.staking.begin_block(ctx)?;
+
+            if self.staking.staked()? > 0 {
+                let divisor: Amount = 100_000.into();
+                let reward = (self.staking.staked()? / divisor)?.amount()?;
+                self.staking.give(reward.into())?;
+            }
+
+            Ok(())
+        }
+    }
+
+    impl EndBlock for InnerApp {
+        fn end_block(&mut self, ctx: &EndBlockCtx) -> Result<()> {
+            self.staking.end_block(ctx)
+        }
+    }
+}
+
+#[derive(State, Query, Call, Client)]
+pub struct Airdrop<S: Symbol> {
+    claimable: Accounts<S>,
+}
+
+impl<S: Symbol> Airdrop<S> {
+    #[query]
+    pub fn balance(&self, address: Address) -> Result<Amount> {
+        self.claimable.balance(address)
+    }
+
+    #[call]
+    pub fn claim(&mut self) -> Result<()> {
+        let signer = self
+            .context::<Signer>()
+            .ok_or_else(|| Error::Signer("No Signer context available".into()))?
+            .signer
+            .ok_or_else(|| Error::Coins("Unauthorized account action".into()))?;
+
+        let amount = self.claimable.balance(signer)?;
+        self.claimable.take_as_funding(amount)
+    }
+
+    fn init_account(&mut self, address: Address, liquid: Amount, staked: Amount) -> Result<()> {
+        // TODO: define payout function
+        let payout_amount = (liquid + staked * Amount::from(4))?;
+        
+        let payout = Coin::mint(payout_amount);
+        self.claimable.deposit(address, payout)
     }
 }
 
 #[cfg(feature = "full")]
-impl BeginBlock for InnerApp {
-    fn begin_block(&mut self, ctx: &BeginBlockCtx) -> Result<()> {
-        self.staking.begin_block(ctx)?;
+impl<S: Symbol> InitChain for Airdrop<S> {
+    fn init_chain(&mut self, _ctx: &InitChainCtx) -> Result<()> {
+        let target_csv = include_str!("../atom_snapshot.csv");
+        let mut rdr = csv::Reader::from_reader(target_csv.as_bytes());
+        let snapshot = rdr.records();
 
-        if self.staking.staked()? > 0 {
-            let divisor: Amount = 100_000.into();
-            let reward = (self.staking.staked()? / divisor)?.amount()?;
-            self.staking.give(reward.into())?;
+        println!("Initializing balances from airdrop snapshot...");
+
+        for row in snapshot {
+            let row = row.map_err(|e| Error::App(e.to_string()))?;
+
+            let (_, address_b32, _) = bech32::decode(&row[0]).unwrap();
+            let address_vec: Vec<u8> = bech32::FromBase32::from_base32(&address_b32).unwrap();
+            let address_buf: [u8; 20] = address_vec.try_into().unwrap();
+
+            let liquid: u64 = row[1].parse().unwrap();
+            let staked: u64 = row[2].parse().unwrap();
+
+            self.init_account(address_buf.into(), liquid.into(), staked.into())?;
         }
 
         Ok(())
     }
 }
-
-#[cfg(feature = "full")]
-impl EndBlock for InnerApp {
-    fn end_block(&mut self, ctx: &EndBlockCtx) -> Result<()> {
-        self.staking.end_block(ctx)
-    }
-}
-
-pub type App = DefaultPlugins<Gucci, InnerApp>;

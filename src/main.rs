@@ -46,6 +46,7 @@ pub enum Command {
     Declare(DeclareCmd),
     Unbond(UnbondCmd),
     Claim(ClaimCmd),
+    ClaimAirdrop(ClaimAirdropCmd),
 }
 
 impl Command {
@@ -62,6 +63,7 @@ impl Command {
             Validators(cmd) => cmd.run().await,
             Unbond(cmd) => cmd.run().await,
             Claim(cmd) => cmd.run().await,
+            ClaimAirdrop(cmd) => cmd.run().await,
         }
     }
 }
@@ -302,6 +304,21 @@ impl ClaimCmd {
         app_client()
             .pay_from(async move |mut client| {
                 client.staking.claim_all().await
+            })
+            .accounts
+            .give_from_funding_all()
+            .await
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct ClaimAirdropCmd;
+
+impl ClaimAirdropCmd {
+    async fn run(&self) -> Result<()> {
+        app_client()
+            .pay_from(async move |mut client| {
+                client.atom_airdrop.claim().await
             })
             .accounts
             .give_from_funding_all()
