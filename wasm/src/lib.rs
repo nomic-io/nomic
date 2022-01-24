@@ -1,7 +1,7 @@
 #![feature(async_closure)]
 
 use wasm_bindgen::prelude::*;
-use nomic::app::{App, InnerApp, Gucci};
+use nomic::app::{App, InnerApp, Gucci, Airdrop};
 use nomic::orga::prelude::*;
 use nomic::orga::merk::ABCIPrefixedProofStore;
 use std::ops::{Deref, DerefMut};
@@ -10,6 +10,8 @@ use wasm_bindgen_futures::JsFuture;
 use web_sys::{Request, RequestInit, RequestMode, Response};
 use std::convert::TryInto;
 use js_sys::{Array, JsString};
+
+const REST_PORT: u64 = 8443;
 
 #[wasm_bindgen(start)]
 pub fn main() -> std::result::Result<(), JsValue> {
@@ -200,9 +202,41 @@ pub async fn unbond(validator_addr: String, amount: u64) {
         .unwrap();
 }
 
+#[wasm_bindgen(js_name = airdropBalance)]
+pub async fn airdrop_balance(addr: String) -> Option<u64> {
+    let client: WebClient<App> = WebClient::new();
+    let address = addr.parse().unwrap();
+
+    type AppQuery = <InnerApp as Query>::Query;
+    type AirdropQuery = <Airdrop<Gucci> as Query>::Query;
+
+    client
+        .query(
+            AppQuery::FieldAtomAirdrop(AirdropQuery::MethodBalance(address, vec![])),
+            |state| state.atom_airdrop.balance(address),
+        )
+        .await
+        .unwrap()
+        .map(Into::into)
+}
+
+#[wasm_bindgen(js_name = claimAirdrop)]
+pub async fn claim_airdrop() {
+    let mut client: WebClient<App> = WebClient::new();
+
+    client
+        .pay_from(async move |mut client| {
+            client.atom_airdrop.claim().await
+        })
+        .accounts
+        .give_from_funding_all()
+        .await
+        .unwrap();
+}
+
 #[wasm_bindgen(js_name = getAddress)]
 pub async fn get_address() -> String {
-    let signer = nomic::orga::plugins::keplr::Signer::new();
+    let mut signer = nomic::orga::plugins::keplr::Signer::new();
     signer.address().await
 }
 
@@ -245,9 +279,8 @@ impl<T: Client<WebAdapter<T>> + Query + State> WebClient<T> {
         web_sys::console::log_1(&format!("query: {}", query).into());
 
         let window = web_sys::window().unwrap();
-
         let location = window.location();
-        let rest_server = format!("{}//{}:{}", location.protocol().unwrap(), location.hostname().unwrap(), 8000);
+        let rest_server = format!("{}//{}:{}", location.protocol().unwrap(), location.hostname().unwrap(), REST_PORT);
 
         let mut opts = RequestInit::new();
         opts.method("GET");
@@ -313,7 +346,7 @@ where
         let window = web_sys::window().unwrap();
 
         let location = window.location();
-        let rest_server = format!("{}//{}:{}", location.protocol().unwrap(), location.hostname().unwrap(), 8000);
+        let rest_server = format!("{}//{}:{}", location.protocol().unwrap(), location.hostname().unwrap(), REST_PORT);
 
         let mut opts = RequestInit::new();
         opts.method("POST");
