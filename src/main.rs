@@ -4,9 +4,7 @@
 #![feature(async_closure)]
 #![feature(never_type)]
 
-// use crate::bitcoin::relayer::Relayer;
 use app::*;
-use bitcoincore_rpc::{Auth, Client as BtcClient};
 use clap::Parser;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
