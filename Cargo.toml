@@ -8,7 +8,7 @@ edition = "2018"
 bitcoin = "0.27.1"
 bitcoind = { version = "0.21.0", features = ["22_0"], optional = true }
 bitcoincore-rpc = { version = "0.14.0", optional = true }
-orga = { git = "https://github.com/nomic-io/orga.git", rev = "776e0830d8eb2c5096c7994642007e0629bdbc63", features = ["merk-verify"] }
+orga = { git = "https://github.com/nomic-io/orga.git", rev = "9730a2002dfb1b9c852c1e7260733ea4c1f2ef97", features = ["merk-verify"] }
 thiserror = "1.0.30"
 ed = { git = "https://github.com/nomic-io/ed.git", rev = "6d327abacf0c6068ceaed36fb67410ae65f2abbe"}
 clap = { version = "3.0.0-rc.4", features = ["derive"], optional = true }
