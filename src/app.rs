@@ -68,8 +68,14 @@ pub struct Airdrop<S: Symbol> {
 
 impl<S: Symbol> Airdrop<S> {
     #[query]
-    pub fn balance(&self, address: Address) -> Result<Amount> {
-        self.claimable.balance(address)
+    pub fn balance(&self, address: Address) -> Result<Option<Amount>> {
+        let exists = self.claimable.exists(address)?;
+        if !exists {
+            return Ok(None);
+        }
+
+        let balance = self.claimable.balance(address)?;
+        Ok(Some(balance))
     }
 
     #[call]
