@@ -22,7 +22,7 @@ mod abci {
     impl InitChain for InnerApp {
         fn init_chain(&mut self, ctx: &InitChainCtx) -> Result<()> {
             self.staking.set_min_self_delegation(100_000);
-            self.staking.set_max_validators(3);
+            self.staking.set_max_validators(100);
             self.accounts.allow_transfers(true);
 
             self.accounts.init_chain(ctx)?;
