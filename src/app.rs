@@ -2,17 +2,17 @@ use orga::prelude::*;
 use orga::Error;
 use std::convert::TryInto;
 
-pub type App = DefaultPlugins<Gucci, InnerApp>;
+pub type App = DefaultPlugins<Nom, InnerApp>;
 
 #[derive(State, Debug, Clone)]
-pub struct Gucci(());
-impl Symbol for Gucci {}
+pub struct Nom(());
+impl Symbol for Nom {}
 
 #[derive(State, Call, Query, Client)]
 pub struct InnerApp {
-    pub accounts: Accounts<Gucci>,
-    pub staking: Staking<Gucci>,
-    pub atom_airdrop: Airdrop<Gucci>,
+    pub accounts: Accounts<Nom>,
+    pub staking: Staking<Nom>,
+    pub atom_airdrop: Airdrop<Nom>,
 }
 
 #[cfg(feature = "full")]

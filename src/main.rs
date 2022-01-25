@@ -13,7 +13,7 @@ mod app;
 mod bitcoin;
 mod error;
 
-const NETWORK_NAME: &str = "guccinet";
+const NETWORK_NAME: &str = "nomic-stakenet-rc";
 
 pub fn app_client() -> TendermintClient<app::App> {
     TendermintClient::new("http://localhost:26657").unwrap()
@@ -124,7 +124,7 @@ impl BalanceCmd {
 
         let client = app_client();
         type AppQuery = <InnerApp as Query>::Query;
-        type AcctQuery = <Accounts<Gucci> as Query>::Query;
+        type AcctQuery = <Accounts<Nom> as Query>::Query;
 
         let q = AppQuery::FieldAccounts(AcctQuery::MethodBalance(address, vec![]));
         let balance: u64 = client
@@ -132,7 +132,7 @@ impl BalanceCmd {
             .await?
             .into();
 
-        println!("balance: {} GUCCI", balance);
+        println!("balance: {} NOM", balance);
 
         Ok(())
     }
@@ -146,7 +146,7 @@ impl DelegationsCmd {
         let address = my_address();
 
         type AppQuery = <InnerApp as Query>::Query;
-        type StakingQuery = <Staking<Gucci> as Query>::Query;
+        type StakingQuery = <Staking<Nom> as Query>::Query;
 
         let delegations = app_client()
             .query(
@@ -167,7 +167,7 @@ impl DelegationsCmd {
                 continue;
             }
             println!(
-                "- {}: staked={} GUCCI, liquid={} GUCCI",
+                "- {}: staked={} NOM, liquid={} NOM",
                 validator, staked, liquid
             );
         }
@@ -182,7 +182,7 @@ pub struct ValidatorsCmd;
 impl ValidatorsCmd {
     async fn run(&self) -> Result<()> {
         type AppQuery = <InnerApp as Query>::Query;
-        type StakingQuery = <Staking<Gucci> as Query>::Query;
+        type StakingQuery = <Staking<Nom> as Query>::Query;
 
         let validators = app_client()
             .query(

@@ -3,7 +3,7 @@ extern crate rocket;
 
 use rocket::serde::json::{json, Value};
 use rocket::response::status::BadRequest;
-use nomic::{app_client, app::{Gucci, InnerApp}, orga::{query::Query, coins::{Accounts, Address, Staking}}};
+use nomic::{app_client, app::{Nom, InnerApp}, orga::{query::Query, coins::{Accounts, Address, Staking}}};
 
 use tendermint_rpc as tm;
 use tm::Client as _;
@@ -13,7 +13,7 @@ async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
 
     type AppQuery = <InnerApp as Query>::Query;
-    type AcctQuery = <Accounts<Gucci> as Query>::Query;
+    type AcctQuery = <Accounts<Nom> as Query>::Query;
 
     let q = AppQuery::FieldAccounts(AcctQuery::MethodBalance(address, vec![]));
     let balance: u64 = app_client()
@@ -117,7 +117,7 @@ async fn distribution_delegatrs_rewards(address: &str) -> Value {
     let address = address.parse().unwrap();
 
     type AppQuery = <InnerApp as Query>::Query;
-    type StakingQuery = <Staking<Gucci> as Query>::Query;
+    type StakingQuery = <Staking<Nom> as Query>::Query;
 
     let delegations = app_client()
         .query(

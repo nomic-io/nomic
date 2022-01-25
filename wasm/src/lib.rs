@@ -1,7 +1,7 @@
 #![feature(async_closure)]
 
 use wasm_bindgen::prelude::*;
-use nomic::app::{App, InnerApp, Gucci, Airdrop};
+use nomic::app::{App, InnerApp, Nom, Airdrop};
 use nomic::orga::prelude::*;
 use nomic::orga::merk::ABCIPrefixedProofStore;
 use std::ops::{Deref, DerefMut};
@@ -41,7 +41,7 @@ pub async fn balance(addr: String) -> u64 {
     let address = addr.parse().unwrap();
 
     type AppQuery = <InnerApp as Query>::Query;
-    type AcctQuery = <Accounts<Gucci> as Query>::Query;
+    type AcctQuery = <Accounts<Nom> as Query>::Query;
 
     let q = AppQuery::FieldAccounts(AcctQuery::MethodBalance(address, vec![]));
     client
@@ -57,7 +57,7 @@ pub async fn reward_balance(addr: String) -> u64 {
     let address = addr.parse().unwrap();
 
     type AppQuery = <InnerApp as Query>::Query;
-    type StakingQuery = <Staking<Gucci> as Query>::Query;
+    type StakingQuery = <Staking<Nom> as Query>::Query;
 
     let delegations = client
         .query(
@@ -93,7 +93,7 @@ pub async fn delegations(addr: String) -> Array {
     let address = addr.parse().unwrap();
 
     type AppQuery = <InnerApp as Query>::Query;
-    type StakingQuery = <Staking<Gucci> as Query>::Query;
+    type StakingQuery = <Staking<Nom> as Query>::Query;
 
     let delegations = client
         .query(
@@ -135,7 +135,7 @@ pub async fn all_validators() -> Array {
     let mut client: WebClient<App> = WebClient::new();
 
     type AppQuery = <InnerApp as Query>::Query;
-    type StakingQuery = <Staking<Gucci> as Query>::Query;
+    type StakingQuery = <Staking<Nom> as Query>::Query;
 
     let validators = client
         .query(
@@ -208,7 +208,7 @@ pub async fn airdrop_balance(addr: String) -> Option<u64> {
     let address = addr.parse().unwrap();
 
     type AppQuery = <InnerApp as Query>::Query;
-    type AirdropQuery = <Airdrop<Gucci> as Query>::Query;
+    type AirdropQuery = <Airdrop<Nom> as Query>::Query;
 
     client
         .query(
