@@ -26,7 +26,7 @@ fn my_address() -> Address {
 }
 
 #[derive(Parser, Debug)]
-#[clap(version = "0.3", author = "The Nomic Developers <hello@nomic.io>")]
+#[clap(version = "0.4", author = "The Nomic Developers <hello@nomic.io>")]
 pub struct Opts {
     #[clap(subcommand)]
     cmd: Command,
