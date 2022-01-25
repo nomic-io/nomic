@@ -2,48 +2,26 @@
 <img src="./logo.svg" width="40%">
 </h1>
 
-Nomic Bitcoin Bridge testnet v0.3.0 (codename "gucci")
+Nomic Bitcoin Bridge testnet v0.4.0 (Stakenet Release Candidate)
 
-## Guccinet
+## Stakenet
 
-In this testnet, we've added two core featues: staking and Bitcoin integration.
+This testnet includes everything required for the upcoming Stakenet launch
+(Nomic's first production network). This network does not include the Bitcoin
+bridge functionality and token transfers are disabled - only staking is
+supported. This is our last test to make sure everything is in order for launch.
 
-### Full staking
-
-Nomic now uses Orga's new high-performance staking module, which provides a staking experience similar to what you'd expect from a Cosmos SDK chain.
-
-Our implementation carefully avoids iteration where possible, so paying block rewards or slashing a million delegators is an O(1) operation.
-
-Offline validators are now automatically jailed.
-
-The following commands are now available via the CLI:
-
-```
-$ nomic claim        # Claim all available rewards from your delegations          
-$ nomic declare      # Declare your node as a validator
-$ nomic delegate     # Delegate coins to a validator     
-$ nomic delegations  # List your delegations
-$ nomic unbond       # Unbond coins from a validator
-```
-
-### Bitcoin integration
-
-Bitcoin block headers are now tracked by our on-chain Bitcoin SPV module.
-
-All full nodes will verify Bitcoin headers, but full nodes may optionally also run a relayer to report new Bitcoin block headers to the network:
-
-```
-$ nomic relayer
-```
-
-In the near future, we'll enable Bitcoin deposits and withdrawals in this module.
-
+You'll notice many differences between Nomic and a typical Cosmos SDK chain,
+this is because Nomic is built with an entirely [custom
+stack](https://github.com/nomic-io/orga).
 
 ## Validator setup guide
 
-This guide will walk you through setting up a validator for the Nomic Bitcoin Bridge testnet.
+This guide will walk you through setting up a validator for the Nomic Bitcoin
+Bridge testnet.
 
-If you need any help getting your node running, join the [Telegram channel](https://t.me/joinchat/b0iv3MHgH5phYjkx).
+If you need any help getting your node running, join the [Telegram
+channel](https://t.me/joinchat/b0iv3MHgH5phYjkx).
 
 ### Requirements
 
@@ -74,14 +52,14 @@ cargo install --path .
 
 ### 2. Initialize and configure your node
 
-Initialize your data directory (`~/.guccinet`) by running:
+Initialize your data directory (`~/.nomic-stakenet-rc`) by running:
 
 ```bash
 nomic init
 ```
 
 Next, add a seed so your node will be able to connect to the network by editing
-`~/.guccinet/tendermint/config/config.toml`:
+`~/.nomic-stakenet-rc/tendermint/config/config.toml`:
 
 ```toml
 # Comma separated list of seed nodes to connect to
@@ -98,8 +76,8 @@ This will run the Nomic state machine and a Tendermint process.
 
 ### 4. Acquiring coins and staking for voting power
 
-First, find your address by running `nomic balance` (for now this must be run on a machine
-which has an active full node).
+First, find your address by running `nomic balance` (for now this must be run on
+a machine which has an active full node).
 
 Ask the Nomic team for some coins in the Telegram and include your address.
 
@@ -107,33 +85,33 @@ Once you have received coins, you can declare your node as a validator and
 delegate to yourself with:
 
 ```
-nomic declare <validator_address> <amount>
+nomic declare \
+  <validator_consensus_key> \
+  <amount> \
+  <commission_rate> \
+  <moniker> \
+  <website> \
+  <identity> \
+  <details>
 ```
 
-The validator address is the base64 pubkey value
-found under `"validator_info"` in the output of http://localhost:26657/status.
-Amount is how many coins to delegate to yourself.
+- The `validator_consensus_key` field is the base64 pubkey `value` field found
+under `"validator_info"` in the output of http://localhost:26657/status.
+- The `identity` field is the 64-bit hex key suffix found on your Keybase
+  profile, used to get your profile picture in wallets and block explorers.
 
-### 5. Run the relayer (optional)
-
-To run the Bitcoin relayer, you must first [run a Bitcoin full node](https://bitcoin.org/en/full-node).
-
-Locate your `bitcoin.conf` (`~/.bitcoin/bitcoin.conf` on Linux, or
-`~/Library/Application\ Support/Bitcoin/bitcoin.conf` on Mac), and configure it
-with:
-
+For example:
 ```
-server=1
-rpcuser=<PICK_A_USERNAME>
-rpcpassword=<PICK_A_PASSWORD>
-rpcbind=127.0.0.1
-rpcport=8332
+nomic declare \
+  ohFOw5u9LGq1ZRMTYZD1Y/WrFtg7xfyBaEB4lSgfeC8= \
+  10000000 \
+  0.123 \
+  "Foo's Validator" \
+  "https://foovalidator.com" \
+  37AA68F6AA20B7A8 \
+  "Please delegate to me!"
 ```
 
-Then start your relayer:
-
-```bash
-nomic relayer <rpc_username> <rpc_pass>
-```
-
-Your node will now start relaying Bitcoin block headers to Nomic.
+Thanks for participating in the Nomic network! We'll be updating the network
+often so stay tuned in [Telegram](https://t.me/joinchat/b0iv3MHgH5phYjkx) for
+updates.

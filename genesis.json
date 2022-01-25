@@ -1,6 +1,6 @@
 {
-  "genesis_time": "2021-12-12T20:00:00.000000Z",
-  "chain_id": "guccinet",
+  "genesis_time": "2022-01-25T01:02:42.222894761Z",
+  "chain_id": "nomic-stakenet-rc",
   "initial_height": "0",
   "consensus_params": {
     "block": {
@@ -22,13 +22,13 @@
   },
   "validators": [
     {
-      "address": "5D152F6990C5EC8DD0901868F6019865E62E577A",
+      "address": "11113DA01984C399457C0D7827400BC459031E4C",
       "pub_key": {
         "type": "tendermint/PubKeyEd25519",
-        "value": "NaU5uTDSK4TBShJIUviRljje5otbUhzsdUiu+VedzZs="
+        "value": "s4+iYcZpLR2xfuurKpU8xLvTzmg+/7i1pEGPfaRBgdw="
       },
       "power": "10",
-      "name": "matt"
+      "name": ""
     }
   ],
   "app_hash": ""
