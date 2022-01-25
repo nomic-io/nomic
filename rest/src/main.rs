@@ -114,43 +114,43 @@ fn staking_delegators_unbonding_delegations(address: &str) -> Value {
 
 #[get("/distribution/delegators/<address>/rewards")]
 async fn distribution_delegatrs_rewards(address: &str) -> Value {
-    let address = address.parse().unwrap();
+    // let address = address.parse().unwrap();
 
-    type AppQuery = <InnerApp as Query>::Query;
-    type StakingQuery = <Staking<Nom> as Query>::Query;
+    // type AppQuery = <InnerApp as Query>::Query;
+    // type StakingQuery = <Staking<Nom> as Query>::Query;
 
-    let delegations = app_client()
-        .query(
-            AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![])),
-            |state| state.staking.delegations(address),
-        )
-        .await
-        .unwrap();
+    // let delegations = app_client()
+    //     .query(
+    //         AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![])),
+    //         |state| state.staking.delegations(address),
+    //     )
+    //     .await
+    //     .unwrap();
 
 
-    let reward = (delegations
-        .iter()
-        .map(|(_, d)| -> u64 { d.liquid.into() })
-        .sum::<u64>())
-        .to_string();
+    // let reward = (delegations
+    //     .iter()
+    //     .map(|(_, d)| -> u64 { d.liquid.into() })
+    //     .sum::<u64>())
+    //     .to_string();
 
     json!({ "height": "1044580", "result": {
         "rewards": [
-          {
-            "validator_address": "cosmosvaloper16xyempempp92x9hyzz9wrgf94r6j9h5f2w4n2l",
-            "reward": [
-              {
-                "denom": "unom",
-                "amount": reward
-              }
-            ]
-          }
+        //   {
+        //     "validator_address": "cosmosvaloper16xyempempp92x9hyzz9wrgf94r6j9h5f2w4n2l",
+        //     "reward": [
+        //       {
+        //         "denom": "unom",
+        //         "amount": reward
+        //       }
+        //     ]
+        //   }
         ],
         "total": [
-          {
-            "denom": "unom",
-            "amount": reward
-          }
+        //   {
+        //     "denom": "unom",
+        //     "amount": reward
+        //   }
         ]
       } })
 }
