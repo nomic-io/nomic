@@ -87,9 +87,10 @@ impl StartCmd {
     async fn run(&self) -> Result<()> {
         tokio::task::spawn_blocking(|| {
             Node::<app::App>::new(NETWORK_NAME)
-                .with_genesis(include_bytes!("../genesis.json"))
+                //.with_genesis(include_bytes!("../genesis.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
+		.reset()
                 .run()
         })
         .await

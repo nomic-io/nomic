@@ -64,6 +64,7 @@ mod abci {
 #[derive(State, Query, Call, Client)]
 pub struct Airdrop<S: Symbol> {
     claimable: Accounts<S>,
+    minted: Amount,
 }
 
 impl<S: Symbol> Airdrop<S> {
@@ -91,10 +92,16 @@ impl<S: Symbol> Airdrop<S> {
     }
 
     fn init_account(&mut self, address: Address, liquid: Amount, staked: Amount) -> Result<()> {
-        // TODO: define payout function
-        let payout_amount = (liquid + staked * Amount::from(4))?;
+        let liquid_capped = Amount::min(liquid, 1_000_000_000.into());
+        let staked_capped = Amount::min(staked, 1_000_000_000.into());
+
+        let units = (liquid_capped + staked_capped * Amount::from(4))?;
+        let units_per_nom = Decimal::from(40_59865) / Decimal::from(100_000);
+        let nom_amount = (Decimal::from(units) / units_per_nom)?.amount()?;
         
-        let payout = Coin::mint(payout_amount);
+        self.minted = (self.minted + nom_amount)?;
+
+        let payout = Coin::mint(nom_amount);
         self.claimable.deposit(address, payout)
     }
 }
@@ -120,6 +127,8 @@ impl<S: Symbol> InitChain for Airdrop<S> {
 
             self.init_account(address_buf.into(), liquid.into(), staked.into())?;
         }
+
+        println!("Total amount minted for airdrop: {} uNOM", self.minted);
 
         Ok(())
     }
