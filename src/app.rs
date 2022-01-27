@@ -1,6 +1,7 @@
 use orga::prelude::*;
 use orga::Error;
 use std::convert::TryInto;
+use std::time::Duration;
 
 pub type App = DefaultPlugins<Nom, InnerApp>;
 
@@ -8,11 +9,69 @@ pub type App = DefaultPlugins<Nom, InnerApp>;
 pub struct Nom(());
 impl Symbol for Nom {}
 
+const DEV_ADDRESS: &str = "nomic1ns0gwwx7pp0f3gdhal5t77msvdkj6trgu2mdek";
+const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1ns0gwwx7pp0f3gdhal5t77msvdkj6trgu2mdek";
+
 #[derive(State, Call, Query, Client)]
 pub struct InnerApp {
     pub accounts: Accounts<Nom>,
     pub staking: Staking<Nom>,
     pub atom_airdrop: Airdrop<Nom>,
+
+    community_pool: Coin<Nom>,
+    incentive_pool: Coin<Nom>,
+
+    staking_rewards: Faucet<Nom>,
+    dev_rewards: Faucet<Nom>,
+    community_pool_rewards: Faucet<Nom>,
+    incentive_pool_rewards: Faucet<Nom>,
+}
+
+impl InnerApp {
+    fn configure_faucets(&mut self) -> Result<()> {
+        let day = 60 * 60 * 24;
+        let year = Duration::from_secs(60 * 60 * 24 * 365);
+        let two_thirds = (Amount::new(2) / Amount::new(3))?;
+
+        let genesis_time = self
+            .context::<Time>()
+            .ok_or_else(|| Error::App("No Time context available".into()))?
+            .seconds;
+
+        self.staking_rewards.configure(FaucetOptions {
+            num_periods: 9,
+            period_length: year,
+            total_coins: 49_875_000.into(),
+            period_decay: two_thirds,
+            start_seconds: genesis_time + day,
+        })?;
+
+        self.dev_rewards.configure(FaucetOptions {
+            num_periods: 9,
+            period_length: year,
+            total_coins: 49_875_000.into(),
+            period_decay: two_thirds,
+            start_seconds: genesis_time + day,
+        })?;
+
+        self.community_pool_rewards.configure(FaucetOptions {
+            num_periods: 9,
+            period_length: year,
+            total_coins: 9_975_000.into(),
+            period_decay: two_thirds,
+            start_seconds: genesis_time + day,
+        })?;
+
+        self.incentive_pool_rewards.configure(FaucetOptions {
+            num_periods: 9,
+            period_length: year,
+            total_coins: 89_775_000.into(),
+            period_decay: two_thirds,
+            start_seconds: genesis_time + day,
+        })?;
+
+        Ok(())
+    }
 }
 
 #[cfg(feature = "full")]
@@ -23,18 +82,17 @@ mod abci {
         fn init_chain(&mut self, ctx: &InitChainCtx) -> Result<()> {
             self.staking.set_min_self_delegation(100_000);
             self.staking.set_max_validators(100);
-            self.accounts.allow_transfers(true);
+            self.accounts.allow_transfers(false);
+
+            self.configure_faucets()?;
 
             self.accounts.init_chain(ctx)?;
             self.staking.init_chain(ctx)?;
             self.atom_airdrop.init_chain(ctx)?;
 
-            self.accounts.deposit(
-                "nomic1ns0gwwx7pp0f3gdhal5t77msvdkj6trgu2mdek"
-                    .parse()
-                    .unwrap(),
-                100_000_000_000.into(),
-            )?;
+            let sr_address = STRATEGIC_RESERVE_ADDRESS.parse().unwrap();
+            self.accounts.deposit(sr_address, 5_250_000_000_000.into())?;
+            self.accounts.add_transfer_exception(sr_address)?;
 
             Ok(())
         }
@@ -45,10 +103,19 @@ mod abci {
             self.staking.begin_block(ctx)?;
 
             if self.staking.staked()? > 0 {
-                let divisor: Amount = 100_000.into();
-                let reward = (self.staking.staked()? / divisor)?.amount()?;
-                self.staking.give(reward.into())?;
+                let reward = self.staking_rewards.mint()?;
+                self.staking.give(reward)?;
             }
+
+            let dev_reward = self.dev_rewards.mint()?;
+            let dev_address = DEV_ADDRESS.parse().unwrap();
+            self.accounts.deposit(dev_address, dev_reward)?;
+
+            let cp_reward = self.community_pool_rewards.mint()?;
+            self.community_pool.give(cp_reward)?;
+
+            let ip_reward = self.incentive_pool_rewards.mint()?;
+            self.incentive_pool.give(ip_reward)?;
 
             Ok(())
         }
@@ -126,7 +193,8 @@ impl<S: Symbol> InitChain for Airdrop<S> {
             let liquid: u64 = row[1].parse().unwrap();
             let staked: u64 = row[2].parse().unwrap();
 
-            let minted_for_account = self.init_account(address_buf.into(), liquid.into(), staked.into())?;
+            let minted_for_account =
+                self.init_account(address_buf.into(), liquid.into(), staked.into())?;
             minted = (minted + minted_for_account)?;
         }
 
