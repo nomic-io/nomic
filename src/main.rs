@@ -326,5 +326,8 @@ impl ClaimAirdropCmd {
 #[tokio::main]
 async fn main() {
     let opts = Opts::parse();
-    opts.cmd.run().await.unwrap();
+    if let Err(err) = opts.cmd.run().await {
+        eprintln!("{}", err);
+        std::process::exit(1);
+    };
 }
