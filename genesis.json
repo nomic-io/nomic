@@ -1,6 +1,6 @@
 {
-  "genesis_time": "2022-01-25T01:02:42.222894761Z",
-  "chain_id": "nomic-stakenet-rc",
+  "genesis_time": "2022-01-27T22:45:00Z",
+  "chain_id": "nomic-stakenet-rc2",
   "initial_height": "0",
   "consensus_params": {
     "block": {
@@ -22,13 +22,22 @@
   },
   "validators": [
     {
-      "address": "11113DA01984C399457C0D7827400BC459031E4C",
+      "address": "7E71D83A57357F395AD7CAA95B39C6AFCAB41AA2",
       "pub_key": {
         "type": "tendermint/PubKeyEd25519",
-        "value": "s4+iYcZpLR2xfuurKpU8xLvTzmg+/7i1pEGPfaRBgdw="
+        "value": "lCJH2bx8LlIY+p9oPO0Mt0cr4Y3ibNdjDkX2PTaX/0s="
       },
       "power": "10",
-      "name": ""
+      "name": "mappum"
+    },
+    {
+      "address": "FBACA5F07C3A3BF6F48605431069CBBCC2E3FA57",
+      "pub_key": {
+        "type": "tendermint/PubKeyEd25519",
+        "value": "kibXvKODwaWtA2r1XY1kMcc2ouKfXSQUEUMHYxXqw0E="
+      },
+      "power": "10",
+      "name": "kep"
     }
   ],
   "app_hash": ""
