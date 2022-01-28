@@ -24,7 +24,10 @@ fn my_address() -> Address {
 }
 
 #[derive(Parser, Debug)]
-#[clap(version = "0.4", author = "The Nomic Developers <hello@nomic.io>")]
+#[clap(
+    version = env!("CARGO_PKG_VERSION"),
+    author = "The Nomic Developers <hello@nomic.io>"
+)]
 pub struct Opts {
     #[clap(subcommand)]
     cmd: Command,
@@ -190,8 +193,12 @@ impl ValidatorsCmd {
             .await?;
 
         for validator in validators {
-            let info: DeclareInfo = serde_json::from_slice(validator.info.bytes.as_slice()).unwrap();
-            println!("- {}\n\tVOTING POWER: {}\n\tMONIKER: {}\n\tDETAILS: {}", validator.address, validator.amount_staked, info.moniker, info.details);
+            let info: DeclareInfo =
+                serde_json::from_slice(validator.info.bytes.as_slice()).unwrap();
+            println!(
+                "- {}\n\tVOTING POWER: {}\n\tMONIKER: {}\n\tDETAILS: {}",
+                validator.address, validator.amount_staked, info.moniker, info.details
+            );
         }
 
         Ok(())
@@ -208,7 +215,10 @@ impl DelegateCmd {
     async fn run(&self) -> Result<()> {
         app_client()
             .pay_from(async move |mut client| {
-                client.accounts.take_as_funding((self.amount + MIN_FEE).into()).await
+                client
+                    .accounts
+                    .take_as_funding((self.amount + MIN_FEE).into())
+                    .await
             })
             .staking
             .delegate_from_self(self.validator_addr, self.amount.into())
@@ -280,12 +290,7 @@ pub struct UnbondCmd {
 impl UnbondCmd {
     async fn run(&self) -> Result<()> {
         app_client()
-            .pay_from(async move |mut client| {
-                client
-                    .accounts
-                    .take_as_funding(MIN_FEE.into())
-                    .await
-            })
+            .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
             .staking
             .unbond_self(self.validator_addr, self.amount.into())
             .await
@@ -298,9 +303,7 @@ pub struct ClaimCmd;
 impl ClaimCmd {
     async fn run(&self) -> Result<()> {
         app_client()
-            .pay_from(async move |mut client| {
-                client.staking.claim_all().await
-            })
+            .pay_from(async move |mut client| client.staking.claim_all().await)
             .accounts
             .give_from_funding_all()
             .await
@@ -313,9 +316,7 @@ pub struct ClaimAirdropCmd;
 impl ClaimAirdropCmd {
     async fn run(&self) -> Result<()> {
         app_client()
-            .pay_from(async move |mut client| {
-                client.atom_airdrop.claim().await
-            })
+            .pay_from(async move |mut client| client.atom_airdrop.claim().await)
             .accounts
             .give_from_funding_all()
             .await
