@@ -41,7 +41,7 @@ impl InnerApp {
         self.staking_rewards.configure(FaucetOptions {
             num_periods: 9,
             period_length: year,
-            total_coins: 49_875_000.into(),
+            total_coins: 49_875_000_000_000.into(),
             period_decay: two_thirds,
             start_seconds: genesis_time + day,
         })?;
@@ -49,7 +49,7 @@ impl InnerApp {
         self.dev_rewards.configure(FaucetOptions {
             num_periods: 9,
             period_length: year,
-            total_coins: 49_875_000.into(),
+            total_coins: 49_875_000_000_000.into(),
             period_decay: two_thirds,
             start_seconds: genesis_time + day,
         })?;
@@ -57,7 +57,7 @@ impl InnerApp {
         self.community_pool_rewards.configure(FaucetOptions {
             num_periods: 9,
             period_length: year,
-            total_coins: 9_975_000.into(),
+            total_coins: 9_975_000_000_000.into(),
             period_decay: two_thirds,
             start_seconds: genesis_time + day,
         })?;
@@ -65,7 +65,7 @@ impl InnerApp {
         self.incentive_pool_rewards.configure(FaucetOptions {
             num_periods: 9,
             period_length: year,
-            total_coins: 89_775_000.into(),
+            total_coins: 89_775_000_000_000.into(),
             period_decay: two_thirds,
             start_seconds: genesis_time + day,
         })?;
@@ -91,7 +91,8 @@ mod abci {
             self.atom_airdrop.init_chain(ctx)?;
 
             let sr_address = STRATEGIC_RESERVE_ADDRESS.parse().unwrap();
-            self.accounts.deposit(sr_address, 5_250_000_000_000.into())?;
+            self.accounts
+                .deposit(sr_address, 5_250_000_000_000.into())?;
             self.accounts.add_transfer_exception(sr_address)?;
 
             Ok(())
