@@ -13,8 +13,6 @@ mod app;
 mod bitcoin;
 mod error;
 
-const NETWORK_NAME: &str = "nomic-stakenet-rc";
-
 pub fn app_client() -> TendermintClient<app::App> {
     TendermintClient::new("http://localhost:26657").unwrap()
 }
@@ -72,7 +70,7 @@ pub struct InitCmd {}
 impl InitCmd {
     async fn run(&self) -> Result<()> {
         tokio::task::spawn_blocking(|| {
-            Node::<app::App>::new(NETWORK_NAME);
+            Node::<app::App>::new(CHAIN_ID);
         })
         .await
         .map_err(|err| orga::Error::App(err.to_string()))?;
@@ -86,11 +84,10 @@ pub struct StartCmd {}
 impl StartCmd {
     async fn run(&self) -> Result<()> {
         tokio::task::spawn_blocking(|| {
-            Node::<app::App>::new(NETWORK_NAME)
-                //.with_genesis(include_bytes!("../genesis.json"))
+            Node::<app::App>::new(CHAIN_ID)
+                .with_genesis(include_bytes!("../genesis.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
-		.reset()
                 .run()
         })
         .await
