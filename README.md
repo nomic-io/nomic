@@ -58,8 +58,22 @@ Initialize your data directory (`~/.nomic-stakenet-rc`) by running:
 nomic init
 ```
 
-Next, add a seed so your node will be able to connect to the network by editing
-`~/.nomic-stakenet-rc/tendermint/config/config.toml`:
+Next, configure your node by editing
+`~/.nomic-stakenet-rc/tendermint/config/config.toml`.
+
+Add the external ip and port where your node can be reached so that other
+nodes will connect to you:
+
+```toml
+# Address to advertise to peers for them to dial
+# If empty, will use the same port as the laddr,
+# and will introspect on the listener or use UPnP
+# to figure out the address. ip and port are required
+# example: 159.89.10.97:26656
+external_address = "123.45.67.89:26656"
+```
+
+Add a seed so your node will be able to connect to the network:
 
 ```toml
 # Comma separated list of seed nodes to connect to
