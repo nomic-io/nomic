@@ -3,7 +3,7 @@ use orga::Error;
 use std::convert::TryInto;
 use std::time::Duration;
 
-pub const CHAIN_ID: &str = "nomic-stakenet-rc2";
+pub const CHAIN_ID: &str = "nomic-stakenet";
 pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
 
 #[derive(State, Debug, Clone)]
