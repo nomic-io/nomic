@@ -43,6 +43,9 @@ rustup default nightly
 # install required dependencies (ubuntu)
 sudo apt install build-essential libssl-dev pkg-config clang
 
+# or for systems running fedora
+sudo dnf install clang openssl-devel && sudo dnf group install "C Development Tools and Libraries" 
+
 # clone
 git clone https://github.com/nomic-io/nomic.git nomic && cd nomic
 
