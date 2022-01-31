@@ -77,7 +77,7 @@ Add a seed so your node will be able to connect to the network:
 
 ```toml
 # Comma separated list of seed nodes to connect to
-seeds = "58380fbc7c83c8d38fd02fc7fe67a2d4173dacac@167.99.119.196:26656,58380fbc7c83c8d38fd02fc7fe67a2d4173dacac@167.99.119.196:26656"
+seeds = "58380fbc7c83c8d38fd02fc7fe67a2d4173dacac@167.99.119.196:26656,87fd4e297428701df19489a02485cb54426a2efa@161.35.51.124:26656"
 ```
 
 ### 3. Run your node
