@@ -10,10 +10,9 @@ pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
 pub struct Nom(());
 impl Symbol for Nom {}
 
-// TODO: update addresses
-const DEV_ADDRESS: &str = "nomic1ns0gwwx7pp0f3gdhal5t77msvdkj6trgu2mdek";
-const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1ns0gwwx7pp0f3gdhal5t77msvdkj6trgu2mdek";
-const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1ns0gwwx7pp0f3gdhal5t77msvdkj6trgu2mdek";
+const DEV_ADDRESS: &str = "nomic14z79y3yrghqx493mwgcj0qd2udy6lm26lmduah";
+const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1d5n325zrf4elfu0heqd59gna5j6xyunhev23cj";
+const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhqd8dcqeq";
 
 #[derive(State, Call, Query, Client)]
 pub struct InnerApp {
