@@ -10,8 +10,10 @@ pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
 pub struct Nom(());
 impl Symbol for Nom {}
 
+// TODO: update addresses
 const DEV_ADDRESS: &str = "nomic1ns0gwwx7pp0f3gdhal5t77msvdkj6trgu2mdek";
 const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1ns0gwwx7pp0f3gdhal5t77msvdkj6trgu2mdek";
+const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1ns0gwwx7pp0f3gdhal5t77msvdkj6trgu2mdek";
 
 #[derive(State, Call, Query, Client)]
 pub struct InnerApp {
@@ -91,12 +93,18 @@ mod abci {
             self.staking.init_chain(ctx)?;
             self.atom_airdrop.init_chain(ctx)?;
 
+            // 100 tokens of strategic reserve are paid to the validator bootstrap account,
+            // a hot wallet to be sent to validators so they can declare themselves
+            let sr_funds = Nom::mint(10_400_000_000_000);
+            let vb_funds = Nom::mint(100_000_000);
+
             let sr_address = STRATEGIC_RESERVE_ADDRESS.parse().unwrap();
-            self.accounts
-                .deposit(sr_address, 10_500_000_000_000.into())?;
+            self.accounts.deposit(sr_address, sr_funds)?;
             self.accounts.add_transfer_exception(sr_address)?;
 
-            // TODO: transfer from strategic reverse to validator bootstrap address
+            let vb_address = VALIDATOR_BOOTSTRAP_ADDRESS.parse().unwrap();
+            self.accounts.deposit(vb_address, vb_funds)?;
+            self.accounts.add_transfer_exception(vb_address)?;
 
             Ok(())
         }
