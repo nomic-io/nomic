@@ -22,19 +22,19 @@
   },
   "validators": [
     {
-      "address": "BB75B155A5FA5295F708A9BDEE11695CB8FA44E9",
+      "address": "67731CD93013A71CE20044289AD906DFFCEBE791",
       "pub_key": {
         "type": "tendermint/PubKeyEd25519",
-        "value": "pgz0hV/ZIwcFtx93mXOW3YU2IiJrFeV1cmzd6ymgCAs="
+        "value": "C4EhqLmOnjSTVC3n81d6qk1hLsW3X5WcQwumXtnlNCg="
       },
       "power": "10",
       "name": "mappum"
     },
     {
-      "address": "48BD94BD423D50685414E82CCA0CC30CBEEDEDFE",
+      "address": "291F724505D10B6B07E1F98F5E1CD1AF9A4E74F4",
       "pub_key": {
         "type": "tendermint/PubKeyEd25519",
-        "value": "8ZI7nLh3F0Kie5ZAOdj+L2lpxOR4C0jGBjQdwqUjt0o="
+        "value": "4GzmiN0OkZF7qAthUmFgMjw3kW7ukJblJWIyIxB82VU="
       },
       "power": "10",
       "name": "kep"
