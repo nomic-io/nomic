@@ -94,7 +94,7 @@ mod abci {
 
             // 100 tokens of strategic reserve are paid to the validator bootstrap account,
             // a hot wallet to be sent to validators so they can declare themselves
-            let sr_funds = Nom::mint(10_400_000_000_000);
+            let sr_funds = Nom::mint(10_499_900_000_000);
             let vb_funds = Nom::mint(100_000_000);
 
             let sr_address = STRATEGIC_RESERVE_ADDRESS.parse().unwrap();
