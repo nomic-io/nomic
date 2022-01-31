@@ -1,18 +1,79 @@
 use orga::prelude::*;
 use orga::Error;
 use std::convert::TryInto;
+use std::time::Duration;
 
-pub type App = DefaultPlugins<Nom, InnerApp>;
+pub const CHAIN_ID: &str = "nomic-stakenet";
+pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
 
 #[derive(State, Debug, Clone)]
 pub struct Nom(());
 impl Symbol for Nom {}
+
+const DEV_ADDRESS: &str = "nomic14z79y3yrghqx493mwgcj0qd2udy6lm26lmduah";
+const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1d5n325zrf4elfu0heqd59gna5j6xyunhev23cj";
+const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhqd8dcqeq";
 
 #[derive(State, Call, Query, Client)]
 pub struct InnerApp {
     pub accounts: Accounts<Nom>,
     pub staking: Staking<Nom>,
     pub atom_airdrop: Airdrop<Nom>,
+
+    community_pool: Coin<Nom>,
+    incentive_pool: Coin<Nom>,
+
+    staking_rewards: Faucet<Nom>,
+    dev_rewards: Faucet<Nom>,
+    community_pool_rewards: Faucet<Nom>,
+    incentive_pool_rewards: Faucet<Nom>,
+}
+
+impl InnerApp {
+    fn configure_faucets(&mut self) -> Result<()> {
+        let day = 60 * 60 * 24;
+        let year = Duration::from_secs(60 * 60 * 24 * 365);
+        let two_thirds = (Amount::new(2) / Amount::new(3))?;
+
+        let genesis_time = self
+            .context::<Time>()
+            .ok_or_else(|| Error::App("No Time context available".into()))?
+            .seconds;
+
+        self.staking_rewards.configure(FaucetOptions {
+            num_periods: 9,
+            period_length: year,
+            total_coins: 47_250_000_000_000.into(),
+            period_decay: two_thirds,
+            start_seconds: genesis_time + day,
+        })?;
+
+        self.dev_rewards.configure(FaucetOptions {
+            num_periods: 9,
+            period_length: year,
+            total_coins: 47_250_000_000_000.into(),
+            period_decay: two_thirds,
+            start_seconds: genesis_time + day,
+        })?;
+
+        self.community_pool_rewards.configure(FaucetOptions {
+            num_periods: 9,
+            period_length: year,
+            total_coins: 9_450_000_000_000.into(),
+            period_decay: two_thirds,
+            start_seconds: genesis_time + day,
+        })?;
+
+        self.incentive_pool_rewards.configure(FaucetOptions {
+            num_periods: 9,
+            period_length: year,
+            total_coins: 85_050_000_000_000.into(),
+            period_decay: two_thirds,
+            start_seconds: genesis_time + day,
+        })?;
+
+        Ok(())
+    }
 }
 
 #[cfg(feature = "full")]
@@ -23,18 +84,26 @@ mod abci {
         fn init_chain(&mut self, ctx: &InitChainCtx) -> Result<()> {
             self.staking.set_min_self_delegation(100_000);
             self.staking.set_max_validators(100);
-            self.accounts.allow_transfers(true);
+            self.accounts.allow_transfers(false);
+
+            self.configure_faucets()?;
 
             self.accounts.init_chain(ctx)?;
             self.staking.init_chain(ctx)?;
             self.atom_airdrop.init_chain(ctx)?;
 
-            self.accounts.deposit(
-                "nomic1ns0gwwx7pp0f3gdhal5t77msvdkj6trgu2mdek"
-                    .parse()
-                    .unwrap(),
-                100_000_000_000.into(),
-            )?;
+            // 100 tokens of strategic reserve are paid to the validator bootstrap account,
+            // a hot wallet to be sent to validators so they can declare themselves
+            let sr_funds = Nom::mint(10_499_900_000_000);
+            let vb_funds = Nom::mint(100_000_000);
+
+            let sr_address = STRATEGIC_RESERVE_ADDRESS.parse().unwrap();
+            self.accounts.deposit(sr_address, sr_funds)?;
+            self.accounts.add_transfer_exception(sr_address)?;
+
+            let vb_address = VALIDATOR_BOOTSTRAP_ADDRESS.parse().unwrap();
+            self.accounts.deposit(vb_address, vb_funds)?;
+            self.accounts.add_transfer_exception(vb_address)?;
 
             Ok(())
         }
@@ -45,10 +114,19 @@ mod abci {
             self.staking.begin_block(ctx)?;
 
             if self.staking.staked()? > 0 {
-                let divisor: Amount = 100_000.into();
-                let reward = (self.staking.staked()? / divisor)?.amount()?;
-                self.staking.give(reward.into())?;
+                let reward = self.staking_rewards.mint()?;
+                self.staking.give(reward)?;
             }
+
+            let dev_reward = self.dev_rewards.mint()?;
+            let dev_address = DEV_ADDRESS.parse().unwrap();
+            self.accounts.deposit(dev_address, dev_reward)?;
+
+            let cp_reward = self.community_pool_rewards.mint()?;
+            self.community_pool.give(cp_reward)?;
+
+            let ip_reward = self.incentive_pool_rewards.mint()?;
+            self.incentive_pool.give(ip_reward)?;
 
             Ok(())
         }
@@ -90,12 +168,18 @@ impl<S: Symbol> Airdrop<S> {
         self.claimable.take_as_funding(amount)
     }
 
-    fn init_account(&mut self, address: Address, liquid: Amount, staked: Amount) -> Result<()> {
-        // TODO: define payout function
-        let payout_amount = (liquid + staked * Amount::from(4))?;
-        
-        let payout = Coin::mint(payout_amount);
-        self.claimable.deposit(address, payout)
+    fn init_account(&mut self, address: Address, liquid: Amount, staked: Amount) -> Result<Amount> {
+        let liquid_capped = Amount::min(liquid, 1_000_000_000.into());
+        let staked_capped = Amount::min(staked, 1_000_000_000.into());
+
+        let units = (liquid_capped + staked_capped * Amount::from(4))?;
+        let units_per_nom = Decimal::from(20_299325) / Decimal::from(1_000_000);
+        let nom_amount = (Decimal::from(units) / units_per_nom)?.amount()?;
+
+        let payout = Coin::mint(nom_amount);
+        self.claimable.deposit(address, payout)?;
+
+        Ok(nom_amount)
     }
 }
 
@@ -108,6 +192,8 @@ impl<S: Symbol> InitChain for Airdrop<S> {
 
         println!("Initializing balances from airdrop snapshot...");
 
+        let mut minted = Amount::from(0);
+
         for row in snapshot {
             let row = row.map_err(|e| Error::App(e.to_string()))?;
 
@@ -118,8 +204,12 @@ impl<S: Symbol> InitChain for Airdrop<S> {
             let liquid: u64 = row[1].parse().unwrap();
             let staked: u64 = row[2].parse().unwrap();
 
-            self.init_account(address_buf.into(), liquid.into(), staked.into())?;
+            let minted_for_account =
+                self.init_account(address_buf.into(), liquid.into(), staked.into())?;
+            minted = (minted + minted_for_account)?;
         }
+
+        println!("Total amount minted for airdrop: {} uNOM", minted);
 
         Ok(())
     }

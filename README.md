@@ -2,14 +2,13 @@
 <img src="./logo.svg" width="40%">
 </h1>
 
-Nomic Bitcoin Bridge testnet v0.4.0 (Stakenet Release Candidate)
+Nomic Bitcoin Bridge v0.5.0 (Stakenet Release)
 
 ## Stakenet
 
-This testnet includes everything required for the upcoming Stakenet launch
-(Nomic's first production network). This network does not include the Bitcoin
-bridge functionality and token transfers are disabled - only staking is
-supported. This is our last test to make sure everything is in order for launch.
+This is the release for the Nomic Stakenet (Nomic's first production network).
+This network does not include the Bitcoin bridge functionality and token
+transfers are disabled - only staking is supported.
 
 You'll notice many differences between Nomic and a typical Cosmos SDK chain,
 this is because Nomic is built with an entirely [custom
@@ -17,16 +16,15 @@ stack](https://github.com/nomic-io/orga).
 
 ## Validator setup guide
 
-This guide will walk you through setting up a validator for the Nomic Bitcoin
-Bridge testnet.
+This guide will walk you through setting up a validator for the Nomic Stakenet.
 
 If you need any help getting your node running, join the [Telegram
 channel](https://t.me/joinchat/b0iv3MHgH5phYjkx).
 
 ### Requirements
 
-- &gt;= 1GB RAM
-- &gt;= 5GB of storage
+- &gt;= 4GB RAM
+- &gt;= 50GB of storage
 - Linux or macOS _(Windows support coming soon)_
 
 ### 1. Build Nomic
@@ -42,7 +40,6 @@ rustup default nightly
 
 # install required dependencies (ubuntu)
 sudo apt install build-essential libssl-dev pkg-config clang
-
 # or for systems running fedora
 sudo dnf install clang openssl-devel && sudo dnf group install "C Development Tools and Libraries" 
 
@@ -55,14 +52,14 @@ cargo install --path .
 
 ### 2. Initialize and configure your node
 
-Initialize your data directory (`~/.nomic-stakenet-rc`) by running:
+Initialize your data directory (`~/.nomic-stakenet`) by running:
 
 ```bash
 nomic init
 ```
 
 Next, configure your node by editing
-`~/.nomic-stakenet-rc/tendermint/config/config.toml`.
+`~/.nomic-stakenet/tendermint/config/config.toml`.
 
 Add the external ip and port where your node can be reached so that other
 nodes will connect to you:
@@ -80,7 +77,7 @@ Add a seed so your node will be able to connect to the network:
 
 ```toml
 # Comma separated list of seed nodes to connect to
-seeds = "dc7103629676c9bc02624887372c3e18a740c37d@167.99.228.240:26656"
+seeds = "238120dfe716082754048057c1fdc3d6f09609b5@161.35.51.124:26656,a67d7a4d90f84d5c67bfc196aac68441ba9484a6@167.99.119.196:26659"
 ```
 
 ### 3. Run your node
@@ -112,6 +109,8 @@ nomic declare \
   <details>
 ```
 
+**IMPORTANT NOTE:** Carefully double-check all the fields since you will not be able to modify them after declaring. If you make a mistake, you will have to declare a new validator instead.
+
 - The `validator_consensus_key` field is the base64 pubkey `value` field found
 under `"validator_info"` in the output of http://localhost:26657/status.
 - The `identity` field is the 64-bit hex key suffix found on your Keybase
@@ -121,13 +120,15 @@ For example:
 ```
 nomic declare \
   ohFOw5u9LGq1ZRMTYZD1Y/WrFtg7xfyBaEB4lSgfeC8= \
-  10000000 \
-  0.123 \
+  100000 \
+  0.042 \
   "Foo's Validator" \
   "https://foovalidator.com" \
   37AA68F6AA20B7A8 \
   "Please delegate to me!"
 ```
+
+Visit https://app.nomic.io to claim the airdrop if you are an eligible ATOM holder/staker, so you can delegate more NOM to yourself.
 
 Thanks for participating in the Nomic network! We'll be updating the network
 often so stay tuned in [Telegram](https://t.me/joinchat/b0iv3MHgH5phYjkx) for
