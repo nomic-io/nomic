@@ -42,7 +42,7 @@ impl InnerApp {
         self.staking_rewards.configure(FaucetOptions {
             num_periods: 9,
             period_length: year,
-            total_coins: 49_875_000_000_000.into(),
+            total_coins: 47_250_000_000_000.into(),
             period_decay: two_thirds,
             start_seconds: genesis_time + day,
         })?;
@@ -50,7 +50,7 @@ impl InnerApp {
         self.dev_rewards.configure(FaucetOptions {
             num_periods: 9,
             period_length: year,
-            total_coins: 49_875_000_000_000.into(),
+            total_coins: 47_250_000_000_000.into(),
             period_decay: two_thirds,
             start_seconds: genesis_time + day,
         })?;
@@ -58,7 +58,7 @@ impl InnerApp {
         self.community_pool_rewards.configure(FaucetOptions {
             num_periods: 9,
             period_length: year,
-            total_coins: 9_975_000_000_000.into(),
+            total_coins: 9_450_000_000_000.into(),
             period_decay: two_thirds,
             start_seconds: genesis_time + day,
         })?;
@@ -66,7 +66,7 @@ impl InnerApp {
         self.incentive_pool_rewards.configure(FaucetOptions {
             num_periods: 9,
             period_length: year,
-            total_coins: 89_775_000_000_000.into(),
+            total_coins: 85_050_000_000_000.into(),
             period_decay: two_thirds,
             start_seconds: genesis_time + day,
         })?;
@@ -93,8 +93,10 @@ mod abci {
 
             let sr_address = STRATEGIC_RESERVE_ADDRESS.parse().unwrap();
             self.accounts
-                .deposit(sr_address, 5_250_000_000_000.into())?;
+                .deposit(sr_address, 10_500_000_000_000.into())?;
             self.accounts.add_transfer_exception(sr_address)?;
+
+            // TODO: transfer from strategic reverse to validator bootstrap address
 
             Ok(())
         }
@@ -164,7 +166,7 @@ impl<S: Symbol> Airdrop<S> {
         let staked_capped = Amount::min(staked, 1_000_000_000.into());
 
         let units = (liquid_capped + staked_capped * Amount::from(4))?;
-        let units_per_nom = Decimal::from(40_59865) / Decimal::from(100_000);
+        let units_per_nom = Decimal::from(20_299325) / Decimal::from(1_000_000);
         let nom_amount = (Decimal::from(units) / units_per_nom)?.amount()?;
 
         let payout = Coin::mint(nom_amount);
