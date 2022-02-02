@@ -35,6 +35,8 @@ Start by building Nomic - for now this requires Rust nightly.
 # install rustup if you haven't already
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
+source ~/.profile
+
 # nomic currently requires rust nightly
 rustup default nightly
 
