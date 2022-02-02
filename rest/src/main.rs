@@ -3,7 +3,7 @@ extern crate rocket;
 
 use rocket::serde::json::{json, Value};
 use rocket::response::status::BadRequest;
-use nomic::{app_client, app::{Nom, InnerApp}, orga::{query::Query, coins::{Accounts, Address, Staking}}};
+use nomic::{app_client, app::{Nom, InnerApp}, orga::{query::Query, coins::{Amount, Accounts, Address, Staking, Decimal}}};
 
 use tendermint_rpc as tm;
 use tm::Client as _;
@@ -181,24 +181,42 @@ async fn distribution_delegatrs_rewards(address: &str) -> Value {
 }
 
 #[get("/minting/inflation")]
-fn minting_inflation() -> Value {
-    json!({ "height": "1044580", "result": "1" })
+async fn minting_inflation() -> Result<Value, BadRequest<String>> {
+    type AppQuery = <InnerApp as Query>::Query;
+    type StakingQuery = <Staking<Nom> as Query>::Query;
+
+    let validators = app_client()
+        .query(
+            AppQuery::FieldStaking(StakingQuery::MethodAllValidators(vec![])),
+            |state| state.staking.all_validators(),
+        )
+        .await
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+
+    let total_staked: u64 = validators.iter().map(|v| -> u64 { v.amount_staked.into() }).sum();
+    let total_staked = Amount::from(total_staked);
+    let yearly_inflation = Decimal::from(71_869_490_000_000);
+    let apr = (yearly_inflation / Decimal::from(total_staked))
+        .result()
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+
+    Ok(json!({ "height": "1044580", "result": apr.to_string() }))
 }
 
 #[get("/bank/total/<denom>")]
 fn bank_total(denom: &str) -> Value {
-    json!({ "height": "1044580", "result": "100" })
+    json!({ "height": "1044580", "result": "0" })
 }
 
 #[get("/staking/pool")]
 fn staking_pool() -> Value {
     json!({ "height": "1044580", "result": {
-        "loose_tokens": "1",
-        "bonded_tokens": "20",
-        "inflation_last_time": "3",
-        "inflation": "0.1",
+        "loose_tokens": "0",
+        "bonded_tokens": "0",
+        "inflation_last_time": "0",
+        "inflation": "1",
         "date_last_commission_reset": "0",
-        "prev_bonded_shares": "6"
+        "prev_bonded_shares": "0"
       } })
 }
 
