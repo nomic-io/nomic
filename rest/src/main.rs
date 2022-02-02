@@ -103,8 +103,33 @@ async fn query(query: &str) -> Result<String, BadRequest<String>> {
 }
 
 #[get("/staking/delegators/<address>/delegations")]
-fn staking_delegators_delegations(address: &str) -> Value {
-    json!({ "height": "1044580", "result": [] })
+async fn staking_delegators_delegations(address: &str) -> Result<Value, BadRequest<String>> {
+    let address: Address = address.parse().unwrap();
+
+    type AppQuery = <InnerApp as Query>::Query;
+    type StakingQuery = <Staking<Nom> as Query>::Query;
+
+    let delegations = app_client()
+        .query(
+            AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![])),
+            |state| state.staking.delegations(address),
+        )
+        .await
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+
+    let total_staked: u64 = delegations.iter().map(|(_, d)| -> u64 { d.staked.into() }).sum();
+
+    Ok(json!({ "height": "1044580", "result": [
+        {
+            "delegator_address": "",
+            "validator_address": "",
+            "shares": "0",
+            "balance": {
+              "denom": "NOM",
+              "amount": total_staked.to_string(),
+            }
+          }
+    ] }))
 }
 
 #[get("/staking/delegators/<address>/unbonding_delegations")]
