@@ -196,8 +196,8 @@ impl ValidatorsCmd {
             let info: DeclareInfo =
                 serde_json::from_slice(validator.info.bytes.as_slice()).unwrap();
             println!(
-                "- {}\n\tVOTING POWER: {}\n\tMONIKER: {}\n\tDETAILS: {}",
-                validator.address, validator.amount_staked, info.moniker, info.details
+                "- {}\n\tVOTING POWER: {}\n\tMONIKER: {}\n\tCOMMISSION: {}\n\tDETAILS: {}",
+                validator.address, validator.amount_staked, info.moniker, validator.commission, info.details
             );
         }
 
