@@ -40,10 +40,11 @@ pub async fn balance(addr: String) -> u64 {
     let mut client: WebClient<App> = WebClient::new();
     let address = addr.parse().unwrap();
 
+    type NonceQuery = <NoncePlugin as Query>::Query;
     type AppQuery = <InnerApp as Query>::Query;
     type AcctQuery = <Accounts<Nom> as Query>::Query;
 
-    let q = AppQuery::FieldAccounts(AcctQuery::MethodBalance(address, vec![]));
+    let q = NonceQuery::Inner(AppQuery::FieldAccounts(AcctQuery::MethodBalance(address, vec![])));
     client
         .query(q, |state| state.accounts.balance(address))
         .await
@@ -56,12 +57,13 @@ pub async fn reward_balance(addr: String) -> u64 {
     let mut client: WebClient<App> = WebClient::new();
     let address = addr.parse().unwrap();
 
+    type NonceQuery = <NoncePlugin as Query>::Query;
     type AppQuery = <InnerApp as Query>::Query;
     type StakingQuery = <Staking<Nom> as Query>::Query;
 
     let delegations = client
         .query(
-            AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![])),
+            NonceQuery::Inner(AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![]))),
             |state| state.staking.delegations(address),
         )
         .await
@@ -92,12 +94,13 @@ pub async fn delegations(addr: String) -> Array {
     let mut client: WebClient<App> = WebClient::new();
     let address = addr.parse().unwrap();
 
+    type NonceQuery = <NoncePlugin as Query>::Query;
     type AppQuery = <InnerApp as Query>::Query;
     type StakingQuery = <Staking<Nom> as Query>::Query;
 
     let delegations = client
         .query(
-            AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![])),
+            NonceQuery::Inner(AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![]))),
             |state| state.staking.delegations(address),
         )
         .await
@@ -134,12 +137,13 @@ pub struct ValidatorQueryInfo {
 pub async fn all_validators() -> Array {
     let mut client: WebClient<App> = WebClient::new();
 
+    type NonceQuery = <NoncePlugin as Query>::Query;
     type AppQuery = <InnerApp as Query>::Query;
     type StakingQuery = <Staking<Nom> as Query>::Query;
 
     let validators = client
         .query(
-            AppQuery::FieldStaking(StakingQuery::MethodAllValidators(vec![])),
+            NonceQuery::Inner(AppQuery::FieldStaking(StakingQuery::MethodAllValidators(vec![]))),
             |state| state.staking.all_validators(),
         )
         .await
@@ -207,12 +211,13 @@ pub async fn airdrop_balance(addr: String) -> Option<u64> {
     let client: WebClient<App> = WebClient::new();
     let address = addr.parse().unwrap();
 
+    type NonceQuery = <NoncePlugin as Query>::Query;
     type AppQuery = <InnerApp as Query>::Query;
     type AirdropQuery = <Airdrop<Nom> as Query>::Query;
 
     client
         .query(
-            AppQuery::FieldAtomAirdrop(AirdropQuery::MethodBalance(address, vec![])),
+            NonceQuery::Inner(AppQuery::FieldAtomAirdrop(AirdropQuery::MethodBalance(address, vec![]))),
             |state| state.atom_airdrop.balance(address),
         )
         .await
