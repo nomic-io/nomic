@@ -198,7 +198,7 @@ async fn minting_inflation() -> Result<Value, BadRequest<String>> {
 
     let total_staked: u64 = validators.iter().map(|v| -> u64 { v.amount_staked.into() }).sum();
     let total_staked = Amount::from(total_staked);
-    let yearly_inflation = Decimal::from(71_869_490_000_000);
+    let yearly_inflation = Decimal::from(64_682_541_340_000);
     let apr = (yearly_inflation / Decimal::from(4) / Decimal::from(total_staked))
         .result()
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
