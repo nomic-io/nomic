@@ -3,7 +3,7 @@ extern crate rocket;
 
 use rocket::serde::json::{json, Value};
 use rocket::response::status::BadRequest;
-use nomic::{app_client, app::{Nom, InnerApp}, orga::{query::Query, coins::{Amount, Accounts, Address, Staking, Decimal}}};
+use nomic::{app_client, app::{Nom, InnerApp}, orga::{query::Query, coins::{Amount, Accounts, Address, Staking, Decimal}, plugins::*}};
 
 use tendermint_rpc as tm;
 use tm::Client as _;
@@ -12,10 +12,11 @@ use tm::Client as _;
 async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
 
+    type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
     type AppQuery = <InnerApp as Query>::Query;
     type AcctQuery = <Accounts<Nom> as Query>::Query;
 
-    let q = AppQuery::FieldAccounts(AcctQuery::MethodBalance(address, vec![]));
+    let q = NonceQuery::Inner(AppQuery::FieldAccounts(AcctQuery::MethodBalance(address, vec![])));
     let balance: u64 = app_client()
         .query(q, |state| state.accounts.balance(address))
         .await
@@ -25,7 +26,7 @@ async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
     let balance = balance.to_string();
 
     Ok(json!({
-        "height": "1044580",
+        "height": "0",
         "result": [
             {
                 "denom": "unom",
@@ -38,7 +39,7 @@ async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
 #[get("/auth/accounts/<address>")]
 fn auth_accounts(address: &str) -> Value {
     json!({
-        "height": "1044580",
+        "height": "0",
         "result": {
             "type": "cosmos-sdk/BaseAccount",
             "value": {
@@ -106,12 +107,13 @@ async fn query(query: &str) -> Result<String, BadRequest<String>> {
 async fn staking_delegators_delegations(address: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
 
+    type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
     type AppQuery = <InnerApp as Query>::Query;
     type StakingQuery = <Staking<Nom> as Query>::Query;
 
     let delegations = app_client()
         .query(
-            AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![])),
+            NonceQuery::Inner(AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![]))),
             |state| state.staking.delegations(address),
         )
         .await
@@ -119,7 +121,7 @@ async fn staking_delegators_delegations(address: &str) -> Result<Value, BadReque
 
     let total_staked: u64 = delegations.iter().map(|(_, d)| -> u64 { d.staked.into() }).sum();
 
-    Ok(json!({ "height": "1044580", "result": [
+    Ok(json!({ "height": "0", "result": [
         {
             "delegator_address": "",
             "validator_address": "",
@@ -134,7 +136,7 @@ async fn staking_delegators_delegations(address: &str) -> Result<Value, BadReque
 
 #[get("/staking/delegators/<address>/unbonding_delegations")]
 fn staking_delegators_unbonding_delegations(address: &str) -> Value {
-    json!({ "height": "1044580", "result": [] })
+    json!({ "height": "0", "result": [] })
 }
 
 #[get("/distribution/delegators/<address>/rewards")]
@@ -159,7 +161,7 @@ async fn distribution_delegatrs_rewards(address: &str) -> Value {
     //     .sum::<u64>())
     //     .to_string();
 
-    json!({ "height": "1044580", "result": {
+    json!({ "height": "0", "result": {
         "rewards": [
         //   {
         //     "validator_address": "cosmosvaloper16xyempempp92x9hyzz9wrgf94r6j9h5f2w4n2l",
@@ -182,12 +184,13 @@ async fn distribution_delegatrs_rewards(address: &str) -> Value {
 
 #[get("/minting/inflation")]
 async fn minting_inflation() -> Result<Value, BadRequest<String>> {
+    type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
     type AppQuery = <InnerApp as Query>::Query;
     type StakingQuery = <Staking<Nom> as Query>::Query;
 
     let validators = app_client()
         .query(
-            AppQuery::FieldStaking(StakingQuery::MethodAllValidators(vec![])),
+            NonceQuery::Inner(AppQuery::FieldStaking(StakingQuery::MethodAllValidators(vec![]))),
             |state| state.staking.all_validators(),
         )
         .await
@@ -196,21 +199,21 @@ async fn minting_inflation() -> Result<Value, BadRequest<String>> {
     let total_staked: u64 = validators.iter().map(|v| -> u64 { v.amount_staked.into() }).sum();
     let total_staked = Amount::from(total_staked);
     let yearly_inflation = Decimal::from(71_869_490_000_000);
-    let apr = (yearly_inflation / Decimal::from(total_staked))
+    let apr = (yearly_inflation / Decimal::from(4) / Decimal::from(total_staked))
         .result()
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
-    Ok(json!({ "height": "1044580", "result": apr.to_string() }))
+    Ok(json!({ "height": "0", "result": apr.to_string() }))
 }
 
 #[get("/bank/total/<denom>")]
 fn bank_total(denom: &str) -> Value {
-    json!({ "height": "1044580", "result": "0" })
+    json!({ "height": "0", "result": "0" })
 }
 
 #[get("/staking/pool")]
 fn staking_pool() -> Value {
-    json!({ "height": "1044580", "result": {
+    json!({ "height": "0", "result": {
         "loose_tokens": "0",
         "bonded_tokens": "0",
         "inflation_last_time": "0",

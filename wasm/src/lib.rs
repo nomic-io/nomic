@@ -40,7 +40,7 @@ pub async fn balance(addr: String) -> u64 {
     let mut client: WebClient<App> = WebClient::new();
     let address = addr.parse().unwrap();
 
-    type NonceQuery = <NoncePlugin as Query>::Query;
+    type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
     type AppQuery = <InnerApp as Query>::Query;
     type AcctQuery = <Accounts<Nom> as Query>::Query;
 
@@ -57,7 +57,7 @@ pub async fn reward_balance(addr: String) -> u64 {
     let mut client: WebClient<App> = WebClient::new();
     let address = addr.parse().unwrap();
 
-    type NonceQuery = <NoncePlugin as Query>::Query;
+    type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
     type AppQuery = <InnerApp as Query>::Query;
     type StakingQuery = <Staking<Nom> as Query>::Query;
 
@@ -94,7 +94,7 @@ pub async fn delegations(addr: String) -> Array {
     let mut client: WebClient<App> = WebClient::new();
     let address = addr.parse().unwrap();
 
-    type NonceQuery = <NoncePlugin as Query>::Query;
+    type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
     type AppQuery = <InnerApp as Query>::Query;
     type StakingQuery = <Staking<Nom> as Query>::Query;
 
@@ -137,7 +137,7 @@ pub struct ValidatorQueryInfo {
 pub async fn all_validators() -> Array {
     let mut client: WebClient<App> = WebClient::new();
 
-    type NonceQuery = <NoncePlugin as Query>::Query;
+    type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
     type AppQuery = <InnerApp as Query>::Query;
     type StakingQuery = <Staking<Nom> as Query>::Query;
 
@@ -211,7 +211,7 @@ pub async fn airdrop_balance(addr: String) -> Option<u64> {
     let client: WebClient<App> = WebClient::new();
     let address = addr.parse().unwrap();
 
-    type NonceQuery = <NoncePlugin as Query>::Query;
+    type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
     type AppQuery = <InnerApp as Query>::Query;
     type AirdropQuery = <Airdrop<Nom> as Query>::Query;
 
