@@ -225,6 +225,22 @@ pub async fn airdrop_balance(addr: String) -> Option<u64> {
         .map(Into::into)
 }
 
+#[wasm_bindgen]
+pub async fn nonce(addr: String) -> u64 {
+    let client: WebClient<App> = WebClient::new();
+    let address = addr.parse().unwrap();
+
+    type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
+
+    client
+        .query(
+            NonceQuery::Nonce(address),
+            |state| state.nonce(address),
+        )
+        .await
+        .unwrap()
+}
+
 #[wasm_bindgen(js_name = claimAirdrop)]
 pub async fn claim_airdrop() {
     let mut client: WebClient<App> = WebClient::new();
