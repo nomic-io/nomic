@@ -10,6 +10,7 @@ use wasm_bindgen_futures::JsFuture;
 use web_sys::{Request, RequestInit, RequestMode, Response};
 use std::convert::TryInto;
 use js_sys::{Array, JsString};
+use std::sync::{Arc, Mutex};
 
 const REST_PORT: u64 = 8443;
 
@@ -20,7 +21,7 @@ pub fn main() -> std::result::Result<(), JsValue> {
 }
 
 #[wasm_bindgen]
-pub async fn transfer(to_addr: String, amount: u64) {
+pub async fn transfer(to_addr: String, amount: u64) -> JsValue {
     let mut client: WebClient<App> = WebClient::new();
     client
         .pay_from(async move |mut client| {
@@ -33,6 +34,7 @@ pub async fn transfer(to_addr: String, amount: u64) {
         )
         .await
         .unwrap();
+    client.last_res()
 }
 
 #[wasm_bindgen]
@@ -165,7 +167,7 @@ pub async fn all_validators() -> Array {
 
 
 #[wasm_bindgen]
-pub async fn claim() {
+pub async fn claim() -> JsValue {
     let mut client: WebClient<App> = WebClient::new();
     
     client
@@ -176,10 +178,11 @@ pub async fn claim() {
         .give_from_funding_all()
         .await
         .unwrap();
+    client.last_res()
 }
 
 #[wasm_bindgen]
-pub async fn delegate(to_addr: String, amount: u64) {
+pub async fn delegate(to_addr: String, amount: u64) -> JsValue {
     let mut client: WebClient<App> = WebClient::new();
     let to_addr = to_addr.parse().unwrap();
     client
@@ -190,10 +193,11 @@ pub async fn delegate(to_addr: String, amount: u64) {
         .delegate_from_self(to_addr, amount.into())
         .await
         .unwrap();
+    client.last_res()
 }
 
 #[wasm_bindgen]
-pub async fn unbond(validator_addr: String, amount: u64) {
+pub async fn unbond(validator_addr: String, amount: u64) -> JsValue {
     let mut client: WebClient<App> = WebClient::new();
     let validator_addr = validator_addr.parse().unwrap();
     client
@@ -204,6 +208,7 @@ pub async fn unbond(validator_addr: String, amount: u64) {
         .unbond_self(validator_addr, amount.into())
         .await
         .unwrap();
+    client.last_res()
 }
 
 #[wasm_bindgen(js_name = airdropBalance)]
@@ -242,7 +247,7 @@ pub async fn nonce(addr: String) -> u64 {
 }
 
 #[wasm_bindgen(js_name = claimAirdrop)]
-pub async fn claim_airdrop() {
+pub async fn claim_airdrop() -> JsValue {
     let mut client: WebClient<App> = WebClient::new();
 
     client
@@ -253,6 +258,8 @@ pub async fn claim_airdrop() {
         .give_from_funding_all()
         .await
         .unwrap();
+
+    client.last_res()
 }
 
 #[wasm_bindgen(js_name = getAddress)]
@@ -263,16 +270,25 @@ pub async fn get_address() -> String {
 
 pub struct WebClient<T: Client<WebAdapter<T>>> {
     state_client: T::Client,
+    last_res: Arc<Mutex<Option<String>>>,
 }
 
 impl<T: Client<WebAdapter<T>>> WebClient<T> {
     pub fn new() -> Self {
+        let last_res = Arc::new(Mutex::new(None));
         let state_client = T::create_client(WebAdapter {
             marker: std::marker::PhantomData,
+            last_res: last_res.clone(),
         });
         WebClient {
             state_client,
+            last_res,
         }
+    }
+
+    fn last_res(&mut self) -> JsValue {
+        let res_json = client.last_res.lock().unwrap().take().unwrap();
+        js_sys::JSON::parse(&res_json).unwrap()
     }
 }
 
@@ -342,12 +358,14 @@ impl<T: Client<WebAdapter<T>> + Query + State> WebClient<T> {
 
 pub struct WebAdapter<T> {
     marker: std::marker::PhantomData<fn() -> T>,
+    last_res: Arc<Mutex<Option<String>>>,
 }
 
 impl<T> Clone for WebAdapter<T> {
     fn clone(&self) -> WebAdapter<T> {
         WebAdapter {
             marker: self.marker,
+            last_res: self.last_res.clone(),
         }
     }
 }
@@ -383,10 +401,9 @@ where
         let res = JsFuture::from(resp.array_buffer().unwrap()).await.unwrap();
         let res = js_sys::Uint8Array::new(&res).to_vec();
         let res = String::from_utf8(res).unwrap();
-        web_sys::console::log_1(&format!("response: {}", res).into());
+        web_sys::console::log_1(&format!("response: {}", &res).into());
 
-        // TODO: handle error response
-
+        self.last_res.lock().unwrap().replace(res);
         Ok(())
     }
 }
