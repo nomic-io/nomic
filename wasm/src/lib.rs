@@ -287,7 +287,7 @@ impl<T: Client<WebAdapter<T>>> WebClient<T> {
     }
 
     fn last_res(&mut self) -> JsValue {
-        let res_json = client.last_res.lock().unwrap().take().unwrap();
+        let res_json = self.last_res.lock().unwrap().take().unwrap();
         js_sys::JSON::parse(&res_json).unwrap()
     }
 }
