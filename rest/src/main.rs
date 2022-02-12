@@ -3,7 +3,7 @@ extern crate rocket;
 
 use rocket::serde::json::{json, Value};
 use rocket::response::status::BadRequest;
-use nomic::{app_client, app::{Nom, InnerApp}, orga::{query::Query, coins::{Amount, Accounts, Address, Staking, Decimal}, plugins::*}};
+use nomic::{app_client, app::{Nom, InnerApp, CHAIN_ID}, orga::{query::Query, coins::{Amount, Accounts, Address, Staking, Decimal}, plugins::*}};
 
 use tendermint_rpc as tm;
 use tm::Client as _;
@@ -12,7 +12,7 @@ use tm::Client as _;
 async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
 
-    type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
+    type NonceQuery = <NoncePlugin<ChainCommitmentPlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>, CHAIN_ID>> as Query>::Query;
     type AppQuery = <InnerApp as Query>::Query;
     type AcctQuery = <Accounts<Nom> as Query>::Query;
 
@@ -77,7 +77,14 @@ async fn auth_accounts(addr_str: &str) -> Result<Value, BadRequest<String>> {
                 "sequence": nonce.to_string()
             }
         }
-    })
+    }))
+}
+
+use serde::{Serialize, Deserialize};
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+struct TxRequest {
+    tx: serde_json::Value,
+    mode: String,
 }
 
 #[post("/txs", data = "<tx>")]
@@ -86,8 +93,13 @@ async fn txs(tx: &str) -> Result<Value, BadRequest<String>> {
 
     let client = tm::HttpClient::new("http://localhost:26657").unwrap();
 
-    let tx_bytes = base64::decode(tx)
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+    let tx_bytes = if let Some('{') = tx.chars().next() {
+        let tx: TxRequest = serde_json::from_str(tx).unwrap();
+        serde_json::to_vec(&tx.tx).unwrap()
+    } else {
+        base64::decode(tx)
+            .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+    };
     
     let res = client.broadcast_tx_commit(tx_bytes.into())
         .await
@@ -122,7 +134,7 @@ async fn query(query: &str) -> Result<String, BadRequest<String>> {
 async fn staking_delegators_delegations(address: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
 
-    type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
+    type NonceQuery = <NoncePlugin<ChainCommitmentPlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>, CHAIN_ID>> as Query>::Query;
     type AppQuery = <InnerApp as Query>::Query;
     type StakingQuery = <Staking<Nom> as Query>::Query;
 
@@ -199,7 +211,7 @@ async fn distribution_delegatrs_rewards(address: &str) -> Value {
 
 #[get("/minting/inflation")]
 async fn minting_inflation() -> Result<Value, BadRequest<String>> {
-    type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
+    type NonceQuery = <NoncePlugin<ChainCommitmentPlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>, CHAIN_ID>> as Query>::Query;
     type AppQuery = <InnerApp as Query>::Query;
     type StakingQuery = <Staking<Nom> as Query>::Query;
 

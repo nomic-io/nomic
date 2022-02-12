@@ -124,7 +124,7 @@ impl BalanceCmd {
         println!("address: {}", address);
 
         let client = app_client();
-        type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
+        type NonceQuery = <NoncePlugin<ChainCommitmentPlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>, CHAIN_ID>> as Query>::Query;
         type AppQuery = <InnerApp as Query>::Query;
         type AcctQuery = <Accounts<Nom> as Query>::Query;
 
@@ -154,7 +154,7 @@ impl DelegationsCmd {
     async fn run(&self) -> Result<()> {
         let address = my_address();
 
-        type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
+        type NonceQuery = <NoncePlugin<ChainCommitmentPlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>, CHAIN_ID>> as Query>::Query;
         type AppQuery = <InnerApp as Query>::Query;
         type StakingQuery = <Staking<Nom> as Query>::Query;
 
@@ -191,7 +191,7 @@ pub struct ValidatorsCmd;
 
 impl ValidatorsCmd {
     async fn run(&self) -> Result<()> {
-        type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
+        type NonceQuery = <NoncePlugin<ChainCommitmentPlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>, CHAIN_ID>> as Query>::Query;
         type AppQuery = <InnerApp as Query>::Query;
         type StakingQuery = <Staking<Nom> as Query>::Query;
 
