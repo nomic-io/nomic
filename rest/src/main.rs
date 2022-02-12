@@ -36,15 +36,34 @@ async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
     }))
 }
 
-#[get("/auth/accounts/<address>")]
-fn auth_accounts(address: &str) -> Value {
-    json!({
+#[get("/auth/accounts/<addr_str>")]
+async fn auth_accounts(addr_str: &str) -> Result<Value, BadRequest<String>> {
+    let address: Address = addr_str.parse().unwrap();
+
+    type NonceQuery = <NoncePlugin<ChainCommitmentPlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>, CHAIN_ID>> as Query>::Query;
+    type AppQuery = <InnerApp as Query>::Query;
+    type AcctQuery = <Accounts<Nom> as Query>::Query;
+
+    let balance_query = NonceQuery::Inner(AppQuery::FieldAccounts(AcctQuery::MethodBalance(address, vec![])));
+    let balance: u64 = app_client()
+        .query(balance_query, |state| state.accounts.balance(address))
+        .await
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+        .into();
+
+    let nonce_query = NonceQuery::Nonce(address);
+    let nonce: u64 = app_client()
+        .query(nonce_query, |state| state.nonce(address))
+        .await
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+        .into();
+
+    Ok(json!({
         "height": "0",
         "result": {
             "type": "cosmos-sdk/BaseAccount",
             "value": {
-                "account_number": "1234",
-                // "address": "string",
+                "address": addr_str,
                 "coins": [
                     {
                         "denom": "unom",
@@ -55,11 +74,7 @@ fn auth_accounts(address: &str) -> Value {
                         "amount": "12345678"
                     }
                 ],
-                "public_key": {
-                    "type": "tendermint/PubKeyEd25519",
-                    "value": "7abai/qElNAJRqaOTlxZ8ZOX5mOW0rmSzKWt0igCyg0="
-                },
-                "sequence": "123"
+                "sequence": nonce.to_string()
             }
         }
     })
