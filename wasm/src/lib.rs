@@ -79,8 +79,9 @@ pub async fn reward_balance(addr: String) -> u64 {
 
 #[wasm_bindgen]
 pub struct UnbondInfo {
-    start_seconds: u64,
-    amount: u64,
+    #[wasm_bindgen(js_name = startSeconds)]
+    pub start_seconds: u64,
+    pub amount: u64,
 }
 
 #[wasm_bindgen(getter_with_clone)]
