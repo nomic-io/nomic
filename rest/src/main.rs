@@ -23,14 +23,12 @@ async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
 
-    let balance = balance.to_string();
-
     Ok(json!({
         "height": "0",
         "result": [
             {
                 "denom": "unom",
-                "amount": balance,
+                "amount": balance.to_string(),
             }
         ]
     }))
@@ -52,11 +50,12 @@ async fn auth_accounts(addr_str: &str) -> Result<Value, BadRequest<String>> {
         .into();
 
     let nonce_query = NonceQuery::Nonce(address);
-    let nonce: u64 = app_client()
+    let mut nonce: u64 = app_client()
         .query(nonce_query, |state| state.nonce(address))
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
+    nonce += 1;
 
     Ok(json!({
         "height": "0",
@@ -67,11 +66,7 @@ async fn auth_accounts(addr_str: &str) -> Result<Value, BadRequest<String>> {
                 "coins": [
                     {
                         "denom": "unom",
-                        "amount": "1234567890"
-                    },
-                    {
-                        "denom": "unbtc",
-                        "amount": "12345678"
+                        "amount": balance.to_string(),
                     }
                 ],
                 "sequence": nonce.to_string()
@@ -105,7 +100,26 @@ async fn txs(tx: &str) -> Result<Value, BadRequest<String>> {
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
-    Ok(json!(res))
+    let tx_response = if res.check_tx.code.is_err() {
+        &res.check_tx
+    } else {
+        &res.deliver_tx
+    };
+
+    Ok(json!({
+        "height": "0",
+        "txhash": res.hash,
+        "codespace": tx_response.codespace,
+        "code": tx_response.code,
+        "data": "",
+        "raw_log": "[]",
+        "logs": [],
+        "info": tx_response.info,
+        "gas_wanted": tx_response.gas_wanted,
+        "gas_used": tx_response.gas_used,
+        "tx": null,
+        "timestamp": ""
+    }))
 }
 
 #[get("/query/<query>")]
@@ -224,7 +238,7 @@ async fn minting_inflation() -> Result<Value, BadRequest<String>> {
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
     let total_staked: u64 = validators.iter().map(|v| -> u64 { v.amount_staked.into() }).sum();
-    let total_staked = Amount::from(total_staked);
+    let total_staked = Amount::from(total_staked + 1);
     let yearly_inflation = Decimal::from(64_682_541_340_000);
     let apr = (yearly_inflation / Decimal::from(4) / Decimal::from(total_staked))
         .result()

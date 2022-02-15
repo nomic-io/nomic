@@ -9,7 +9,7 @@ edition = "2021"
 rocket = { version = "0.5.0-rc.1", features = ["json", "tls"] }
 nomic = { path = "..", features = ["full"] }
 hex = "0.4.3"
-tendermint-rpc = { version = "0.23.3", features = ["http-client"] }
+tendermint-rpc = { version = "0.23.5", features = ["http-client"] }
 tendermint = "0.23.5"
 base64 = "0.13.0"
 serde = "1.0.136"
