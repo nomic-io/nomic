@@ -1,9 +1,12 @@
+use orga::plugins::sdk_compat::{
+    sdk::{self, Tx as SdkTx},
+    ConvertSdkTx,
+};
 use orga::prelude::*;
-use orga::plugins::sdk_compat::{sdk::{self, Tx as SdkTx}, ConvertSdkTx};
 use orga::Error;
 use std::convert::TryInto;
-use std::time::Duration;
 use std::ops::{Deref, DerefMut};
+use std::time::Duration;
 
 pub const CHAIN_ID: &str = "stakenet";
 pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
@@ -107,8 +110,11 @@ mod abci {
             self.accounts.deposit(vb_address, vb_funds)?;
             self.accounts.add_transfer_exception(vb_address)?;
 
-            let dev_address = "nomic1ud2dhntvve2quwt6txh7te0x5985j8ek6r4t2y".parse().unwrap();
-            self.accounts.deposit(dev_address, Nom::mint(1_000_000_000))?;
+            let dev_address = "nomic1ud2dhntvve2quwt6txh7te0x5985j8ek6r4t2y"
+                .parse()
+                .unwrap();
+            self.accounts
+                .deposit(dev_address, Nom::mint(1_000_000_000))?;
 
             Ok(())
         }
@@ -234,23 +240,32 @@ impl ConvertSdkTx for InnerApp {
                 type AppCall = <InnerApp as Call>::Call;
                 type AccountCall = <Accounts<Nom> as Call>::Call;
 
-                let to: Address = msg.value.get("to_address")
+                let to: Address = msg
+                    .value
+                    .get("to_address")
                     .ok_or_else(|| Error::App("No to_address in MsgSend".into()))?
                     .as_str()
                     .ok_or_else(|| Error::App("to_address is not a string".into()))?
                     .parse()
                     .map_err(|e| Error::App(format!("Invalid to_address in MsgSend: {}", e)))?;
 
-                let amount = msg.value.get("amount")
+                let amount = msg
+                    .value
+                    .get("amount")
                     .ok_or_else(|| Error::App("No amount in MsgSend".into()))?
                     .get(0)
                     .ok_or_else(|| Error::App("Empty amount in MsgSend".into()))?;
-                let denom = amount.get("denom")
+                let denom = amount
+                    .get("denom")
                     .ok_or_else(|| Error::App("No denom in MsgSend amount".into()))?;
                 if denom != "unom" {
-                    return Err(Error::App(format!("Invalid denom in MsgSend amount: {}", denom)));
+                    return Err(Error::App(format!(
+                        "Invalid denom in MsgSend amount: {}",
+                        denom
+                    )));
                 }
-                let amount: u64 = amount.get("amount")
+                let amount: u64 = amount
+                    .get("amount")
                     .ok_or_else(|| Error::App("No amount in MsgSend amount".into()))?
                     .as_str()
                     .ok_or_else(|| Error::App("amount is not a string".into()))?
@@ -264,7 +279,10 @@ impl ConvertSdkTx for InnerApp {
                 let transfer_call_bytes = transfer_call.encode()?;
                 let paid_call = AppCall::FieldAccounts(transfer_call_bytes);
 
-                Ok(PaidCall { payer: payer_call, paid: paid_call })
+                Ok(PaidCall {
+                    payer: payer_call,
+                    paid: paid_call,
+                })
             }
             _ => Err(Error::App("Unsupported message type".into())),
         }

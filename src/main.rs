@@ -129,7 +129,10 @@ impl BalanceCmd {
         type AppQuery = <InnerApp as Query>::Query;
         type AcctQuery = <Accounts<Nom> as Query>::Query;
 
-        let q = NonceQuery::Inner(AppQuery::FieldAccounts(AcctQuery::MethodBalance(address, vec![])));
+        let q = NonceQuery::Inner(AppQuery::FieldAccounts(AcctQuery::MethodBalance(
+            address,
+            vec![],
+        )));
         let balance: u64 = client
             .query(q, |state| state.accounts.balance(address))
             .await?
@@ -138,9 +141,7 @@ impl BalanceCmd {
         println!("balance: {} NOM", balance);
 
         let q = NonceQuery::Nonce(address);
-        let nonce: u64 = client
-            .query(q, |state| state.nonce(address))
-            .await?;
+        let nonce: u64 = client.query(q, |state| state.nonce(address)).await?;
 
         println!("nonce: {}", nonce);
 
@@ -161,7 +162,10 @@ impl DelegationsCmd {
 
         let delegations = app_client()
             .query(
-                NonceQuery::Inner(AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![]))),
+                NonceQuery::Inner(AppQuery::FieldStaking(StakingQuery::MethodDelegations(
+                    address,
+                    vec![],
+                ))),
                 |state| state.staking.delegations(address),
             )
             .await?;
@@ -198,7 +202,9 @@ impl ValidatorsCmd {
 
         let validators = app_client()
             .query(
-                NonceQuery::Inner(AppQuery::FieldStaking(StakingQuery::MethodAllValidators(vec![]))),
+                NonceQuery::Inner(AppQuery::FieldStaking(StakingQuery::MethodAllValidators(
+                    vec![],
+                ))),
                 |state| state.staking.all_validators(),
             )
             .await?;
