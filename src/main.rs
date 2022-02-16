@@ -88,9 +88,10 @@ impl StartCmd {
     async fn run(&self) -> Result<()> {
         tokio::task::spawn_blocking(|| {
             Node::<app::App>::new(CHAIN_ID)
-                .with_genesis(include_bytes!("../genesis.json"))
+                // .with_genesis(include_bytes!("../genesis.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
+                .reset()
                 .run()
         })
         .await
@@ -124,7 +125,7 @@ impl BalanceCmd {
         println!("address: {}", address);
 
         let client = app_client();
-        type NonceQuery = <NoncePlugin<ChainCommitmentPlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>, CHAIN_ID>> as Query>::Query;
+        type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
         type AppQuery = <InnerApp as Query>::Query;
         type AcctQuery = <Accounts<Nom> as Query>::Query;
 
@@ -154,7 +155,7 @@ impl DelegationsCmd {
     async fn run(&self) -> Result<()> {
         let address = my_address();
 
-        type NonceQuery = <NoncePlugin<ChainCommitmentPlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>, CHAIN_ID>> as Query>::Query;
+        type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
         type AppQuery = <InnerApp as Query>::Query;
         type StakingQuery = <Staking<Nom> as Query>::Query;
 
@@ -191,7 +192,7 @@ pub struct ValidatorsCmd;
 
 impl ValidatorsCmd {
     async fn run(&self) -> Result<()> {
-        type NonceQuery = <NoncePlugin<ChainCommitmentPlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>, CHAIN_ID>> as Query>::Query;
+        type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
         type AppQuery = <InnerApp as Query>::Query;
         type StakingQuery = <Staking<Nom> as Query>::Query;
 

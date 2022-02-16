@@ -1,12 +1,12 @@
 use orga::prelude::*;
-use orga::plugins::sdk_compat::{sdk, ConvertFn};
+use orga::plugins::sdk_compat::{sdk::{self, Tx as SdkTx}, ConvertSdkTx};
 use orga::Error;
 use std::convert::TryInto;
 use std::time::Duration;
 use std::ops::{Deref, DerefMut};
 
-pub const CHAIN_ID: &str = "nomic-stakenet";
-pub type App = ConvertFnProvider<DefaultPlugins<Nom, InnerApp, CHAIN_ID>>;
+pub const CHAIN_ID: &str = "stakenet";
+pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
 
 #[derive(State, Debug, Clone)]
 pub struct Nom(());
@@ -86,7 +86,7 @@ mod abci {
         fn init_chain(&mut self, ctx: &InitChainCtx) -> Result<()> {
             self.staking.set_min_self_delegation(100_000);
             self.staking.set_max_validators(100);
-            self.accounts.allow_transfers(false);
+            self.accounts.allow_transfers(true);
 
             self.configure_faucets()?;
 
@@ -106,6 +106,9 @@ mod abci {
             let vb_address = VALIDATOR_BOOTSTRAP_ADDRESS.parse().unwrap();
             self.accounts.deposit(vb_address, vb_funds)?;
             self.accounts.add_transfer_exception(vb_address)?;
+
+            let dev_address = "nomic1ud2dhntvve2quwt6txh7te0x5985j8ek6r4t2y".parse().unwrap();
+            self.accounts.deposit(dev_address, Nom::mint(1_000_000_000))?;
 
             Ok(())
         }
@@ -217,106 +220,53 @@ impl<S: Symbol> InitChain for Airdrop<S> {
     }
 }
 
-fn convert_sdk_message(msg: sdk::Msg) -> Result<<InnerApp as Call>::Call> {
-    match msg.type_.as_str() {
-        "cosmos-sdk/MsgSend" => {
-            type AppCall = <InnerApp as Call>::Call;
-            type AccountCall = <Accounts<Nom> as Call>::Call;
+impl ConvertSdkTx for InnerApp {
+    type Output = PaidCall<<InnerApp as Call>::Call>;
 
-            let to: Address = msg.value.get("to_address")
-                .ok_or_else(|| Error::App("No to_address in MsgSend".into()))?
-                .as_str()
-                .ok_or_else(|| Error::App("to_address is not a string".into()))?
-                .parse()
-                .map_err(|e| Error::App(format!("Invalid to_address in MsgSend: {}", e)))?;
-
-            let amount = msg.value.get("amount")
-                .ok_or_else(|| Error::App("No amount in MsgSend".into()))?
-                .get(0)
-                .ok_or_else(|| Error::App("Empty amount in MsgSend".into()))?;
-            let denom = amount.get("denom")
-                .ok_or_else(|| Error::App("No denom in MsgSend amount".into()))?;
-            if denom != "unom" {
-                return Err(Error::App(format!("Invalid denom in MsgSend amount: {}", denom)));
-            }
-            let amount: u64 = amount.get("amount")
-                .ok_or_else(|| Error::App("No amount in MsgSend amount".into()))?
-                .as_str()
-                .ok_or_else(|| Error::App("amount is not a string".into()))?
-                .parse()?;
-
-            let account_call = AccountCall::MethodTransfer(to, amount.into(), vec![]);
-            let account_call_bytes = account_call.encode()?;
-
-            Ok(AppCall::FieldAccounts(account_call_bytes))
+    fn convert(&self, sdk_tx: &SdkTx) -> Result<PaidCall<<InnerApp as Call>::Call>> {
+        if sdk_tx.msg.len() != 1 {
+            return Err(Error::App("Invalid number of messages".into()));
         }
-        _ => Err(Error::App("Unsupported message type".into())),
+        let msg = &sdk_tx.msg[0];
+
+        match msg.type_.as_str() {
+            "cosmos-sdk/MsgSend" => {
+                type AppCall = <InnerApp as Call>::Call;
+                type AccountCall = <Accounts<Nom> as Call>::Call;
+
+                let to: Address = msg.value.get("to_address")
+                    .ok_or_else(|| Error::App("No to_address in MsgSend".into()))?
+                    .as_str()
+                    .ok_or_else(|| Error::App("to_address is not a string".into()))?
+                    .parse()
+                    .map_err(|e| Error::App(format!("Invalid to_address in MsgSend: {}", e)))?;
+
+                let amount = msg.value.get("amount")
+                    .ok_or_else(|| Error::App("No amount in MsgSend".into()))?
+                    .get(0)
+                    .ok_or_else(|| Error::App("Empty amount in MsgSend".into()))?;
+                let denom = amount.get("denom")
+                    .ok_or_else(|| Error::App("No denom in MsgSend amount".into()))?;
+                if denom != "unom" {
+                    return Err(Error::App(format!("Invalid denom in MsgSend amount: {}", denom)));
+                }
+                let amount: u64 = amount.get("amount")
+                    .ok_or_else(|| Error::App("No amount in MsgSend amount".into()))?
+                    .as_str()
+                    .ok_or_else(|| Error::App("amount is not a string".into()))?
+                    .parse()?;
+
+                let funding_call = AccountCall::MethodTakeAsFunding(MIN_FEE.into(), vec![]);
+                let funding_call_bytes = funding_call.encode()?;
+                let payer_call = AppCall::FieldAccounts(funding_call_bytes);
+
+                let transfer_call = AccountCall::MethodTransfer(to, amount.into(), vec![]);
+                let transfer_call_bytes = transfer_call.encode()?;
+                let paid_call = AppCall::FieldAccounts(transfer_call_bytes);
+
+                Ok(PaidCall { payer: payer_call, paid: paid_call })
+            }
+            _ => Err(Error::App("Unsupported message type".into())),
+        }
     }
 }
-
-pub struct ConvertFnProvider<T> {
-    pub inner: T,
-}
-
-impl<T> Deref for ConvertFnProvider<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-impl<T> DerefMut for ConvertFnProvider<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
-    }
-}
-
-impl<T: State> State for ConvertFnProvider<T> {
-    type Encoding = (T::Encoding,);
-
-    fn create(store: Store, data: (T::Encoding,)) -> Result<Self> {
-        Ok(Self {
-            inner: T::create(store, data.0)?,
-        })
-    }
-
-    fn flush(self) -> Result<(T::Encoding,)> {
-        Ok((self.inner.flush()?,))
-    }
-}
-
-impl<T: State> From<ConvertFnProvider<T>> for (T::Encoding,) {
-    fn from(provider: ConvertFnProvider<T>) -> Self {
-        (provider.inner.into(),)
-    }
-}
-
-impl<T: Client<U>, U: Clone> Client<U> for ConvertFnProvider<T> {
-    type Client = T::Client;
-
-    fn create_client(parent: U) -> T::Client {
-        T::create_client(parent)
-    }
-}
-
-impl<T: Call> Call for ConvertFnProvider<T> {
-    type Call = T::Call;
-
-    fn call(&mut self, call: T::Call) -> Result<()> {
-        Context::add::<ConvertFn<<InnerApp as Call>::Call>>(convert_sdk_message);
-        let res = self.inner.call(call);
-        Context::remove::<ConvertFn<<InnerApp as Call>::Call>>();
-        res
-    }
-}
-
-impl<T: Query> Query for ConvertFnProvider<T> {
-    type Query = T::Query;
-
-    fn query(&self, query: T::Query) -> Result<()> {
-        self.inner.query(query)
-    }
-}
-
-
