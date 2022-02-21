@@ -124,26 +124,8 @@ impl BalanceCmd {
         let address = my_address();
         println!("address: {}", address);
 
-        let client = app_client();
-        type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
-        type AppQuery = <InnerApp as Query>::Query;
-        type AcctQuery = <Accounts<Nom> as Query>::Query;
-
-        let q = NonceQuery::Inner(AppQuery::FieldAccounts(AcctQuery::MethodBalance(
-            address,
-            vec![],
-        )));
-        let balance: u64 = client
-            .query(q, |state| state.accounts.balance(address))
-            .await?
-            .into();
-
+        let balance = app_client().accounts.balance(address).await??;
         println!("balance: {} NOM", balance);
-
-        let q = NonceQuery::Nonce(address);
-        let nonce: u64 = client.query(q, |state| state.nonce(address)).await?;
-
-        println!("nonce: {}", nonce);
 
         Ok(())
     }
@@ -155,20 +137,7 @@ pub struct DelegationsCmd;
 impl DelegationsCmd {
     async fn run(&self) -> Result<()> {
         let address = my_address();
-
-        type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
-        type AppQuery = <InnerApp as Query>::Query;
-        type StakingQuery = <Staking<Nom> as Query>::Query;
-
-        let delegations = app_client()
-            .query(
-                NonceQuery::Inner(AppQuery::FieldStaking(StakingQuery::MethodDelegations(
-                    address,
-                    vec![],
-                ))),
-                |state| state.staking.delegations(address),
-            )
-            .await?;
+        let delegations = app_client().staking.delegations(address).await??;
 
         println!(
             "delegated to {} validator{}",
@@ -196,18 +165,7 @@ pub struct ValidatorsCmd;
 
 impl ValidatorsCmd {
     async fn run(&self) -> Result<()> {
-        type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
-        type AppQuery = <InnerApp as Query>::Query;
-        type StakingQuery = <Staking<Nom> as Query>::Query;
-
-        let validators = app_client()
-            .query(
-                NonceQuery::Inner(AppQuery::FieldStaking(StakingQuery::MethodAllValidators(
-                    vec![],
-                ))),
-                |state| state.staking.all_validators(),
-            )
-            .await?;
+        let validators = app_client().staking.all_validators().await??;
 
         for validator in validators {
             let info: DeclareInfo =

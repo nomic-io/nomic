@@ -12,14 +12,9 @@ use tm::Client as _;
 async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
 
-    type NonceQuery = <NoncePlugin<ChainCommitmentPlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>, CHAIN_ID>> as Query>::Query;
-    type AppQuery = <InnerApp as Query>::Query;
-    type AcctQuery = <Accounts<Nom> as Query>::Query;
-
-    let q = NonceQuery::Inner(AppQuery::FieldAccounts(AcctQuery::MethodBalance(address, vec![])));
-    let balance: u64 = app_client()
-        .query(q, |state| state.accounts.balance(address))
+    let balance: u64 = app_client().accounts.balance(address)
         .await
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
 
@@ -38,20 +33,17 @@ async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
 async fn auth_accounts(addr_str: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = addr_str.parse().unwrap();
 
-    type NonceQuery = <NoncePlugin<ChainCommitmentPlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>, CHAIN_ID>> as Query>::Query;
-    type AppQuery = <InnerApp as Query>::Query;
-    type AcctQuery = <Accounts<Nom> as Query>::Query;
-
-    let balance_query = NonceQuery::Inner(AppQuery::FieldAccounts(AcctQuery::MethodBalance(address, vec![])));
-    let balance: u64 = app_client()
-        .query(balance_query, |state| state.accounts.balance(address))
+    let balance: u64 = app_client().accounts.balance(address)
         .await
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
 
-    let nonce_query = NonceQuery::Nonce(address);
-    let mut nonce: u64 = app_client()
-        .query(nonce_query, |state| state.nonce(address))
+    type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
+    let mut nonce: u64 = app_client().query(
+            NonceQuery::Nonce(address),
+            |state| state.nonce(address),
+        )
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
@@ -148,16 +140,9 @@ async fn query(query: &str) -> Result<String, BadRequest<String>> {
 async fn staking_delegators_delegations(address: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
 
-    type NonceQuery = <NoncePlugin<ChainCommitmentPlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>, CHAIN_ID>> as Query>::Query;
-    type AppQuery = <InnerApp as Query>::Query;
-    type StakingQuery = <Staking<Nom> as Query>::Query;
-
-    let delegations = app_client()
-        .query(
-            NonceQuery::Inner(AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![]))),
-            |state| state.staking.delegations(address),
-        )
+    let delegations = app_client().staking.delegations(address)
         .await
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
     let total_staked: u64 = delegations.iter().map(|(_, d)| -> u64 { d.staked.into() }).sum();
@@ -225,16 +210,9 @@ async fn distribution_delegatrs_rewards(address: &str) -> Value {
 
 #[get("/minting/inflation")]
 async fn minting_inflation() -> Result<Value, BadRequest<String>> {
-    type NonceQuery = <NoncePlugin<ChainCommitmentPlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>, CHAIN_ID>> as Query>::Query;
-    type AppQuery = <InnerApp as Query>::Query;
-    type StakingQuery = <Staking<Nom> as Query>::Query;
-
-    let validators = app_client()
-        .query(
-            NonceQuery::Inner(AppQuery::FieldStaking(StakingQuery::MethodAllValidators(vec![]))),
-            |state| state.staking.all_validators(),
-        )
+    let validators = app_client().staking.all_validators()
         .await
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
     let total_staked: u64 = validators.iter().map(|v| -> u64 { v.amount_staked.into() }).sum();

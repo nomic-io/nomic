@@ -3,6 +3,7 @@
 use wasm_bindgen::prelude::*;
 use nomic::app::{App, InnerApp, Nom, Airdrop};
 use nomic::orga::prelude::*;
+use nomic::orga::client::AsyncQuery;
 use nomic::orga::merk::ABCIPrefixedProofStore;
 use std::ops::{Deref, DerefMut};
 use wasm_bindgen::JsCast;
@@ -42,14 +43,9 @@ pub async fn balance(addr: String) -> u64 {
     let mut client: WebClient<App> = WebClient::new();
     let address = addr.parse().unwrap();
 
-    type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
-    type AppQuery = <InnerApp as Query>::Query;
-    type AcctQuery = <Accounts<Nom> as Query>::Query;
-
-    let q = NonceQuery::Inner(AppQuery::FieldAccounts(AcctQuery::MethodBalance(address, vec![])));
-    client
-        .query(q, |state| state.accounts.balance(address))
+    client.accounts.balance(address)
         .await
+        .unwrap()
         .unwrap()
         .into()
 }
@@ -59,16 +55,9 @@ pub async fn reward_balance(addr: String) -> u64 {
     let mut client: WebClient<App> = WebClient::new();
     let address = addr.parse().unwrap();
 
-    type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
-    type AppQuery = <InnerApp as Query>::Query;
-    type StakingQuery = <Staking<Nom> as Query>::Query;
-
-    let delegations = client
-        .query(
-            NonceQuery::Inner(AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![]))),
-            |state| state.staking.delegations(address),
-        )
+    let delegations = client.staking.delegations(address)
         .await
+        .unwrap()
         .unwrap();
 
     delegations
@@ -97,16 +86,9 @@ pub async fn delegations(addr: String) -> Array {
     let mut client: WebClient<App> = WebClient::new();
     let address = addr.parse().unwrap();
 
-    type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
-    type AppQuery = <InnerApp as Query>::Query;
-    type StakingQuery = <Staking<Nom> as Query>::Query;
-
-    let delegations = client
-        .query(
-            NonceQuery::Inner(AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![]))),
-            |state| state.staking.delegations(address),
-        )
+    let delegations = client.staking.delegations(address)
         .await
+        .unwrap()
         .unwrap();
 
     delegations
@@ -140,16 +122,9 @@ pub struct ValidatorQueryInfo {
 pub async fn all_validators() -> Array {
     let mut client: WebClient<App> = WebClient::new();
 
-    type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
-    type AppQuery = <InnerApp as Query>::Query;
-    type StakingQuery = <Staking<Nom> as Query>::Query;
-
-    let validators = client
-        .query(
-            NonceQuery::Inner(AppQuery::FieldStaking(StakingQuery::MethodAllValidators(vec![]))),
-            |state| state.staking.all_validators(),
-        )
+    let validators = client.staking.all_validators()
         .await
+        .unwrap()
         .unwrap();
 
     validators
@@ -217,16 +192,9 @@ pub async fn airdrop_balance(addr: String) -> Option<u64> {
     let client: WebClient<App> = WebClient::new();
     let address = addr.parse().unwrap();
 
-    type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
-    type AppQuery = <InnerApp as Query>::Query;
-    type AirdropQuery = <Airdrop<Nom> as Query>::Query;
-
-    client
-        .query(
-            NonceQuery::Inner(AppQuery::FieldAtomAirdrop(AirdropQuery::MethodBalance(address, vec![]))),
-            |state| state.atom_airdrop.balance(address),
-        )
+    client.atom_airdrop.balance(address)
         .await
+        .unwrap()
         .unwrap()
         .map(Into::into)
 }
@@ -236,13 +204,7 @@ pub async fn nonce(addr: String) -> u64 {
     let client: WebClient<App> = WebClient::new();
     let address = addr.parse().unwrap();
 
-    type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
-
-    client
-        .query(
-            NonceQuery::Nonce(address),
-            |state| state.nonce(address),
-        )
+    client.nonce(address)
         .await
         .unwrap()
 }
@@ -307,56 +269,6 @@ impl<T: Client<WebAdapter<T>>> DerefMut for WebClient<T> {
     }
 }
 
-impl<T: Client<WebAdapter<T>> + Query + State> WebClient<T> {
-    pub async fn query<F, R>(&self, query: T::Query, check: F) -> Result<R>
-    where
-        F: Fn(&T) -> Result<R>,
-    {
-        let query = query.encode()?;
-        let query = hex::encode(&query);
-        web_sys::console::log_1(&format!("query: {}", query).into());
-
-        let window = web_sys::window().unwrap();
-        let location = window.location();
-        let rest_server = format!("{}//{}:{}", location.protocol().unwrap(), location.hostname().unwrap(), REST_PORT);
-
-        let mut opts = RequestInit::new();
-        opts.method("GET");
-        opts.mode(RequestMode::Cors);
-        let url = format!("{}/query/{}", rest_server, query);
-    
-        let request = Request::new_with_str_and_init(&url, &opts).unwrap();
-
-        let resp_value = JsFuture::from(window.fetch_with_request(&request)).await.unwrap();
-
-        let resp: Response = resp_value.dyn_into().unwrap();
-        let res = JsFuture::from(resp.array_buffer().unwrap()).await.unwrap();
-        let res = js_sys::Uint8Array::new(&res).to_vec();
-        let res = String::from_utf8(res).unwrap();
-        web_sys::console::log_1(&format!("response: {}", res).into());
-        let res = base64::decode(&res).unwrap();
-
-        // // TODO: we shouldn't need to include the root hash in the result, it
-        // // should come from a trusted source
-        let root_hash = match res[0..32].try_into() {
-            Ok(inner) => inner,
-            _ => panic!("Cannot convert result to fixed size array"),
-        };
-        let proof_bytes = &res[32..];
-
-        let map = nomic::orga::merk::merk::proofs::query::verify(proof_bytes, root_hash).unwrap();
-        let root_value = match map.get(&[]).unwrap() {
-            Some(root_value) => root_value,
-            None => panic!("Missing root value"),
-        };
-        let encoding = T::Encoding::decode(root_value).unwrap();
-        let store: Shared<ABCIPrefixedProofStore> = Shared::new(ABCIPrefixedProofStore::new(map));
-        let state = T::create(Store::new(store.into()), encoding).unwrap();
-
-        check(&state)
-    }
-}
-
 pub struct WebAdapter<T> {
     marker: std::marker::PhantomData<fn() -> T>,
     last_res: Arc<Mutex<Option<String>>>,
@@ -406,5 +318,59 @@ where
 
         self.last_res.lock().unwrap().replace(res);
         Ok(())
+    }
+}
+
+#[async_trait::async_trait(?Send)]
+impl<T: Query + State> AsyncQuery for WebAdapter<T> {
+    type Query = T::Query;
+    type Response = T;
+
+    async fn query<F, R>(&self, query: T::Query, mut check: F) -> Result<R>
+    where
+        F: FnMut(T) -> Result<R>,
+    {
+        let query = query.encode()?;
+        let query = hex::encode(&query);
+        web_sys::console::log_1(&format!("query: {}", query).into());
+
+        let window = web_sys::window().unwrap();
+        let location = window.location();
+        let rest_server = format!("{}//{}:{}", location.protocol().unwrap(), location.hostname().unwrap(), REST_PORT);
+
+        let mut opts = RequestInit::new();
+        opts.method("GET");
+        opts.mode(RequestMode::Cors);
+        let url = format!("{}/query/{}", rest_server, query);
+    
+        let request = Request::new_with_str_and_init(&url, &opts).unwrap();
+
+        let resp_value = JsFuture::from(window.fetch_with_request(&request)).await.unwrap();
+
+        let resp: Response = resp_value.dyn_into().unwrap();
+        let res = JsFuture::from(resp.array_buffer().unwrap()).await.unwrap();
+        let res = js_sys::Uint8Array::new(&res).to_vec();
+        let res = String::from_utf8(res).unwrap();
+        web_sys::console::log_1(&format!("response: {}", res).into());
+        let res = base64::decode(&res).unwrap();
+
+        // // TODO: we shouldn't need to include the root hash in the result, it
+        // // should come from a trusted source
+        let root_hash = match res[0..32].try_into() {
+            Ok(inner) => inner,
+            _ => panic!("Cannot convert result to fixed size array"),
+        };
+        let proof_bytes = &res[32..];
+
+        let map = nomic::orga::merk::merk::proofs::query::verify(proof_bytes, root_hash).unwrap();
+        let root_value = match map.get(&[]).unwrap() {
+            Some(root_value) => root_value,
+            None => panic!("Missing root value"),
+        };
+        let encoding = T::Encoding::decode(root_value).unwrap();
+        let store: Shared<ABCIPrefixedProofStore> = Shared::new(ABCIPrefixedProofStore::new(map));
+        let state = T::create(Store::new(store.into()), encoding).unwrap();
+
+        check(state)
     }
 }
