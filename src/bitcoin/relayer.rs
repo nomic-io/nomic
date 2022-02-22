@@ -1,141 +1,137 @@
-use crate::app::InnerApp;
-use crate::bitcoin::header_queue::{HeaderList, HeaderQueue, WrappedHeader};
+use super::Bitcoin;
+use crate::bitcoin::header_queue::{HeaderList, WrappedHeader};
 use crate::error::Result;
+use bitcoin::{hashes::Hash, BlockHash};
+use bitcoincore_rpc::json::GetBlockHeaderResult;
 use bitcoincore_rpc::{Client as BtcClient, RpcApi};
+use orga::client::{AsyncCall, AsyncQuery};
 use orga::prelude::*;
 use orga::Result as OrgaResult;
 
-const SEEK_BATCH_SIZE: u32 = 10;
+const HEADER_BATCH_SIZE: usize = 50;
 
-type AppClient = TendermintClient<crate::app::App>;
+type AppClient<T> = <Bitcoin as Client<T>>::Client;
 
-pub struct Relayer {
+pub struct Relayer<T: Clone + Send> {
     btc_client: BtcClient,
-    app_client: AppClient,
+    app_client: AppClient<T>,
 }
 
-type AppQuery = <InnerApp as Query>::Query;
-type HeaderQueueQuery = <HeaderQueue as Query>::Query;
-
-impl Relayer {
-    pub fn new(btc_client: BtcClient, app_client: AppClient) -> Self {
+impl<T: Clone + Send> Relayer<T>
+where
+    T: AsyncQuery<Query = <Bitcoin as Query>::Query>,
+    T: AsyncQuery<Response = Bitcoin>,
+    T: AsyncCall<Call = <Bitcoin as Call>::Call>,
+{
+    pub fn new(btc_client: BtcClient, app_client: AppClient<T>) -> Self {
         Relayer {
             btc_client,
             app_client,
         }
     }
 
-    async fn app_height(&self) -> OrgaResult<u32> {
-        self.app_client
-            .query(
-                AppQuery::FieldBtcHeaders(HeaderQueueQuery::MethodHeight(vec![])),
-                |state| Ok(state.btc_headers.height().unwrap()),
-            )
-            .await
-    }
-
-    async fn app_trusted_height(&self) -> OrgaResult<u32> {
-        self.app_client
-            .query(
-                AppQuery::FieldBtcHeaders(HeaderQueueQuery::MethodTrustedHeight(vec![])),
-                |state| Ok(state.btc_headers.trusted_height()),
-            )
-            .await
+    async fn sidechain_block_hash(&self) -> Result<BlockHash> {
+        let hash = self.app_client.headers.hash().await??;
+        let hash = bitcoin::BlockHash::from_slice(hash.as_slice())?;
+        Ok(hash)
     }
 
     async fn app_add(&mut self, headers: HeaderList) -> OrgaResult<()> {
-        self.app_client.btc_headers.add(headers).await
+        self.app_client.headers.add(headers).await
     }
 
     pub async fn start(&mut self) -> Result<!> {
-        self.wait_for_trusted_header().await?;
-        self.listen().await
+        println!("Starting relayer...");
+        self.relay_headers().await
     }
 
-    async fn wait_for_trusted_header(&self) -> Result<()> {
+    async fn relay_headers(&mut self) -> Result<!> {
         loop {
-            let tip_hash = self.btc_client.get_best_block_hash()?;
-            let tip_height = self.btc_client.get_block_header_info(&tip_hash)?.height;
-            println!("wait_for_trusted_header: btc={}", tip_height);
-            if (tip_height as u32) < self.app_trusted_height().await? {
-                std::thread::sleep(std::time::Duration::from_secs(1));
-            } else {
-                break;
+            let fullnode_hash = self.btc_client.get_best_block_hash()?;
+            let sidechain_hash = self.sidechain_block_hash().await?;
+
+            if fullnode_hash != sidechain_hash {
+                self.relay_header_batch(fullnode_hash, sidechain_hash)
+                    .await?;
+                continue;
             }
-        }
 
-        Ok(())
-    }
-
-    async fn listen(&mut self) -> Result<!> {
-        loop {
-            let tip_hash = self.btc_client.get_best_block_hash()?;
-            let tip_height = self.btc_client.get_block_header_info(&tip_hash)?.height;
+            let info = self.btc_client.get_block_info(&fullnode_hash)?;
             println!(
-                "relayer listen: btc={}, app={}",
-                tip_height,
-                self.app_height().await?
+                "Sidechain header state is up-to-date:\n\thash={}\n\theight={}",
+                info.hash, info.height
             );
-            if tip_height as u32 > self.app_height().await? {
-                self.seek_to_tip().await?;
-            } else {
-                std::thread::sleep(std::time::Duration::from_secs(1));
-            }
+
+            self.btc_client.wait_for_new_block(30_000)?;
         }
     }
 
-    #[cfg(test)]
-    pub async fn bounded_listen(&mut self, num_blocks: u32) -> Result<()> {
-        for _ in 0..num_blocks {
-            let tip_hash = self.btc_client.get_best_block_hash()?;
-            let tip_height = self.btc_client.get_block_header_info(&tip_hash)?.height;
-            if tip_height as u32 > self.app_height().await? {
-                self.seek_to_tip().await?;
-            } else {
-                std::thread::sleep(std::time::Duration::from_secs(1));
-            }
+    async fn relay_header_batch(
+        &mut self,
+        fullnode_hash: BlockHash,
+        sidechain_hash: BlockHash,
+    ) -> Result<()> {
+        let get_info = |hash| self.btc_client.get_block_header_info(&hash);
+
+        let fullnode_info = get_info(fullnode_hash)?;
+        let sidechain_info = get_info(sidechain_hash)?;
+
+        if fullnode_info.height < sidechain_info.height {
+            // full node is still syncing
+            return Ok(());
         }
+
+        let start = self.common_ancestor(fullnode_hash, sidechain_hash)?;
+        let batch = self.get_header_batch(start.hash)?;
+
+        println!(
+            "Relaying headers...\n\thash={}\n\theight={}\n\tbatch_len={}",
+            start.hash,
+            start.height,
+            batch.len(),
+        );
+
+        self.app_add(batch.into()).await?;
 
         Ok(())
     }
 
-    async fn seek_to_tip(&mut self) -> Result<()> {
-        let tip_height = self.get_rpc_height()?;
-        let mut app_height = self.app_height().await?;
-        while app_height < tip_height {
-            println!("seek_to_tip: btc={}, app={}", tip_height, app_height);
-            let headers = self.get_header_batch(SEEK_BATCH_SIZE).await?;
-            self.app_add(headers.into()).await?;
-            app_height = self.app_height().await?;
-        }
-        Ok(())
-    }
+    fn get_header_batch(&self, from_hash: BlockHash) -> Result<Vec<WrappedHeader>> {
+        let get_info = |hash| self.btc_client.get_block_header_info(&hash);
 
-    async fn get_header_batch(&self, batch_size: u32) -> Result<Vec<WrappedHeader>> {
-        let mut headers = Vec::with_capacity(batch_size as usize);
-        for i in 1..=batch_size {
-            let hash = match self
-                .btc_client
-                .get_block_hash((self.app_height().await? + i) as u64)
-            {
-                Ok(hash) => hash,
-                Err(_) => break,
+        let mut cursor = get_info(from_hash)?;
+
+        let mut headers = Vec::with_capacity(HEADER_BATCH_SIZE as usize);
+        for _ in 0..HEADER_BATCH_SIZE {
+            match cursor.next_block_hash {
+                Some(next_hash) => cursor = get_info(next_hash)?,
+                None => break,
             };
 
-            let header = self.btc_client.get_block_header(&hash)?;
-            let height = self.btc_client.get_block_header_info(&hash)?.height;
-            let wrapped_header = WrappedHeader::from_header(&header, height as u32);
-            headers.push(wrapped_header);
+            let header = self.btc_client.get_block_header(&cursor.hash)?;
+            let header = WrappedHeader::from_header(&header, cursor.height as u32);
+
+            headers.push(header);
         }
 
         Ok(headers)
     }
 
-    fn get_rpc_height(&self) -> Result<u32> {
-        let tip_hash = self.btc_client.get_best_block_hash()?;
-        let tip_height = self.btc_client.get_block_header_info(&tip_hash)?.height;
+    fn common_ancestor(&self, a: BlockHash, b: BlockHash) -> Result<GetBlockHeaderResult> {
+        let get_info = |hash| self.btc_client.get_block_header_info(&hash);
 
-        Ok(tip_height as u32)
+        let mut a = get_info(a)?;
+        let mut b = get_info(b)?;
+
+        while a != b {
+            if a.height > b.height {
+                a = get_info(a.previous_block_hash.unwrap())?;
+            } else {
+                b = get_info(b.previous_block_hash.unwrap())?;
+            }
+        }
+
+        Ok(a)
     }
 }
 

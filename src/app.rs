@@ -7,11 +7,12 @@ use orga::Error;
 use std::convert::TryInto;
 use std::ops::{Deref, DerefMut};
 use std::time::Duration;
+use crate::bitcoin::Bitcoin;
 
 pub const CHAIN_ID: &str = "stakenet";
 pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
 
-#[derive(State, Debug, Clone)]
+#[derive(State, Debug, Clone, Client, Query, Call)]
 pub struct Nom(());
 impl Symbol for Nom {}
 
@@ -32,6 +33,8 @@ pub struct InnerApp {
     dev_rewards: Faucet<Nom>,
     community_pool_rewards: Faucet<Nom>,
     incentive_pool_rewards: Faucet<Nom>,
+
+    pub bitcoin: Bitcoin,
 }
 
 impl InnerApp {
