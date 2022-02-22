@@ -3,6 +3,7 @@ name = "nomic"
 version = "1.0.0"
 authors = [ "The Nomic Team <hello@nomic.io>" ]
 edition = "2018"
+default-run = "nomic"
 
 [dependencies]
 bitcoin = "0.27.1"
@@ -31,3 +32,9 @@ mutagen = "0.1.2"
 [features]
 default = ["full"]
 full = ["bitcoind", "bitcoincore-rpc", "clap", "tokio", "orga/merk-full", "orga/abci", "csv", "bech32"]
+
+[[bin]]
+name = "nomic"
+
+[[bin]]
+name = "create-checkpoint"

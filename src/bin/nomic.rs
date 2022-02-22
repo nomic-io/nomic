@@ -4,16 +4,14 @@
 #![feature(async_closure)]
 #![feature(never_type)]
 
-use app::*;
+use bitcoincore_rpc::{Auth, Client as BtcClient};
 use clap::Parser;
+use nomic::app::*;
+use nomic::bitcoin::relayer::Relayer;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 
-mod app;
-mod bitcoin;
-mod error;
-
-pub fn app_client() -> TendermintClient<app::App> {
+pub fn app_client() -> TendermintClient<nomic::app::App> {
     TendermintClient::new("http://localhost:26657").unwrap()
 }
 
@@ -46,6 +44,7 @@ pub enum Command {
     Unbond(UnbondCmd),
     Claim(ClaimCmd),
     ClaimAirdrop(ClaimAirdropCmd),
+    Relayer(RelayerCmd),
 }
 
 impl Command {
@@ -63,6 +62,7 @@ impl Command {
             Unbond(cmd) => cmd.run().await,
             Claim(cmd) => cmd.run().await,
             ClaimAirdrop(cmd) => cmd.run().await,
+            Relayer(cmd) => cmd.run().await,
         }
     }
 }
@@ -73,7 +73,7 @@ pub struct InitCmd {}
 impl InitCmd {
     async fn run(&self) -> Result<()> {
         tokio::task::spawn_blocking(|| {
-            Node::<app::App>::new(CHAIN_ID);
+            Node::<nomic::app::App>::new(CHAIN_ID);
         })
         .await
         .map_err(|err| orga::Error::App(err.to_string()))?;
@@ -87,7 +87,7 @@ pub struct StartCmd {}
 impl StartCmd {
     async fn run(&self) -> Result<()> {
         tokio::task::spawn_blocking(|| {
-            Node::<app::App>::new(CHAIN_ID)
+            Node::<nomic::app::App>::new(CHAIN_ID)
                 // .with_genesis(include_bytes!("../genesis.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
@@ -295,6 +295,44 @@ impl ClaimAirdropCmd {
             .accounts
             .give_from_funding_all()
             .await
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct RelayerCmd {
+    #[clap(short = 'p', long, default_value_t = 8332)]
+    rpc_port: u16,
+
+    #[clap(short = 'u', long)]
+    rpc_user: Option<String>,
+
+    #[clap(short = 'P', long)]
+    rpc_pass: Option<String>,
+}
+
+impl RelayerCmd {
+    fn btc_client(&self) -> Result<BtcClient> {
+        let rpc_url = format!("http://localhost:{}", self.rpc_port);
+        let auth = match (self.rpc_user.clone(), self.rpc_pass.clone()) {
+            (Some(user), Some(pass)) => Auth::UserPass(user, pass),
+            _ => Auth::None,
+        };
+
+        let btc_client = BtcClient::new(&rpc_url, auth)
+            .map_err(|e| orga::Error::App(e.to_string()))?;
+
+        Ok(btc_client)
+    }
+
+    async fn run(&self) -> Result<()> {
+        let btc_client = self.btc_client()?;
+        let app_client = app_client().bitcoin.clone();
+
+        let mut relayer = Relayer::new(btc_client, app_client);
+        relayer
+            .start()
+            .await
+            .map_err(|e| orga::Error::App(e.to_string()))?;
     }
 }
 
