@@ -10,6 +10,7 @@ use nomic::app::*;
 use nomic::bitcoin::relayer::Relayer;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
+use futures::FutureExt;
 
 pub fn app_client() -> TendermintClient<nomic::app::App> {
     TendermintClient::new("http://localhost:26657").unwrap()
@@ -325,14 +326,17 @@ impl RelayerCmd {
     }
 
     async fn run(&self) -> Result<()> {
-        let btc_client = self.btc_client()?;
-        let app_client = app_client().bitcoin.clone();
+        let create_relayer = || {
+            let btc_client = self.btc_client().unwrap();
+            let app_bitcoin_client = app_client().bitcoin.clone();
+            Relayer::new(btc_client, app_bitcoin_client)
+        };
 
-        let mut relayer = Relayer::new(btc_client, app_client);
-        relayer
-            .start()
-            .await
-            .map_err(|e| orga::Error::App(e.to_string()))?;
+        let mut relayer = create_relayer();
+        tokio::spawn((async move || relayer.relay_headers().await)());
+
+        let mut relayer = create_relayer();
+        let deposits = relayer.relay_deposits().await.unwrap();
     }
 }
 
