@@ -1,7 +1,7 @@
 use super::Bitcoin;
-use crate::bitcoin::header_queue::{HeaderList, WrappedHeader};
+use crate::bitcoin::{adapter::Adapter, header_queue::{HeaderList, WrappedHeader}};
 use crate::error::Result;
-use bitcoin::{hashes::Hash, Block, BlockHash, Script, Transaction};
+use bitcoin::{hashes::{Hash, hex::ToHex}, Block, BlockHash, Script, Transaction};
 use bitcoincore_rpc::json::{GetBlockHeaderResult, GetBlockResult, Utxo};
 use bitcoincore_rpc::{Client as BtcClient, RpcApi};
 use orga::client::{AsyncCall, AsyncQuery};
@@ -11,14 +11,14 @@ use orga::Result as OrgaResult;
 use std::collections::{HashMap, HashSet, VecDeque};
 use tokio::task::block_in_place as block;
 
-const HEADER_BATCH_SIZE: usize = 50;
+const HEADER_BATCH_SIZE: usize = 100;
 
 type AppClient<T> = <Bitcoin as Client<T>>::Client;
 
 // TODO
 fn derive_script(addr: Address, sig_set: &SignatorySet) -> Script {
     let data = (addr, sig_set.0 as u64).encode().unwrap();
-    bitcoin::Script::new_op_return(&data)
+    bitcoin::Script::new_op_return(&data).to_v0_p2wsh()
 }
 
 pub struct Relayer<T: Clone + Send> {
@@ -48,10 +48,6 @@ where
         Ok(hash)
     }
 
-    async fn app_add(&mut self, headers: HeaderList) -> OrgaResult<()> {
-        self.app_client.headers.add(headers).await
-    }
-
     pub async fn relay_headers(&mut self) -> Result<!> {
         println!("Starting header relay...");
 
@@ -78,41 +74,59 @@ where
     pub async fn relay_deposits(&mut self) -> Result<!> {
         println!("Starting deposit relay...");
 
+        // TODO: remove this (just added for testing)
+        self.scripts.add_address([0; 20].into());
+        self.scripts.add_sig_set(SignatorySet(0));
+
         let block_hash = self.sidechain_block_hash().await?;
-        let blocks = self.last_n_blocks(2, block_hash)?;
-        println!("{:?}", blocks);
+        for block in self.last_n_blocks(1008, block_hash)? {
+            for tx in self.relevant_txs(&block) {
+                self.maybe_relay_deposit(tx).await?;
+            }
+        }
 
         loop {
             block(|| std::thread::sleep(std::time::Duration::from_secs(1)));
         }
     }
 
-    pub fn last_n_blocks(&self, n: usize, mut hash: BlockHash) -> Result<Vec<Block>> {
-        let mut blocks = std::collections::VecDeque::with_capacity(n);
-
-        for _ in 0..n {
-            let block = block(|| self.btc_client.get_block(&hash))?;
-            hash = block.header.prev_blockhash;
-            blocks.push_front(block);
-        }
-
-        Ok(blocks.into_iter().rev().collect())
+    pub fn last_n_blocks(
+        &self,
+        n: usize,
+        mut hash: BlockHash,
+    ) -> Result<Vec<Block>> {
+        (0..n).map(move |_| {
+            let block = tokio::task::block_in_place(|| self.btc_client.get_block(&hash.clone()));
+            if let Ok(ref block) = block {
+                hash = block.header.prev_blockhash;
+            }
+            Ok(block?)
+        }).collect()
     }
 
-    pub fn relevant_txs_in_block(&self, block: Block) -> Result<Vec<Transaction>> {
-        let mut txs = Vec::new();
+    pub fn relevant_txs<'a>(
+        &self,
+        block: &'a Block,
+    ) -> Vec<&'a Transaction> {
+        block
+            .txdata
+            .iter()
+            .filter(move |tx| tx.output.iter().any(|s| self.scripts.has(&s.script_pubkey)))
+            .collect()
+    }
 
-        todo!();
-
-        for tx in block.txdata {
-            for output in tx.output.iter() {
-                if let Some((addr, sig_set)) = self.scripts.get(&output.script_pubkey) {
-
-                }
-            }
+    async fn maybe_relay_deposit(&mut self, tx: &Transaction) -> Result<()> {
+        let txid = Adapter::new(tx.txid());
+        if self.app_client.was_relayed(txid).await?? {
+            println!("Detected already-relayed deposit: {}", txid.to_hex());
+            return Ok(());
         }
 
-        Ok(txs)
+        let tx = Adapter::new(tx.clone());
+        self.app_client.deposit(tx, 2).await?;
+        println!("Relayed deposit: {}", txid.to_hex());
+
+        Ok(())
     }
 
     async fn relay_header_batch(
@@ -140,7 +154,8 @@ where
             batch.len(),
         );
 
-        self.app_add(batch.into()).await?;
+        self.app_client.headers.add(batch.into()).await?;
+        println!("Relayed headers");
 
         Ok(())
     }
@@ -213,7 +228,11 @@ pub struct WatchedScripts {
 }
 
 impl WatchedScripts {
-    pub fn new(derive_script: fn(Address, &SignatorySet) -> Script, addr_ttl: u64, max_sig_sets: usize) -> Self {
+    pub fn new(
+        derive_script: fn(Address, &SignatorySet) -> Script,
+        addr_ttl: u64,
+        max_sig_sets: usize,
+    ) -> Self {
         Self {
             scripts: HashMap::new(),
 
@@ -234,6 +253,10 @@ impl WatchedScripts {
             let sig_set = self.sig_set(sig_set_index);
             (addr, sig_set)
         })
+    }
+
+    pub fn has(&self, script: &Script) -> bool {
+        self.scripts.contains_key(script)
     }
 
     pub fn len(&self) -> usize {
