@@ -1,3 +1,5 @@
+use crate::bitcoin::Bitcoin;
+use orga::migrate::{exec_migration, Migrate};
 use orga::plugins::sdk_compat::{
     sdk::{self, Tx as SdkTx},
     ConvertSdkTx,
@@ -5,14 +7,11 @@ use orga::plugins::sdk_compat::{
 use orga::prelude::*;
 use orga::Error;
 use std::convert::TryInto;
-use std::ops::{Deref, DerefMut};
-use std::time::Duration;
-use crate::bitcoin::Bitcoin;
 
 pub const CHAIN_ID: &str = "stakenet";
 pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
 
-#[derive(State, Debug, Clone, Client, Query, Call)]
+#[derive(State, Debug, Clone)]
 pub struct Nom(());
 impl Symbol for Nom {}
 
@@ -37,48 +36,21 @@ pub struct InnerApp {
     pub bitcoin: Bitcoin,
 }
 
-impl InnerApp {
-    fn configure_faucets(&mut self) -> Result<()> {
-        let day = 60 * 60 * 24;
-        let year = Duration::from_secs(60 * 60 * 24 * 365);
-        let two_thirds = (Amount::new(2) / Amount::new(3))?;
+impl Migrate<nomicv1::app::InnerApp> for InnerApp {
+    fn migrate(&mut self, legacy: nomicv1::app::InnerApp) -> Result<()> {
+        self.accounts.migrate(legacy.accounts)?;
+        self.staking.migrate(legacy.staking)?;
+        // TODO: migrate airdrop
 
-        let genesis_time = self
-            .context::<Time>()
-            .ok_or_else(|| Error::App("No Time context available".into()))?
-            .seconds;
+        self.community_pool.migrate(legacy.community_pool)?;
+        self.incentive_pool.migrate(legacy.incentive_pool)?;
 
-        self.staking_rewards.configure(FaucetOptions {
-            num_periods: 9,
-            period_length: year,
-            total_coins: 47_250_000_000_000.into(),
-            period_decay: two_thirds,
-            start_seconds: genesis_time + day,
-        })?;
-
-        self.dev_rewards.configure(FaucetOptions {
-            num_periods: 9,
-            period_length: year,
-            total_coins: 47_250_000_000_000.into(),
-            period_decay: two_thirds,
-            start_seconds: genesis_time + day,
-        })?;
-
-        self.community_pool_rewards.configure(FaucetOptions {
-            num_periods: 9,
-            period_length: year,
-            total_coins: 9_450_000_000_000.into(),
-            period_decay: two_thirds,
-            start_seconds: genesis_time + day,
-        })?;
-
-        self.incentive_pool_rewards.configure(FaucetOptions {
-            num_periods: 9,
-            period_length: year,
-            total_coins: 85_050_000_000_000.into(),
-            period_decay: two_thirds,
-            start_seconds: genesis_time + day,
-        })?;
+        self.staking_rewards.migrate(legacy.staking_rewards)?;
+        self.dev_rewards.migrate(legacy.dev_rewards)?;
+        self.community_pool_rewards
+            .migrate(legacy.community_pool_rewards)?;
+        self.incentive_pool_rewards
+            .migrate(legacy.incentive_pool_rewards)?;
 
         Ok(())
     }
@@ -90,34 +62,14 @@ mod abci {
 
     impl InitChain for InnerApp {
         fn init_chain(&mut self, ctx: &InitChainCtx) -> Result<()> {
-            self.staking.set_min_self_delegation(100_000);
-            self.staking.set_max_validators(100);
-            self.accounts.allow_transfers(true);
-
-            self.configure_faucets()?;
-
-            self.accounts.init_chain(ctx)?;
-            self.staking.init_chain(ctx)?;
-            self.atom_airdrop.init_chain(ctx)?;
-
-            // 100 tokens of strategic reserve are paid to the validator bootstrap account,
-            // a hot wallet to be sent to validators so they can declare themselves
-            let sr_funds = Nom::mint(10_499_900_000_000);
-            let vb_funds = Nom::mint(100_000_000);
+            self.staking.max_validators = 125;
+            // TODO: add remaining configuration
 
             let sr_address = STRATEGIC_RESERVE_ADDRESS.parse().unwrap();
-            self.accounts.deposit(sr_address, sr_funds)?;
             self.accounts.add_transfer_exception(sr_address)?;
 
             let vb_address = VALIDATOR_BOOTSTRAP_ADDRESS.parse().unwrap();
-            self.accounts.deposit(vb_address, vb_funds)?;
             self.accounts.add_transfer_exception(vb_address)?;
-
-            let dev_address = "nomic1ud2dhntvve2quwt6txh7te0x5985j8ek6r4t2y"
-                .parse()
-                .unwrap();
-            self.accounts
-                .deposit(dev_address, Nom::mint(1_000_000_000))?;
 
             Ok(())
         }
