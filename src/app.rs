@@ -62,8 +62,13 @@ mod abci {
 
     impl InitChain for InnerApp {
         fn init_chain(&mut self, _ctx: &InitChainCtx) -> Result<()> {
-            self.staking.max_validators = 125;
-            // TODO: add remaining configuration
+            self.staking.max_validators = 100;
+            self.staking.max_offline_blocks = 5_000;
+            self.staking.downtime_jail_seconds = 60 * 30; // 30 minutes
+            self.staking.slash_fraction_downtime = (Amount::new(1) / Amount::new(20))?;
+            self.staking.slash_fraction_double_sign = (Amount::new(1) / Amount::new(4))?;
+            self.min_self_delegation_min = 1;
+
             let old_home_path = nomicv1::orga::abci::Node::<()>::home(nomicv1::app::CHAIN_ID);
             exec_migration(self, old_home_path.join("merk"), &[0, 1, 0])?;
 
