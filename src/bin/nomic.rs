@@ -6,11 +6,11 @@
 
 use bitcoincore_rpc::{Auth, Client as BtcClient};
 use clap::Parser;
+use futures::FutureExt;
 use nomic::app::*;
 use nomic::bitcoin::relayer::Relayer;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
-use futures::FutureExt;
 
 pub fn app_client() -> TendermintClient<nomic::app::App> {
     TendermintClient::new("http://localhost:26657").unwrap()
@@ -207,6 +207,9 @@ pub struct DeclareCmd {
     consensus_key: String,
     amount: u64,
     commission_rate: Decimal,
+    commission_max: Decimal,
+    commission_max_change: Decimal,
+    min_self_delegation: u64,
     moniker: String,
     website: String,
     identity: String,
@@ -239,6 +242,18 @@ impl DeclareCmd {
             .map_err(|_| orga::Error::App("invalid json".to_string()))?;
         let info_bytes = info_json.as_bytes().to_vec();
 
+        let declaration = Declaration {
+            consensus_key,
+            amount: self.amount.into(),
+            validator_info: info_bytes.into(),
+            commission: Commission {
+                rate: self.commission_rate,
+                max: self.commission_max,
+                max_change: self.commission_max_change,
+            },
+            min_self_delegation: self.min_self_delegation.into(),
+        };
+
         app_client()
             .pay_from(async move |mut client| {
                 client
@@ -247,12 +262,7 @@ impl DeclareCmd {
                     .await
             })
             .staking
-            .declare_self(
-                consensus_key,
-                self.commission_rate,
-                self.amount.into(),
-                info_bytes.into(),
-            )
+            .declare_self(declaration)
             .await
     }
 }
@@ -319,8 +329,8 @@ impl RelayerCmd {
             _ => Auth::None,
         };
 
-        let btc_client = BtcClient::new(&rpc_url, auth)
-            .map_err(|e| orga::Error::App(e.to_string()))?;
+        let btc_client =
+            BtcClient::new(&rpc_url, auth).map_err(|e| orga::Error::App(e.to_string()))?;
 
         Ok(btc_client)
     }
