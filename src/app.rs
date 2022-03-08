@@ -61,9 +61,11 @@ mod abci {
     use super::*;
 
     impl InitChain for InnerApp {
-        fn init_chain(&mut self, ctx: &InitChainCtx) -> Result<()> {
+        fn init_chain(&mut self, _ctx: &InitChainCtx) -> Result<()> {
             self.staking.max_validators = 125;
             // TODO: add remaining configuration
+            let old_home_path = nomicv1::orga::abci::Node::<()>::home(nomicv1::app::CHAIN_ID);
+            exec_migration(self, old_home_path.join("merk"), &[0, 1, 0])?;
 
             let sr_address = STRATEGIC_RESERVE_ADDRESS.parse().unwrap();
             self.accounts.add_transfer_exception(sr_address)?;
