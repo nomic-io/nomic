@@ -36,6 +36,8 @@ pub struct Opts {
 pub enum Command {
     Init(InitCmd),
     Start(StartCmd),
+    #[cfg(debug)]
+    StartDev(StartDevCmd),
     Send(SendCmd),
     Balance(BalanceCmd),
     Delegations(DelegationsCmd),
@@ -54,6 +56,8 @@ impl Command {
         match self {
             Init(cmd) => cmd.run().await,
             Start(cmd) => cmd.run().await,
+            #[cfg(debug)]
+            StartDev(cmd) => cmd.run().await,
             Send(cmd) => cmd.run().await,
             Balance(cmd) => cmd.run().await,
             Delegate(cmd) => cmd.run().await,
@@ -88,16 +92,81 @@ pub struct StartCmd {}
 impl StartCmd {
     async fn run(&self) -> Result<()> {
         tokio::task::spawn_blocking(|| {
-            Node::<nomic::app::App>::new(CHAIN_ID)
-                // .with_genesis(include_bytes!("../genesis.json"))
+            let old_name = nomicv1::app::CHAIN_ID;
+            let new_name = nomic::app::CHAIN_ID;
+
+            let has_old_node = Node::home(old_name).exists();
+            let has_new_node = Node::home(new_name).exists();
+            let started_new_node = Node::height(new_name).unwrap() > 0;
+
+            if !has_new_node {
+                let new_home = Node::home(new_name);
+                println!("Initializing node at {}...", new_home.display());
+                Node::<nomic::app::App>::new(new_name);
+
+                if has_old_node {
+                    let old_home = Node::home(old_name);
+                    println!(
+                        "Legacy network data detected, copying keys and config from {}...",
+                        old_home.display()
+                    );
+
+                    std::fs::copy(
+                        old_home.join("tendermint/config/priv_validator_key.json"),
+                        new_home.join("tendermint/config/priv_validator_key.json"),
+                    ).unwrap();
+                    std::fs::copy(
+                        old_home.join("tendermint/config/node_key.json"),
+                        new_home.join("tendermint/config/node_key.json"),
+                    ).unwrap();
+                    std::fs::copy(
+                        old_home.join("tendermint/config/config.toml"),
+                        new_home.join("tendermint/config/config.toml"),
+                    ).unwrap();
+                }
+            }
+
+            if has_old_node && !started_new_node {
+                println!("Starting legacy node for migration...");
+
+                let res = nomicv1::orga::abci::Node::<nomicv1::app::App>::new(old_name)
+                    .stdout(std::process::Stdio::inherit())
+                    .stderr(std::process::Stdio::inherit())
+                    .run();
+
+                if let Err(nomicv1::orga::Error::App(msg)) = res {
+                    if &msg != "Halting" {
+                        panic!("{}", msg);
+                    }
+                } else {
+                    res.unwrap();
+                }
+            }
+
+            println!("Starting node...");
+            Node::<nomic::app::App>::new(new_name)
+                .with_genesis(include_bytes!("../../genesis/stakenet-2.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
-                .reset()
                 .run()
+                .unwrap();
         })
         .await
         .map_err(|err| orga::Error::App(err.to_string()))?;
         Ok(())
+    }
+}
+
+#[cfg(debug)]
+#[derive(Parser, Debug)]
+pub struct StartDevCmd {}
+
+#[cfg(debug)]
+impl StartDevCmd {
+    async fn run(&self) -> Result<()> {
+        tokio::task::spawn_blocking(|| {
+            unimplemented!()       
+        })
     }
 }
 
