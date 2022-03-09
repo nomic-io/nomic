@@ -5,7 +5,7 @@ use orga::prelude::*;
 use orga::Error;
 use std::convert::TryInto;
 
-pub const CHAIN_ID: &str = "nomic-stakenet-2";
+pub const CHAIN_ID: &str = "nomic-stakenet-test-2";
 pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
 
 #[derive(State, Debug, Clone)]

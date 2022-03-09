@@ -145,7 +145,7 @@ impl StartCmd {
 
             println!("Starting node...");
             Node::<nomic::app::App>::new(new_name)
-                .with_genesis(include_bytes!("../../genesis/stakenet-2.json"))
+                .with_genesis(include_bytes!("../../genesis/practicenet-2.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
                 .run()
