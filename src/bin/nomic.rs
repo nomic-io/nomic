@@ -132,10 +132,11 @@ impl StartCmd {
                 let res = nomicv1::orga::abci::Node::<nomicv1::app::App>::new(old_name)
                     .stdout(std::process::Stdio::inherit())
                     .stderr(std::process::Stdio::inherit())
+                    .stop_height(500)
                     .run();
 
-                if let Err(nomicv1::orga::Error::App(msg)) = res {
-                    if &msg != "Halting" {
+                if let Err(nomicv1::orga::Error::ABCI(msg)) = res {
+                    if &msg != "Reached stop height" {
                         panic!("{}", msg);
                     }
                 } else {
