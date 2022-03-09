@@ -1,9 +1,6 @@
 use crate::bitcoin::Bitcoin;
 use orga::migrate::{exec_migration, Migrate};
-use orga::plugins::sdk_compat::{
-    sdk::{self, Tx as SdkTx},
-    ConvertSdkTx,
-};
+use orga::plugins::sdk_compat::{sdk::Tx as SdkTx, ConvertSdkTx};
 use orga::prelude::*;
 use orga::Error;
 use std::convert::TryInto;
@@ -67,7 +64,7 @@ mod abci {
             self.staking.downtime_jail_seconds = 60 * 30; // 30 minutes
             self.staking.slash_fraction_downtime = (Amount::new(1) / Amount::new(20))?;
             self.staking.slash_fraction_double_sign = (Amount::new(1) / Amount::new(4))?;
-            self.min_self_delegation_min = 1;
+            self.staking.min_self_delegation_min = 1;
 
             let old_home_path = nomicv1::orga::abci::Node::<()>::home(nomicv1::app::CHAIN_ID);
             exec_migration(self, old_home_path.join("merk"), &[0, 1, 0])?;
@@ -197,11 +194,12 @@ impl ConvertSdkTx for InnerApp {
         }
         let msg = &sdk_tx.msg[0];
 
+        type AppCall = <InnerApp as Call>::Call;
+        type AccountCall = <Accounts<Nom> as Call>::Call;
+        type StakingCall = <Staking<Nom> as Call>::Call;
+
         match msg.type_.as_str() {
             "cosmos-sdk/MsgSend" => {
-                type AppCall = <InnerApp as Call>::Call;
-                type AccountCall = <Accounts<Nom> as Call>::Call;
-
                 let to: Address = msg
                     .value
                     .get("to_address")
@@ -246,6 +244,199 @@ impl ConvertSdkTx for InnerApp {
                     paid: paid_call,
                 })
             }
+
+            "cosmos-sdk/MsgDelegate" => {
+                let val_addr: Address = msg
+                    .value
+                    .get("validator_address")
+                    .ok_or_else(|| Error::App("No validator_address in MsgDelegate".into()))?
+                    .as_str()
+                    .ok_or_else(|| Error::App("validator_address is not a string".into()))?
+                    .parse()
+                    .map_err(|e| Error::App(format!("Invalid validator_address in MsgS: {}", e)))?;
+
+                let _del_addr: Address = msg
+                    .value
+                    .get("delegator_address")
+                    .ok_or_else(|| Error::App("No delegator_address in MsgDelegate".into()))?
+                    .as_str()
+                    .ok_or_else(|| Error::App("delegator_address is not a string".into()))?
+                    .parse()
+                    .map_err(|e| {
+                        Error::App(format!("Invalid delegator_address in MsgDelegate: {}", e))
+                    })?;
+
+                let amount: u64 = msg
+                    .value
+                    .get("amount")
+                    .ok_or_else(|| Error::App("No amount in MsgDelegate".into()))?
+                    .get("amount")
+                    .ok_or_else(|| Error::App("No amount in MsgDelegate amount".into()))?
+                    .as_str()
+                    .ok_or_else(|| Error::App("amount is not a string".into()))?
+                    .parse()?;
+
+                let denom = msg
+                    .value
+                    .get("amount")
+                    .ok_or_else(|| Error::App("No amount in Delegate".into()))?
+                    .get("denom")
+                    .ok_or_else(|| Error::App("No denom in Delegate amount".into()))?;
+
+                if denom != "unom" {
+                    return Err(Error::App(format!(
+                        "Invalid denom in Delegate amount: {}",
+                        denom
+                    )));
+                }
+
+                let funding_amt = MIN_FEE + amount;
+                let funding_call = AccountCall::MethodTakeAsFunding(funding_amt.into(), vec![]);
+                let funding_call_bytes = funding_call.encode()?;
+                let payer_call = AppCall::FieldAccounts(funding_call_bytes);
+
+                let delegate_call =
+                    StakingCall::MethodDelegateFromSelf(val_addr, amount.into(), vec![]);
+                let delegate_call_bytes = delegate_call.encode()?;
+                let paid_call = AppCall::FieldStaking(delegate_call_bytes);
+
+                Ok(PaidCall {
+                    payer: payer_call,
+                    paid: paid_call,
+                })
+            }
+
+            "cosmos-sdk/MsgBeginRedelegate" => {
+                let val_src_addr: Address = msg
+                    .value
+                    .get("validator_src_address")
+                    .ok_or_else(|| {
+                        Error::App("No validator_src_address in MsgBeginRedelegate".into())
+                    })?
+                    .as_str()
+                    .ok_or_else(|| Error::App("validator_src_address is not a string".into()))?
+                    .parse()
+                    .map_err(|e| {
+                        Error::App(format!(
+                            "Invalid validator_src_address in MsgBeginRedelegate: {}",
+                            e
+                        ))
+                    })?;
+
+                let val_dst_addr: Address = msg
+                    .value
+                    .get("validator_dst_address")
+                    .ok_or_else(|| {
+                        Error::App("No validator_dst_address in MsgBeginRedelegate".into())
+                    })?
+                    .as_str()
+                    .ok_or_else(|| Error::App("validator_dst_address is not a string".into()))?
+                    .parse()
+                    .map_err(|e| {
+                        Error::App(format!(
+                            "Invalid validator_dst_address in MsgBeginRedelegate: {}",
+                            e
+                        ))
+                    })?;
+
+                let amount = msg
+                    .value
+                    .get("amount")
+                    .ok_or_else(|| Error::App("No amount in MsgBeginRedelegate".into()))?
+                    .get("amount")
+                    .ok_or_else(|| Error::App("No amount in MsgBeginRedelegate amount".into()))?;
+
+                let denom = msg
+                    .value
+                    .get("amount")
+                    .ok_or_else(|| Error::App("No amount in MsgBeginRedelegate".into()))?
+                    .get("denom")
+                    .ok_or_else(|| Error::App("No denom in MsgBeginRedelegate amount".into()))?;
+
+                if denom != "unom" {
+                    return Err(Error::App(format!(
+                        "Invalid denom in MsgBeginRedelegate amount: {}",
+                        denom
+                    )));
+                }
+                let amount: u64 = amount
+                    .as_str()
+                    .ok_or_else(|| Error::App("amount is not a string".into()))?
+                    .parse()?;
+
+                let funding_amt = MIN_FEE;
+                let funding_call = AccountCall::MethodTakeAsFunding(funding_amt.into(), vec![]);
+                let funding_call_bytes = funding_call.encode()?;
+                let payer_call = AppCall::FieldAccounts(funding_call_bytes);
+
+                let redelegate_call = StakingCall::MethodRedelegateSelf(
+                    val_src_addr,
+                    val_dst_addr,
+                    amount.into(),
+                    vec![],
+                );
+                let redelegate_call_bytes = redelegate_call.encode()?;
+                let paid_call = AppCall::FieldStaking(redelegate_call_bytes);
+
+                Ok(PaidCall {
+                    payer: payer_call,
+                    paid: paid_call,
+                })
+            }
+            "cosmos-sdk/MsgUndelegate" => {
+                let val_addr: Address = msg
+                    .value
+                    .get("validator_address")
+                    .ok_or_else(|| Error::App("No validator_address in MsgUndelegate".into()))?
+                    .as_str()
+                    .ok_or_else(|| Error::App("validator_address is not a string".into()))?
+                    .parse()
+                    .map_err(|e| {
+                        Error::App(format!("Invalid validator_address in MsgUndelegate: {}", e))
+                    })?;
+
+                let amount = msg
+                    .value
+                    .get("amount")
+                    .ok_or_else(|| Error::App("No amount in MsgUndelegate".into()))?
+                    .get("amount")
+                    .ok_or_else(|| Error::App("No amount in MsgUndelegate amount".into()))?;
+
+                let denom = msg
+                    .value
+                    .get("amount")
+                    .ok_or_else(|| Error::App("No amount in MsgUndelegate".into()))?
+                    .get("denom")
+                    .ok_or_else(|| Error::App("No denom in MsgUndelegate amount".into()))?;
+
+                if denom != "unom" {
+                    return Err(Error::App(format!(
+                        "Invalid denom in MsgUndelegate amount: {}",
+                        denom
+                    )));
+                }
+
+                let amount: u64 = amount
+                    .as_str()
+                    .ok_or_else(|| Error::App("amount is not a string".into()))?
+                    .parse()?;
+
+                let funding_amt = MIN_FEE;
+                let funding_call = AccountCall::MethodTakeAsFunding(funding_amt.into(), vec![]);
+                let funding_call_bytes = funding_call.encode()?;
+                let payer_call = AppCall::FieldAccounts(funding_call_bytes);
+
+                let undelegate_call =
+                    StakingCall::MethodUnbondSelf(val_addr, amount.into(), vec![]);
+                let undelegate_call_bytes = undelegate_call.encode()?;
+                let paid_call = AppCall::FieldStaking(undelegate_call_bytes);
+
+                Ok(PaidCall {
+                    payer: payer_call,
+                    paid: paid_call,
+                })
+            }
+
             _ => Err(Error::App("Unsupported message type".into())),
         }
     }
