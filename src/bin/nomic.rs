@@ -78,7 +78,8 @@ pub struct InitCmd {}
 impl InitCmd {
     async fn run(&self) -> Result<()> {
         tokio::task::spawn_blocking(|| {
-            Node::<nomic::app::App>::new(CHAIN_ID);
+            // TODO: add cfg defaults
+            Node::<nomic::app::App>::new(CHAIN_ID, Default::default());
         })
         .await
         .map_err(|err| orga::Error::App(err.to_string()))?;
@@ -102,7 +103,8 @@ impl StartCmd {
             if !has_new_node {
                 let new_home = Node::home(new_name);
                 println!("Initializing node at {}...", new_home.display());
-                Node::<nomic::app::App>::new(new_name);
+                // TODO: configure default seeds and timeout_commit
+                Node::<nomic::app::App>::new(new_name, Default::default());
 
                 if has_old_node {
                     let old_home = Node::home(old_name);
@@ -114,15 +116,19 @@ impl StartCmd {
                     std::fs::copy(
                         old_home.join("tendermint/config/priv_validator_key.json"),
                         new_home.join("tendermint/config/priv_validator_key.json"),
-                    ).unwrap();
+                    )
+                    .unwrap();
                     std::fs::copy(
                         old_home.join("tendermint/config/node_key.json"),
                         new_home.join("tendermint/config/node_key.json"),
-                    ).unwrap();
+                    )
+                    .unwrap();
+                    // TODO: remove copying config for v1 -> v2
                     std::fs::copy(
                         old_home.join("tendermint/config/config.toml"),
                         new_home.join("tendermint/config/config.toml"),
-                    ).unwrap();
+                    )
+                    .unwrap();
                 }
             }
 
@@ -144,8 +150,10 @@ impl StartCmd {
             }
 
             println!("Starting node...");
-            Node::<nomic::app::App>::new(new_name)
-                .with_genesis(include_bytes!("../../genesis/stakenet-2.json"))
+            // TODO: add cfg defaults
+            Node::<nomic::app::App>::new(new_name, Default::default())
+                // TODO: add genesis
+                // .with_genesis(include_bytes!("../../genesis/stakenet-2.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
                 .run()
@@ -164,9 +172,7 @@ pub struct StartDevCmd {}
 #[cfg(debug)]
 impl StartDevCmd {
     async fn run(&self) -> Result<()> {
-        tokio::task::spawn_blocking(|| {
-            unimplemented!()       
-        })
+        tokio::task::spawn_blocking(|| unimplemented!())
     }
 }
 
