@@ -205,6 +205,10 @@ impl<S: Symbol> Airdrop<S> {
 
         Ok(nom_amount)
     }
+
+    pub fn accounts(self) -> Accounts<S> {
+        self.claimable
+    }
 }
 
 #[cfg(feature = "full")]
