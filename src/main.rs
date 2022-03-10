@@ -94,8 +94,7 @@ impl StartCmd {
                 .run()
         })
         .await
-        .map_err(|err| orga::Error::App(err.to_string()))?;
-        Ok(())
+        .map_err(|err| orga::Error::App(err.to_string()))?
     }
 }
 
