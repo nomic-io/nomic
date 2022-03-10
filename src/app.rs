@@ -3,7 +3,6 @@ use orga::migrate::{exec_migration, Migrate};
 use orga::plugins::sdk_compat::{sdk::Tx as SdkTx, ConvertSdkTx};
 use orga::prelude::*;
 use orga::Error;
-use std::convert::TryInto;
 
 pub const CHAIN_ID: &str = "nomic-stakenet-test-2";
 pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
@@ -35,19 +34,19 @@ pub struct InnerApp {
 
 impl Migrate<nomicv1::app::InnerApp> for InnerApp {
     fn migrate(&mut self, legacy: nomicv1::app::InnerApp) -> Result<()> {
+        self.community_pool.migrate(legacy.community_pool())?;
+        self.incentive_pool.migrate(legacy.incentive_pool())?;
+
+        self.staking_rewards.migrate(legacy.staking_rewards())?;
+        self.dev_rewards.migrate(legacy.dev_rewards())?;
+        self.community_pool_rewards
+            .migrate(legacy.community_pool_rewards())?;
+        self.incentive_pool_rewards
+            .migrate(legacy.incentive_pool_rewards())?;
+
         self.accounts.migrate(legacy.accounts)?;
         self.staking.migrate(legacy.staking)?;
-        // TODO: migrate airdrop
-
-        self.community_pool.migrate(legacy.community_pool)?;
-        self.incentive_pool.migrate(legacy.incentive_pool)?;
-
-        self.staking_rewards.migrate(legacy.staking_rewards)?;
-        self.dev_rewards.migrate(legacy.dev_rewards)?;
-        self.community_pool_rewards
-            .migrate(legacy.community_pool_rewards)?;
-        self.incentive_pool_rewards
-            .migrate(legacy.incentive_pool_rewards)?;
+        self.atom_airdrop.migrate(legacy.atom_airdrop)?;
 
         Ok(())
     }
@@ -137,51 +136,11 @@ impl<S: Symbol> Airdrop<S> {
         let amount = self.claimable.balance(signer)?;
         self.claimable.take_as_funding(amount)
     }
-
-    fn init_account(&mut self, address: Address, liquid: Amount, staked: Amount) -> Result<Amount> {
-        let liquid_capped = Amount::min(liquid, 1_000_000_000.into());
-        let staked_capped = Amount::min(staked, 1_000_000_000.into());
-
-        let units = (liquid_capped + staked_capped * Amount::from(4))?;
-        let units_per_nom = Decimal::from(20_299325) / Decimal::from(1_000_000);
-        let nom_amount = (Decimal::from(units) / units_per_nom)?.amount()?;
-
-        let payout = Coin::mint(nom_amount);
-        self.claimable.deposit(address, payout)?;
-
-        Ok(nom_amount)
-    }
 }
 
-#[cfg(feature = "full")]
-impl<S: Symbol> InitChain for Airdrop<S> {
-    fn init_chain(&mut self, _ctx: &InitChainCtx) -> Result<()> {
-        let target_csv = include_str!("../atom_snapshot.csv");
-        let mut rdr = csv::Reader::from_reader(target_csv.as_bytes());
-        let snapshot = rdr.records();
-
-        println!("Initializing balances from airdrop snapshot...");
-
-        let mut minted = Amount::from(0);
-
-        for row in snapshot {
-            let row = row.map_err(|e| Error::App(e.to_string()))?;
-
-            let (_, address_b32, _) = bech32::decode(&row[0]).unwrap();
-            let address_vec: Vec<u8> = bech32::FromBase32::from_base32(&address_b32).unwrap();
-            let address_buf: [u8; 20] = address_vec.try_into().unwrap();
-
-            let liquid: u64 = row[1].parse().unwrap();
-            let staked: u64 = row[2].parse().unwrap();
-
-            let minted_for_account =
-                self.init_account(address_buf.into(), liquid.into(), staked.into())?;
-            minted = (minted + minted_for_account)?;
-        }
-
-        println!("Total amount minted for airdrop: {} uNOM", minted);
-
-        Ok(())
+impl Migrate<nomicv1::app::Airdrop<nomicv1::app::Nom>> for Airdrop<Nom> {
+    fn migrate(&mut self, legacy: nomicv1::app::Airdrop<nomicv1::app::Nom>) -> Result<()> {
+        self.claimable.migrate(legacy.accounts())
     }
 }
 
