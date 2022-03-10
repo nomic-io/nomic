@@ -20,13 +20,13 @@ pub struct InnerApp {
     pub staking: Staking<Nom>,
     pub atom_airdrop: Airdrop<Nom>,
 
-    pub community_pool: Coin<Nom>,
-    pub incentive_pool: Coin<Nom>,
+    community_pool: Coin<Nom>,
+    incentive_pool: Coin<Nom>,
 
-    pub staking_rewards: Faucet<Nom>,
-    pub dev_rewards: Faucet<Nom>,
-    pub community_pool_rewards: Faucet<Nom>,
-    pub incentive_pool_rewards: Faucet<Nom>,
+    staking_rewards: Faucet<Nom>,
+    dev_rewards: Faucet<Nom>,
+    community_pool_rewards: Faucet<Nom>,
+    incentive_pool_rewards: Faucet<Nom>,
 }
 
 impl InnerApp {
@@ -73,6 +73,30 @@ impl InnerApp {
         })?;
 
         Ok(())
+    }
+
+    pub fn community_pool(&self) -> Coin<Nom> {
+        self.community_pool.amount.into()
+    }
+
+    pub fn incentive_pool(&self) -> Coin<Nom> {
+        self.incentive_pool.amount.into()
+    }
+
+    pub fn staking_rewards(&self) -> Faucet<Nom> {
+        self.staking_rewards.clone()
+    }
+
+    pub fn dev_rewards(&self) -> Faucet<Nom> {
+        self.dev_rewards.clone()
+    }
+
+    pub fn community_pool_rewards(&self) -> Faucet<Nom> {
+        self.community_pool_rewards.clone()
+    }
+
+    pub fn incentive_pool_rewards(&self) -> Faucet<Nom> {
+        self.incentive_pool_rewards.clone()
     }
 }
 
