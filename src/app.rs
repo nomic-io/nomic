@@ -35,19 +35,19 @@ pub struct InnerApp {
 
 impl Migrate<nomicv1::app::InnerApp> for InnerApp {
     fn migrate(&mut self, legacy: nomicv1::app::InnerApp) -> Result<()> {
+        self.community_pool.migrate(legacy.community_pool())?;
+        self.incentive_pool.migrate(legacy.incentive_pool())?;
+
+        self.staking_rewards.migrate(legacy.staking_rewards())?;
+        self.dev_rewards.migrate(legacy.dev_rewards())?;
+        self.community_pool_rewards
+            .migrate(legacy.community_pool_rewards())?;
+        self.incentive_pool_rewards
+            .migrate(legacy.incentive_pool_rewards())?;
+
         self.accounts.migrate(legacy.accounts)?;
         self.staking.migrate(legacy.staking)?;
         // TODO: migrate airdrop
-
-        self.community_pool.migrate(legacy.community_pool)?;
-        self.incentive_pool.migrate(legacy.incentive_pool)?;
-
-        self.staking_rewards.migrate(legacy.staking_rewards)?;
-        self.dev_rewards.migrate(legacy.dev_rewards)?;
-        self.community_pool_rewards
-            .migrate(legacy.community_pool_rewards)?;
-        self.incentive_pool_rewards
-            .migrate(legacy.incentive_pool_rewards)?;
 
         Ok(())
     }
