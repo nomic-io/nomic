@@ -105,7 +105,7 @@ async fn txs(tx: &str) -> Result<Value, BadRequest<String>> {
         "code": tx_response.code,
         "data": "",
         "raw_log": "[]",
-        "logs": [],
+        "logs": [ tx_response.log ],
         "info": tx_response.info,
         "gas_wanted": tx_response.gas_wanted,
         "gas_used": tx_response.gas_used,
