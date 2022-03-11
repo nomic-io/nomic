@@ -11,6 +11,7 @@ use orga::Result;
 
 pub mod adapter;
 pub mod header_queue;
+#[cfg(feature = "full")]
 pub mod relayer;
 pub mod threshold_sig;
 

@@ -9,7 +9,7 @@ use orga::abci::TendermintClient;
 pub use orga;
 
 pub mod app;
-pub mod bitcoin;
+// pub mod bitcoin;
 pub mod error;
 
 #[cfg(feature = "full")]

@@ -1,4 +1,5 @@
-use crate::bitcoin::Bitcoin;
+// use crate::bitcoin::Bitcoin;
+#[cfg(feature = "full")]
 use orga::migrate::{exec_migration, Migrate};
 use orga::plugins::sdk_compat::{sdk::Tx as SdkTx, ConvertSdkTx};
 use orga::prelude::*;
@@ -29,9 +30,10 @@ pub struct InnerApp {
     community_pool_rewards: Faucet<Nom>,
     incentive_pool_rewards: Faucet<Nom>,
 
-    pub bitcoin: Bitcoin,
+    // pub bitcoin: Bitcoin,
 }
 
+#[cfg(feature = "full")]
 impl Migrate<nomicv1::app::InnerApp> for InnerApp {
     fn migrate(&mut self, legacy: nomicv1::app::InnerApp) -> Result<()> {
         self.community_pool.migrate(legacy.community_pool())?;
@@ -138,6 +140,7 @@ impl<S: Symbol> Airdrop<S> {
     }
 }
 
+#[cfg(feature = "full")]
 impl Migrate<nomicv1::app::Airdrop<nomicv1::app::Nom>> for Airdrop<Nom> {
     fn migrate(&mut self, legacy: nomicv1::app::Airdrop<nomicv1::app::Nom>) -> Result<()> {
         self.claimable.migrate(legacy.accounts())
