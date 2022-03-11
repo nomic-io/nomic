@@ -1,7 +1,7 @@
 #![feature(async_closure)]
 
 use wasm_bindgen::prelude::*;
-use nomic::app::{App, InnerApp, Nom, Airdrop};
+use nomic::app::{App, InnerApp, Nom, Airdrop, CHAIN_ID};
 use nomic::orga::prelude::*;
 use nomic::orga::client::AsyncQuery;
 use nomic::orga::merk::ABCIPrefixedProofStore;
@@ -160,15 +160,38 @@ pub async fn claim() -> JsValue {
 #[wasm_bindgen]
 pub async fn delegate(to_addr: String, amount: u64) -> JsValue {
     let mut client: WebClient<App> = WebClient::new();
-    let to_addr = to_addr.parse().unwrap();
-    client
-        .pay_from(async move |mut client| {
-            client.accounts.take_as_funding((amount + MIN_FEE).into()).await
-        })
-        .staking
-        .delegate_from_self(to_addr, amount.into())
-        .await
-        .unwrap();
+    let mut signer = nomic::orga::plugins::keplr::Signer::new();
+
+    let my_addr = signer.address().await;
+    let nonce = client.nonce(my_addr.parse().unwrap()).await.unwrap();
+
+    let mut amount_obj = serde_json::Map::new();
+    amount_obj.insert("amount".to_string(), amount.to_string().into());
+    amount_obj.insert("denom".to_string(), "unom".into());
+
+    let mut value = serde_json::Map::new();
+    value.insert("delegator_address".to_string(), my_addr.into());
+    value.insert("validator_address".to_string(), to_addr.into());
+    value.insert("amount".to_string(), amount_obj.into());
+
+    use nomic::orga::plugins::sdk_compat::sdk::*;
+    client.send_sdk_tx(SignDoc {
+        account_number: "0".to_string(),
+        chain_id: CHAIN_ID.to_string(),
+        fee: Fee {
+            amount: vec![ Coin { amount: MIN_FEE.to_string(), denom: "unom".to_string() } ],
+            gas: MIN_FEE.to_string(),
+        },
+        memo: "".to_string(),
+        msgs: vec![
+            Msg {
+                type_: "cosmos-sdk/MsgDelegate".to_string(),
+                value,
+            },
+        ],
+        sequence: (nonce + 1).to_string(),
+    }).await.unwrap();
+
     client.last_res()
 }
 
