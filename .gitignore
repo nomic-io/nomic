@@ -6,4 +6,5 @@ merk.db/
 # Added by cargo
 
 /target
-Cargo.lock
+fuzz/Cargo.lock
+wasm/Cargo.lock
