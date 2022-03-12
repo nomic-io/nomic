@@ -13,8 +13,7 @@ ideally be run on a separate node from your mainnet validator.
 
 This guide will walk you through setting up a validator for the Nomic Stakenet.
 
-If you need any help getting your node running, join the [Telegram
-channel](https://t.me/joinchat/b0iv3MHgH5phYjkx).
+If you need any help getting your node running, join the [Discord](https://discord.gg/jH7U2NRJKn).
 
 ### Requirements
 
@@ -41,20 +40,23 @@ sudo dnf install clang openssl-devel && sudo dnf group install "C Development To
 # clone
 git clone https://github.com/nomic-io/nomic.git nomic && cd nomic
 
+# change to testnet branch
+git checkout testnet
+
 # build and install, adding a `nomic` command to your PATH
 cargo install --path .
 ```
 
 ### 2. Initialize and configure your node
 
-Initialize your data directory (`~/.nomic-stakenet`) by running:
+Initialize your data directory (`~/.nomic-testnet`) by running:
 
 ```bash
 nomic init
 ```
 
 Next, configure your node by editing
-`~/.nomic-stakenet/tendermint/config/config.toml`.
+`~/.nomic-testnet/tendermint/config/config.toml`.
 
 Add the external ip and port where your node can be reached so that other
 nodes will connect to you:
@@ -89,7 +91,7 @@ This will run the Nomic state machine and a Tendermint process.
 First, find your address by running `nomic balance` (for now this must be run on
 a machine which has an active full node).
 
-Ask the Nomic team for some coins in the Telegram and include your address.
+Ask the Nomic team for some coins in the Discord and include your address.
 
 Once you have received coins, you can declare your node as a validator and
 delegate to yourself with:
