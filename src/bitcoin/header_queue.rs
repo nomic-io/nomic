@@ -1,9 +1,9 @@
 use crate::bitcoin::adapter::Adapter;
 use crate::error::{Error, Result};
 use bitcoin::blockdata::block::BlockHeader;
+use bitcoin::consensus::Encodable;
 use bitcoin::util::uint::Uint256;
 use bitcoin::BlockHash;
-use bitcoin::consensus::Encodable;
 use orga::call::Call;
 use orga::client::Client;
 use orga::collections::Deque;
@@ -222,7 +222,9 @@ impl Config {
         let checkpoint_json = include_str!("./testnet_checkpoint.json");
         let checkpoint_header: BlockHeader = serde_json::from_str(checkpoint_json).unwrap();
         let mut checkpoint_bytes = vec![];
-        checkpoint_header.consensus_encode(&mut checkpoint_bytes).unwrap();
+        checkpoint_header
+            .consensus_encode(&mut checkpoint_bytes)
+            .unwrap();
         let checkpoint_height = 2_161_152;
 
         Self {
@@ -329,6 +331,8 @@ impl HeaderQueue {
             return Err(Error::Header("New tip is behind current tip.".into()));
         }
 
+        self.verify_headers(&headers)?;
+
         if first.height <= current_height {
             // TODO: should compare to oldest retained height
             if first.height < self.config.trusted_height {
@@ -336,8 +340,6 @@ impl HeaderQueue {
             }
             self.reorg(headers.clone(), first.height)?;
         }
-
-        self.verify_headers(&headers)?;
 
         while self.len() > self.config.max_length {
             let header = match self.deque.pop_front()? {
