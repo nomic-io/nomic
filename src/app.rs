@@ -1,4 +1,5 @@
-// use crate::bitcoin::Bitcoin;
+use crate::bitcoin::Bitcoin;
+
 #[cfg(feature = "full")]
 use orga::migrate::{exec_migration, Migrate};
 use orga::plugins::sdk_compat::{sdk::Tx as SdkTx, ConvertSdkTx};
@@ -30,7 +31,7 @@ pub struct InnerApp {
     community_pool_rewards: Faucet<Nom>,
     incentive_pool_rewards: Faucet<Nom>,
 
-    // pub bitcoin: Bitcoin,
+    pub bitcoin: Bitcoin,
 }
 
 #[cfg(feature = "full")]
