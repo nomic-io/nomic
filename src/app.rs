@@ -2,7 +2,7 @@ use crate::bitcoin::Bitcoin;
 
 #[cfg(feature = "full")]
 use orga::migrate::{exec_migration, Migrate};
-use orga::plugins::sdk_compat::{sdk::Tx as SdkTx, ConvertSdkTx};
+use orga::plugins::sdk_compat::{sdk, sdk::Tx as SdkTx, ConvertSdkTx};
 use orga::prelude::*;
 use orga::Error;
 
@@ -162,49 +162,29 @@ impl ConvertSdkTx for InnerApp {
         type StakingCall = <Staking<Nom> as Call>::Call;
         type AirdropCall = <Airdrop<Nom> as Call>::Call;
 
-        let get_addr = |name: &str| -> Result<Address> {
-            msg
-                .value
-                .get(name)
-                .ok_or_else(|| Error::App(format!("No field named '{}'", name)))?
-                .as_str()
-                .ok_or_else(|| Error::App(format!("{} is not a string", name)))?
-                .parse()
-                .map_err(|e| Error::App(format!("Invalid {}: {}", name, e)))
-        };
-
-        let get_amount = |expected_denom| -> Result<Amount> {
-            let amount = msg
-                .value
-                .get("amount")
-                .ok_or_else(|| Error::App("No amount".into()))?
-                .get(0)
-                .ok_or_else(|| Error::App("Empty amount".into()))?;
-
-            let denom = amount
-                .get("denom")
-                .ok_or_else(|| Error::App("No denom in amount".into()))?;
-            if denom != expected_denom {
+        let get_amount = |coin: Option<&sdk::Coin>, expected_denom| -> Result<Amount> {
+            let coin = coin.map_or_else(|| Err(Error::App("Empty amount".into())), Ok)?;
+            if coin.denom != expected_denom {
                 return Err(Error::App(format!(
                     "Invalid denom in amount: {}",
-                    denom
+                    coin.denom,
                 )));
             }
 
-            let amount: u64 = amount
-                .get("amount")
-                .ok_or_else(|| Error::App("No 'amount' field in amount".into()))?
-                .as_str()
-                .ok_or_else(|| Error::App("amount is not a string".into()))?
-                .parse()?;
-
+            let amount: u64 = coin.amount.parse()?;
             Ok(Amount::new(amount))
         };
 
+        // TODO: move message validation/parsing into orga (e.g. with a message enum)
+
         match msg.type_.as_str() {
             "cosmos-sdk/MsgSend" => {
-                let to = get_addr("to_address")?;
-                let amount = get_amount("unom")?;
+                let msg: sdk::MsgSend = serde_json::value::from_value(msg.value.clone())
+                    .map_err(|e| Error::App(e.to_string()))?;
+
+                let to: Address = msg.to_address.parse()
+                    .map_err(|e: bech32::Error| Error::App(e.to_string()))?;
+                let amount = get_amount(msg.amount.first(), "unom")?;
 
                 let funding_call = AccountCall::MethodTakeAsFunding(MIN_FEE.into(), vec![]);
                 let funding_call_bytes = funding_call.encode()?;
@@ -221,10 +201,12 @@ impl ConvertSdkTx for InnerApp {
             }
 
             "cosmos-sdk/MsgDelegate" => {
-                let val_addr = get_addr("validator_adddress")?;
-                let _del_addr = get_addr("delegator_address")?;
+                let msg: sdk::MsgDelegate = serde_json::value::from_value(msg.value.clone())
+                    .map_err(|e| Error::App(e.to_string()))?;
 
-                let amount: u64 = get_amount("unom")?.into();
+                let val_addr: Address = msg.validator_address.parse()
+                    .map_err(|e: bech32::Error| Error::App(e.to_string()))?;
+                let amount: u64 = get_amount(msg.amount.as_ref(), "unom")?.into();
 
                 let funding_amt = MIN_FEE + amount;
                 let funding_call = AccountCall::MethodTakeAsFunding(funding_amt.into(), vec![]);
@@ -243,10 +225,15 @@ impl ConvertSdkTx for InnerApp {
             }
 
             "cosmos-sdk/MsgBeginRedelegate" => {
-                let val_src_addr = get_addr("validator_src_address")?;
-                let val_dst_addr = get_addr("validator_dst_address")?;
+                let msg: sdk::MsgBeginRedelegate = serde_json::value::from_value(msg.value.clone())
+                    .map_err(|e| Error::App(e.to_string()))?;
 
-                let amount = get_amount("unom")?;
+                let val_src_addr: Address = msg.validator_src_address.parse()
+                    .map_err(|e: bech32::Error| Error::App(e.to_string()))?;
+                let val_dst_addr: Address = msg.validator_dst_address.parse()
+                    .map_err(|e: bech32::Error| Error::App(e.to_string()))?;
+
+                let amount = get_amount(msg.amount.as_ref(), "unom")?;
 
                 let funding_amt = MIN_FEE;
                 let funding_call = AccountCall::MethodTakeAsFunding(funding_amt.into(), vec![]);
@@ -269,8 +256,12 @@ impl ConvertSdkTx for InnerApp {
             }
 
             "cosmos-sdk/MsgUndelegate" => {
-                let val_addr = get_addr("validator_address")?;
-                let amount = get_amount("unom")?;
+                let msg: sdk::MsgUndelegate = serde_json::value::from_value(msg.value.clone())
+                    .map_err(|e| Error::App(e.to_string()))?;
+
+                let val_addr: Address = msg.validator_address.parse()
+                    .map_err(|e: bech32::Error| Error::App(e.to_string()))?;
+                let amount = get_amount(msg.amount.as_ref(), "unom")?;
 
                 let funding_amt = MIN_FEE;
                 let funding_call = AccountCall::MethodTakeAsFunding(funding_amt.into(), vec![]);
@@ -289,6 +280,11 @@ impl ConvertSdkTx for InnerApp {
             }
 
             "nomic/claim-rewards" => {
+                let msg = msg.value.as_object().ok_or_else(|| Error::App("Invalid message value".to_string()))?;
+                if msg.is_empty() {
+                    return Err(Error::App("Message should be empty".to_string()));
+                }
+
                 let claim_call = StakingCall::MethodClaimAll(vec![]);
                 let claim_call_bytes = claim_call.encode()?;
                 let payer_call = AppCall::FieldStaking(claim_call_bytes);
@@ -304,6 +300,11 @@ impl ConvertSdkTx for InnerApp {
             }
 
             "nomic/claim-airdrop" => {
+                let msg = msg.value.as_object().ok_or_else(|| Error::App("Invalid message value".to_string()))?;
+                if msg.is_empty() {
+                    return Err(Error::App("Message should be empty".to_string()));
+                }
+
                 let claim_call = AirdropCall::MethodClaim(vec![]);
                 let claim_call_bytes = claim_call.encode()?;
                 let payer_call = AppCall::FieldAtomAirdrop(claim_call_bytes);
