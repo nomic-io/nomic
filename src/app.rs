@@ -159,6 +159,7 @@ impl ConvertSdkTx for InnerApp {
         type AppCall = <InnerApp as Call>::Call;
         type AccountCall = <Accounts<Nom> as Call>::Call;
         type StakingCall = <Staking<Nom> as Call>::Call;
+        type AirdropCall = <Airdrop<Nom> as Call>::Call;
 
         let get_addr = |name: &str| -> Result<Address> {
             msg
@@ -279,6 +280,36 @@ impl ConvertSdkTx for InnerApp {
                     StakingCall::MethodUnbondSelf(val_addr, amount, vec![]);
                 let undelegate_call_bytes = undelegate_call.encode()?;
                 let paid_call = AppCall::FieldStaking(undelegate_call_bytes);
+
+                Ok(PaidCall {
+                    payer: payer_call,
+                    paid: paid_call,
+                })
+            }
+
+            "nomic/claim-rewards" => {
+                let claim_call = StakingCall::MethodClaimAll(vec![]);
+                let claim_call_bytes = claim_call.encode()?;
+                let payer_call = AppCall::FieldStaking(claim_call_bytes);
+
+                let give_call = AccountCall::MethodGiveFromFundingAll(vec![]);
+                let give_call_bytes = give_call.encode()?;
+                let paid_call = AppCall::FieldAccounts(give_call_bytes);
+
+                Ok(PaidCall {
+                    payer: payer_call,
+                    paid: paid_call,
+                })
+            }
+
+            "nomic/claim-airdrop" => {
+                let claim_call = AirdropCall::MethodClaim(vec![]);
+                let claim_call_bytes = claim_call.encode()?;
+                let payer_call = AppCall::FieldAtomAirdrop(claim_call_bytes);
+
+                let give_call = AccountCall::MethodGiveFromFundingAll(vec![]);
+                let give_call_bytes = give_call.encode()?;
+                let paid_call = AppCall::FieldAccounts(give_call_bytes);
 
                 Ok(PaidCall {
                     payer: payer_call,
