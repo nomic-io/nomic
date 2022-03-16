@@ -6,7 +6,6 @@
 
 use bitcoincore_rpc::{Auth, Client as BtcClient};
 use clap::Parser;
-use futures::FutureExt;
 use nomic::app::*;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
