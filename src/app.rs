@@ -3,7 +3,7 @@ use orga::Error;
 use std::convert::TryInto;
 use std::time::Duration;
 
-pub const CHAIN_ID: &str = "nomic-stakenet";
+pub const CHAIN_ID: &str = "nomic-practicenet-3-pre";
 pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
 
 #[derive(State, Debug, Clone)]
@@ -108,7 +108,7 @@ mod abci {
         fn init_chain(&mut self, ctx: &InitChainCtx) -> Result<()> {
             self.staking.set_min_self_delegation(100_000);
             self.staking.set_max_validators(100);
-            self.accounts.allow_transfers(false);
+            self.accounts.allow_transfers(true);
 
             self.configure_faucets()?;
 
