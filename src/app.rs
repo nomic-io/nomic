@@ -1,4 +1,4 @@
-// use crate::bitcoin::Bitcoin;
+use crate::bitcoin::Bitcoin;
 #[cfg(feature = "full")]
 use orga::migrate::{exec_migration, Migrate};
 use orga::plugins::sdk_compat::{sdk::Tx as SdkTx, ConvertSdkTx};
@@ -30,7 +30,7 @@ pub struct InnerApp {
     community_pool_rewards: Faucet<Nom>,
     incentive_pool_rewards: Faucet<Nom>,
 
-    // pub bitcoin: Bitcoin,
+    pub bitcoin: Bitcoin,
 }
 
 #[cfg(feature = "full")]
@@ -161,8 +161,7 @@ impl ConvertSdkTx for InnerApp {
         type StakingCall = <Staking<Nom> as Call>::Call;
 
         let get_addr = |name: &str| -> Result<Address> {
-            msg
-                .value
+            msg.value
                 .get(name)
                 .ok_or_else(|| Error::App(format!("No field named '{}'", name)))?
                 .as_str()
@@ -183,10 +182,7 @@ impl ConvertSdkTx for InnerApp {
                 .get("denom")
                 .ok_or_else(|| Error::App("No denom in amount".into()))?;
             if denom != expected_denom {
-                return Err(Error::App(format!(
-                    "Invalid denom in amount: {}",
-                    denom
-                )));
+                return Err(Error::App(format!("Invalid denom in amount: {}", denom)));
             }
 
             let amount: u64 = amount
@@ -251,12 +247,8 @@ impl ConvertSdkTx for InnerApp {
                 let funding_call_bytes = funding_call.encode()?;
                 let payer_call = AppCall::FieldAccounts(funding_call_bytes);
 
-                let redelegate_call = StakingCall::MethodRedelegateSelf(
-                    val_src_addr,
-                    val_dst_addr,
-                    amount,
-                    vec![],
-                );
+                let redelegate_call =
+                    StakingCall::MethodRedelegateSelf(val_src_addr, val_dst_addr, amount, vec![]);
                 let redelegate_call_bytes = redelegate_call.encode()?;
                 let paid_call = AppCall::FieldStaking(redelegate_call_bytes);
 
@@ -275,8 +267,7 @@ impl ConvertSdkTx for InnerApp {
                 let funding_call_bytes = funding_call.encode()?;
                 let payer_call = AppCall::FieldAccounts(funding_call_bytes);
 
-                let undelegate_call =
-                    StakingCall::MethodUnbondSelf(val_addr, amount, vec![]);
+                let undelegate_call = StakingCall::MethodUnbondSelf(val_addr, amount, vec![]);
                 let undelegate_call_bytes = undelegate_call.encode()?;
                 let paid_call = AppCall::FieldStaking(undelegate_call_bytes);
 

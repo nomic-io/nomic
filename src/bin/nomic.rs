@@ -8,7 +8,6 @@ use bitcoincore_rpc::{Auth, Client as BtcClient};
 use clap::Parser;
 use futures::FutureExt;
 use nomic::app::*;
-use nomic::bitcoin::relayer::Relayer;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -47,7 +46,6 @@ pub enum Command {
     Unbond(UnbondCmd),
     Claim(ClaimCmd),
     ClaimAirdrop(ClaimAirdropCmd),
-    Relayer(RelayerCmd),
 }
 
 impl Command {
@@ -67,7 +65,6 @@ impl Command {
             Unbond(cmd) => cmd.run().await,
             Claim(cmd) => cmd.run().await,
             ClaimAirdrop(cmd) => cmd.run().await,
-            Relayer(cmd) => cmd.run().await,
         }
     }
 }
@@ -381,47 +378,6 @@ impl ClaimAirdropCmd {
             .accounts
             .give_from_funding_all()
             .await
-    }
-}
-
-#[derive(Parser, Debug)]
-pub struct RelayerCmd {
-    #[clap(short = 'p', long, default_value_t = 8332)]
-    rpc_port: u16,
-
-    #[clap(short = 'u', long)]
-    rpc_user: Option<String>,
-
-    #[clap(short = 'P', long)]
-    rpc_pass: Option<String>,
-}
-
-impl RelayerCmd {
-    fn btc_client(&self) -> Result<BtcClient> {
-        let rpc_url = format!("http://localhost:{}", self.rpc_port);
-        let auth = match (self.rpc_user.clone(), self.rpc_pass.clone()) {
-            (Some(user), Some(pass)) => Auth::UserPass(user, pass),
-            _ => Auth::None,
-        };
-
-        let btc_client =
-            BtcClient::new(&rpc_url, auth).map_err(|e| orga::Error::App(e.to_string()))?;
-
-        Ok(btc_client)
-    }
-
-    async fn run(&self) -> Result<()> {
-        let create_relayer = || {
-            let btc_client = self.btc_client().unwrap();
-            let app_bitcoin_client = app_client().bitcoin.clone();
-            Relayer::new(btc_client, app_bitcoin_client)
-        };
-
-        let mut relayer = create_relayer();
-        tokio::spawn((async move || relayer.relay_headers().await)());
-
-        let mut relayer = create_relayer();
-        let deposits = relayer.relay_deposits().await.unwrap();
     }
 }
 
