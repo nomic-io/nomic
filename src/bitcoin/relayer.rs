@@ -1,141 +1,345 @@
-use crate::app::InnerApp;
-use crate::bitcoin::header_queue::{HeaderList, HeaderQueue, WrappedHeader};
+use super::Bitcoin;
+use crate::bitcoin::{adapter::Adapter, header_queue::{HeaderList, WrappedHeader}};
 use crate::error::Result;
+use bitcoin::{hashes::{Hash, hex::ToHex}, Block, BlockHash, Script, Transaction};
+use bitcoincore_rpc::json::{GetBlockHeaderResult, GetBlockResult, Utxo};
 use bitcoincore_rpc::{Client as BtcClient, RpcApi};
+use orga::client::{AsyncCall, AsyncQuery};
+use orga::coins::Address;
 use orga::prelude::*;
 use orga::Result as OrgaResult;
+use std::collections::{HashMap, HashSet, VecDeque};
+use tokio::task::block_in_place as block;
 
-const SEEK_BATCH_SIZE: u32 = 10;
+const HEADER_BATCH_SIZE: usize = 100;
 
-type AppClient = TendermintClient<crate::app::App>;
+type AppClient<T> = <Bitcoin as Client<T>>::Client;
 
-pub struct Relayer {
-    btc_client: BtcClient,
-    app_client: AppClient,
+// TODO
+fn derive_script(addr: Address, sig_set: &SignatorySet) -> Script {
+    let data = (addr, sig_set.0 as u64).encode().unwrap();
+    bitcoin::Script::new_op_return(&data).to_v0_p2wsh()
 }
 
-type AppQuery = <InnerApp as Query>::Query;
-type HeaderQueueQuery = <HeaderQueue as Query>::Query;
+pub struct Relayer<T: Clone + Send> {
+    btc_client: BtcClient,
+    app_client: AppClient<T>,
 
-impl Relayer {
-    pub fn new(btc_client: BtcClient, app_client: AppClient) -> Self {
+    scripts: WatchedScripts,
+}
+
+impl<T: Clone + Send> Relayer<T>
+where
+    T: AsyncQuery<Query = <Bitcoin as Query>::Query>,
+    T: AsyncQuery<Response = Bitcoin>,
+    T: AsyncCall<Call = <Bitcoin as Call>::Call>,
+{
+    pub fn new(btc_client: BtcClient, app_client: AppClient<T>) -> Self {
         Relayer {
             btc_client,
             app_client,
+            scripts: WatchedScripts::new(derive_script, 86_400, 144),
         }
     }
 
-    async fn app_height(&self) -> OrgaResult<u32> {
-        self.app_client
-            .query(
-                AppQuery::FieldBtcHeaders(HeaderQueueQuery::MethodHeight(vec![])),
-                |state| Ok(state.btc_headers.height().unwrap()),
-            )
-            .await
+    async fn sidechain_block_hash(&self) -> Result<BlockHash> {
+        let hash = self.app_client.headers.hash().await??;
+        let hash = bitcoin::BlockHash::from_slice(hash.as_slice())?;
+        Ok(hash)
     }
 
-    async fn app_trusted_height(&self) -> OrgaResult<u32> {
-        self.app_client
-            .query(
-                AppQuery::FieldBtcHeaders(HeaderQueueQuery::MethodTrustedHeight(vec![])),
-                |state| Ok(state.btc_headers.trusted_height()),
-            )
-            .await
-    }
+    pub async fn relay_headers(&mut self) -> Result<!> {
+        println!("Starting header relay...");
 
-    async fn app_add(&mut self, headers: HeaderList) -> OrgaResult<()> {
-        self.app_client.btc_headers.add(headers).await
-    }
-
-    pub async fn start(&mut self) -> Result<!> {
-        self.wait_for_trusted_header().await?;
-        self.listen().await
-    }
-
-    async fn wait_for_trusted_header(&self) -> Result<()> {
         loop {
-            let tip_hash = self.btc_client.get_best_block_hash()?;
-            let tip_height = self.btc_client.get_block_header_info(&tip_hash)?.height;
-            println!("wait_for_trusted_header: btc={}", tip_height);
-            if (tip_height as u32) < self.app_trusted_height().await? {
-                std::thread::sleep(std::time::Duration::from_secs(1));
-            } else {
-                break;
+            let fullnode_hash = block(|| self.btc_client.get_best_block_hash())?;
+            let sidechain_hash = self.sidechain_block_hash().await?;
+
+            if fullnode_hash != sidechain_hash {
+                self.relay_header_batch(fullnode_hash, sidechain_hash)
+                    .await?;
+                continue;
             }
-        }
 
-        Ok(())
-    }
-
-    async fn listen(&mut self) -> Result<!> {
-        loop {
-            let tip_hash = self.btc_client.get_best_block_hash()?;
-            let tip_height = self.btc_client.get_block_header_info(&tip_hash)?.height;
+            let info = block(|| self.btc_client.get_block_info(&fullnode_hash))?;
             println!(
-                "relayer listen: btc={}, app={}",
-                tip_height,
-                self.app_height().await?
+                "Sidechain header state is up-to-date:\n\thash={}\n\theight={}",
+                info.hash, info.height
             );
-            if tip_height as u32 > self.app_height().await? {
-                self.seek_to_tip().await?;
-            } else {
-                std::thread::sleep(std::time::Duration::from_secs(1));
-            }
+
+            block(|| self.btc_client.wait_for_new_block(0))?;
         }
     }
 
-    #[cfg(test)]
-    pub async fn bounded_listen(&mut self, num_blocks: u32) -> Result<()> {
-        for _ in 0..num_blocks {
-            let tip_hash = self.btc_client.get_best_block_hash()?;
-            let tip_height = self.btc_client.get_block_header_info(&tip_hash)?.height;
-            if tip_height as u32 > self.app_height().await? {
-                self.seek_to_tip().await?;
-            } else {
-                std::thread::sleep(std::time::Duration::from_secs(1));
+    pub async fn relay_deposits(&mut self) -> Result<!> {
+        println!("Starting deposit relay...");
+
+        // TODO: remove this (just added for testing)
+        self.scripts.add_address([0; 20].into());
+        self.scripts.add_sig_set(SignatorySet(0));
+
+        let block_hash = self.sidechain_block_hash().await?;
+        for block in self.last_n_blocks(1008, block_hash)? {
+            for tx in self.relevant_txs(&block) {
+                self.maybe_relay_deposit(tx).await?;
             }
         }
+
+        loop {
+            block(|| std::thread::sleep(std::time::Duration::from_secs(1)));
+        }
+    }
+
+    pub fn last_n_blocks(
+        &self,
+        n: usize,
+        mut hash: BlockHash,
+    ) -> Result<Vec<Block>> {
+        (0..n).map(move |_| {
+            let block = tokio::task::block_in_place(|| self.btc_client.get_block(&hash.clone()));
+            if let Ok(ref block) = block {
+                hash = block.header.prev_blockhash;
+            }
+            Ok(block?)
+        }).collect()
+    }
+
+    pub fn relevant_txs<'a>(
+        &self,
+        block: &'a Block,
+    ) -> Vec<&'a Transaction> {
+        block
+            .txdata
+            .iter()
+            .filter(move |tx| tx.output.iter().any(|s| self.scripts.has(&s.script_pubkey)))
+            .collect()
+    }
+
+    async fn maybe_relay_deposit(&mut self, tx: &Transaction) -> Result<()> {
+        let txid = Adapter::new(tx.txid());
+        if self.app_client.was_relayed(txid).await?? {
+            println!("Detected already-relayed deposit: {}", txid.to_hex());
+            return Ok(());
+        }
+
+        let tx = Adapter::new(tx.clone());
+        self.app_client.deposit(tx, 2).await?;
+        println!("Relayed deposit: {}", txid.to_hex());
 
         Ok(())
     }
 
-    async fn seek_to_tip(&mut self) -> Result<()> {
-        let tip_height = self.get_rpc_height()?;
-        let mut app_height = self.app_height().await?;
-        while app_height < tip_height {
-            println!("seek_to_tip: btc={}, app={}", tip_height, app_height);
-            let headers = self.get_header_batch(SEEK_BATCH_SIZE).await?;
-            self.app_add(headers.into()).await?;
-            app_height = self.app_height().await?;
+    async fn relay_header_batch(
+        &mut self,
+        fullnode_hash: BlockHash,
+        sidechain_hash: BlockHash,
+    ) -> Result<()> {
+        let get_info = |hash| block(|| self.btc_client.get_block_header_info(&hash));
+
+        let fullnode_info = get_info(fullnode_hash)?;
+        let sidechain_info = get_info(sidechain_hash)?;
+
+        if fullnode_info.height < sidechain_info.height {
+            // full node is still syncing
+            return Ok(());
         }
+
+        let start = self.common_ancestor(fullnode_hash, sidechain_hash)?;
+        let batch = self.get_header_batch(start.hash)?;
+
+        println!(
+            "Relaying headers...\n\thash={}\n\theight={}\n\tbatch_len={}",
+            start.hash,
+            start.height,
+            batch.len(),
+        );
+
+        self.app_client.headers.add(batch.into()).await?;
+        println!("Relayed headers");
+
         Ok(())
     }
 
-    async fn get_header_batch(&self, batch_size: u32) -> Result<Vec<WrappedHeader>> {
-        let mut headers = Vec::with_capacity(batch_size as usize);
-        for i in 1..=batch_size {
-            let hash = match self
-                .btc_client
-                .get_block_hash((self.app_height().await? + i) as u64)
-            {
-                Ok(hash) => hash,
-                Err(_) => break,
+    fn get_header_batch(&self, from_hash: BlockHash) -> Result<Vec<WrappedHeader>> {
+        let get_info = |hash| block(|| self.btc_client.get_block_header_info(&hash));
+
+        let mut cursor = get_info(from_hash)?;
+
+        let mut headers = Vec::with_capacity(HEADER_BATCH_SIZE as usize);
+        for _ in 0..HEADER_BATCH_SIZE {
+            match cursor.next_block_hash {
+                Some(next_hash) => cursor = get_info(next_hash)?,
+                None => break,
             };
 
-            let header = self.btc_client.get_block_header(&hash)?;
-            let height = self.btc_client.get_block_header_info(&hash)?.height;
-            let wrapped_header = WrappedHeader::from_header(&header, height as u32);
-            headers.push(wrapped_header);
+            let header = block(|| self.btc_client.get_block_header(&cursor.hash))?;
+            let header = WrappedHeader::from_header(&header, cursor.height as u32);
+
+            headers.push(header);
         }
 
         Ok(headers)
     }
 
-    fn get_rpc_height(&self) -> Result<u32> {
-        let tip_hash = self.btc_client.get_best_block_hash()?;
-        let tip_height = self.btc_client.get_block_header_info(&tip_hash)?.height;
+    fn common_ancestor(&self, a: BlockHash, b: BlockHash) -> Result<GetBlockHeaderResult> {
+        let get_info = |hash| block(|| self.btc_client.get_block_header_info(&hash));
 
-        Ok(tip_height as u32)
+        let mut a = get_info(a)?;
+        let mut b = get_info(b)?;
+
+        while a != b {
+            if a.height > b.height {
+                a = get_info(a.previous_block_hash.unwrap())?;
+            } else {
+                b = get_info(b.previous_block_hash.unwrap())?;
+            }
+        }
+
+        Ok(a)
+    }
+}
+
+// TODO: implement actual signatory set type
+#[derive(Hash)]
+pub struct SignatorySet(usize);
+
+fn time_now() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
+/// A collection which stores all watched addresses and signatory sets, for
+/// efficiently detecting deposit output scripts.
+pub struct WatchedScripts {
+    scripts: HashMap<Script, (Address, usize)>,
+
+    addr_queue: VecDeque<(u64, Address)>,
+    addrs: HashSet<Address>,
+
+    sig_set_index: usize,
+    sig_sets: VecDeque<SignatorySet>,
+
+    derive_script: fn(Address, &SignatorySet) -> Script,
+    addr_ttl: u64,
+    max_sig_sets: usize,
+}
+
+impl WatchedScripts {
+    pub fn new(
+        derive_script: fn(Address, &SignatorySet) -> Script,
+        addr_ttl: u64,
+        max_sig_sets: usize,
+    ) -> Self {
+        Self {
+            scripts: HashMap::new(),
+
+            addr_queue: VecDeque::new(),
+            addrs: HashSet::new(),
+
+            sig_set_index: 0,
+            sig_sets: VecDeque::new(),
+
+            derive_script,
+            addr_ttl,
+            max_sig_sets,
+        }
+    }
+
+    pub fn get(&self, script: &Script) -> Option<(Address, &SignatorySet)> {
+        self.scripts.get(script).map(|&(addr, sig_set_index)| {
+            let sig_set = self.sig_set(sig_set_index);
+            (addr, sig_set)
+        })
+    }
+
+    pub fn has(&self, script: &Script) -> bool {
+        self.scripts.contains_key(script)
+    }
+
+    pub fn len(&self) -> usize {
+        self.scripts.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.scripts.is_empty()
+    }
+
+    pub fn add_address(&mut self, addr: Address) {
+        let now = time_now();
+        self.addr_queue.push_back((now, addr));
+        self.addrs.insert(addr);
+
+        for (sig_set_index, script) in self.scripts_for_addr(addr) {
+            self.scripts.insert(script, (addr, sig_set_index));
+        }
+    }
+
+    pub fn remove_expired_addrs(&mut self) {
+        let now = time_now();
+
+        while let Some(&(time, addr)) = self.addr_queue.front() {
+            let age = now - time;
+            if age < self.addr_ttl {
+                break;
+            }
+
+            self.addrs.remove(&addr);
+            self.addr_queue.pop_front();
+
+            for (_, script) in self.scripts_for_addr(addr) {
+                self.scripts.remove(&script);
+            }
+        }
+    }
+
+    fn scripts_for_addr(&self, addr: Address) -> Vec<(usize, Script)> {
+        self.sig_sets
+            .iter()
+            .enumerate()
+            .map(|(i, sig_set)| {
+                let index = self.sig_set_index - self.sig_sets.len() + i;
+                let script = (self.derive_script)(addr, sig_set);
+                (index, script)
+            })
+            .collect()
+    }
+
+    pub fn add_sig_set(&mut self, sig_set: SignatorySet) {
+        for (addr, script) in self.scripts_for_sig_set(&sig_set) {
+            self.scripts.insert(script, (addr, self.sig_set_index + 1));
+        }
+
+        self.sig_sets.push_back(sig_set);
+        self.sig_set_index += 1;
+
+        while self.sig_sets.len() > self.max_sig_sets {
+            self.remove_sig_set();
+        }
+    }
+
+    fn remove_sig_set(&mut self) {
+        let sig_set = self.sig_sets.pop_front().unwrap();
+
+        for (_, script) in self.scripts_for_sig_set(&sig_set) {
+            self.scripts.remove(&script);
+        }
+    }
+
+    fn scripts_for_sig_set(&self, sig_set: &SignatorySet) -> Vec<(Address, Script)> {
+        self.addrs
+            .iter()
+            .map(|&addr| {
+                let script = (self.derive_script)(addr, sig_set);
+                (addr, script)
+            })
+            .collect()
+    }
+
+    fn sig_set(&self, index: usize) -> &SignatorySet {
+        &self.sig_sets[index - (self.sig_set_index - self.sig_sets.len() + 1)]
     }
 }
 

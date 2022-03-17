@@ -1,8 +1,9 @@
 #![feature(async_closure)]
 
 use wasm_bindgen::prelude::*;
-use nomic::app::{App, InnerApp, Nom, Airdrop};
+use nomic::app::{App, InnerApp, Nom, Airdrop, CHAIN_ID};
 use nomic::orga::prelude::*;
+use nomic::orga::client::AsyncQuery;
 use nomic::orga::merk::ABCIPrefixedProofStore;
 use std::ops::{Deref, DerefMut};
 use wasm_bindgen::JsCast;
@@ -10,6 +11,7 @@ use wasm_bindgen_futures::JsFuture;
 use web_sys::{Request, RequestInit, RequestMode, Response};
 use std::convert::TryInto;
 use js_sys::{Array, JsString};
+use std::sync::{Arc, Mutex};
 
 const REST_PORT: u64 = 8443;
 
@@ -20,7 +22,7 @@ pub fn main() -> std::result::Result<(), JsValue> {
 }
 
 #[wasm_bindgen]
-pub async fn transfer(to_addr: String, amount: u64) {
+pub async fn transfer(to_addr: String, amount: u64) -> JsValue {
     let mut client: WebClient<App> = WebClient::new();
     client
         .pay_from(async move |mut client| {
@@ -33,6 +35,7 @@ pub async fn transfer(to_addr: String, amount: u64) {
         )
         .await
         .unwrap();
+    client.last_res()
 }
 
 #[wasm_bindgen]
@@ -40,13 +43,9 @@ pub async fn balance(addr: String) -> u64 {
     let mut client: WebClient<App> = WebClient::new();
     let address = addr.parse().unwrap();
 
-    type AppQuery = <InnerApp as Query>::Query;
-    type AcctQuery = <Accounts<Nom> as Query>::Query;
-
-    let q = AppQuery::FieldAccounts(AcctQuery::MethodBalance(address, vec![]));
-    client
-        .query(q, |state| state.accounts.balance(address))
+    client.accounts.balance(address)
         .await
+        .unwrap()
         .unwrap()
         .into()
 }
@@ -56,15 +55,9 @@ pub async fn reward_balance(addr: String) -> u64 {
     let mut client: WebClient<App> = WebClient::new();
     let address = addr.parse().unwrap();
 
-    type AppQuery = <InnerApp as Query>::Query;
-    type StakingQuery = <Staking<Nom> as Query>::Query;
-
-    let delegations = client
-        .query(
-            AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![])),
-            |state| state.staking.delegations(address),
-        )
+    let delegations = client.staking.delegations(address)
         .await
+        .unwrap()
         .unwrap();
 
     delegations
@@ -75,8 +68,9 @@ pub async fn reward_balance(addr: String) -> u64 {
 
 #[wasm_bindgen]
 pub struct UnbondInfo {
-    start_seconds: u64,
-    amount: u64,
+    #[wasm_bindgen(js_name = startSeconds)]
+    pub start_seconds: u64,
+    pub amount: u64,
 }
 
 #[wasm_bindgen(getter_with_clone)]
@@ -92,15 +86,9 @@ pub async fn delegations(addr: String) -> Array {
     let mut client: WebClient<App> = WebClient::new();
     let address = addr.parse().unwrap();
 
-    type AppQuery = <InnerApp as Query>::Query;
-    type StakingQuery = <Staking<Nom> as Query>::Query;
-
-    let delegations = client
-        .query(
-            AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![])),
-            |state| state.staking.delegations(address),
-        )
+    let delegations = client.staking.delegations(address)
         .await
+        .unwrap()
         .unwrap();
 
     delegations
@@ -134,15 +122,9 @@ pub struct ValidatorQueryInfo {
 pub async fn all_validators() -> Array {
     let mut client: WebClient<App> = WebClient::new();
 
-    type AppQuery = <InnerApp as Query>::Query;
-    type StakingQuery = <Staking<Nom> as Query>::Query;
-
-    let validators = client
-        .query(
-            AppQuery::FieldStaking(StakingQuery::MethodAllValidators(vec![])),
-            |state| state.staking.all_validators(),
-        )
+    let validators = client.staking.all_validators()
         .await
+        .unwrap()
         .unwrap();
 
     validators
@@ -161,7 +143,7 @@ pub async fn all_validators() -> Array {
 
 
 #[wasm_bindgen]
-pub async fn claim() {
+pub async fn claim() -> JsValue {
     let mut client: WebClient<App> = WebClient::new();
     
     client
@@ -172,24 +154,49 @@ pub async fn claim() {
         .give_from_funding_all()
         .await
         .unwrap();
+    client.last_res()
 }
 
 #[wasm_bindgen]
-pub async fn delegate(to_addr: String, amount: u64) {
+pub async fn delegate(to_addr: String, amount: u64) -> JsValue {
     let mut client: WebClient<App> = WebClient::new();
-    let to_addr = to_addr.parse().unwrap();
-    client
-        .pay_from(async move |mut client| {
-            client.accounts.take_as_funding((amount + MIN_FEE).into()).await
-        })
-        .staking
-        .delegate_from_self(to_addr, amount.into())
-        .await
-        .unwrap();
+    let mut signer = nomic::orga::plugins::keplr::Signer::new();
+
+    let my_addr = signer.address().await;
+    let nonce = client.nonce(my_addr.parse().unwrap()).await.unwrap();
+
+    let mut amount_obj = serde_json::Map::new();
+    amount_obj.insert("amount".to_string(), amount.to_string().into());
+    amount_obj.insert("denom".to_string(), "unom".into());
+
+    let mut value = serde_json::Map::new();
+    value.insert("delegator_address".to_string(), my_addr.into());
+    value.insert("validator_address".to_string(), to_addr.into());
+    value.insert("amount".to_string(), amount_obj.into());
+
+    use nomic::orga::plugins::sdk_compat::sdk::*;
+    client.send_sdk_tx(SignDoc {
+        account_number: "0".to_string(),
+        chain_id: CHAIN_ID.to_string(),
+        fee: Fee {
+            amount: vec![ Coin { amount: MIN_FEE.to_string(), denom: "unom".to_string() } ],
+            gas: MIN_FEE.to_string(),
+        },
+        memo: "".to_string(),
+        msgs: vec![
+            Msg {
+                type_: "cosmos-sdk/MsgDelegate".to_string(),
+                value,
+            },
+        ],
+        sequence: (nonce + 1).to_string(),
+    }).await.unwrap();
+
+    client.last_res()
 }
 
 #[wasm_bindgen]
-pub async fn unbond(validator_addr: String, amount: u64) {
+pub async fn unbond(validator_addr: String, amount: u64) -> JsValue {
     let mut client: WebClient<App> = WebClient::new();
     let validator_addr = validator_addr.parse().unwrap();
     client
@@ -200,6 +207,7 @@ pub async fn unbond(validator_addr: String, amount: u64) {
         .unbond_self(validator_addr, amount.into())
         .await
         .unwrap();
+    client.last_res()
 }
 
 #[wasm_bindgen(js_name = airdropBalance)]
@@ -207,21 +215,25 @@ pub async fn airdrop_balance(addr: String) -> Option<u64> {
     let client: WebClient<App> = WebClient::new();
     let address = addr.parse().unwrap();
 
-    type AppQuery = <InnerApp as Query>::Query;
-    type AirdropQuery = <Airdrop<Nom> as Query>::Query;
-
-    client
-        .query(
-            AppQuery::FieldAtomAirdrop(AirdropQuery::MethodBalance(address, vec![])),
-            |state| state.atom_airdrop.balance(address),
-        )
+    client.atom_airdrop.balance(address)
         .await
+        .unwrap()
         .unwrap()
         .map(Into::into)
 }
 
+#[wasm_bindgen]
+pub async fn nonce(addr: String) -> u64 {
+    let client: WebClient<App> = WebClient::new();
+    let address = addr.parse().unwrap();
+
+    client.nonce(address)
+        .await
+        .unwrap()
+}
+
 #[wasm_bindgen(js_name = claimAirdrop)]
-pub async fn claim_airdrop() {
+pub async fn claim_airdrop() -> JsValue {
     let mut client: WebClient<App> = WebClient::new();
 
     client
@@ -232,6 +244,8 @@ pub async fn claim_airdrop() {
         .give_from_funding_all()
         .await
         .unwrap();
+
+    client.last_res()
 }
 
 #[wasm_bindgen(js_name = getAddress)]
@@ -242,16 +256,25 @@ pub async fn get_address() -> String {
 
 pub struct WebClient<T: Client<WebAdapter<T>>> {
     state_client: T::Client,
+    last_res: Arc<Mutex<Option<String>>>,
 }
 
 impl<T: Client<WebAdapter<T>>> WebClient<T> {
     pub fn new() -> Self {
+        let last_res = Arc::new(Mutex::new(None));
         let state_client = T::create_client(WebAdapter {
             marker: std::marker::PhantomData,
+            last_res: last_res.clone(),
         });
         WebClient {
             state_client,
+            last_res,
         }
+    }
+
+    fn last_res(&mut self) -> JsValue {
+        let res_json = self.last_res.lock().unwrap().take().unwrap();
+        js_sys::JSON::parse(&res_json).unwrap()
     }
 }
 
@@ -269,10 +292,66 @@ impl<T: Client<WebAdapter<T>>> DerefMut for WebClient<T> {
     }
 }
 
-impl<T: Client<WebAdapter<T>> + Query + State> WebClient<T> {
-    pub async fn query<F, R>(&self, query: T::Query, check: F) -> Result<R>
+pub struct WebAdapter<T> {
+    marker: std::marker::PhantomData<fn() -> T>,
+    last_res: Arc<Mutex<Option<String>>>,
+}
+
+impl<T> Clone for WebAdapter<T> {
+    fn clone(&self) -> WebAdapter<T> {
+        WebAdapter {
+            marker: self.marker,
+            last_res: self.last_res.clone(),
+        }
+    }
+}
+
+#[async_trait::async_trait(?Send)]
+impl<T: Call> AsyncCall for WebAdapter<T>
+where
+    T::Call: Send,
+{
+    type Call = T::Call;
+
+    async fn call(&mut self, call: Self::Call) -> Result<()> {
+        let tx = call.encode()?;
+        let tx = base64::encode(&tx);
+        web_sys::console::log_1(&format!("call: {}", tx).into());
+
+        let window = web_sys::window().unwrap();
+
+        let location = window.location();
+        let rest_server = format!("{}//{}:{}", location.protocol().unwrap(), location.hostname().unwrap(), REST_PORT);
+
+        let mut opts = RequestInit::new();
+        opts.method("POST");
+        opts.body(Some(&tx.into()));
+        opts.mode(RequestMode::Cors);
+        let url = format!("{}/txs", rest_server);
+    
+        let request = Request::new_with_str_and_init(&url, &opts).unwrap();
+
+        let resp_value = JsFuture::from(window.fetch_with_request(&request)).await.unwrap();
+
+        let resp: Response = resp_value.dyn_into().unwrap();
+        let res = JsFuture::from(resp.array_buffer().unwrap()).await.unwrap();
+        let res = js_sys::Uint8Array::new(&res).to_vec();
+        let res = String::from_utf8(res).unwrap();
+        web_sys::console::log_1(&format!("response: {}", &res).into());
+
+        self.last_res.lock().unwrap().replace(res);
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait(?Send)]
+impl<T: Query + State> AsyncQuery for WebAdapter<T> {
+    type Query = T::Query;
+    type Response = T;
+
+    async fn query<F, R>(&self, query: T::Query, mut check: F) -> Result<R>
     where
-        F: Fn(&T) -> Result<R>,
+        F: FnMut(T) -> Result<R>,
     {
         let query = query.encode()?;
         let query = hex::encode(&query);
@@ -315,57 +394,6 @@ impl<T: Client<WebAdapter<T>> + Query + State> WebClient<T> {
         let store: Shared<ABCIPrefixedProofStore> = Shared::new(ABCIPrefixedProofStore::new(map));
         let state = T::create(Store::new(store.into()), encoding).unwrap();
 
-        check(&state)
-    }
-}
-
-pub struct WebAdapter<T> {
-    marker: std::marker::PhantomData<fn() -> T>,
-}
-
-impl<T> Clone for WebAdapter<T> {
-    fn clone(&self) -> WebAdapter<T> {
-        WebAdapter {
-            marker: self.marker,
-        }
-    }
-}
-
-#[async_trait::async_trait(?Send)]
-impl<T: Call> AsyncCall for WebAdapter<T>
-where
-    T::Call: Send,
-{
-    type Call = T::Call;
-
-    async fn call(&mut self, call: Self::Call) -> Result<()> {
-        let tx = call.encode()?;
-        let tx = base64::encode(&tx);
-        web_sys::console::log_1(&format!("call: {}", tx).into());
-
-        let window = web_sys::window().unwrap();
-
-        let location = window.location();
-        let rest_server = format!("{}//{}:{}", location.protocol().unwrap(), location.hostname().unwrap(), REST_PORT);
-
-        let mut opts = RequestInit::new();
-        opts.method("POST");
-        opts.body(Some(&tx.into()));
-        opts.mode(RequestMode::Cors);
-        let url = format!("{}/txs", rest_server);
-    
-        let request = Request::new_with_str_and_init(&url, &opts).unwrap();
-
-        let resp_value = JsFuture::from(window.fetch_with_request(&request)).await.unwrap();
-
-        let resp: Response = resp_value.dyn_into().unwrap();
-        let res = JsFuture::from(resp.array_buffer().unwrap()).await.unwrap();
-        let res = js_sys::Uint8Array::new(&res).to_vec();
-        let res = String::from_utf8(res).unwrap();
-        web_sys::console::log_1(&format!("response: {}", res).into());
-
-        // TODO: handle error response
-
-        Ok(())
+        check(state)
     }
 }
