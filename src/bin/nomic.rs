@@ -43,6 +43,7 @@ pub enum Command {
     Delegate(DelegateCmd),
     Declare(DeclareCmd),
     Unbond(UnbondCmd),
+    Unjail(UnjailCmd),
     Claim(ClaimCmd),
     ClaimAirdrop(ClaimAirdropCmd),
 }
@@ -62,6 +63,7 @@ impl Command {
             Delegations(cmd) => cmd.run().await,
             Validators(cmd) => cmd.run().await,
             Unbond(cmd) => cmd.run().await,
+            Unjail(cmd) => cmd.run().await,
             Claim(cmd) => cmd.run().await,
             ClaimAirdrop(cmd) => cmd.run().await,
         }
@@ -350,6 +352,19 @@ impl UnbondCmd {
             .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
             .staking
             .unbond_self(self.validator_addr, self.amount.into())
+            .await
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct UnjailCmd {}
+
+impl UnjailCmd {
+    async fn run(&self) -> Result<()> {
+        app_client()
+            .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
+            .staking
+            .unjail()
             .await
     }
 }
