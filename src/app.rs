@@ -334,7 +334,7 @@ impl ConvertSdkTx for InnerApp {
                     .value
                     .as_object()
                     .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
-                if msg.is_empty() {
+                if !msg.is_empty() {
                     return Err(Error::App("Message should be empty".to_string()));
                 }
 
@@ -357,7 +357,7 @@ impl ConvertSdkTx for InnerApp {
                     .value
                     .as_object()
                     .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
-                if msg.is_empty() {
+                if !msg.is_empty() {
                     return Err(Error::App("Message should be empty".to_string()));
                 }
 
