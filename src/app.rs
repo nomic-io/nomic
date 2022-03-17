@@ -329,7 +329,7 @@ impl ConvertSdkTx for InnerApp {
                 })
             }
 
-            "nomic/claim-rewards" => {
+            "nomic/MsgClaimRewards" => {
                 let msg = msg
                     .value
                     .as_object()
@@ -352,7 +352,7 @@ impl ConvertSdkTx for InnerApp {
                 })
             }
 
-            "nomic/claim-airdrop" => {
+            "nomic/MsgClaimAirdrop" => {
                 let msg = msg
                     .value
                     .as_object()

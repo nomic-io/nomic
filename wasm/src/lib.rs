@@ -141,29 +141,48 @@ pub async fn all_validators() -> Array {
         .collect()
 }
 
+use nomic::orga::plugins::sdk_compat::sdk;
 
-#[wasm_bindgen]
-pub async fn claim() -> JsValue {
+async fn send_sdk_tx(msg: sdk::Msg) -> JsValue {
+    let my_addr = get_address().await;
+
     let mut client: WebClient<App> = WebClient::new();
-    
-    client
-        .pay_from(async move |mut client| {
-            client.staking.claim_all().await
-        })
-        .accounts
-        .give_from_funding_all()
-        .await
-        .unwrap();
+    let nonce = client.nonce(my_addr.parse().unwrap()).await.unwrap();
+
+    client.send_sdk_tx(sdk::SignDoc {
+        account_number: "0".to_string(),
+        chain_id: CHAIN_ID.to_string(),
+        fee: sdk::Fee {
+            amount: vec![ sdk::Coin { amount: MIN_FEE.to_string(), denom: "unom".to_string() } ],
+            gas: MIN_FEE.to_string(),
+        },
+        memo: "".to_string(),
+        msgs: vec![ msg ],
+        sequence: (nonce + 1).to_string(),
+    }).await.unwrap();
+
     client.last_res()
 }
 
 #[wasm_bindgen]
-pub async fn delegate(to_addr: String, amount: u64) -> JsValue {
-    let mut client: WebClient<App> = WebClient::new();
-    let mut signer = nomic::orga::plugins::keplr::Signer::new();
+pub async fn claim() -> JsValue {
+    send_sdk_tx(sdk::Msg {
+        type_: "nomic/MsgClaimRewards".to_string(),
+        value: serde_json::Map::new().into(),
+    }).await
+}
 
-    let my_addr = signer.address().await;
-    let nonce = client.nonce(my_addr.parse().unwrap()).await.unwrap();
+#[wasm_bindgen(js_name = claimAirdrop)]
+pub async fn claim_airdrop() -> JsValue {
+    send_sdk_tx(sdk::Msg {
+        type_: "nomic/MsgClaimAirdrop".to_string(),
+        value: serde_json::Map::new().into(),
+    }).await
+}
+
+#[wasm_bindgen]
+pub async fn delegate(to_addr: String, amount: u64) -> JsValue {
+    let my_addr = get_address().await;
 
     let mut amount_obj = serde_json::Map::new();
     amount_obj.insert("amount".to_string(), amount.to_string().into());
@@ -174,40 +193,49 @@ pub async fn delegate(to_addr: String, amount: u64) -> JsValue {
     value.insert("validator_address".to_string(), to_addr.into());
     value.insert("amount".to_string(), amount_obj.into());
 
-    use nomic::orga::plugins::sdk_compat::sdk::*;
-    client.send_sdk_tx(SignDoc {
-        account_number: "0".to_string(),
-        chain_id: CHAIN_ID.to_string(),
-        fee: Fee {
-            amount: vec![ Coin { amount: MIN_FEE.to_string(), denom: "unom".to_string() } ],
-            gas: MIN_FEE.to_string(),
-        },
-        memo: "".to_string(),
-        msgs: vec![
-            Msg {
-                type_: "cosmos-sdk/MsgDelegate".to_string(),
-                value: value.into(),
-            },
-        ],
-        sequence: (nonce + 1).to_string(),
-    }).await.unwrap();
-
-    client.last_res()
+    send_sdk_tx(sdk::Msg {
+        type_: "cosmos-sdk/MsgDelegate".to_string(),
+        value: value.into(),
+    }).await
 }
 
 #[wasm_bindgen]
-pub async fn unbond(validator_addr: String, amount: u64) -> JsValue {
-    let mut client: WebClient<App> = WebClient::new();
-    let validator_addr = validator_addr.parse().unwrap();
-    client
-        .pay_from(async move |mut client| {
-            client.accounts.take_as_funding(MIN_FEE.into()).await
-        })
-        .staking
-        .unbond_self(validator_addr, amount.into())
-        .await
-        .unwrap();
-    client.last_res()
+pub async fn unbond(val_addr: String, amount: u64) -> JsValue {
+    let my_addr = get_address().await;
+
+    let mut amount_obj = serde_json::Map::new();
+    amount_obj.insert("amount".to_string(), amount.to_string().into());
+    amount_obj.insert("denom".to_string(), "unom".into());
+
+    let mut value = serde_json::Map::new();
+    value.insert("delegator_address".to_string(), my_addr.into());
+    value.insert("validator_address".to_string(), val_addr.into());
+    value.insert("amount".to_string(), amount_obj.into());
+
+    send_sdk_tx(sdk::Msg {
+        type_: "cosmos-sdk/MsgUndelegate".to_string(),
+        value: value.into(),
+    }).await
+}
+
+#[wasm_bindgen]
+pub async fn redelegate(src_addr: String, dst_addr: String, amount: u64) -> JsValue {
+    let my_addr = get_address().await;
+
+    let mut amount_obj = serde_json::Map::new();
+    amount_obj.insert("amount".to_string(), amount.to_string().into());
+    amount_obj.insert("denom".to_string(), "unom".into());
+
+    let mut value = serde_json::Map::new();
+    value.insert("delegator_address".to_string(), my_addr.into());
+    value.insert("validator_src_address".to_string(), src_addr.into());
+    value.insert("validator_dst_address".to_string(), dst_addr.into());
+    value.insert("amount".to_string(), amount_obj.into());
+
+    send_sdk_tx(sdk::Msg {
+        type_: "cosmos-sdk/MsgBeginRedelegate".to_string(),
+        value: value.into(),
+    }).await
 }
 
 #[wasm_bindgen(js_name = airdropBalance)]
@@ -230,22 +258,6 @@ pub async fn nonce(addr: String) -> u64 {
     client.nonce(address)
         .await
         .unwrap()
-}
-
-#[wasm_bindgen(js_name = claimAirdrop)]
-pub async fn claim_airdrop() -> JsValue {
-    let mut client: WebClient<App> = WebClient::new();
-
-    client
-        .pay_from(async move |mut client| {
-            client.atom_airdrop.claim().await
-        })
-        .accounts
-        .give_from_funding_all()
-        .await
-        .unwrap();
-
-    client.last_res()
 }
 
 #[wasm_bindgen(js_name = getAddress)]
