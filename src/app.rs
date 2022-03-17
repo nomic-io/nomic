@@ -15,7 +15,7 @@ impl Symbol for Nom {}
 
 const DEV_ADDRESS: &str = "nomic14z79y3yrghqx493mwgcj0qd2udy6lm26lmduah";
 const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1d5n325zrf4elfu0heqd59gna5j6xyunhev23cj";
-const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhqd8dcqeq";
+const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic186xfxt5u9paadc58825s5dsh6u9v6hjr5we5p7";
 
 #[derive(State, Call, Query, Client)]
 pub struct InnerApp {
@@ -184,13 +184,19 @@ impl ConvertSdkTx for InnerApp {
                 let msg: sdk::MsgSend = serde_json::value::from_value(msg.value.clone())
                     .map_err(|e| Error::App(e.to_string()))?;
 
-                let from: Address = msg.from_address.parse()
+                let from: Address = msg
+                    .from_address
+                    .parse()
                     .map_err(|e: bech32::Error| Error::App(e.to_string()))?;
                 if from != sender_address {
-                    return Err(Error::App("'from_address' must match sender address".to_string()));
+                    return Err(Error::App(
+                        "'from_address' must match sender address".to_string(),
+                    ));
                 }
 
-                let to: Address = msg.to_address.parse()
+                let to: Address = msg
+                    .to_address
+                    .parse()
                     .map_err(|e: bech32::Error| Error::App(e.to_string()))?;
                 let amount = get_amount(msg.amount.first(), "unom")?;
 
@@ -212,13 +218,19 @@ impl ConvertSdkTx for InnerApp {
                 let msg: sdk::MsgDelegate = serde_json::value::from_value(msg.value.clone())
                     .map_err(|e| Error::App(e.to_string()))?;
 
-                let del_addr: Address = msg.delegator_address.parse()
+                let del_addr: Address = msg
+                    .delegator_address
+                    .parse()
                     .map_err(|e: bech32::Error| Error::App(e.to_string()))?;
                 if del_addr != sender_address {
-                    return Err(Error::App("'delegator_address' must match sender address".to_string()));
+                    return Err(Error::App(
+                        "'delegator_address' must match sender address".to_string(),
+                    ));
                 }
 
-                let val_addr: Address = msg.validator_address.parse()
+                let val_addr: Address = msg
+                    .validator_address
+                    .parse()
                     .map_err(|e: bech32::Error| Error::App(e.to_string()))?;
                 let amount: u64 = get_amount(msg.amount.as_ref(), "unom")?.into();
 
@@ -241,16 +253,24 @@ impl ConvertSdkTx for InnerApp {
             "cosmos-sdk/MsgBeginRedelegate" => {
                 let msg: sdk::MsgBeginRedelegate = serde_json::value::from_value(msg.value.clone())
                     .map_err(|e| Error::App(e.to_string()))?;
-                
-                let del_addr: Address = msg.delegator_address.parse()
+
+                let del_addr: Address = msg
+                    .delegator_address
+                    .parse()
                     .map_err(|e: bech32::Error| Error::App(e.to_string()))?;
                 if del_addr != sender_address {
-                    return Err(Error::App("'delegator_address' must match sender address".to_string()));
+                    return Err(Error::App(
+                        "'delegator_address' must match sender address".to_string(),
+                    ));
                 }
 
-                let val_src_addr: Address = msg.validator_src_address.parse()
+                let val_src_addr: Address = msg
+                    .validator_src_address
+                    .parse()
                     .map_err(|e: bech32::Error| Error::App(e.to_string()))?;
-                let val_dst_addr: Address = msg.validator_dst_address.parse()
+                let val_dst_addr: Address = msg
+                    .validator_dst_address
+                    .parse()
                     .map_err(|e: bech32::Error| Error::App(e.to_string()))?;
 
                 let amount = get_amount(msg.amount.as_ref(), "unom")?;
@@ -275,13 +295,19 @@ impl ConvertSdkTx for InnerApp {
                 let msg: sdk::MsgUndelegate = serde_json::value::from_value(msg.value.clone())
                     .map_err(|e| Error::App(e.to_string()))?;
 
-                let del_addr: Address = msg.delegator_address.parse()
+                let del_addr: Address = msg
+                    .delegator_address
+                    .parse()
                     .map_err(|e: bech32::Error| Error::App(e.to_string()))?;
                 if del_addr != sender_address {
-                    return Err(Error::App("'delegator_address' must match sender address".to_string()));
+                    return Err(Error::App(
+                        "'delegator_address' must match sender address".to_string(),
+                    ));
                 }
 
-                let val_addr: Address = msg.validator_address.parse()
+                let val_addr: Address = msg
+                    .validator_address
+                    .parse()
                     .map_err(|e: bech32::Error| Error::App(e.to_string()))?;
                 let amount = get_amount(msg.amount.as_ref(), "unom")?;
 
@@ -301,7 +327,10 @@ impl ConvertSdkTx for InnerApp {
             }
 
             "nomic/claim-rewards" => {
-                let msg = msg.value.as_object().ok_or_else(|| Error::App("Invalid message value".to_string()))?;
+                let msg = msg
+                    .value
+                    .as_object()
+                    .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
                 if msg.is_empty() {
                     return Err(Error::App("Message should be empty".to_string()));
                 }
@@ -321,7 +350,10 @@ impl ConvertSdkTx for InnerApp {
             }
 
             "nomic/claim-airdrop" => {
-                let msg = msg.value.as_object().ok_or_else(|| Error::App("Invalid message value".to_string()))?;
+                let msg = msg
+                    .value
+                    .as_object()
+                    .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
                 if msg.is_empty() {
                     return Err(Error::App("Message should be empty".to_string()));
                 }
