@@ -133,10 +133,11 @@ impl StartCmd {
             if has_old_node && !started_new_node {
                 println!("Starting legacy node for migration...");
 
+                todo!(); // lock in a stop height below
                 let res = nomicv1::orga::abci::Node::<nomicv1::app::App>::new(old_name)
                     .stdout(std::process::Stdio::inherit())
                     .stderr(std::process::Stdio::inherit())
-                    .stop_height(3900)
+                    // .stop_height(3900)
                     .run();
 
                 if let Err(nomicv1::orga::Error::ABCI(msg)) = res {
@@ -151,7 +152,7 @@ impl StartCmd {
             println!("Starting node...");
             // TODO: add cfg defaults
             Node::<nomic::app::App>::new(new_name, Default::default())
-                .with_genesis(include_bytes!("../../genesis/practicenet-3-post.json"))
+                .with_genesis(include_bytes!("../../genesis/nomic-testnet-2.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
                 .run()

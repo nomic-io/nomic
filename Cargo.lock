@@ -1450,7 +1450,7 @@ dependencies = [
 [[package]]
 name = "nomic"
 version = "1.0.0"
-source = "git+https://github.com/nomic-io/nomic.git?branch=practicenet3-legacy#5430cf794b57883d72a586e8e3a62bb18f434d53"
+source = "git+https://github.com/nomic-io/nomic.git?branch=testnet-legacy#8a2d533a0436ca09843da1dcb1244b2e8a429abd"
 dependencies = [
  "base64",
  "bech32",

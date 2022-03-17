@@ -6,7 +6,7 @@ use orga::plugins::sdk_compat::{sdk, sdk::Tx as SdkTx, ConvertSdkTx};
 use orga::prelude::*;
 use orga::Error;
 
-pub const CHAIN_ID: &str = "nomic-practicenet-3-post";
+pub const CHAIN_ID: &str = "nomic-testnet-2";
 pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
 
 #[derive(State, Debug, Clone)]
@@ -15,7 +15,7 @@ impl Symbol for Nom {}
 
 const DEV_ADDRESS: &str = "nomic14z79y3yrghqx493mwgcj0qd2udy6lm26lmduah";
 const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1d5n325zrf4elfu0heqd59gna5j6xyunhev23cj";
-const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic186xfxt5u9paadc58825s5dsh6u9v6hjr5we5p7";
+const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhqd8dcqeq";
 
 #[derive(State, Call, Query, Client)]
 pub struct InnerApp {
@@ -61,12 +61,14 @@ mod abci {
 
     impl InitChain for InnerApp {
         fn init_chain(&mut self, _ctx: &InitChainCtx) -> Result<()> {
-            self.staking.max_validators = 3;
+            self.staking.max_validators = 20;
             self.staking.max_offline_blocks = 100;
             self.staking.downtime_jail_seconds = 60 * 30; // 30 minutes
             self.staking.slash_fraction_downtime = (Amount::new(1) / Amount::new(20))?;
             self.staking.slash_fraction_double_sign = (Amount::new(1) / Amount::new(4))?;
             self.staking.min_self_delegation_min = 1;
+
+            self.accounts.allow_transfers(true);
 
             let old_home_path = nomicv1::orga::abci::Node::<()>::home(nomicv1::app::CHAIN_ID);
             exec_migration(self, old_home_path.join("merk"), &[0, 1, 0])?;
@@ -84,9 +86,6 @@ mod abci {
     impl BeginBlock for InnerApp {
         fn begin_block(&mut self, ctx: &BeginBlockCtx) -> Result<()> {
             self.staking.begin_block(ctx)?;
-            if ctx.height == 2800 {
-                self.accounts.allow_transfers(true);
-            }
 
             if self.staking.staked()? > 0 {
                 let reward = self.staking_rewards.mint()?;
