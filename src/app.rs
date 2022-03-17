@@ -12,7 +12,7 @@ impl Symbol for Nom {}
 
 const DEV_ADDRESS: &str = "nomic14z79y3yrghqx493mwgcj0qd2udy6lm26lmduah";
 const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1d5n325zrf4elfu0heqd59gna5j6xyunhev23cj";
-const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhqd8dcqeq";
+const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic186xfxt5u9paadc58825s5dsh6u9v6hjr5we5p7";
 
 #[derive(State, Call, Query, Client)]
 pub struct InnerApp {
