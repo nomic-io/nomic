@@ -84,6 +84,9 @@ mod abci {
     impl BeginBlock for InnerApp {
         fn begin_block(&mut self, ctx: &BeginBlockCtx) -> Result<()> {
             self.staking.begin_block(ctx)?;
+            if ctx.height == 2800 {
+                self.accounts.allow_transfers(true);
+            }
 
             if self.staking.staked()? > 0 {
                 let reward = self.staking_rewards.mint()?;
