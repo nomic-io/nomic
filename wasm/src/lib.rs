@@ -132,7 +132,7 @@ pub async fn all_validators() -> Array {
         .map(|v| ValidatorQueryInfo {
             jailed: v.jailed,
             address: v.address.to_string(),
-            commission: v.commission.to_string(),
+            commission: v.commission.rate.to_string(),
             in_active_set: v.in_active_set,
             info: String::from_utf8(v.info.bytes.clone()).unwrap_or(String::new()),
             amount_staked: v.amount_staked.into(),
@@ -186,7 +186,7 @@ pub async fn delegate(to_addr: String, amount: u64) -> JsValue {
         msgs: vec![
             Msg {
                 type_: "cosmos-sdk/MsgDelegate".to_string(),
-                value,
+                value: value.into(),
             },
         ],
         sequence: (nonce + 1).to_string(),
