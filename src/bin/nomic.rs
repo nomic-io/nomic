@@ -4,7 +4,6 @@
 #![feature(async_closure)]
 #![feature(never_type)]
 
-use bitcoincore_rpc::{Auth, Client as BtcClient};
 use clap::Parser;
 use nomic::app::*;
 use orga::prelude::*;

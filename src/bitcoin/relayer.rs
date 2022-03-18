@@ -1,13 +1,15 @@
 use super::Bitcoin;
-use crate::bitcoin::{adapter::Adapter, header_queue::{HeaderList, WrappedHeader}};
+use crate::bitcoin::{adapter::Adapter, header_queue::WrappedHeader};
 use crate::error::Result;
-use bitcoin::{hashes::{Hash, hex::ToHex}, Block, BlockHash, Script, Transaction};
-use bitcoincore_rpc::json::{GetBlockHeaderResult, GetBlockResult, Utxo};
+use bitcoin::{
+    hashes::{hex::ToHex, Hash},
+    Block, BlockHash, Script, Transaction,
+};
+use bitcoincore_rpc::json::GetBlockHeaderResult;
 use bitcoincore_rpc::{Client as BtcClient, RpcApi};
 use orga::client::{AsyncCall, AsyncQuery};
 use orga::coins::Address;
 use orga::prelude::*;
-use orga::Result as OrgaResult;
 use std::collections::{HashMap, HashSet, VecDeque};
 use tokio::task::block_in_place as block;
 
@@ -90,24 +92,20 @@ where
         }
     }
 
-    pub fn last_n_blocks(
-        &self,
-        n: usize,
-        mut hash: BlockHash,
-    ) -> Result<Vec<Block>> {
-        (0..n).map(move |_| {
-            let block = tokio::task::block_in_place(|| self.btc_client.get_block(&hash.clone()));
-            if let Ok(ref block) = block {
-                hash = block.header.prev_blockhash;
-            }
-            Ok(block?)
-        }).collect()
+    pub fn last_n_blocks(&self, n: usize, mut hash: BlockHash) -> Result<Vec<Block>> {
+        (0..n)
+            .map(move |_| {
+                let block =
+                    tokio::task::block_in_place(|| self.btc_client.get_block(&hash.clone()));
+                if let Ok(ref block) = block {
+                    hash = block.header.prev_blockhash;
+                }
+                Ok(block?)
+            })
+            .collect()
     }
 
-    pub fn relevant_txs<'a>(
-        &self,
-        block: &'a Block,
-    ) -> Vec<&'a Transaction> {
+    pub fn relevant_txs<'a>(&self, block: &'a Block) -> Vec<&'a Transaction> {
         block
             .txdata
             .iter()
@@ -122,8 +120,8 @@ where
             return Ok(());
         }
 
-        let tx = Adapter::new(tx.clone());
-        self.app_client.deposit(tx, 2).await?;
+        let _tx = Adapter::new(tx.clone());
+        // self.app_client.deposit(tx, 2).await?;
         println!("Relayed deposit: {}", txid.to_hex());
 
         Ok(())

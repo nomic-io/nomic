@@ -1,10 +1,9 @@
 use adapter::Adapter;
-use bitcoin::{Transaction, Txid};
 use bitcoin::hashes::Hash;
+use bitcoin::Txid;
 use orga::call::Call;
 use orga::client::Client;
-use orga::collections::{EntryMap, Map};
-use orga::encoding::{Decode, Encode};
+use orga::collections::Map;
 use orga::query::Query;
 use orga::state::State;
 use orga::Result;
@@ -27,10 +26,10 @@ impl Bitcoin {
         self.relayed_txs.contains(txid)
     }
 
-    #[call]
-    pub fn deposit(&mut self, tx: Adapter<Transaction>, expiration: u64) -> Result<()> {
-        self.relayed_txs.insert(tx.txid(), expiration)
-    }
+    // #[call]
+    // pub fn deposit(&mut self, tx: Adapter<Transaction>, expiration: u64) -> Result<()> {
+    //     self.relayed_txs.insert(tx.txid(), expiration)
+    // }
 }
 
 #[derive(State, Call, Query, Client)]
@@ -48,7 +47,8 @@ impl RelayedTxs {
     pub fn insert(&mut self, txid: Txid, expiration: u64) -> Result<()> {
         let txid = Adapter::new(txid);
         self.txids.insert(txid, ())?;
-        self.expiration_queue.insert((expiration, txid.into_inner()), ())?;
+        self.expiration_queue
+            .insert((expiration, txid.into_inner()), ())?;
         Ok(())
     }
 
