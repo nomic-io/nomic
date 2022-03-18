@@ -133,11 +133,10 @@ impl StartCmd {
             if has_old_node && !started_new_node {
                 println!("Starting legacy node for migration...");
 
-                todo!(); // lock in a stop height below
                 let res = nomicv1::orga::abci::Node::<nomicv1::app::App>::new(old_name)
                     .stdout(std::process::Stdio::inherit())
                     .stderr(std::process::Stdio::inherit())
-                    // .stop_height(3900)
+                    .stop_height(460_000)
                     .run();
 
                 if let Err(nomicv1::orga::Error::ABCI(msg)) = res {
