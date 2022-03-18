@@ -3,6 +3,9 @@ pub enum Error {
     #[error(transparent)]
     Bitcoin(#[from] bitcoin::util::Error),
     #[error(transparent)]
+    BitcoinHash(#[from] bitcoin::hashes::Error),
+    #[cfg(feature = "full")]
+    #[error(transparent)]
     BitcoinRpc(#[from] bitcoincore_rpc::Error),
     #[error("{0}")]
     Header(String),

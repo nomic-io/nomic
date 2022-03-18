@@ -4,16 +4,13 @@
 #![feature(async_closure)]
 #![feature(never_type)]
 
-use app::*;
+use std::path::PathBuf;
+
 use clap::Parser;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 
-mod app;
-mod bitcoin;
-mod error;
-
-pub fn app_client() -> TendermintClient<app::App> {
+pub fn app_client() -> TendermintClient<nomic::app::App> {
     TendermintClient::new("http://localhost:26657").unwrap()
 }
 
@@ -37,6 +34,8 @@ pub struct Opts {
 pub enum Command {
     Init(InitCmd),
     Start(StartCmd),
+    #[cfg(debug)]
+    StartDev(StartDevCmd),
     Send(SendCmd),
     Balance(BalanceCmd),
     Delegations(DelegationsCmd),
@@ -44,6 +43,7 @@ pub enum Command {
     Delegate(DelegateCmd),
     Declare(DeclareCmd),
     Unbond(UnbondCmd),
+    Unjail(UnjailCmd),
     Claim(ClaimCmd),
     ClaimAirdrop(ClaimAirdropCmd),
 }
@@ -54,6 +54,8 @@ impl Command {
         match self {
             Init(cmd) => cmd.run().await,
             Start(cmd) => cmd.run().await,
+            #[cfg(debug)]
+            StartDev(cmd) => cmd.run().await,
             Send(cmd) => cmd.run().await,
             Balance(cmd) => cmd.run().await,
             Delegate(cmd) => cmd.run().await,
@@ -61,6 +63,7 @@ impl Command {
             Delegations(cmd) => cmd.run().await,
             Validators(cmd) => cmd.run().await,
             Unbond(cmd) => cmd.run().await,
+            Unjail(cmd) => cmd.run().await,
             Claim(cmd) => cmd.run().await,
             ClaimAirdrop(cmd) => cmd.run().await,
         }
@@ -73,7 +76,8 @@ pub struct InitCmd {}
 impl InitCmd {
     async fn run(&self) -> Result<()> {
         tokio::task::spawn_blocking(|| {
-            Node::<app::App>::new(CHAIN_ID);
+            // TODO: add cfg defaults
+            nomicv1::orga::abci::Node::<nomicv1::app::App>::new(nomicv1::app::CHAIN_ID);
         })
         .await
         .map_err(|err| orga::Error::App(err.to_string()))?;
@@ -87,15 +91,98 @@ pub struct StartCmd {}
 impl StartCmd {
     async fn run(&self) -> Result<()> {
         tokio::task::spawn_blocking(|| {
-            Node::<app::App>::new(CHAIN_ID)
-                .with_genesis(include_bytes!("../genesis.json"))
+            let old_name = nomicv1::app::CHAIN_ID;
+            let new_name = nomic::app::CHAIN_ID;
+
+            let has_old_node = Node::home(old_name).exists();
+            let has_new_node = Node::home(new_name).exists();
+            let started_new_node = Node::height(new_name).unwrap() > 0;
+
+            if !has_new_node {
+                let new_home = Node::home(new_name);
+                println!("Initializing node at {}...", new_home.display());
+                // TODO: configure default seeds
+                Node::<nomic::app::App>::new(new_name, Default::default());
+
+                if has_old_node {
+                    let old_home = Node::home(old_name);
+                    println!(
+                        "Legacy network data detected, copying keys and config from {}...",
+                        old_home.display()
+                    );
+
+                    std::fs::copy(
+                        old_home.join("tendermint/config/priv_validator_key.json"),
+                        new_home.join("tendermint/config/priv_validator_key.json"),
+                    )
+                    .unwrap();
+                    std::fs::copy(
+                        old_home.join("tendermint/config/node_key.json"),
+                        new_home.join("tendermint/config/node_key.json"),
+                    )
+                    .unwrap();
+                    std::fs::copy(
+                        old_home.join("tendermint/config/config.toml"),
+                        new_home.join("tendermint/config/config.toml"),
+                    )
+                    .unwrap();
+                    edit_block_time(&new_home.join("tendermint/config/config.toml"), "3s");
+                }
+            }
+
+            if has_old_node && !started_new_node {
+                println!("Starting legacy node for migration...");
+
+                let res = nomicv1::orga::abci::Node::<nomicv1::app::App>::new(old_name)
+                    .stdout(std::process::Stdio::inherit())
+                    .stderr(std::process::Stdio::inherit())
+                    .stop_height(460_000)
+                    .run();
+
+                if let Err(nomicv1::orga::Error::ABCI(msg)) = res {
+                    if &msg != "Reached stop height" {
+                        panic!("{}", msg);
+                    }
+                } else {
+                    res.unwrap();
+                }
+            }
+
+            println!("Starting node...");
+            // TODO: add cfg defaults
+            Node::<nomic::app::App>::new(new_name, Default::default())
+                .with_genesis(include_bytes!("../../genesis/nomic-testnet-2.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
                 .run()
+                .unwrap();
         })
         .await
         .map_err(|err| orga::Error::App(err.to_string()))?;
         Ok(())
+    }
+}
+
+fn edit_block_time(cfg_path: &PathBuf, timeout_commit: &str) {
+    let data = std::fs::read_to_string(cfg_path).expect("Failed to read config.toml");
+
+    let mut toml = data
+        .parse::<toml_edit::Document>()
+        .expect("Failed to parse config.toml");
+
+    toml["consensus"]["timeout_commit"] = toml_edit::value(timeout_commit);
+
+    std::fs::write(cfg_path, toml.to_string()).expect("Failed to write config.toml");
+}
+
+#[cfg(debug)]
+#[derive(Parser, Debug)]
+pub struct StartDevCmd {}
+
+#[cfg(debug)]
+impl StartDevCmd {
+    async fn run(&self) -> Result<()> {
+        tokio::task::spawn_blocking(|| unimplemented!())
     }
 }
 
@@ -123,16 +210,7 @@ impl BalanceCmd {
         let address = my_address();
         println!("address: {}", address);
 
-        let client = app_client();
-        type AppQuery = <InnerApp as Query>::Query;
-        type AcctQuery = <Accounts<Nom> as Query>::Query;
-
-        let q = AppQuery::FieldAccounts(AcctQuery::MethodBalance(address, vec![]));
-        let balance: u64 = client
-            .query(q, |state| state.accounts.balance(address))
-            .await?
-            .into();
-
+        let balance = app_client().accounts.balance(address).await??;
         println!("balance: {} NOM", balance);
 
         Ok(())
@@ -145,16 +223,7 @@ pub struct DelegationsCmd;
 impl DelegationsCmd {
     async fn run(&self) -> Result<()> {
         let address = my_address();
-
-        type AppQuery = <InnerApp as Query>::Query;
-        type StakingQuery = <Staking<Nom> as Query>::Query;
-
-        let delegations = app_client()
-            .query(
-                AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![])),
-                |state| state.staking.delegations(address),
-            )
-            .await?;
+        let delegations = app_client().staking.delegations(address).await??;
 
         println!(
             "delegated to {} validator{}",
@@ -182,15 +251,7 @@ pub struct ValidatorsCmd;
 
 impl ValidatorsCmd {
     async fn run(&self) -> Result<()> {
-        type AppQuery = <InnerApp as Query>::Query;
-        type StakingQuery = <Staking<Nom> as Query>::Query;
-
-        let validators = app_client()
-            .query(
-                AppQuery::FieldStaking(StakingQuery::MethodAllValidators(vec![])),
-                |state| state.staking.all_validators(),
-            )
-            .await?;
+        let validators = app_client().staking.all_validators().await??;
 
         for validator in validators {
             let info: DeclareInfo =
@@ -231,6 +292,9 @@ pub struct DeclareCmd {
     consensus_key: String,
     amount: u64,
     commission_rate: Decimal,
+    commission_max: Decimal,
+    commission_max_change: Decimal,
+    min_self_delegation: u64,
     moniker: String,
     website: String,
     identity: String,
@@ -263,6 +327,18 @@ impl DeclareCmd {
             .map_err(|_| orga::Error::App("invalid json".to_string()))?;
         let info_bytes = info_json.as_bytes().to_vec();
 
+        let declaration = Declaration {
+            consensus_key,
+            amount: self.amount.into(),
+            validator_info: info_bytes.into(),
+            commission: Commission {
+                rate: self.commission_rate,
+                max: self.commission_max,
+                max_change: self.commission_max_change,
+            },
+            min_self_delegation: self.min_self_delegation.into(),
+        };
+
         app_client()
             .pay_from(async move |mut client| {
                 client
@@ -271,12 +347,7 @@ impl DeclareCmd {
                     .await
             })
             .staking
-            .declare_self(
-                consensus_key,
-                self.commission_rate,
-                self.amount.into(),
-                info_bytes.into(),
-            )
+            .declare_self(declaration)
             .await
     }
 }
@@ -293,6 +364,19 @@ impl UnbondCmd {
             .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
             .staking
             .unbond_self(self.validator_addr, self.amount.into())
+            .await
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct UnjailCmd {}
+
+impl UnjailCmd {
+    async fn run(&self) -> Result<()> {
+        app_client()
+            .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
+            .staking
+            .unjail()
             .await
     }
 }
