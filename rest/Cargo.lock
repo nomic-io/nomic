@@ -5,7 +5,18 @@ version = 3
 [[package]]
 name = "abci2"
 version = "0.1.3-alpha.0"
-source = "git+https://github.com/nomic-io/abci2?rev=3cacf0b41c4d4ec8c6a897c9ce1024b11863ee33#3cacf0b41c4d4ec8c6a897c9ce1024b11863ee33"
+source = "git+https://github.com/nomic-io/abci2?rev=096e7cf17802de216ce13e3a1db09c517fa60007#096e7cf17802de216ce13e3a1db09c517fa60007"
+dependencies = [
+ "log",
+ "prost",
+ "tendermint-proto",
+ "thiserror",
+]
+
+[[package]]
+name = "abci2"
+version = "0.1.3-alpha.0"
+source = "git+https://github.com/nomic-io/abci2?rev=bf7d3e4fd1f4acd23d1550c18d4f01670e911acb#bf7d3e4fd1f4acd23d1550c18d4f01670e911acb"
 dependencies = [
  "log",
  "prost",
@@ -175,9 +186,9 @@ checksum = "383d29d513d8764dcdc42ea295d979eb99c3c9f00607b3692cf68a431f7dca72"
 
 [[package]]
 name = "bindgen"
-version = "0.57.0"
+version = "0.59.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd4865004a46a0aafb2a0a5eb19d3c9fc46ee5f063a6cfc605c69ac9ecf5263d"
+checksum = "2bd2a9a458e8f4304c52c43ebb0cfbd520289f8379a52e329a38afda99bf8eb8"
 dependencies = [
  "bitflags",
  "cexpr",
@@ -323,6 +334,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4872d67bab6358e59559027aa3b9157c53d9358c51423c17554809a8858e0f8"
 
 [[package]]
+name = "bzip2-sys"
+version = "0.1.11+1.0.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "736a955f3fa7875102d57c82b8cac37ec45224a07fd32d58f9f7a186b6cd4cdc"
+dependencies = [
+ "cc",
+ "libc",
+ "pkg-config",
+]
+
+[[package]]
 name = "cc"
 version = "1.0.72"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -333,9 +355,9 @@ dependencies = [
 
 [[package]]
 name = "cexpr"
-version = "0.4.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f4aedb84272dbe89af497cf81375129abda4fc0a9e7c5d317498c15cc30c0d27"
+checksum = "6fac387a98bb7c37292057cffc56d62ecb629900026402633ae9160df93a8766"
 dependencies = [
  "nom",
 ]
@@ -653,16 +675,17 @@ name = "ed"
 version = "0.2.2-alpha.0"
 source = "git+https://github.com/nomic-io/ed?rev=dd28e9f9e7c97827dde943ee8decfcdf25b3cc83#dd28e9f9e7c97827dde943ee8decfcdf25b3cc83"
 dependencies = [
- "ed-derive",
+ "ed-derive 0.2.3",
  "thiserror",
 ]
 
 [[package]]
 name = "ed"
-version = "0.2.3-alpha.0"
-source = "git+https://github.com/nomic-io/ed.git?rev=6d327abacf0c6068ceaed36fb67410ae65f2abbe#6d327abacf0c6068ceaed36fb67410ae65f2abbe"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f205c65ec89e8fdd41f5a522eb5721818dc84c732634a6e48eb1a7b92e0169d"
 dependencies = [
- "ed-derive",
+ "ed-derive 0.3.0",
  "thiserror",
 ]
 
@@ -671,6 +694,17 @@ name = "ed-derive"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06a91d774f4b861acaa791bc6165e66d72d3a5d1aa85fc8c0956f5580f863161"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "ed-derive"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e9907e1f07d6b49fc8cfc92870aae890618671e932db9b7b9224d530eddde2cb"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -849,9 +883,9 @@ checksum = "a06f77d526c1a601b7c4cdd98f54b5eaabffc14d5f2f0296febdc7f357c6d3ba"
 
 [[package]]
 name = "futures"
-version = "0.3.19"
+version = "0.3.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28560757fe2bb34e79f907794bb6b22ae8b0e5c669b638a1132f2592b19035b4"
+checksum = "f73fe65f54d1e12b726f517d3e2135ca3125a437b6d998caf1962961f7172d9e"
 dependencies = [
  "futures-channel",
  "futures-core",
@@ -864,9 +898,9 @@ dependencies = [
 
 [[package]]
 name = "futures-channel"
-version = "0.3.19"
+version = "0.3.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba3dda0b6588335f360afc675d0564c17a77a2bda81ca178a4b6081bd86c7f0b"
+checksum = "c3083ce4b914124575708913bca19bfe887522d6e2e6d0952943f5eac4a74010"
 dependencies = [
  "futures-core",
  "futures-sink",
@@ -874,15 +908,15 @@ dependencies = [
 
 [[package]]
 name = "futures-core"
-version = "0.3.19"
+version = "0.3.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0c8ff0461b82559810cdccfde3215c3f373807f5e5232b71479bff7bb2583d7"
+checksum = "0c09fd04b7e4073ac7156a9539b57a484a8ea920f79c7c675d05d289ab6110d3"
 
 [[package]]
 name = "futures-executor"
-version = "0.3.19"
+version = "0.3.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29d6d2ff5bb10fb95c85b8ce46538a2e5f5e7fdc755623a7d4529ab8a4ed9d2a"
+checksum = "9420b90cfa29e327d0429f19be13e7ddb68fa1cccb09d65e5706b8c7a749b8a6"
 dependencies = [
  "futures-core",
  "futures-task",
@@ -891,9 +925,9 @@ dependencies = [
 
 [[package]]
 name = "futures-io"
-version = "0.3.19"
+version = "0.3.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1f9d34af5a1aac6fb380f735fe510746c38067c5bf16c7fd250280503c971b2"
+checksum = "fc4045962a5a5e935ee2fdedaa4e08284547402885ab326734432bed5d12966b"
 
 [[package]]
 name = "futures-lite"
@@ -912,9 +946,9 @@ dependencies = [
 
 [[package]]
 name = "futures-macro"
-version = "0.3.19"
+version = "0.3.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6dbd947adfffb0efc70599b3ddcf7b5597bb5fa9e245eb99f62b3a5f7bb8bd3c"
+checksum = "33c1e13800337f4d4d7a316bf45a567dbcb6ffe087f16424852d97e97a91f512"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -923,21 +957,21 @@ dependencies = [
 
 [[package]]
 name = "futures-sink"
-version = "0.3.19"
+version = "0.3.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3055baccb68d74ff6480350f8d6eb8fcfa3aa11bdc1a1ae3afdd0514617d508"
+checksum = "21163e139fa306126e6eedaf49ecdb4588f939600f0b1e770f4205ee4b7fa868"
 
 [[package]]
 name = "futures-task"
-version = "0.3.19"
+version = "0.3.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ee7c6485c30167ce4dfb83ac568a849fe53274c831081476ee13e0dce1aad72"
+checksum = "57c66a976bf5909d801bbef33416c41372779507e7a6b3a5e25e4749c58f776a"
 
 [[package]]
 name = "futures-util"
-version = "0.3.19"
+version = "0.3.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9b5cf40b47a271f77a8b1bec03ca09044d99d2372c0de244e66430761127164"
+checksum = "d8b7abd5d659d9b90c8cba917f6ec750a74e2dc23902ef9cd4cc8c8b22e6036a"
 dependencies = [
  "futures-channel",
  "futures-core",
@@ -1373,13 +1407,27 @@ dependencies = [
 
 [[package]]
 name = "librocksdb-sys"
-version = "6.17.3"
-source = "git+https://github.com/rust-rocksdb/rust-rocksdb?rev=v0.16.0#5329272444193c68394fa02428158ebccee09e45"
+version = "0.6.1+6.28.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "81bc587013734dadb7cf23468e531aa120788b87243648be42e2d3a072186291"
 dependencies = [
  "bindgen",
+ "bzip2-sys",
  "cc",
  "glob",
  "libc",
+ "libz-sys",
+]
+
+[[package]]
+name = "libz-sys"
+version = "1.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f35facd4a5673cb5a48822be2be1d4236c1c99cb4113cab7061ac720d5bf859"
+dependencies = [
+ "cc",
+ "pkg-config",
+ "vcpkg",
 ]
 
 [[package]]
@@ -1445,7 +1493,7 @@ checksum = "308cc39be01b73d0d18f82a0e7b2a3df85245f84af96fdddc5d202d27e47b86a"
 [[package]]
 name = "merk"
 version = "1.0.0"
-source = "git+https://github.com/nomic-io/merk?rev=3c30b41415423af5e165d64cc8646c59da4acfd6#3c30b41415423af5e165d64cc8646c59da4acfd6"
+source = "git+https://github.com/nomic-io/merk?rev=e9038a659e1ad3cf13720b57be88e2845d0d6a01#e9038a659e1ad3cf13720b57be88e2845d0d6a01"
 dependencies = [
  "blake3",
  "byteorder",
@@ -1466,6 +1514,12 @@ name = "mime"
 version = "0.3.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2a60c7ce501c71e03a9c9c0d35b861413ae925bd979cc7a4e30d060069aaac8d"
+
+[[package]]
+name = "minimal-lexical"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "miniz_oxide"
@@ -1539,17 +1593,18 @@ dependencies = [
 
 [[package]]
 name = "nom"
-version = "5.1.2"
+version = "7.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ffb4262d26ed83a1c0a33a38fe2bb15797329c85770da05e6b828ddb782627af"
+checksum = "a8903e5a29a317527874d0402f867152a3d21c908bb0b933e416c65e301d4c36"
 dependencies = [
  "memchr",
- "version_check",
+ "minimal-lexical",
 ]
 
 [[package]]
 name = "nomic"
 version = "1.0.0"
+source = "git+https://github.com/nomic-io/nomic.git?branch=practicenet3-legacy#5430cf794b57883d72a586e8e3a62bb18f434d53"
 dependencies = [
  "base64",
  "bech32",
@@ -1558,9 +1613,32 @@ dependencies = [
  "bitcoind",
  "clap",
  "csv",
- "ed 0.2.3-alpha.0",
+ "ed 0.3.0",
  "js-sys",
- "orga",
+ "orga 0.2.0 (git+https://github.com/nomic-io/orga.git?branch=legacy-v1)",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "nomic"
+version = "2.0.0"
+dependencies = [
+ "base64",
+ "bech32",
+ "bitcoin",
+ "bitcoincore-rpc",
+ "bitcoind",
+ "clap",
+ "csv",
+ "ed 0.3.0",
+ "futures",
+ "js-sys",
+ "nomic 1.0.0",
+ "orga 0.2.0 (git+https://github.com/nomic-io/orga.git?branch=migration)",
+ "secp256k1 0.21.2",
  "serde",
  "serde_json",
  "thiserror",
@@ -1573,8 +1651,10 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "hex",
- "nomic",
+ "nomic 2.0.0",
  "rocket",
+ "serde",
+ "serde_json",
  "tendermint",
  "tendermint-rpc",
 ]
@@ -1717,13 +1797,13 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.2.0"
-source = "git+https://github.com/nomic-io/orga.git?rev=9f459ecb9ae7208df9a8a39570d19ed212209fe5#9f459ecb9ae7208df9a8a39570d19ed212209fe5"
+source = "git+https://github.com/nomic-io/orga.git?branch=legacy-v1#f1732f7984ae17ea116dc9a560f33a2cc7fb3e3c"
 dependencies = [
- "abci2",
+ "abci2 0.1.3-alpha.0 (git+https://github.com/nomic-io/abci2?rev=bf7d3e4fd1f4acd23d1550c18d4f01670e911acb)",
  "async-trait",
  "base64",
  "bech32",
- "ed 0.2.3-alpha.0",
+ "ed 0.3.0",
  "ed25519-dalek",
  "flate2",
  "futures-lite",
@@ -1736,7 +1816,52 @@ dependencies = [
  "merk",
  "num-rational",
  "num-traits",
- "orga-macros",
+ "orga-macros 0.2.2 (git+https://github.com/nomic-io/orga.git?branch=legacy-v1)",
+ "prost",
+ "reqwest",
+ "ripemd",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "secp256k1 0.21.2",
+ "seq-macro",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tar",
+ "tendermint",
+ "tendermint-proto",
+ "tendermint-rpc",
+ "thiserror",
+ "toml_edit",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
+name = "orga"
+version = "0.2.0"
+source = "git+https://github.com/nomic-io/orga.git?branch=migration#ab22e48f27bd0e15942bbd13e5a39ae1e0d77216"
+dependencies = [
+ "abci2 0.1.3-alpha.0 (git+https://github.com/nomic-io/abci2?rev=096e7cf17802de216ce13e3a1db09c517fa60007)",
+ "async-trait",
+ "base64",
+ "bech32",
+ "ed 0.3.0",
+ "ed25519-dalek",
+ "flate2",
+ "futures-lite",
+ "hex",
+ "hex-literal",
+ "home",
+ "is_executable",
+ "js-sys",
+ "log",
+ "merk",
+ "num-rational",
+ "num-traits",
+ "orga 0.2.0 (git+https://github.com/nomic-io/orga.git?branch=legacy-v1)",
+ "orga-macros 0.2.2 (git+https://github.com/nomic-io/orga.git?branch=migration)",
  "prost",
  "reqwest",
  "ripemd",
@@ -1761,7 +1886,18 @@ dependencies = [
 [[package]]
 name = "orga-macros"
 version = "0.2.2"
-source = "git+https://github.com/nomic-io/orga.git?rev=9f459ecb9ae7208df9a8a39570d19ed212209fe5#9f459ecb9ae7208df9a8a39570d19ed212209fe5"
+source = "git+https://github.com/nomic-io/orga.git?branch=legacy-v1#f1732f7984ae17ea116dc9a560f33a2cc7fb3e3c"
+dependencies = [
+ "heck 0.3.3",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "orga-macros"
+version = "0.2.2"
+source = "git+https://github.com/nomic-io/orga.git?branch=migration#ab22e48f27bd0e15942bbd13e5a39ae1e0d77216"
 dependencies = [
  "heck 0.3.3",
  "proc-macro2",
@@ -2438,8 +2574,9 @@ dependencies = [
 
 [[package]]
 name = "rocksdb"
-version = "0.16.0"
-source = "git+https://github.com/rust-rocksdb/rust-rocksdb?rev=v0.16.0#5329272444193c68394fa02428158ebccee09e45"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "620f4129485ff1a7128d184bc687470c21c7951b64779ebc9cfdad3dcd920290"
 dependencies = [
  "libc",
  "librocksdb-sys",
@@ -2641,9 +2778,9 @@ checksum = "aa62e15412784450a67f0f49cc3cfd295f3ac0c5cda05e8312f089040debda0c"
 
 [[package]]
 name = "serde"
-version = "1.0.134"
+version = "1.0.136"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96b3c34c1690edf8174f5b289a336ab03f568a4460d8c6df75f2f3a692b3bc6a"
+checksum = "ce31e24b01e1e524df96f1c2fdd054405f8d7376249a5110886fb4b658484789"
 dependencies = [
  "serde_derive",
 ]
@@ -2659,9 +2796,9 @@ dependencies = [
 
 [[package]]
 name = "serde_derive"
-version = "1.0.134"
+version = "1.0.136"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "784ed1fbfa13fe191077537b0d70ec8ad1e903cfe04831da608aa36457cb653d"
+checksum = "08597e7152fcd306f41838ed3e37be9eaeed2b61c42e2117266a554fab4662f9"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2670,9 +2807,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.75"
+version = "1.0.79"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c059c05b48c5c0067d4b4b2b4f0732dd65feb52daf7e0ea09cd87e7dadc1af79"
+checksum = "8e8d9fa5c3b304765ce1fd9c4c8a3de2c8db365a5b91be52f186efc675681d95"
 dependencies = [
  "itoa 1.0.1",
  "ryu",
@@ -2754,9 +2891,9 @@ dependencies = [
 
 [[package]]
 name = "shlex"
-version = "0.1.1"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fdf1b9db47230893d76faad238fd6097fd6d6a9245cd7a4d90dbd639536bbd2"
+checksum = "43b2853a4d09f215c24cc5489c992ce46052d359b5109343cbafbf26bc62f8a3"
 
 [[package]]
 name = "signal-hook-registry"
