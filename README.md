@@ -9,6 +9,22 @@ Nomic Bitcoin Bridge (Testnet)
 The code in this branch is for running a node on the Nomic Testnet, which should
 ideally be run on a separate node from your mainnet validator.
 
+If you're upgrading your existing testnet node:
+
+1. Rebuild from this branch with:
+
+```
+git pull
+
+cargo install --path .
+```
+
+2. Shutdown your running node.
+
+3. Restart your node with `nomic start`.
+
+Your node will automatically perform the upgrade at block 460000 for the current testnet.
+
 ## Validator setup guide
 
 This guide will walk you through setting up a validator for the Nomic Stakenet.
