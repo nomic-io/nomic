@@ -4,6 +4,8 @@
 #![feature(async_closure)]
 #![feature(never_type)]
 
+use std::path::PathBuf;
+
 use clap::Parser;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -99,7 +101,7 @@ impl StartCmd {
             if !has_new_node {
                 let new_home = Node::home(new_name);
                 println!("Initializing node at {}...", new_home.display());
-                // TODO: configure default seeds and timeout_commit
+                // TODO: configure default seeds
                 Node::<nomic::app::App>::new(new_name, Default::default());
 
                 if has_old_node {
@@ -119,12 +121,12 @@ impl StartCmd {
                         new_home.join("tendermint/config/node_key.json"),
                     )
                     .unwrap();
-                    // TODO: remove copying config for v1 -> v2
                     std::fs::copy(
                         old_home.join("tendermint/config/config.toml"),
                         new_home.join("tendermint/config/config.toml"),
                     )
                     .unwrap();
+                    edit_block_time(&new_home.join("tendermint/config/config.toml"), "3s");
                 }
             }
 
@@ -160,6 +162,18 @@ impl StartCmd {
         .map_err(|err| orga::Error::App(err.to_string()))?;
         Ok(())
     }
+}
+
+fn edit_block_time(cfg_path: &PathBuf, timeout_commit: &str) {
+    let data = std::fs::read_to_string(cfg_path).expect("Failed to read config.toml");
+
+    let mut toml = data
+        .parse::<toml_edit::Document>()
+        .expect("Failed to parse config.toml");
+
+    toml["consensus"]["timeout_commit"] = toml_edit::value(timeout_commit);
+
+    std::fs::write(cfg_path, toml.to_string()).expect("Failed to write config.toml");
 }
 
 #[cfg(debug)]
