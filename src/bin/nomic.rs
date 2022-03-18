@@ -5,7 +5,6 @@
 #![feature(never_type)]
 
 use clap::Parser;
-use nomic::app::*;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -76,7 +75,7 @@ impl InitCmd {
     async fn run(&self) -> Result<()> {
         tokio::task::spawn_blocking(|| {
             // TODO: add cfg defaults
-            Node::<nomic::app::App>::new(CHAIN_ID, Default::default());
+            nomicv1::orga::abci::Node::<nomicv1::app::App>::new(nomicv1::app::CHAIN_ID);
         })
         .await
         .map_err(|err| orga::Error::App(err.to_string()))?;
