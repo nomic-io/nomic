@@ -46,6 +46,7 @@ pub enum Command {
     Unjail(UnjailCmd),
     Claim(ClaimCmd),
     ClaimAirdrop(ClaimAirdropCmd),
+    Legacy(LegacyCmd),
 }
 
 impl Command {
@@ -66,6 +67,7 @@ impl Command {
             Unjail(cmd) => cmd.run().await,
             Claim(cmd) => cmd.run().await,
             ClaimAirdrop(cmd) => cmd.run().await,
+            Legacy(cmd) => cmd.run().await,
         }
     }
 }
@@ -404,6 +406,20 @@ impl ClaimAirdropCmd {
             .accounts
             .give_from_funding_all()
             .await
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct LegacyCmd {
+    #[clap(subcommand)]
+    cmd: nomicv1::command::Command,
+}
+
+impl LegacyCmd {
+    async fn run(&self) -> Result<()> {
+        self.cmd.run().await.unwrap();
+
+        Ok(())
     }
 }
 
