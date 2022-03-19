@@ -134,6 +134,7 @@ impl StartCmd {
                 println!("Starting legacy node for migration...");
 
                 let res = nomicv1::orga::abci::Node::<nomicv1::app::App>::new(old_name)
+                    .with_genesis(include_bytes!("../../genesis/nomic-testnet.json"))
                     .stdout(std::process::Stdio::inherit())
                     .stderr(std::process::Stdio::inherit())
                     .stop_height(460_000)
