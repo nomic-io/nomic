@@ -45,7 +45,9 @@ pub enum Command {
     Delegate(DelegateCmd),
     Declare(DeclareCmd),
     Unbond(UnbondCmd),
+    Redelegate(RedelegateCmd),
     Unjail(UnjailCmd),
+    Edit(EditCmd),
     Claim(ClaimCmd),
     ClaimAirdrop(ClaimAirdropCmd),
     Legacy(LegacyCmd),
@@ -66,7 +68,9 @@ impl Command {
             Delegations(cmd) => cmd.run().await,
             Validators(cmd) => cmd.run().await,
             Unbond(cmd) => cmd.run().await,
+            Redelegate(cmd) => cmd.run().await,
             Unjail(cmd) => cmd.run().await,
+            Edit(cmd) => cmd.run().await,
             Claim(cmd) => cmd.run().await,
             ClaimAirdrop(cmd) => cmd.run().await,
             Legacy(cmd) => cmd.run().await,
@@ -359,6 +363,40 @@ impl DeclareCmd {
 }
 
 #[derive(Parser, Debug)]
+pub struct EditCmd {
+    commission_rate: Decimal,
+    min_self_delegation: u64,
+    moniker: String,
+    website: String,
+    identity: String,
+    details: String,
+}
+
+impl EditCmd {
+    async fn run(&self) -> Result<()> {
+        let info = DeclareInfo {
+            moniker: self.moniker.clone(),
+            website: self.website.clone(),
+            identity: self.identity.clone(),
+            details: self.details.clone(),
+        };
+        let info_json = serde_json::to_string(&info)
+            .map_err(|_| orga::Error::App("invalid json".to_string()))?;
+        let info_bytes = info_json.as_bytes().to_vec();
+
+        app_client()
+            .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
+            .staking
+            .edit_validator_self(
+                self.commission_rate,
+                self.min_self_delegation.into(),
+                info_bytes.into(),
+            )
+            .await
+    }
+}
+
+#[derive(Parser, Debug)]
 pub struct UnbondCmd {
     validator_addr: Address,
     amount: u64,
@@ -370,6 +408,27 @@ impl UnbondCmd {
             .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
             .staking
             .unbond_self(self.validator_addr, self.amount.into())
+            .await
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct RedelegateCmd {
+    src_validator_addr: Address,
+    dest_validator_addr: Address,
+    amount: u64,
+}
+
+impl RedelegateCmd {
+    async fn run(&self) -> Result<()> {
+        app_client()
+            .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
+            .staking
+            .redelegate_self(
+                self.src_validator_addr,
+                self.dest_validator_addr,
+                self.amount.into(),
+            )
             .await
     }
 }
