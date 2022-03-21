@@ -10,6 +10,8 @@ use clap::Parser;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 
+const STOP_HEIGHT: u64 = 460_000;
+
 pub fn app_client() -> TendermintClient<nomic::app::App> {
     TendermintClient::new("http://localhost:26657").unwrap()
 }
@@ -98,7 +100,8 @@ impl StartCmd {
 
             let has_old_node = Node::home(old_name).exists();
             let has_new_node = Node::home(new_name).exists();
-            let started_new_node = Node::height(new_name).unwrap() > 0;
+            let started_new_node = Node::height(old_name).unwrap() >= STOP_HEIGHT;
+            println!("Legacy node height: {}", Node::height(old_name).unwrap());
 
             if !has_new_node {
                 let new_home = Node::home(new_name);
@@ -139,7 +142,7 @@ impl StartCmd {
                     .with_genesis(include_bytes!("../../genesis/nomic-testnet.json"))
                     .stdout(std::process::Stdio::inherit())
                     .stderr(std::process::Stdio::inherit())
-                    .stop_height(460_000)
+                    .stop_height(STOP_HEIGHT)
                     .run();
 
                 if let Err(nomicv1::orga::Error::ABCI(msg)) = res {
