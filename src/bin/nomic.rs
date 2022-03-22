@@ -146,10 +146,16 @@ impl StartCmd {
                     edit_block_time(&config_path, "3s");
                 } else {
                     println!("Configuring node for state sync...");
-                    // TODO: default RPC boostrap nodes
+
+                    // TODO: set default seeds
+                    set_p2p_seeds(&config_path, &[
+                        "edb32208ff79b591dd4cddcf1c879f6405fe6c79@167.99.228.240:26656",
+                    ]);
+
+                    // TODO: set default RPC boostrap nodes
                     prepare_for_statesync(&config_path, &[
-                        "http://localhost:26667",
-                        "http://localhost:26677",
+                        "http://167.99.228.240:26667",
+                        "http://167.99.228.240:26677",
                     ]);
                 }
             }
@@ -188,39 +194,49 @@ impl StartCmd {
     }
 }
 
-fn edit_block_time(cfg_path: &PathBuf, timeout_commit: &str) {
+fn configure_node<P, F>(cfg_path: &P, configure: F)
+where
+    P: AsRef<std::path::Path>,
+    F: Fn(&mut toml_edit::Document),
+{
     let data = std::fs::read_to_string(cfg_path).expect("Failed to read config.toml");
 
     let mut toml = data
         .parse::<toml_edit::Document>()
         .expect("Failed to parse config.toml");
 
-    toml["consensus"]["timeout_commit"] = toml_edit::value(timeout_commit);
+    configure(&mut toml);
 
     std::fs::write(cfg_path, toml.to_string()).expect("Failed to write config.toml");
+}
+
+fn edit_block_time(cfg_path: &PathBuf, timeout_commit: &str) {
+    configure_node(cfg_path, |cfg| {
+        cfg["consensus"]["timeout_commit"] = toml_edit::value(timeout_commit);
+    });
+}
+
+fn set_p2p_seeds(cfg_path: &PathBuf, seeds: &[&str]) {
+    configure_node(cfg_path, |cfg| {
+        cfg["p2p"]["seeds"] = toml_edit::value(seeds.join(","));
+    });
 }
 
 fn prepare_for_statesync(cfg_path: &PathBuf, rpc_servers: &[&str]) {
-    let data = std::fs::read_to_string(cfg_path).expect("Failed to read config.toml");
-
-    let mut toml = data
-        .parse::<toml_edit::Document>()
-        .expect("Failed to parse config.toml");
-
     println!("Getting bootstrap state for Tendermint light client...");
-    let (height, hash) = block_on(bootstrap_state(rpc_servers)).expect("Failed to bootstrap state");
+    let (height, hash) = block_on(get_bootstrap_state(rpc_servers)).expect("Failed to bootstrap state");
     println!("Configuring light client at height {} with hash {}", height, hash);
 
-    toml["statesync"]["enable"] = toml_edit::value(true);
-    toml["statesync"]["rpc_servers"] = toml_edit::value(rpc_servers.join(","));
-    toml["statesync"]["trust_height"] = toml_edit::value(height);
-    toml["statesync"]["trust_hash"] = toml_edit::value(hash);
-    toml["statesync"]["trust_period"] = toml_edit::value("216h0m0s");
-
-    std::fs::write(cfg_path, toml.to_string()).expect("Failed to write config.toml");
+    configure_node(cfg_path, |cfg| {
+        cfg["statesync"]["enable"] = toml_edit::value(true);
+        cfg["statesync"]["rpc_servers"] = toml_edit::value(rpc_servers.join(","));
+        cfg["statesync"]["trust_height"] = toml_edit::value(height);
+        cfg["statesync"]["trust_hash"] = toml_edit::value(hash.clone());
+        cfg["statesync"]["trust_period"] = toml_edit::value("216h0m0s");
+    });
 }
 
-async fn bootstrap_state(rpc_servers: &[&str]) -> Result<(i64, String)> {
+async fn get_bootstrap_state(rpc_servers: &[&str]) -> Result<(i64, String)> {
     let rpc_clients: Vec<_> = rpc_servers.iter().map(|addr| {
         tendermint_rpc::HttpClient::new(*addr)
             .expect("Could not create tendermint RPC client")
