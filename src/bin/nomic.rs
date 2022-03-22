@@ -8,10 +8,10 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use futures::executor::block_on;
+use nomic::error::Result;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
-use nomic::error::{Error, Result};
 
 const STOP_HEIGHT: u64 = 460_000;
 
@@ -112,7 +112,7 @@ impl StartCmd {
             if has_old_node {
                 println!("Legacy node height: {}", Node::height(old_name).unwrap());
             }
-            
+
             if !has_new_node {
                 let new_home = Node::home(new_name);
                 println!("Initializing node at {}...", new_home.display());
@@ -148,15 +148,16 @@ impl StartCmd {
                     println!("Configuring node for state sync...");
 
                     // TODO: set default seeds
-                    set_p2p_seeds(&config_path, &[
-                        "edb32208ff79b591dd4cddcf1c879f6405fe6c79@167.99.228.240:26656",
-                    ]);
+                    set_p2p_seeds(
+                        &config_path,
+                        &["edb32208ff79b591dd4cddcf1c879f6405fe6c79@167.99.228.240:26656"],
+                    );
 
                     // TODO: set default RPC boostrap nodes
-                    prepare_for_statesync(&config_path, &[
-                        "http://167.99.228.240:26667",
-                        "http://167.99.228.240:26677",
-                    ]);
+                    prepare_for_statesync(
+                        &config_path,
+                        &["http://167.99.228.240:26667", "http://167.99.228.240:26677"],
+                    );
                 }
             }
 
@@ -224,8 +225,12 @@ fn set_p2p_seeds(cfg_path: &PathBuf, seeds: &[&str]) {
 
 fn prepare_for_statesync(cfg_path: &PathBuf, rpc_servers: &[&str]) {
     println!("Getting bootstrap state for Tendermint light client...");
-    let (height, hash) = block_on(get_bootstrap_state(rpc_servers)).expect("Failed to bootstrap state");
-    println!("Configuring light client at height {} with hash {}", height, hash);
+    let (height, hash) =
+        block_on(get_bootstrap_state(rpc_servers)).expect("Failed to bootstrap state");
+    println!(
+        "Configuring light client at height {} with hash {}",
+        height, hash
+    );
 
     configure_node(cfg_path, |cfg| {
         cfg["statesync"]["enable"] = toml_edit::value(true);
@@ -237,15 +242,20 @@ fn prepare_for_statesync(cfg_path: &PathBuf, rpc_servers: &[&str]) {
 }
 
 async fn get_bootstrap_state(rpc_servers: &[&str]) -> Result<(i64, String)> {
-    let rpc_clients: Vec<_> = rpc_servers.iter().map(|addr| {
-        tendermint_rpc::HttpClient::new(*addr)
-            .expect("Could not create tendermint RPC client")
-    }).collect();
+    let rpc_clients: Vec<_> = rpc_servers
+        .iter()
+        .map(|addr| {
+            tendermint_rpc::HttpClient::new(*addr).expect("Could not create tendermint RPC client")
+        })
+        .collect();
 
     // get median latest height
     let mut latest_heights = vec![];
     for client in rpc_clients.iter() {
-        let status = client.status().await.expect("Could not get tendermint status");
+        let status = client
+            .status()
+            .await
+            .expect("Could not get tendermint status");
         let height = status.sync_info.latest_block_height.value();
         latest_heights.push(height);
     }
@@ -258,7 +268,10 @@ async fn get_bootstrap_state(rpc_servers: &[&str]) -> Result<(i64, String)> {
     // get block hash
     let mut hash = None;
     for client in rpc_clients.iter() {
-        let res = client.blockchain(height, height).await.expect("Could not get tendermint block header");
+        let res = client
+            .blockchain(height, height)
+            .await
+            .expect("Could not get tendermint block header");
         let block = &res.block_metas[0];
         if hash.is_none() {
             hash = Some(block.header.hash());
@@ -472,7 +485,7 @@ impl EditCmd {
             .map_err(|_| orga::Error::App("invalid json".to_string()))?;
         let info_bytes = info_json.as_bytes().to_vec();
 
-        app_client()
+        Ok(app_client()
             .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
             .staking
             .edit_validator_self(
@@ -480,7 +493,7 @@ impl EditCmd {
                 self.min_self_delegation.into(),
                 info_bytes.into(),
             )
-            .await
+            .await?)
     }
 }
 
@@ -509,7 +522,7 @@ pub struct RedelegateCmd {
 
 impl RedelegateCmd {
     async fn run(&self) -> Result<()> {
-        app_client()
+        Ok(app_client()
             .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
             .staking
             .redelegate_self(
@@ -517,7 +530,7 @@ impl RedelegateCmd {
                 self.dest_validator_addr,
                 self.amount.into(),
             )
-            .await
+            .await?)
     }
 }
 
