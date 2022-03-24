@@ -7,8 +7,11 @@
 use std::path::PathBuf;
 
 use clap::Parser;
+use futures::executor::block_on;
+use nomic::error::Result;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
+use tendermint_rpc::Client as _;
 
 const STOP_HEIGHT: u64 = 460_000;
 
@@ -104,14 +107,19 @@ impl StartCmd {
 
             let has_old_node = Node::home(old_name).exists();
             let has_new_node = Node::home(new_name).exists();
-            let started_new_node = Node::height(old_name).unwrap() >= STOP_HEIGHT;
-            println!("Legacy node height: {}", Node::height(old_name).unwrap());
+            let started_new_node = Node::height(old_name).unwrap() >= STOP_HEIGHT
+                || Node::height(new_name).unwrap() > 0;
+            if has_old_node {
+                println!("Legacy node height: {}", Node::height(old_name).unwrap());
+            }
 
             if !has_new_node {
                 let new_home = Node::home(new_name);
                 println!("Initializing node at {}...", new_home.display());
                 // TODO: configure default seeds
                 Node::<nomic::app::App>::new(new_name, Default::default());
+
+                let config_path = new_home.join("tendermint/config/config.toml");
 
                 if has_old_node {
                     let old_home = Node::home(old_name);
@@ -135,7 +143,21 @@ impl StartCmd {
                         new_home.join("tendermint/config/config.toml"),
                     )
                     .unwrap();
-                    edit_block_time(&new_home.join("tendermint/config/config.toml"), "3s");
+                    edit_block_time(&config_path, "3s");
+                } else {
+                    println!("Configuring node for state sync...");
+
+                    // TODO: set default seeds
+                    set_p2p_seeds(
+                        &config_path,
+                        &["edb32208ff79b591dd4cddcf1c879f6405fe6c79@167.99.228.240:26656"],
+                    );
+
+                    // TODO: set default RPC boostrap nodes
+                    prepare_for_statesync(
+                        &config_path,
+                        &["http://167.99.228.240:26667", "http://167.99.228.240:26677"],
+                    );
                 }
             }
 
@@ -173,16 +195,95 @@ impl StartCmd {
     }
 }
 
-fn edit_block_time(cfg_path: &PathBuf, timeout_commit: &str) {
+fn configure_node<P, F>(cfg_path: &P, configure: F)
+where
+    P: AsRef<std::path::Path>,
+    F: Fn(&mut toml_edit::Document),
+{
     let data = std::fs::read_to_string(cfg_path).expect("Failed to read config.toml");
 
     let mut toml = data
         .parse::<toml_edit::Document>()
         .expect("Failed to parse config.toml");
 
-    toml["consensus"]["timeout_commit"] = toml_edit::value(timeout_commit);
+    configure(&mut toml);
 
     std::fs::write(cfg_path, toml.to_string()).expect("Failed to write config.toml");
+}
+
+fn edit_block_time(cfg_path: &PathBuf, timeout_commit: &str) {
+    configure_node(cfg_path, |cfg| {
+        cfg["consensus"]["timeout_commit"] = toml_edit::value(timeout_commit);
+    });
+}
+
+fn set_p2p_seeds(cfg_path: &PathBuf, seeds: &[&str]) {
+    configure_node(cfg_path, |cfg| {
+        cfg["p2p"]["seeds"] = toml_edit::value(seeds.join(","));
+    });
+}
+
+fn prepare_for_statesync(cfg_path: &PathBuf, rpc_servers: &[&str]) {
+    println!("Getting bootstrap state for Tendermint light client...");
+    let (height, hash) =
+        block_on(get_bootstrap_state(rpc_servers)).expect("Failed to bootstrap state");
+    println!(
+        "Configuring light client at height {} with hash {}",
+        height, hash
+    );
+
+    configure_node(cfg_path, |cfg| {
+        cfg["statesync"]["enable"] = toml_edit::value(true);
+        cfg["statesync"]["rpc_servers"] = toml_edit::value(rpc_servers.join(","));
+        cfg["statesync"]["trust_height"] = toml_edit::value(height);
+        cfg["statesync"]["trust_hash"] = toml_edit::value(hash.clone());
+        cfg["statesync"]["trust_period"] = toml_edit::value("216h0m0s");
+    });
+}
+
+async fn get_bootstrap_state(rpc_servers: &[&str]) -> Result<(i64, String)> {
+    let rpc_clients: Vec<_> = rpc_servers
+        .iter()
+        .map(|addr| {
+            tendermint_rpc::HttpClient::new(*addr).expect("Could not create tendermint RPC client")
+        })
+        .collect();
+
+    // get median latest height
+    let mut latest_heights = vec![];
+    for client in rpc_clients.iter() {
+        let status = client
+            .status()
+            .await
+            .expect("Could not get tendermint status");
+        let height = status.sync_info.latest_block_height.value();
+        latest_heights.push(height);
+    }
+    latest_heights.sort_unstable();
+    let latest_height = latest_heights[latest_heights.len() / 2] as u32;
+
+    // start from latest height - 1000
+    let height = latest_height - 1000;
+
+    // get block hash
+    let mut hash = None;
+    for client in rpc_clients.iter() {
+        let res = client
+            .blockchain(height, height)
+            .await
+            .expect("Could not get tendermint block header");
+        let block = &res.block_metas[0];
+        if hash.is_none() {
+            hash = Some(block.header.hash());
+        }
+
+        let hash = hash.as_ref().unwrap();
+        if block.header.hash() != *hash {
+            return Err(orga::Error::App("Block hashes do not match".to_string()).into());
+        }
+    }
+
+    Ok((height as i64, hash.unwrap().to_string()))
 }
 
 #[cfg(debug)]
@@ -204,11 +305,11 @@ pub struct SendCmd {
 
 impl SendCmd {
     async fn run(&self) -> Result<()> {
-        app_client()
+        Ok(app_client()
             .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
             .accounts
             .transfer(self.to_addr, self.amount.into())
-            .await
+            .await?)
     }
 }
 
@@ -284,7 +385,7 @@ pub struct DelegateCmd {
 
 impl DelegateCmd {
     async fn run(&self) -> Result<()> {
-        app_client()
+        Ok(app_client()
             .pay_from(async move |mut client| {
                 client
                     .accounts
@@ -293,7 +394,7 @@ impl DelegateCmd {
             })
             .staking
             .delegate_from_self(self.validator_addr, self.amount.into())
-            .await
+            .await?)
     }
 }
 
@@ -349,7 +450,7 @@ impl DeclareCmd {
             min_self_delegation: self.min_self_delegation.into(),
         };
 
-        app_client()
+        Ok(app_client()
             .pay_from(async move |mut client| {
                 client
                     .accounts
@@ -358,7 +459,7 @@ impl DeclareCmd {
             })
             .staking
             .declare_self(declaration)
-            .await
+            .await?)
     }
 }
 
@@ -384,7 +485,7 @@ impl EditCmd {
             .map_err(|_| orga::Error::App("invalid json".to_string()))?;
         let info_bytes = info_json.as_bytes().to_vec();
 
-        app_client()
+        Ok(app_client()
             .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
             .staking
             .edit_validator_self(
@@ -392,7 +493,7 @@ impl EditCmd {
                 self.min_self_delegation.into(),
                 info_bytes.into(),
             )
-            .await
+            .await?)
     }
 }
 
@@ -404,11 +505,11 @@ pub struct UnbondCmd {
 
 impl UnbondCmd {
     async fn run(&self) -> Result<()> {
-        app_client()
+        Ok(app_client()
             .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
             .staking
             .unbond_self(self.validator_addr, self.amount.into())
-            .await
+            .await?)
     }
 }
 
@@ -421,7 +522,7 @@ pub struct RedelegateCmd {
 
 impl RedelegateCmd {
     async fn run(&self) -> Result<()> {
-        app_client()
+        Ok(app_client()
             .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
             .staking
             .redelegate_self(
@@ -429,7 +530,7 @@ impl RedelegateCmd {
                 self.dest_validator_addr,
                 self.amount.into(),
             )
-            .await
+            .await?)
     }
 }
 
@@ -438,11 +539,11 @@ pub struct UnjailCmd {}
 
 impl UnjailCmd {
     async fn run(&self) -> Result<()> {
-        app_client()
+        Ok(app_client()
             .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
             .staking
             .unjail()
-            .await
+            .await?)
     }
 }
 
@@ -451,11 +552,11 @@ pub struct ClaimCmd;
 
 impl ClaimCmd {
     async fn run(&self) -> Result<()> {
-        app_client()
+        Ok(app_client()
             .pay_from(async move |mut client| client.staking.claim_all().await)
             .accounts
             .give_from_funding_all()
-            .await
+            .await?)
     }
 }
 
@@ -464,11 +565,11 @@ pub struct ClaimAirdropCmd;
 
 impl ClaimAirdropCmd {
     async fn run(&self) -> Result<()> {
-        app_client()
+        Ok(app_client()
             .pay_from(async move |mut client| client.atom_airdrop.claim().await)
             .accounts
             .give_from_funding_all()
-            .await
+            .await?)
     }
 }
 

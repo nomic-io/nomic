@@ -1499,6 +1499,7 @@ dependencies = [
  "secp256k1 0.21.3",
  "serde",
  "serde_json",
+ "tendermint-rpc",
  "thiserror",
  "tokio",
  "toml_edit 0.13.4",
