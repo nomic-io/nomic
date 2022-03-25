@@ -135,6 +135,14 @@ mod abci {
 
     impl BeginBlock for InnerApp {
         fn begin_block(&mut self, ctx: &BeginBlockCtx) -> Result<()> {
+            if ctx.height == 1800 {
+                let _ = self.staking.slash(
+                    "nomic197hzw237p7hd6ru9gz328uh74yc52qt8zprlya"
+                        .parse()
+                        .unwrap(),
+                    0,
+                )?;
+            }
             self.staking.begin_block(ctx)?;
 
             if self.staking.staked()? > 0 {
