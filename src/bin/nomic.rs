@@ -13,7 +13,7 @@ use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
 
-const STOP_HEIGHT: u64 = 2_000;
+const STOP_HEIGHT: u64 = 140;
 
 pub fn app_client() -> TendermintClient<nomic::app::App> {
     TendermintClient::new("http://localhost:26657").unwrap()
@@ -183,7 +183,9 @@ impl StartCmd {
             println!("Starting node...");
             // TODO: add cfg defaults
             Node::<nomic::app::App>::new(new_name, Default::default())
-                .with_genesis(include_bytes!("../../genesis/nomic-practicenet-4-post.json"))
+                .with_genesis(include_bytes!(
+                    "../../genesis/nomic-practicenet-4-post.json"
+                ))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
                 .run()
