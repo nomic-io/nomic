@@ -97,11 +97,16 @@ impl InitCmd {
 }
 
 #[derive(Parser, Debug)]
-pub struct StartCmd {}
+pub struct StartCmd {
+    #[clap(long, short)]
+    pub state_sync: bool,
+}
 
 impl StartCmd {
     async fn run(&self) -> Result<()> {
-        tokio::task::spawn_blocking(|| {
+        let state_sync = self.state_sync;
+
+        tokio::task::spawn_blocking(move || {
             let old_name = nomicv1::app::CHAIN_ID;
             let new_name = nomic::app::CHAIN_ID;
 
@@ -113,55 +118,50 @@ impl StartCmd {
                 println!("Legacy node height: {}", Node::height(old_name).unwrap());
             }
 
+            let new_home = Node::home(new_name);
+            let config_path = new_home.join("tendermint/config/config.toml");
+
             if !has_new_node {
-                let new_home = Node::home(new_name);
                 println!("Initializing node at {}...", new_home.display());
                 // TODO: configure default seeds
                 Node::<nomic::app::App>::new(new_name, Default::default());
-
-                let config_path = new_home.join("tendermint/config/config.toml");
 
                 if has_old_node {
                     let old_home = Node::home(old_name);
                     println!(
                         "Legacy network data detected, copying keys and config from {}...",
-                        old_home.display()
+                        old_home.display(),
                     );
 
-                    std::fs::copy(
-                        old_home.join("tendermint/config/priv_validator_key.json"),
-                        new_home.join("tendermint/config/priv_validator_key.json"),
-                    )
-                    .unwrap();
-                    std::fs::copy(
-                        old_home.join("tendermint/config/node_key.json"),
-                        new_home.join("tendermint/config/node_key.json"),
-                    )
-                    .unwrap();
-                    std::fs::copy(
-                        old_home.join("tendermint/config/config.toml"),
-                        new_home.join("tendermint/config/config.toml"),
-                    )
-                    .unwrap();
-                    edit_block_time(&config_path, "3s");
-                } else {
-                    println!("Configuring node for state sync...");
+                    let copy = |file: &str| {
+                        std::fs::copy(old_home.join(file), new_home.join(file)).unwrap();
+                    };
 
-                    // TODO: set default seeds
-                    set_p2p_seeds(
-                        &config_path,
-                        &["edb32208ff79b591dd4cddcf1c879f6405fe6c79@167.99.228.240:26656"],
-                    );
-
-                    // TODO: set default RPC boostrap nodes
-                    prepare_for_statesync(
-                        &config_path,
-                        &["http://167.99.228.240:26667", "http://167.99.228.240:26677"],
-                    );
+                    copy("tendermint/config/priv_validator_key.json");
+                    copy("tendermint/config/node_key.json");
+                    copy("tendermint/config/config.toml");
                 }
+
+                edit_block_time(&config_path, "3s");
             }
 
-            if has_old_node && !started_new_node {
+            if !has_old_node || state_sync {
+                println!("Configuring node for state sync...");
+
+                // TODO: set default seeds
+                set_p2p_seeds(
+                    &config_path,
+                    &["edb32208ff79b591dd4cddcf1c879f6405fe6c79@167.99.228.240:26656"],
+                );
+
+                // TODO: set default RPC boostrap nodes
+                configure_for_statesync(
+                    &config_path,
+                    &["http://167.99.228.240:26667", "http://167.99.228.240:26677"],
+                );
+            }
+
+            if has_old_node && !started_new_node && !state_sync {
                 println!("Starting legacy node for migration...");
 
                 let res = nomicv1::orga::abci::Node::<nomicv1::app::App>::new(old_name)
@@ -217,13 +217,14 @@ fn edit_block_time(cfg_path: &PathBuf, timeout_commit: &str) {
     });
 }
 
+// TODO: append instead of replace
 fn set_p2p_seeds(cfg_path: &PathBuf, seeds: &[&str]) {
     configure_node(cfg_path, |cfg| {
         cfg["p2p"]["seeds"] = toml_edit::value(seeds.join(","));
     });
 }
 
-fn prepare_for_statesync(cfg_path: &PathBuf, rpc_servers: &[&str]) {
+fn configure_for_statesync(cfg_path: &PathBuf, rpc_servers: &[&str]) {
     println!("Getting bootstrap state for Tendermint light client...");
     let (height, hash) =
         block_on(get_bootstrap_state(rpc_servers)).expect("Failed to bootstrap state");
