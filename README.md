@@ -2,24 +2,34 @@
 <img src="./logo.svg" width="40%">
 </h1>
 
-Nomic Bitcoin Bridge v0.5.0 (Stakenet Release)
+Nomic Bitcoin Bridge (Testnet)
 
-## Stakenet
+## Testnet
 
-This is the release for the Nomic Stakenet (Nomic's first production network).
-This network does not include the Bitcoin bridge functionality and token
-transfers are disabled - only staking is supported.
+The code in this branch is for running a node on the Nomic Testnet, which should
+ideally be run on a separate node from your mainnet validator.
 
-You'll notice many differences between Nomic and a typical Cosmos SDK chain,
-this is because Nomic is built with an entirely [custom
-stack](https://github.com/nomic-io/orga).
+If you're upgrading your existing testnet node:
+
+1. Rebuild from this branch with:
+
+```
+git pull
+
+cargo install --path .
+```
+
+2. Shutdown your running node.
+
+3. Restart your node with `nomic start`.
+
+Your node will automatically perform the upgrade at block 460000 for the current testnet.
 
 ## Validator setup guide
 
 This guide will walk you through setting up a validator for the Nomic Stakenet.
 
-If you need any help getting your node running, join the [Telegram
-channel](https://t.me/joinchat/b0iv3MHgH5phYjkx).
+If you need any help getting your node running, join the [Discord](https://discord.gg/jH7U2NRJKn).
 
 ### Requirements
 
@@ -41,25 +51,28 @@ rustup default nightly
 # install required dependencies (ubuntu)
 sudo apt install build-essential libssl-dev pkg-config clang
 # or for systems running fedora
-sudo dnf install clang openssl-devel && sudo dnf group install "C Development Tools and Libraries" 
+sudo dnf install clang openssl-devel && sudo dnf group install "C Development Tools and Libraries"
 
 # clone
 git clone https://github.com/nomic-io/nomic.git nomic && cd nomic
 
+# change to testnet branch
+git checkout testnet
+
 # build and install, adding a `nomic` command to your PATH
-cargo install --path .
+cargo install --locked --path .
 ```
 
 ### 2. Initialize and configure your node
 
-Initialize your data directory (`~/.nomic-stakenet`) by running:
+Initialize your data directory (`~/.nomic-testnet`) by running:
 
 ```bash
 nomic init
 ```
 
 Next, configure your node by editing
-`~/.nomic-stakenet/tendermint/config/config.toml`.
+`~/.nomic-testnet/tendermint/config/config.toml`.
 
 Add the external ip and port where your node can be reached so that other
 nodes will connect to you:
@@ -73,11 +86,12 @@ nodes will connect to you:
 external_address = "123.45.67.89:26656"
 ```
 
-Add a seed so your node will be able to connect to the network:
+Add a seed so your node will be able to connect to the network (updated with
+testnet seeds):
 
 ```toml
 # Comma separated list of seed nodes to connect to
-seeds = "238120dfe716082754048057c1fdc3d6f09609b5@161.35.51.124:26656,a67d7a4d90f84d5c67bfc196aac68441ba9484a6@167.99.119.196:26659"
+seeds = "edb32208ff79b591dd4cddcf1c879f6405fe6c79@167.99.228.240:26656,29af7e39d5ea0a64ca5dedad0e1fedb3e3cee0ee@164.90.158.216:26656"
 ```
 
 ### 3. Run your node
@@ -93,7 +107,7 @@ This will run the Nomic state machine and a Tendermint process.
 First, find your address by running `nomic balance` (for now this must be run on
 a machine which has an active full node).
 
-Ask the Nomic team for some coins in the Telegram and include your address.
+Ask the Nomic team for some coins in the Discord and include your address.
 
 Once you have received coins, you can declare your node as a validator and
 delegate to yourself with:

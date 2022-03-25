@@ -3,6 +3,7 @@ use orga::encoding::Result as EncodingResult;
 use orga::prelude::*;
 use orga::state::State;
 use orga::store::Store;
+use orga::client::{Client, PrimitiveClient};
 use std::io::{Read, Write};
 use std::ops::{Deref, DerefMut};
 
@@ -91,3 +92,29 @@ impl<T: Decodable> Decode for Adapter<T> {
         }
     }
 }
+
+impl<T, U: Clone> Client<U> for Adapter<T> {
+    type Client = PrimitiveClient<T, U>;
+
+    fn create_client(inner: U) -> Self::Client {
+        PrimitiveClient::new(inner)
+    }
+}
+
+impl<T> Query for Adapter<T> {
+    type Query = ();
+
+    fn query(&self, _: Self::Query) -> Result<()> {
+        Ok(())
+    }
+}
+
+impl<T> Call for Adapter<T> {
+    type Call = ();
+
+    fn call(&mut self, _: Self::Call) -> Result<()> {
+        Ok(())
+    }
+}
+
+impl<T: Copy> Copy for Adapter<T> {}
