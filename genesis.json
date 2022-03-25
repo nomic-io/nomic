@@ -31,10 +31,10 @@
       "name": "mappum"
     },
     {
-      "address": "291F724505D10B6B07E1F98F5E1CD1AF9A4E74F4",
+      "address": "FB4D12A1C0490A90F3C93643FDEE7381B61CB59E",
       "pub_key": {
         "type": "tendermint/PubKeyEd25519",
-        "value": "4GzmiN0OkZF7qAthUmFgMjw3kW7ukJblJWIyIxB82VU="
+        "value": "1Fh+Rn6OWVa+b9QTseEaRn2kGSj0Rhnvax0vFf48naU="
       },
       "power": "10",
       "name": "kep"
