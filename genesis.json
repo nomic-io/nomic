@@ -14,16 +14,18 @@
       "max_bytes": "1048576"
     },
     "validator": {
-      "pub_key_types": ["ed25519"]
+      "pub_key_types": [
+        "ed25519"
+      ]
     },
     "version": {}
   },
   "validators": [
     {
-      "address": "3CE8700EE0395F4720F7188DDDD90F24E8AEB622",
+      "address": "9C44356C6E591E18344FA048A5999C476580199E",
       "pub_key": {
         "type": "tendermint/PubKeyEd25519",
-        "value": "AGcZJ3h9L8By99aaFaaSVX02wTVfFrdjRv7DDrpFzEg="
+        "value": "JnlzpPIkokkzBwGhLxHAAytjHrE0f5CEqS5iaTK+Q9Y="
       },
       "power": "10",
       "name": "mappum"
