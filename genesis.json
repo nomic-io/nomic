@@ -1,6 +1,6 @@
 {
-  "genesis_time": "2022-03-11T16:40:00Z",
-  "chain_id": "nomic-testnet",
+  "genesis_time": "2022-03-24T19:00:00Z",
+  "chain_id": "nomic-practicenet-4-pre",
   "initial_height": "0",
   "consensus_params": {
     "block": {
@@ -20,10 +20,10 @@
   },
   "validators": [
     {
-      "address": "CAB5582E2C98DAE479F25E1CBAA21807208399A7",
+      "address": "3CE8700EE0395F4720F7188DDDD90F24E8AEB622",
       "pub_key": {
         "type": "tendermint/PubKeyEd25519",
-        "value": "wLqdeP6LtmOf7+QX58iKGa93jEo5IqWqGuovuDx29ak="
+        "value": "AGcZJ3h9L8By99aaFaaSVX02wTVfFrdjRv7DDrpFzEg="
       },
       "power": "10",
       "name": "mappum"
