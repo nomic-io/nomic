@@ -13,7 +13,7 @@ use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
 
-const STOP_HEIGHT: u64 = 460_000;
+const STOP_HEIGHT: u64 = 2_000;
 
 pub fn app_client() -> TendermintClient<nomic::app::App> {
     TendermintClient::new("http://localhost:26657").unwrap()
@@ -151,13 +151,13 @@ impl StartCmd {
                 // TODO: set default seeds
                 set_p2p_seeds(
                     &config_path,
-                    &["edb32208ff79b591dd4cddcf1c879f6405fe6c79@167.99.228.240:26656"],
+                    &["b89b03d4c2b6f4dd8bb71394a6fff89d33fe5947@167.99.228.240:27656"],
                 );
 
                 // TODO: set default RPC boostrap nodes
                 configure_for_statesync(
                     &config_path,
-                    &["http://167.99.228.240:26667", "http://167.99.228.240:26677"],
+                    &["http://167.99.228.240:27657", "http://167.99.228.240:27667"],
                 );
             }
 
@@ -165,7 +165,7 @@ impl StartCmd {
                 println!("Starting legacy node for migration...");
 
                 let res = nomicv1::orga::abci::Node::<nomicv1::app::App>::new(old_name)
-                    .with_genesis(include_bytes!("../../genesis/nomic-testnet.json"))
+                    .with_genesis(include_bytes!("../../genesis/nomic-practicenet-4-pre.json"))
                     .stdout(std::process::Stdio::inherit())
                     .stderr(std::process::Stdio::inherit())
                     .stop_height(STOP_HEIGHT)
@@ -183,7 +183,7 @@ impl StartCmd {
             println!("Starting node...");
             // TODO: add cfg defaults
             Node::<nomic::app::App>::new(new_name, Default::default())
-                .with_genesis(include_bytes!("../../genesis/nomic-testnet-2.json"))
+                .with_genesis(include_bytes!("../../genesis/nomic-practicenet-4-post.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
                 .run()
