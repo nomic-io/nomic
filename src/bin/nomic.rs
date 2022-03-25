@@ -118,10 +118,10 @@ impl StartCmd {
                 println!("Legacy node height: {}", Node::height(old_name).unwrap());
             }
 
+            let new_home = Node::home(new_name);
+            let config_path = new_home.join("tendermint/config/config.toml");
+
             if !has_new_node {
-                let new_home = Node::home(new_name);
-                let config_path = new_home.join("tendermint/config/config.toml");
-    
                 println!("Initializing node at {}...", new_home.display());
                 // TODO: configure default seeds
                 Node::<nomic::app::App>::new(new_name, Default::default());
@@ -142,23 +142,23 @@ impl StartCmd {
                     copy("tendermint/config/config.toml");
                 }
 
-                if !has_old_node || state_sync {
-                    println!("Configuring node for state sync...");
-
-                    // TODO: set default seeds
-                    set_p2p_seeds(
-                        &config_path,
-                        &["edb32208ff79b591dd4cddcf1c879f6405fe6c79@167.99.228.240:26656"],
-                    );
-
-                    // TODO: set default RPC boostrap nodes
-                    configure_for_statesync(
-                        &config_path,
-                        &["http://167.99.228.240:26667", "http://167.99.228.240:26677"],
-                    );
-                }
-
                 edit_block_time(&config_path, "3s");
+            }
+
+            if !has_old_node || state_sync {
+                println!("Configuring node for state sync...");
+
+                // TODO: set default seeds
+                set_p2p_seeds(
+                    &config_path,
+                    &["edb32208ff79b591dd4cddcf1c879f6405fe6c79@167.99.228.240:26656"],
+                );
+
+                // TODO: set default RPC boostrap nodes
+                configure_for_statesync(
+                    &config_path,
+                    &["http://167.99.228.240:26667", "http://167.99.228.240:26677"],
+                );
             }
 
             if has_old_node && !started_new_node && !state_sync {
@@ -217,6 +217,7 @@ fn edit_block_time(cfg_path: &PathBuf, timeout_commit: &str) {
     });
 }
 
+// TODO: append instead of replace
 fn set_p2p_seeds(cfg_path: &PathBuf, seeds: &[&str]) {
     configure_node(cfg_path, |cfg| {
         cfg["p2p"]["seeds"] = toml_edit::value(seeds.join(","));
