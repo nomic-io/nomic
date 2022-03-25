@@ -1459,7 +1459,7 @@ dependencies = [
 [[package]]
 name = "nomic"
 version = "1.0.0"
-source = "git+https://github.com/nomic-io/nomic.git?branch=practicenet4-legacy#88841e7c1f25edd8a742d08b1030d5c6dcfcc710"
+source = "git+https://github.com/nomic-io/nomic.git?branch=practicenet4-legacy#467ae554e2c55c632bb6ce1f78846f057257c404"
 dependencies = [
  "base64",
  "bech32",
@@ -1687,7 +1687,7 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.2.0"
-source = "git+https://github.com/nomic-io/orga.git?branch=migration-testnet#f767ecfefba854557fb2309c804041f5785b6341"
+source = "git+https://github.com/nomic-io/orga.git?branch=migration-testnet#e092d42c8302a941f1ce515c10c7df0911ad9f4f"
 dependencies = [
  "abci2 0.1.3-alpha.0 (git+https://github.com/nomic-io/abci2?rev=096e7cf17802de216ce13e3a1db09c517fa60007)",
  "async-trait",
@@ -1743,7 +1743,7 @@ dependencies = [
 [[package]]
 name = "orga-macros"
 version = "0.2.2"
-source = "git+https://github.com/nomic-io/orga.git?branch=migration-testnet#f767ecfefba854557fb2309c804041f5785b6341"
+source = "git+https://github.com/nomic-io/orga.git?branch=migration-testnet#e092d42c8302a941f1ce515c10c7df0911ad9f4f"
 dependencies = [
  "heck 0.3.3",
  "proc-macro2",
