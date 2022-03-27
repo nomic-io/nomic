@@ -18,8 +18,7 @@ stack](https://github.com/nomic-io/orga).
 
 This guide will walk you through setting up a validator for the Nomic Stakenet.
 
-If you need any help getting your node running, join the [Telegram
-channel](https://t.me/joinchat/b0iv3MHgH5phYjkx).
+If you need any help getting your node running, join the [Discord](https://discord.gg/DJ2f2YtfpJ) and request the validator role.
 
 ### Requirements
 
@@ -93,7 +92,7 @@ This will run the Nomic state machine and a Tendermint process.
 First, find your address by running `nomic balance` (for now this must be run on
 a machine which has an active full node).
 
-Ask the Nomic team for some coins in the Telegram and include your address.
+Ask the Nomic team for some coins in Discord and include your address.
 
 Once you have received coins, you can declare your node as a validator and
 delegate to yourself with:
@@ -131,5 +130,5 @@ nomic declare \
 Visit https://app.nomic.io to claim the airdrop if you are an eligible ATOM holder/staker, so you can delegate more NOM to yourself.
 
 Thanks for participating in the Nomic network! We'll be updating the network
-often so stay tuned in [Telegram](https://t.me/joinchat/b0iv3MHgH5phYjkx) for
+often so stay tuned in [Discord](https://discord.gg/DJ2f2YtfpJ) for
 updates.
