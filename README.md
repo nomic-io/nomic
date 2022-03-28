@@ -129,7 +129,9 @@ nomic declare \
   <details>
 ```
 
-**IMPORTANT NOTE:** Carefully double-check all the fields since you will not be able to modify them after declaring. If you make a mistake, you will have to declare a new validator instead.
+**IMPORTANT NOTE:** Carefully double-check all the fields since you will not be
+able to modify the `commission_max` or `commission_max_change` after declaring. If you make a mistake, you will have to
+declare a new validator instead.
 
 - The `validator_consensus_key` field is the base64 pubkey `value` field found
 under `"validator_info"` in the output of http://localhost:26657/status.
