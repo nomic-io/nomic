@@ -35,7 +35,7 @@ mutagen = "0.1.2"
 
 [features]
 default = ["full"]
-full = ["bitcoind", "bitcoincore-rpc", "clap", "tokio", "orga/merk-full", "orga/abci", "csv", "nomicv1"]
+full = ["bitcoind", "bitcoincore-rpc", "clap", "tokio", "orga/merk-full", "orga/abci", "orga/state-sync", "csv", "nomicv1"]
 
 [[bin]]
 name = "nomic"
