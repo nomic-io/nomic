@@ -13,7 +13,7 @@ use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
 
-const STOP_HEIGHT: u64 = 140;
+const STOP_HEIGHT: u64 = 2_684_000;
 
 pub fn app_client() -> TendermintClient<nomic::app::App> {
     TendermintClient::new("http://localhost:26657").unwrap()
@@ -165,7 +165,7 @@ impl StartCmd {
                 println!("Starting legacy node for migration...");
 
                 let res = nomicv1::orga::abci::Node::<nomicv1::app::App>::new(old_name)
-                    .with_genesis(include_bytes!("../../genesis/nomic-practicenet-4-pre.json"))
+                    .with_genesis(include_bytes!("../../genesis/stakenet.json"))
                     .stdout(std::process::Stdio::inherit())
                     .stderr(std::process::Stdio::inherit())
                     .stop_height(STOP_HEIGHT)
@@ -184,7 +184,7 @@ impl StartCmd {
             // TODO: add cfg defaults
             Node::<nomic::app::App>::new(new_name, Default::default())
                 .with_genesis(include_bytes!(
-                    "../../genesis/nomic-practicenet-4-post.json"
+                    "../../genesis/stakenet-2.json"
                 ))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
