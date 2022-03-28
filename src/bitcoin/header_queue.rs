@@ -1,9 +1,11 @@
 use crate::bitcoin::adapter::Adapter;
 use crate::error::{Error, Result};
 use bitcoin::blockdata::block::BlockHeader;
+use bitcoin::consensus::Encodable;
 use bitcoin::util::uint::Uint256;
 use bitcoin::BlockHash;
 use orga::call::Call;
+use orga::client::Client;
 use orga::collections::Deque;
 use orga::encoding as ed;
 use orga::prelude::*;
@@ -15,11 +17,13 @@ use orga::Result as OrgaResult;
 
 const MAX_LENGTH: u64 = 4032;
 const MAX_TIME_INCREASE: u32 = 2 * 60 * 60;
-const TRUSTED_HEIGHT: u32 = 709_632;
 const RETARGET_INTERVAL: u32 = 2016;
 const TARGET_SPACING: u32 = 10 * 60;
 const TARGET_TIMESPAN: u32 = RETARGET_INTERVAL * TARGET_SPACING;
 const MAX_TARGET: u32 = 0x1d00ffff;
+
+// TODO: get checkpoint from file (include_bytes!(...))
+const TRUSTED_HEIGHT: u32 = 709_632;
 const ENCODED_TRUSTED_HEADER: [u8; 80] = [
     4, 0, 32, 32, 204, 188, 198, 116, 105, 62, 248, 117, 28, 147, 156, 14, 109, 71, 40, 221, 230,
     46, 36, 252, 18, 55, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 119, 236, 20, 71, 55, 95, 198, 128, 41, 171,
@@ -139,7 +143,7 @@ impl Decode for HeaderList {
 
 impl Terminated for HeaderList {}
 
-#[derive(Clone, Debug, Decode, Encode, State)]
+#[derive(Clone, Debug, Decode, Encode, State, Call, Client)]
 pub struct WorkHeader {
     chain_work: Adapter<Uint256>,
     header: WrappedHeader,
@@ -194,6 +198,12 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
+        Config::mainnet()
+    }
+}
+
+impl Config {
+    pub fn mainnet() -> Self {
         Self {
             max_length: MAX_LENGTH,
             max_time_increase: MAX_TIME_INCREASE,
@@ -205,6 +215,29 @@ impl Default for Config {
             encoded_trusted_header: ENCODED_TRUSTED_HEADER.into(),
             retargeting: true,
             min_difficulty_blocks: false,
+        }
+    }
+
+    pub fn testnet() -> Self {
+        let checkpoint_json = include_str!("./testnet_checkpoint.json");
+        let checkpoint_header: BlockHeader = serde_json::from_str(checkpoint_json).unwrap();
+        let mut checkpoint_bytes = vec![];
+        checkpoint_header
+            .consensus_encode(&mut checkpoint_bytes)
+            .unwrap();
+        let checkpoint_height = 2_161_152;
+
+        Self {
+            max_length: MAX_LENGTH,
+            max_time_increase: MAX_TIME_INCREASE,
+            retarget_interval: RETARGET_INTERVAL,
+            target_spacing: TARGET_SPACING,
+            target_timespan: TARGET_TIMESPAN,
+            max_target: MAX_TARGET,
+            trusted_height: checkpoint_height,
+            encoded_trusted_header: checkpoint_bytes,
+            retargeting: true,
+            min_difficulty_blocks: true,
         }
     }
 }
@@ -226,7 +259,7 @@ impl State for HeaderQueue {
         let mut queue = Self {
             deque: State::create(store.sub(&[0]), data.0)?,
             current_work: State::create(store.sub(&[1]), data.1)?,
-            config: Config::default(),
+            config: Config::mainnet(),
         };
 
         let height = match queue.height() {
@@ -298,14 +331,15 @@ impl HeaderQueue {
             return Err(Error::Header("New tip is behind current tip.".into()));
         }
 
+        self.verify_headers(&headers)?;
+
         if first.height <= current_height {
+            // TODO: should compare to oldest retained height
             if first.height < self.config.trusted_height {
                 return Err(Error::Header("New tip is behind trusted tip.".into()));
             }
             self.reorg(headers.clone(), first.height)?;
         }
-
-        self.verify_headers(&headers)?;
 
         while self.len() > self.config.max_length {
             let header = match self.deque.pop_front()? {
@@ -553,6 +587,14 @@ impl HeaderQueue {
         match self.deque.back()? {
             Some(inner) => Ok((*inner).height()),
             None => Ok(0),
+        }
+    }
+
+    #[query]
+    pub fn hash(&self) -> Result<Vec<u8>> {
+        match self.deque.back()? {
+            Some(inner) => Ok((*inner).block_hash().to_vec()),
+            None => Err(Error::Header("HeaderQueue is empty".into())),
         }
     }
 
