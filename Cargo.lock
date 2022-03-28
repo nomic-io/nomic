@@ -908,9 +908,9 @@ dependencies = [
 
 [[package]]
 name = "getrandom"
-version = "0.2.5"
+version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d39cd93900197114fa1fcb7ae84ca742095eed9442088988ae74fa744e930e77"
+checksum = "9be70c98951c83b8d2f8f60d7065fa6d5146873094452a1008da8c2f1e4205ad"
 dependencies = [
  "cfg-if 1.0.0",
  "js-sys",
@@ -1430,9 +1430,9 @@ dependencies = [
 
 [[package]]
 name = "native-tls"
-version = "0.2.8"
+version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "48ba9f7719b5a0f42f338907614285fb5fd70e53858141f69898a1fb7203b24d"
+checksum = "09bf6f32a3afefd0b587ee42ed19acd945c6d1f3b5424040f50b2f24ab16be77"
 dependencies = [
  "lazy_static",
  "libc",
@@ -1459,7 +1459,7 @@ dependencies = [
 [[package]]
 name = "nomic"
 version = "1.0.0"
-source = "git+https://github.com/nomic-io/nomic.git?branch=practicenet4-legacy#467ae554e2c55c632bb6ce1f78846f057257c404"
+source = "git+https://github.com/nomic-io/nomic.git?branch=stakenet2-legacy#1e33374fcc28ebf935ef3c7f9491e8f6853f5436"
 dependencies = [
  "base64",
  "bech32",
@@ -1687,7 +1687,7 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.2.0"
-source = "git+https://github.com/nomic-io/orga.git?branch=migration-testnet#c5511ad59732cfc454506e43c6b087dda7f34731"
+source = "git+https://github.com/nomic-io/orga.git?branch=migration-testnet#b23ed5f4283e4f776d1509afaee496c737bc6036"
 dependencies = [
  "abci2 0.1.3-alpha.0 (git+https://github.com/nomic-io/abci2?rev=096e7cf17802de216ce13e3a1db09c517fa60007)",
  "async-trait",
@@ -1743,7 +1743,7 @@ dependencies = [
 [[package]]
 name = "orga-macros"
 version = "0.2.2"
-source = "git+https://github.com/nomic-io/orga.git?branch=migration-testnet#c5511ad59732cfc454506e43c6b087dda7f34731"
+source = "git+https://github.com/nomic-io/orga.git?branch=migration-testnet#b23ed5f4283e4f776d1509afaee496c737bc6036"
 dependencies = [
  "heck 0.3.3",
  "proc-macro2",
@@ -1791,9 +1791,9 @@ dependencies = [
 
 [[package]]
 name = "paste"
-version = "1.0.6"
+version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0744126afe1a6dd7f394cb50a716dbe086cb06e255e53d8d0185d82828358fb5"
+checksum = "0c520e05135d6e763148b6426a837e239041653ba7becd2e538c076c738025fc"
 
 [[package]]
 name = "peeking_take_while"
@@ -2081,7 +2081,7 @@ version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d34f1408f55294453790c48b2f1ebbb1c5b4b7563eb1f418bcfcfdbb06ebb4e7"
 dependencies = [
- "getrandom 0.2.5",
+ "getrandom 0.2.6",
 ]
 
 [[package]]
@@ -2275,9 +2275,9 @@ dependencies = [
 
 [[package]]
 name = "rust_decimal"
-version = "1.22.0"
+version = "1.23.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d37baa70cf8662d2ba1c1868c5983dda16ef32b105cce41fb5c47e72936a90b3"
+checksum = "22dc69eadbf0ee2110b8d20418c0c6edbaefec2811c4963dc17b6344e11fe0f8"
 dependencies = [
  "arrayvec 0.7.2",
  "num-traits",
@@ -2286,9 +2286,9 @@ dependencies = [
 
 [[package]]
 name = "rust_decimal_macros"
-version = "1.22.0"
+version = "1.23.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "184abaf7b434800e1a5a8aad3ebc8cd7498df33af72d65371d797a264713a59b"
+checksum = "a4c70be9367d4bc095d10b48d41b819d09ed4dafc528765a144d32ed1d530654"
 dependencies = [
  "quote",
  "rust_decimal",
@@ -2687,9 +2687,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "1.0.89"
+version = "1.0.90"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea297be220d52398dcc07ce15a209fce436d361735ac1db700cab3b6cdfb9f54"
+checksum = "704df27628939572cd88d33f171cd6f896f4eaca85252c6e0a72d8d8287ee86f"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2804,7 +2804,7 @@ dependencies = [
  "bytes",
  "flex-error",
  "futures",
- "getrandom 0.2.5",
+ "getrandom 0.2.6",
  "http",
  "hyper",
  "hyper-proxy",
