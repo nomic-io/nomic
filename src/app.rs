@@ -66,7 +66,7 @@ mod abci {
             self.staking.downtime_jail_seconds = 60 * 30; // 30 minutes
             self.staking.slash_fraction_downtime = (Amount::new(1) / Amount::new(1000))?;
             self.staking.slash_fraction_double_sign = (Amount::new(1) / Amount::new(20))?;
-            self.staking.min_self_delegation_min = 1;
+            self.staking.min_self_delegation_min = 0;
 
             self.accounts.allow_transfers(false);
 
