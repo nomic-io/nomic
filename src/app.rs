@@ -3,7 +3,7 @@ use orga::Error;
 use std::convert::TryInto;
 use std::time::Duration;
 
-pub const CHAIN_ID: &str = "nomic-practicenet-4-pre";
+pub const CHAIN_ID: &str = "nomic-stakenet";
 pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
 
 #[derive(State, Debug, Clone)]
@@ -108,7 +108,7 @@ mod abci {
         fn init_chain(&mut self, ctx: &InitChainCtx) -> Result<()> {
             self.staking.set_min_self_delegation(100_000);
             self.staking.set_max_validators(100);
-            self.accounts.allow_transfers(true);
+            self.accounts.allow_transfers(false);
 
             self.configure_faucets()?;
 
@@ -135,14 +135,6 @@ mod abci {
 
     impl BeginBlock for InnerApp {
         fn begin_block(&mut self, ctx: &BeginBlockCtx) -> Result<()> {
-            if ctx.height == 50 {
-                let _ = self.staking.slash(
-                    "nomic197hzw237p7hd6ru9gz328uh74yc52qt8zprlya"
-                        .parse()
-                        .unwrap(),
-                    0,
-                )?;
-            }
             self.staking.begin_block(ctx)?;
 
             if self.staking.staked()? > 0 {
