@@ -59,8 +59,8 @@ sudo dnf install clang openssl-devel && sudo dnf group install "C Development To
 # clone
 git clone https://github.com/nomic-io/nomic.git nomic && cd nomic
 
-# change to testnet branch
-git checkout testnet
+# change to develop branch
+git checkout develop
 
 # build and install, adding a `nomic` command to your PATH
 cargo install --locked --path .
@@ -68,14 +68,14 @@ cargo install --locked --path .
 
 ### 2. Initialize and configure your node
 
-Initialize your data directory (`~/.nomic-testnet`) by running:
+Initialize your data directory (`~/.nomic-stakenet`) by running:
 
 ```bash
 nomic init
 ```
 
 Next, configure your node by editing
-`~/.nomic-testnet/tendermint/config/config.toml`.
+`~/.nomic-stakenet/tendermint/config/config.toml`.
 
 Add the external ip and port where your node can be reached so that other
 nodes will connect to you (use your own actual IP address):
@@ -89,8 +89,7 @@ nodes will connect to you (use your own actual IP address):
 external_address = "11.11.11.11:26656"
 ```
 
-Add a seed so your node will be able to connect to the network (updated with
-testnet seeds):
+Add a seed so your node will be able to connect to the network:
 
 ```toml
 # Comma separated list of seed nodes to connect to
@@ -134,11 +133,12 @@ able to modify the `commission_max` or `commission_max_change` after declaring. 
 declare a new validator instead.
 
 - The `validator_consensus_key` field is the base64 pubkey `value` field found
-under `"validator_info"` in the output of http://localhost:26657/status.
+  under `"validator_info"` in the output of http://localhost:26657/status.
 - The `identity` field is the 64-bit hex key suffix found on your Keybase
   profile, used to get your profile picture in wallets and block explorers.
 
 For example:
+
 ```
 nomic declare \
   ohFOw5u9LGq1ZRMTYZD1Y/WrFtg7xfyBaEB4lSgfeC8= \
@@ -157,4 +157,3 @@ Visit https://app.nomic.io to claim the airdrop if you are an eligible ATOM hold
 
 Thanks for participating in the Nomic network! We'll be updating the network
 often so stay tuned in [Discord](https://discord.gg/jH7U2NRJKn) for updates.
-
