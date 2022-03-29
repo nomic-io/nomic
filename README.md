@@ -102,6 +102,29 @@ seeds = "238120dfe716082754048057c1fdc3d6f09609b5@161.35.51.124:26656,a67d7a4d90
 nomic start
 ```
 
+OR use service file (shown below) 
+```bash
+  sudo tee /etc/systemd/system/nomicd.service > /dev/null <<EOF
+[Unit]
+  Description=nomic
+  After=network-online.target
+[Service]
+  User=$USER
+  ExecStart=$(which nomic) start
+  Restart=on-failure
+  RestartSec=10
+  LimitNOFILE=65535
+[Install]
+  WantedBy=multi-user.target
+EOF
+
+sudo systemctl enable nomicd
+sudo systemctl daemon-reload
+sudo systemctl restart nomicd && journalctl -u nomicd -f -o cat
+```
+
+
+
 This will run the Nomic state machine and a Tendermint process.
 
 ### 4. Acquiring coins and staking for voting power
