@@ -153,7 +153,7 @@ async fn send_sdk_tx(msg: sdk::Msg) -> JsValue {
         account_number: "0".to_string(),
         chain_id: CHAIN_ID.to_string(),
         fee: sdk::Fee {
-            amount: vec![ sdk::Coin { amount: MIN_FEE.to_string(), denom: "unom".to_string() } ],
+            amount: vec![ sdk::Coin { amount: 0.to_string(), denom: "unom".to_string() } ],
             gas: MIN_FEE.to_string(),
         },
         memo: "".to_string(),
