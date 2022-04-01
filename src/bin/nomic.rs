@@ -12,6 +12,8 @@ use nomic::error::Result;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
+use bitcoincore_rpc::{Auth, Client as BtcClient};
+use nomic::bitcoin::relayer::Relayer;
 
 const STOP_HEIGHT: u64 = 2_684_000;
 
@@ -54,6 +56,7 @@ pub enum Command {
     Claim(ClaimCmd),
     ClaimAirdrop(ClaimAirdropCmd),
     Legacy(LegacyCmd),
+    Relayer(RelayerCmd),
 }
 
 impl Command {
@@ -77,6 +80,7 @@ impl Command {
             Claim(cmd) => cmd.run().await,
             ClaimAirdrop(cmd) => cmd.run().await,
             Legacy(cmd) => cmd.run().await,
+            Relayer(cmd) => cmd.run().await,
         }
     }
 }
@@ -587,6 +591,53 @@ impl LegacyCmd {
         self.cmd.run().await.unwrap();
 
         Ok(())
+    }
+}
+
+
+#[derive(Parser, Debug)]
+pub struct RelayerCmd {
+    #[clap(short = 'p', long, default_value_t = 8332)]
+    rpc_port: u16,
+
+    #[clap(short = 'u', long)]
+    rpc_user: Option<String>,
+
+    #[clap(short = 'P', long)]
+    rpc_pass: Option<String>,
+}
+
+impl RelayerCmd {
+    fn btc_client(&self) -> Result<BtcClient> {
+        let rpc_url = format!("http://localhost:{}", self.rpc_port);
+        let auth = match (self.rpc_user.clone(), self.rpc_pass.clone()) {
+            (Some(user), Some(pass)) => Auth::UserPass(user, pass),
+            _ => Auth::None,
+        };
+
+        let btc_client = BtcClient::new(&rpc_url, auth)
+            .map_err(|e| orga::Error::App(e.to_string()))?;
+
+        Ok(btc_client)
+    }
+
+    async fn run(&self) -> Result<()> {
+        let create_relayer = || {
+            let btc_client = self.btc_client().unwrap();
+            let app_bitcoin_client = app_client()
+                .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
+                .bitcoin;
+            Relayer::new(btc_client, app_bitcoin_client)
+        };
+
+        let mut relayer = create_relayer();
+        // let relay_headers = async move || {
+        relayer.relay_headers().await
+        // };
+        // tokio::spawn(relay_headers());
+
+        // let mut relayer = create_relayer();
+        // let deposits = relayer.relay_deposits().await.unwrap();
     }
 }
 

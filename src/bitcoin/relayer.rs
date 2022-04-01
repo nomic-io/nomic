@@ -13,7 +13,7 @@ use orga::prelude::*;
 use std::collections::{HashMap, HashSet, VecDeque};
 use tokio::task::block_in_place as block;
 
-const HEADER_BATCH_SIZE: usize = 100;
+const HEADER_BATCH_SIZE: usize = 50;
 
 type AppClient<T> = <Bitcoin as Client<T>>::Client;
 
@@ -50,12 +50,14 @@ where
         Ok(hash)
     }
 
-    pub async fn relay_headers(&mut self) -> Result<!> {
+    pub async fn relay_headers(&mut self) -> Result<()> {
         println!("Starting header relay...");
 
         loop {
             let fullnode_hash = block(|| self.btc_client.get_best_block_hash())?;
+            dbg!(fullnode_hash);
             let sidechain_hash = self.sidechain_block_hash().await?;
+            dbg!(sidechain_hash);
 
             if fullnode_hash != sidechain_hash {
                 self.relay_header_batch(fullnode_hash, sidechain_hash)
@@ -173,6 +175,8 @@ where
             let header = block(|| self.btc_client.get_block_header(&cursor.hash))?;
             let header = WrappedHeader::from_header(&header, cursor.height as u32);
 
+            dbg!(&header);
+
             headers.push(header);
         }
 
@@ -185,11 +189,18 @@ where
         let mut a = get_info(a)?;
         let mut b = get_info(b)?;
 
+        let prev =
+            |header: GetBlockHeaderResult| get_info(header.previous_block_hash.unwrap());
+
         while a != b {
-            if a.height > b.height {
-                a = get_info(a.previous_block_hash.unwrap())?;
+            if a.height > b.height && (b.confirmations - 1) as usize == a.height - b.height {
+                return Ok(b);
+            } else if b.height > a.height && (a.confirmations - 1) as usize == b.height - a.height {
+                return Ok(a);
+            } else if a.height > b.height {
+                a = prev(a)?;
             } else {
-                b = get_info(b.previous_block_hash.unwrap())?;
+                b = prev(b)?;
             }
         }
 
@@ -346,7 +357,7 @@ impl WatchedScripts {
 mod tests {
     use super::*;
     use crate::bitcoin::adapter::Adapter;
-    use crate::bitcoin::header_queue::Config;
+    use crate::bitcoin::header_queue::{Config, HeaderQueue};
     use bitcoincore_rpc::Auth;
     use bitcoind::BitcoinD;
     use orga::encoding::Encode;
@@ -374,8 +385,7 @@ mod tests {
 
         bitcoind.client.generate_to_address(100, &address).unwrap();
 
-        let store = Store::new(Shared::new(MapStore::new()));
-
+        let store = Store::new(Shared::new(MapStore::new()).into());
         let mut header_queue = HeaderQueue::with_conf(store, Default::default(), config).unwrap();
         let relayer = Relayer::new(rpc_client);
         relayer.seek_to_tip(&mut header_queue).unwrap();
