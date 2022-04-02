@@ -19,13 +19,16 @@ async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
         .into();
 
     Ok(json!({
-        "height": "0",
-        "result": [
+        "balances": [
             {
                 "denom": "unom",
                 "amount": balance.to_string(),
             }
-        ]
+        ],
+        "pagination": {
+            "next_key": "",
+            "total": 1
+        }
     }))
 }
 
@@ -217,12 +220,6 @@ fn staking_delegators_unbonding_delegations_2(address: &str) -> Value {
     json!({ "height": "0", "result": [] })
 }
 
-#[get("/cosmos/staking/v1beta1/delegations/<address>")]
-fn staking_delegations(address: &str) -> Value {
-    json!({ "height": "0", "result": [] })
-}
-
-
 #[get("/staking/delegators/<address>/delegations")]
 fn staking_delegations_2(address: &str) -> Value {
     json!({ "height": "0", "result": [] })
@@ -329,7 +326,7 @@ async fn minting_inflation() -> Result<Value, BadRequest<String>> {
         .result()
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
-    Ok(json!({ "height": "0", "result": apr.to_string() }))
+    Ok(json!({ "inflation": apr.to_string() }))
 }
 
 #[get("/minting/inflation")]
@@ -366,6 +363,25 @@ fn staking_pool() -> Value {
       } })
 }
 
+#[get("/ibc/apps/transfer/v1/params")]
+fn ibc_apps_transfer_params() {
+    json!({
+        "params": {
+            "send_enabled": false,
+            "receive_enabled": false
+        }
+    })
+}
+
+#[get("/ibc/applications/transfer/v1/params")]
+fn ibc_applications_transfer_params() {
+    json!({
+        "params": {
+            "send_enabled": false,
+            "receive_enabled": false
+        }
+    })
+}
 
 use rocket::http::Header;
 use rocket::{Request, Response};
@@ -409,5 +425,7 @@ fn rocket() -> _ {
         minting_inflation,
         staking_pool, 
         bank_total,
+        ibc_apps_transfer_params,
+        ibc_applications_transfer_params,
     ])
 }
