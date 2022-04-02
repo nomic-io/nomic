@@ -351,8 +351,26 @@ fn bank_total(denom: &str) -> Value {
     json!({ "height": "0", "result": "0" })
 }
 
-#[get("/staking/pool")]
+#[get("/cosmos/staking/v1beta1/pool")]
 fn staking_pool() -> Value {
+    json!({
+        "bonded_tokens": "0",
+        "not_bonded_tokens": "0"
+    })
+}
+
+#[get("/cosmos/bank/v1beta1/supply/unom")]
+fn bank_supply_unom() -> Value {
+    json!({
+        "amount": {
+            "denom": "unom",
+            "amount": "1"
+        }
+    })
+}
+
+#[get("/staking/pool")]
+fn staking_pool_2() -> Value {
     json!({ "height": "0", "result": {
         "loose_tokens": "0",
         "bonded_tokens": "0",
@@ -423,8 +441,10 @@ fn rocket() -> _ {
         staking_delegations_2,
         minting_inflation,
         staking_pool, 
+        staking_pool_2,
         bank_total,
         ibc_apps_transfer_params,
         ibc_applications_transfer_params,
+        bank_supply_unom,
     ])
 }
