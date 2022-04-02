@@ -157,7 +157,7 @@ async fn query(query: &str) -> Result<String, BadRequest<String>> {
     Ok(base64::encode(res.value))
 }
 
-#[get("/cosmos/staking/v1beta1/delegators/<address>/delegations")]
+#[get("/cosmos/staking/v1beta1/delegations/<address>")]
 async fn staking_delegators_delegations(address: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
 
@@ -168,17 +168,19 @@ async fn staking_delegators_delegations(address: &str) -> Result<Value, BadReque
 
     let total_staked: u64 = delegations.iter().map(|(_, d)| -> u64 { d.staked.into() }).sum();
 
-    Ok(json!({ "height": "0", "result": [
+    Ok(json!({ "delegation_responses": [
         {
-            "delegator_address": "",
-            "validator_address": "",
-            "shares": "0",
+            "delegation": {
+                "delegator_address": "",
+                "validator_address": "",
+                "shares": "0"
+            },
             "balance": {
-              "denom": "NOM",
-              "amount": total_staked.to_string(),
+                "denom": "unom",
+                "amount": total_staked.to_string(),
             }
           }
-    ] }))
+    ], "pagination": { "next_key": "", "total": "1" } }))
 }
 
 #[get("/staking/delegators/<address>/delegations")]
@@ -207,7 +209,7 @@ async fn staking_delegators_delegations_2(address: &str) -> Result<Value, BadReq
 
 #[get("/cosmos/staking/v1beta1/delegators/<address>/unbonding_delegations")]
 fn staking_delegators_unbonding_delegations(address: &str) -> Value {
-    json!({ "height": "0", "result": [] })
+    json!({ "unbonding_responses": [], "pagination": { "next_key": "", "total": "0" } })
 }
 
 #[get("/staking/delegators/<address>/unbonding_delegations")]
@@ -397,7 +399,7 @@ fn rocket() -> _ {
         txs,
         query,
         staking_delegators_delegations,
-        staking_delegators_delegations_2,
+        // staking_delegators_delegations_2,
         staking_delegators_unbonding_delegations,
         staking_delegators_unbonding_delegations_2,
         distribution_delegatrs_rewards,
