@@ -26,8 +26,8 @@ async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
             }
         ],
         "pagination": {
-            "next_key": "",
-            "total": 1
+            "next_key": null,
+            "total": "0"
         }
     }))
 }
@@ -183,7 +183,7 @@ async fn staking_delegators_delegations(address: &str) -> Result<Value, BadReque
                 "amount": total_staked.to_string(),
             }
           }
-    ], "pagination": { "next_key": "", "total": "1" } }))
+    ], "pagination": { "next_key": null, "total": "0" } }))
 }
 
 #[get("/staking/delegators/<address>/delegations")]
@@ -212,7 +212,7 @@ async fn staking_delegators_delegations_2(address: &str) -> Result<Value, BadReq
 
 #[get("/cosmos/staking/v1beta1/delegators/<address>/unbonding_delegations")]
 fn staking_delegators_unbonding_delegations(address: &str) -> Value {
-    json!({ "unbonding_responses": [], "pagination": { "next_key": "", "total": "0" } })
+    json!({ "unbonding_responses": [], "pagination": { "next_key": null, "total": "0" } })
 }
 
 #[get("/staking/delegators/<address>/unbonding_delegations")]
