@@ -364,7 +364,7 @@ fn staking_pool() -> Value {
 }
 
 #[get("/ibc/apps/transfer/v1/params")]
-fn ibc_apps_transfer_params() {
+fn ibc_apps_transfer_params() -> Value {
     json!({
         "params": {
             "send_enabled": false,
@@ -374,7 +374,7 @@ fn ibc_apps_transfer_params() {
 }
 
 #[get("/ibc/applications/transfer/v1/params")]
-fn ibc_applications_transfer_params() {
+fn ibc_applications_transfer_params() -> Value {
     json!({
         "params": {
             "send_enabled": false,
@@ -420,7 +420,6 @@ fn rocket() -> _ {
         staking_delegators_unbonding_delegations_2,
         distribution_delegatrs_rewards,
         distribution_delegatrs_rewards_2,
-        staking_delegations,
         staking_delegations_2,
         minting_inflation,
         staking_pool, 
