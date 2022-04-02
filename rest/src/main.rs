@@ -8,7 +8,7 @@ use nomic::{app_client, app::{Nom, InnerApp, CHAIN_ID}, orga::{query::Query, coi
 use tendermint_rpc as tm;
 use tm::Client as _;
 
-#[get("/bank/balances/<address>")]
+#[get("/cosmos/bank/v1beta1/balances/<address>")]
 async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
 
@@ -136,7 +136,7 @@ async fn query(query: &str) -> Result<String, BadRequest<String>> {
     Ok(base64::encode(res.value))
 }
 
-#[get("/staking/delegators/<address>/delegations")]
+#[get("/cosmos/staking/v1beta1/delegators/<address>/delegations")]
 async fn staking_delegators_delegations(address: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
 
@@ -160,12 +160,12 @@ async fn staking_delegators_delegations(address: &str) -> Result<Value, BadReque
     ] }))
 }
 
-#[get("/staking/delegators/<address>/unbonding_delegations")]
+#[get("/cosmos/staking/v1beta1/delegators/<address>/unbonding_delegations")]
 fn staking_delegators_unbonding_delegations(address: &str) -> Value {
     json!({ "height": "0", "result": [] })
 }
 
-#[get("/distribution/delegators/<address>/rewards")]
+#[get("/cosmos/distribution/v1beta1/delegators/<address>/rewards")]
 async fn distribution_delegatrs_rewards(address: &str) -> Value {
     // let address = address.parse().unwrap();
 
@@ -208,7 +208,7 @@ async fn distribution_delegatrs_rewards(address: &str) -> Value {
       } })
 }
 
-#[get("/minting/inflation")]
+#[get("/cosmos/mint/v1beta1/inflation")]
 async fn minting_inflation() -> Result<Value, BadRequest<String>> {
     let validators = app_client().staking.all_validators()
         .await
