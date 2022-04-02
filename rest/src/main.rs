@@ -29,6 +29,27 @@ async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
     }))
 }
 
+#[get("/bank/balances/<address>")]
+async fn bank_balances_2(address: &str) -> Result<Value, BadRequest<String>> {
+    let address: Address = address.parse().unwrap();
+
+    let balance: u64 = app_client().accounts.balance(address)
+        .await
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+        .into();
+
+    Ok(json!({
+        "height": "0",
+        "result": [
+            {
+                "denom": "unom",
+                "amount": balance.to_string(),
+            }
+        ]
+    }))
+}
+
 #[get("/auth/accounts/<addr_str>")]
 async fn auth_accounts(addr_str: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = addr_str.parse().unwrap();
@@ -160,13 +181,48 @@ async fn staking_delegators_delegations(address: &str) -> Result<Value, BadReque
     ] }))
 }
 
+#[get("/staking/delegators/<address>/delegations")]
+async fn staking_delegators_delegations_2(address: &str) -> Result<Value, BadRequest<String>> {
+    let address: Address = address.parse().unwrap();
+
+    let delegations = app_client().staking.delegations(address)
+        .await
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+
+    let total_staked: u64 = delegations.iter().map(|(_, d)| -> u64 { d.staked.into() }).sum();
+
+    Ok(json!({ "height": "0", "result": [
+        {
+            "delegator_address": "",
+            "validator_address": "",
+            "shares": "0",
+            "balance": {
+              "denom": "NOM",
+              "amount": total_staked.to_string(),
+            }
+          }
+    ] }))
+}
+
 #[get("/cosmos/staking/v1beta1/delegators/<address>/unbonding_delegations")]
 fn staking_delegators_unbonding_delegations(address: &str) -> Value {
     json!({ "height": "0", "result": [] })
 }
 
+#[get("/staking/delegators/<address>/unbonding_delegations")]
+fn staking_delegators_unbonding_delegations_2(address: &str) -> Value {
+    json!({ "height": "0", "result": [] })
+}
+
 #[get("/cosmos/staking/v1beta1/delegations/<address>")]
 fn staking_delegations(address: &str) -> Value {
+    json!({ "height": "0", "result": [] })
+}
+
+
+#[get("/staking/delegators/<address>/delegations")]
+fn staking_delegations_2(address: &str) -> Value {
     json!({ "height": "0", "result": [] })
 }
 
@@ -213,8 +269,69 @@ async fn distribution_delegatrs_rewards(address: &str) -> Value {
       } })
 }
 
+
+#[get("/distribution/delegators/<address>/rewards")]
+async fn distribution_delegatrs_rewards_2(address: &str) -> Value {
+    // let address = address.parse().unwrap();
+
+    // type AppQuery = <InnerApp as Query>::Query;
+    // type StakingQuery = <Staking<Nom> as Query>::Query;
+
+    // let delegations = app_client()
+    //     .query(
+    //         AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![])),
+    //         |state| state.staking.delegations(address),
+    //     )
+    //     .await
+    //     .unwrap();
+
+
+    // let reward = (delegations
+    //     .iter()
+    //     .map(|(_, d)| -> u64 { d.liquid.into() })
+    //     .sum::<u64>())
+    //     .to_string();
+
+    json!({ "height": "0", "result": {
+        "rewards": [
+        //   {
+        //     "validator_address": "cosmosvaloper16xyempempp92x9hyzz9wrgf94r6j9h5f2w4n2l",
+        //     "reward": [
+        //       {
+        //         "denom": "unom",
+        //         "amount": reward
+        //       }
+        //     ]
+        //   }
+        ],
+        "total": [
+        //   {
+        //     "denom": "unom",
+        //     "amount": reward
+        //   }
+        ]
+      } })
+}
+
 #[get("/cosmos/mint/v1beta1/inflation")]
 async fn minting_inflation() -> Result<Value, BadRequest<String>> {
+    let validators = app_client().staking.all_validators()
+        .await
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+
+    let total_staked: u64 = validators.iter().map(|v| -> u64 { v.amount_staked.into() }).sum();
+    let total_staked = Amount::from(total_staked + 1);
+    let yearly_inflation = Decimal::from(64_682_541_340_000);
+    let apr = (yearly_inflation / Decimal::from(4) / Decimal::from(total_staked))
+        .result()
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+
+    Ok(json!({ "height": "0", "result": apr.to_string() }))
+}
+
+#[get("/minting/inflation")]
+async fn minting_inflation_2() -> Result<Value, BadRequest<String>> {
     let validators = app_client().staking.all_validators()
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
@@ -275,13 +392,18 @@ impl Fairing for CORS {
 fn rocket() -> _ {
     rocket::build().attach(CORS).mount("/", routes![
         bank_balances,
+        bank_balances_2,
         auth_accounts,
         txs,
         query,
         staking_delegators_delegations,
+        staking_delegators_delegations_2,
         staking_delegators_unbonding_delegations,
+        staking_delegators_unbonding_delegations_2,
         distribution_delegatrs_rewards,
+        distribution_delegatrs_rewards_2,
         staking_delegations,
+        staking_delegations_2,
         minting_inflation,
         staking_pool, 
         bank_total,
