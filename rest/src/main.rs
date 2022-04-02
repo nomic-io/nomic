@@ -165,6 +165,11 @@ fn staking_delegators_unbonding_delegations(address: &str) -> Value {
     json!({ "height": "0", "result": [] })
 }
 
+#[get("/cosmos/staking/v1beta1/delegations/<address>")]
+fn staking_delegations(address: &str) -> Value {
+    json!({ "height": "0", "result": [] })
+}
+
 #[get("/cosmos/distribution/v1beta1/delegators/<address>/rewards")]
 async fn distribution_delegatrs_rewards(address: &str) -> Value {
     // let address = address.parse().unwrap();
@@ -276,6 +281,7 @@ fn rocket() -> _ {
         staking_delegators_delegations,
         staking_delegators_unbonding_delegations,
         distribution_delegatrs_rewards,
+        staking_delegations,
         minting_inflation,
         staking_pool, 
         bank_total,
