@@ -1495,7 +1495,7 @@ dependencies = [
  "js-sys",
  "mutagen",
  "nomic 1.0.0",
- "orga 0.2.0 (git+https://github.com/nomic-io/orga.git?branch=migration-testnet)",
+ "orga 0.2.0 (git+https://github.com/nomic-io/orga.git?rev=8cab88b88a4839facca606d91b0e83790ad52040)",
  "secp256k1 0.21.3",
  "serde",
  "serde_json",
@@ -1687,7 +1687,7 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.2.0"
-source = "git+https://github.com/nomic-io/orga.git?branch=migration-testnet#262e0cf633ad59a3a5a9f8b0ed5676466fdf7e15"
+source = "git+https://github.com/nomic-io/orga.git?rev=8cab88b88a4839facca606d91b0e83790ad52040#8cab88b88a4839facca606d91b0e83790ad52040"
 dependencies = [
  "abci2 0.1.3-alpha.0 (git+https://github.com/nomic-io/abci2?rev=096e7cf17802de216ce13e3a1db09c517fa60007)",
  "async-trait",
@@ -1707,7 +1707,7 @@ dependencies = [
  "num-rational",
  "num-traits",
  "orga 0.2.0 (git+https://github.com/nomic-io/orga?branch=legacy-v1)",
- "orga-macros 0.2.2 (git+https://github.com/nomic-io/orga.git?branch=migration-testnet)",
+ "orga-macros 0.2.2 (git+https://github.com/nomic-io/orga.git?rev=8cab88b88a4839facca606d91b0e83790ad52040)",
  "prost",
  "reqwest",
  "ripemd",
@@ -1743,7 +1743,7 @@ dependencies = [
 [[package]]
 name = "orga-macros"
 version = "0.2.2"
-source = "git+https://github.com/nomic-io/orga.git?branch=migration-testnet#262e0cf633ad59a3a5a9f8b0ed5676466fdf7e15"
+source = "git+https://github.com/nomic-io/orga.git?rev=8cab88b88a4839facca606d91b0e83790ad52040#8cab88b88a4839facca606d91b0e83790ad52040"
 dependencies = [
  "heck 0.3.3",
  "proc-macro2",
