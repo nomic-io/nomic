@@ -9,7 +9,7 @@ default-run = "nomic"
 bitcoin = { version = "0.27.1", features = ["use-serde"] }
 bitcoind = { version = "0.21.0", features = ["22_0"], optional = true }
 bitcoincore-rpc = { version = "0.14.0", optional = true }
-orga = { git = "https://github.com/nomic-io/orga.git", rev = "8a638bb69ecab4e6e7c815dd079eca3f4992c442", features = ["merk-verify"] }
+orga = { git = "https://github.com/nomic-io/orga.git", rev = "fabd5374fd92c91b57be6533c87d19ce434bc654", features = ["merk-verify"] }
 thiserror = "1.0.30"
 ed = "0.3.0"
 clap = { version = "3.0.0-rc.4", features = ["derive"], optional = true }
