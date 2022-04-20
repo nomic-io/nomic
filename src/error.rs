@@ -4,9 +4,13 @@ pub enum Error {
     Bitcoin(#[from] bitcoin::util::Error),
     #[error(transparent)]
     BitcoinHash(#[from] bitcoin::hashes::Error),
+    #[error(transparent)]
+    SapioBitcoin(#[from] bitcoincore_rpc_async::bitcoin::util::Error),
+    #[error(transparent)]
+    SapioBitcoinHash(#[from] bitcoincore_rpc_async::bitcoin::hashes::Error),
     #[cfg(feature = "full")]
     #[error(transparent)]
-    BitcoinRpc(#[from] bitcoincore_rpc::Error),
+    BitcoinRpc(#[from] bitcoincore_rpc_async::Error),
     #[error("{0}")]
     Header(String),
     #[error(transparent)]
