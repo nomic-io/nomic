@@ -1,25 +1,28 @@
-use super::Bitcoin;
+use super::{Bitcoin, SignatorySet};
 use crate::bitcoin::{adapter::Adapter, header_queue::WrappedHeader};
 use crate::error::Result;
-use bitcoin::{
+use bitcoincore_rpc_async::bitcoin;
+use bitcoincore_rpc_async::bitcoin::{
     hashes::{hex::ToHex, Hash},
     Block, BlockHash, Script, Transaction,
+    consensus::Decodable,
 };
-use bitcoincore_rpc::json::GetBlockHeaderResult;
-use bitcoincore_rpc::{Client as BtcClient, RpcApi};
+use ::bitcoin::consensus::Decodable as _;
+use bitcoincore_rpc_async::bitcoin::consensus::Encodable;
+use bitcoincore_rpc_async::json::GetBlockHeaderResult;
+use bitcoincore_rpc_async::{Client as BtcClient, RpcApi};
 use orga::client::{AsyncCall, AsyncQuery};
 use orga::coins::Address;
 use orga::prelude::*;
 use std::collections::{HashMap, HashSet, VecDeque};
-use tokio::task::block_in_place as block;
 
 const HEADER_BATCH_SIZE: usize = 50;
 
 type AppClient<T> = <Bitcoin as Client<T>>::Client;
 
 // TODO
-fn derive_script(addr: Address, sig_set: &SignatorySet) -> Script {
-    let data = (addr, sig_set.0 as u64).encode().unwrap();
+fn derive_script(addr: Address, _sig_set: &SignatorySet) -> Script {
+    let data = (addr, 123u32).encode().unwrap();
     bitcoin::Script::new_op_return(&data).to_v0_p2wsh()
 }
 
@@ -33,7 +36,7 @@ pub struct Relayer<T: Clone + Send> {
 impl<T: Clone + Send> Relayer<T>
 where
     T: AsyncQuery<Query = <Bitcoin as Query>::Query>,
-    T: AsyncQuery<Response = Bitcoin>,
+    T: for<'a> AsyncQuery<Response<'a> = &'a Bitcoin>,
     T: AsyncCall<Call = <Bitcoin as Call>::Call>,
 {
     pub fn new(btc_client: BtcClient, app_client: AppClient<T>) -> Self {
@@ -46,7 +49,7 @@ where
 
     async fn sidechain_block_hash(&self) -> Result<BlockHash> {
         let hash = self.app_client.headers.hash().await??;
-        let hash = bitcoin::BlockHash::from_slice(hash.as_slice())?;
+        let hash = BlockHash::from_slice(hash.as_slice())?;
         Ok(hash)
     }
 
@@ -54,7 +57,7 @@ where
         println!("Starting header relay...");
 
         loop {
-            let fullnode_hash = block(|| self.btc_client.get_best_block_hash())?;
+            let fullnode_hash = self.btc_client.get_best_block_hash().await?;
             dbg!(fullnode_hash);
             let sidechain_hash = self.sidechain_block_hash().await?;
             dbg!(sidechain_hash);
@@ -65,13 +68,13 @@ where
                 continue;
             }
 
-            let info = block(|| self.btc_client.get_block_info(&fullnode_hash))?;
+            let info = self.btc_client.get_block_info(&fullnode_hash).await?;
             println!(
                 "Sidechain header state is up-to-date:\n\thash={}\n\theight={}",
                 info.hash, info.height
             );
 
-            block(|| self.btc_client.wait_for_new_block(0))?;
+            self.btc_client.wait_for_new_block(0).await?;
         }
     }
 
@@ -80,31 +83,37 @@ where
 
         // TODO: remove this (just added for testing)
         self.scripts.add_address([0; 20].into());
-        self.scripts.add_sig_set(SignatorySet(0));
+        // self.scripts.add_sig_set(SignatorySet(0));
 
         let block_hash = self.sidechain_block_hash().await?;
-        for block in self.last_n_blocks(1008, block_hash)? {
+        for block in self.last_n_blocks(1008, block_hash).await?.into_iter().rev() {
             for tx in self.relevant_txs(&block) {
                 self.maybe_relay_deposit(tx).await?;
             }
         }
 
         loop {
-            block(|| std::thread::sleep(std::time::Duration::from_secs(1)));
+            tokio::task::block_in_place(|| std::thread::sleep(std::time::Duration::from_secs(1)));
         }
     }
 
-    pub fn last_n_blocks(&self, n: usize, mut hash: BlockHash) -> Result<Vec<Block>> {
-        (0..n)
-            .map(move |_| {
-                let block =
-                    tokio::task::block_in_place(|| self.btc_client.get_block(&hash.clone()));
-                if let Ok(ref block) = block {
-                    hash = block.header.prev_blockhash;
-                }
-                Ok(block?)
-            })
-            .collect()
+    pub async fn last_n_blocks(&self, n: usize, hash: BlockHash) -> Result<Vec<Block>> {
+        let mut blocks = vec![];
+
+        let mut hash = bitcoincore_rpc_async::bitcoin::BlockHash::from_inner(hash.into_inner());
+
+        for _ in 0..n {
+            let block = self.btc_client.get_block(&hash.clone()).await?;
+            hash = block.header.prev_blockhash;
+
+            let mut block_bytes = vec![];
+            block.consensus_encode(&mut block_bytes).unwrap();
+            let block = Block::consensus_decode(block_bytes.as_slice()).unwrap();
+
+            blocks.push(block);
+        }
+
+        Ok(blocks)
     }
 
     pub fn relevant_txs<'a>(&self, block: &'a Block) -> Vec<&'a Transaction> {
@@ -116,17 +125,18 @@ where
     }
 
     async fn maybe_relay_deposit(&mut self, tx: &Transaction) -> Result<()> {
-        let txid = Adapter::new(tx.txid());
-        if self.app_client.was_relayed(txid).await?? {
-            println!("Detected already-relayed deposit: {}", txid.to_hex());
-            return Ok(());
-        }
+        todo!();
+        // let txid = Adapter::new(tx.txid());
+        // if self.app_client.relayed_txs.contains(txid).await?? {
+        //     println!("Detected already-relayed deposit: {}", txid.to_hex());
+        //     return Ok(());
+        // }
 
-        let _tx = Adapter::new(tx.clone());
-        // self.app_client.deposit(tx, 2).await?;
-        println!("Relayed deposit: {}", txid.to_hex());
-
-        Ok(())
+        // let _tx = Adapter::new(tx.clone());
+        // // self.app_client.deposit(tx, 2).await?;
+        // println!("Relayed deposit: {}", txid.to_hex());
+        // 
+        // Ok(())
     }
 
     async fn relay_header_batch(
@@ -134,18 +144,16 @@ where
         fullnode_hash: BlockHash,
         sidechain_hash: BlockHash,
     ) -> Result<()> {
-        let get_info = |hash| block(|| self.btc_client.get_block_header_info(&hash));
-
-        let fullnode_info = get_info(fullnode_hash)?;
-        let sidechain_info = get_info(sidechain_hash)?;
+        let fullnode_info = self.btc_client.get_block_header_info(&fullnode_hash).await?;
+        let sidechain_info = self.btc_client.get_block_header_info(&sidechain_hash).await?;
 
         if fullnode_info.height < sidechain_info.height {
             // full node is still syncing
             return Ok(());
         }
 
-        let start = self.common_ancestor(fullnode_hash, sidechain_hash)?;
-        let batch = self.get_header_batch(start.hash)?;
+        let start = self.common_ancestor(fullnode_hash, sidechain_hash).await?;
+        let batch = self.get_header_batch(start.hash).await?;
 
         println!(
             "Relaying headers...\n\thash={}\n\theight={}\n\tbatch_len={}",
@@ -160,19 +168,21 @@ where
         Ok(())
     }
 
-    fn get_header_batch(&self, from_hash: BlockHash) -> Result<Vec<WrappedHeader>> {
-        let get_info = |hash| block(|| self.btc_client.get_block_header_info(&hash));
-
-        let mut cursor = get_info(from_hash)?;
+    async fn get_header_batch(&self, from_hash: BlockHash) -> Result<Vec<WrappedHeader>> {
+        let mut cursor = self.btc_client.get_block_header_info(&from_hash).await?;
 
         let mut headers = Vec::with_capacity(HEADER_BATCH_SIZE as usize);
         for _ in 0..HEADER_BATCH_SIZE {
             match cursor.next_block_hash {
-                Some(next_hash) => cursor = get_info(next_hash)?,
+                Some(next_hash) => cursor = self.btc_client.get_block_header_info(&next_hash).await?,
                 None => break,
             };
 
-            let header = block(|| self.btc_client.get_block_header(&cursor.hash))?;
+            let header = self.btc_client.get_block_header(&cursor.hash).await?;
+            let mut header_bytes = vec![];
+            header.consensus_encode(&mut header_bytes).unwrap();
+            let header = ::bitcoin::BlockHeader::consensus_decode(header_bytes.as_slice()).unwrap();
+
             let header = WrappedHeader::from_header(&header, cursor.height as u32);
 
             dbg!(&header);
@@ -183,14 +193,9 @@ where
         Ok(headers)
     }
 
-    fn common_ancestor(&self, a: BlockHash, b: BlockHash) -> Result<GetBlockHeaderResult> {
-        let get_info = |hash| block(|| self.btc_client.get_block_header_info(&hash));
-
-        let mut a = get_info(a)?;
-        let mut b = get_info(b)?;
-
-        let prev =
-            |header: GetBlockHeaderResult| get_info(header.previous_block_hash.unwrap());
+    async fn common_ancestor(&self, a: BlockHash, b: BlockHash) -> Result<GetBlockHeaderResult> {
+        let mut a = self.btc_client.get_block_header_info(&a).await?;
+        let mut b = self.btc_client.get_block_header_info(&b).await?;
 
         while a != b {
             if a.height > b.height && (b.confirmations - 1) as usize == a.height - b.height {
@@ -198,19 +203,17 @@ where
             } else if b.height > a.height && (a.confirmations - 1) as usize == b.height - a.height {
                 return Ok(a);
             } else if a.height > b.height {
-                a = prev(a)?;
+                let prev = a.previous_block_hash.unwrap();
+                a = self.btc_client.get_block_header_info(&prev).await?;
             } else {
-                b = prev(b)?;
+                let prev = b.previous_block_hash.unwrap();
+                b = self.btc_client.get_block_header_info(&prev).await?;
             }
         }
 
         Ok(a)
     }
 }
-
-// TODO: implement actual signatory set type
-#[derive(Hash)]
-pub struct SignatorySet(usize);
 
 fn time_now() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};

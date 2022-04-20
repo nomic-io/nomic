@@ -1,5 +1,5 @@
 use clap::Parser;
-use bitcoincore_rpc::{Auth, Client, RpcApi};
+use bitcoincore_rpc_async::{Auth, Client, RpcApi};
 
 #[derive(Parser, Debug)]
 pub struct Opts {
@@ -28,11 +28,13 @@ pub fn main() {
         _ => Auth::None,
     };
     
-    let client = Client::new(&rpc_url, auth).unwrap();
+    todo!()
+    
+    // let client = Client::new(rpc_url, auth).unwrap();
 
-    let hash = client.get_block_hash(opts.height).unwrap();
-    let header = client.get_block_header(&hash).unwrap();
+    // let hash = client.get_block_hash(opts.height).unwrap();
+    // let header = client.get_block_header(&hash).unwrap();
 
-    let header_json = serde_json::to_string_pretty(&header).unwrap();
-    println!("{}", header_json);
+    // let header_json = serde_json::to_string_pretty(&header).unwrap();
+    // println!("{}", header_json);
 }
