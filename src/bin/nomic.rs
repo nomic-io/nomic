@@ -12,7 +12,7 @@ use nomic::error::Result;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
-use bitcoincore_rpc::{Auth, Client as BtcClient};
+use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use nomic::bitcoin::relayer::Relayer;
 
 const STOP_HEIGHT: u64 = 2_684_000;
@@ -41,7 +41,7 @@ pub struct Opts {
 pub enum Command {
     Init(InitCmd),
     Start(StartCmd),
-    #[cfg(debug)]
+    #[cfg(debug_assertions)]
     StartDev(StartDevCmd),
     Send(SendCmd),
     Balance(BalanceCmd),
@@ -65,7 +65,7 @@ impl Command {
         match self {
             Init(cmd) => cmd.run().await,
             Start(cmd) => cmd.run().await,
-            #[cfg(debug)]
+            #[cfg(debug_assertions)]
             StartDev(cmd) => cmd.run().await,
             Send(cmd) => cmd.run().await,
             Balance(cmd) => cmd.run().await,
@@ -293,14 +293,27 @@ async fn get_bootstrap_state(rpc_servers: &[&str]) -> Result<(i64, String)> {
     Ok((height as i64, hash.unwrap().to_string()))
 }
 
-#[cfg(debug)]
+#[cfg(debug_assertions)]
 #[derive(Parser, Debug)]
 pub struct StartDevCmd {}
 
-#[cfg(debug)]
+#[cfg(debug_assertions)]
 impl StartDevCmd {
     async fn run(&self) -> Result<()> {
-        tokio::task::spawn_blocking(|| unimplemented!())
+        tokio::task::spawn_blocking(move || {
+            let name = format!("{}-test", nomic::app::CHAIN_ID);
+
+            println!("Starting node...");
+            // TODO: add cfg defaults
+            Node::<nomic::app::App>::new(name.as_str(), Default::default())
+                .stdout(std::process::Stdio::inherit())
+                .stderr(std::process::Stdio::inherit())
+                .run()
+                .unwrap();
+        })
+        .await
+        .map_err(|err| orga::Error::App(err.to_string()))?;
+        Ok(())
     }
 }
 
@@ -608,36 +621,38 @@ pub struct RelayerCmd {
 }
 
 impl RelayerCmd {
-    fn btc_client(&self) -> Result<BtcClient> {
+    async fn btc_client(&self) -> Result<BtcClient> {
         let rpc_url = format!("http://localhost:{}", self.rpc_port);
         let auth = match (self.rpc_user.clone(), self.rpc_pass.clone()) {
             (Some(user), Some(pass)) => Auth::UserPass(user, pass),
             _ => Auth::None,
         };
 
-        let btc_client = BtcClient::new(&rpc_url, auth)
+        let btc_client = BtcClient::new(rpc_url, auth)
+            .await
             .map_err(|e| orga::Error::App(e.to_string()))?;
 
         Ok(btc_client)
     }
 
     async fn run(&self) -> Result<()> {
-        let create_relayer = || {
-            let btc_client = self.btc_client().unwrap();
+        let create_relayer = async || {
+            let btc_client = self.btc_client().await.unwrap();
             let app_bitcoin_client = app_client()
                 .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
                 .bitcoin;
             Relayer::new(btc_client, app_bitcoin_client)
         };
 
-        let mut relayer = create_relayer();
-        // let relay_headers = async move || {
-        relayer.relay_headers().await
-        // };
-        // tokio::spawn(relay_headers());
+        let mut relayer = create_relayer().await;
+        let headers = relayer.relay_headers().await;
 
-        // let mut relayer = create_relayer();
-        // let deposits = relayer.relay_deposits().await.unwrap();
+        // let mut relayer = create_relayer().await;
+        // let deposits = relayer.relay_deposits();
+
+        // futures::try_join!(headers, deposits).unwrap();
+
+        Ok(())
     }
 }
 
