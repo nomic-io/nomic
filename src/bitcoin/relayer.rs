@@ -83,8 +83,18 @@ where
 
         // TODO: remove this (just added for testing)
         self.scripts.add_address([0; 20].into());
-        // self.scripts.add_sig_set(SignatorySet(0));
 
+        for checkpoint in self.app_client.checkpoints.all().await?? {
+            self.scripts.add_sig_set(checkpoint.sig_set.clone());
+        }
+
+        println!("deposit addrs:");
+        for (script, (depositor, sigset)) in self.scripts.scripts.iter() {
+            let addr = bitcoin::Address::from_script(script, bitcoin::Network::Testnet).unwrap();
+            println!(" - {} ({}, {})", addr, depositor, sigset);
+        }
+
+        println!("Scanning recent blocks for deposits...");
         let block_hash = self.sidechain_block_hash().await?;
         for block in self.last_n_blocks(1008, block_hash).await?.into_iter().rev() {
             for tx in self.relevant_txs(&block) {
@@ -92,15 +102,20 @@ where
             }
         }
 
+        println!("Watching for new deposits...");
         loop {
             tokio::task::block_in_place(|| std::thread::sleep(std::time::Duration::from_secs(1)));
+
+            // TODO: add new sig sets when detected
+            // TODO: remove old sigsets when expired
+            // TODO: scan new bitcoin blocks when detected
         }
     }
 
     pub async fn last_n_blocks(&self, n: usize, hash: BlockHash) -> Result<Vec<Block>> {
         let mut blocks = vec![];
 
-        let mut hash = bitcoincore_rpc_async::bitcoin::BlockHash::from_inner(hash.into_inner());
+        let mut hash = bitcoin::BlockHash::from_inner(hash.into_inner());
 
         for _ in 0..n {
             let block = self.btc_client.get_block(&hash.clone()).await?;
@@ -125,18 +140,23 @@ where
     }
 
     async fn maybe_relay_deposit(&mut self, tx: &Transaction) -> Result<()> {
-        todo!();
-        // let txid = Adapter::new(tx.txid());
-        // if self.app_client.relayed_txs.contains(txid).await?? {
-        //     println!("Detected already-relayed deposit: {}", txid.to_hex());
-        //     return Ok(());
-        // }
+        use self::bitcoin::hashes::Hash as _;
+        use ::bitcoin::hashes::Hash as _;
 
-        // let _tx = Adapter::new(tx.clone());
-        // // self.app_client.deposit(tx, 2).await?;
-        // println!("Relayed deposit: {}", txid.to_hex());
-        // 
-        // Ok(())
+        let txid = tx.txid();
+        let txid = ::bitcoin::Txid::from_inner(txid.into_inner());
+        let txid = Adapter::new(txid);
+
+        if self.app_client.relayed_txs.contains(txid).await?? {
+            println!("Detected already-relayed deposit: {}", txid.to_hex());
+            return Ok(());
+        }
+
+        let _tx = Adapter::new(tx.clone());
+        // self.app_client.deposit(tx, 2).await?;
+        println!("Relayed deposit: {:#?}", tx);
+        
+        Ok(())
     }
 
     async fn relay_header_batch(
