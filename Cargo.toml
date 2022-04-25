@@ -24,7 +24,7 @@ futures = "0.3.21"
 nomicv1 = { git = "https://github.com/nomic-io/nomic.git", branch = "stakenet2-legacy", package = "nomic", optional = true }
 toml_edit = "0.13.4"
 tendermint-rpc = "0.23.5"
-bitcoincore-rpc-async = "3.0.1"
+bitcoincore-rpc-async = { version = "3.0.1", optional = true }
 bitcoin-script = "0.1.1"
 
 [dev-dependencies]
