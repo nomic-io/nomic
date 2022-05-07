@@ -334,15 +334,20 @@ impl SendCmd {
 }
 
 #[derive(Parser, Debug)]
-pub struct BalanceCmd;
+pub struct BalanceCmd {
+    address: Option<Address>,
+}
 
 impl BalanceCmd {
     async fn run(&self) -> Result<()> {
-        let address = my_address();
+        let address = self.address.unwrap_or_else(|| my_address());
         println!("address: {}", address);
 
         let balance = app_client().accounts.balance(address).await??;
-        println!("balance: {} NOM", balance);
+        println!("{} NOM", balance);
+
+        let balance = app_client().bitcoin.accounts.balance(address).await??;
+        println!("{} NBTC", balance);
 
         Ok(())
     }
