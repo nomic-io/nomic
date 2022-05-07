@@ -23,15 +23,6 @@ const TARGET_SPACING: u32 = 10 * 60;
 const TARGET_TIMESPAN: u32 = RETARGET_INTERVAL * TARGET_SPACING;
 const MAX_TARGET: u32 = 0x1d00ffff;
 
-// TODO: get checkpoint from file (include_bytes!(...))
-const TRUSTED_HEIGHT: u32 = 709_632;
-const ENCODED_TRUSTED_HEADER: [u8; 80] = [
-    4, 0, 32, 32, 204, 188, 198, 116, 105, 62, 248, 117, 28, 147, 156, 14, 109, 71, 40, 221, 230,
-    46, 36, 252, 18, 55, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 119, 236, 20, 71, 55, 95, 198, 128, 41, 171,
-    122, 133, 253, 105, 137, 197, 211, 19, 81, 182, 25, 232, 247, 9, 222, 104, 32, 8, 16, 59, 218,
-    106, 111, 155, 144, 97, 234, 105, 12, 23, 2, 115, 15, 84,
-];
-
 #[derive(Clone, Debug, Decode, Encode, PartialEq, State, Query)]
 pub struct WrappedHeader {
     height: u32,
@@ -209,15 +200,24 @@ impl Default for Config {
 
 impl Config {
     pub fn mainnet() -> Self {
+        let checkpoint_json = include_str!("./checkpoint.json");
+        let checkpoint: (u32, BlockHeader) = serde_json::from_str(checkpoint_json).unwrap();
+        let (height, header) = checkpoint;
+        
+        let mut header_bytes = vec![];
+        header
+            .consensus_encode(&mut header_bytes)
+            .unwrap();
+
         Self {
             max_length: MAX_LENGTH,
             max_time_increase: MAX_TIME_INCREASE,
-            trusted_height: TRUSTED_HEIGHT,
+            trusted_height: height,
             retarget_interval: RETARGET_INTERVAL,
             target_spacing: TARGET_SPACING,
             target_timespan: TARGET_TIMESPAN,
             max_target: MAX_TARGET,
-            encoded_trusted_header: ENCODED_TRUSTED_HEADER.into(),
+            encoded_trusted_header: header_bytes,
             retargeting: true,
             min_difficulty_blocks: false,
         }
@@ -228,9 +228,9 @@ impl Config {
         let checkpoint: (u32, BlockHeader) = serde_json::from_str(checkpoint_json).unwrap();
         let (height, header) = checkpoint;
         
-        let mut checkpoint_bytes = vec![];
+        let mut header_bytes = vec![];
         header
-            .consensus_encode(&mut checkpoint_bytes)
+            .consensus_encode(&mut header_bytes)
             .unwrap();
 
         Self {
@@ -241,7 +241,7 @@ impl Config {
             target_timespan: TARGET_TIMESPAN,
             max_target: MAX_TARGET,
             trusted_height: height,
-            encoded_trusted_header: checkpoint_bytes,
+            encoded_trusted_header: header_bytes,
             retargeting: true,
             min_difficulty_blocks: true,
         }
