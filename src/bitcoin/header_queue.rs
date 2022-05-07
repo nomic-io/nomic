@@ -225,12 +225,13 @@ impl Config {
 
     pub fn testnet() -> Self {
         let checkpoint_json = include_str!("./testnet_checkpoint.json");
-        let checkpoint_header: BlockHeader = serde_json::from_str(checkpoint_json).unwrap();
+        let checkpoint: (u32, BlockHeader) = serde_json::from_str(checkpoint_json).unwrap();
+        let (height, header) = checkpoint;
+        
         let mut checkpoint_bytes = vec![];
-        checkpoint_header
+        header
             .consensus_encode(&mut checkpoint_bytes)
             .unwrap();
-        let checkpoint_height = 2_161_152;
 
         Self {
             max_length: MAX_LENGTH,
@@ -239,7 +240,7 @@ impl Config {
             target_spacing: TARGET_SPACING,
             target_timespan: TARGET_TIMESPAN,
             max_target: MAX_TARGET,
-            trusted_height: checkpoint_height,
+            trusted_height: height,
             encoded_trusted_header: checkpoint_bytes,
             retargeting: true,
             min_difficulty_blocks: true,
