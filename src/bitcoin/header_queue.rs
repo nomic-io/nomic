@@ -4,6 +4,7 @@ use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::consensus::Encodable;
 use bitcoin::util::uint::Uint256;
 use bitcoin::BlockHash;
+use bitcoin::TxMerkleNode;
 use orga::call::Call;
 use orga::client::Client;
 use orga::collections::Deque;
@@ -165,11 +166,11 @@ impl WorkHeader {
         }
     }
 
-    fn time(&self) -> u32 {
+    pub fn time(&self) -> u32 {
         self.header.time()
     }
 
-    fn block_hash(&self) -> BlockHash {
+    pub fn block_hash(&self) -> BlockHash {
         self.header.block_hash()
     }
 
@@ -179,6 +180,10 @@ impl WorkHeader {
 
     pub fn height(&self) -> u32 {
         self.header.height()
+    }
+
+    pub fn merkle_root(&self) -> TxMerkleNode {
+        self.header.header.merkle_root
     }
 }
 
