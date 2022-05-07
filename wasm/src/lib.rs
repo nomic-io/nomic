@@ -325,7 +325,7 @@ where
 {
     type Call = T::Call;
 
-    async fn call(&mut self, call: Self::Call) -> Result<()> {
+    async fn call(&self, call: Self::Call) -> Result<()> {
         let tx = call.encode()?;
         let tx = base64::encode(&tx);
         web_sys::console::log_1(&format!("call: {}", tx).into());
