@@ -650,12 +650,12 @@ impl RelayerCmd {
         };
 
         let mut relayer = create_relayer().await;
-        let headers = relayer.relay_headers().await;
+        let headers = relayer.relay_headers();
 
-        // let mut relayer = create_relayer().await;
-        // let deposits = relayer.relay_deposits();
+        let mut relayer = create_relayer().await;
+        let deposits = relayer.relay_deposits();
 
-        // futures::try_join!(headers, deposits).unwrap();
+        futures::try_join!(headers, deposits).unwrap();
 
         Ok(())
     }

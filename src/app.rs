@@ -51,6 +51,8 @@ impl Migrate<nomicv1::app::InnerApp> for InnerApp {
         self.staking.migrate(legacy.staking)?;
         self.atom_airdrop.migrate(legacy.atom_airdrop)?;
 
+        self.bitcoin.checkpoints.push_building()?;
+
         Ok(())
     }
 }
