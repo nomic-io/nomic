@@ -1,4 +1,5 @@
 #![feature(async_closure)]
+#![feature(generic_associated_types)]
 
 use wasm_bindgen::prelude::*;
 use nomic::app::{App, InnerApp, Nom, Airdrop, CHAIN_ID};
@@ -357,13 +358,13 @@ where
 }
 
 #[async_trait::async_trait(?Send)]
-impl<T: Query + State> AsyncQuery for WebAdapter<T> {
+impl<T: Query + State + 'static> AsyncQuery for WebAdapter<T> {
     type Query = T::Query;
-    type Response = T;
+    type Response<'a> = &'a T;
 
     async fn query<F, R>(&self, query: T::Query, mut check: F) -> Result<R>
     where
-        F: FnMut(T) -> Result<R>,
+        F: FnMut(Self::Response<'_>) -> Result<R>,
     {
         let query = query.encode()?;
         let query = hex::encode(&query);
@@ -406,6 +407,6 @@ impl<T: Query + State> AsyncQuery for WebAdapter<T> {
         let store: Shared<ABCIPrefixedProofStore> = Shared::new(ABCIPrefixedProofStore::new(map));
         let state = T::create(Store::new(store.into()), encoding).unwrap();
 
-        check(state)
+        check(&state)
     }
 }
