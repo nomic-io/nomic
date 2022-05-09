@@ -225,10 +225,15 @@ impl CheckpointQueue {
     }
 
     pub fn push_building(&mut self) -> Result<()> {
+        let index = self.index;
+        if !self.queue.is_empty() {
+            self.index += 1;
+        }
+
         self.queue.push_back(Default::default())?;
         let mut building = self.building_mut()?;
 
-        building.0.sig_set = SignatorySet::from_validator_ctx()?;
+        building.0.sig_set = SignatorySet::from_validator_ctx(index)?;
 
         Ok(())
     }
@@ -260,6 +265,7 @@ impl CheckpointQueue {
         Ok(())
     }
 
+    #[query]
     pub fn active_sigset(&self) -> Result<SignatorySet> {
         Ok(self.building()?.0.sig_set.clone())
     }

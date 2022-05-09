@@ -25,11 +25,12 @@ pub struct Signatory {
 pub struct SignatorySet {
     create_time: u64,
     total_vp: u64,
+    index: u64,
     signatories: Vec<Signatory>,
 }
 
 impl SignatorySet {
-    pub fn from_validator_ctx() -> Result<Self> {
+    pub fn from_validator_ctx(index: u64) -> Result<Self> {
         // let validators: &mut Validators = self.context().ok_or_else(|| {
         //     Error::Orga(orga::Error::App("No validator context found".to_string()))
         // })?;
@@ -54,6 +55,7 @@ impl SignatorySet {
         let mut sigset = SignatorySet {
             create_time: time.seconds as u64,
             total_vp: 0,
+            index,
             signatories: vec![],
         };
 
@@ -139,6 +141,10 @@ impl SignatorySet {
 
     pub fn deposit_timeout(&self) -> u64 {
         self.create_time + MAX_DEPOSIT_AGE
+    }
+
+    pub fn index(&self) -> u64 {
+        self.index
     }
 }
 
