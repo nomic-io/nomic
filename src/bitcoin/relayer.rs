@@ -15,18 +15,11 @@ use bitcoincore_rpc_async::{Client as BtcClient, RpcApi};
 use orga::client::{AsyncCall, AsyncQuery};
 use orga::coins::Address;
 use orga::prelude::*;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 const HEADER_BATCH_SIZE: usize = 100;
 
 type AppClient<T> = <Bitcoin as Client<T>>::Client;
-
-fn derive_script(dest: Address, sigset: &SignatorySet) -> Script {
-    sigset
-        .output_script(dest.bytes().to_vec())
-        .to_bytes()
-        .into()
-}
 
 pub struct Relayer<T: Clone + Send> {
     btc_client: BtcClient,
@@ -45,7 +38,7 @@ where
         Relayer {
             btc_client,
             app_client,
-            scripts: WatchedScripts::new(derive_script, 86_400, 144),
+            scripts: WatchedScripts::new(),
         }
     }
 
@@ -86,16 +79,11 @@ where
     pub async fn relay_deposits(&mut self) -> Result<!> {
         println!("Starting deposit relay...");
 
-        // TODO: remove this (just added for testing)
-        self.scripts.add_address([0; 20].into());
-
-        for (index, checkpoint) in self.app_client.checkpoints.all().await?? {
-            self.scripts.add_sig_set(checkpoint.sig_set.clone(), index);
-        }
+        // TODO: load address state
 
         println!("deposit addrs:");
         for (script, (depositor, sigset)) in self.scripts.scripts.iter() {
-            let addr = bitcoin::Address::from_script(script, bitcoin::Network::Testnet).unwrap();
+            let addr = ::bitcoin::Address::from_script(script, ::bitcoin::Network::Testnet).unwrap();
             println!(" - {} ({}, {})", addr, depositor, sigset);
         }
 
@@ -179,8 +167,15 @@ where
             .iter()
             .enumerate()
             .filter_map(move |(vout, output)| {
+                let mut script_bytes = vec![];
+                output
+                    .script_pubkey
+                    .consensus_encode(&mut script_bytes)
+                    .unwrap();
+                let script = ::bitcoin::Script::consensus_decode(script_bytes.as_slice()).unwrap();
+
                 self.scripts
-                    .get(&output.script_pubkey)
+                    .get(&script)
                     .map(|(dest, sigset_index)| OutputMatch {
                         sigset_index: sigset_index as u64,
                         vout: vout as u32,
@@ -345,45 +340,23 @@ fn time_now() -> u64 {
 /// A collection which stores all watched addresses and signatory sets, for
 /// efficiently detecting deposit output scripts.
 pub struct WatchedScripts {
-    scripts: HashMap<Script, (Address, u64)>,
-
-    addr_queue: VecDeque<(u64, Address)>,
-    addrs: HashSet<Address>,
-
-    sig_set_index: u64,
-    sig_sets: VecDeque<SignatorySet>,
-
-    derive_script: fn(Address, &SignatorySet) -> Script,
-    addr_ttl: u64,
-    max_sig_sets: usize,
+    scripts: HashMap<::bitcoin::Script, (Address, u64)>,
+    sigsets: BTreeMap<u64, (SignatorySet, Vec<Address>)>,
 }
 
 impl WatchedScripts {
-    pub fn new(
-        derive_script: fn(Address, &SignatorySet) -> Script,
-        addr_ttl: u64,
-        max_sig_sets: usize,
-    ) -> Self {
+    pub fn new() -> Self {
         Self {
             scripts: HashMap::new(),
-
-            addr_queue: VecDeque::new(),
-            addrs: HashSet::new(),
-
-            sig_set_index: 0,
-            sig_sets: VecDeque::new(),
-
-            derive_script,
-            addr_ttl,
-            max_sig_sets,
+            sigsets: BTreeMap::new(),
         }
     }
 
-    pub fn get(&self, script: &Script) -> Option<(Address, u64)> {
+    pub fn get(&self, script: &::bitcoin::Script) -> Option<(Address, u64)> {
         self.scripts.get(script).copied()
     }
 
-    pub fn has(&self, script: &Script) -> bool {
+    pub fn has(&self, script: &::bitcoin::Script) -> bool {
         self.scripts.contains_key(script)
     }
 
@@ -395,79 +368,34 @@ impl WatchedScripts {
         self.scripts.is_empty()
     }
 
-    pub fn add_address(&mut self, addr: Address) {
-        let now = time_now();
-        self.addr_queue.push_back((now, addr));
-        self.addrs.insert(addr);
+    pub fn insert(&mut self, addr: Address, sigset: &SignatorySet) {
+        let script = self.derive_script(addr, sigset);
+        self.scripts.insert(script, (addr, sigset.index()));
 
-        for (sigset_index, script) in self.scripts_for_addr(addr) {
-            self.scripts.insert(script, (addr, sigset_index));
-        }
+        let (sigset, addrs) = self
+            .sigsets
+            .entry(sigset.index())
+            .or_insert((sigset.clone(), vec![]));
+        addrs.push(addr);
     }
 
-    pub fn remove_expired_addrs(&mut self) {
+    pub fn remove_expired(&mut self) {
         let now = time_now();
 
-        while let Some(&(time, addr)) = self.addr_queue.front() {
-            let age = now - time;
-            if age < self.addr_ttl {
+        for (i, (sigset, addrs)) in self.sigsets.iter() {
+            if now < sigset.deposit_timeout() {
                 break;
             }
 
-            self.addrs.remove(&addr);
-            self.addr_queue.pop_front();
-
-            for (_, script) in self.scripts_for_addr(addr) {
+            for addr in addrs {
+                let script = self.derive_script(*addr, sigset);
                 self.scripts.remove(&script);
             }
         }
     }
 
-    fn scripts_for_addr(&self, addr: Address) -> Vec<(u64, Script)> {
-        self.sig_sets
-            .iter()
-            .enumerate()
-            .map(|(i, sig_set)| {
-                let index = self.sig_set_index - (self.sig_sets.len() as u64 - i as u64 - 1);
-                let script = (self.derive_script)(addr, sig_set);
-                (index, script)
-            })
-            .collect()
-    }
-
-    pub fn add_sig_set(&mut self, sig_set: SignatorySet, index: u64) {
-        for (addr, script) in self.scripts_for_sig_set(&sig_set) {
-            self.scripts.insert(script, (addr, index));
-        }
-
-        self.sig_sets.push_back(sig_set);
-        self.sig_set_index = index;
-
-        while self.sig_sets.len() > self.max_sig_sets {
-            self.remove_sig_set();
-        }
-    }
-
-    fn remove_sig_set(&mut self) {
-        let sig_set = self.sig_sets.pop_front().unwrap();
-
-        for (_, script) in self.scripts_for_sig_set(&sig_set) {
-            self.scripts.remove(&script);
-        }
-    }
-
-    fn scripts_for_sig_set(&self, sig_set: &SignatorySet) -> Vec<(Address, Script)> {
-        self.addrs
-            .iter()
-            .map(|&addr| {
-                let script = (self.derive_script)(addr, sig_set);
-                (addr, script)
-            })
-            .collect()
-    }
-
-    fn sig_set(&self, index: u64) -> &SignatorySet {
-        &self.sig_sets[(index - (self.sig_set_index - self.sig_sets.len() as u64 + 1)) as usize]
+    fn derive_script(&self, addr: Address, sigset: &SignatorySet) -> ::bitcoin::Script {
+        sigset.output_script(addr.bytes().to_vec())
     }
 }
 
