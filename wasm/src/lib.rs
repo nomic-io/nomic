@@ -6,6 +6,7 @@ use nomic::app::{App, InnerApp, Nom, Airdrop, CHAIN_ID};
 use nomic::orga::prelude::*;
 use nomic::orga::client::AsyncQuery;
 use nomic::orga::merk::ABCIPrefixedProofStore;
+use nomic::bitcoin::signatory::SignatorySet;
 use std::ops::{Deref, DerefMut};
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
@@ -263,9 +264,33 @@ pub async fn nonce(addr: String) -> u64 {
 
 #[wasm_bindgen(js_name = getAddress)]
 pub async fn get_address() -> String {
-    let mut signer = nomic::orga::plugins::keplr::Signer::new();
+    let signer = nomic::orga::plugins::keplr::Signer;
     signer.address().await
 }
+
+#[wasm_bindgen]
+pub struct DepositAddress {
+    address: String,
+    #[wasm_bindgen(js_name = sigsetIndex)]
+    sigset_index: u64,
+}
+
+#[wasm_bindgen(js_name = btcDepositAddress)]
+pub async fn btc_deposit_address(addr: String) -> String {
+    let client: WebClient<App> = WebClient::new();
+    let addr: Address = addr.parse().unwrap();
+
+    let sigset = client.bitcoin.checkpoints.active_sigset().await.unwrap().unwrap();
+    let script =  sigset.output_script(addr.bytes().to_vec());
+    // TODO: get network from somewhere
+    let btc_addr = bitcoin::Address::from_script(&script, bitcoin::Network::Testnet).unwrap();
+
+    DepositAddress {
+        address: btc_addr.to_string(),
+        sigset_index: sigset.index(),
+    }
+}
+
 
 pub struct WebClient<T: Client<WebAdapter<T>>> {
     state_client: T::Client,
