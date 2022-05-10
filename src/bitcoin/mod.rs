@@ -92,7 +92,7 @@ impl Bitcoin {
             .context::<Time>()
             .ok_or_else(|| Error::Orga(OrgaError::App("No time context available".to_string())))?
             .seconds as u64;
-        let sigset = &self.checkpoints.get(sigset_index)?.sig_set;
+        let sigset = &self.checkpoints.get(sigset_index)?.sigset;
         if now > sigset.deposit_timeout() {
             return Err(OrgaError::App("Deposit timeout has expired".to_string()))?;
         }

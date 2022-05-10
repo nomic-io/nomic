@@ -16,6 +16,7 @@ use orga::client::{AsyncCall, AsyncQuery};
 use orga::coins::Address;
 use orga::prelude::*;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use tokio::sync::mpsc::Receiver;
 
 const HEADER_BATCH_SIZE: usize = 100;
 
@@ -76,16 +77,12 @@ where
         }
     }
 
-    pub async fn relay_deposits(&mut self) -> Result<!> {
+    pub async fn relay_deposits(&mut self, mut recv: Receiver<(Address, u64)>) -> Result<!> {
         println!("Starting deposit relay...");
 
-        // TODO: load address state
-
-        println!("deposit addrs:");
-        for (script, (depositor, sigset)) in self.scripts.scripts.iter() {
-            let addr = ::bitcoin::Address::from_script(script, ::bitcoin::Network::Testnet).unwrap();
-            println!(" - {} ({}, {})", addr, depositor, sigset);
-        }
+        // TODO: load persisted addresses
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        self.insert_announced_addrs(&mut recv).await?;
 
         println!("Scanning recent blocks for deposits...");
         let tip = self.sidechain_block_hash().await?;
@@ -104,30 +101,52 @@ where
         println!("Watching for new deposits...");
         let mut prev_tip = tip;
         loop {
-            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
-            // TODO: add new sig sets when detected
-            // TODO: remove old sigsets when expired
+            self.insert_announced_addrs(&mut recv).await?;
 
             let tip = self.sidechain_block_hash().await?;
-            if tip != prev_tip {
-                let start_height = self.common_ancestor(tip, prev_tip).await?.height;
-                let end_height = self.btc_client.get_block_header_info(&tip).await?.height;
+            if tip == prev_tip {
+                continue;
+            }
 
-                let blocks = self.last_n_blocks(end_height - start_height, tip).await?;
-                for (i, block) in blocks.into_iter().enumerate().rev() {
-                    let height = (end_height - i) as u32;
-                    for (tx, matches) in self.relevant_txs(&block) {
-                        for output in matches {
-                            self.maybe_relay_deposit(tx, height, &block.block_hash(), output)
-                                .await?;
-                        }
+            let start_height = self.common_ancestor(tip, prev_tip).await?.height;
+            let end_height = self.btc_client.get_block_header_info(&tip).await?.height;
+
+            let blocks = self.last_n_blocks(end_height - start_height, tip).await?;
+            for (i, block) in blocks.into_iter().enumerate().rev() {
+                let height = (end_height - i) as u32;
+                for (tx, matches) in self.relevant_txs(&block) {
+                    for output in matches {
+                        self.maybe_relay_deposit(tx, height, &block.block_hash(), output)
+                            .await?;
                     }
                 }
+            }
 
-                prev_tip = tip;
+            prev_tip = tip;
+        }
+    }
+
+    async fn insert_announced_addrs(&mut self, recv: &mut Receiver<(Address, u64)>) -> Result<()> {
+        while let Ok((addr, sigset_index)) = recv.try_recv() {
+            let checkpoint_res = self.app_client.checkpoints.get(sigset_index).await?;
+            let sigset = match &checkpoint_res {
+                Ok(checkpoint) => &checkpoint.sigset,
+                Err(err) => {
+                    eprintln!("{}", err);
+                    continue;
+                }
+            };
+            println!("inserting {}, {}", addr, sigset.index());
+            self.scripts.insert(addr, sigset);
+            for script in self.scripts.scripts.keys() {
+                println!("{}", ::bitcoin::Address::from_script(&script, ::bitcoin::Network::Testnet).unwrap());
             }
         }
+        // self.scripts.remove_expired();
+
+        Ok(())
     }
 
     pub async fn last_n_blocks(&self, n: usize, hash: BlockHash) -> Result<Vec<Block>> {

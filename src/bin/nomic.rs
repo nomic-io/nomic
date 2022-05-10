@@ -6,14 +6,14 @@
 
 use std::path::PathBuf;
 
+use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
 use futures::executor::block_on;
+use nomic::bitcoin::relayer::Relayer;
 use nomic::error::Result;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
-use bitcoincore_rpc_async::{Auth, Client as BtcClient};
-use nomic::bitcoin::relayer::Relayer;
 
 const STOP_HEIGHT: u64 = 2_684_000;
 
@@ -187,9 +187,7 @@ impl StartCmd {
             println!("Starting node...");
             // TODO: add cfg defaults
             Node::<nomic::app::App>::new(new_name, Default::default())
-                .with_genesis(include_bytes!(
-                    "../../genesis/stakenet-2.json"
-                ))
+                .with_genesis(include_bytes!("../../genesis/stakenet-2.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
                 .run()
@@ -612,7 +610,6 @@ impl LegacyCmd {
     }
 }
 
-
 #[derive(Parser, Debug)]
 pub struct RelayerCmd {
     #[clap(short = 'p', long, default_value_t = 8332)]
@@ -623,6 +620,12 @@ pub struct RelayerCmd {
 
     #[clap(short = 'P', long)]
     rpc_pass: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DepositAddress {
+    addr: String,
+    sigset_index: u64,
 }
 
 impl RelayerCmd {
@@ -644,18 +647,41 @@ impl RelayerCmd {
         let create_relayer = async || {
             let btc_client = self.btc_client().await.unwrap();
             let app_bitcoin_client = app_client()
-                .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
+                .pay_from(async move |mut client| {
+                    client.accounts.take_as_funding(MIN_FEE.into()).await
+                })
                 .bitcoin;
             Relayer::new(btc_client, app_bitcoin_client)
         };
+
+        let (send, recv) = tokio::sync::mpsc::channel(1024);
+
+        // TODO: configurable listen address
+        use warp::Filter;
+        let route = warp::post()
+            .and(warp::query::<DepositAddress>())
+            .map(move |query: DepositAddress| {
+                (query, send.clone())
+            })
+            .and_then(async move |(query, send): (DepositAddress, tokio::sync::mpsc::Sender<_>)| {
+                let addr: Address = query.addr.parse()
+                    .map_err(|_| warp::reject::reject())?;
+                Ok::<_, warp::Rejection>((addr, query.sigset_index, send))
+            })
+            .then(async move |(addr, sigset_index, send): (Address, u64, tokio::sync::mpsc::Sender<_>)| {
+                println!("{}, {}", addr, sigset_index);
+                send.send((addr, sigset_index)).await.unwrap();
+                "OK"
+            });
+        let addr_server = warp::serve(route).run(([0, 0, 0, 0], 9000));
 
         let mut relayer = create_relayer().await;
         let headers = relayer.relay_headers();
 
         let mut relayer = create_relayer().await;
-        let deposits = relayer.relay_deposits();
+        let deposits = relayer.relay_deposits(recv);
 
-        futures::try_join!(headers, deposits).unwrap();
+        futures::try_join!(headers, deposits, async { addr_server.await; Ok(()) }).unwrap();
 
         Ok(())
     }

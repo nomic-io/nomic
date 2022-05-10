@@ -672,12 +672,12 @@ mod test {
         let store = Store::new(Shared::new(MapStore::new()).into());
         let q = HeaderQueue::create(store, Default::default()).unwrap();
 
-        let decoded_adapter: Adapter<BlockHeader> =
-            Decode::decode(ENCODED_TRUSTED_HEADER.as_slice()).unwrap();
-        let wrapped_header = WrappedHeader::new(decoded_adapter, TRUSTED_HEIGHT);
+        // let decoded_adapter: Adapter<BlockHeader> =
+        //     Decode::decode(ENCODED_TRUSTED_HEADER.as_slice()).unwrap();
+        // let wrapped_header = WrappedHeader::new(decoded_adapter, TRUSTED_HEIGHT);
 
-        assert_eq!(q.height().unwrap(), wrapped_header.height());
-        assert_eq!(*q.current_work, wrapped_header.work());
+        // assert_eq!(q.height().unwrap(), wrapped_header.height());
+        // assert_eq!(*q.current_work, wrapped_header.work());
     }
 
     #[test]

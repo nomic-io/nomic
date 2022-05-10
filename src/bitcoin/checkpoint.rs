@@ -87,7 +87,7 @@ pub struct Checkpoint {
     pub inputs: Deque<Input>,
     pub outputs: Deque<Output>,
     sig: ThresholdSig,
-    pub sig_set: SignatorySet,
+    pub sigset: SignatorySet,
 }
 
 #[derive(State, Call, Query, Client)]
@@ -116,6 +116,7 @@ pub struct BuildingCheckpoint<'a>(Ref<'a, Checkpoint>);
 pub struct BuildingCheckpointMut<'a>(ChildMut<'a, u64, Checkpoint>);
 
 impl CheckpointQueue {
+    #[query]
     pub fn get(&self, index: u64) -> Result<Ref<'_, Checkpoint>> {
         let index = self.get_deque_index(index)?;
         Ok(self.queue.get(index)?.unwrap())
@@ -233,7 +234,7 @@ impl CheckpointQueue {
         self.queue.push_back(Default::default())?;
         let mut building = self.building_mut()?;
 
-        building.0.sig_set = SignatorySet::from_validator_ctx(index)?;
+        building.0.sigset = SignatorySet::from_validator_ctx(index)?;
 
         Ok(())
     }
@@ -267,6 +268,6 @@ impl CheckpointQueue {
 
     #[query]
     pub fn active_sigset(&self) -> Result<SignatorySet> {
-        Ok(self.building()?.0.sig_set.clone())
+        Ok(self.building()?.0.sigset.clone())
     }
 }
