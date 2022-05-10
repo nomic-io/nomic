@@ -268,29 +268,47 @@ pub async fn get_address() -> String {
     signer.address().await
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(getter_with_clone)]
 pub struct DepositAddress {
-    address: String,
+    pub address: String,
     #[wasm_bindgen(js_name = sigsetIndex)]
-    sigset_index: u64,
+    pub sigset_index: u64,
+    pub expiration: u64,
 }
 
-#[wasm_bindgen(js_name = btcDepositAddress)]
-pub async fn btc_deposit_address(addr: String) -> String {
+#[wasm_bindgen(js_name = generateDepositAddress)]
+pub async fn gen_deposit_addr(dest_addr: String) -> DepositAddress {
     let client: WebClient<App> = WebClient::new();
-    let addr: Address = addr.parse().unwrap();
+    let dest_addr: Address = dest_addr.parse().unwrap();
 
     let sigset = client.bitcoin.checkpoints.active_sigset().await.unwrap().unwrap();
-    let script =  sigset.output_script(addr.bytes().to_vec());
+    let script =  sigset.output_script(dest_addr.bytes().to_vec());
     // TODO: get network from somewhere
     let btc_addr = bitcoin::Address::from_script(&script, bitcoin::Network::Testnet).unwrap();
 
     DepositAddress {
         address: btc_addr.to_string(),
         sigset_index: sigset.index(),
+        expiration: sigset.deposit_timeout() * 1000,
     }
 }
 
+#[wasm_bindgen(js_name = nbtcBalance)]
+pub async fn nbtc_balance(addr: String) -> u64 {
+    let client: WebClient<App> = WebClient::new();
+    let addr: Address = addr.parse().unwrap();
+
+    client.bitcoin.accounts.balance(addr)
+        .await
+        .unwrap()
+        .unwrap()
+        .into()
+}
+
+#[wasm_bindgen(js_name = broadcastDepositAddress)]
+pub async fn broadcast_deposit_addr(deposit_addr: DepositAddress) {
+    // TODO
+}
 
 pub struct WebClient<T: Client<WebAdapter<T>>> {
     state_client: T::Client,
