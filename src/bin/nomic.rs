@@ -672,7 +672,8 @@ impl RelayerCmd {
                 println!("{}, {}", addr, sigset_index);
                 send.send((addr, sigset_index)).await.unwrap();
                 "OK"
-            });
+            })
+            .with(warp::cors().allow_any_origin());
         let addr_server = warp::serve(route).run(([0, 0, 0, 0], 9000));
 
         let mut relayer = create_relayer().await;
