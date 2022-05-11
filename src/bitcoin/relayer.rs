@@ -77,7 +77,7 @@ where
         }
     }
 
-    pub async fn relay_deposits(&mut self, mut recv: Receiver<(Address, u64)>) -> Result<!> {
+    pub async fn relay_deposits(&mut self, mut recv: Receiver<(Address, u32)>) -> Result<!> {
         println!("Starting deposit relay...");
 
         // TODO: load persisted addresses
@@ -128,7 +128,7 @@ where
         }
     }
 
-    async fn insert_announced_addrs(&mut self, recv: &mut Receiver<(Address, u64)>) -> Result<()> {
+    async fn insert_announced_addrs(&mut self, recv: &mut Receiver<(Address, u32)>) -> Result<()> {
         while let Ok((addr, sigset_index)) = recv.try_recv() {
             let checkpoint_res = self.app_client.checkpoints.get(sigset_index).await?;
             let sigset = match &checkpoint_res {
@@ -196,7 +196,7 @@ where
                 self.scripts
                     .get(&script)
                     .map(|(dest, sigset_index)| OutputMatch {
-                        sigset_index: sigset_index as u64,
+                        sigset_index,
                         vout: vout as u32,
                         dest,
                     })
@@ -343,7 +343,7 @@ where
 }
 
 pub struct OutputMatch {
-    sigset_index: u64,
+    sigset_index: u32,
     vout: u32,
     dest: Address,
 }
@@ -359,8 +359,8 @@ fn time_now() -> u64 {
 /// A collection which stores all watched addresses and signatory sets, for
 /// efficiently detecting deposit output scripts.
 pub struct WatchedScripts {
-    scripts: HashMap<::bitcoin::Script, (Address, u64)>,
-    sigsets: BTreeMap<u64, (SignatorySet, Vec<Address>)>,
+    scripts: HashMap<::bitcoin::Script, (Address, u32)>,
+    sigsets: BTreeMap<u32, (SignatorySet, Vec<Address>)>,
 }
 
 impl WatchedScripts {
@@ -371,7 +371,7 @@ impl WatchedScripts {
         }
     }
 
-    pub fn get(&self, script: &::bitcoin::Script) -> Option<(Address, u64)> {
+    pub fn get(&self, script: &::bitcoin::Script) -> Option<(Address, u32)> {
         self.scripts.get(script).copied()
     }
 

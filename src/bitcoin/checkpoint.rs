@@ -93,7 +93,7 @@ pub struct Checkpoint {
 #[derive(State, Call, Query, Client)]
 pub struct CheckpointQueue {
     queue: Deque<Checkpoint>,
-    index: u64,
+    index: u32,
 }
 
 pub struct CompletedCheckpoint<'a>(Ref<'a, Checkpoint>);
@@ -117,18 +117,18 @@ pub struct BuildingCheckpointMut<'a>(ChildMut<'a, u64, Checkpoint>);
 
 impl CheckpointQueue {
     #[query]
-    pub fn get(&self, index: u64) -> Result<Ref<'_, Checkpoint>> {
+    pub fn get(&self, index: u32) -> Result<Ref<'_, Checkpoint>> {
         let index = self.get_deque_index(index)?;
-        Ok(self.queue.get(index)?.unwrap())
+        Ok(self.queue.get(index as u64)?.unwrap())
     }
 
-    pub fn get_mut(&mut self, index: u64) -> Result<ChildMut<'_, u64, Checkpoint>> {
+    pub fn get_mut(&mut self, index: u32) -> Result<ChildMut<'_, u64, Checkpoint>> {
         let index = self.get_deque_index(index)?;
-        Ok(self.queue.get_mut(index)?.unwrap())
+        Ok(self.queue.get_mut(index as u64)?.unwrap())
     }
 
-    fn get_deque_index(&self, index: u64) -> Result<u64> {
-        let start = self.index + 1 - self.queue.len();
+    fn get_deque_index(&self, index: u32) -> Result<u32> {
+        let start = self.index + 1 - (self.queue.len() as u32);
         if index > self.index || index < start {
             Err(Error::App("Index out of bounds".to_string()))
         } else {
@@ -137,20 +137,20 @@ impl CheckpointQueue {
     }
 
     #[query]
-    pub fn index(&self) -> u64 {
+    pub fn index(&self) -> u32 {
         self.index
     }
 
     #[query]
-    pub fn all(&self) -> Result<Vec<(u64, Ref<'_, Checkpoint>)>> {
+    pub fn all(&self) -> Result<Vec<(u32, Ref<'_, Checkpoint>)>> {
         // TODO: return iterator
         // TODO: use Deque iterator
 
         let mut out = Vec::with_capacity(self.queue.len() as usize);
 
         for i in 0..self.queue.len() {
-            let index = self.index - i;
-            let checkpoint = self.queue.get(index)?.unwrap();
+            let index = self.index - (i as u32);
+            let checkpoint = self.queue.get(index as u64)?.unwrap();
             out.push((index, checkpoint));
         }
 

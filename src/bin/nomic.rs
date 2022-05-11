@@ -625,7 +625,7 @@ pub struct RelayerCmd {
 #[derive(Serialize, Deserialize)]
 struct DepositAddress {
     addr: String,
-    sigset_index: u64,
+    sigset_index: u32,
 }
 
 impl RelayerCmd {
@@ -668,7 +668,7 @@ impl RelayerCmd {
                     .map_err(|_| warp::reject::reject())?;
                 Ok::<_, warp::Rejection>((addr, query.sigset_index, send))
             })
-            .then(async move |(addr, sigset_index, send): (Address, u64, tokio::sync::mpsc::Sender<_>)| {
+            .then(async move |(addr, sigset_index, send): (Address, u32, tokio::sync::mpsc::Sender<_>)| {
                 println!("{}, {}", addr, sigset_index);
                 send.send((addr, sigset_index)).await.unwrap();
                 "OK"

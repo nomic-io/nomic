@@ -54,7 +54,7 @@ impl Bitcoin {
         btc_height: u32,
         btc_proof: Adapter<PartialMerkleTree>,
         btc_vout: u32,
-        sigset_index: u64,
+        sigset_index: u32,
         dest: Address,
     ) -> Result<()> {
         let btc_header = self
