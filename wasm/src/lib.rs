@@ -272,7 +272,7 @@ pub async fn get_address() -> String {
 pub struct DepositAddress {
     pub address: String,
     #[wasm_bindgen(js_name = sigsetIndex)]
-    pub sigset_index: u64,
+    pub sigset_index: u32,
     pub expiration: u64,
 }
 
@@ -306,8 +306,27 @@ pub async fn nbtc_balance(addr: String) -> u64 {
 }
 
 #[wasm_bindgen(js_name = broadcastDepositAddress)]
-pub async fn broadcast_deposit_addr(deposit_addr: DepositAddress) {
-    // TODO
+pub async fn broadcast_deposit_addr(addr: String, sigset_index: u32, relayers: js_sys::Array) {
+    let window = web_sys::window().unwrap();
+
+    for relayer in relayers.iter() {
+        let relayer = relayer.as_string().unwrap();
+
+        let mut opts = RequestInit::new();
+        opts.method("POST");
+        opts.mode(RequestMode::Cors);
+        let url = format!("{}?addr={}&sigset_index={}", relayer, addr, sigset_index);
+
+        let request = Request::new_with_str_and_init(&url, &opts).unwrap();
+
+        let resp_value = JsFuture::from(window.fetch_with_request(&request)).await.unwrap();
+
+        let res: Response = resp_value.dyn_into().unwrap();
+        let res = JsFuture::from(res.array_buffer().unwrap()).await.unwrap();
+        let res = js_sys::Uint8Array::new(&res).to_vec();
+        let res = String::from_utf8(res).unwrap();
+        web_sys::console::log_1(&format!("response: {}", &res).into());
+    }
 }
 
 pub struct WebClient<T: Client<WebAdapter<T>>> {
@@ -389,8 +408,8 @@ where
 
         let resp_value = JsFuture::from(window.fetch_with_request(&request)).await.unwrap();
 
-        let resp: Response = resp_value.dyn_into().unwrap();
-        let res = JsFuture::from(resp.array_buffer().unwrap()).await.unwrap();
+        let res: Response = resp_value.dyn_into().unwrap();
+        let res = JsFuture::from(res.array_buffer().unwrap()).await.unwrap();
         let res = js_sys::Uint8Array::new(&res).to_vec();
         let res = String::from_utf8(res).unwrap();
         web_sys::console::log_1(&format!("response: {}", &res).into());
