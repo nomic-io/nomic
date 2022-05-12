@@ -1,6 +1,9 @@
+use std::ops::Deref;
+
 use crate::error::{Error, Result};
 use adapter::Adapter;
 use bitcoin::hashes::Hash;
+use bitcoin::util::bip32::ExtendedPubKey;
 use bitcoin::{util::merkleblock::PartialMerkleTree, Transaction, Txid};
 use checkpoint::CheckpointQueue;
 use header_queue::HeaderQueue;
@@ -14,10 +17,10 @@ use orga::collections::{
     Deque, Map,
 };
 use orga::context::GetContext;
-use orga::encoding::{Decode, Encode};
+use orga::encoding::{Decode, Encode, Terminated};
 #[cfg(feature = "full")]
-use orga::plugins::InitChainCtx;
-use orga::plugins::Time;
+use orga::plugins::{InitChainCtx, Validators};
+use orga::plugins::{Time, Signer};
 use orga::query::Query;
 use orga::state::State;
 use orga::{Error as OrgaError, Result as OrgaResult};
@@ -44,9 +47,92 @@ pub struct Bitcoin {
     pub processed_outpoints: OutpointSet,
     pub checkpoints: CheckpointQueue,
     pub accounts: Accounts<Nbtc>,
+    pub signatory_keys: Map<ConsensusKey, Xpub>,
 }
 
+pub type ConsensusKey = [u8; 32];
+
+#[derive(Call, Query, Client)]
+pub struct Xpub(ExtendedPubKey);
+
+pub const XPUB_LENGTH: usize = 78;
+
+impl Xpub {
+    pub fn new(key: ExtendedPubKey) -> Self {
+        Xpub(key)
+    }
+}
+
+impl State for Xpub {
+    type Encoding = Self;
+
+    fn create(_: orga::store::Store, data: Self) -> OrgaResult<Self> {
+        Ok(data)
+    }
+
+    fn flush(self) -> OrgaResult<Self> {
+        Ok(self)
+    }
+}
+
+impl Deref for Xpub {
+    type Target = ExtendedPubKey;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Encode for Xpub {
+    fn encode_into<W: std::io::Write>(&self, dest: &mut W) -> ed::Result<()> {
+        let bytes = self.0.encode();
+        dest.write_all(&bytes)?;
+        Ok(())
+    }
+
+    fn encoding_length(&self) -> ed::Result<usize> {
+        Ok(XPUB_LENGTH)
+    }
+}
+
+impl Decode for Xpub {
+    fn decode<R: std::io::Read>(mut input: R) -> ed::Result<Self> {
+        let mut bytes = [0; XPUB_LENGTH];
+        input.read_exact(&mut bytes)?;
+        let key = ExtendedPubKey::decode(&bytes)
+            .map_err(|_| ed::Error::UnexpectedByte(32))?;
+        Ok(Xpub(key))
+    }
+}
+
+impl Terminated for Xpub {}
+
 impl Bitcoin {
+    #[cfg(feature = "full")]
+    #[call]
+    pub fn set_signatory_key(&mut self, signatory_key: Xpub) -> Result<()> {
+        let signer = self.context::<Signer>()
+            .ok_or_else(|| Error::Orga(OrgaError::App("No Signer context available".into())))?
+            .signer
+            .ok_or_else(|| Error::Orga(OrgaError::App("Call must be signed".into())))?;
+
+        let validators: &mut Validators = self.context().ok_or_else(|| {
+            Error::Orga(orga::Error::App("No validator context found".to_string()))
+        })?;
+
+        let consensus_key = validators.consensus_key(signer)?.ok_or_else(|| {
+            Error::Orga(orga::Error::App(
+                "Signer does not have a consensus key".to_string(),
+            ))
+        })?;
+
+        self.signatory_keys.insert(consensus_key, signatory_key)?;
+
+        // TODO: rate-limiting
+
+        Ok(())
+    }
+
     #[call]
     pub fn relay_deposit(
         &mut self,
