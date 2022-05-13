@@ -139,7 +139,7 @@ where
                 }
             };
             println!("inserting {}, {}", addr, sigset.index());
-            self.scripts.insert(addr, sigset);
+            self.scripts.insert(addr, sigset)?;
             for script in self.scripts.scripts.keys() {
                 println!("{}", ::bitcoin::Address::from_script(&script, ::bitcoin::Network::Testnet).unwrap());
             }
@@ -387,8 +387,8 @@ impl WatchedScripts {
         self.scripts.is_empty()
     }
 
-    pub fn insert(&mut self, addr: Address, sigset: &SignatorySet) {
-        let script = self.derive_script(addr, sigset);
+    pub fn insert(&mut self, addr: Address, sigset: &SignatorySet) -> Result<()> {
+        let script = self.derive_script(addr, sigset)?;
         self.scripts.insert(script, (addr, sigset.index()));
 
         let (sigset, addrs) = self
@@ -396,9 +396,11 @@ impl WatchedScripts {
             .entry(sigset.index())
             .or_insert((sigset.clone(), vec![]));
         addrs.push(addr);
+
+        Ok(())
     }
 
-    pub fn remove_expired(&mut self) {
+    pub fn remove_expired(&mut self) -> Result<()> {
         let now = time_now();
 
         for (i, (sigset, addrs)) in self.sigsets.iter() {
@@ -407,13 +409,15 @@ impl WatchedScripts {
             }
 
             for addr in addrs {
-                let script = self.derive_script(*addr, sigset);
+                let script = self.derive_script(*addr, sigset)?;
                 self.scripts.remove(&script);
             }
         }
+
+        Ok(())
     }
 
-    fn derive_script(&self, addr: Address, sigset: &SignatorySet) -> ::bitcoin::Script {
+    fn derive_script(&self, addr: Address, sigset: &SignatorySet) -> Result<::bitcoin::Script> {
         sigset.output_script(addr.bytes().to_vec())
     }
 }

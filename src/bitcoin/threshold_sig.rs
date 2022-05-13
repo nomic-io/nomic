@@ -6,6 +6,7 @@ use orga::query::Query;
 use orga::state::State;
 use orga::{Error, Result};
 use secp256k1::constants::{COMPACT_SIGNATURE_SIZE, MESSAGE_SIZE, PUBLIC_KEY_SIZE};
+use serde::Serialize;
 
 pub type Message = [u8; MESSAGE_SIZE];
 pub type Signature = [u8; COMPACT_SIGNATURE_SIZE];
@@ -46,6 +47,12 @@ impl Pubkey {
 
     pub fn as_slice(&self) -> &[u8] {
         &self.0
+    }
+}
+
+impl From<bitcoin::PublicKey> for Pubkey {
+    fn from(pubkey: bitcoin::PublicKey) -> Self {
+        Pubkey(pubkey.key.serialize())
     }
 }
 

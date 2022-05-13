@@ -1,3 +1,5 @@
+use crate::error::{Error, Result};
+use bitcoin::util::bip32::ChildNumber;
 use bitcoin::Script;
 use bitcoin_script::bitcoin_script as script;
 use orga::call::Call;
@@ -6,16 +8,20 @@ use orga::collections::Map;
 use orga::context::{Context, GetContext};
 use orga::encoding::{Decode, Encode};
 use orga::plugins::Time;
+#[cfg(feature = "full")]
+use orga::plugins::Validators;
 use orga::query::Query;
 use orga::state::State;
-use orga::{Error, Result};
+use orga::{Error as OrgaError, Result as OrgaResult};
 use std::cmp::Ordering;
 
 use super::threshold_sig::Pubkey;
+use super::ConsensusKey;
+use super::Xpub;
 
 pub const MAX_DEPOSIT_AGE: u64 = 60 * 60 * 24 * 7;
 
-#[derive(Encode, Decode, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Encode, Decode, Clone)]
 pub struct Signatory {
     voting_power: u64,
     pubkey: Pubkey,
@@ -30,27 +36,10 @@ pub struct SignatorySet {
 }
 
 impl SignatorySet {
-    pub fn from_validator_ctx(index: u32) -> Result<Self> {
-        // let validators: &mut Validators = self.context().ok_or_else(|| {
-        //     Error::Orga(orga::Error::App("No validator context found".to_string()))
-        // })?;
-        // let val_set = validators.current_set().ok_or_else(|| {
-        //     Error::Orga(orga::Error::App(
-        //         "Could not access validator set".to_string(),
-        //     ))
-        // })?;
-        // for entry in val_set.iter()? {
-        //     let entry = entry?;
-        //     let pubkey = Pubkey::new(entry.pubkey);
-        //     let signatory = Signatory {
-        //         voting_power: entry.power,
-        //     };
-        //     self.insert(pubkey, signatory)?;
-        // }
-        // Ok(())
-
-        let time: &mut Time =
-            Context::resolve().ok_or_else(|| Error::App("No time context found".to_string()))?;
+    #[cfg(feature = "full")]
+    pub fn from_validator_ctx(index: u32, sig_keys: &Map<ConsensusKey, Xpub>) -> Result<Self> {
+        let time: &mut Time = Context::resolve()
+            .ok_or_else(|| OrgaError::App("No time context found".to_string()))?;
 
         let mut sigset = SignatorySet {
             create_time: time.seconds as u64,
@@ -59,13 +48,38 @@ impl SignatorySet {
             signatories: vec![],
         };
 
-        // TODO: use real signatories
-        sigset.insert(Signatory {
-            pubkey: Pubkey::new([0; 33]),
-            voting_power: 1000,
-        });
+        let validators: &mut Validators = Context::resolve().ok_or_else(|| {
+            Error::Orga(orga::Error::App("No validator context found".to_string()))
+        })?;
+        let val_set = validators.current_set();
+        let val_iter = val_set.as_ref().ok_or_else(|| {
+            Error::Orga(orga::Error::App(
+                "Could not access validator set".to_string(),
+            ))
+        })?.iter()?;
 
-        sigset.signatories.sort();
+        let secp = bitcoin::secp256k1::Secp256k1::verification_only();
+        let derive_path = [ChildNumber::from_normal_idx(index)?];
+
+        for entry in val_iter {
+            let entry = entry?;
+            let consensus_key = entry.pubkey;
+            let signatory_key = match sig_keys.get(consensus_key)? {
+                Some(xpub) => {
+                    xpub
+                        .derive_pub(&secp, &derive_path)?
+                        .public_key
+                        .into()
+                },
+                None => continue,
+            };
+
+            let signatory = Signatory {
+                voting_power: entry.power,
+                pubkey: signatory_key,
+            };
+            sigset.insert(signatory);
+        }
 
         Ok(sigset)
     }
@@ -79,17 +93,26 @@ impl SignatorySet {
         ((self.total_vp as u128) * 9 / 10) as u64
     }
 
-    pub fn redeem_script(&self, data: Vec<u8>) -> Script {
+    pub fn total_vp(&self) -> u64 {
+        self.total_vp
+    }
+
+    pub fn len(&self) -> usize {
+        self.signatories.len()
+    }
+
+    pub fn redeem_script(&self, data: Vec<u8>) -> Result<Script> {
         let truncation = self.get_truncation(23);
 
         let mut iter = self.signatories.iter();
 
         // first signatory
-        let signatory = iter.next().expect("Cannot create redeem script for empty signatory set");
+        let signatory = iter
+            .next()
+            .expect("Cannot create redeem script for empty signatory set");
         let truncated_voting_power = signatory.voting_power >> truncation;
-        let pubkey = signatory.pubkey.as_slice();
         let script = script! {
-            <pubkey> OP_CHECKSIG
+            <signatory.pubkey.as_slice()> OP_CHECKSIG
             OP_IF
                 <truncated_voting_power as i64>
             OP_ELSE
@@ -101,10 +124,9 @@ impl SignatorySet {
         // all other signatories
         for signatory in iter {
             let truncated_voting_power = signatory.voting_power >> truncation;
-            let pubkey = signatory.pubkey.as_slice();
             let script = script! {
                 OP_SWAP
-                <pubkey> OP_CHECKSIG
+                <signatory.pubkey.as_slice()> OP_CHECKSIG
                 OP_IF
                     <truncated_voting_power as i64> OP_ADD
                 OP_ENDIF
@@ -123,11 +145,11 @@ impl SignatorySet {
         let script = script!(<data> OP_DROP);
         bytes.extend(&script.into_bytes());
 
-        bytes.into()
+        Ok(bytes.into())
     }
 
-    pub fn output_script(&self, data: Vec<u8>) -> Script {
-        self.redeem_script(data).to_v0_p2wsh()
+    pub fn output_script(&self, data: Vec<u8>) -> Result<Script> {
+        Ok(self.redeem_script(data)?.to_v0_p2wsh())
     }
 
     fn get_truncation(&self, target_precision: u32) -> u32 {

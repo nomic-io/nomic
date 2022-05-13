@@ -51,8 +51,6 @@ impl Migrate<nomicv1::app::InnerApp> for InnerApp {
         self.staking.migrate(legacy.staking)?;
         self.atom_airdrop.migrate(legacy.atom_airdrop)?;
 
-        self.bitcoin.checkpoints.push_building()?;
-
         Ok(())
     }
 }
@@ -103,6 +101,8 @@ mod abci {
 
             let ip_reward = self.incentive_pool_rewards.mint()?;
             self.incentive_pool.give(ip_reward)?;
+
+            self.bitcoin.begin_block(ctx)?;
 
             Ok(())
         }

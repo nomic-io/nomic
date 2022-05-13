@@ -8,7 +8,7 @@ use bitcoin::{util::merkleblock::PartialMerkleTree, Transaction, Txid};
 use checkpoint::CheckpointQueue;
 use header_queue::HeaderQueue;
 #[cfg(feature = "full")]
-use orga::abci::InitChain;
+use orga::abci::{BeginBlock, InitChain};
 use orga::call::Call;
 use orga::client::Client;
 use orga::coins::{Accounts, Address, Coin, Symbol};
@@ -19,7 +19,7 @@ use orga::collections::{
 use orga::context::GetContext;
 use orga::encoding::{Decode, Encode, Terminated};
 #[cfg(feature = "full")]
-use orga::plugins::{InitChainCtx, Validators};
+use orga::plugins::{InitChainCtx, BeginBlockCtx, Validators};
 use orga::plugins::{Time, Signer};
 use orga::query::Query;
 use orga::state::State;
@@ -52,7 +52,7 @@ pub struct Bitcoin {
 
 pub type ConsensusKey = [u8; 32];
 
-#[derive(Call, Query, Client)]
+#[derive(Call, Query, Client, Clone)]
 pub struct Xpub(ExtendedPubKey);
 
 pub const XPUB_LENGTH: usize = 78;
@@ -107,28 +107,36 @@ impl Decode for Xpub {
 
 impl Terminated for Xpub {}
 
+impl From<ExtendedPubKey> for Xpub {
+    fn from(key: ExtendedPubKey) -> Self {
+        Xpub(key)
+    }
+}
+
 impl Bitcoin {
-    #[cfg(feature = "full")]
     #[call]
     pub fn set_signatory_key(&mut self, signatory_key: Xpub) -> Result<()> {
-        let signer = self.context::<Signer>()
-            .ok_or_else(|| Error::Orga(OrgaError::App("No Signer context available".into())))?
-            .signer
-            .ok_or_else(|| Error::Orga(OrgaError::App("Call must be signed".into())))?;
+        #[cfg(feature = "full")]
+        {
+            let signer = self.context::<Signer>()
+                .ok_or_else(|| Error::Orga(OrgaError::App("No Signer context available".into())))?
+                .signer
+                .ok_or_else(|| Error::Orga(OrgaError::App("Call must be signed".into())))?;
 
-        let validators: &mut Validators = self.context().ok_or_else(|| {
-            Error::Orga(orga::Error::App("No validator context found".to_string()))
-        })?;
+            let validators: &mut Validators = self.context().ok_or_else(|| {
+                Error::Orga(orga::Error::App("No validator context found".to_string()))
+            })?;
 
-        let consensus_key = validators.consensus_key(signer)?.ok_or_else(|| {
-            Error::Orga(orga::Error::App(
-                "Signer does not have a consensus key".to_string(),
-            ))
-        })?;
+            let consensus_key = validators.consensus_key(signer)?.ok_or_else(|| {
+                Error::Orga(orga::Error::App(
+                    "Signer does not have a consensus key".to_string(),
+                ))
+            })?;
 
-        self.signatory_keys.insert(consensus_key, signatory_key)?;
+            self.signatory_keys.insert(consensus_key, signatory_key)?;
 
-        // TODO: rate-limiting
+            // TODO: rate-limiting
+        }
 
         Ok(())
     }
@@ -183,7 +191,7 @@ impl Bitcoin {
             return Err(OrgaError::App("Deposit timeout has expired".to_string()))?;
         }
 
-        let expected_script = sigset.output_script(dest.bytes().to_vec());
+        let expected_script = sigset.output_script(dest.bytes().to_vec())?;
         if output.script_pubkey != expected_script {
             return Err(OrgaError::App(
                 "Output script does not match signature set".to_string(),
@@ -208,9 +216,10 @@ impl Bitcoin {
 }
 
 #[cfg(feature = "full")]
-impl InitChain for Bitcoin {
-    fn init_chain(&mut self, ctx: &InitChainCtx) -> OrgaResult<()> {
-        self.checkpoints.push_building()?;
+impl BeginBlock for Bitcoin {
+    fn begin_block(&mut self, ctx: &BeginBlockCtx) -> OrgaResult<()> {
+        self.checkpoints.maybe_advance(&self.signatory_keys)
+            .map_err(|err| OrgaError::App(err.to_string()))?;
 
         Ok(())
     }
