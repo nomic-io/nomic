@@ -57,6 +57,7 @@ pub enum Command {
     ClaimAirdrop(ClaimAirdropCmd),
     Legacy(LegacyCmd),
     Relayer(RelayerCmd),
+    SetSignatoryKey(SetSignatoryKeyCmd),
 }
 
 impl Command {
@@ -81,6 +82,7 @@ impl Command {
             ClaimAirdrop(cmd) => cmd.run().await,
             Legacy(cmd) => cmd.run().await,
             Relayer(cmd) => cmd.run().await,
+            SetSignatoryKey(cmd) => cmd.run().await,
         }
     }
 }
@@ -683,6 +685,23 @@ impl RelayerCmd {
         let deposits = relayer.relay_deposits(recv);
 
         futures::try_join!(headers, deposits, async { addr_server.await; Ok(()) }).unwrap();
+
+        Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct SetSignatoryKeyCmd {
+    xpub: bitcoin::util::bip32::ExtendedPubKey,
+}
+
+impl SetSignatoryKeyCmd {
+    async fn run(&self) -> Result<()> {
+        app_client()
+            .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
+            .bitcoin
+            .set_signatory_key(self.xpub.into())
+            .await?;
 
         Ok(())
     }
