@@ -282,7 +282,7 @@ pub async fn gen_deposit_addr(dest_addr: String) -> DepositAddress {
     let dest_addr: Address = dest_addr.parse().unwrap();
 
     let sigset = client.bitcoin.checkpoints.active_sigset().await.unwrap().unwrap();
-    let script =  sigset.output_script(dest_addr.bytes().to_vec());
+    let script =  sigset.output_script(dest_addr.bytes().to_vec()).unwrap();
     // TODO: get network from somewhere
     let btc_addr = bitcoin::Address::from_script(&script, bitcoin::Network::Testnet).unwrap();
 
