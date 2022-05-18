@@ -159,6 +159,10 @@ impl Bitcoin {
         sigset_index: u32,
         dest: Address,
     ) -> Result<()> {
+        if dest.is_null() {
+            return Err(OrgaError::App("Cannot deposit to null address".to_string()).into());
+        }
+
         let btc_header = self
             .headers
             .get_by_height(btc_height)?
