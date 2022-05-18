@@ -41,6 +41,8 @@ pub mod txid_set;
 pub struct Nbtc(());
 impl Symbol for Nbtc {}
 
+pub const MIN_DEPOSIT_AMOUNT: u64 = 600;
+
 #[derive(State, Call, Query, Client)]
 pub struct Bitcoin {
     pub headers: HeaderQueue,
@@ -187,6 +189,10 @@ impl Bitcoin {
             return Err(OrgaError::App("Output index is out of bounds".to_string()))?;
         }
         let output = &btc_tx.output[btc_vout as usize];
+
+        if output.value < MIN_DEPOSIT_AMOUNT {
+            return Err(OrgaError::App("Deposit amount is below minimum".to_string()))?;
+        }
 
         let now = self
             .context::<Time>()
