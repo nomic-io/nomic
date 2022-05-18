@@ -178,6 +178,8 @@ impl WorkHeader {
     }
 }
 
+// TODO: implement trait that returns constants for bitcoin::Network variants
+
 #[derive(Clone)]
 pub struct Config {
     pub max_length: u64,
@@ -190,6 +192,7 @@ pub struct Config {
     pub encoded_trusted_header: Vec<u8>,
     pub retargeting: bool,
     pub min_difficulty_blocks: bool,
+    pub network: bitcoin::Network,
 }
 
 impl Default for Config {
@@ -220,6 +223,7 @@ impl Config {
             encoded_trusted_header: header_bytes,
             retargeting: true,
             min_difficulty_blocks: false,
+            network: bitcoin::Network::Bitcoin,
         }
     }
 
@@ -244,6 +248,7 @@ impl Config {
             encoded_trusted_header: header_bytes,
             retargeting: true,
             min_difficulty_blocks: true,
+            network: bitcoin::Network::Testnet,
         }
     }
 }
@@ -656,6 +661,10 @@ impl HeaderQueue {
 
         Ok(queue)
     }
+
+    pub fn network(&self) -> bitcoin::Network {
+        self.config.network
+    }
 }
 
 #[cfg(test)]
@@ -855,6 +864,7 @@ mod test {
                 229, 97, 43, 251, 118, 162, 220, 55, 217, 196, 39, 65, 221, 104, 73, 255, 255, 0,
                 29, 43, 144, 157, 214,
             ],
+            network: bitcoin::Network::Bitcoin,
         };
         let store = Store::new(Shared::new(MapStore::new()).into());
         let mut q = HeaderQueue::with_conf(store, Default::default(), test_config).unwrap();
@@ -897,6 +907,7 @@ mod test {
                 229, 97, 43, 251, 118, 162, 220, 55, 217, 196, 39, 65, 221, 104, 73, 255, 255, 0,
                 29, 43, 144, 157, 214,
             ],
+            network: bitcoin::Network::Bitcoin,
         };
 
         let adapter = Adapter::new(header);
@@ -949,6 +960,7 @@ mod test {
                 229, 97, 43, 251, 118, 162, 220, 55, 217, 196, 39, 65, 221, 104, 73, 255, 255, 0,
                 29, 43, 144, 157, 214,
             ],
+            network: bitcoin::Network::Bitcoin,
         };
 
         let adapter = Adapter::new(header);

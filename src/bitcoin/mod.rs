@@ -133,6 +133,12 @@ impl Bitcoin {
                 ))
             })?;
 
+            if signatory_key.network != self.network() {
+                return Err(Error::Orga(orga::Error::App(
+                    "Signatory key network does not match network".to_string(),
+                )));
+            }
+
             self.signatory_keys.insert(consensus_key, signatory_key)?;
 
             // TODO: rate-limiting
