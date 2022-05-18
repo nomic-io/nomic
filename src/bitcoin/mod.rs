@@ -5,7 +5,7 @@ use adapter::Adapter;
 use bitcoin::hashes::Hash;
 use bitcoin::util::bip32::ExtendedPubKey;
 use bitcoin::{util::merkleblock::PartialMerkleTree, Transaction, Txid};
-use checkpoint::CheckpointQueue;
+use checkpoint::{CheckpointQueue, Input};
 use header_queue::HeaderQueue;
 #[cfg(feature = "full")]
 use orga::abci::{BeginBlock, InitChain};
@@ -223,18 +223,30 @@ impl Bitcoin {
 
         self.processed_outpoints
             .insert(outpoint, sigset.deposit_timeout())?;
+        
+        self.checkpoints.building_mut()?.inputs.push_back(Input {
+            txid: Adapter::new(btc_tx.txid()),
+            vout: btc_vout,
+            sigset_index,
+            dest,
+            amount: output.value,
+        }.into())?;
 
         // TODO: subtract deposit fee
         self.accounts.deposit(dest, Nbtc::mint(output.value))?;
 
         Ok(())
     }
+
+    pub fn network(&self) -> bitcoin::Network {
+        self.headers.network()
+    }
 }
 
 #[cfg(feature = "full")]
 impl BeginBlock for Bitcoin {
     fn begin_block(&mut self, ctx: &BeginBlockCtx) -> OrgaResult<()> {
-        self.checkpoints.maybe_advance(&self.signatory_keys)
+        self.checkpoints.maybe_step(&self.signatory_keys)
             .map_err(|err| OrgaError::App(err.to_string()))?;
 
         Ok(())

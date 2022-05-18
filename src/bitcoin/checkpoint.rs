@@ -2,23 +2,29 @@ use super::{
     adapter::Adapter,
     header_queue::HeaderQueue,
     signatory::SignatorySet,
-    threshold_sig::{Pubkey, Signature, ThresholdSig},
+    threshold_sig::{LengthVec, Pubkey, Signature, ThresholdSig},
     ConsensusKey, Xpub,
 };
 use crate::error::{Error, Result};
 use bitcoin::hashes::Hash;
 use bitcoin::Txid;
+use derive_more::{Deref, DerefMut};
 use orga::{
     call::Call,
+    coins::Address,
     client::Client,
     collections::{ChildMut, Deque, Map, Ref},
+    context::GetContext,
     encoding::{Decode, Encode},
+    plugins::{Signer, Time},
     query::Query,
     state::State,
     Error as OrgaError, Result as OrgaResult,
 };
 
-pub const INITIAL_QUORUM_PERCENT: u64 = 70;
+pub const CHECKPOINT_INTERVAL: u64 = 60 * 10;
+pub const MAX_INPUTS: u64 = 50;
+pub const MAX_OUTPUTS: u64 = 200;
 
 #[derive(Debug, Encode, Decode)]
 pub enum CheckpointStatus {
@@ -74,15 +80,12 @@ impl<U: Send + Clone> Client<U> for CheckpointStatus {
 pub struct Input {
     pub txid: Adapter<Txid>,
     pub vout: u32,
-    pub script_pubkey: (), // TODO
-    pub sig: ThresholdSig,
+    pub sigset_index: u32,
+    pub dest: Address,
+    pub amount: u64,
 }
 
-#[derive(State, Call, Query, Client)]
-pub struct Output {
-    pub amount: u64,
-    pub script: Vec<u8>,
-}
+pub type Output = Adapter<bitcoin::TxOut>;
 
 #[derive(State, Call, Query, Client)]
 pub struct Checkpoint {
@@ -93,13 +96,22 @@ pub struct Checkpoint {
     pub sigset: SignatorySet,
 }
 
+impl Checkpoint {
+    pub fn create_time(&self) -> u64 {
+        self.sigset.create_time()
+    }
+}
+
 #[derive(State, Call, Query, Client)]
 pub struct CheckpointQueue {
     queue: Deque<Checkpoint>,
     index: u32,
 }
 
+#[derive(Deref)]
 pub struct CompletedCheckpoint<'a>(Ref<'a, Checkpoint>);
+
+#[derive(Deref)]
 pub struct SigningCheckpoint<'a>(Ref<'a, Checkpoint>);
 
 impl<'a, U: Clone> Client<U> for SigningCheckpoint<'a> {
@@ -116,9 +128,46 @@ impl<'a> Query for SigningCheckpoint<'a> {
     }
 }
 
+#[derive(Deref, DerefMut)]
 pub struct SigningCheckpointMut<'a>(ChildMut<'a, u64, Checkpoint>);
+
+#[derive(Deref)]
 pub struct BuildingCheckpoint<'a>(Ref<'a, Checkpoint>);
+
+#[derive(Deref, DerefMut)]
 pub struct BuildingCheckpointMut<'a>(ChildMut<'a, u64, Checkpoint>);
+
+impl<'a> BuildingCheckpointMut<'a> {
+    pub fn advance(self) -> Result<(SigningCheckpointMut<'a>, Vec<Input>, Vec<Output>)> {
+        let mut checkpoint = self.0;
+
+        checkpoint.status = CheckpointStatus::Signing;
+
+        let mut child_inputs = vec![];
+        let mut child_outputs = vec![];
+
+        let reserve_out = bitcoin::TxOut {
+            value: 0, // will be updated after counting inputs and fees
+            script_pubkey: checkpoint.sigset.output_script(Address::NULL)?,
+        };
+        checkpoint.outputs.push_front(Adapter::new(reserve_out))?;
+
+        // TODO: move excess inputs/outputs to child
+        // TODO: set reserve based on inputs/outputs
+        // TODO: estimate size, deduct estimated fee from reserve
+        // TODO: populate signing messages (sighash for each input)
+
+        // child_inputs.push(Input {
+        //     amount: ,
+        //     dest: Address::NULL,
+        //     sigset_index: checkpoint.sigset.index(),
+        //     txid: ,
+        //     vout: ,
+        // });
+
+        Ok((SigningCheckpointMut(checkpoint), child_inputs, child_outputs))
+    }
+}
 
 impl CheckpointQueue {
     #[query]
@@ -219,74 +268,76 @@ impl CheckpointQueue {
         Ok(BuildingCheckpointMut(last))
     }
 
-    pub fn maybe_advance(&mut self, sig_keys: &Map<ConsensusKey, Xpub>) -> Result<()> {
+    pub fn maybe_step(&mut self, sig_keys: &Map<ConsensusKey, Xpub>) -> Result<()> {
         #[cfg(feature = "full")]
         {
-            let initializing = self.queue.is_empty();
-            if initializing {
-                let sigset = SignatorySet::from_validator_ctx(self.index, sig_keys)?;
-                if sigset.len() == 0 {
-                    return Ok(());
-                }
-
-                self.push_building(sig_keys)?;
+            if self.signing()?.is_some() {
+                return Ok(());
             }
 
-            // TODO: advance to signing and push new building after time has passed
+            if !self.queue.is_empty() {
+                let now = self.context::<Time>()
+                    .ok_or_else(|| OrgaError::App("No time context".to_string()))?
+                    .seconds as u64;
+                let elapsed = now - self.building()?.create_time();
+                if elapsed < CHECKPOINT_INTERVAL {
+                    return Ok(());
+                }
+            }
+
+            if self.maybe_push(sig_keys)?.is_none() {
+                return Ok(());
+            }
+
+            let second = self.get_mut(self.index - 1)?;
+            BuildingCheckpointMut(second).advance()?;
         }
 
         Ok(())
     }
 
-    // fn start_signing(&mut self) -> Result<()> {
-    //     if self.signing()?.is_some() {
-    //         return Err(OrgaError::App("Previous checkpoint is still being signed".to_string()).into());
-    //     }
-
-    //     let mut building = self.building_mut()?;
-    //     building.0.status = CheckpointStatus::Signing;
-
-    //     self.push_building()
-    // }
-
-    fn push_building(&mut self, sig_keys: &Map<ConsensusKey, Xpub>) -> Result<()> {
-        let index = self.index;
-        if !self.queue.is_empty() {
-            self.index += 1;
-        }
-
-        #[cfg(feature = "full")]
-        let sigset = SignatorySet::from_validator_ctx(index, sig_keys)?;
-
-        self.queue.push_back(Default::default())?;
-        let mut building = self.building_mut()?;
+    fn maybe_push(&mut self, sig_keys: &Map<ConsensusKey, Xpub>) -> Result<Option<BuildingCheckpointMut>> {
+        #[cfg(not(feature = "full"))]
+        unimplemented!();
 
         #[cfg(feature = "full")]
         {
-            building.0.sigset = sigset;
-        }
+            let sigset = SignatorySet::from_validator_ctx(self.index, sig_keys)?;
 
-        Ok(())
+            if !sigset.has_quorum() {
+                return Ok(None);
+            }
+
+            if !self.queue.is_empty() {
+                self.index += 1;
+            }
+
+            self.queue.push_back(Default::default())?;
+            let mut building = self.building_mut()?;
+
+            building.sigset = sigset;
+
+           Ok(Some(building))
+        }
     }
 
-    // #[call]
-    // TODO: should have N signatures (1 per spent input of checkpoint)
-    pub fn sign_checkpoint(&mut self, pubkey: Pubkey, sig: Signature) -> Result<()> {
+    #[call]
+    pub fn sign(&mut self, pubkey: Pubkey, sigs: LengthVec<u16, Signature>) -> Result<()> {
         let mut signing = self
             .signing_mut()?
             .ok_or_else(|| Error::Orga(OrgaError::App("No checkpoint to be signed".to_string())))?;
 
-        signing.0.sig.sign(pubkey, sig)?;
+        signing.sig.sign(pubkey, sigs)?;
 
-        if signing.0.sig.done() {
+        if signing.sig.done() {
             // TODO: move this block into its own method
 
-            signing.0.status = CheckpointStatus::Complete;
-            // let reserve_out = signing.0.reserve_output()?;
+            signing.status = CheckpointStatus::Complete;
+            // let reserve_out = signing.reserve_output()?;
 
             let mut building = self.building_mut()?;
-            building.0.inputs.push_back(Default::default())?;
-            let mut reserve_in = building.0.inputs.get_mut(0)?.unwrap();
+            building.inputs.push_back(Default::default())?;
+            let mut reserve_in = building.inputs.get_mut(0)?.unwrap();
 
             // reserve_in.txid = reserve_out.txid;
             reserve_in.vout = 0;
@@ -299,6 +350,6 @@ impl CheckpointQueue {
 
     #[query]
     pub fn active_sigset(&self) -> Result<SignatorySet> {
-        Ok(self.building()?.0.sigset.clone())
+        Ok(self.building()?.sigset.clone())
     }
 }

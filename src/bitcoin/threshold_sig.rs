@@ -1,12 +1,11 @@
 use orga::call::Call;
 use orga::client::Client;
 use orga::collections::{Map, Next};
-use orga::encoding::{Decode, Encode};
+use orga::encoding::{Decode, Encode, Terminated, Result as EdResult, Error as EdError};
 use orga::query::Query;
 use orga::state::State;
 use orga::{Error, Result};
 use secp256k1::constants::{COMPACT_SIGNATURE_SIZE, MESSAGE_SIZE, PUBLIC_KEY_SIZE};
-use serde::Serialize;
 
 pub type Message = [u8; MESSAGE_SIZE];
 pub type Signature = [u8; COMPACT_SIGNATURE_SIZE];
@@ -63,7 +62,7 @@ pub struct ThresholdSig {
     threshold: u64,
     signed: u64,
     sigs: Map<Pubkey, Share>,
-    message: Message,
+    messages: LengthVec<u16, Message>,
 }
 
 impl ThresholdSig {
@@ -73,7 +72,7 @@ impl ThresholdSig {
     }
 
     #[query]
-    pub fn sigs(&self) -> Result<Vec<(Pubkey, Signature)>> {
+    pub fn sigs(&self) -> Result<Vec<(Pubkey, Vec<Signature>)>> {
         self.sigs
             .iter()?
             .filter_map(|entry| {
@@ -81,7 +80,7 @@ impl ThresholdSig {
                     Err(e) => return Some(Err(e)),
                     Ok(entry) => entry,
                 };
-                share.sig.map(|sig| Ok((pubkey.clone(), sig)))
+                share.sigs.as_ref().map(|sigs| Ok((pubkey.clone(), sigs.clone())))
             })
             .collect()
     }
@@ -91,43 +90,49 @@ impl ThresholdSig {
         self.sigs
             .get(pubkey)?
             .ok_or_else(|| Error::App("Pubkey is not part of threshold signature".into()))
-            .map(|share| share.sig.is_some())
+            .map(|share| share.sigs.is_some())
     }
 
     // TODO: exempt from fee
     #[call]
-    pub fn sign(&mut self, pubkey: Pubkey, sig: Signature) -> Result<()> {
+    pub fn sign(&mut self, pubkey: Pubkey, sigs: LengthVec<u16, Signature>) -> Result<()> {
         if self.done() {
             return Err(Error::App("Threshold signature is done".into()));
         }
 
-        self.verify(pubkey, sig)?;
+        self.verify(pubkey, sigs.as_slice())?;
 
         let mut share = self
             .sigs
             .get_mut(pubkey)?
             .ok_or_else(|| Error::App("Pubkey is not part of threshold signature".into()))?;
 
-        if share.sig.is_some() {
+        if share.sigs.is_some() {
             return Err(Error::App("Pubkey already signed".into()));
         }
 
-        share.sig = Some(sig);
+        share.sigs = Some(sigs.into());
         self.signed += share.power;
 
         Ok(())
     }
 
-    pub fn verify(&self, pubkey: Pubkey, sig: Signature) -> Result<()> {
+    pub fn verify(&self, pubkey: Pubkey, sigs: &[Signature]) -> Result<()> {
+        if sigs.len() != self.messages.len() {
+            return Err(Error::App("Invalid number of signatures".into()));
+        }
+
         // TODO: re-use secp context
         let secp = secp256k1::Secp256k1::verification_only();
-
-        let msg = secp256k1::Message::from_slice(&self.message)?;
-        let sig = secp256k1::ecdsa::Signature::from_compact(&sig)?;
         let pubkey = secp256k1::PublicKey::from_slice(&pubkey.0)?;
 
-        #[cfg(not(fuzzing))]
-        secp.verify_ecdsa(&msg, &sig, &pubkey)?;
+        for (msg, sig) in self.messages.iter().zip(sigs.iter()) {
+            let msg = secp256k1::Message::from_slice(msg)?;
+            let sig = secp256k1::ecdsa::Signature::from_compact(sig)?;
+
+            #[cfg(not(fuzzing))]
+            secp.verify_ecdsa(&msg, &sig, &pubkey)?;
+        }
 
         Ok(())
     }
@@ -135,6 +140,87 @@ impl ThresholdSig {
 
 #[derive(State, Call, Client, Query)]
 pub struct Share {
-    sig: Option<Signature>,
     power: u64,
+    sigs: Option<Vec<Signature>>,
+}
+
+// TODO: move this into ed
+use std::convert::{TryInto, TryFrom};
+use derive_more::{Deref, DerefMut, Into};
+
+#[derive(Deref, DerefMut, Encode, Into, Default)]
+pub struct LengthVec<P, T>
+where
+    P: Encode + Terminated,
+    T: Encode + Terminated,
+{
+    len: P,
+
+    #[deref]
+    #[deref_mut]
+    #[into]
+    values: Vec<T>,
+}
+
+impl<P, T> LengthVec<P, T>
+where
+    P: Encode + Terminated,
+    T: Encode + Terminated,
+{
+    pub fn new(len: P, values: Vec<T>) -> Self {
+        LengthVec { len, values }
+    }
+}
+
+impl<P, T> State for LengthVec<P, T>
+where
+    P: Encode + Decode + Terminated + TryInto<usize> + Clone,
+    T: Encode + Decode + Terminated,
+{
+    type Encoding = Self;
+    
+    fn create(_: orga::store::Store, data: Self::Encoding) -> Result<Self> {
+        Ok(data)
+    }
+
+    fn flush(self) -> Result<Self::Encoding> {
+        Ok(self)
+    }
+}
+
+impl<P, T> From<Vec<T>> for LengthVec<P, T>
+where
+    P: Encode + Terminated + TryFrom<usize>,
+    T: Encode + Terminated,
+    <P as TryFrom<usize>>::Error: std::fmt::Debug,
+{
+    fn from(values: Vec<T>) -> Self {
+        LengthVec::new(P::try_from(values.len()).unwrap(), values)
+    }
+}
+
+impl<P, T> Terminated for LengthVec<P, T>
+where
+    P: Encode + Terminated,
+    T: Encode + Terminated,
+{}
+
+impl<P, T> Decode for LengthVec<P, T>
+where
+    P: Encode + Decode + Terminated + TryInto<usize> + Clone,
+    T: Encode + Decode + Terminated,
+{
+    fn decode<R: std::io::Read>(mut input: R) -> EdResult<Self> {
+        let len = P::decode(&mut input)?;
+        let len_usize = len.clone().try_into()
+            .map_err(|_| EdError::UnexpectedByte(80))?;
+
+        let mut values = Vec::with_capacity(len_usize);
+        for i in 0..len_usize {
+            let value = T::decode(&mut input)?;
+            values.push(value);
+        }
+
+        Ok(LengthVec { len, values })
+    }
 }
