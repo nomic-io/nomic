@@ -197,7 +197,7 @@ impl Bitcoin {
             return Err(OrgaError::App("Deposit timeout has expired".to_string()))?;
         }
 
-        let expected_script = sigset.output_script(dest.bytes().to_vec())?;
+        let expected_script = sigset.output_script(dest)?;
         if output.script_pubkey != expected_script {
             return Err(OrgaError::App(
                 "Output script does not match signature set".to_string(),

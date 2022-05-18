@@ -418,7 +418,7 @@ impl WatchedScripts {
     }
 
     fn derive_script(&self, addr: Address, sigset: &SignatorySet) -> Result<::bitcoin::Script> {
-        sigset.output_script(addr.bytes().to_vec())
+        sigset.output_script(addr)
     }
 }
 

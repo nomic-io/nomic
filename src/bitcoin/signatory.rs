@@ -4,6 +4,7 @@ use bitcoin::Script;
 use bitcoin_script::bitcoin_script as script;
 use orga::call::Call;
 use orga::client::Client;
+use orga::coins::Address;
 use orga::collections::Map;
 use orga::context::{Context, GetContext};
 use orga::encoding::{Decode, Encode};
@@ -101,7 +102,7 @@ impl SignatorySet {
         self.signatories.len()
     }
 
-    pub fn redeem_script(&self, data: Vec<u8>) -> Result<Script> {
+    pub fn redeem_script(&self, dest: Address) -> Result<Script> {
         let truncation = self.get_truncation(23);
 
         let mut iter = self.signatories.iter();
