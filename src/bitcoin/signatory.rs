@@ -31,7 +31,8 @@ pub struct Signatory {
 #[derive(State, Call, Query, Client, Clone)]
 pub struct SignatorySet {
     create_time: u64,
-    total_vp: u64,
+    present_vp: u64,
+    possible_vp: u64,
     index: u32,
     signatories: Vec<Signatory>,
 }
@@ -44,7 +45,8 @@ impl SignatorySet {
 
         let mut sigset = SignatorySet {
             create_time: time.seconds as u64,
-            total_vp: 0,
+            present_vp: 0,
+            possible_vp: 0,
             index,
             signatories: vec![],
         };
@@ -65,6 +67,9 @@ impl SignatorySet {
         for entry in val_iter {
             let entry = entry?;
             let consensus_key = entry.pubkey;
+
+            sigset.possible_vp += entry.power;
+
             let signatory_key = match sig_keys.get(consensus_key)? {
                 Some(xpub) => {
                     xpub
@@ -86,16 +91,28 @@ impl SignatorySet {
     }
 
     fn insert(&mut self, signatory: Signatory) {
-        self.total_vp += signatory.voting_power;
+        self.present_vp += signatory.voting_power;
         self.signatories.push(signatory);
     }
 
     pub fn signature_threshold(&self) -> u64 {
-        ((self.total_vp as u128) * 9 / 10) as u64
+        ((self.present_vp as u128) * 9 / 10) as u64
     }
 
-    pub fn total_vp(&self) -> u64 {
-        self.total_vp
+    pub fn quorum_threshold(&self) -> u64 {
+        self.possible_vp / 2
+    }
+
+    pub fn present_vp(&self) -> u64 {
+        self.present_vp
+    }
+
+    pub fn possible_vp(&self) -> u64 {
+        self.possible_vp
+    }
+
+    pub fn has_quorum(&self) -> bool {
+        self.present_vp >= self.quorum_threshold()
     }
 
     pub fn len(&self) -> usize {
@@ -143,18 +160,19 @@ impl SignatorySet {
         bytes.extend(&script.into_bytes());
 
         // depositor data commitment
+        let data = &dest.bytes()[..];
         let script = script!(<data> OP_DROP);
         bytes.extend(&script.into_bytes());
 
         Ok(bytes.into())
     }
 
-    pub fn output_script(&self, data: Vec<u8>) -> Result<Script> {
-        Ok(self.redeem_script(data)?.to_v0_p2wsh())
+    pub fn output_script(&self, dest: Address) -> Result<Script> {
+        Ok(self.redeem_script(dest)?.to_v0_p2wsh())
     }
 
     fn get_truncation(&self, target_precision: u32) -> u32 {
-        let vp_bits = u64::BITS - self.total_vp.leading_zeros();
+        let vp_bits = u64::BITS - self.present_vp.leading_zeros();
         vp_bits.saturating_sub(target_precision)
     }
 
