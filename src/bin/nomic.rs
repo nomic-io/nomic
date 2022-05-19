@@ -758,6 +758,8 @@ impl WithdrawCmd {
 
 #[tokio::main]
 async fn main() {
+    pretty_env_logger::init();
+
     let opts = Opts::parse();
     if let Err(err) = opts.cmd.run().await {
         eprintln!("{}", err);
