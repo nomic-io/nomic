@@ -289,8 +289,10 @@ impl CheckpointQueue {
                 return Ok(());
             }
 
-            let second = self.get_mut(self.index - 1)?;
-            BuildingCheckpointMut(second).advance()?;
+            if self.index > 0 {
+                let second = self.get_mut(self.index - 1)?;
+                BuildingCheckpointMut(second).advance()?;
+            }
         }
 
         Ok(())
@@ -303,6 +305,10 @@ impl CheckpointQueue {
         #[cfg(feature = "full")]
         {
             let sigset = SignatorySet::from_validator_ctx(self.index, sig_keys)?;
+
+            if sigset.possible_vp() == 0 {
+                return Ok(None);
+            }
 
             if !sigset.has_quorum() {
                 return Ok(None);
