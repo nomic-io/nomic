@@ -22,13 +22,13 @@ use super::Xpub;
 
 pub const MAX_DEPOSIT_AGE: u64 = 60 * 60 * 24 * 7;
 
-#[derive(Encode, Decode, Clone)]
+#[derive(Encode, Decode, Clone, Debug)]
 pub struct Signatory {
     voting_power: u64,
     pubkey: Pubkey,
 }
 
-#[derive(State, Call, Query, Client, Clone)]
+#[derive(State, Call, Query, Client, Clone, Debug)]
 pub struct SignatorySet {
     create_time: u64,
     present_vp: u64,
@@ -127,7 +127,7 @@ impl SignatorySet {
         // first signatory
         let signatory = iter
             .next()
-            .expect("Cannot create redeem script for empty signatory set");
+            .ok_or_else(|| OrgaError::App("Cannot create redeem script for empty signatory set".to_string()))?;
         let truncated_voting_power = signatory.voting_power >> truncation;
         let script = script! {
             <signatory.pubkey.as_slice()> OP_CHECKSIG
