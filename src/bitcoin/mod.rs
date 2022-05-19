@@ -2,6 +2,7 @@ use std::ops::Deref;
 
 use crate::error::{Error, Result};
 use adapter::Adapter;
+use bitcoin::Script;
 use bitcoin::hashes::Hash;
 use bitcoin::util::bip32::ExtendedPubKey;
 use bitcoin::{util::merkleblock::PartialMerkleTree, Transaction, Txid};
@@ -11,7 +12,7 @@ use header_queue::HeaderQueue;
 use orga::abci::{BeginBlock, InitChain};
 use orga::call::Call;
 use orga::client::Client;
-use orga::coins::{Accounts, Address, Coin, Symbol};
+use orga::coins::{Accounts, Address, Coin, Symbol, Amount};
 use orga::collections::{
     map::{ChildMut, Ref},
     Deque, Map,
@@ -42,6 +43,7 @@ pub struct Nbtc(());
 impl Symbol for Nbtc {}
 
 pub const MIN_DEPOSIT_AMOUNT: u64 = 600;
+pub const MAX_WITHDRAWAL_SCRIPT_LENGTH: u64 = 64;
 
 #[derive(State, Call, Query, Client)]
 pub struct Bitcoin {
@@ -234,6 +236,30 @@ impl Bitcoin {
 
         // TODO: subtract deposit fee
         self.accounts.deposit(dest, Nbtc::mint(output.value))?;
+
+        Ok(())
+    }
+
+    #[call]
+    pub fn withdraw(&mut self, script_pubkey: Adapter<Script>, amount: Amount) -> Result<()> {
+        if script_pubkey.len() as u64 > MAX_WITHDRAWAL_SCRIPT_LENGTH {
+            return Err(OrgaError::App("Script exceeds maximum length".to_string()).into());
+        }
+
+        let signer = self.context::<Signer>()
+            .ok_or_else(|| Error::Orga(OrgaError::App("No Signer context available".into())))?
+            .signer
+            .ok_or_else(|| Error::Orga(OrgaError::App("Call must be signed".into())))?;
+
+        self.accounts.withdraw(signer, amount)?.burn();
+
+        let output = bitcoin::TxOut {
+            script_pubkey: script_pubkey.into_inner(),
+            value: amount.into(),
+        };
+
+        let mut checkpoint = self.checkpoints.building_mut()?;
+        checkpoint.outputs.push_back(Adapter::new(output))?;
 
         Ok(())
     }
