@@ -58,6 +58,8 @@ pub enum Command {
     Legacy(LegacyCmd),
     Relayer(RelayerCmd),
     SetSignatoryKey(SetSignatoryKeyCmd),
+    Deposit(DepositCmd),
+    Withdraw(WithdrawCmd),
 }
 
 impl Command {
@@ -83,6 +85,8 @@ impl Command {
             Legacy(cmd) => cmd.run().await,
             Relayer(cmd) => cmd.run().await,
             SetSignatoryKey(cmd) => cmd.run().await,
+            Deposit(cmd) => cmd.run().await,
+            Withdraw(cmd) => cmd.run().await,
         }
     }
 }
@@ -701,6 +705,51 @@ impl SetSignatoryKeyCmd {
             .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
             .bitcoin
             .set_signatory_key(self.xpub.into())
+            .await?;
+
+        Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct DepositCmd {
+    address: Option<Address>,
+}
+
+impl DepositCmd {
+    async fn run(&self) -> Result<()> {
+        let dest_addr = self.address.unwrap_or_else(|| my_address());
+
+        let sigset = app_client().bitcoin.checkpoints.active_sigset().await??;
+        let script =  sigset.output_script(dest_addr)?;
+        // TODO: get network from somewhere
+        let btc_addr = bitcoin::Address::from_script(&script, bitcoin::Network::Testnet).unwrap();
+
+        println!("Deposit address: {}", btc_addr);
+        println!("Expiration: {}", "TODO");
+        // TODO: show real expiration
+
+        // TODO: announce deposit address to relayers
+
+        Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct WithdrawCmd {
+    dest: bitcoin::Address,
+    amount: u64,
+}
+
+impl WithdrawCmd {
+    async fn run(&self) -> Result<()> {
+        use nomic::bitcoin::adapter::Adapter;
+
+        let script = self.dest.script_pubkey();
+
+        app_client()
+            .bitcoin
+            .withdraw(Adapter::new(script), self.amount.into())
             .await?;
 
         Ok(())
