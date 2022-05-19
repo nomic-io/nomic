@@ -2,9 +2,9 @@ use std::ops::Deref;
 
 use crate::error::{Error, Result};
 use adapter::Adapter;
-use bitcoin::Script;
 use bitcoin::hashes::Hash;
 use bitcoin::util::bip32::ExtendedPubKey;
+use bitcoin::Script;
 use bitcoin::{util::merkleblock::PartialMerkleTree, Transaction, Txid};
 use checkpoint::{CheckpointQueue, Input};
 use header_queue::HeaderQueue;
@@ -12,7 +12,7 @@ use header_queue::HeaderQueue;
 use orga::abci::{BeginBlock, InitChain};
 use orga::call::Call;
 use orga::client::Client;
-use orga::coins::{Accounts, Address, Coin, Symbol, Amount};
+use orga::coins::{Accounts, Address, Amount, Coin, Symbol};
 use orga::collections::{
     map::{ChildMut, Ref},
     Deque, Map,
@@ -20,8 +20,8 @@ use orga::collections::{
 use orga::context::GetContext;
 use orga::encoding::{Decode, Encode, Terminated};
 #[cfg(feature = "full")]
-use orga::plugins::{InitChainCtx, BeginBlockCtx, Validators};
-use orga::plugins::{Time, Signer};
+use orga::plugins::{BeginBlockCtx, InitChainCtx, Validators};
+use orga::plugins::{Signer, Time};
 use orga::query::Query;
 use orga::state::State;
 use orga::{Error as OrgaError, Result as OrgaResult};
@@ -103,8 +103,7 @@ impl Decode for Xpub {
     fn decode<R: std::io::Read>(mut input: R) -> ed::Result<Self> {
         let mut bytes = [0; XPUB_LENGTH];
         input.read_exact(&mut bytes)?;
-        let key = ExtendedPubKey::decode(&bytes)
-            .map_err(|_| ed::Error::UnexpectedByte(32))?;
+        let key = ExtendedPubKey::decode(&bytes).map_err(|_| ed::Error::UnexpectedByte(32))?;
         Ok(Xpub(key))
     }
 }
@@ -122,7 +121,8 @@ impl Bitcoin {
     pub fn set_signatory_key(&mut self, signatory_key: Xpub) -> Result<()> {
         #[cfg(feature = "full")]
         {
-            let signer = self.context::<Signer>()
+            let signer = self
+                .context::<Signer>()
                 .ok_or_else(|| Error::Orga(OrgaError::App("No Signer context available".into())))?
                 .signer
                 .ok_or_else(|| Error::Orga(OrgaError::App("Call must be signed".into())))?;
@@ -197,14 +197,16 @@ impl Bitcoin {
         let output = &btc_tx.output[btc_vout as usize];
 
         if output.value < MIN_DEPOSIT_AMOUNT {
-            return Err(OrgaError::App("Deposit amount is below minimum".to_string()))?;
+            return Err(OrgaError::App(
+                "Deposit amount is below minimum".to_string(),
+            ))?;
         }
 
         let now = self
             .context::<Time>()
             .ok_or_else(|| Error::Orga(OrgaError::App("No time context available".to_string())))?
             .seconds as u64;
-        let sigset = &self.checkpoints.get(sigset_index)?.sigset;
+        let sigset = self.checkpoints.get(sigset_index)?.sigset.clone();
         if now > sigset.deposit_timeout() {
             return Err(OrgaError::App("Deposit timeout has expired".to_string()))?;
         }
@@ -225,15 +227,16 @@ impl Bitcoin {
 
         self.processed_outpoints
             .insert(outpoint, sigset.deposit_timeout())?;
-        
-        self.checkpoints.building_mut()?.inputs.push_back(Input {
-            txid: Adapter::new(btc_tx.txid()),
-            vout: btc_vout,
-            sigset_index,
-            dest,
-            amount: output.value,
-        }.into())?;
 
+        self.checkpoints.building_mut()?.push_input(
+            btc_tx.txid(),
+            btc_vout,
+            &sigset,
+            dest,
+            output.value,
+        )?;
+
+        // TODO: don't credit account until we're done signing including tx
         // TODO: subtract deposit fee
         self.accounts.deposit(dest, Nbtc::mint(output.value))?;
 
@@ -246,7 +249,8 @@ impl Bitcoin {
             return Err(OrgaError::App("Script exceeds maximum length".to_string()).into());
         }
 
-        let signer = self.context::<Signer>()
+        let signer = self
+            .context::<Signer>()
             .ok_or_else(|| Error::Orga(OrgaError::App("No Signer context available".into())))?
             .signer
             .ok_or_else(|| Error::Orga(OrgaError::App("Call must be signed".into())))?;
@@ -272,7 +276,8 @@ impl Bitcoin {
 #[cfg(feature = "full")]
 impl BeginBlock for Bitcoin {
     fn begin_block(&mut self, ctx: &BeginBlockCtx) -> OrgaResult<()> {
-        self.checkpoints.maybe_step(&self.signatory_keys)
+        self.checkpoints
+            .maybe_step(&self.signatory_keys)
             .map_err(|err| OrgaError::App(err.to_string()))?;
 
         Ok(())

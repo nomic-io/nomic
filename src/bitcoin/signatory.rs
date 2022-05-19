@@ -21,6 +21,7 @@ use super::ConsensusKey;
 use super::Xpub;
 
 pub const MAX_DEPOSIT_AGE: u64 = 60 * 60 * 24 * 7;
+pub const MAX_SIGNATORIES: u64 = 60;
 
 #[derive(Encode, Decode, Clone, Debug)]
 pub struct Signatory {
