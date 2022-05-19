@@ -16,6 +16,10 @@ impl<T> Adapter<T> {
     pub fn new(inner: T) -> Self {
         Self { inner }
     }
+
+    pub fn into_inner(self) -> T {
+        self.inner
+    }
 }
 
 impl<T: Default> Default for Adapter<T> {
