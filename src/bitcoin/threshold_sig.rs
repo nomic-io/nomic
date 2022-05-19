@@ -5,7 +5,12 @@ use orga::encoding::{Decode, Encode, Terminated, Result as EdResult, Error as Ed
 use orga::query::Query;
 use orga::state::State;
 use orga::{Error, Result};
-use secp256k1::constants::{COMPACT_SIGNATURE_SIZE, MESSAGE_SIZE, PUBLIC_KEY_SIZE};
+use secp256k1::{
+    PublicKey,
+    Secp256k1,
+    ecdsa,
+    constants::{COMPACT_SIGNATURE_SIZE, MESSAGE_SIZE, PUBLIC_KEY_SIZE}
+};
 
 pub type Message = [u8; MESSAGE_SIZE];
 pub type Signature = [u8; COMPACT_SIGNATURE_SIZE];
@@ -61,8 +66,8 @@ impl From<bitcoin::PublicKey> for Pubkey {
 pub struct ThresholdSig {
     threshold: u64,
     signed: u64,
+    message: Message,
     sigs: Map<Pubkey, Share>,
-    messages: LengthVec<u16, Message>,
 }
 
 impl ThresholdSig {
@@ -72,7 +77,7 @@ impl ThresholdSig {
     }
 
     #[query]
-    pub fn sigs(&self) -> Result<Vec<(Pubkey, Vec<Signature>)>> {
+    pub fn sigs(&self) -> Result<Vec<(Pubkey, Signature)>> {
         self.sigs
             .iter()?
             .filter_map(|entry| {
@@ -80,59 +85,53 @@ impl ThresholdSig {
                     Err(e) => return Some(Err(e)),
                     Ok(entry) => entry,
                 };
-                share.sigs.as_ref().map(|sigs| Ok((pubkey.clone(), sigs.clone())))
+                share.sig.as_ref().map(|sig| Ok((pubkey.clone(), sig.clone())))
             })
             .collect()
     }
 
     #[query]
-    pub fn signed(&self, pubkey: Pubkey) -> Result<bool> {
-        self.sigs
-            .get(pubkey)?
-            .ok_or_else(|| Error::App("Pubkey is not part of threshold signature".into()))
-            .map(|share| share.sigs.is_some())
+    pub fn contains_key(&self, pubkey: Pubkey) -> Result<bool> {
+        self.sigs.contains_key(pubkey)
     }
 
     // TODO: exempt from fee
-    #[call]
-    pub fn sign(&mut self, pubkey: Pubkey, sigs: LengthVec<u16, Signature>) -> Result<()> {
+    pub fn sign(&mut self, pubkey: Pubkey, sig: Signature) -> Result<()> {
         if self.done() {
             return Err(Error::App("Threshold signature is done".into()));
         }
 
-        self.verify(pubkey, sigs.as_slice())?;
+        let share = self
+            .sigs
+            .get(pubkey)?
+            .ok_or_else(|| Error::App("Pubkey is not part of threshold signature".into()))?;
+        
+        if share.sig.is_some() {
+            return Err(Error::App("Pubkey already signed".into()));
+        }
+
+        self.verify(pubkey, sig)?;
 
         let mut share = self
             .sigs
             .get_mut(pubkey)?
             .ok_or_else(|| Error::App("Pubkey is not part of threshold signature".into()))?;
-
-        if share.sigs.is_some() {
-            return Err(Error::App("Pubkey already signed".into()));
-        }
-
-        share.sigs = Some(sigs.into());
+        
+        share.sig = Some(sig);
         self.signed += share.power;
 
         Ok(())
     }
 
-    pub fn verify(&self, pubkey: Pubkey, sigs: &[Signature]) -> Result<()> {
-        if sigs.len() != self.messages.len() {
-            return Err(Error::App("Invalid number of signatures".into()));
-        }
-
+    pub fn verify(&self, pubkey: Pubkey, sig: Signature) -> Result<()> {
         // TODO: re-use secp context
-        let secp = secp256k1::Secp256k1::verification_only();
-        let pubkey = secp256k1::PublicKey::from_slice(&pubkey.0)?;
+        let secp = Secp256k1::verification_only();
+        let pubkey = PublicKey::from_slice(&pubkey.0)?;
+        let msg = secp256k1::Message::from_slice(self.message.as_slice())?;
+        let sig = ecdsa::Signature::from_compact(sig.as_slice())?;
 
-        for (msg, sig) in self.messages.iter().zip(sigs.iter()) {
-            let msg = secp256k1::Message::from_slice(msg)?;
-            let sig = secp256k1::ecdsa::Signature::from_compact(sig)?;
-
-            #[cfg(not(fuzzing))]
-            secp.verify_ecdsa(&msg, &sig, &pubkey)?;
-        }
+        #[cfg(not(fuzzing))]
+        secp.verify_ecdsa(&msg, &sig, &pubkey)?;
 
         Ok(())
     }
@@ -141,7 +140,7 @@ impl ThresholdSig {
 #[derive(State, Call, Client, Query)]
 pub struct Share {
     power: u64,
-    sigs: Option<Vec<Signature>>,
+    sig: Option<Signature>,
 }
 
 // TODO: move this into ed
