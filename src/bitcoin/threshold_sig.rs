@@ -11,6 +11,7 @@ use secp256k1::{
     ecdsa,
     constants::{COMPACT_SIGNATURE_SIZE, MESSAGE_SIZE, PUBLIC_KEY_SIZE}
 };
+use super::SignatorySet;
 
 pub type Message = [u8; MESSAGE_SIZE];
 pub type Signature = [u8; COMPACT_SIGNATURE_SIZE];
@@ -67,10 +68,38 @@ pub struct ThresholdSig {
     threshold: u64,
     signed: u64,
     message: Message,
+    len: u16,
     sigs: Map<Pubkey, Share>,
 }
 
 impl ThresholdSig {
+    pub fn set_message(&mut self, message: Message) {
+        self.message = message;
+    }
+
+    pub fn message(&self) -> Message {
+        self.message
+    }
+
+    pub fn from_sigset(&mut self, signatories: &SignatorySet) -> Result<()> {
+        let mut total_vp = 0;
+
+        for signatory in signatories.iter() {
+            self.sigs.insert(signatory.pubkey, Share {
+                power: signatory.voting_power,
+                sig: None,
+            }.into())?;
+
+            self.len += 1;
+            total_vp += signatory.voting_power;
+        }
+
+        // TODO: get threshold ratio from somewhere else
+        self.threshold = ((total_vp as u128) * 9 / 10) as u64;
+
+        Ok(())
+    }
+
     #[query]
     pub fn done(&self) -> bool {
         self.signed >= self.threshold
@@ -93,6 +122,13 @@ impl ThresholdSig {
     #[query]
     pub fn contains_key(&self, pubkey: Pubkey) -> Result<bool> {
         self.sigs.contains_key(pubkey)
+    }
+
+    #[query]
+    pub fn needs_sig(&self, pubkey: Pubkey) -> Result<bool> {
+        Ok(self.sigs.get(pubkey)?
+            .map(|share| share.sig.is_none())
+            .unwrap_or(false))
     }
 
     // TODO: exempt from fee
@@ -134,6 +170,41 @@ impl ThresholdSig {
         secp.verify_ecdsa(&msg, &sig, &pubkey)?;
 
         Ok(())
+    }
+
+    pub fn to_witness(&self) -> Result<Vec<Vec<u8>>> {
+        if !self.done() {
+            return Ok(vec![]);
+        }
+
+        self.sigs.iter()?
+            .map(|entry| {
+                let (_, share) = entry?;
+                share.sig.map_or(Ok(vec![0]), |sig| {
+                    let sig = ecdsa::Signature::from_compact(sig.as_slice())?.serialize_der();
+                    let mut v = sig.to_vec();
+                    v.push(bitcoin::SigHashType::All.as_u32() as u8);
+                    Ok(v)
+                })
+            })
+            .collect()
+    }
+
+    pub fn est_vsize(&self) -> u64 {
+        self.len as u64 * 47 + 6
+    }
+}
+
+use std::fmt::Debug;
+impl Debug for ThresholdSig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ThresholdSig")
+            .field("threshold", &self.threshold)
+            .field("signed", &self.signed)
+            .field("message", &self.message)
+            .field("len", &self.len)
+            .field("sigs", &"TODO")
+            .finish()
     }
 }
 

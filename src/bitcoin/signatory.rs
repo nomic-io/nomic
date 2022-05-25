@@ -25,8 +25,8 @@ pub const MAX_SIGNATORIES: u64 = 60;
 
 #[derive(Encode, Decode, Clone, Debug)]
 pub struct Signatory {
-    voting_power: u64,
-    pubkey: Pubkey,
+    pub voting_power: u64,
+    pub pubkey: Pubkey,
 }
 
 #[derive(State, Call, Query, Client, Clone, Debug)]
@@ -187,6 +187,10 @@ impl SignatorySet {
 
     pub fn index(&self) -> u32 {
         self.index
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Signatory> {
+        self.signatories.iter()
     }
 }
 

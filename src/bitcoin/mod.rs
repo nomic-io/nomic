@@ -34,6 +34,8 @@ pub mod checkpoint;
 pub mod header_queue;
 #[cfg(feature = "full")]
 pub mod relayer;
+#[cfg(feature = "full")]
+pub mod signer;
 pub mod signatory;
 pub mod threshold_sig;
 pub mod txid_set;
@@ -202,11 +204,12 @@ impl Bitcoin {
             ))?;
         }
 
+        let sigset = self.checkpoints.get(sigset_index)?.sigset.clone();
+
         let now = self
             .context::<Time>()
             .ok_or_else(|| Error::Orga(OrgaError::App("No time context available".to_string())))?
             .seconds as u64;
-        let sigset = self.checkpoints.get(sigset_index)?.sigset.clone();
         if now > sigset.deposit_timeout() {
             return Err(OrgaError::App("Deposit timeout has expired".to_string()))?;
         }
@@ -228,9 +231,12 @@ impl Bitcoin {
         self.processed_outpoints
             .insert(outpoint, sigset.deposit_timeout())?;
 
+        let prevout = bitcoin::OutPoint {
+            txid: btc_tx.txid(),
+            vout: btc_vout,
+        };
         self.checkpoints.building_mut()?.push_input(
-            btc_tx.txid(),
-            btc_vout,
+            prevout,
             &sigset,
             dest,
             output.value,

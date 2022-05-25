@@ -76,19 +76,36 @@ impl<U: Send + Clone> Client<U> for CheckpointStatus {
     }
 }
 
-#[derive(State, Call, Query, Client)]
+#[derive(State, Call, Query, Client, Debug)]
 pub struct Input {
-    pub txid: Adapter<Txid>,
-    pub vout: u32,
+    pub prevout: Adapter<bitcoin::OutPoint>,
+    pub script_pubkey: Adapter<bitcoin::Script>,
+    pub redeem_script: Adapter<bitcoin::Script>,
     pub sigset_index: u32,
     pub dest: Address,
     pub amount: u64,
     pub sigs: ThresholdSig,
 }
 
+impl Input {
+    pub fn to_txin(&self) -> Result<bitcoin::TxIn> {
+        let mut witness = self.sigs.to_witness()?;
+        if self.sigs.done() {
+            witness.push(self.redeem_script.to_bytes());
+        }
+
+        Ok(bitcoin::TxIn {
+            previous_output: *self.prevout,
+            script_sig: bitcoin::Script::new(),
+            sequence: u32::MAX,
+            witness,
+        })
+    }
+}
+
 pub type Output = Adapter<bitcoin::TxOut>;
 
-#[derive(State, Call, Query, Client)]
+#[derive(State, Call, Query, Client, Debug)]
 pub struct Checkpoint {
     pub status: CheckpointStatus,
     pub inputs: Deque<Input>,
@@ -101,6 +118,34 @@ impl Checkpoint {
     pub fn create_time(&self) -> u64 {
         self.sigset.create_time()
     }
+
+    pub fn tx(&self) -> Result<(bitcoin::Transaction, u64)> {
+        let mut tx = bitcoin::Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+        };
+
+        let mut est_vsize = 0;
+
+        // TODO: use deque iterator
+        for i in 0..self.inputs.len() {
+            let input = self.inputs.get(i)?.unwrap();
+            tx.input.push(input.to_txin()?);
+            est_vsize += input.sigs.est_vsize();
+        }
+
+        // TODO: use deque iterator
+        for i in 0..self.outputs.len() {
+            let output = self.outputs.get(i)?.unwrap();
+            tx.output.push((**output).clone());
+        }
+
+        est_vsize += tx.get_size() as u64;
+
+        Ok((tx, est_vsize))
+    }
 }
 
 #[derive(State, Call, Query, Client)]
@@ -112,7 +157,7 @@ pub struct CheckpointQueue {
 #[derive(Deref)]
 pub struct CompletedCheckpoint<'a>(Ref<'a, Checkpoint>);
 
-#[derive(Deref)]
+#[derive(Deref, Debug)]
 pub struct SigningCheckpoint<'a>(Ref<'a, Checkpoint>);
 
 impl<'a, U: Clone> Client<U> for SigningCheckpoint<'a> {
@@ -129,10 +174,83 @@ impl<'a> Query for SigningCheckpoint<'a> {
     }
 }
 
+impl<'a> SigningCheckpoint<'a> {
+    #[query]
+    pub fn to_sign(&self, xpub: Xpub) -> Result<Vec<([u8; 32], u32)>> {
+        let secp = bitcoin::secp256k1::Secp256k1::verification_only();
+
+        let mut msgs = vec![];
+
+        for i in 0..self.inputs.len() {
+            let input = self.inputs.get(i)?.unwrap();
+            let pubkey = xpub
+                .derive_pub(
+                    &secp,
+                    &[bitcoin::util::bip32::ChildNumber::from_normal_idx(
+                        input.sigset_index,
+                    )?],
+                )?
+                .public_key;
+            if input.sigs.needs_sig(pubkey.into())? {
+                msgs.push((input.sigs.message(), input.sigset_index));
+            }
+        }
+
+        Ok(msgs)
+    }
+}
+
 #[derive(Deref, DerefMut)]
 pub struct SigningCheckpointMut<'a>(ChildMut<'a, u64, Checkpoint>);
 
 impl<'a> SigningCheckpointMut<'a> {
+    pub fn sign(&mut self, xpub: Xpub, sigs: LengthVec<u16, Signature>) -> Result<()> {
+        let secp = bitcoin::secp256k1::Secp256k1::verification_only();
+
+        let mut sig_index = 0;
+        for i in 0..self.inputs.len() {
+            let mut input = self.inputs.get_mut(i)?.unwrap();
+
+            let pubkey = xpub
+                .derive_pub(
+                    &secp,
+                    &[bitcoin::util::bip32::ChildNumber::from_normal_idx(
+                        input.sigset_index,
+                    )?],
+                )?
+                .public_key
+                .into();
+
+            if !input.sigs.contains_key(pubkey)? {
+                continue;
+            }
+
+            if input.sigs.done() {
+                sig_index += 1;
+                continue;
+            }
+
+            if sig_index > sigs.len() {
+                return Err(OrgaError::App("Not enough signatures supplied".to_string()).into());
+            }
+
+            let sig = sigs[sig_index];
+            sig_index += 1;
+
+            input.sigs.sign(pubkey, sig)?;
+
+            if input.sigs.done() {
+                self.signed_inputs += 1;
+            }
+        }
+
+        if sig_index != sigs.len() {
+            return Err(OrgaError::App("Excess signatures supplied".to_string()).into());
+        }
+
+        Ok(())
+    }
+
     pub fn done(&self) -> bool {
         self.signed_inputs as u64 == self.inputs.len()
     }
@@ -155,59 +273,83 @@ pub struct BuildingCheckpointMut<'a>(ChildMut<'a, u64, Checkpoint>);
 impl<'a> BuildingCheckpointMut<'a> {
     pub fn push_input(
         &mut self,
-        txid: Txid,
-        vout: u32,
+        prevout: bitcoin::OutPoint,
         sigset: &SignatorySet,
         dest: Address,
         amount: u64,
     ) -> Result<()> {
+        let script_pubkey = sigset.output_script(dest)?;
+        let redeem_script = sigset.redeem_script(dest)?;
+
         // TODO: need a better way to initialize state types from values?
         self.inputs.push_back((
-            Adapter::new(txid),
-            vout,
+            Adapter::new(prevout),
+            Adapter::new(script_pubkey),
+            Adapter::new(redeem_script),
             sigset.index(),
             dest.into(),
             amount,
             <ThresholdSig as State>::Encoding::default(),
         ))?;
 
-        // TODO: populate thresholdsig state
+        let inputs_len = self.inputs.len();
+        let mut input = self.inputs.get_mut(inputs_len - 1)?.unwrap();
+        input.sigs.from_sigset(sigset)?;
 
         Ok(())
     }
 
-    pub fn advance(self) -> Result<(SigningCheckpointMut<'a>, Vec<Input>, Vec<Output>)> {
+    pub fn advance(self) -> Result<SigningCheckpointMut<'a>> {
         let mut checkpoint = self.0;
 
         checkpoint.status = CheckpointStatus::Signing;
 
-        let mut child_inputs = vec![];
-        let mut child_outputs = vec![];
-
         let reserve_out = bitcoin::TxOut {
-            value: 0, // will be updated after counting inputs and fees
+            value: 0, // will be updated after counting ins/outs and fees
             script_pubkey: checkpoint.sigset.output_script(Address::NULL)?,
         };
         checkpoint.outputs.push_front(Adapter::new(reserve_out))?;
 
-        // TODO: move excess inputs/outputs to child
-        // TODO: set reserve based on inputs/outputs
-        // TODO: estimate size, deduct estimated fee from reserve
-        // TODO: populate signing messages (sighash for each input)
+        for i in MAX_INPUTS..checkpoint.inputs.len() {
+            // TODO: move input to child
+            todo!()
+        }
 
-        // child_inputs.push(Input {
-        //     amount: ,
-        //     dest: Address::NULL,
-        //     sigset_index: checkpoint.sigset.index(),
-        //     txid: ,
-        //     vout: ,
-        // });
+        for i in MAX_OUTPUTS..checkpoint.outputs.len() {
+            // TODO: move output to child
+            todo!()
+        }
 
-        Ok((
-            SigningCheckpointMut(checkpoint),
-            child_inputs,
-            child_outputs,
-        ))
+        let mut in_amount = 0;
+        for i in 0..checkpoint.inputs.len() {
+            let input = checkpoint.inputs.get(i)?.unwrap();
+            in_amount += input.amount;
+        }
+
+        let mut out_amount = 0;
+        for i in 0..checkpoint.outputs.len() {
+            let output = checkpoint.outputs.get(i)?.unwrap();
+            out_amount += output.value;
+        }
+
+        let mut signing = SigningCheckpointMut(checkpoint);
+
+        let (mut tx, est_vsize) = signing.tx()?;
+        let fee = est_vsize * FEE_RATE;
+        let reserve_value = in_amount - out_amount - fee;
+        let mut reserve_out = signing.outputs.get_mut(0)?.unwrap();
+        reserve_out.value = reserve_value;
+        tx.output[0].value = reserve_value;
+
+        let mut sc = bitcoin::util::bip143::SigHashCache::new(&tx);
+        for i in 0..signing.inputs.len() {
+            let mut input = signing.inputs.get_mut(i)?.unwrap();
+            let sighash_type = bitcoin::SigHashType::All;
+            let sighash = sc.signature_hash(i as usize, &input.redeem_script, input.amount, sighash_type);
+            input.sigs.set_message(sighash.into_inner());
+        }
+
+        Ok(signing)
     }
 }
 
@@ -274,6 +416,14 @@ impl CheckpointQueue {
     }
 
     #[query]
+    pub fn completed_txs(&self) -> Result<Vec<Adapter<bitcoin::Transaction>>> {
+        self.completed()?
+            .into_iter()
+            .map(|c| Ok(Adapter::new(c.tx()?.0)))
+            .collect()
+    }
+
+    #[query]
     pub fn signing(&self) -> Result<Option<SigningCheckpoint<'_>>> {
         if self.queue.len() < 2 {
             return Ok(None);
@@ -311,6 +461,9 @@ impl CheckpointQueue {
     }
 
     pub fn maybe_step(&mut self, sig_keys: &Map<ConsensusKey, Xpub>) -> Result<()> {
+        #[cfg(not(feature = "full"))]
+        unimplemented!();
+
         #[cfg(feature = "full")]
         {
             if self.signing()?.is_some() {
@@ -335,10 +488,28 @@ impl CheckpointQueue {
             if self.index > 0 {
                 let second = self.get_mut(self.index - 1)?;
                 BuildingCheckpointMut(second).advance()?;
-            }
-        }
 
-        Ok(())
+                // TODO: do this inside advance()?
+                let signing = self.signing()?.unwrap();
+                let reserve_value = signing.outputs.front()?.unwrap().value;
+                let (signing_tx, _) = signing.tx()?;
+                let outpoint = bitcoin::OutPoint {
+                    txid: signing_tx.txid(),
+                    vout: 0,
+                };
+                let script_pubkey = signing.sigset.output_script(Address::NULL)?;
+                let sigset = signing.sigset.clone();
+
+                let mut building = self.building_mut()?;
+                building.push_input(
+                    outpoint, &sigset,
+                    Address::NULL,
+                    reserve_value,
+                )?;
+            }
+
+            Ok(())
+        }
     }
 
     fn maybe_push(
@@ -350,6 +521,10 @@ impl CheckpointQueue {
 
         #[cfg(feature = "full")]
         {
+            if !self.queue.is_empty() {
+                self.index += 1;
+            }
+
             let sigset = SignatorySet::from_validator_ctx(self.index, sig_keys)?;
 
             if sigset.possible_vp() == 0 {
@@ -358,10 +533,6 @@ impl CheckpointQueue {
 
             if !sigset.has_quorum() {
                 return Ok(None);
-            }
-
-            if !self.queue.is_empty() {
-                self.index += 1;
             }
 
             self.queue.push_back(Default::default())?;
@@ -373,44 +544,21 @@ impl CheckpointQueue {
         }
     }
 
+    #[query]
+    pub fn active_sigset(&self) -> Result<SignatorySet> {
+        Ok(self.building()?.sigset.clone())
+    }
+
     #[call]
-    pub fn sign(&mut self, pubkey: Pubkey, sigs: LengthVec<u16, Signature>) -> Result<()> {
+    pub fn sign(&mut self, xpub: Xpub, sigs: LengthVec<u16, Signature>) -> Result<()> {
         let mut signing = self
             .signing_mut()?
             .ok_or_else(|| Error::Orga(OrgaError::App("No checkpoint to be signed".to_string())))?;
 
-        let mut sig_index = 0;
-        for i in 0..signing.inputs.len() {
-            let mut input = signing.inputs.get_mut(i)?.unwrap();
-
-            if !input.sigs.contains_key(pubkey)? {
-                continue;
-            }
-
-            if input.sigs.done() {
-                sig_index += 1;
-                continue;
-            }
-
-            if sig_index > sigs.len() {
-                return Err(OrgaError::App("Not enough signatures supplied".to_string()).into());
-            }
-
-            let sig = sigs[sig_index];
-            sig_index += 1;
-
-            input.sigs.sign(pubkey, sig)?;
-
-            if input.sigs.done() {
-                signing.signed_inputs += 1;
-            }
-        }
-
-        if sig_index != sigs.len() {
-            return Err(OrgaError::App("Excess signatures supplied".to_string()).into());
-        }
+        signing.sign(xpub, sigs)?;
 
         if signing.done() {
+            println!("done. {:?}", signing.tx()?);
             signing.advance()?;
         }
 
@@ -418,8 +566,10 @@ impl CheckpointQueue {
     }
 
     #[query]
-    pub fn active_sigset(&self) -> Result<SignatorySet> {
-        Ok(self.building()?.sigset.clone())
+    pub fn to_sign(&self, xpub: Xpub) -> Result<Vec<([u8; 32], u32)>> {
+        self.signing()?
+            .ok_or_else(|| OrgaError::App("No checkpoint to be signed".to_string()))?
+            .to_sign(xpub)
     }
 
     pub fn sigset(&self, index: u32) -> Result<SignatorySet> {
