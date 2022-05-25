@@ -128,20 +128,56 @@ where
         }
     }
 
+    pub async fn relay_checkpoints(&mut self) -> Result<!> {
+        println!("Starting checkpoint relay...");
+
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+
+            let txs = self.app_client.checkpoints.completed_txs().await??;
+            for tx in txs {
+                use ::bitcoin::consensus::Encodable;
+                let mut tx_bytes = vec![];
+                tx.consensus_encode(&mut tx_bytes)?;
+
+                match self.btc_client.send_raw_transaction(&tx_bytes).await {
+                    Ok(_) => {}
+                    Err(err) if err.to_string().contains("bad-txns-inputs-missingorspent") => {}
+                    Err(err)
+                        if err
+                            .to_string()
+                            .contains("Transaction already in block chain") => {}
+                    Err(err) => Err(err)?,
+                }
+            }
+        }
+    }
+
     async fn insert_announced_addrs(&mut self, recv: &mut Receiver<(Address, u32)>) -> Result<()> {
         while let Ok((addr, sigset_index)) = recv.try_recv() {
-            let checkpoint_res = self.app_client.checkpoints.get(sigset_index).await?;
-            let sigset = match &checkpoint_res {
-                Ok(checkpoint) => &checkpoint.sigset,
-                Err(err) => {
-                    eprintln!("{}", err);
-                    continue;
+            for i in 0..10 {
+                if sigset_index < i {
+                    break;
                 }
-            };
-            println!("inserting {}, {}", addr, sigset.index());
-            self.scripts.insert(addr, sigset)?;
-            for script in self.scripts.scripts.keys() {
-                println!("{}", ::bitcoin::Address::from_script(&script, ::bitcoin::Network::Testnet).unwrap());
+
+                let sigset_index = sigset_index - i;
+                let checkpoint_res = self.app_client.checkpoints.get(sigset_index).await?;
+                let sigset = match &checkpoint_res {
+                    Ok(checkpoint) => &checkpoint.sigset,
+                    Err(err) => {
+                        eprintln!("{}", err);
+                        continue;
+                    }
+                };
+                println!("inserting {}, {}", addr, sigset_index);
+                self.scripts.insert(addr, sigset)?;
+            }
+
+            for (script, (dest, index)) in self.scripts.scripts.iter() {
+                let addr = ::bitcoin::Address::from_script(&script, ::bitcoin::Network::Testnet)
+                    .unwrap()
+                    .to_string();
+                dbg!((addr, index));
             }
         }
         // self.scripts.remove_expired();
@@ -239,6 +275,11 @@ where
             let tx = Adapter::new(tx.clone());
 
             let proof = Adapter::new(proof);
+
+            println!(
+                "Relaying deposit... sigset_index={}, value={}",
+                output.sigset_index, tx.output[output.vout as usize].value
+            );
 
             self.app_client
                 .relay_deposit(
@@ -391,7 +432,7 @@ impl WatchedScripts {
         let script = self.derive_script(addr, sigset)?;
         self.scripts.insert(script, (addr, sigset.index()));
 
-        let (sigset, addrs) = self
+        let (_, addrs) = self
             .sigsets
             .entry(sigset.index())
             .or_insert((sigset.clone(), vec![]));

@@ -8,6 +8,8 @@ pub enum Error {
     BitcoinEncode(#[from] bitcoin::consensus::encode::Error),
     #[error(transparent)]
     Bip32(#[from] bitcoin::util::bip32::Error),
+    #[error(transparent)]
+    Secp(#[from] bitcoin::secp256k1::Error),
     #[error("Could not verify merkle proof")]
     BitcoinMerkleBlockError,
     #[cfg(feature = "full")]

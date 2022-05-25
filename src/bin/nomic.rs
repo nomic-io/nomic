@@ -9,7 +9,10 @@ use std::path::PathBuf;
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
 use futures::executor::block_on;
-use nomic::bitcoin::relayer::Relayer;
+use nomic::bitcoin::{
+    relayer::Relayer,
+    signer::Signer,
+};
 use nomic::error::Result;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -57,6 +60,7 @@ pub enum Command {
     ClaimAirdrop(ClaimAirdropCmd),
     Legacy(LegacyCmd),
     Relayer(RelayerCmd),
+    Signer(SignerCmd),
     SetSignatoryKey(SetSignatoryKeyCmd),
     Deposit(DepositCmd),
     Withdraw(WithdrawCmd),
@@ -84,6 +88,7 @@ impl Command {
             ClaimAirdrop(cmd) => cmd.run().await,
             Legacy(cmd) => cmd.run().await,
             Relayer(cmd) => cmd.run().await,
+            Signer(cmd) => cmd.run().await,
             SetSignatoryKey(cmd) => cmd.run().await,
             Deposit(cmd) => cmd.run().await,
             Withdraw(cmd) => cmd.run().await,
@@ -688,7 +693,28 @@ impl RelayerCmd {
         let mut relayer = create_relayer().await;
         let deposits = relayer.relay_deposits(recv);
 
-        futures::try_join!(headers, deposits, async { addr_server.await; Ok(()) }).unwrap();
+        let mut relayer = create_relayer().await;
+        let checkpoints = relayer.relay_checkpoints();
+
+        futures::try_join!(headers, deposits, checkpoints, async { addr_server.await; Ok(()) }).unwrap();
+
+        Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct SignerCmd;
+
+impl SignerCmd {
+    async fn run(&self) -> Result<()> {
+        let app_bitcoin_client = app_client()
+            .pay_from(async move |mut client| {
+                client.accounts.take_as_funding(MIN_FEE.into()).await
+            })
+            .bitcoin;
+
+        let signer = Signer::new(app_bitcoin_client);
+        signer.start().await?;
 
         Ok(())
     }
@@ -748,6 +774,7 @@ impl WithdrawCmd {
         let script = self.dest.script_pubkey();
 
         app_client()
+            .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
             .bitcoin
             .withdraw(Adapter::new(script), self.amount.into())
             .await?;
