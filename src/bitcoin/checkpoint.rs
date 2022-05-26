@@ -533,11 +533,12 @@ impl CheckpointQueue {
 
         #[cfg(feature = "full")]
         {
+            let mut index = self.index;
             if !self.queue.is_empty() {
-                self.index += 1;
+                index += 1;
             }
 
-            let sigset = SignatorySet::from_validator_ctx(self.index, sig_keys)?;
+            let sigset = SignatorySet::from_validator_ctx(index, sig_keys)?;
 
             if sigset.possible_vp() == 0 {
                 return Ok(None);
@@ -547,6 +548,7 @@ impl CheckpointQueue {
                 return Ok(None);
             }
 
+            self.index = index;
             self.queue.push_back(Default::default())?;
             let mut building = self.building_mut()?;
 
