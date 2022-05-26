@@ -479,6 +479,19 @@ impl CheckpointQueue {
                 if elapsed < CHECKPOINT_INTERVAL {
                     return Ok(());
                 }
+
+                let building = self.building()?;
+                let has_pending_deposit = if self.index == 0 {
+                    building.inputs.len() > 0
+                } else {
+                    building.inputs.len() > 1
+                };
+
+                let has_pending_withdrawal = building.outputs.len() > 0;
+
+                if !has_pending_deposit && !has_pending_withdrawal {
+                    return Ok(());
+                }
             }
 
             if self.maybe_push(sig_keys)?.is_none() {
@@ -497,7 +510,6 @@ impl CheckpointQueue {
                     txid: signing_tx.txid(),
                     vout: 0,
                 };
-                let script_pubkey = signing.sigset.output_script(Address::NULL)?;
                 let sigset = signing.sigset.clone();
 
                 let mut building = self.building_mut()?;
