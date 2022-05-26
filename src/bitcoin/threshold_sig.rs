@@ -172,17 +172,22 @@ impl ThresholdSig {
         Ok(())
     }
 
+    // TODO: this shouldn't know so much about bitcoin-specific structure,
+    // decouple by exposing a power-ordered iterator of Option<Signature>
     pub fn to_witness(&self) -> Result<Vec<Vec<u8>>> {
         if !self.done() {
             return Ok(vec![]);
         }
 
-        self.sigs.iter()?
-            .map(|entry| {
-                let (_, share) = entry?;
-                share.sig.map_or(Ok(vec![0]), |sig| {
-                    let sig = ecdsa::Signature::from_compact(sig.as_slice())?.serialize_der();
-                    let mut v = sig.to_vec();
+        let mut entries: Vec<_> = self.sigs.iter()?.collect::<Result<_>>()?;
+        entries.sort_by(|a, b| (a.1.power, &a.0).cmp(&(b.1.power, &b.0)));
+
+        entries
+            .into_iter()
+            .map(|(_, share)| {
+                share.sig.map_or(Ok(vec![]), |sig| {
+                    let sig = ecdsa::Signature::from_compact(sig.as_slice())?;
+                    let mut v = sig.serialize_der().to_vec();
                     v.push(bitcoin::SigHashType::All.as_u32() as u8);
                     Ok(v)
                 })

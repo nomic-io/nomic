@@ -21,9 +21,9 @@ use super::ConsensusKey;
 use super::Xpub;
 
 pub const MAX_DEPOSIT_AGE: u64 = 60 * 60 * 24 * 7;
-pub const MAX_SIGNATORIES: u64 = 60;
+pub const MAX_SIGNATORIES: u64 = 40;
 
-#[derive(Encode, Decode, Clone, Debug)]
+#[derive(Encode, Decode, Clone, Debug, PartialOrd, PartialEq, Eq, Ord)]
 pub struct Signatory {
     pub voting_power: u64,
     pub pubkey: Pubkey,
@@ -88,12 +88,19 @@ impl SignatorySet {
             sigset.insert(signatory);
         }
 
+        sigset.sort_and_truncate();
+
         Ok(sigset)
     }
 
     fn insert(&mut self, signatory: Signatory) {
         self.present_vp += signatory.voting_power;
         self.signatories.push(signatory);
+    }
+
+    fn sort_and_truncate(&mut self) {
+        self.signatories.sort_by(|a, b| b.cmp(a));
+        self.signatories.truncate(MAX_SIGNATORIES as usize);
     }
 
     pub fn signature_threshold(&self) -> u64 {

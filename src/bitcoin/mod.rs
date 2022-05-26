@@ -233,12 +233,9 @@ impl Bitcoin {
             txid: btc_tx.txid(),
             vout: btc_vout,
         };
-        self.checkpoints.building_mut()?.push_input(
-            prevout,
-            &sigset,
-            dest,
-            output.value,
-        )?;
+        self.checkpoints
+            .building_mut()?
+            .push_input(prevout, &sigset, dest, output.value)?;
 
         // TODO: don't credit account until we're done signing including tx
         // TODO: subtract deposit fee
