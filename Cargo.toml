@@ -29,6 +29,7 @@ bitcoin-script = "0.1.1"
 warp = { version = "0.3.2", optional = true }
 derive_more = "0.99.17"
 pretty_env_logger = "0.4.0"
+reqwest = "0.11.10"
 
 [dev-dependencies]
 chrono = "0.4.0"

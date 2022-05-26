@@ -9,10 +9,7 @@ use std::path::PathBuf;
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
 use futures::executor::block_on;
-use nomic::bitcoin::{
-    relayer::Relayer,
-    signer::Signer,
-};
+use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -671,19 +668,24 @@ impl RelayerCmd {
         use warp::Filter;
         let route = warp::post()
             .and(warp::query::<DepositAddress>())
-            .map(move |query: DepositAddress| {
-                (query, send.clone())
-            })
-            .and_then(async move |(query, send): (DepositAddress, tokio::sync::mpsc::Sender<_>)| {
-                let addr: Address = query.addr.parse()
-                    .map_err(|_| warp::reject::reject())?;
-                Ok::<_, warp::Rejection>((addr, query.sigset_index, send))
-            })
-            .then(async move |(addr, sigset_index, send): (Address, u32, tokio::sync::mpsc::Sender<_>)| {
-                println!("{}, {}", addr, sigset_index);
-                send.send((addr, sigset_index)).await.unwrap();
-                "OK"
-            })
+            .map(move |query: DepositAddress| (query, send.clone()))
+            .and_then(
+                async move |(query, send): (DepositAddress, tokio::sync::mpsc::Sender<_>)| {
+                    let addr: Address = query.addr.parse().map_err(|_| warp::reject::reject())?;
+                    Ok::<_, warp::Rejection>((addr, query.sigset_index, send))
+                },
+            )
+            .then(
+                async move |(addr, sigset_index, send): (
+                    Address,
+                    u32,
+                    tokio::sync::mpsc::Sender<_>,
+                )| {
+                    println!("{}, {}", addr, sigset_index);
+                    send.send((addr, sigset_index)).await.unwrap();
+                    "OK"
+                },
+            )
             .with(warp::cors().allow_any_origin());
         let addr_server = warp::serve(route).run(([0, 0, 0, 0], 9000));
 
@@ -696,7 +698,11 @@ impl RelayerCmd {
         let mut relayer = create_relayer().await;
         let checkpoints = relayer.relay_checkpoints();
 
-        futures::try_join!(headers, deposits, checkpoints, async { addr_server.await; Ok(()) }).unwrap();
+        futures::try_join!(headers, deposits, checkpoints, async {
+            addr_server.await;
+            Ok(())
+        })
+        .unwrap();
 
         Ok(())
     }
@@ -708,9 +714,7 @@ pub struct SignerCmd;
 impl SignerCmd {
     async fn run(&self) -> Result<()> {
         let app_bitcoin_client = app_client()
-            .pay_from(async move |mut client| {
-                client.accounts.take_as_funding(MIN_FEE.into()).await
-            })
+            .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
             .bitcoin;
 
         let signer = Signer::new(app_bitcoin_client);
@@ -747,15 +751,25 @@ impl DepositCmd {
         let dest_addr = self.address.unwrap_or_else(|| my_address());
 
         let sigset = app_client().bitcoin.checkpoints.active_sigset().await??;
-        let script =  sigset.output_script(dest_addr)?;
+        let script = sigset.output_script(dest_addr)?;
         // TODO: get network from somewhere
         let btc_addr = bitcoin::Address::from_script(&script, bitcoin::Network::Testnet).unwrap();
+
+        // TODO: use real relayer addresses
+        let client = reqwest::Client::new();
+        let res = client
+            .post(format!(
+                "http://localhost:9000?addr={}&sigset_index={}",
+                dest_addr,
+                sigset.index()
+            ))
+            .send()
+            .await
+            .map_err(|err| nomic::error::Error::Orga(orga::Error::App(err.to_string())))?;
 
         println!("Deposit address: {}", btc_addr);
         println!("Expiration: {}", "TODO");
         // TODO: show real expiration
-
-        // TODO: announce deposit address to relayers
 
         Ok(())
     }
