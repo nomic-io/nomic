@@ -34,9 +34,9 @@ pub mod checkpoint;
 pub mod header_queue;
 #[cfg(feature = "full")]
 pub mod relayer;
+pub mod signatory;
 #[cfg(feature = "full")]
 pub mod signer;
-pub mod signatory;
 pub mod threshold_sig;
 pub mod txid_set;
 
@@ -53,7 +53,7 @@ pub struct Bitcoin {
     pub processed_outpoints: OutpointSet,
     pub checkpoints: CheckpointQueue,
     pub accounts: Accounts<Nbtc>,
-    pub signatory_keys: Map<ConsensusKey, Xpub>,
+    pub signatory_keys: SignatoryKeys,
 }
 
 pub type ConsensusKey = [u8; 32];
@@ -146,8 +146,6 @@ impl Bitcoin {
             }
 
             self.signatory_keys.insert(consensus_key, signatory_key)?;
-
-            // TODO: rate-limiting
         }
 
         Ok(())
@@ -283,8 +281,35 @@ impl Bitcoin {
 impl BeginBlock for Bitcoin {
     fn begin_block(&mut self, ctx: &BeginBlockCtx) -> OrgaResult<()> {
         self.checkpoints
-            .maybe_step(&self.signatory_keys)
+            .maybe_step(self.signatory_keys.map())
             .map_err(|err| OrgaError::App(err.to_string()))?;
+
+        Ok(())
+    }
+}
+
+#[derive(State, Call, Query, Client)]
+pub struct SignatoryKeys {
+    by_cons: Map<ConsensusKey, Xpub>,
+    xpubs: Map<Xpub, ()>,
+}
+
+impl SignatoryKeys {
+    pub fn map(&self) -> &Map<ConsensusKey, Xpub> {
+        &self.by_cons
+    }
+
+    pub fn insert(&mut self, consensus_key: ConsensusKey, xpub: Xpub) -> Result<()> {
+        if self.xpubs.contains_key(xpub.clone())? {
+            return Err(OrgaError::App("Duplicate signatory key".to_string()).into());
+        }
+
+        let existing = self.by_cons.remove(consensus_key)?;
+        if let Some(existing_xpub) = existing {
+            self.xpubs.remove(existing_xpub.clone())?;
+        }
+
+        self.by_cons.insert(consensus_key, xpub)?;
 
         Ok(())
     }
