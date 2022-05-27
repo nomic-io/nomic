@@ -20,6 +20,16 @@
     },
     "version": {}
   },
-  "validators": [],
+  "validators": [
+    {
+      "address": "8810E9A41FE02CD6BE277B19D538E753F0AA73A2",
+      "pub_key": {
+        "type": "tendermint/PubKeyEd25519",
+        "value": "EWnZ8OJrD5RNqCNWM1x/HXX7zBeutVfPcNt9R51qqmg="
+      },
+      "power": "10",
+      "name": "mappum"
+    }
+  ],
   "app_hash": ""
 }
