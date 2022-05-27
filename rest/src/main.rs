@@ -8,64 +8,64 @@ use nomic::{app_client, app::{Nom, InnerApp, CHAIN_ID}, orga::{query::Query, coi
 use tendermint_rpc as tm;
 use tm::Client as _;
 
-#[get("/bank/balances/<address>")]
-async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
-    let address: Address = address.parse().unwrap();
+// #[get("/bank/balances/<address>")]
+// async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
+//     let address: Address = address.parse().unwrap();
 
-    let balance: u64 = app_client().accounts.balance(address)
-        .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
-        .into();
+//     let balance: u64 = app_client().accounts.balance(address)
+//         .await
+//         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+//         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+//         .into();
 
-    Ok(json!({
-        "height": "0",
-        "result": [
-            {
-                "denom": "unom",
-                "amount": balance.to_string(),
-            }
-        ]
-    }))
-}
+//     Ok(json!({
+//         "height": "0",
+//         "result": [
+//             {
+//                 "denom": "unom",
+//                 "amount": balance.to_string(),
+//             }
+//         ]
+//     }))
+// }
 
-#[get("/auth/accounts/<addr_str>")]
-async fn auth_accounts(addr_str: &str) -> Result<Value, BadRequest<String>> {
-    let address: Address = addr_str.parse().unwrap();
+// #[get("/auth/accounts/<addr_str>")]
+// async fn auth_accounts(addr_str: &str) -> Result<Value, BadRequest<String>> {
+//     let address: Address = addr_str.parse().unwrap();
 
-    let balance: u64 = app_client().accounts.balance(address)
-        .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
-        .into();
+//     let balance: u64 = app_client().accounts.balance(address)
+//         .await
+//         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+//         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+//         .into();
 
-    type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
-    let mut nonce: u64 = app_client().query(
-            NonceQuery::Nonce(address),
-            |state| state.nonce(address),
-        )
-        .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
-        .into();
-    nonce += 1;
+//     type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
+//     let mut nonce: u64 = app_client().query(
+//             NonceQuery::Nonce(address),
+//             |state| state.nonce(address),
+//         )
+//         .await
+//         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+//         .into();
+//     nonce += 1;
 
-    Ok(json!({
-        "height": "0",
-        "result": {
-            "type": "cosmos-sdk/BaseAccount",
-            "value": {
-                "address": addr_str,
-                "coins": [
-                    {
-                        "denom": "unom",
-                        "amount": balance.to_string(),
-                    }
-                ],
-                "sequence": nonce.to_string()
-            }
-        }
-    }))
-}
+//     Ok(json!({
+//         "height": "0",
+//         "result": {
+//             "type": "cosmos-sdk/BaseAccount",
+//             "value": {
+//                 "address": addr_str,
+//                 "coins": [
+//                     {
+//                         "denom": "unom",
+//                         "amount": balance.to_string(),
+//                     }
+//                 ],
+//                 "sequence": nonce.to_string()
+//             }
+//         }
+//     }))
+// }
 
 use serde::{Serialize, Deserialize};
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -136,29 +136,29 @@ async fn query(query: &str) -> Result<String, BadRequest<String>> {
     Ok(base64::encode(res.value))
 }
 
-#[get("/staking/delegators/<address>/delegations")]
-async fn staking_delegators_delegations(address: &str) -> Result<Value, BadRequest<String>> {
-    let address: Address = address.parse().unwrap();
+// #[get("/staking/delegators/<address>/delegations")]
+// async fn staking_delegators_delegations(address: &str) -> Result<Value, BadRequest<String>> {
+//     let address: Address = address.parse().unwrap();
 
-    let delegations = app_client().staking.delegations(address)
-        .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+//     let delegations = app_client().staking.delegations(address)
+//         .await
+//         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+//         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
-    let total_staked: u64 = delegations.iter().map(|(_, d)| -> u64 { d.staked.into() }).sum();
+//     let total_staked: u64 = delegations.iter().map(|(_, d)| -> u64 { d.staked.into() }).sum();
 
-    Ok(json!({ "height": "0", "result": [
-        {
-            "delegator_address": "",
-            "validator_address": "",
-            "shares": "0",
-            "balance": {
-              "denom": "NOM",
-              "amount": total_staked.to_string(),
-            }
-          }
-    ] }))
-}
+//     Ok(json!({ "height": "0", "result": [
+//         {
+//             "delegator_address": "",
+//             "validator_address": "",
+//             "shares": "0",
+//             "balance": {
+//               "denom": "NOM",
+//               "amount": total_staked.to_string(),
+//             }
+//           }
+//     ] }))
+// }
 
 #[get("/staking/delegators/<address>/unbonding_delegations")]
 fn staking_delegators_unbonding_delegations(address: &str) -> Value {
@@ -208,22 +208,22 @@ async fn distribution_delegatrs_rewards(address: &str) -> Value {
       } })
 }
 
-#[get("/minting/inflation")]
-async fn minting_inflation() -> Result<Value, BadRequest<String>> {
-    let validators = app_client().staking.all_validators()
-        .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+// #[get("/minting/inflation")]
+// async fn minting_inflation() -> Result<Value, BadRequest<String>> {
+//     let validators = app_client().staking.all_validators()
+//         .await
+//         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+//         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
-    let total_staked: u64 = validators.iter().map(|v| -> u64 { v.amount_staked.into() }).sum();
-    let total_staked = Amount::from(total_staked + 1);
-    let yearly_inflation = Decimal::from(64_682_541_340_000);
-    let apr = (yearly_inflation / Decimal::from(4) / Decimal::from(total_staked))
-        .result()
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+//     let total_staked: u64 = validators.iter().map(|v| -> u64 { v.amount_staked.into() }).sum();
+//     let total_staked = Amount::from(total_staked + 1);
+//     let yearly_inflation = Decimal::from(64_682_541_340_000);
+//     let apr = (yearly_inflation / Decimal::from(4) / Decimal::from(total_staked))
+//         .result()
+//         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
-    Ok(json!({ "height": "0", "result": apr.to_string() }))
-}
+//     Ok(json!({ "height": "0", "result": apr.to_string() }))
+// }
 
 #[get("/bank/total/<denom>")]
 fn bank_total(denom: &str) -> Value {
@@ -269,14 +269,14 @@ impl Fairing for CORS {
 #[launch]
 fn rocket() -> _ {
     rocket::build().attach(CORS).mount("/", routes![
-        bank_balances,
-        auth_accounts,
+        // bank_balances,
+        // auth_accounts,
         txs,
         query,
-        staking_delegators_delegations,
+        // staking_delegators_delegations,
         staking_delegators_unbonding_delegations,
         distribution_delegatrs_rewards,
-        minting_inflation,
+        // minting_inflation,
         staking_pool, 
         bank_total,
     ])

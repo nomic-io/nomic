@@ -7,7 +7,7 @@ use orga::prelude::*;
 use orga::Error;
 use serde::{Deserialize, Serialize};
 
-pub const CHAIN_ID: &str = "nomic-stakenet-2-test";
+pub const CHAIN_ID: &str = "nomic-stakenet-test-2";
 pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
 
 #[derive(State, Debug, Clone)]
@@ -51,7 +51,7 @@ impl Migrate<nomicv1::app::InnerApp> for InnerApp {
         self.accounts.migrate(legacy.accounts)?;
         // self.staking.migrate(legacy.staking)?;
         self.atom_airdrop.migrate(legacy.atom_airdrop)?;
-        
+
         Ok(())
     }
 }

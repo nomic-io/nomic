@@ -174,6 +174,12 @@ dependencies = [
 
 [[package]]
 name = "bech32"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2dabbe35f96fb9507f7330793dc490461b2962659ac5d427181e451a623751d1"
+
+[[package]]
+name = "bech32"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf9ff0bbfd639f15c74af777d81383cf53efb7c93613f6cab67c6c11e05bbf8b"
@@ -209,9 +215,32 @@ version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9a41df6ad9642c5c15ae312dd3d074de38fd3eb7cc87ad4ce10f90292a83fe4d"
 dependencies = [
- "bech32",
- "bitcoin_hashes",
+ "bech32 0.8.1",
+ "bitcoin_hashes 0.10.0",
  "secp256k1 0.20.3",
+ "serde",
+]
+
+[[package]]
+name = "bitcoin-script"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b016df67dfe415b724e86f1edcab57bf2ab5dffa8fc2011ea1be5febab5e2fa3"
+dependencies = [
+ "bitcoin",
+ "hex 0.4.3",
+ "lazy_static",
+ "proc-macro-error",
+ "proc-macro2",
+ "quote",
+]
+
+[[package]]
+name = "bitcoin_hashes"
+version = "0.9.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ce18265ec2324ad075345d5814fbeed4f41f0a660055dc78840b74d19b874b1"
+dependencies = [
  "serde",
 ]
 
@@ -238,6 +267,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "bitcoincore-rpc-async"
+version = "3.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a36d64c8fc538867644983cb3af416595d0e70ab6a06a98cbee5cd60bdc1625d"
+dependencies = [
+ "async-trait",
+ "bitcoincore-rpc-json-async",
+ "jsonrpc-async",
+ "log",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "bitcoincore-rpc-json"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -249,12 +292,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "bitcoincore-rpc-json-async"
+version = "3.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2703b13da6811c55e51e3dcb39b55f06081dbc95f063c141120be7564fd09be4"
+dependencies = [
+ "hex 0.3.2",
+ "sapio-bitcoin",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "bitcoind"
 version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3cbcfb04a9933a928ce02c2847fb08d0998dd5ec1b90d353cb94b658f9f1e38"
 dependencies = [
- "bitcoin_hashes",
+ "bitcoin_hashes 0.10.0",
  "bitcoincore-rpc",
  "flate2",
  "home",
@@ -313,6 +368,16 @@ dependencies = [
  "memchr",
  "regex-automata",
  "serde",
+]
+
+[[package]]
+name = "buf_redux"
+version = "0.8.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b953a6887648bb07a535631f2bc00fbdb2a2216f135552cb3f534ed136b9c07f"
+dependencies = [
+ "memchr",
+ "safemem",
 ]
 
 [[package]]
@@ -1120,6 +1185,12 @@ dependencies = [
 
 [[package]]
 name = "hex"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "805026a5d0141ffc30abb3be3173848ad46a1b1664fe632428479619a3644d77"
+
+[[package]]
+name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
@@ -1378,6 +1449,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "jsonrpc-async"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a20e8e4ed08ee58717113cbf277b1ecef5cd9554d3e48c114de338289727d466"
+dependencies = [
+ "async-trait",
+ "base64-compat",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "kstring"
+version = "1.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b310ccceade8121d7d77fee406160e457c2f4e7c7982d589da3499bc7ea4526"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1493,6 +1587,24 @@ checksum = "308cc39be01b73d0d18f82a0e7b2a3df85245f84af96fdddc5d202d27e47b86a"
 [[package]]
 name = "merk"
 version = "1.0.0"
+dependencies = [
+ "blake3",
+ "byteorder",
+ "colored",
+ "ed 0.2.2-alpha.0",
+ "failure",
+ "hex 0.4.3",
+ "jemallocator",
+ "num_cpus",
+ "rand 0.8.4",
+ "rocksdb",
+ "thiserror",
+ "time 0.1.44",
+]
+
+[[package]]
+name = "merk"
+version = "1.0.0"
 source = "git+https://github.com/nomic-io/merk?rev=e9038a659e1ad3cf13720b57be88e2845d0d6a01#e9038a659e1ad3cf13720b57be88e2845d0d6a01"
 dependencies = [
  "blake3",
@@ -1500,7 +1612,7 @@ dependencies = [
  "colored",
  "ed 0.2.2-alpha.0",
  "failure",
- "hex",
+ "hex 0.4.3",
  "jemallocator",
  "num_cpus",
  "rand 0.8.4",
@@ -1514,6 +1626,16 @@ name = "mime"
 version = "0.3.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2a60c7ce501c71e03a9c9c0d35b861413ae925bd979cc7a4e30d060069aaac8d"
+
+[[package]]
+name = "mime_guess"
+version = "2.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4192263c238a5f0d0c6bfd21f336a313a4ce1c450542449ca191bb657b4642ef"
+dependencies = [
+ "mime",
+ "unicase",
+]
 
 [[package]]
 name = "minimal-lexical"
@@ -1574,6 +1696,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "multipart"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "00dec633863867f29cb39df64a397cdf4a6354708ddd7759f70c7fb51c5f9182"
+dependencies = [
+ "buf_redux",
+ "httparse",
+ "log",
+ "mime",
+ "mime_guess",
+ "quick-error",
+ "rand 0.8.4",
+ "safemem",
+ "tempfile",
+ "twoway",
+]
+
+[[package]]
 name = "native-tls"
 version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1604,10 +1744,10 @@ dependencies = [
 [[package]]
 name = "nomic"
 version = "1.0.0"
-source = "git+https://github.com/nomic-io/nomic.git?branch=practicenet3-legacy#5430cf794b57883d72a586e8e3a62bb18f434d53"
+source = "git+https://github.com/nomic-io/nomic.git?branch=stakenet2-legacy#1e33374fcc28ebf935ef3c7f9491e8f6853f5436"
 dependencies = [
  "base64",
- "bech32",
+ "bech32 0.8.1",
  "bitcoin",
  "bitcoincore-rpc",
  "bitcoind",
@@ -1624,12 +1764,13 @@ dependencies = [
 
 [[package]]
 name = "nomic"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "base64",
- "bech32",
+ "bech32 0.8.1",
  "bitcoin",
- "bitcoincore-rpc",
+ "bitcoin-script",
+ "bitcoincore-rpc-async",
  "bitcoind",
  "clap",
  "csv",
@@ -1637,12 +1778,15 @@ dependencies = [
  "futures",
  "js-sys",
  "nomic 1.0.0",
- "orga 0.2.0 (git+https://github.com/nomic-io/orga.git?branch=migration)",
+ "orga 0.2.0",
  "secp256k1 0.21.2",
  "serde",
  "serde_json",
+ "tendermint-rpc",
  "thiserror",
  "tokio",
+ "toml_edit 0.13.4",
+ "warp",
 ]
 
 [[package]]
@@ -1650,8 +1794,8 @@ name = "nomic-rest"
 version = "0.1.0"
 dependencies = [
  "base64",
- "hex",
- "nomic 2.0.0",
+ "hex 0.4.3",
+ "nomic 2.0.1",
  "rocket",
  "serde",
  "serde_json",
@@ -1797,23 +1941,67 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.2.0"
-source = "git+https://github.com/nomic-io/orga.git?branch=legacy-v1#f1732f7984ae17ea116dc9a560f33a2cc7fb3e3c"
 dependencies = [
- "abci2 0.1.3-alpha.0 (git+https://github.com/nomic-io/abci2?rev=bf7d3e4fd1f4acd23d1550c18d4f01670e911acb)",
+ "abci2 0.1.3-alpha.0 (git+https://github.com/nomic-io/abci2?rev=096e7cf17802de216ce13e3a1db09c517fa60007)",
  "async-trait",
  "base64",
- "bech32",
+ "bech32 0.8.1",
  "ed 0.3.0",
  "ed25519-dalek",
  "flate2",
  "futures-lite",
- "hex",
+ "hex 0.4.3",
  "hex-literal",
  "home",
  "is_executable",
  "js-sys",
  "log",
- "merk",
+ "merk 1.0.0",
+ "num-rational",
+ "num-traits",
+ "orga 0.2.0 (git+https://github.com/nomic-io/orga.git?branch=legacy-v1)",
+ "orga-macros 0.2.2",
+ "prost",
+ "reqwest",
+ "ripemd",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "secp256k1 0.21.2",
+ "seq-macro",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tar",
+ "tendermint",
+ "tendermint-proto",
+ "tendermint-rpc",
+ "thiserror",
+ "toml_edit 0.2.1",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
+name = "orga"
+version = "0.2.0"
+source = "git+https://github.com/nomic-io/orga.git?branch=legacy-v1#f1732f7984ae17ea116dc9a560f33a2cc7fb3e3c"
+dependencies = [
+ "abci2 0.1.3-alpha.0 (git+https://github.com/nomic-io/abci2?rev=bf7d3e4fd1f4acd23d1550c18d4f01670e911acb)",
+ "async-trait",
+ "base64",
+ "bech32 0.8.1",
+ "ed 0.3.0",
+ "ed25519-dalek",
+ "flate2",
+ "futures-lite",
+ "hex 0.4.3",
+ "hex-literal",
+ "home",
+ "is_executable",
+ "js-sys",
+ "log",
+ "merk 1.0.0 (git+https://github.com/nomic-io/merk?rev=e9038a659e1ad3cf13720b57be88e2845d0d6a01)",
  "num-rational",
  "num-traits",
  "orga-macros 0.2.2 (git+https://github.com/nomic-io/orga.git?branch=legacy-v1)",
@@ -1832,52 +2020,7 @@ dependencies = [
  "tendermint-proto",
  "tendermint-rpc",
  "thiserror",
- "toml_edit",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
-]
-
-[[package]]
-name = "orga"
-version = "0.2.0"
-source = "git+https://github.com/nomic-io/orga.git?branch=migration#ab22e48f27bd0e15942bbd13e5a39ae1e0d77216"
-dependencies = [
- "abci2 0.1.3-alpha.0 (git+https://github.com/nomic-io/abci2?rev=096e7cf17802de216ce13e3a1db09c517fa60007)",
- "async-trait",
- "base64",
- "bech32",
- "ed 0.3.0",
- "ed25519-dalek",
- "flate2",
- "futures-lite",
- "hex",
- "hex-literal",
- "home",
- "is_executable",
- "js-sys",
- "log",
- "merk",
- "num-rational",
- "num-traits",
- "orga 0.2.0 (git+https://github.com/nomic-io/orga.git?branch=legacy-v1)",
- "orga-macros 0.2.2 (git+https://github.com/nomic-io/orga.git?branch=migration)",
- "prost",
- "reqwest",
- "ripemd",
- "rust_decimal",
- "rust_decimal_macros",
- "secp256k1 0.21.2",
- "seq-macro",
- "serde",
- "serde_json",
- "sha2",
- "tar",
- "tendermint",
- "tendermint-proto",
- "tendermint-rpc",
- "thiserror",
- "toml_edit",
+ "toml_edit 0.2.1",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
@@ -1886,7 +2029,6 @@ dependencies = [
 [[package]]
 name = "orga-macros"
 version = "0.2.2"
-source = "git+https://github.com/nomic-io/orga.git?branch=legacy-v1#f1732f7984ae17ea116dc9a560f33a2cc7fb3e3c"
 dependencies = [
  "heck 0.3.3",
  "proc-macro2",
@@ -1897,7 +2039,7 @@ dependencies = [
 [[package]]
 name = "orga-macros"
 version = "0.2.2"
-source = "git+https://github.com/nomic-io/orga.git?branch=migration#ab22e48f27bd0e15942bbd13e5a39ae1e0d77216"
+source = "git+https://github.com/nomic-io/orga.git?branch=legacy-v1#f1732f7984ae17ea116dc9a560f33a2cc7fb3e3c"
 dependencies = [
  "heck 0.3.3",
  "proc-macro2",
@@ -2089,9 +2231,9 @@ checksum = "dbf0c48bc1d91375ae5c3cd81e3722dff1abcf81a30960240640d223f59fe0e5"
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.36"
+version = "1.0.38"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7342d5883fbccae1cc37a2353b09c87c9b0f3afd73f5fb9bba687a1f733b029"
+checksum = "9027b48e9d4c9175fa2218adf3557f91c1137021739951d4932f5f8268ac48aa"
 dependencies = [
  "unicode-xid",
 ]
@@ -2162,10 +2304,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "quote"
-version = "1.0.14"
+name = "quick-error"
+version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47aa80447ce4daf1717500037052af176af5d38cc3e571d9ec1c7353fc10c87d"
+checksum = "a1d01941d82fa2ab50be1e79e6714289dd7cde78eba4c074bc5a4374f650dfe0"
+
+[[package]]
+name = "quote"
+version = "1.0.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a1feb54ed693b93a84e14094943b84b7c4eae204c512b7ccb95ab0c66d278ad1"
 dependencies = [
  "proc-macro2",
 ]
@@ -2662,12 +2810,40 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73b4b750c782965c211b42f022f59af1fbceabdd026623714f104152f1ec149f"
 
 [[package]]
+name = "safemem"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef703b7cb59335eae2eb93ceb664c0eb7ea6bf567079d843e09420219668e072"
+
+[[package]]
 name = "same-file"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "sapio-bitcoin"
+version = "0.26.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60df4fbc4dc3173998ec341b611c38c15ef5ce93c7d7405673aea3a911016d7a"
+dependencies = [
+ "bech32 0.7.3",
+ "bitcoin_hashes 0.9.7",
+ "sapio-secp256k1",
+ "serde",
+]
+
+[[package]]
+name = "sapio-secp256k1"
+version = "0.20.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7830cd189705b505d3c291fd41a6ab852085d5024feffdc15e59aff64f1024d2"
+dependencies = [
+ "secp256k1-sys",
+ "serde",
 ]
 
 [[package]]
@@ -2718,7 +2894,7 @@ version = "0.21.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab7883017d5b21f011ef8040ea9c6c7ac90834c0df26a69e4c0b06276151f125"
 dependencies = [
- "bitcoin_hashes",
+ "bitcoin_hashes 0.10.0",
  "rand 0.6.5",
  "secp256k1-sys",
 ]
@@ -3371,6 +3547,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-tungstenite"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "511de3f85caf1c98983545490c3d09685fa8eb634e57eec22bb4db271f46cbd8"
+dependencies = [
+ "futures-util",
+ "log",
+ "pin-project",
+ "tokio",
+ "tungstenite",
+]
+
+[[package]]
 name = "tokio-util"
 version = "0.6.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3405,6 +3594,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "toml_edit"
+version = "0.13.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "744e9ed5b352340aa47ce033716991b5589e23781acb97cad37d4ea70560f55b"
+dependencies = [
+ "combine",
+ "indexmap",
+ "itertools",
+ "kstring",
+]
+
+[[package]]
 name = "tower-service"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3417,6 +3618,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "375a639232caf30edfc78e8d89b2d4c375515393e7af7e16f01cd96917fb2105"
 dependencies = [
  "cfg-if 1.0.0",
+ "log",
  "pin-project-lite",
  "tracing-attributes",
  "tracing-core",
@@ -3478,6 +3680,34 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "59547bce71d9c38b83d9c0e92b6066c4253371f15005def0c30d9657f50c7642"
 
 [[package]]
+name = "tungstenite"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a0b2d8558abd2e276b0a8df5c05a2ec762609344191e5fd23e292c910e9165b5"
+dependencies = [
+ "base64",
+ "byteorder",
+ "bytes",
+ "http",
+ "httparse",
+ "log",
+ "rand 0.8.4",
+ "sha-1",
+ "thiserror",
+ "url",
+ "utf-8",
+]
+
+[[package]]
+name = "twoway"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59b11b2b5241ba34be09c3cc85a36e56e48f9888862e19cedf23336d35316ed1"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "typenum"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3499,6 +3729,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5baeed7327e25054889b9bd4f975f32e5f4c5d434042d59ab6cd4142c0a76ed0"
 dependencies = [
  "serde",
+ "version_check",
+]
+
+[[package]]
+name = "unicase"
+version = "2.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "50f37be617794602aabbeee0be4f259dc1778fabe05e2d67ee8f79326d5cb4f6"
+dependencies = [
  "version_check",
 ]
 
@@ -3567,6 +3806,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "utf-8"
+version = "0.7.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09cc8ee72d2a9becf2f2febe0205bbed8fc6615b7cb429ad062dc7b7ddd036a9"
+
+[[package]]
 name = "uuid"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3609,6 +3854,36 @@ checksum = "1ce8a968cb1cd110d136ff8b819a556d6fb6d919363c61534f6860c7eb172ba0"
 dependencies = [
  "log",
  "try-lock",
+]
+
+[[package]]
+name = "warp"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3cef4e1e9114a4b7f1ac799f16ce71c14de5778500c5450ec6b7b920c55b587e"
+dependencies = [
+ "bytes",
+ "futures-channel",
+ "futures-util",
+ "headers",
+ "http",
+ "hyper",
+ "log",
+ "mime",
+ "mime_guess",
+ "multipart",
+ "percent-encoding",
+ "pin-project",
+ "scoped-tls",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "tokio",
+ "tokio-stream",
+ "tokio-tungstenite",
+ "tokio-util",
+ "tower-service",
+ "tracing",
 ]
 
 [[package]]
