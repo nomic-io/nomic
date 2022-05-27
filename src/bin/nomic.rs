@@ -709,7 +709,9 @@ impl RelayerCmd {
 }
 
 #[derive(Parser, Debug)]
-pub struct SignerCmd;
+pub struct SignerCmd {
+    pub xpriv: String,
+}
 
 impl SignerCmd {
     async fn run(&self) -> Result<()> {
@@ -717,7 +719,7 @@ impl SignerCmd {
             .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
             .bitcoin;
 
-        let signer = Signer::new(app_bitcoin_client);
+        let signer = Signer::new(app_bitcoin_client, self.xpriv.as_str())?;
         signer.start().await?;
 
         Ok(())
