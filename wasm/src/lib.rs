@@ -155,7 +155,7 @@ async fn send_sdk_tx(msg: sdk::Msg) -> JsValue {
         account_number: "0".to_string(),
         chain_id: CHAIN_ID.to_string(),
         fee: sdk::Fee {
-            amount: vec![ sdk::Coin { amount: MIN_FEE.to_string(), denom: "unom".to_string() } ],
+            amount: vec![ sdk::Coin { amount: "0".to_string(), denom: "unom".to_string() } ],
             gas: MIN_FEE.to_string(),
         },
         memo: "".to_string(),
@@ -282,7 +282,7 @@ pub async fn gen_deposit_addr(dest_addr: String) -> DepositAddress {
     let dest_addr: Address = dest_addr.parse().unwrap();
 
     let sigset = client.bitcoin.checkpoints.active_sigset().await.unwrap().unwrap();
-    let script =  sigset.output_script(dest_addr.bytes().to_vec()).unwrap();
+    let script =  sigset.output_script(dest_addr).unwrap();
     // TODO: get network from somewhere
     let btc_addr = bitcoin::Address::from_script(&script, bitcoin::Network::Testnet).unwrap();
 
@@ -327,6 +327,18 @@ pub async fn broadcast_deposit_addr(addr: String, sigset_index: u32, relayers: j
         let res = String::from_utf8(res).unwrap();
         web_sys::console::log_1(&format!("response: {}", &res).into());
     }
+}
+
+#[wasm_bindgen]
+pub async fn withdraw(dest_addr: String, amount: u64) -> JsValue {
+    let mut value = serde_json::Map::new();
+    value.insert("amount".to_string(), amount.to_string().into());
+    value.insert("dst_address".to_string(), dest_addr.into());
+
+    send_sdk_tx(sdk::Msg {
+        type_: "nomic/MsgWithdraw".to_string(),
+        value: value.into(),
+    }).await
 }
 
 pub struct WebClient<T: Client<WebAdapter<T>>> {
