@@ -163,7 +163,7 @@ impl StartCmd {
                 // TODO: set default seeds
                 set_p2p_seeds(
                     &config_path,
-                    &["8fdf9363e059ad6ba447efda021eee03faeaa473@192.168.1.126:26656"],
+                    &["7403ab51f221d3e9cc45eda921df9a4f71884f05@192.168.1.126:26656"],
                 );
 
                 // TODO: set default RPC boostrap nodes
