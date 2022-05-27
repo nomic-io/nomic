@@ -399,6 +399,7 @@ fn time_now() -> u64 {
 
 /// A collection which stores all watched addresses and signatory sets, for
 /// efficiently detecting deposit output scripts.
+#[derive(Default)]
 pub struct WatchedScripts {
     scripts: HashMap<::bitcoin::Script, (Address, u32)>,
     sigsets: BTreeMap<u32, (SignatorySet, Vec<Address>)>,
@@ -406,10 +407,7 @@ pub struct WatchedScripts {
 
 impl WatchedScripts {
     pub fn new() -> Self {
-        Self {
-            scripts: HashMap::new(),
-            sigsets: BTreeMap::new(),
-        }
+        Default::default()
     }
 
     pub fn get(&self, script: &::bitcoin::Script) -> Option<(Address, u32)> {

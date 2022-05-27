@@ -3,6 +3,8 @@ use crate::error::{Error, Result};
 use orga::call::Call;
 use orga::client::{AsyncCall, AsyncQuery, Client};
 use orga::query::Query;
+use bitcoin::util::bip32::{ExtendedPrivKey, ExtendedPubKey, ChildNumber};
+use bitcoin::secp256k1::{Message, Secp256k1};
 
 type AppClient<T> = <Bitcoin as Client<T>>::Client;
 
@@ -21,10 +23,10 @@ where
     }
 
     pub async fn start(&self) -> Result<()> {
-        let secp = bitcoin::secp256k1::Secp256k1::signing_only();
-        let xpriv: bitcoin::util::bip32::ExtendedPrivKey = "tprv8ZgxMBicQKsPeFt7JQzg8PeDuh99t7bBX9dsarzMgmXFsTnDuCjqX57NcjtWgjdUc2a8P9iqVju2QJTb21BB1DmADUSomdBNB5daGseyaUU".parse().unwrap();
+        let secp = Secp256k1::signing_only();
+        let xpriv: ExtendedPrivKey = "tprv8ZgxMBicQKsPcyZNa7A6H7C7Jj9WtZ8r3dfsNKDWbqpDoKfWSnB6s2aCgMqr2edfQbn12t5QyLdca6TCe6gBGhLpo7VAZNHucbG3EXv6YVE".parse().unwrap();
 
-        let xpub = bitcoin::util::bip32::ExtendedPubKey::from_private(&secp, &xpriv);
+        let xpub = ExtendedPubKey::from_private(&secp, &xpriv);
 
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -46,13 +48,13 @@ where
                     let privkey = xpriv
                         .derive_priv(
                             &secp,
-                            &[bitcoin::util::bip32::ChildNumber::from_normal_idx(index)?],
+                            &[ChildNumber::from_normal_idx(index)?],
                         )?
                         .private_key
                         .key;
 
                     Ok(secp.sign(
-                        &bitcoin::secp256k1::Message::from_slice(&msg[..])?,
+                        &Message::from_slice(&msg[..])?,
                         &privkey,
                     )
                     .serialize_compact())
