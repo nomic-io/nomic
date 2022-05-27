@@ -5,8 +5,9 @@ use orga::migrate::{exec_migration, Migrate};
 use orga::plugins::sdk_compat::{sdk, sdk::Tx as SdkTx, ConvertSdkTx};
 use orga::prelude::*;
 use orga::Error;
+use serde::{Deserialize, Serialize};
 
-pub const CHAIN_ID: &str = "nomic-stakenet-2";
+pub const CHAIN_ID: &str = "nomic-stakenet-2-test";
 pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
 
 #[derive(State, Debug, Clone)]
@@ -167,6 +168,8 @@ impl ConvertSdkTx for InnerApp {
         type AccountCall = <Accounts<Nom> as Call>::Call;
         type StakingCall = <Staking<Nom> as Call>::Call;
         type AirdropCall = <Airdrop<Nom> as Call>::Call;
+        type BitcoinCall = <Bitcoin as Call>::Call;
+        type NbtcAccountCall = <Accounts<crate::bitcoin::Nbtc> as Call>::Call;
 
         let get_amount = |coin: Option<&sdk::Coin>, expected_denom| -> Result<Amount> {
             let coin = coin.map_or_else(|| Err(Error::App("Empty amount".into())), Ok)?;
@@ -376,7 +379,43 @@ impl ConvertSdkTx for InnerApp {
                 })
             }
 
+            "nomic/MsgWithdraw" => {
+                let msg: MsgWithdraw = serde_json::value::from_value(msg.value.clone())
+                    .map_err(|e| Error::App(e.to_string()))?;
+
+                let dest_addr: bitcoin::Address = msg
+                    .dst_address
+                    .parse()
+                    .map_err(|e: bitcoin::util::address::Error| Error::App(e.to_string()))?;
+                let dest_script = crate::bitcoin::adapter::Adapter::new(dest_addr.script_pubkey());
+
+                let amount: u64 = msg
+                    .amount
+                    .parse()
+                    .map_err(|e: std::num::ParseIntError| Error::App(e.to_string()))?;
+
+                let funding_amt = MIN_FEE;
+                let funding_call = AccountCall::MethodTakeAsFunding(funding_amt.into(), vec![]);
+                let funding_call_bytes = funding_call.encode()?;
+                let payer_call = AppCall::FieldAccounts(funding_call_bytes);
+
+                let withdraw_call = BitcoinCall::MethodWithdraw(dest_script, amount.into(), vec![]);
+                let withdraw_call_bytes = withdraw_call.encode()?;
+                let paid_call = AppCall::FieldBitcoin(withdraw_call_bytes);
+
+                Ok(PaidCall {
+                    payer: payer_call,
+                    paid: paid_call,
+                })
+            }
+
             _ => Err(Error::App("Unsupported message type".into())),
         }
     }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct MsgWithdraw {
+    pub amount: String,
+    pub dst_address: String,
 }
