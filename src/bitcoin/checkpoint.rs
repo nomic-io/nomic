@@ -22,9 +22,10 @@ use orga::{
     Error as OrgaError, Result as OrgaResult,
 };
 
-pub const CHECKPOINT_INTERVAL: u64 = 60 * 10;
+pub const CHECKPOINT_INTERVAL: u64 = 60 * 1;
 pub const MAX_INPUTS: u64 = 50;
 pub const MAX_OUTPUTS: u64 = 200;
+pub const FEE_RATE: u64 = 1;
 
 #[derive(Debug, Encode, Decode)]
 pub enum CheckpointStatus {

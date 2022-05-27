@@ -18,7 +18,7 @@ use orga::prelude::*;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use tokio::sync::mpsc::Receiver;
 
-const HEADER_BATCH_SIZE: usize = 100;
+const HEADER_BATCH_SIZE: usize = 200;
 
 type AppClient<T> = <Bitcoin as Client<T>>::Client;
 
