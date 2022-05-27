@@ -163,13 +163,13 @@ impl StartCmd {
                 // TODO: set default seeds
                 set_p2p_seeds(
                     &config_path,
-                    &["238120dfe716082754048057c1fdc3d6f09609b5@161.35.51.124:26656"],
+                    &["8fdf9363e059ad6ba447efda021eee03faeaa473@192.168.1.126:26656"],
                 );
 
                 // TODO: set default RPC boostrap nodes
                 configure_for_statesync(
                     &config_path,
-                    &["http://161.35.51.124:27657", "http://161.35.51.124:28657"],
+                    &["http://192.168.1.126:27657", "http://192.168.1.126:28657"],
                 );
             }
 
@@ -177,7 +177,7 @@ impl StartCmd {
                 println!("Starting legacy node for migration...");
 
                 let res = nomicv1::orga::abci::Node::<nomicv1::app::App>::new(old_name)
-                    .with_genesis(include_bytes!("../../genesis/stakenet.json"))
+                    .with_genesis(include_bytes!("../../genesis/stakenet-2-test.json"))
                     .stdout(std::process::Stdio::inherit())
                     .stderr(std::process::Stdio::inherit())
                     .stop_height(STOP_HEIGHT)
@@ -759,7 +759,7 @@ impl DepositCmd {
         let client = reqwest::Client::new();
         let res = client
             .post(format!(
-                "http://localhost:9000?addr={}&sigset_index={}",
+                "http://192.168.1.126:9000?addr={}&sigset_index={}",
                 dest_addr,
                 sigset.index()
             ))
