@@ -1678,7 +1678,7 @@ dependencies = [
  "js-sys",
  "mutagen",
  "nomic 1.0.0",
- "orga 0.2.0 (git+https://github.com/nomic-io/orga.git?branch=bitcoin-tweaks)",
+ "orga 0.2.0 (git+https://github.com/nomic-io/orga.git?rev=874155e19600589a83f93a9a14581c119ebf47ce)",
  "pretty_env_logger",
  "reqwest",
  "secp256k1 0.21.3",
@@ -1829,9 +1829,9 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.2.0"
-source = "git+https://github.com/nomic-io/orga.git?branch=bitcoin-tweaks#f9495fc9a31debceb8d619eedc06932e0bbb0ff4"
+source = "git+https://github.com/nomic-io/orga.git?branch=legacy-v1#838fdd43202ba6e2965bf5ea95949bafa2be5e21"
 dependencies = [
- "abci2 0.1.3-alpha.0 (git+https://github.com/nomic-io/abci2?rev=096e7cf17802de216ce13e3a1db09c517fa60007)",
+ "abci2 0.1.3-alpha.0 (git+https://github.com/nomic-io/abci2?rev=bf7d3e4fd1f4acd23d1550c18d4f01670e911acb)",
  "async-trait",
  "base64",
  "bech32 0.8.1",
@@ -1845,11 +1845,10 @@ dependencies = [
  "is_executable",
  "js-sys",
  "log",
- "merk 1.0.0 (git+https://github.com/nomic-io/merk?rev=a2e46ed40c7b7eeaaed7a94654c18413728f7b8d)",
+ "merk 1.0.0 (git+https://github.com/nomic-io/merk?rev=e9038a659e1ad3cf13720b57be88e2845d0d6a01)",
  "num-rational",
  "num-traits",
- "orga 0.2.0 (git+https://github.com/nomic-io/orga.git?branch=legacy-v1)",
- "orga-macros 0.2.2 (git+https://github.com/nomic-io/orga.git?branch=bitcoin-tweaks)",
+ "orga-macros 0.2.2",
  "prost",
  "reqwest",
  "ripemd",
@@ -1874,9 +1873,9 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.2.0"
-source = "git+https://github.com/nomic-io/orga.git?branch=legacy-v1#838fdd43202ba6e2965bf5ea95949bafa2be5e21"
+source = "git+https://github.com/nomic-io/orga.git?rev=874155e19600589a83f93a9a14581c119ebf47ce#874155e19600589a83f93a9a14581c119ebf47ce"
 dependencies = [
- "abci2 0.1.3-alpha.0 (git+https://github.com/nomic-io/abci2?rev=bf7d3e4fd1f4acd23d1550c18d4f01670e911acb)",
+ "abci2 0.1.3-alpha.0 (git+https://github.com/nomic-io/abci2?rev=096e7cf17802de216ce13e3a1db09c517fa60007)",
  "async-trait",
  "base64",
  "bech32 0.8.1",
@@ -1890,10 +1889,11 @@ dependencies = [
  "is_executable",
  "js-sys",
  "log",
- "merk 1.0.0 (git+https://github.com/nomic-io/merk?rev=e9038a659e1ad3cf13720b57be88e2845d0d6a01)",
+ "merk 1.0.0 (git+https://github.com/nomic-io/merk?rev=a2e46ed40c7b7eeaaed7a94654c18413728f7b8d)",
  "num-rational",
  "num-traits",
- "orga-macros 0.2.2 (git+https://github.com/nomic-io/orga.git?branch=legacy-v1)",
+ "orga 0.2.0 (git+https://github.com/nomic-io/orga.git?branch=legacy-v1)",
+ "orga-macros 0.2.3",
  "prost",
  "reqwest",
  "ripemd",
@@ -1918,7 +1918,7 @@ dependencies = [
 [[package]]
 name = "orga-macros"
 version = "0.2.2"
-source = "git+https://github.com/nomic-io/orga.git?branch=bitcoin-tweaks#f9495fc9a31debceb8d619eedc06932e0bbb0ff4"
+source = "git+https://github.com/nomic-io/orga.git?branch=legacy-v1#838fdd43202ba6e2965bf5ea95949bafa2be5e21"
 dependencies = [
  "heck 0.3.3",
  "proc-macro2",
@@ -1928,8 +1928,8 @@ dependencies = [
 
 [[package]]
 name = "orga-macros"
-version = "0.2.2"
-source = "git+https://github.com/nomic-io/orga.git?branch=legacy-v1#838fdd43202ba6e2965bf5ea95949bafa2be5e21"
+version = "0.2.3"
+source = "git+https://github.com/nomic-io/orga.git?rev=874155e19600589a83f93a9a14581c119ebf47ce#874155e19600589a83f93a9a14581c119ebf47ce"
 dependencies = [
  "heck 0.3.3",
  "proc-macro2",
