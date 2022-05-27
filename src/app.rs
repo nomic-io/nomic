@@ -49,9 +49,9 @@ impl Migrate<nomicv1::app::InnerApp> for InnerApp {
             .migrate(legacy.incentive_pool_rewards())?;
 
         self.accounts.migrate(legacy.accounts)?;
-        self.staking.migrate(legacy.staking)?;
+        // self.staking.migrate(legacy.staking)?;
         self.atom_airdrop.migrate(legacy.atom_airdrop)?;
-
+        
         Ok(())
     }
 }
@@ -69,7 +69,7 @@ mod abci {
             self.staking.slash_fraction_double_sign = (Amount::new(1) / Amount::new(20))?;
             self.staking.min_self_delegation_min = 0;
 
-            self.accounts.allow_transfers(false);
+            self.accounts.allow_transfers(true);
 
             let old_home_path = nomicv1::orga::abci::Node::<()>::home(nomicv1::app::CHAIN_ID);
             exec_migration(self, old_home_path.join("merk"), &[0, 1, 0])?;
