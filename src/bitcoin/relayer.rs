@@ -1,4 +1,4 @@
-use super::{Bitcoin, SignatorySet};
+use super::{checkpoint::CheckpointQueue, Bitcoin, SignatorySet};
 use crate::bitcoin::{adapter::Adapter, header_queue::WrappedHeader};
 use crate::error::Result;
 use ::bitcoin::consensus::Decodable as _;
@@ -11,7 +11,7 @@ use bitcoincore_rpc_async::bitcoin::{
     Block, BlockHash, Script, Transaction,
 };
 use bitcoincore_rpc_async::json::GetBlockHeaderResult;
-use bitcoincore_rpc_async::{Client as BtcClient, RpcApi};
+use bitcoincore_rpc_async::{Client as BitcoinRpcClient, RpcApi};
 use orga::client::{AsyncCall, AsyncQuery};
 use orga::coins::Address;
 use orga::prelude::*;
@@ -20,13 +20,14 @@ use tokio::sync::mpsc::Receiver;
 
 const HEADER_BATCH_SIZE: usize = 200;
 
-type AppClient<T> = <Bitcoin as Client<T>>::Client;
+type BitcoinStateClient<T> = <Bitcoin as Client<T>>::Client;
+type CheckpointQueueClient<T> = <CheckpointQueue as Client<T>>::Client;
 
 pub struct Relayer<T: Clone + Send> {
-    btc_client: BtcClient,
-    app_client: AppClient<T>,
+    btc_client: BitcoinRpcClient,
+    app_client: BitcoinStateClient<T>,
 
-    scripts: WatchedScripts,
+    scripts: WatchedScriptStore,
 }
 
 impl<T: Clone + Send> Relayer<T>
@@ -35,12 +36,17 @@ where
     T: for<'a> AsyncQuery<Response<'a> = &'a Bitcoin>,
     T: AsyncCall<Call = <Bitcoin as Call>::Call>,
 {
-    pub fn new(btc_client: BtcClient, app_client: AppClient<T>) -> Self {
-        Relayer {
+    pub async fn new<P: AsRef<Path>>(
+        store_path: P,
+        btc_client: BitcoinRpcClient,
+        app_client: BitcoinStateClient<T>,
+    ) -> Result<Self> {
+        let scripts = WatchedScriptStore::open(store_path, &app_client.checkpoints).await?;
+        Ok(Relayer {
             btc_client,
             app_client,
-            scripts: WatchedScripts::new(),
-        }
+            scripts,
+        })
     }
 
     async fn sidechain_block_hash(&self) -> Result<BlockHash> {
@@ -155,32 +161,26 @@ where
 
     async fn insert_announced_addrs(&mut self, recv: &mut Receiver<(Address, u32)>) -> Result<()> {
         while let Ok((addr, sigset_index)) = recv.try_recv() {
-            for i in 0..10 {
-                if sigset_index < i {
-                    break;
+            let checkpoint_res = self.app_client.checkpoints.get(sigset_index).await?;
+            let sigset = match &checkpoint_res {
+                Ok(checkpoint) => &checkpoint.sigset,
+                Err(err) => {
+                    eprintln!("{}", err);
+                    continue;
                 }
-
-                let sigset_index = sigset_index - i;
-                let checkpoint_res = self.app_client.checkpoints.get(sigset_index).await?;
-                let sigset = match &checkpoint_res {
-                    Ok(checkpoint) => &checkpoint.sigset,
-                    Err(err) => {
-                        eprintln!("{}", err);
-                        continue;
-                    }
-                };
-                println!("inserting {}, {}", addr, sigset_index);
-                self.scripts.insert(addr, sigset)?;
-            }
-
-            for (script, (dest, index)) in self.scripts.scripts.iter() {
-                let addr = ::bitcoin::Address::from_script(&script, ::bitcoin::Network::Testnet)
-                    .unwrap()
-                    .to_string();
-                dbg!((addr, index));
-            }
+            };
+            println!("inserting {}, {}", addr, sigset_index);
+            self.scripts.insert(addr, sigset)?;
         }
-        // self.scripts.remove_expired();
+
+        for (script, (dest, index)) in self.scripts.scripts.scripts.iter() {
+            let addr = ::bitcoin::Address::from_script(&script, ::bitcoin::Network::Testnet)
+                .unwrap()
+                .to_string();
+            dbg!((addr, index));
+        }
+        
+        self.scripts.scripts.remove_expired()?;
 
         Ok(())
     }
@@ -230,6 +230,7 @@ where
                 let script = ::bitcoin::Script::consensus_decode(script_bytes.as_slice()).unwrap();
 
                 self.scripts
+                    .scripts
                     .get(&script)
                     .map(|(dest, sigset_index)| OutputMatch {
                         sigset_index,
@@ -461,6 +462,93 @@ impl WatchedScripts {
     }
 }
 
+use std::fs::File;
+use std::io::{self, BufRead, BufReader, Write};
+use std::path::Path;
+
+pub struct WatchedScriptStore {
+    scripts: WatchedScripts,
+    file: File,
+}
+
+impl WatchedScriptStore {
+    pub async fn open<P: AsRef<Path>, T: Clone + Send>(
+        path: P,
+        checkpoint_client: &CheckpointQueueClient<T>,
+    ) -> Result<Self>
+    where
+        T: AsyncQuery<Query = <CheckpointQueue as Query>::Query>,
+        T: for<'a> AsyncQuery<Response<'a> = &'a CheckpointQueue>,
+        T: AsyncCall<Call = <CheckpointQueue as Call>::Call>,
+    {
+        let mut scripts = WatchedScripts::new();
+        Self::maybe_load(&path, &mut scripts, checkpoint_client).await?;
+
+        let mut file = File::create(path)?;
+        for (addr, sigset_index) in scripts.scripts.values() {
+            Self::write(&mut file, *addr, *sigset_index)?;
+        }
+
+        Ok(WatchedScriptStore { scripts, file })
+    }
+
+    async fn maybe_load<P: AsRef<Path>, T: Clone + Send>(
+        path: P,
+        scripts: &mut WatchedScripts,
+        client: &CheckpointQueueClient<T>,
+    ) -> Result<()>
+    where
+        T: AsyncQuery<Query = <CheckpointQueue as Query>::Query>,
+        T: for<'a> AsyncQuery<Response<'a> = &'a CheckpointQueue>,
+        T: AsyncCall<Call = <CheckpointQueue as Call>::Call>,
+    {
+        let file = match File::open(&path) {
+            Err(ref e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(e.into()),
+            Ok(file) => file,
+        };
+
+        let mut sigsets = BTreeMap::new();
+        for (index, checkpoint) in client.all().await?? {
+            sigsets.insert(index, checkpoint.sigset.clone());
+        }
+
+        let lines = BufReader::new(file).lines();
+        for line in lines {
+            let line = line?;
+            let items: Vec<_> = line.split(',').collect();
+
+            let sigset_index: u32 = items[1]
+                .parse()
+                .map_err(|e| orga::Error::App("Could not parse sigset index".to_string()))?;
+            let sigset = match sigsets.get(&sigset_index) {
+                Some(sigset) => sigset,
+                None => continue,
+            };
+
+            let address: Address = items[0]
+                .parse()
+                .map_err(|e| orga::Error::App("Could not parse address".to_string()))?;
+
+            scripts.insert(address, sigset)?;
+        }
+
+        scripts.remove_expired()?;
+
+        Ok(())
+    }
+
+    pub fn insert(&mut self, addr: Address, sigset: &SignatorySet) -> Result<()> {
+        self.scripts.insert(addr, sigset)?;
+        Self::write(&mut self.file, addr, sigset.index())
+    }
+
+    fn write(file: &mut File, addr: Address, sigset_index: u32) -> Result<()> {
+        writeln!(file, "{},{}", addr, sigset_index)?;
+        Ok(())
+    }
+}
+
 #[cfg(todo)]
 #[cfg(test)]
 mod tests {
@@ -484,7 +572,7 @@ mod tests {
         let bitcoind_url = bitcoind.rpc_url();
         let bitcoin_cookie_file = bitcoind.params.cookie_file.clone();
         let rpc_client =
-            BtcClient::new(&bitcoind_url, Auth::CookieFile(bitcoin_cookie_file)).unwrap();
+            BitcoinRpcClient::new(&bitcoind_url, Auth::CookieFile(bitcoin_cookie_file)).unwrap();
 
         let encoded_header = Encode::encode(&Adapter::new(trusted_header)).unwrap();
         let mut config: Config = Default::default();
@@ -515,7 +603,7 @@ mod tests {
         let bitcoind_url = bitcoind.rpc_url();
         let bitcoin_cookie_file = bitcoind.params.cookie_file.clone();
         let rpc_client =
-            BtcClient::new(&bitcoind_url, Auth::CookieFile(bitcoin_cookie_file)).unwrap();
+            BitcoinRpcClient::new(&bitcoind_url, Auth::CookieFile(bitcoin_cookie_file)).unwrap();
 
         let encoded_header = Encode::encode(&Adapter::new(trusted_header)).unwrap();
         let mut config: Config = Default::default();

@@ -659,7 +659,7 @@ impl RelayerCmd {
                     client.accounts.take_as_funding(MIN_FEE.into()).await
                 })
                 .bitcoin;
-            Relayer::new(btc_client, app_bitcoin_client)
+            Relayer::new("deposit_addresses.csv", btc_client, app_bitcoin_client).await
         };
 
         let (send, recv) = tokio::sync::mpsc::channel(1024);
@@ -689,13 +689,13 @@ impl RelayerCmd {
             .with(warp::cors().allow_any_origin());
         let addr_server = warp::serve(route).run(([0, 0, 0, 0], 9000));
 
-        let mut relayer = create_relayer().await;
+        let mut relayer = create_relayer().await?;
         let headers = relayer.relay_headers();
 
-        let mut relayer = create_relayer().await;
+        let mut relayer = create_relayer().await?;
         let deposits = relayer.relay_deposits(recv);
 
-        let mut relayer = create_relayer().await;
+        let mut relayer = create_relayer().await?;
         let checkpoints = relayer.relay_checkpoints();
 
         futures::try_join!(headers, deposits, checkpoints, async {
