@@ -100,7 +100,10 @@ impl SignatorySet {
 
     fn sort_and_truncate(&mut self) {
         self.signatories.sort_by(|a, b| b.cmp(a));
-        self.signatories.truncate(MAX_SIGNATORIES as usize);
+
+        for removed in self.signatories.drain(MAX_SIGNATORIES as usize..) {
+            self.present_vp -= removed.voting_power;
+        }
     }
 
     pub fn signature_threshold(&self) -> u64 {
@@ -125,6 +128,10 @@ impl SignatorySet {
 
     pub fn len(&self) -> usize {
         self.signatories.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub fn redeem_script(&self, dest: Address) -> Result<Script> {
