@@ -297,16 +297,21 @@ impl SignatoryKeys {
     }
 
     pub fn insert(&mut self, consensus_key: ConsensusKey, xpub: Xpub) -> Result<()> {
-        if self.xpubs.contains_key(xpub.clone())? {
+        let mut normalized_xpub = xpub.clone();
+        normalized_xpub.0.child_number = 0.into();
+        normalized_xpub.0.depth = 0;
+        normalized_xpub.0.parent_fingerprint = Default::default();
+
+        if self.xpubs.contains_key(normalized_xpub.clone())? {
             return Err(OrgaError::App("Duplicate signatory key".to_string()).into());
         }
 
-        let existing = self.by_cons.remove(consensus_key)?;
-        if let Some(existing_xpub) = existing {
-            self.xpubs.remove(existing_xpub.clone())?;
+        if self.by_cons.contains_key(consensus_key)? {
+            return Err(OrgaError::App("Validator already has a signatory key".to_string()).into());
         }
 
         self.by_cons.insert(consensus_key, xpub)?;
+        self.xpubs.insert(normalized_xpub, ())?;
 
         Ok(())
     }
