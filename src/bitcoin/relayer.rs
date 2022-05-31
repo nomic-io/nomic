@@ -448,8 +448,13 @@ impl WatchedScripts {
         self.scripts.is_empty()
     }
 
-    pub fn insert(&mut self, addr: Address, sigset: &SignatorySet) -> Result<()> {
+    pub fn insert(&mut self, addr: Address, sigset: &SignatorySet) -> Result<bool> {
         let script = self.derive_script(addr, sigset)?;
+
+        if self.scripts.contains_key(&script) {
+            return Ok(false);
+        }
+
         self.scripts.insert(script, (addr, sigset.index()));
 
         let (_, addrs) = self
@@ -458,7 +463,7 @@ impl WatchedScripts {
             .or_insert((sigset.clone(), vec![]));
         addrs.push(addr);
 
-        Ok(())
+        Ok(true)
     }
 
     pub fn remove_expired(&mut self) -> Result<()> {
@@ -560,8 +565,11 @@ impl WatchedScriptStore {
     }
 
     pub fn insert(&mut self, addr: Address, sigset: &SignatorySet) -> Result<()> {
-        self.scripts.insert(addr, sigset)?;
-        Self::write(&mut self.file, addr, sigset.index())
+        if self.scripts.insert(addr, sigset)? {
+            Self::write(&mut self.file, addr, sigset.index())?;
+        }
+
+        Ok(())
     }
 
     fn write(file: &mut File, addr: Address, sigset_index: u32) -> Result<()> {
