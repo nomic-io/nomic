@@ -690,13 +690,13 @@ impl RelayerCmd {
         let addr_server = warp::serve(route).run(([0, 0, 0, 0], 9000));
 
         let mut relayer = create_relayer().await?;
-        let headers = relayer.relay_headers();
+        let headers = relayer.start_header_relay();
 
         let mut relayer = create_relayer().await?;
-        let deposits = relayer.relay_deposits(recv);
+        let deposits = relayer.start_deposit_relay(recv);
 
         let mut relayer = create_relayer().await?;
-        let checkpoints = relayer.relay_checkpoints();
+        let checkpoints = relayer.start_checkpoint_relay();
 
         futures::try_join!(headers, deposits, checkpoints, async {
             addr_server.await;

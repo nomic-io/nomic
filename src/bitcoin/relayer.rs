@@ -55,9 +55,19 @@ where
         Ok(hash)
     }
 
-    pub async fn relay_headers(&mut self) -> Result<()> {
+    pub async fn start_header_relay(&mut self) -> Result<!> {
         println!("Starting header relay...");
 
+        loop {
+            if let Err(e) = self.relay_headers().await {
+                eprintln!("Header relay error: {}", e);
+            }
+
+            sleep(2).await;
+        }
+    }
+
+    async fn relay_headers(&mut self) -> Result<()> {
         let mut last_hash = None;
 
         loop {
@@ -83,17 +93,46 @@ where
         }
     }
 
-    pub async fn relay_deposits(&mut self, mut recv: Receiver<(Address, u32)>) -> Result<!> {
+    pub async fn start_deposit_relay(&mut self, mut recv: Receiver<(Address, u32)>) -> Result<!> {
         println!("Starting deposit relay...");
 
-        // TODO: load persisted addresses
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-        self.insert_announced_addrs(&mut recv).await?;
+        loop {
+            if let Err(e) = self.relay_deposits(&mut recv).await {
+                eprintln!("Deposit relay error: {}", e);
+            }
 
-        println!("Scanning recent blocks for deposits...");
+            sleep(2).await;
+        }
+    }
+
+    async fn relay_deposits(&mut self, recv: &mut Receiver<(Address, u32)>) -> Result<!> {
+        let mut prev_tip = None;
+        loop {
+            sleep(2).await;
+
+            self.insert_announced_addrs(recv).await?;
+
+            let tip = self.sidechain_block_hash().await?;
+            let prev = prev_tip.unwrap_or(tip);
+            if prev_tip.is_some() && prev == tip {
+                continue;
+            }
+
+            let start_height = self.common_ancestor(tip, prev).await?.height;
+            let end_height = self.btc_client.get_block_header_info(&tip).await?.height;
+            let num_blocks = (end_height - start_height).max(1100);
+
+            self.scan_for_deposits(num_blocks).await?;
+
+            prev_tip = Some(tip);
+        }
+    }
+
+    async fn scan_for_deposits(&mut self, num_blocks: usize) -> Result<BlockHash> {
         let tip = self.sidechain_block_hash().await?;
         let base_height = self.btc_client.get_block_header_info(&tip).await?.height;
-        let blocks = self.last_n_blocks(1008, tip).await?;
+        let blocks = self.last_n_blocks(num_blocks, tip).await?;
+
         for (i, block) in blocks.into_iter().enumerate().rev() {
             let height = (base_height - i) as u32;
             for (tx, matches) in self.relevant_txs(&block) {
@@ -104,41 +143,24 @@ where
             }
         }
 
-        println!("Watching for new deposits...");
-        let mut prev_tip = tip;
-        loop {
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-
-            self.insert_announced_addrs(&mut recv).await?;
-
-            let tip = self.sidechain_block_hash().await?;
-            if tip == prev_tip {
-                continue;
-            }
-
-            let start_height = self.common_ancestor(tip, prev_tip).await?.height;
-            let end_height = self.btc_client.get_block_header_info(&tip).await?.height;
-
-            let blocks = self.last_n_blocks(end_height - start_height, tip).await?;
-            for (i, block) in blocks.into_iter().enumerate().rev() {
-                let height = (end_height - i) as u32;
-                for (tx, matches) in self.relevant_txs(&block) {
-                    for output in matches {
-                        self.maybe_relay_deposit(tx, height, &block.block_hash(), output)
-                            .await?;
-                    }
-                }
-            }
-
-            prev_tip = tip;
-        }
+        Ok(tip)
     }
 
-    pub async fn relay_checkpoints(&mut self) -> Result<!> {
+    pub async fn start_checkpoint_relay(&mut self) -> Result<!> {
         println!("Starting checkpoint relay...");
 
         loop {
-            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+            if let Err(e) = self.relay_checkpoints().await {
+                eprintln!("Checkpoint relay error: {}", e);
+            }
+
+            sleep(2).await;
+        }
+    }
+
+    async fn relay_checkpoints(&mut self) -> Result<()> {
+        loop {
+            sleep(10).await;
 
             let txs = self.app_client.checkpoints.completed_txs().await??;
             for tx in txs {
@@ -157,6 +179,8 @@ where
                 }
             }
         }
+
+        Ok(())
     }
 
     async fn insert_announced_addrs(&mut self, recv: &mut Receiver<(Address, u32)>) -> Result<()> {
@@ -169,17 +193,10 @@ where
                     continue;
                 }
             };
-            println!("inserting {}, {}", addr, sigset_index);
+
             self.scripts.insert(addr, sigset)?;
         }
 
-        for (script, (dest, index)) in self.scripts.scripts.scripts.iter() {
-            let addr = ::bitcoin::Address::from_script(&script, ::bitcoin::Network::Testnet)
-                .unwrap()
-                .to_string();
-            dbg!((addr, index));
-        }
-        
         self.scripts.scripts.remove_expired()?;
 
         Ok(())
@@ -259,7 +276,6 @@ where
             .contains(outpoint)
             .await??
         {
-            println!("Detected already-relayed deposit: {}", txid.to_hex());
             return Ok(());
         }
 
@@ -396,6 +412,11 @@ fn time_now() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs()
+}
+
+async fn sleep(seconds: u64) {
+    let duration = std::time::Duration::from_secs(seconds);
+    tokio::time::sleep(duration).await;
 }
 
 /// A collection which stores all watched addresses and signatory sets, for
