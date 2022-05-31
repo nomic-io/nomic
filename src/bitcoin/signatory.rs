@@ -101,8 +101,10 @@ impl SignatorySet {
     fn sort_and_truncate(&mut self) {
         self.signatories.sort_by(|a, b| b.cmp(a));
 
-        for removed in self.signatories.drain(MAX_SIGNATORIES as usize..) {
-            self.present_vp -= removed.voting_power;
+        if self.signatories.len() as u64 > MAX_SIGNATORIES {
+            for removed in self.signatories.drain(MAX_SIGNATORIES as usize..) {
+                self.present_vp -= removed.voting_power;
+            }
         }
     }
 

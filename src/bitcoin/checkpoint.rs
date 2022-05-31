@@ -13,7 +13,7 @@ use orga::{
     call::Call,
     client::Client,
     coins::Address,
-    collections::{ChildMut, Deque, Map, Ref},
+    collections::{ChildMut, Deque, Map, Ref, map::ReadOnly},
     context::GetContext,
     encoding::{Decode, Encode},
     plugins::{Signer, Time},
@@ -297,10 +297,10 @@ impl<'a> BuildingCheckpointMut<'a> {
         let mut input = self.inputs.get_mut(inputs_len - 1)?.unwrap();
         input.sigs.from_sigset(sigset)?;
 
-        Ok(())
+        Ok(input.est_vsize())
     }
 
-    pub fn advance(self) -> Result<SigningCheckpointMut<'a>> {
+    pub fn advance(self) -> Result<(bitcoin::OutPoint, u64, Vec<ReadOnly<Input>>, Vec<ReadOnly<Output>>)> {
         let mut checkpoint = self.0;
 
         checkpoint.status = CheckpointStatus::Signing;
@@ -311,14 +311,16 @@ impl<'a> BuildingCheckpointMut<'a> {
         };
         checkpoint.outputs.push_front(Adapter::new(reserve_out))?;
 
-        for i in MAX_INPUTS..checkpoint.inputs.len() {
-            // TODO: move input to child
-            todo!()
+        let mut excess_inputs = vec![];
+        while checkpoint.inputs.len() > MAX_INPUTS {
+            let removed_input = checkpoint.inputs.pop_back()?.unwrap();
+            excess_inputs.push(removed_input);
         }
 
-        for i in MAX_OUTPUTS..checkpoint.outputs.len() {
-            // TODO: move output to child
-            todo!()
+        let mut excess_outputs = vec![];
+        while checkpoint.outputs.len() > MAX_OUTPUTS {
+            let removed_output = checkpoint.outputs.pop_back()?.unwrap();
+            excess_outputs.push(removed_output);
         }
 
         let mut in_amount = 0;
@@ -346,11 +348,17 @@ impl<'a> BuildingCheckpointMut<'a> {
         for i in 0..signing.inputs.len() {
             let mut input = signing.inputs.get_mut(i)?.unwrap();
             let sighash_type = bitcoin::SigHashType::All;
-            let sighash = sc.signature_hash(i as usize, &input.redeem_script, input.amount, sighash_type);
+            let sighash =
+                sc.signature_hash(i as usize, &input.redeem_script, input.amount, sighash_type);
             input.sigs.set_message(sighash.into_inner());
         }
 
-        Ok(signing)
+        let reserve_outpoint = bitcoin::OutPoint {
+            txid: tx.txid(),
+            vout: 0,
+        };
+
+        Ok((reserve_outpoint, reserve_value, excess_inputs, excess_outputs))
     }
 }
 
@@ -501,24 +509,30 @@ impl CheckpointQueue {
 
             if self.index > 0 {
                 let second = self.get_mut(self.index - 1)?;
-                BuildingCheckpointMut(second).advance()?;
-
-                // TODO: do this inside advance()?
-                let signing = self.signing()?.unwrap();
-                let reserve_value = signing.outputs.front()?.unwrap().value;
-                let (signing_tx, _) = signing.tx()?;
-                let outpoint = bitcoin::OutPoint {
-                    txid: signing_tx.txid(),
-                    vout: 0,
-                };
-                let sigset = signing.sigset.clone();
+                let sigset = second.sigset.clone();
+                let (reserve_outpoint, reserve_value, excess_inputs, excess_outputs) =
+                    BuildingCheckpointMut(second).advance()?;
 
                 let mut building = self.building_mut()?;
-                building.push_input(
-                    outpoint, &sigset,
-                    Address::NULL,
-                    reserve_value,
-                )?;
+
+                building.push_input(reserve_outpoint, &sigset, Address::NULL, reserve_value)?;
+
+                for input in excess_inputs {
+                    let shares = input.sigs.shares()?;
+                    let data = input.into_inner().into();
+                    building.inputs.push_back(data)?;
+                    building
+                        .inputs
+                        .back_mut()?
+                        .unwrap()
+                        .sigs
+                        .from_shares(shares)?;
+                }
+
+                for output in excess_outputs {
+                    let data = output.into_inner().into();
+                    building.outputs.push_back(data)?;
+                }
             }
 
             Ok(())
