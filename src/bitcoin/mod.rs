@@ -269,6 +269,23 @@ impl Bitcoin {
         Ok(())
     }
 
+    #[query]
+    pub fn value_locked(&self) -> Result<u64> {
+        let checkpoint = match self.checkpoints.front()? {
+            Some(checkpoints) => checkpoints,
+            None => return Ok(0),
+        };
+
+        let mut tvl = 0;
+        for i in 0..checkpoint.inputs.len() {
+            if let Some(input) = checkpoint.inputs.get(i)? {
+                tvl += input.amount;
+            }
+        }
+
+        Ok(tvl)
+    }
+
     pub fn network(&self) -> bitcoin::Network {
         self.headers.network()
     }
