@@ -208,6 +208,10 @@ impl SignatorySet {
     pub fn iter(&self) -> impl Iterator<Item = &Signatory> {
         self.signatories.iter()
     }
+
+    pub fn est_witness_vsize(&self) -> u64 {
+        self.signatories.len() as u64 * 79 + 39
+    }
 }
 
 #[cfg(test)]

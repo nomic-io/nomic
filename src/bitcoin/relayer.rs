@@ -293,12 +293,7 @@ where
 
             let proof = Adapter::new(proof);
 
-            println!(
-                "Relaying deposit... sigset_index={}, value={}",
-                output.sigset_index, tx.output[output.vout as usize].value
-            );
-
-            self.app_client
+            let res = self.app_client
                 .relay_deposit(
                     tx,
                     height,
@@ -307,7 +302,14 @@ where
                     output.sigset_index,
                     output.dest,
                 )
-                .await?;
+                .await;
+
+            match res {
+                Err(err) if err.to_string().contains("Deposit amount is below minimum") || err.to_string().contains("Deposit amount is too small to pay its spending fee") => {
+                    return Ok(());
+                },
+                _ => res?,
+            };
         }
 
         println!(

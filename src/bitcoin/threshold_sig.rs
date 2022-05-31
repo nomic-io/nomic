@@ -231,10 +231,6 @@ impl ThresholdSig {
             })
             .collect()
     }
-
-    pub fn est_vsize(&self) -> u64 {
-        self.len as u64 * 47 + 6
-    }
 }
 
 use std::fmt::Debug;

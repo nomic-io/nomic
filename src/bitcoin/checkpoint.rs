@@ -85,6 +85,7 @@ pub struct Input {
     pub sigset_index: u32,
     pub dest: Address,
     pub amount: u64,
+    pub est_witness_vsize: u64,
     pub sigs: ThresholdSig,
 }
 
@@ -101,6 +102,10 @@ impl Input {
             sequence: u32::MAX,
             witness,
         })
+    }
+
+    pub fn est_vsize(&self) -> u64 {
+        self.est_witness_vsize + 40
     }
 }
 
@@ -134,7 +139,7 @@ impl Checkpoint {
         for i in 0..self.inputs.len() {
             let input = self.inputs.get(i)?.unwrap();
             tx.input.push(input.to_txin()?);
-            est_vsize += input.sigs.est_vsize();
+            est_vsize += input.est_witness_vsize;
         }
 
         // TODO: use deque iterator
@@ -278,7 +283,7 @@ impl<'a> BuildingCheckpointMut<'a> {
         sigset: &SignatorySet,
         dest: Address,
         amount: u64,
-    ) -> Result<()> {
+    ) -> Result<u64> {
         let script_pubkey = sigset.output_script(dest)?;
         let redeem_script = sigset.redeem_script(dest)?;
 
@@ -290,6 +295,7 @@ impl<'a> BuildingCheckpointMut<'a> {
             sigset.index(),
             dest.into(),
             amount,
+            sigset.est_witness_vsize(),
             <ThresholdSig as State>::Encoding::default(),
         ))?;
 
