@@ -21,6 +21,7 @@ use orga::{
     state::State,
     Error as OrgaError, Result as OrgaResult,
 };
+use std::convert::TryFrom;
 
 pub const CHECKPOINT_INTERVAL: u64 = 60 * 1;
 pub const MAX_INPUTS: u64 = 50;
@@ -381,6 +382,10 @@ impl CheckpointQueue {
         } else {
             Ok(index - start)
         }
+    }
+
+    pub fn len(&self) -> Result<u32> {
+        Ok(u32::try_from(self.queue.len())?)
     }
 
     #[query]
