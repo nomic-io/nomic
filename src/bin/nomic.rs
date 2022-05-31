@@ -710,7 +710,8 @@ impl RelayerCmd {
 
 #[derive(Parser, Debug)]
 pub struct SignerCmd {
-    pub xpriv: String,
+    #[clap(short, long)]
+    path: Option<String>,
 }
 
 impl SignerCmd {
@@ -719,7 +720,17 @@ impl SignerCmd {
             .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
             .bitcoin;
 
-        let signer = Signer::new(app_bitcoin_client, self.xpriv.as_str())?;
+        let signer_dir_path = self
+            .path
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| Node::home(nomic::app::CHAIN_ID).join("signer"));
+        if !signer_dir_path.exists() {
+            std::fs::create_dir(&signer_dir_path)?;
+        }
+        let key_path = signer_dir_path.join("xpriv");
+
+        let signer = Signer::load_or_generate(app_bitcoin_client, key_path)?;
         signer.start().await?;
 
         Ok(())

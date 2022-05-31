@@ -30,6 +30,7 @@ warp = { version = "0.3.2", optional = true }
 derive_more = "0.99.17"
 pretty_env_logger = "0.4.0"
 reqwest = "0.11.10"
+rand = { version = "0.8.5", optional = true }
 
 [dev-dependencies]
 chrono = "0.4.0"
@@ -40,7 +41,7 @@ mutagen = "0.1.2"
 
 [features]
 default = ["full"]
-full = ["bitcoind", "bitcoincore-rpc-async", "clap", "tokio", "orga/merk-full", "orga/abci", "orga/state-sync", "csv", "nomicv1", "warp"]
+full = ["bitcoind", "bitcoincore-rpc-async", "clap", "tokio", "orga/merk-full", "orga/abci", "orga/state-sync", "csv", "nomicv1", "warp", "rand"]
 
 [[bin]]
 name = "nomic"
