@@ -18,7 +18,7 @@ use orga::prelude::*;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use tokio::sync::mpsc::Receiver;
 
-const HEADER_BATCH_SIZE: usize = 200;
+const HEADER_BATCH_SIZE: usize = 25;
 
 type BitcoinStateClient<T> = <Bitcoin as Client<T>>::Client;
 type CheckpointQueueClient<T> = <CheckpointQueue as Client<T>>::Client;
