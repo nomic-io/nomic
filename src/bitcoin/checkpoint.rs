@@ -362,14 +362,6 @@ impl CheckpointQueue {
         Ok(self.queue.get(index as u64)?.unwrap())
     }
 
-    pub fn front(&self) -> Result<Option<Ref<'_, Checkpoint>>> {
-        Ok(self.queue.front()?)
-    }
-
-    pub fn back(&self) -> Result<Option<Ref<'_, Checkpoint>>> {
-        Ok(self.queue.back()?)
-    }
-
     pub fn get_mut(&mut self, index: u32) -> Result<ChildMut<'_, u64, Checkpoint>> {
         let index = self.get_deque_index(index)?;
         Ok(self.queue.get_mut(index as u64)?.unwrap())
