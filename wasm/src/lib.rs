@@ -305,6 +305,12 @@ pub async fn nbtc_balance(addr: String) -> u64 {
         .into()
 }
 
+#[wasm_bindgen(js_name = getTvl)]
+pub async fn get_tvl() -> JsValue {
+    let client: WebClient<App> = WebClient::new();
+    client.bitcoin.get_tvl()
+}
+
 #[wasm_bindgen(js_name = broadcastDepositAddress)]
 pub async fn broadcast_deposit_addr(addr: String, sigset_index: u32, relayers: js_sys::Array) {
     let window = web_sys::window().unwrap();
