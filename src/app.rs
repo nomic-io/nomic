@@ -7,7 +7,7 @@ use orga::prelude::*;
 use orga::Error;
 use serde::{Deserialize, Serialize};
 
-pub const CHAIN_ID: &str = "nomic-stakenet-test-2";
+pub const CHAIN_ID: &str = "nomic-testnet-3";
 pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
 
 #[derive(State, Debug, Clone)]
@@ -49,7 +49,7 @@ impl Migrate<nomicv1::app::InnerApp> for InnerApp {
             .migrate(legacy.incentive_pool_rewards())?;
 
         self.accounts.migrate(legacy.accounts)?;
-        // self.staking.migrate(legacy.staking)?;
+        self.staking.migrate(legacy.staking)?;
         self.atom_airdrop.migrate(legacy.atom_airdrop)?;
 
         Ok(())
@@ -62,17 +62,17 @@ mod abci {
 
     impl InitChain for InnerApp {
         fn init_chain(&mut self, _ctx: &InitChainCtx) -> Result<()> {
-            self.staking.max_validators = 100;
-            self.staking.max_offline_blocks = 20_000;
+            self.staking.max_validators = 20;
+            self.staking.max_offline_blocks = 100;
             self.staking.downtime_jail_seconds = 60 * 30; // 30 minutes
-            self.staking.slash_fraction_downtime = (Amount::new(1) / Amount::new(1000))?;
-            self.staking.slash_fraction_double_sign = (Amount::new(1) / Amount::new(20))?;
+            self.staking.slash_fraction_downtime = (Amount::new(1) / Amount::new(20))?;
+            self.staking.slash_fraction_double_sign = (Amount::new(1) / Amount::new(4))?;
             self.staking.min_self_delegation_min = 0;
-
-            self.accounts.allow_transfers(true);
 
             let old_home_path = nomicv1::orga::abci::Node::<()>::home(nomicv1::app::CHAIN_ID);
             exec_migration(self, old_home_path.join("merk"), &[0, 1, 0])?;
+
+            self.accounts.allow_transfers(true);
 
             let sr_address = STRATEGIC_RESERVE_ADDRESS.parse().unwrap();
             self.accounts.add_transfer_exception(sr_address)?;

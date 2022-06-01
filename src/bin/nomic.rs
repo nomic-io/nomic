@@ -15,7 +15,16 @@ use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
 
-const STOP_HEIGHT: u64 = 2_684_000;
+const STOP_SECONDS: i64 = 0;
+
+fn now_seconds() -> i64 {
+    use std::time::SystemTime;
+
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64
+}
 
 pub fn app_client() -> TendermintClient<nomic::app::App> {
     TendermintClient::new("http://localhost:26657").unwrap()
@@ -39,7 +48,6 @@ pub struct Opts {
 
 #[derive(Parser, Debug)]
 pub enum Command {
-    Init(InitCmd),
     Start(StartCmd),
     #[cfg(debug_assertions)]
     StartDev(StartDevCmd),
@@ -67,7 +75,6 @@ impl Command {
     async fn run(&self) -> Result<()> {
         use Command::*;
         match self {
-            Init(cmd) => cmd.run().await,
             Start(cmd) => cmd.run().await,
             #[cfg(debug_assertions)]
             StartDev(cmd) => cmd.run().await,
@@ -94,21 +101,6 @@ impl Command {
 }
 
 #[derive(Parser, Debug)]
-pub struct InitCmd {}
-
-impl InitCmd {
-    async fn run(&self) -> Result<()> {
-        tokio::task::spawn_blocking(|| {
-            // TODO: add cfg defaults
-            nomicv1::orga::abci::Node::<nomicv1::app::App>::new(nomicv1::app::CHAIN_ID);
-        })
-        .await
-        .map_err(|err| orga::Error::App(err.to_string()))?;
-        Ok(())
-    }
-}
-
-#[derive(Parser, Debug)]
 pub struct StartCmd {
     #[clap(long, short)]
     pub state_sync: bool,
@@ -124,14 +116,46 @@ impl StartCmd {
 
             let has_old_node = Node::home(old_name).exists();
             let has_new_node = Node::home(new_name).exists();
-            let started_new_node = Node::height(old_name).unwrap() >= STOP_HEIGHT
-                || Node::height(new_name).unwrap() > 0;
+            let started_new_node = Node::height(new_name).unwrap() > 0;
+            let upgrade_time_passed = now_seconds() > STOP_SECONDS;
             if has_old_node {
                 println!("Legacy node height: {}", Node::height(old_name).unwrap());
             }
 
             let new_home = Node::home(new_name);
-            let config_path = new_home.join("tendermint/config/config.toml");
+            let new_config_path = new_home.join("tendermint/config/config.toml");
+
+            let old_home = Node::home(old_name);
+            let old_config_path = old_home.join("tendermint/config/config.toml");
+
+            if !upgrade_time_passed && !started_new_node {
+                println!("Starting legacy node for migration...");
+
+                let node = nomicv1::orga::abci::Node::<nomicv1::app::App>::new(
+                    old_name,
+                    Default::default(),
+                )
+                .with_genesis(include_bytes!("../../genesis/testnet-2.json"))
+                .stdout(std::process::Stdio::inherit())
+                .stderr(std::process::Stdio::inherit())
+                .stop_seconds(STOP_SECONDS);
+
+                set_p2p_seeds(&old_config_path, &[]);
+
+                // TODO: set default RPC boostrap nodes
+                configure_for_statesync(&old_config_path, &[]);
+
+                let res = node.run();
+                if let Err(nomicv1::orga::Error::ABCI(msg)) = res {
+                    if &msg != "Reached stop height" {
+                        panic!("{}", msg);
+                    }
+                } else {
+                    res.unwrap();
+                }
+            }
+
+            let has_old_node = Node::home(old_name).exists();
 
             if !has_new_node {
                 println!("Initializing node at {}...", new_home.display());
@@ -152,50 +176,26 @@ impl StartCmd {
                     copy("tendermint/config/priv_validator_key.json");
                     copy("tendermint/config/node_key.json");
                     copy("tendermint/config/config.toml");
+                    deconfigure_statesync(&new_config_path);
                 }
 
-                edit_block_time(&config_path, "3s");
+                edit_block_time(&new_config_path, "3s");
             }
 
             if !has_old_node || state_sync {
                 println!("Configuring node for state sync...");
 
                 // TODO: set default seeds
-                set_p2p_seeds(
-                    &config_path,
-                    &["7403ab51f221d3e9cc45eda921df9a4f71884f05@192.168.1.126:26656"],
-                );
+                set_p2p_seeds(&new_config_path, &[]);
 
                 // TODO: set default RPC boostrap nodes
-                configure_for_statesync(
-                    &config_path,
-                    &["http://192.168.1.126:27657", "http://192.168.1.126:28657"],
-                );
-            }
-
-            if has_old_node && !started_new_node && !state_sync {
-                println!("Starting legacy node for migration...");
-
-                let res = nomicv1::orga::abci::Node::<nomicv1::app::App>::new(old_name)
-                    .with_genesis(include_bytes!("../../genesis/stakenet-2-test.json"))
-                    .stdout(std::process::Stdio::inherit())
-                    .stderr(std::process::Stdio::inherit())
-                    .stop_height(STOP_HEIGHT)
-                    .run();
-
-                if let Err(nomicv1::orga::Error::ABCI(msg)) = res {
-                    if &msg != "Reached stop height" {
-                        panic!("{}", msg);
-                    }
-                } else {
-                    res.unwrap();
-                }
+                configure_for_statesync(&new_config_path, &[]);
             }
 
             println!("Starting node...");
             // TODO: add cfg defaults
             Node::<nomic::app::App>::new(new_name, Default::default())
-                .with_genesis(include_bytes!("../../genesis/stakenet-2-test.json"))
+                .with_genesis(include_bytes!("../../genesis/testnet-3.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
                 .run()
@@ -233,6 +233,16 @@ fn edit_block_time(cfg_path: &PathBuf, timeout_commit: &str) {
 fn set_p2p_seeds(cfg_path: &PathBuf, seeds: &[&str]) {
     configure_node(cfg_path, |cfg| {
         cfg["p2p"]["seeds"] = toml_edit::value(seeds.join(","));
+    });
+}
+
+fn deconfigure_statesync(cfg_path: &PathBuf) {
+    configure_node(cfg_path, |cfg| {
+        cfg["statesync"]["enable"] = toml_edit::value(false);
+        cfg["statesync"]["rpc_servers"] = toml_edit::value("");
+        cfg["statesync"]["trust_height"] = toml_edit::value(0);
+        cfg["statesync"]["trust_hash"] = toml_edit::value("");
+        cfg["statesync"]["trust_period"] = toml_edit::value("216h0m0s");
     });
 }
 
