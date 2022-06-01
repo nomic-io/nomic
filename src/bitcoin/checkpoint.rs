@@ -148,6 +148,17 @@ impl Checkpoint {
 
         Ok((tx, est_vsize))
     }
+
+    pub fn get_tvl(&self) -> Result<u64> {
+        let mut tvl = 0;
+        for i in 0..self.inputs.len() {
+            if let Some(input) = self.inputs.get(i)? {
+                tvl += input.amount;
+            }
+        }
+
+        Ok(tvl)
+    }
 }
 
 #[derive(State, Call, Query, Client)]
@@ -347,7 +358,8 @@ impl<'a> BuildingCheckpointMut<'a> {
         for i in 0..signing.inputs.len() {
             let mut input = signing.inputs.get_mut(i)?.unwrap();
             let sighash_type = bitcoin::SigHashType::All;
-            let sighash = sc.signature_hash(i as usize, &input.redeem_script, input.amount, sighash_type);
+            let sighash =
+                sc.signature_hash(i as usize, &input.redeem_script, input.amount, sighash_type);
             input.sigs.set_message(sighash.into_inner());
         }
 
@@ -519,11 +531,7 @@ impl CheckpointQueue {
                 let sigset = signing.sigset.clone();
 
                 let mut building = self.building_mut()?;
-                building.push_input(
-                    outpoint, &sigset,
-                    Address::NULL,
-                    reserve_value,
-                )?;
+                building.push_input(outpoint, &sigset, Address::NULL, reserve_value)?;
             }
 
             Ok(())
