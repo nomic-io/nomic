@@ -1678,8 +1678,9 @@ dependencies = [
  "js-sys",
  "mutagen",
  "nomic 1.0.0",
- "orga 0.2.0 (git+https://github.com/nomic-io/orga.git?rev=874155e19600589a83f93a9a14581c119ebf47ce)",
+ "orga 0.2.0 (git+https://github.com/nomic-io/orga.git?rev=818704c237f812bfbbec64f25efb7832139e1bd)",
  "pretty_env_logger",
+ "rand 0.8.5",
  "reqwest",
  "secp256k1 0.21.3",
  "serde",
@@ -1873,7 +1874,7 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.2.0"
-source = "git+https://github.com/nomic-io/orga.git?rev=874155e19600589a83f93a9a14581c119ebf47ce#874155e19600589a83f93a9a14581c119ebf47ce"
+source = "git+https://github.com/nomic-io/orga.git?rev=818704c237f812bfbbec64f25efb7832139e1bd#818704c237f812bfbbec64f25efb7832139e1bdf"
 dependencies = [
  "abci2 0.1.3-alpha.0 (git+https://github.com/nomic-io/abci2?rev=096e7cf17802de216ce13e3a1db09c517fa60007)",
  "async-trait",
@@ -1929,7 +1930,7 @@ dependencies = [
 [[package]]
 name = "orga-macros"
 version = "0.2.3"
-source = "git+https://github.com/nomic-io/orga.git?rev=874155e19600589a83f93a9a14581c119ebf47ce#874155e19600589a83f93a9a14581c119ebf47ce"
+source = "git+https://github.com/nomic-io/orga.git?rev=818704c237f812bfbbec64f25efb7832139e1bd#818704c237f812bfbbec64f25efb7832139e1bdf"
 dependencies = [
  "heck 0.3.3",
  "proc-macro2",
