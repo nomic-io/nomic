@@ -311,6 +311,12 @@ pub async fn get_tvl() -> JsValue {
     client.bitcoin.get_tvl()
 }
 
+#[wasm_bindgen(js_name = getLatestCheckpointHash)]
+pub async fn get_latest_checkpoint_hash() -> Jsvalue {
+    let last_checkpoint_id = self.app_client.checkpoints.last_completed_tx().await??.tx_id();
+    return *last_checkpoint_id;
+}
+
 #[wasm_bindgen(js_name = broadcastDepositAddress)]
 pub async fn broadcast_deposit_addr(addr: String, sigset_index: u32, relayers: js_sys::Array) {
     let window = web_sys::window().unwrap();
