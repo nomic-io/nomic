@@ -9,6 +9,8 @@ pub enum Error {
     #[error(transparent)]
     Bip32(#[from] bitcoin::util::bip32::Error),
     #[error(transparent)]
+    TryFrom(#[from] std::num::TryFromIntError),
+    #[error(transparent)]
     Secp(#[from] bitcoin::secp256k1::Error),
     #[error("Could not verify merkle proof")]
     BitcoinMerkleBlockError,

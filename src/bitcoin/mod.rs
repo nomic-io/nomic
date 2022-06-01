@@ -6,7 +6,7 @@ use bitcoin::hashes::Hash;
 use bitcoin::util::bip32::ExtendedPubKey;
 use bitcoin::Script;
 use bitcoin::{util::merkleblock::PartialMerkleTree, Transaction, Txid};
-use checkpoint::{CheckpointQueue, Input, FEE_RATE};
+use checkpoint::{Checkpoint, CheckpointQueue, CheckpointStatus, Input, FEE_RATE};
 use header_queue::HeaderQueue;
 #[cfg(feature = "full")]
 use orga::abci::{BeginBlock, InitChain};
@@ -271,7 +271,12 @@ impl Bitcoin {
         let fee = (9 + script_pubkey.len() as u64) * FEE_RATE;
         let value: u64 = amount.into();
         let value = match value.checked_sub(fee) {
-            None => return Err(OrgaError::App("Withdrawal is too small to pay its miner fee".to_string()).into()),
+            None => {
+                return Err(OrgaError::App(
+                    "Withdrawal is too small to pay its miner fee".to_string(),
+                )
+                .into())
+            }
             Some(value) => value,
         };
 
@@ -284,6 +289,15 @@ impl Bitcoin {
         checkpoint.outputs.push_back(Adapter::new(output))?;
 
         Ok(())
+    }
+
+    #[query]
+    pub fn value_locked(&self) -> Result<u64> {
+        if let Some(checkpoint) = self.checkpoints.back()? {
+            checkpoint.get_tvl()
+        } else {
+            Ok(0)
+        }
     }
 
     pub fn network(&self) -> bitcoin::Network {

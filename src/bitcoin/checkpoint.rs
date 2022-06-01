@@ -13,7 +13,7 @@ use orga::{
     call::Call,
     client::Client,
     coins::Address,
-    collections::{ChildMut, Deque, Map, Ref, map::ReadOnly},
+    collections::{map::ReadOnly, ChildMut, Deque, Map, Ref},
     context::GetContext,
     encoding::{Decode, Encode},
     plugins::{Signer, Time},
@@ -21,6 +21,7 @@ use orga::{
     state::State,
     Error as OrgaError, Result as OrgaResult,
 };
+use std::convert::TryFrom;
 
 pub const CHECKPOINT_INTERVAL: u64 = 60 * 1;
 pub const MAX_INPUTS: u64 = 20;
@@ -151,6 +152,17 @@ impl Checkpoint {
         est_vsize += tx.get_size() as u64;
 
         Ok((tx, est_vsize))
+    }
+
+    pub fn get_tvl(&self) -> Result<u64> {
+        let mut tvl = 0;
+        for i in 0..self.inputs.len() {
+            if let Some(input) = self.inputs.get(i)? {
+                tvl += input.amount;
+            }
+        }
+
+        Ok(tvl)
     }
 }
 
@@ -306,7 +318,14 @@ impl<'a> BuildingCheckpointMut<'a> {
         Ok(input.est_vsize())
     }
 
-    pub fn advance(self) -> Result<(bitcoin::OutPoint, u64, Vec<ReadOnly<Input>>, Vec<ReadOnly<Output>>)> {
+    pub fn advance(
+        self,
+    ) -> Result<(
+        bitcoin::OutPoint,
+        u64,
+        Vec<ReadOnly<Input>>,
+        Vec<ReadOnly<Output>>,
+    )> {
         let mut checkpoint = self.0;
 
         checkpoint.status = CheckpointStatus::Signing;
@@ -364,7 +383,12 @@ impl<'a> BuildingCheckpointMut<'a> {
             vout: 0,
         };
 
-        Ok((reserve_outpoint, reserve_value, excess_inputs, excess_outputs))
+        Ok((
+            reserve_outpoint,
+            reserve_value,
+            excess_inputs,
+            excess_outputs,
+        ))
     }
 }
 
@@ -380,6 +404,14 @@ impl CheckpointQueue {
         Ok(self.queue.get_mut(index as u64)?.unwrap())
     }
 
+    pub fn front(&self) -> Result<Option<Ref<Checkpoint>>> {
+        Ok(self.queue.front()?)
+    }
+
+    pub fn back(&self) -> Result<Option<Ref<Checkpoint>>> {
+        Ok(self.queue.back()?)
+    }
+
     fn get_deque_index(&self, index: u32) -> Result<u32> {
         let start = self.index + 1 - (self.queue.len() as u32);
         if index > self.index || index < start {
@@ -387,6 +419,10 @@ impl CheckpointQueue {
         } else {
             Ok(index - start)
         }
+    }
+
+    pub fn len(&self) -> Result<u32> {
+        Ok(u32::try_from(self.queue.len())?)
     }
 
     #[query]
