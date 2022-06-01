@@ -183,11 +183,11 @@ where
                     Err(err)
                         if err
                             .to_string()
-                            .contains("Transaction already in block chain") => {
-                                relayed.insert(tx.txid());
-                            }
+                            .contains("Transaction already in block chain") => {}
                     Err(err) => Err(err)?,
                 }
+
+                relayed.insert(tx.txid());
             }
 
             sleep(1).await;
