@@ -404,6 +404,14 @@ impl CheckpointQueue {
         Ok(self.queue.get_mut(index as u64)?.unwrap())
     }
 
+    pub fn front(&self) -> Result<Option<Ref<Checkpoint>>> {
+        Ok(self.queue.front()?)
+    }
+
+    pub fn back(&self) -> Result<Option<Ref<Checkpoint>>> {
+        Ok(self.queue.back()?)
+    }
+
     fn get_deque_index(&self, index: u32) -> Result<u32> {
         let start = self.index + 1 - (self.queue.len() as u32);
         if index > self.index || index < start {
