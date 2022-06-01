@@ -431,6 +431,17 @@ impl CheckpointQueue {
     }
 
     #[query]
+    pub fn last_completed_tx(&self) -> Result<Adapter<bitcoin::Transaction>> {
+        let index = if self.signing()?.is_some() {
+            self.index - 2
+        } else {
+            self.index - 1
+        };
+
+        Ok(Adapter::new(self.get(index)?.tx()?.0))
+    }
+
+    #[query]
     pub fn completed_txs(&self) -> Result<Vec<Adapter<bitcoin::Transaction>>> {
         self.completed()?
             .into_iter()
