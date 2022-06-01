@@ -308,7 +308,7 @@ pub async fn nbtc_balance(addr: String) -> u64 {
 #[wasm_bindgen(js_name = valueLocked)]
 pub async fn value_locked() -> u64 {
     let client: WebClient<App> = WebClient::new();
-    client.bitcoin.get_tvl()
+    client.bitcoin.value_locked().await.unwrap().unwrap()
 }
 
 #[wasm_bindgen(js_name = getLatestCheckpointHash)]
