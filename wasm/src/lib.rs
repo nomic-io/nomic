@@ -311,10 +311,12 @@ pub async fn value_locked() -> u64 {
     client.bitcoin.value_locked().await.unwrap().unwrap()
 }
 
-#[wasm_bindgen(js_name = getLatestCheckpointHash)]
-pub async fn get_latest_checkpoint_hash() -> Jsvalue {
-    let last_checkpoint_id = self.app_client.checkpoints.last_completed_tx().await??.tx_id();
-    return *last_checkpoint_id;
+#[wasm_bindgen(js_name = latestCheckpointHash)]
+pub async fn latest_checkpoint_hash() -> String {
+    let client: WebClient<App> = WebClient::new();
+
+    let last_checkpoint_id = client.bitcoin.checkpoints.last_completed_tx().await.unwrap().unwrap().txid();
+    return last_checkpoint_id.to_string();
 }
 
 #[wasm_bindgen(js_name = broadcastDepositAddress)]
