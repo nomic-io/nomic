@@ -305,8 +305,8 @@ pub async fn nbtc_balance(addr: String) -> u64 {
         .into()
 }
 
-#[wasm_bindgen(js_name = getTvl)]
-pub async fn get_tvl() -> JsValue {
+#[wasm_bindgen(js_name = valueLocked)]
+pub async fn value_locked() -> u64 {
     let client: WebClient<App> = WebClient::new();
     client.bitcoin.get_tvl()
 }
