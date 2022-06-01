@@ -669,7 +669,7 @@ impl RelayerCmd {
                     client.accounts.take_as_funding(MIN_FEE.into()).await
                 })
                 .bitcoin;
-            Relayer::new(btc_client, app_bitcoin_client)
+            Relayer::new("deposit_addresses.csv", btc_client, app_bitcoin_client).await
         };
 
         let (send, recv) = tokio::sync::mpsc::channel(1024);
@@ -699,14 +699,14 @@ impl RelayerCmd {
             .with(warp::cors().allow_any_origin());
         let addr_server = warp::serve(route).run(([0, 0, 0, 0], 9000));
 
-        let mut relayer = create_relayer().await;
-        let headers = relayer.relay_headers();
+        let mut relayer = create_relayer().await?;
+        let headers = relayer.start_header_relay();
 
-        let mut relayer = create_relayer().await;
-        let deposits = relayer.relay_deposits(recv);
+        let mut relayer = create_relayer().await?;
+        let deposits = relayer.start_deposit_relay(recv);
 
-        let mut relayer = create_relayer().await;
-        let checkpoints = relayer.relay_checkpoints();
+        let mut relayer = create_relayer().await?;
+        let checkpoints = relayer.start_checkpoint_relay();
 
         futures::try_join!(headers, deposits, checkpoints, async {
             addr_server.await;
@@ -720,7 +720,8 @@ impl RelayerCmd {
 
 #[derive(Parser, Debug)]
 pub struct SignerCmd {
-    pub xpriv: String,
+    #[clap(short, long)]
+    path: Option<String>,
 }
 
 impl SignerCmd {
@@ -729,7 +730,17 @@ impl SignerCmd {
             .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
             .bitcoin;
 
-        let signer = Signer::new(app_bitcoin_client, self.xpriv.as_str())?;
+        let signer_dir_path = self
+            .path
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| Node::home(nomic::app::CHAIN_ID).join("signer"));
+        if !signer_dir_path.exists() {
+            std::fs::create_dir(&signer_dir_path)?;
+        }
+        let key_path = signer_dir_path.join("xpriv");
+
+        let signer = Signer::load_or_generate(app_bitcoin_client, key_path)?;
         signer.start().await?;
 
         Ok(())

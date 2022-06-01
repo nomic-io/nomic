@@ -6,7 +6,7 @@ use bitcoin::hashes::Hash;
 use bitcoin::util::bip32::ExtendedPubKey;
 use bitcoin::Script;
 use bitcoin::{util::merkleblock::PartialMerkleTree, Transaction, Txid};
-use checkpoint::{CheckpointQueue, Input};
+use checkpoint::{Checkpoint, CheckpointQueue, CheckpointStatus, Input, FEE_RATE};
 use header_queue::HeaderQueue;
 #[cfg(feature = "full")]
 use orga::abci::{BeginBlock, InitChain};
@@ -233,13 +233,23 @@ impl Bitcoin {
             txid: btc_tx.txid(),
             vout: btc_vout,
         };
-        self.checkpoints
-            .building_mut()?
-            .push_input(prevout, &sigset, dest, output.value)?;
+        let est_vsize =
+            self.checkpoints
+                .building_mut()?
+                .push_input(prevout, &sigset, dest, output.value)?;
 
         // TODO: don't credit account until we're done signing including tx
-        // TODO: subtract deposit fee
-        self.accounts.deposit(dest, Nbtc::mint(output.value))?;
+        let value = output.value.checked_sub(est_vsize * FEE_RATE);
+
+        match value {
+            None => {
+                return Err(OrgaError::App(
+                    "Deposit amount is too small to pay its spending fee".to_string(),
+                )
+                .into())
+            }
+            Some(value) => self.accounts.deposit(dest, Nbtc::mint(value))?,
+        };
 
         Ok(())
     }
@@ -258,15 +268,36 @@ impl Bitcoin {
 
         self.accounts.withdraw(signer, amount)?.burn();
 
+        let fee = (9 + script_pubkey.len() as u64) * FEE_RATE;
+        let value: u64 = amount.into();
+        let value = match value.checked_sub(fee) {
+            None => {
+                return Err(OrgaError::App(
+                    "Withdrawal is too small to pay its miner fee".to_string(),
+                )
+                .into())
+            }
+            Some(value) => value,
+        };
+
         let output = bitcoin::TxOut {
             script_pubkey: script_pubkey.into_inner(),
-            value: amount.into(),
+            value,
         };
 
         let mut checkpoint = self.checkpoints.building_mut()?;
         checkpoint.outputs.push_back(Adapter::new(output))?;
 
         Ok(())
+    }
+
+    #[query]
+    pub fn value_locked(&self) -> Result<u64> {
+        if let Some(checkpoint) = self.checkpoints.back()? {
+            checkpoint.get_tvl()
+        } else {
+            Ok(0)
+        }
     }
 
     pub fn network(&self) -> bitcoin::Network {
@@ -297,16 +328,21 @@ impl SignatoryKeys {
     }
 
     pub fn insert(&mut self, consensus_key: ConsensusKey, xpub: Xpub) -> Result<()> {
-        if self.xpubs.contains_key(xpub.clone())? {
+        let mut normalized_xpub = xpub.clone();
+        normalized_xpub.0.child_number = 0.into();
+        normalized_xpub.0.depth = 0;
+        normalized_xpub.0.parent_fingerprint = Default::default();
+
+        if self.xpubs.contains_key(normalized_xpub.clone())? {
             return Err(OrgaError::App("Duplicate signatory key".to_string()).into());
         }
 
-        let existing = self.by_cons.remove(consensus_key)?;
-        if let Some(existing_xpub) = existing {
-            self.xpubs.remove(existing_xpub.clone())?;
+        if self.by_cons.contains_key(consensus_key)? {
+            return Err(OrgaError::App("Validator already has a signatory key".to_string()).into());
         }
 
         self.by_cons.insert(consensus_key, xpub)?;
+        self.xpubs.insert(normalized_xpub, ())?;
 
         Ok(())
     }

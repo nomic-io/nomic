@@ -17,6 +17,7 @@ use orga::Error as OrgaError;
 use orga::Result as OrgaResult;
 
 const MAX_LENGTH: u64 = 4032;
+const MAX_RELAY: u64 = 25;
 const MAX_TIME_INCREASE: u32 = 2 * 60 * 60;
 const RETARGET_INTERVAL: u32 = 2016;
 const TARGET_SPACING: u32 = 10 * 60;
@@ -307,6 +308,11 @@ impl HeaderQueue {
     #[call]
     pub fn add(&mut self, headers: HeaderList) -> OrgaResult<()> {
         let headers: Vec<_> = headers.into();
+
+        if headers.len() as u64 > MAX_RELAY {
+            return Err(OrgaError::App("Exceeded maximum amount of relayed headers".to_string()));
+        }
+
         self.add_into_iter(headers)
             .map_err(|err| OrgaError::App(err.to_string()))
     }

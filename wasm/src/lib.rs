@@ -305,6 +305,26 @@ pub async fn nbtc_balance(addr: String) -> u64 {
         .into()
 }
 
+#[wasm_bindgen(js_name = valueLocked)]
+pub async fn value_locked() -> u64 {
+    let client: WebClient<App> = WebClient::new();
+    client.bitcoin.value_locked().await.unwrap().unwrap()
+}
+
+#[wasm_bindgen(js_name = latestCheckpointHash)]
+pub async fn latest_checkpoint_hash() -> String {
+    let client: WebClient<App> = WebClient::new();
+
+    let last_checkpoint_id = client.bitcoin.checkpoints.last_completed_tx().await.unwrap().unwrap().txid();
+    return last_checkpoint_id.to_string();
+}
+
+#[wasm_bindgen(js_name = bitcoinHeight)]
+pub async fn bitcoin_height() -> u32 {
+    let client: WebClient<App> = WebClient::new();
+    client.bitcoin.headers.height().await.unwrap().unwrap()
+}
+
 #[wasm_bindgen(js_name = broadcastDepositAddress)]
 pub async fn broadcast_deposit_addr(addr: String, sigset_index: u32, relayers: js_sys::Array) {
     let window = web_sys::window().unwrap();

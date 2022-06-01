@@ -5,6 +5,9 @@ use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use orga::call::Call;
 use orga::client::{AsyncCall, AsyncQuery, Client};
 use orga::query::Query;
+use std::path::Path;
+use std::fs;
+use rand::Rng;
 
 type AppClient<T> = <Bitcoin as Client<T>>::Client;
 
@@ -19,9 +22,33 @@ where
     T: for<'a> AsyncQuery<Response<'a> = &'a Bitcoin>,
     T: AsyncCall<Call = <Bitcoin as Call>::Call>,
 {
-    pub fn new(client: AppClient<T>, xpriv: &str) -> Result<Self> {
-        let xpriv = xpriv.parse()?;
-        Ok(Signer { client, xpriv })
+    pub fn load_or_generate<P: AsRef<Path>>(client: AppClient<T>, key_path: P) -> Result<Self> {
+        let path = key_path.as_ref();
+        let xpriv = if path.exists() {
+            println!("Loading signatory key from {}", path.display());
+            let bytes = fs::read(path)?;
+            let text = String::from_utf8(bytes).unwrap();
+            text.trim().parse()?
+        } else {
+            println!("Generating signatory key at {}", path.display());
+            let seed: [u8; 32] = rand::thread_rng().gen();
+            // TODO: get network from somewhere
+            let xpriv = ExtendedPrivKey::new_master(bitcoin::Network::Testnet, seed.as_slice())?;
+
+            fs::write(path, xpriv.to_string().as_bytes())?;
+
+            xpriv
+        };
+
+        let secp = bitcoin::secp256k1::Secp256k1::signing_only();
+        let xpub = ExtendedPubKey::from_private(&secp, &xpriv);
+        println!("Signatory xpub:\n{}", xpub);
+
+        Ok(Self::new(client, xpriv))
+    }
+
+    pub fn new(client: AppClient<T>, xpriv: ExtendedPrivKey) -> Self {
+        Signer { client, xpriv }
     }
 
     pub async fn start(&self) -> Result<()> {

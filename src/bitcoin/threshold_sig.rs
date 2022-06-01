@@ -1,17 +1,15 @@
+use super::SignatorySet;
 use orga::call::Call;
 use orga::client::Client;
 use orga::collections::{Map, Next};
-use orga::encoding::{Decode, Encode, Terminated, Result as EdResult, Error as EdError};
+use orga::encoding::{Decode, Encode, Error as EdError, Result as EdResult, Terminated};
 use orga::query::Query;
 use orga::state::State;
 use orga::{Error, Result};
 use secp256k1::{
-    PublicKey,
-    Secp256k1,
-    ecdsa,
-    constants::{COMPACT_SIGNATURE_SIZE, MESSAGE_SIZE, PUBLIC_KEY_SIZE}
+    constants::{COMPACT_SIGNATURE_SIZE, MESSAGE_SIZE, PUBLIC_KEY_SIZE},
+    ecdsa, PublicKey, Secp256k1,
 };
-use super::SignatorySet;
 
 pub type Message = [u8; MESSAGE_SIZE];
 pub type Signature = [u8; COMPACT_SIGNATURE_SIZE];
@@ -73,6 +71,10 @@ pub struct ThresholdSig {
 }
 
 impl ThresholdSig {
+    pub fn len(&self) -> u16 {
+        self.len
+    }
+
     pub fn set_message(&mut self, message: Message) {
         self.message = message;
     }
@@ -85,10 +87,14 @@ impl ThresholdSig {
         let mut total_vp = 0;
 
         for signatory in signatories.iter() {
-            self.sigs.insert(signatory.pubkey, Share {
-                power: signatory.voting_power,
-                sig: None,
-            }.into())?;
+            self.sigs.insert(
+                signatory.pubkey,
+                Share {
+                    power: signatory.voting_power,
+                    sig: None,
+                }
+                .into(),
+            )?;
 
             self.len += 1;
             total_vp += signatory.voting_power;
@@ -96,6 +102,24 @@ impl ThresholdSig {
 
         // TODO: get threshold ratio from somewhere else
         self.threshold = ((total_vp as u128) * 9 / 10) as u64;
+
+        Ok(())
+    }
+
+    pub fn from_shares(&mut self, shares: Vec<(Pubkey, Share)>) -> Result<()> {
+        let mut total_vp = 0;
+        let mut len = 0;
+
+        for (pubkey, share) in shares.into_iter() {
+            assert!(share.sig.is_none());
+            total_vp += share.power;
+            len += 1;
+            self.sigs.insert(pubkey, share.into())?;
+        }
+
+        // TODO: get threshold ratio from somewhere else
+        self.threshold = ((total_vp as u128) * 9 / 10) as u64;
+        self.len = len;
 
         Ok(())
     }
@@ -114,8 +138,19 @@ impl ThresholdSig {
                     Err(e) => return Some(Err(e)),
                     Ok(entry) => entry,
                 };
-                share.sig.as_ref().map(|sig| Ok((pubkey.clone(), sig.clone())))
+                share
+                    .sig
+                    .as_ref()
+                    .map(|sig| Ok((pubkey.clone(), sig.clone())))
             })
+            .collect()
+    }
+
+    // TODO: should be iterator?
+    pub fn shares(&self) -> Result<Vec<(Pubkey, Share)>> {
+        self.sigs
+            .iter()?
+            .map(|entry| entry.map(|(pubkey, share)| (pubkey.clone(), share.clone())))
             .collect()
     }
 
@@ -126,7 +161,9 @@ impl ThresholdSig {
 
     #[query]
     pub fn needs_sig(&self, pubkey: Pubkey) -> Result<bool> {
-        Ok(self.sigs.get(pubkey)?
+        Ok(self
+            .sigs
+            .get(pubkey)?
             .map(|share| share.sig.is_none())
             .unwrap_or(false))
     }
@@ -141,7 +178,7 @@ impl ThresholdSig {
             .sigs
             .get(pubkey)?
             .ok_or_else(|| Error::App("Pubkey is not part of threshold signature".into()))?;
-        
+
         if share.sig.is_some() {
             return Err(Error::App("Pubkey already signed".into()));
         }
@@ -152,7 +189,7 @@ impl ThresholdSig {
             .sigs
             .get_mut(pubkey)?
             .ok_or_else(|| Error::App("Pubkey is not part of threshold signature".into()))?;
-        
+
         share.sig = Some(sig);
         self.signed += share.power;
 
@@ -194,10 +231,6 @@ impl ThresholdSig {
             })
             .collect()
     }
-
-    pub fn est_vsize(&self) -> u64 {
-        self.len as u64 * 47 + 6
-    }
 }
 
 use std::fmt::Debug;
@@ -213,15 +246,15 @@ impl Debug for ThresholdSig {
     }
 }
 
-#[derive(State, Call, Client, Query)]
+#[derive(State, Call, Client, Query, Clone)]
 pub struct Share {
     power: u64,
     sig: Option<Signature>,
 }
 
 // TODO: move this into ed
-use std::convert::{TryInto, TryFrom};
 use derive_more::{Deref, DerefMut, Into};
+use std::convert::{TryFrom, TryInto};
 
 #[derive(Deref, DerefMut, Encode, Into, Default)]
 pub struct LengthVec<P, T>
@@ -253,7 +286,7 @@ where
     T: Encode + Decode + Terminated,
 {
     type Encoding = Self;
-    
+
     fn create(_: orga::store::Store, data: Self::Encoding) -> Result<Self> {
         Ok(data)
     }
@@ -278,7 +311,8 @@ impl<P, T> Terminated for LengthVec<P, T>
 where
     P: Encode + Terminated,
     T: Encode + Terminated,
-{}
+{
+}
 
 impl<P, T> Decode for LengthVec<P, T>
 where
@@ -287,7 +321,9 @@ where
 {
     fn decode<R: std::io::Read>(mut input: R) -> EdResult<Self> {
         let len = P::decode(&mut input)?;
-        let len_usize = len.clone().try_into()
+        let len_usize = len
+            .clone()
+            .try_into()
             .map_err(|_| EdError::UnexpectedByte(80))?;
 
         let mut values = Vec::with_capacity(len_usize);
