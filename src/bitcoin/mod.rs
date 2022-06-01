@@ -6,7 +6,7 @@ use bitcoin::hashes::Hash;
 use bitcoin::util::bip32::ExtendedPubKey;
 use bitcoin::Script;
 use bitcoin::{util::merkleblock::PartialMerkleTree, Transaction, Txid};
-use checkpoint::{Checkpoint, CheckpointQueue, CheckpointStatus, Input};
+use checkpoint::{Checkpoint, CheckpointQueue, CheckpointStatus, Input, FEE_RATE};
 use header_queue::HeaderQueue;
 #[cfg(feature = "full")]
 use orga::abci::{BeginBlock, InitChain};
@@ -233,13 +233,23 @@ impl Bitcoin {
             txid: btc_tx.txid(),
             vout: btc_vout,
         };
-        self.checkpoints
-            .building_mut()?
-            .push_input(prevout, &sigset, dest, output.value)?;
+        let est_vsize =
+            self.checkpoints
+                .building_mut()?
+                .push_input(prevout, &sigset, dest, output.value)?;
 
         // TODO: don't credit account until we're done signing including tx
-        // TODO: subtract deposit fee
-        self.accounts.deposit(dest, Nbtc::mint(output.value))?;
+        let value = output.value.checked_sub(est_vsize * FEE_RATE);
+
+        match value {
+            None => {
+                return Err(OrgaError::App(
+                    "Deposit amount is too small to pay its spending fee".to_string(),
+                )
+                .into())
+            }
+            Some(value) => self.accounts.deposit(dest, Nbtc::mint(value))?,
+        };
 
         Ok(())
     }
@@ -258,9 +268,21 @@ impl Bitcoin {
 
         self.accounts.withdraw(signer, amount)?.burn();
 
+        let fee = (9 + script_pubkey.len() as u64) * FEE_RATE;
+        let value: u64 = amount.into();
+        let value = match value.checked_sub(fee) {
+            None => {
+                return Err(OrgaError::App(
+                    "Withdrawal is too small to pay its miner fee".to_string(),
+                )
+                .into())
+            }
+            Some(value) => value,
+        };
+
         let output = bitcoin::TxOut {
             script_pubkey: script_pubkey.into_inner(),
-            value: amount.into(),
+            value,
         };
 
         let mut checkpoint = self.checkpoints.building_mut()?;

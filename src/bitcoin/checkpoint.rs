@@ -13,7 +13,7 @@ use orga::{
     call::Call,
     client::Client,
     coins::Address,
-    collections::{ChildMut, Deque, Map, Ref},
+    collections::{map::ReadOnly, ChildMut, Deque, Map, Ref},
     context::GetContext,
     encoding::{Decode, Encode},
     plugins::{Signer, Time},
@@ -86,6 +86,7 @@ pub struct Input {
     pub sigset_index: u32,
     pub dest: Address,
     pub amount: u64,
+    pub est_witness_vsize: u64,
     pub sigs: ThresholdSig,
 }
 
@@ -102,6 +103,10 @@ impl Input {
             sequence: u32::MAX,
             witness,
         })
+    }
+
+    pub fn est_vsize(&self) -> u64 {
+        self.est_witness_vsize + 40
     }
 }
 
@@ -135,7 +140,7 @@ impl Checkpoint {
         for i in 0..self.inputs.len() {
             let input = self.inputs.get(i)?.unwrap();
             tx.input.push(input.to_txin()?);
-            est_vsize += input.sigs.est_vsize();
+            est_vsize += input.est_witness_vsize;
         }
 
         // TODO: use deque iterator
@@ -290,7 +295,7 @@ impl<'a> BuildingCheckpointMut<'a> {
         sigset: &SignatorySet,
         dest: Address,
         amount: u64,
-    ) -> Result<()> {
+    ) -> Result<u64> {
         let script_pubkey = sigset.output_script(dest)?;
         let redeem_script = sigset.redeem_script(dest)?;
 
@@ -302,6 +307,7 @@ impl<'a> BuildingCheckpointMut<'a> {
             sigset.index(),
             dest.into(),
             amount,
+            sigset.est_witness_vsize(),
             <ThresholdSig as State>::Encoding::default(),
         ))?;
 
@@ -309,10 +315,17 @@ impl<'a> BuildingCheckpointMut<'a> {
         let mut input = self.inputs.get_mut(inputs_len - 1)?.unwrap();
         input.sigs.from_sigset(sigset)?;
 
-        Ok(())
+        Ok(input.est_vsize())
     }
 
-    pub fn advance(self) -> Result<SigningCheckpointMut<'a>> {
+    pub fn advance(
+        self,
+    ) -> Result<(
+        bitcoin::OutPoint,
+        u64,
+        Vec<ReadOnly<Input>>,
+        Vec<ReadOnly<Output>>,
+    )> {
         let mut checkpoint = self.0;
 
         checkpoint.status = CheckpointStatus::Signing;
@@ -323,14 +336,16 @@ impl<'a> BuildingCheckpointMut<'a> {
         };
         checkpoint.outputs.push_front(Adapter::new(reserve_out))?;
 
-        for i in MAX_INPUTS..checkpoint.inputs.len() {
-            // TODO: move input to child
-            todo!()
+        let mut excess_inputs = vec![];
+        while checkpoint.inputs.len() > MAX_INPUTS {
+            let removed_input = checkpoint.inputs.pop_back()?.unwrap();
+            excess_inputs.push(removed_input);
         }
 
-        for i in MAX_OUTPUTS..checkpoint.outputs.len() {
-            // TODO: move output to child
-            todo!()
+        let mut excess_outputs = vec![];
+        while checkpoint.outputs.len() > MAX_OUTPUTS {
+            let removed_output = checkpoint.outputs.pop_back()?.unwrap();
+            excess_outputs.push(removed_output);
         }
 
         let mut in_amount = 0;
@@ -363,7 +378,17 @@ impl<'a> BuildingCheckpointMut<'a> {
             input.sigs.set_message(sighash.into_inner());
         }
 
-        Ok(signing)
+        let reserve_outpoint = bitcoin::OutPoint {
+            txid: tx.txid(),
+            vout: 0,
+        };
+
+        Ok((
+            reserve_outpoint,
+            reserve_value,
+            excess_inputs,
+            excess_outputs,
+        ))
     }
 }
 
@@ -431,6 +456,17 @@ impl CheckpointQueue {
         }
 
         Ok(out)
+    }
+
+    #[query]
+    pub fn last_completed_tx(&self) -> Result<Adapter<bitcoin::Transaction>> {
+        let index = if self.signing()?.is_some() {
+            self.index - 2
+        } else {
+            self.index - 1
+        };
+
+        Ok(Adapter::new(self.get(index)?.tx()?.0))
     }
 
     #[query]
@@ -518,20 +554,30 @@ impl CheckpointQueue {
 
             if self.index > 0 {
                 let second = self.get_mut(self.index - 1)?;
-                BuildingCheckpointMut(second).advance()?;
-
-                // TODO: do this inside advance()?
-                let signing = self.signing()?.unwrap();
-                let reserve_value = signing.outputs.front()?.unwrap().value;
-                let (signing_tx, _) = signing.tx()?;
-                let outpoint = bitcoin::OutPoint {
-                    txid: signing_tx.txid(),
-                    vout: 0,
-                };
-                let sigset = signing.sigset.clone();
+                let sigset = second.sigset.clone();
+                let (reserve_outpoint, reserve_value, excess_inputs, excess_outputs) =
+                    BuildingCheckpointMut(second).advance()?;
 
                 let mut building = self.building_mut()?;
-                building.push_input(outpoint, &sigset, Address::NULL, reserve_value)?;
+
+                building.push_input(reserve_outpoint, &sigset, Address::NULL, reserve_value)?;
+
+                for input in excess_inputs {
+                    let shares = input.sigs.shares()?;
+                    let data = input.into_inner().into();
+                    building.inputs.push_back(data)?;
+                    building
+                        .inputs
+                        .back_mut()?
+                        .unwrap()
+                        .sigs
+                        .from_shares(shares)?;
+                }
+
+                for output in excess_outputs {
+                    let data = output.into_inner().into();
+                    building.outputs.push_back(data)?;
+                }
             }
 
             Ok(())

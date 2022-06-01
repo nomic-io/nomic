@@ -159,25 +159,38 @@ where
     }
 
     async fn relay_checkpoints(&mut self) -> Result<()> {
-        loop {
-            sleep(10).await;
+        let last_checkpoint = self.app_client.checkpoints.last_completed_tx().await??;
+        println!("Last checkpoint tx: {}", last_checkpoint.txid());
 
+        let mut relayed = HashSet::new();
+
+        loop {
             let txs = self.app_client.checkpoints.completed_txs().await??;
             for tx in txs {
+                if relayed.contains(&tx.txid()) {
+                    continue;
+                }
+
                 use ::bitcoin::consensus::Encodable;
                 let mut tx_bytes = vec![];
                 tx.consensus_encode(&mut tx_bytes)?;
 
                 match self.btc_client.send_raw_transaction(&tx_bytes).await {
-                    Ok(_) => {}
+                    Ok(_) => {
+                        println!("Relayed checkpoint: {}", tx.txid());
+                    }
                     Err(err) if err.to_string().contains("bad-txns-inputs-missingorspent") => {}
                     Err(err)
                         if err
                             .to_string()
-                            .contains("Transaction already in block chain") => {}
+                            .contains("Transaction already in block chain") => {
+                                relayed.insert(tx.txid());
+                            }
                     Err(err) => Err(err)?,
                 }
             }
+
+            sleep(1).await;
         }
 
         Ok(())
@@ -293,12 +306,7 @@ where
 
             let proof = Adapter::new(proof);
 
-            println!(
-                "Relaying deposit... sigset_index={}, value={}",
-                output.sigset_index, tx.output[output.vout as usize].value
-            );
-
-            self.app_client
+            let res = self.app_client
                 .relay_deposit(
                     tx,
                     height,
@@ -307,7 +315,14 @@ where
                     output.sigset_index,
                     output.dest,
                 )
-                .await?;
+                .await;
+
+            match res {
+                Err(err) if err.to_string().contains("Deposit amount is below minimum") || err.to_string().contains("Deposit amount is too small to pay its spending fee") => {
+                    return Ok(());
+                },
+                _ => res?,
+            };
         }
 
         println!(
