@@ -6,7 +6,7 @@ use bitcoin::hashes::Hash;
 use bitcoin::util::bip32::ExtendedPubKey;
 use bitcoin::Script;
 use bitcoin::{util::merkleblock::PartialMerkleTree, Transaction, Txid};
-use checkpoint::{CheckpointQueue, Input};
+use checkpoint::{Checkpoint, CheckpointQueue, CheckpointStatus, Input};
 use header_queue::HeaderQueue;
 #[cfg(feature = "full")]
 use orga::abci::{BeginBlock, InitChain};
@@ -271,19 +271,15 @@ impl Bitcoin {
 
     #[query]
     pub fn value_locked(&self) -> Result<u64> {
-        let checkpoint = match self.checkpoints.front()? {
-            Some(checkpoints) => checkpoints,
-            None => return Ok(0),
-        };
-
-        let mut tvl = 0;
-        for i in 0..checkpoint.inputs.len() {
-            if let Some(input) = checkpoint.inputs.get(i)? {
-                tvl += input.amount;
+        for i in 0..self.checkpoints.len()? {
+            let checkpoint = self.checkpoints.get(i)?;
+            match checkpoint.status {
+                CheckpointStatus::Complete => return checkpoint.get_tvl(),
+                _ => continue,
             }
         }
 
-        Ok(tvl)
+        Ok(0)
     }
 
     pub fn network(&self) -> bitcoin::Network {
