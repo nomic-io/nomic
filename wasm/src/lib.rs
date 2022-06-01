@@ -319,6 +319,12 @@ pub async fn latest_checkpoint_hash() -> String {
     return last_checkpoint_id.to_string();
 }
 
+#[wasm_bindgen(js_name = bitcoinHeight)]
+pub async fn bitcoin_height() -> u32 {
+    let client: WebClient<App> = WebClient::new();
+    client.bitcoin.headers.height().await.unwrap().unwrap()
+}
+
 #[wasm_bindgen(js_name = broadcastDepositAddress)]
 pub async fn broadcast_deposit_addr(addr: String, sigset_index: u32, relayers: js_sys::Array) {
     let window = web_sys::window().unwrap();
