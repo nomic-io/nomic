@@ -116,6 +116,7 @@ impl StartCmd {
 
             let has_old_node = Node::home(old_name).exists();
             let has_new_node = Node::home(new_name).exists();
+            let started_old_node = Node::height(old_name).unwrap() > 0;
             let started_new_node = Node::height(new_name).unwrap() > 0;
             let upgrade_time_passed = now_seconds() > STOP_SECONDS;
             if has_old_node {
@@ -140,16 +141,17 @@ impl StartCmd {
                 .stderr(std::process::Stdio::inherit())
                 .stop_seconds(STOP_SECONDS);
 
-                set_p2p_seeds(&old_config_path, &[
-                    "337d4415bbe17251446dd251290d4d766be2e882@192.168.1.126:26656",
-                ]);
+                set_p2p_seeds(
+                    &old_config_path,
+                    &["337d4415bbe17251446dd251290d4d766be2e882@192.168.1.126:26656"],
+                );
 
-                if !has_old_node {
+                if !started_old_node {
                     // TODO: set default RPC boostrap nodes
-                    configure_for_statesync(&old_config_path, &[
-                        "http://192.168.1.126:27657",
-                        "http://192.168.1.126:28657",
-                    ]);
+                    configure_for_statesync(
+                        &old_config_path,
+                        &["http://192.168.1.126:27657", "http://192.168.1.126:28657"],
+                    );
                 }
 
                 let res = node.run();
