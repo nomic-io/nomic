@@ -210,20 +210,42 @@ impl ConvertSdkTx for InnerApp {
                     .to_address
                     .parse()
                     .map_err(|e: bech32::Error| Error::App(e.to_string()))?;
-                let amount = get_amount(msg.amount.first(), "unom")?;
 
-                let funding_call = AccountCall::MethodTakeAsFunding(MIN_FEE.into(), vec![]);
-                let funding_call_bytes = funding_call.encode()?;
-                let payer_call = AppCall::FieldAccounts(funding_call_bytes);
+                if msg.amount.len() != 1 {
+                    return Err(Error::App("'amount' must have exactly one element".to_string()));
+                }
 
-                let transfer_call = AccountCall::MethodTransfer(to, amount, vec![]);
-                let transfer_call_bytes = transfer_call.encode()?;
-                let paid_call = AppCall::FieldAccounts(transfer_call_bytes);
+                match msg.amount[0].denom.as_str() {
+                    "unom" => {
+                        let amount = get_amount(msg.amount.first(), "unom")?;
 
-                Ok(PaidCall {
-                    payer: payer_call,
-                    paid: paid_call,
-                })
+                        let funding_call = AccountCall::MethodTakeAsFunding(MIN_FEE.into(), vec![]);
+                        let funding_call_bytes = funding_call.encode()?;
+                        let payer_call = AppCall::FieldAccounts(funding_call_bytes);
+
+                        let transfer_call = AccountCall::MethodTransfer(to, amount, vec![]);
+                        let transfer_call_bytes = transfer_call.encode()?;
+                        let paid_call = AppCall::FieldAccounts(transfer_call_bytes);
+
+                        Ok(PaidCall {
+                            payer: payer_call,
+                            paid: paid_call,
+                        })
+                    }
+                    "nsat" => {
+                        let amount = get_amount(msg.amount.first(), "nsat")?;
+                       
+                        let funding_call = BitcoinCall::MethodTransfer(to, amount, vec![]);
+                        let funding_call_bytes = funding_call.encode()?;
+                        let payer_call = AppCall::FieldBitcoin(funding_call_bytes);
+
+                        Ok(PaidCall {
+                            payer: payer_call,
+                            paid: AppCall::MethodNoop(vec![]),
+                        }) 
+                    },
+                    _ => Err(Error::App("Unknown denom".to_string())) 
+                }
             }
 
             "cosmos-sdk/MsgDelegate" => {

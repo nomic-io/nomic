@@ -309,7 +309,7 @@ impl Bitcoin {
     }
 
     #[call]
-    pub fn transfer(&mut self, to: Address, amount: u64) -> Result<()> {
+    pub fn transfer(&mut self, to: Address, amount: Amount) -> Result<()> {
         exempt_from_fee()?;
 
         let signer = self
@@ -319,7 +319,7 @@ impl Bitcoin {
             .ok_or_else(|| Error::Orga(OrgaError::App("Call must be signed".into())))?;
         self.accounts.withdraw(signer, TRANSFER_FEE.into())?.burn();
 
-        self.accounts.transfer(to, amount.into())?;
+        self.accounts.transfer(to, amount)?;
 
         Ok(())
     }
