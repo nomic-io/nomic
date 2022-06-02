@@ -34,6 +34,32 @@ pub struct InnerApp {
     pub bitcoin: Bitcoin,
 }
 
+impl InnerApp {
+    pub fn community_pool(&self) -> Coin<Nom> {
+        self.community_pool.amount.into()
+    }
+
+    pub fn incentive_pool(&self) -> Coin<Nom> {
+        self.incentive_pool.amount.into()
+    }
+
+    pub fn staking_rewards(&self) -> Faucet<Nom> {
+        self.staking_rewards.clone()
+    }
+
+    pub fn dev_rewards(&self) -> Faucet<Nom> {
+        self.dev_rewards.clone()
+    }
+
+    pub fn community_pool_rewards(&self) -> Faucet<Nom> {
+        self.community_pool_rewards.clone()
+    }
+
+    pub fn incentive_pool_rewards(&self) -> Faucet<Nom> {
+        self.incentive_pool_rewards.clone()
+    }
+}
+
 #[cfg(feature = "full")]
 impl Migrate<nomicv1::app::InnerApp> for InnerApp {
     fn migrate(&mut self, legacy: nomicv1::app::InnerApp) -> Result<()> {
@@ -140,6 +166,10 @@ impl<S: Symbol> Airdrop<S> {
 
         let amount = self.claimable.balance(signer)?;
         self.claimable.take_as_funding(amount)
+    }
+
+    pub fn accounts(self) -> Accounts<S> {
+        self.claimable
     }
 }
 
