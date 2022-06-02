@@ -140,11 +140,16 @@ impl StartCmd {
                 .stderr(std::process::Stdio::inherit())
                 .stop_seconds(STOP_SECONDS);
 
-                set_p2p_seeds(&old_config_path, &[]);
+                set_p2p_seeds(&old_config_path, &[
+                    "a2d84dfe30a8b4c007525fef63808fd38240206d:26656",
+                ]);
 
                 if !has_old_node {
                     // TODO: set default RPC boostrap nodes
-                    configure_for_statesync(&old_config_path, &[]);
+                    configure_for_statesync(&old_config_path, &[
+                        "192.168.1.126:27657",
+                        "192.168.1.126:28657",
+                    ]);
                 }
 
                 let res = node.run();
