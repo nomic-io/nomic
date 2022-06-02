@@ -664,12 +664,7 @@ impl RelayerCmd {
     async fn run(&self) -> Result<()> {
         let create_relayer = async || {
             let btc_client = self.btc_client().await.unwrap();
-            let app_bitcoin_client = app_client()
-                .pay_from(async move |mut client| {
-                    client.accounts.take_as_funding(MIN_FEE.into()).await
-                })
-                .bitcoin;
-            Relayer::new("deposit_addresses.csv", btc_client, app_bitcoin_client).await
+            Relayer::new("deposit_addresses.csv", btc_client, app_client()).await
         };
 
         let (send, recv) = tokio::sync::mpsc::channel(1024);
@@ -726,10 +721,6 @@ pub struct SignerCmd {
 
 impl SignerCmd {
     async fn run(&self) -> Result<()> {
-        let app_bitcoin_client = app_client()
-            .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
-            .bitcoin;
-
         let signer_dir_path = self
             .path
             .as_ref()
@@ -740,7 +731,7 @@ impl SignerCmd {
         }
         let key_path = signer_dir_path.join("xpriv");
 
-        let signer = Signer::load_or_generate(app_bitcoin_client, key_path)?;
+        let signer = Signer::load_or_generate(app_client(), key_path)?;
         signer.start().await?;
 
         Ok(())
@@ -811,9 +802,13 @@ impl WithdrawCmd {
         let script = self.dest.script_pubkey();
 
         app_client()
-            .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
-            .bitcoin
-            .withdraw(Adapter::new(script), self.amount.into())
+            .pay_from(async move |client| {
+                client
+                    .bitcoin
+                    .withdraw(Adapter::new(script), self.amount.into())
+                    .await
+            })
+            .noop()
             .await?;
 
         Ok(())

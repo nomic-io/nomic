@@ -1,6 +1,7 @@
 use super::{checkpoint::CheckpointQueue, Bitcoin, SignatorySet};
 use crate::bitcoin::{adapter::Adapter, header_queue::WrappedHeader};
 use crate::error::Result;
+use crate::app::App;
 use ::bitcoin::consensus::Decodable as _;
 use ::bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoincore_rpc_async::bitcoin;
@@ -15,33 +16,26 @@ use bitcoincore_rpc_async::{Client as BitcoinRpcClient, RpcApi};
 use orga::client::{AsyncCall, AsyncQuery};
 use orga::coins::Address;
 use orga::prelude::*;
+use orga::abci::TendermintClient;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use tokio::sync::mpsc::Receiver;
 
 const HEADER_BATCH_SIZE: usize = 25;
 
-type BitcoinStateClient<T> = <Bitcoin as Client<T>>::Client;
-type CheckpointQueueClient<T> = <CheckpointQueue as Client<T>>::Client;
-
-pub struct Relayer<T: Clone + Send> {
+pub struct Relayer {
     btc_client: BitcoinRpcClient,
-    app_client: BitcoinStateClient<T>,
+    app_client: TendermintClient<App>,
 
     scripts: WatchedScriptStore,
 }
 
-impl<T: Clone + Send> Relayer<T>
-where
-    T: AsyncQuery<Query = <Bitcoin as Query>::Query>,
-    T: for<'a> AsyncQuery<Response<'a> = &'a Bitcoin>,
-    T: AsyncCall<Call = <Bitcoin as Call>::Call>,
-{
+impl Relayer {
     pub async fn new<P: AsRef<Path>>(
         store_path: P,
         btc_client: BitcoinRpcClient,
-        app_client: BitcoinStateClient<T>,
+        app_client: TendermintClient<App>,
     ) -> Result<Self> {
-        let scripts = WatchedScriptStore::open(store_path, &app_client.checkpoints).await?;
+        let scripts = WatchedScriptStore::open(store_path, &app_client).await?;
         Ok(Relayer {
             btc_client,
             app_client,
@@ -50,7 +44,7 @@ where
     }
 
     async fn sidechain_block_hash(&self) -> Result<BlockHash> {
-        let hash = self.app_client.headers.hash().await??;
+        let hash = self.app_client.bitcoin.headers.hash().await??;
         let hash = BlockHash::from_slice(hash.as_slice())?;
         Ok(hash)
     }
@@ -159,13 +153,13 @@ where
     }
 
     async fn relay_checkpoints(&mut self) -> Result<()> {
-        let last_checkpoint = self.app_client.checkpoints.last_completed_tx().await??;
+        let last_checkpoint = self.app_client.bitcoin.checkpoints.last_completed_tx().await??;
         println!("Last checkpoint tx: {}", last_checkpoint.txid());
 
         let mut relayed = HashSet::new();
 
         loop {
-            let txs = self.app_client.checkpoints.completed_txs().await??;
+            let txs = self.app_client.bitcoin.checkpoints.completed_txs().await??;
             for tx in txs {
                 if relayed.contains(&tx.txid()) {
                     continue;
@@ -198,7 +192,7 @@ where
 
     async fn insert_announced_addrs(&mut self, recv: &mut Receiver<(Address, u32)>) -> Result<()> {
         while let Ok((addr, sigset_index)) = recv.try_recv() {
-            let checkpoint_res = self.app_client.checkpoints.get(sigset_index).await?;
+            let checkpoint_res = self.app_client.bitcoin.checkpoints.get(sigset_index).await?;
             let sigset = match &checkpoint_res {
                 Ok(checkpoint) => &checkpoint.sigset,
                 Err(err) => {
@@ -282,9 +276,11 @@ where
 
         let txid = tx.txid();
         let outpoint = (txid.into_inner(), output.vout);
+        let dest = output.dest;
+        let vout = output.vout;
 
         if self
-            .app_client
+            .app_client.bitcoin
             .processed_outpoints
             .contains(outpoint)
             .await??
@@ -306,8 +302,9 @@ where
 
             let proof = Adapter::new(proof);
 
-            let res = self.app_client
-                .relay_deposit(
+            let res = self.app_client.clone()
+                .pay_from(async move |client| {
+                client.bitcoin.relay_deposit(
                     tx,
                     height,
                     proof,
@@ -315,7 +312,7 @@ where
                     output.sigset_index,
                     output.dest,
                 )
-                .await;
+                .await}).noop().await;
 
             match res {
                 Err(err) if err.to_string().contains("Deposit amount is below minimum") || err.to_string().contains("Deposit amount is too small to pay its spending fee") => {
@@ -327,7 +324,7 @@ where
 
         println!(
             "Relayed deposit: {} sats, {}",
-            tx.output[output.vout as usize].value, output.dest
+            tx.output[vout as usize].value, dest
         );
 
         Ok(())
@@ -362,7 +359,8 @@ where
             batch.len(),
         );
 
-        self.app_client.headers.add(batch.into()).await?;
+        self.app_client.pay_from(async move |client| {
+            client.bitcoin.headers.add(batch.into()).await}).noop().await?;
         println!("Relayed headers");
 
         Ok(())
@@ -513,17 +511,12 @@ pub struct WatchedScriptStore {
 }
 
 impl WatchedScriptStore {
-    pub async fn open<P: AsRef<Path>, T: Clone + Send>(
+    pub async fn open<P: AsRef<Path>>(
         path: P,
-        checkpoint_client: &CheckpointQueueClient<T>,
-    ) -> Result<Self>
-    where
-        T: AsyncQuery<Query = <CheckpointQueue as Query>::Query>,
-        T: for<'a> AsyncQuery<Response<'a> = &'a CheckpointQueue>,
-        T: AsyncCall<Call = <CheckpointQueue as Call>::Call>,
-    {
+        app_client: &TendermintClient<App>,
+    ) -> Result<Self> {
         let mut scripts = WatchedScripts::new();
-        Self::maybe_load(&path, &mut scripts, checkpoint_client).await?;
+        Self::maybe_load(&path, &mut scripts, app_client).await?;
 
         let mut file = File::create(path)?;
         for (addr, sigset_index) in scripts.scripts.values() {
@@ -533,16 +526,11 @@ impl WatchedScriptStore {
         Ok(WatchedScriptStore { scripts, file })
     }
 
-    async fn maybe_load<P: AsRef<Path>, T: Clone + Send>(
+    async fn maybe_load<P: AsRef<Path>>(
         path: P,
         scripts: &mut WatchedScripts,
-        client: &CheckpointQueueClient<T>,
-    ) -> Result<()>
-    where
-        T: AsyncQuery<Query = <CheckpointQueue as Query>::Query>,
-        T: for<'a> AsyncQuery<Response<'a> = &'a CheckpointQueue>,
-        T: AsyncCall<Call = <CheckpointQueue as Call>::Call>,
-    {
+        client: &TendermintClient<App>,
+    ) -> Result<()> {
         let file = match File::open(&path) {
             Err(ref e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
             Err(e) => return Err(e.into()),
@@ -550,7 +538,7 @@ impl WatchedScriptStore {
         };
 
         let mut sigsets = BTreeMap::new();
-        for (index, checkpoint) in client.all().await?? {
+        for (index, checkpoint) in client.bitcoin.checkpoints.all().await?? {
             sigsets.insert(index, checkpoint.sigset.clone());
         }
 

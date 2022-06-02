@@ -13,11 +13,12 @@ use orga::abci::{BeginBlock, InitChain};
 use orga::call::Call;
 use orga::client::Client;
 use orga::coins::{Accounts, Address, Amount, Coin, Symbol};
+use orga::context::{GetContext, Context};
+use orga::plugins::Paid;
 use orga::collections::{
     map::{ChildMut, Ref},
     Deque, Map,
 };
-use orga::context::GetContext;
 use orga::encoding::{Decode, Encode, Terminated};
 #[cfg(feature = "full")]
 use orga::plugins::{BeginBlockCtx, InitChainCtx, Validators};
@@ -46,6 +47,7 @@ impl Symbol for Nbtc {}
 
 pub const MIN_DEPOSIT_AMOUNT: u64 = 600;
 pub const MAX_WITHDRAWAL_SCRIPT_LENGTH: u64 = 64;
+pub const TRANSFER_FEE: u64 = 100;
 
 #[derive(State, Call, Query, Client)]
 pub struct Bitcoin {
@@ -118,11 +120,22 @@ impl From<ExtendedPubKey> for Xpub {
     }
 }
 
+fn exempt_from_fee() -> Result<()> {
+    let paid = Context::resolve::<Paid>()
+        .ok_or_else(|| OrgaError::Coins("No Paid context found".into()))?;
+
+    paid.give::<crate::app::Nom, _>(orga::plugins::MIN_FEE)?;
+
+    Ok(())
+}
+
 impl Bitcoin {
     #[call]
     pub fn set_signatory_key(&mut self, signatory_key: Xpub) -> Result<()> {
         #[cfg(feature = "full")]
         {
+            exempt_from_fee()?;
+
             let signer = self
                 .context::<Signer>()
                 .ok_or_else(|| Error::Orga(OrgaError::App("No Signer context available".into())))?
@@ -161,6 +174,8 @@ impl Bitcoin {
         sigset_index: u32,
         dest: Address,
     ) -> Result<()> {
+        exempt_from_fee()?;
+
         if dest.is_null() {
             return Err(OrgaError::App("Cannot deposit to null address".to_string()).into());
         }
@@ -256,6 +271,8 @@ impl Bitcoin {
 
     #[call]
     pub fn withdraw(&mut self, script_pubkey: Adapter<Script>, amount: Amount) -> Result<()> {
+        exempt_from_fee()?;
+
         if script_pubkey.len() as u64 > MAX_WITHDRAWAL_SCRIPT_LENGTH {
             return Err(OrgaError::App("Script exceeds maximum length".to_string()).into());
         }
@@ -287,6 +304,22 @@ impl Bitcoin {
 
         let mut checkpoint = self.checkpoints.building_mut()?;
         checkpoint.outputs.push_back(Adapter::new(output))?;
+
+        Ok(())
+    }
+
+    #[call]
+    pub fn transfer(&mut self, to: Address, amount: u64) -> Result<()> {
+        exempt_from_fee()?;
+
+        let signer = self
+            .context::<Signer>()
+            .ok_or_else(|| Error::Orga(OrgaError::App("No Signer context available".into())))?
+            .signer
+            .ok_or_else(|| Error::Orga(OrgaError::App("Call must be signed".into())))?;
+        self.accounts.withdraw(signer, TRANSFER_FEE.into())?.burn();
+
+        self.accounts.transfer(to, amount.into())?;
 
         Ok(())
     }
