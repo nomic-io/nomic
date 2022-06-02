@@ -15,7 +15,7 @@ use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
 
-const STOP_SECONDS: i64 = 0;
+const STOP_SECONDS: i64 = 1654204800;
 
 fn now_seconds() -> i64 {
     use std::time::SystemTime;
@@ -135,15 +135,17 @@ impl StartCmd {
                     old_name,
                     Default::default(),
                 )
-                .with_genesis(include_bytes!("../../genesis/testnet-2.json"))
+                .with_genesis(include_bytes!("../../genesis/internal-2.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
                 .stop_seconds(STOP_SECONDS);
 
                 set_p2p_seeds(&old_config_path, &[]);
 
-                // TODO: set default RPC boostrap nodes
-                configure_for_statesync(&old_config_path, &[]);
+                if !has_old_node {
+                    // TODO: set default RPC boostrap nodes
+                    configure_for_statesync(&old_config_path, &[]);
+                }
 
                 let res = node.run();
                 if let Err(nomicv2::orga::Error::ABCI(msg)) = res {
@@ -195,7 +197,7 @@ impl StartCmd {
             println!("Starting node...");
             // TODO: add cfg defaults
             Node::<nomic::app::App>::new(new_name, Default::default())
-                .with_genesis(include_bytes!("../../genesis/testnet-3.json"))
+                .with_genesis(include_bytes!("../../genesis/internal-3.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
                 .run()

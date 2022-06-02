@@ -1,0 +1,35 @@
+{
+  "genesis_time": "2022-06-02T20:25:22.251853Z",
+  "chain_id": "nomic-internal-2",
+  "initial_height": "0",
+  "consensus_params": {
+    "block": {
+      "max_bytes": "22020096",
+      "max_gas": "-1",
+      "time_iota_ms": "1000"
+    },
+    "evidence": {
+      "max_age_num_blocks": "100000",
+      "max_age_duration": "172800000000000",
+      "max_bytes": "1048576"
+    },
+    "validator": {
+      "pub_key_types": [
+        "ed25519"
+      ]
+    },
+    "version": {}
+  },
+  "validators": [
+    {
+      "address": "093095E89A90991C7D58A4F51AE296C2F42435C5",
+      "pub_key": {
+        "type": "tendermint/PubKeyEd25519",
+        "value": "p2pgNNqxk28Cud6U1/dUGD5snXLdQ9knpiQZt2WHw9s="
+      },
+      "power": "10",
+      "name": ""
+    }
+  ],
+  "app_hash": ""
+}
