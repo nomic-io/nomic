@@ -15,7 +15,7 @@ use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
 
-const STOP_SECONDS: i64 = 1654204800;
+const STOP_SECONDS: i64 = 1654206969;
 
 fn now_seconds() -> i64 {
     use std::time::SystemTime;
@@ -141,7 +141,7 @@ impl StartCmd {
                 .stop_seconds(STOP_SECONDS);
 
                 set_p2p_seeds(&old_config_path, &[
-                    "a2d84dfe30a8b4c007525fef63808fd38240206d@192.168.1.126:26656",
+                    "337d4415bbe17251446dd251290d4d766be2e882@192.168.1.126:26656",
                 ]);
 
                 if !has_old_node {

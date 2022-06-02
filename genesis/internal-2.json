@@ -22,10 +22,10 @@
   },
   "validators": [
     {
-      "address": "093095E89A90991C7D58A4F51AE296C2F42435C5",
+      "address": "35B313B0F0D8DE8F4029C504B4D428E78EC2D381",
       "pub_key": {
         "type": "tendermint/PubKeyEd25519",
-        "value": "p2pgNNqxk28Cud6U1/dUGD5snXLdQ9knpiQZt2WHw9s="
+        "value": "SmNKeJz4XTd3urZk0edJGWTlbGn7Qd1wP8N8KLeEXtQ="
       },
       "power": "10",
       "name": ""
