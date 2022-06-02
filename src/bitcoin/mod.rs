@@ -47,6 +47,7 @@ impl Symbol for Nbtc {}
 
 pub const MIN_DEPOSIT_AMOUNT: u64 = 600;
 pub const MAX_WITHDRAWAL_SCRIPT_LENGTH: u64 = 64;
+pub const TRANSFER_FEE: u64 = 100;
 
 #[derive(State, Call, Query, Client)]
 pub struct Bitcoin {
@@ -303,6 +304,22 @@ impl Bitcoin {
 
         let mut checkpoint = self.checkpoints.building_mut()?;
         checkpoint.outputs.push_back(Adapter::new(output))?;
+
+        Ok(())
+    }
+
+    #[call]
+    pub fn transfer(&mut self, to: Address, amount: u64) -> Result<()> {
+        exempt_from_fee()?;
+
+        let signer = self
+            .context::<Signer>()
+            .ok_or_else(|| Error::Orga(OrgaError::App("No Signer context available".into())))?
+            .signer
+            .ok_or_else(|| Error::Orga(OrgaError::App("Call must be signed".into())))?;
+        self.accounts.withdraw(signer, TRANSFER_FEE.into())?.burn();
+
+        self.accounts.transfer(to, amount.into())?;
 
         Ok(())
     }
