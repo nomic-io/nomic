@@ -141,7 +141,7 @@ impl StartCmd {
                 .stop_seconds(STOP_SECONDS);
 
                 set_p2p_seeds(&old_config_path, &[
-                    "a2d84dfe30a8b4c007525fef63808fd38240206d:26656",
+                    "a2d84dfe30a8b4c007525fef63808fd38240206d@192.168.1.126:26656",
                 ]);
 
                 if !has_old_node {
