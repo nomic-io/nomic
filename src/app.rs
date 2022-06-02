@@ -35,6 +35,11 @@ pub struct InnerApp {
     pub bitcoin: Bitcoin,
 }
 
+impl InnerApp {
+    #[call]
+    pub fn noop(&mut self) {}
+}
+
 #[cfg(feature = "full")]
 impl Migrate<nomicv1::app::InnerApp> for InnerApp {
     fn migrate(&mut self, legacy: nomicv1::app::InnerApp) -> Result<()> {

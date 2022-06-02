@@ -1,28 +1,23 @@
 use super::Bitcoin;
+use crate::app::App;
 use crate::error::{Error, Result};
 use bitcoin::secp256k1::{Message, Secp256k1};
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use orga::call::Call;
 use orga::client::{AsyncCall, AsyncQuery, Client};
 use orga::query::Query;
-use std::path::Path;
-use std::fs;
+use orga::abci::TendermintClient;
 use rand::Rng;
+use std::fs;
+use std::path::Path;
 
-type AppClient<T> = <Bitcoin as Client<T>>::Client;
-
-pub struct Signer<T: Clone + Send> {
-    client: AppClient<T>,
+pub struct Signer {
+    client: TendermintClient<App>,
     xpriv: ExtendedPrivKey,
 }
 
-impl<T: Clone + Send> Signer<T>
-where
-    T: AsyncQuery<Query = <Bitcoin as Query>::Query>,
-    T: for<'a> AsyncQuery<Response<'a> = &'a Bitcoin>,
-    T: AsyncCall<Call = <Bitcoin as Call>::Call>,
-{
-    pub fn load_or_generate<P: AsRef<Path>>(client: AppClient<T>, key_path: P) -> Result<Self> {
+impl Signer {
+    pub fn load_or_generate<P: AsRef<Path>>(client: TendermintClient<App>, key_path: P) -> Result<Self> {
         let path = key_path.as_ref();
         let xpriv = if path.exists() {
             println!("Loading signatory key from {}", path.display());
@@ -47,7 +42,7 @@ where
         Ok(Self::new(client, xpriv))
     }
 
-    pub fn new(client: AppClient<T>, xpriv: ExtendedPrivKey) -> Self {
+    pub fn new(client: TendermintClient<App>, xpriv: ExtendedPrivKey) -> Self {
         Signer { client, xpriv }
     }
 
@@ -59,11 +54,16 @@ where
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 
-            if self.client.checkpoints.signing().await??.is_none() {
+            if self.client.bitcoin.checkpoints.signing().await??.is_none() {
                 continue;
             }
 
-            let to_sign = self.client.checkpoints.to_sign(xpub.into()).await??;
+            let to_sign = self
+                .client
+                .bitcoin
+                .checkpoints
+                .to_sign(xpub.into())
+                .await??;
             if to_sign.is_empty() {
                 continue;
             }
@@ -86,8 +86,15 @@ where
                 .collect::<Result<_>>()?;
 
             self.client
-                .checkpoints
-                .sign(xpub.into(), sigs.into())
+                .clone()
+                .pay_from(async move |client| {
+                    client
+                        .bitcoin
+                        .checkpoints
+                        .sign(xpub.into(), sigs.into())
+                        .await
+                })
+                .noop()
                 .await?;
             println!("Submitted signatures");
         }
