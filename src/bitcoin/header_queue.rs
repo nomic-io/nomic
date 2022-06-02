@@ -306,15 +306,17 @@ impl Terminated for HeaderQueue {}
 
 impl HeaderQueue {
     #[call]
-    pub fn add(&mut self, headers: HeaderList) -> OrgaResult<()> {
+    pub fn add(&mut self, headers: HeaderList) -> Result<()> {
+        super::exempt_from_fee()?;
+
         let headers: Vec<_> = headers.into();
 
         if headers.len() as u64 > MAX_RELAY {
-            return Err(OrgaError::App("Exceeded maximum amount of relayed headers".to_string()));
+            return Err(OrgaError::App("Exceeded maximum amount of relayed headers".to_string()).into());
         }
 
         self.add_into_iter(headers)
-            .map_err(|err| OrgaError::App(err.to_string()))
+            .map_err(|err| OrgaError::App(err.to_string()).into())
     }
 
     pub fn add_into_iter<T>(&mut self, headers: T) -> Result<()>

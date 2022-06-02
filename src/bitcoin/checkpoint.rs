@@ -633,6 +633,8 @@ impl CheckpointQueue {
 
     #[call]
     pub fn sign(&mut self, xpub: Xpub, sigs: LengthVec<u16, Signature>) -> Result<()> {
+        super::exempt_from_fee()?;
+
         let mut signing = self
             .signing_mut()?
             .ok_or_else(|| Error::Orga(OrgaError::App("No checkpoint to be signed".to_string())))?;
