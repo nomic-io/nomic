@@ -1,7 +1,7 @@
 use crate::bitcoin::Bitcoin;
 
-#[cfg(feature = "full")]
-use orga::migrate::{exec_migration, Migrate};
+// #[cfg(feature = "full")]
+// use orga::migrate::{exec_migration, Migrate};
 use orga::plugins::sdk_compat::{sdk, sdk::Tx as SdkTx, ConvertSdkTx};
 use orga::prelude::*;
 use orga::Error;
@@ -60,26 +60,26 @@ impl InnerApp {
     }
 }
 
-#[cfg(feature = "full")]
-impl Migrate<nomicv1::app::InnerApp> for InnerApp {
-    fn migrate(&mut self, legacy: nomicv1::app::InnerApp) -> Result<()> {
-        self.community_pool.migrate(legacy.community_pool())?;
-        self.incentive_pool.migrate(legacy.incentive_pool())?;
+// #[cfg(feature = "full")]
+// impl Migrate<nomicv1::app::InnerApp> for InnerApp {
+//     fn migrate(&mut self, legacy: nomicv1::app::InnerApp) -> Result<()> {
+//         self.community_pool.migrate(legacy.community_pool())?;
+//         self.incentive_pool.migrate(legacy.incentive_pool())?;
 
-        self.staking_rewards.migrate(legacy.staking_rewards())?;
-        self.dev_rewards.migrate(legacy.dev_rewards())?;
-        self.community_pool_rewards
-            .migrate(legacy.community_pool_rewards())?;
-        self.incentive_pool_rewards
-            .migrate(legacy.incentive_pool_rewards())?;
+//         self.staking_rewards.migrate(legacy.staking_rewards())?;
+//         self.dev_rewards.migrate(legacy.dev_rewards())?;
+//         self.community_pool_rewards
+//             .migrate(legacy.community_pool_rewards())?;
+//         self.incentive_pool_rewards
+//             .migrate(legacy.incentive_pool_rewards())?;
 
-        self.accounts.migrate(legacy.accounts)?;
-        self.staking.migrate(legacy.staking)?;
-        self.atom_airdrop.migrate(legacy.atom_airdrop)?;
+//         self.accounts.migrate(legacy.accounts)?;
+//         self.staking.migrate(legacy.staking)?;
+//         self.atom_airdrop.migrate(legacy.atom_airdrop)?;
 
-        Ok(())
-    }
-}
+//         Ok(())
+//     }
+// }
 
 #[cfg(feature = "full")]
 mod abci {
@@ -87,25 +87,26 @@ mod abci {
 
     impl InitChain for InnerApp {
         fn init_chain(&mut self, _ctx: &InitChainCtx) -> Result<()> {
-            self.staking.max_validators = 100;
-            self.staking.max_offline_blocks = 20_000;
-            self.staking.downtime_jail_seconds = 60 * 30; // 30 minutes
-            self.staking.slash_fraction_downtime = (Amount::new(1) / Amount::new(1000))?;
-            self.staking.slash_fraction_double_sign = (Amount::new(1) / Amount::new(20))?;
-            self.staking.min_self_delegation_min = 0;
+            panic!("Legacy node must already have existing data or be started with state sync");
+            // self.staking.max_validators = 100;
+            // self.staking.max_offline_blocks = 20_000;
+            // self.staking.downtime_jail_seconds = 60 * 30; // 30 minutes
+            // self.staking.slash_fraction_downtime = (Amount::new(1) / Amount::new(1000))?;
+            // self.staking.slash_fraction_double_sign = (Amount::new(1) / Amount::new(20))?;
+            // self.staking.min_self_delegation_min = 0;
 
-            self.accounts.allow_transfers(false);
+            // self.accounts.allow_transfers(false);
 
-            let old_home_path = nomicv1::orga::abci::Node::<()>::home(nomicv1::app::CHAIN_ID);
-            exec_migration(self, old_home_path.join("merk"), &[0, 1, 0])?;
+            // let old_home_path = nomicv1::orga::abci::Node::<()>::home(nomicv1::app::CHAIN_ID);
+            // exec_migration(self, old_home_path.join("merk"), &[0, 1, 0])?;
 
-            let sr_address = STRATEGIC_RESERVE_ADDRESS.parse().unwrap();
-            self.accounts.add_transfer_exception(sr_address)?;
+            // let sr_address = STRATEGIC_RESERVE_ADDRESS.parse().unwrap();
+            // self.accounts.add_transfer_exception(sr_address)?;
 
-            let vb_address = VALIDATOR_BOOTSTRAP_ADDRESS.parse().unwrap();
-            self.accounts.add_transfer_exception(vb_address)?;
+            // let vb_address = VALIDATOR_BOOTSTRAP_ADDRESS.parse().unwrap();
+            // self.accounts.add_transfer_exception(vb_address)?;
 
-            Ok(())
+            // Ok(())
         }
     }
 
@@ -173,12 +174,12 @@ impl<S: Symbol> Airdrop<S> {
     }
 }
 
-#[cfg(feature = "full")]
-impl Migrate<nomicv1::app::Airdrop<nomicv1::app::Nom>> for Airdrop<Nom> {
-    fn migrate(&mut self, legacy: nomicv1::app::Airdrop<nomicv1::app::Nom>) -> Result<()> {
-        self.claimable.migrate(legacy.accounts())
-    }
-}
+// #[cfg(feature = "full")]
+// impl Migrate<nomicv1::app::Airdrop<nomicv1::app::Nom>> for Airdrop<Nom> {
+//     fn migrate(&mut self, legacy: nomicv1::app::Airdrop<nomicv1::app::Nom>) -> Result<()> {
+//         self.claimable.migrate(legacy.accounts())
+//     }
+// }
 
 impl ConvertSdkTx for InnerApp {
     type Output = PaidCall<<InnerApp as Call>::Call>;
