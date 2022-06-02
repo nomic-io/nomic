@@ -36,8 +36,8 @@ pub struct InnerApp {
 }
 
 #[cfg(feature = "full")]
-impl Migrate<nomicv1::app::InnerApp> for InnerApp {
-    fn migrate(&mut self, legacy: nomicv1::app::InnerApp) -> Result<()> {
+impl Migrate<nomicv2::app::InnerApp> for InnerApp {
+    fn migrate(&mut self, legacy: nomicv2::app::InnerApp) -> Result<()> {
         self.community_pool.migrate(legacy.community_pool())?;
         self.incentive_pool.migrate(legacy.incentive_pool())?;
 
@@ -69,7 +69,7 @@ mod abci {
             self.staking.slash_fraction_double_sign = (Amount::new(1) / Amount::new(4))?;
             self.staking.min_self_delegation_min = 0;
 
-            let old_home_path = nomicv1::orga::abci::Node::<()>::home(nomicv1::app::CHAIN_ID);
+            let old_home_path = nomicv2::orga::abci::Node::<()>::home(nomicv2::app::CHAIN_ID);
             exec_migration(self, old_home_path.join("merk"), &[0, 1, 0])?;
 
             self.accounts.allow_transfers(true);
@@ -147,8 +147,8 @@ impl<S: Symbol> Airdrop<S> {
 }
 
 #[cfg(feature = "full")]
-impl Migrate<nomicv1::app::Airdrop<nomicv1::app::Nom>> for Airdrop<Nom> {
-    fn migrate(&mut self, legacy: nomicv1::app::Airdrop<nomicv1::app::Nom>) -> Result<()> {
+impl Migrate<nomicv2::app::Airdrop<nomicv2::app::Nom>> for Airdrop<Nom> {
+    fn migrate(&mut self, legacy: nomicv2::app::Airdrop<nomicv2::app::Nom>) -> Result<()> {
         self.claimable.migrate(legacy.accounts())
     }
 }

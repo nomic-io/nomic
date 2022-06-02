@@ -111,7 +111,7 @@ impl StartCmd {
         let state_sync = self.state_sync;
 
         tokio::task::spawn_blocking(move || {
-            let old_name = nomicv1::app::CHAIN_ID;
+            let old_name = nomicv2::app::CHAIN_ID;
             let new_name = nomic::app::CHAIN_ID;
 
             let has_old_node = Node::home(old_name).exists();
@@ -131,7 +131,7 @@ impl StartCmd {
             if !upgrade_time_passed && !started_new_node {
                 println!("Starting legacy node for migration...");
 
-                let node = nomicv1::orga::abci::Node::<nomicv1::app::App>::new(
+                let node = nomicv2::orga::abci::Node::<nomicv2::app::App>::new(
                     old_name,
                     Default::default(),
                 )
@@ -146,7 +146,7 @@ impl StartCmd {
                 configure_for_statesync(&old_config_path, &[]);
 
                 let res = node.run();
-                if let Err(nomicv1::orga::Error::ABCI(msg)) = res {
+                if let Err(nomicv2::orga::Error::ABCI(msg)) = res {
                     if &msg != "Reached stop height" {
                         panic!("{}", msg);
                     }
@@ -617,7 +617,7 @@ impl ClaimAirdropCmd {
 #[derive(Parser, Debug)]
 pub struct LegacyCmd {
     #[clap(subcommand)]
-    cmd: nomicv1::command::Command,
+    cmd: nomicv2::command::Command,
 }
 
 impl LegacyCmd {
