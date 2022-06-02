@@ -147,8 +147,8 @@ impl StartCmd {
                 if !has_old_node {
                     // TODO: set default RPC boostrap nodes
                     configure_for_statesync(&old_config_path, &[
-                        "192.168.1.126:27657",
-                        "192.168.1.126:28657",
+                        "http://192.168.1.126:27657",
+                        "http://192.168.1.126:28657",
                     ]);
                 }
 
