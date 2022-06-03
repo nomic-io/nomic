@@ -78,6 +78,7 @@ mod abci {
             exec_migration(self, old_home_path.join("merk"), &[0, 1, 0])?;
 
             self.accounts.allow_transfers(true);
+            self.bitcoin.accounts.allow_transfers(true);
 
             let sr_address = STRATEGIC_RESERVE_ADDRESS.parse().unwrap();
             self.accounts.add_transfer_exception(sr_address)?;
