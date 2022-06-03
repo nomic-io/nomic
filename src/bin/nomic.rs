@@ -11,6 +11,7 @@ use clap::Parser;
 use futures::executor::block_on;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
+use nomicv2::command::Opts as LegacyOpts;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
@@ -827,10 +828,23 @@ impl WithdrawCmd {
 #[tokio::main]
 async fn main() {
     pretty_env_logger::init();
+    let is_start = std::env::args()
+        .nth(1)
+        .map(|s| s == "start")
+        .unwrap_or(false);
 
-    let opts = Opts::parse();
-    if let Err(err) = opts.cmd.run().await {
-        eprintln!("{}", err);
-        std::process::exit(1);
-    };
+    if is_start || now_seconds() > STOP_SECONDS {
+        let opts = Opts::parse();
+        if let Err(err) = opts.cmd.run().await {
+            eprintln!("{}", err);
+            std::process::exit(1);
+        };
+    } else {
+        let opts = LegacyOpts::parse();
+
+        if let Err(err) = opts.cmd.run().await {
+            eprintln!("{}", err);
+            std::process::exit(1);
+        };
+    }
 }
