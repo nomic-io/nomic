@@ -1629,7 +1629,7 @@ dependencies = [
 [[package]]
 name = "nomic"
 version = "2.0.1"
-source = "git+https://github.com/nomic-io/nomic?branch=v2-legacy-testnet#d07aaaea97ee10002753575db6d058f9cb2b5628"
+source = "git+https://github.com/nomic-io/nomic?branch=v2-legacy-testnet#001827139f1d5e422b506fbe8597fbfe35b840ba"
 dependencies = [
  "base64",
  "bech32 0.8.1",
