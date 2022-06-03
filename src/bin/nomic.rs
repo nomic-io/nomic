@@ -352,7 +352,7 @@ pub struct SendCmd {
 impl SendCmd {
     async fn run(&self) -> Result<()> {
         Ok(app_client()
-            .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
+            .pay_from(async move |client| client.accounts.take_as_funding(MIN_FEE.into()).await)
             .accounts
             .transfer(self.to_addr, self.amount.into())
             .await?)
@@ -437,7 +437,7 @@ pub struct DelegateCmd {
 impl DelegateCmd {
     async fn run(&self) -> Result<()> {
         Ok(app_client()
-            .pay_from(async move |mut client| {
+            .pay_from(async move |client| {
                 client
                     .accounts
                     .take_as_funding((self.amount + MIN_FEE).into())
@@ -502,7 +502,7 @@ impl DeclareCmd {
         };
 
         Ok(app_client()
-            .pay_from(async move |mut client| {
+            .pay_from(async move |client| {
                 client
                     .accounts
                     .take_as_funding((self.amount + MIN_FEE).into())
@@ -537,7 +537,7 @@ impl EditCmd {
         let info_bytes = info_json.as_bytes().to_vec();
 
         Ok(app_client()
-            .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
+            .pay_from(async move |client| client.accounts.take_as_funding(MIN_FEE.into()).await)
             .staking
             .edit_validator_self(
                 self.commission_rate,
@@ -557,7 +557,7 @@ pub struct UnbondCmd {
 impl UnbondCmd {
     async fn run(&self) -> Result<()> {
         Ok(app_client()
-            .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
+            .pay_from(async move |client| client.accounts.take_as_funding(MIN_FEE.into()).await)
             .staking
             .unbond_self(self.validator_addr, self.amount.into())
             .await?)
@@ -574,7 +574,7 @@ pub struct RedelegateCmd {
 impl RedelegateCmd {
     async fn run(&self) -> Result<()> {
         Ok(app_client()
-            .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
+            .pay_from(async move |client| client.accounts.take_as_funding(MIN_FEE.into()).await)
             .staking
             .redelegate_self(
                 self.src_validator_addr,
@@ -591,7 +591,7 @@ pub struct UnjailCmd {}
 impl UnjailCmd {
     async fn run(&self) -> Result<()> {
         Ok(app_client()
-            .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
+            .pay_from(async move |client| client.accounts.take_as_funding(MIN_FEE.into()).await)
             .staking
             .unjail()
             .await?)
@@ -604,7 +604,7 @@ pub struct ClaimCmd;
 impl ClaimCmd {
     async fn run(&self) -> Result<()> {
         Ok(app_client()
-            .pay_from(async move |mut client| client.staking.claim_all().await)
+            .pay_from(async move |client| client.staking.claim_all().await)
             .accounts
             .give_from_funding_all()
             .await?)
@@ -617,7 +617,7 @@ pub struct ClaimAirdropCmd;
 impl ClaimAirdropCmd {
     async fn run(&self) -> Result<()> {
         Ok(app_client()
-            .pay_from(async move |mut client| client.atom_airdrop.claim().await)
+            .pay_from(async move |client| client.atom_airdrop.claim().await)
             .accounts
             .give_from_funding_all()
             .await?)
@@ -756,7 +756,7 @@ pub struct SetSignatoryKeyCmd {
 impl SetSignatoryKeyCmd {
     async fn run(&self) -> Result<()> {
         app_client()
-            .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
+            .pay_from(async move |client| client.accounts.take_as_funding(MIN_FEE.into()).await)
             .bitcoin
             .set_signatory_key(self.xpub.into())
             .await?;
@@ -781,7 +781,7 @@ impl DepositCmd {
 
         // TODO: use real relayer addresses
         let client = reqwest::Client::new();
-        let res = client
+        client
             .post(format!(
                 "http://192.168.1.126:9000?addr={}&sigset_index={}",
                 dest_addr,

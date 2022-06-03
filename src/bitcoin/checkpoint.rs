@@ -1,13 +1,11 @@
 use super::{
     adapter::Adapter,
-    header_queue::HeaderQueue,
     signatory::SignatorySet,
-    threshold_sig::{LengthVec, Pubkey, Signature, ThresholdSig},
+    threshold_sig::{LengthVec, Signature, ThresholdSig},
     ConsensusKey, Xpub,
 };
 use crate::error::{Error, Result};
 use bitcoin::hashes::Hash;
-use bitcoin::Txid;
 use derive_more::{Deref, DerefMut};
 use orga::{
     call::Call,
@@ -16,7 +14,7 @@ use orga::{
     collections::{map::ReadOnly, ChildMut, Deque, Map, Ref},
     context::GetContext,
     encoding::{Decode, Encode},
-    plugins::{Signer, Time},
+    plugins::Time,
     query::Query,
     state::State,
     Error as OrgaError, Result as OrgaResult,

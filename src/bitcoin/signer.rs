@@ -1,11 +1,7 @@
-use super::Bitcoin;
 use crate::app::App;
-use crate::error::{Error, Result};
+use crate::error::Result;
 use bitcoin::secp256k1::{Message, Secp256k1};
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
-use orga::call::Call;
-use orga::client::{AsyncCall, AsyncQuery, Client};
-use orga::query::Query;
 use orga::abci::TendermintClient;
 use rand::Rng;
 use std::fs;
@@ -98,7 +94,5 @@ impl Signer {
                 .await?;
             println!("Submitted signatures");
         }
-
-        Ok(())
     }
 }

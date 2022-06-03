@@ -5,30 +5,26 @@ use adapter::Adapter;
 use bitcoin::hashes::Hash;
 use bitcoin::util::bip32::ExtendedPubKey;
 use bitcoin::Script;
-use bitcoin::{util::merkleblock::PartialMerkleTree, Transaction, Txid};
-use checkpoint::{Checkpoint, CheckpointQueue, CheckpointStatus, Input, FEE_RATE};
+use bitcoin::{util::merkleblock::PartialMerkleTree, Transaction};
+use checkpoint::{CheckpointQueue, FEE_RATE};
 use header_queue::HeaderQueue;
 #[cfg(feature = "full")]
-use orga::abci::{BeginBlock, InitChain};
+use orga::abci::BeginBlock;
 use orga::call::Call;
 use orga::client::Client;
-use orga::coins::{Accounts, Address, Amount, Coin, Symbol};
+use orga::coins::{Accounts, Address, Amount, Symbol};
 use orga::context::{GetContext, Context};
 use orga::plugins::Paid;
-use orga::collections::{
-    map::{ChildMut, Ref},
-    Deque, Map,
-};
+use orga::collections::Map;
 use orga::encoding::{Decode, Encode, Terminated};
 #[cfg(feature = "full")]
-use orga::plugins::{BeginBlockCtx, InitChainCtx, Validators};
+use orga::plugins::{BeginBlockCtx, Validators};
 use orga::plugins::{Signer, Time};
 use orga::query::Query;
 use orga::state::State;
 use orga::{Error as OrgaError, Result as OrgaResult};
 use signatory::SignatorySet;
-use threshold_sig::{Pubkey, Signature, ThresholdSig};
-use txid_set::{Outpoint, OutpointSet};
+use txid_set::OutpointSet;
 
 pub mod adapter;
 pub mod checkpoint;
@@ -340,7 +336,7 @@ impl Bitcoin {
 
 #[cfg(feature = "full")]
 impl BeginBlock for Bitcoin {
-    fn begin_block(&mut self, ctx: &BeginBlockCtx) -> OrgaResult<()> {
+    fn begin_block(&mut self, _ctx: &BeginBlockCtx) -> OrgaResult<()> {
         self.checkpoints
             .maybe_step(self.signatory_keys.map())
             .map_err(|err| OrgaError::App(err.to_string()))?;

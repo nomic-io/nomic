@@ -174,7 +174,6 @@ impl ConvertSdkTx for InnerApp {
         type StakingCall = <Staking<Nom> as Call>::Call;
         type AirdropCall = <Airdrop<Nom> as Call>::Call;
         type BitcoinCall = <Bitcoin as Call>::Call;
-        type NbtcAccountCall = <Accounts<crate::bitcoin::Nbtc> as Call>::Call;
 
         let get_amount = |coin: Option<&sdk::Coin>, expected_denom| -> Result<Amount> {
             let coin = coin.map_or_else(|| Err(Error::App("Empty amount".into())), Ok)?;

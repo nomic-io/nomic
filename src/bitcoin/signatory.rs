@@ -6,15 +6,14 @@ use orga::call::Call;
 use orga::client::Client;
 use orga::coins::Address;
 use orga::collections::Map;
-use orga::context::{Context, GetContext};
+use orga::context::Context;
 use orga::encoding::{Decode, Encode};
 use orga::plugins::Time;
 #[cfg(feature = "full")]
 use orga::plugins::Validators;
 use orga::query::Query;
 use orga::state::State;
-use orga::{Error as OrgaError, Result as OrgaResult};
-use std::cmp::Ordering;
+use orga::Error as OrgaError;
 
 use super::threshold_sig::Pubkey;
 use super::ConsensusKey;

@@ -327,7 +327,7 @@ where
             .map_err(|_| EdError::UnexpectedByte(80))?;
 
         let mut values = Vec::with_capacity(len_usize);
-        for i in 0..len_usize {
+        for _ in 0..len_usize {
             let value = T::decode(&mut input)?;
             values.push(value);
         }

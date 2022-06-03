@@ -1,23 +1,20 @@
-use super::{checkpoint::CheckpointQueue, Bitcoin, SignatorySet};
+use super::SignatorySet;
 use crate::bitcoin::{adapter::Adapter, header_queue::WrappedHeader};
 use crate::error::Result;
 use crate::app::App;
 use ::bitcoin::consensus::Decodable as _;
-use ::bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoincore_rpc_async::bitcoin;
 use bitcoincore_rpc_async::bitcoin::consensus::Encodable;
 use bitcoincore_rpc_async::bitcoin::{
     consensus::Decodable,
-    hashes::{hex::ToHex, Hash},
-    Block, BlockHash, Script, Transaction,
+    hashes::Hash,
+    Block, BlockHash, Transaction,
 };
 use bitcoincore_rpc_async::json::GetBlockHeaderResult;
 use bitcoincore_rpc_async::{Client as BitcoinRpcClient, RpcApi};
-use orga::client::{AsyncCall, AsyncQuery};
 use orga::coins::Address;
-use orga::prelude::*;
 use orga::abci::TendermintClient;
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use tokio::sync::mpsc::Receiver;
 
 const HEADER_BATCH_SIZE: usize = 25;
@@ -186,8 +183,6 @@ impl Relayer {
 
             sleep(1).await;
         }
-
-        Ok(())
     }
 
     async fn insert_announced_addrs(&mut self, recv: &mut Receiver<(Address, u32)>) -> Result<()> {
@@ -272,7 +267,6 @@ impl Relayer {
         output: OutputMatch,
     ) -> Result<()> {
         use self::bitcoin::hashes::Hash as _;
-        use ::bitcoin::hashes::Hash as _;
 
         let txid = tx.txid();
         let outpoint = (txid.into_inner(), output.vout);
@@ -482,7 +476,7 @@ impl WatchedScripts {
     pub fn remove_expired(&mut self) -> Result<()> {
         let now = time_now();
 
-        for (i, (sigset, addrs)) in self.sigsets.iter() {
+        for (_, (sigset, addrs)) in self.sigsets.iter() {
             if now < sigset.deposit_timeout() {
                 break;
             }
@@ -549,7 +543,7 @@ impl WatchedScriptStore {
 
             let sigset_index: u32 = items[1]
                 .parse()
-                .map_err(|e| orga::Error::App("Could not parse sigset index".to_string()))?;
+                .map_err(|_| orga::Error::App("Could not parse sigset index".to_string()))?;
             let sigset = match sigsets.get(&sigset_index) {
                 Some(sigset) => sigset,
                 None => continue,
@@ -557,7 +551,7 @@ impl WatchedScriptStore {
 
             let address: Address = items[0]
                 .parse()
-                .map_err(|e| orga::Error::App("Could not parse address".to_string()))?;
+                .map_err(|_| orga::Error::App("Could not parse address".to_string()))?;
 
             scripts.insert(address, sigset)?;
         }
