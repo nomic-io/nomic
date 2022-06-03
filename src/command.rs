@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
+use crate::error::Result;
 use clap::Parser;
 use futures::executor::block_on;
-use crate::error::Result;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
@@ -24,7 +24,7 @@ fn my_address() -> Address {
 )]
 pub struct Opts {
     #[clap(subcommand)]
-    cmd: Command,
+    pub cmd: Command,
 }
 
 #[derive(Parser, Debug)]
@@ -62,9 +62,6 @@ impl Command {
         }
     }
 }
-
-
-
 
 #[derive(Parser, Debug)]
 pub struct SendCmd {
