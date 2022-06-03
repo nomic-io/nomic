@@ -19,8 +19,8 @@ use super::threshold_sig::Pubkey;
 use super::ConsensusKey;
 use super::Xpub;
 
-pub const MAX_DEPOSIT_AGE: u64 = 60 * 60 * 24 * 7;
-pub const MAX_SIGNATORIES: u64 = 40;
+pub const MAX_DEPOSIT_AGE: u64 = 60 * 30;
+pub const MAX_SIGNATORIES: u64 = 2;
 
 #[derive(Encode, Decode, Clone, Debug, PartialOrd, PartialEq, Eq, Ord)]
 pub struct Signatory {
@@ -108,7 +108,7 @@ impl SignatorySet {
     }
 
     pub fn signature_threshold(&self) -> u64 {
-        ((self.present_vp as u128) * 9 / 10) as u64
+        ((self.present_vp as u128) * 2 / 3) as u64
     }
 
     pub fn quorum_threshold(&self) -> u64 {
