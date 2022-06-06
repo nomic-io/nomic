@@ -21,7 +21,7 @@ use orga::{
 };
 use std::convert::TryFrom;
 
-pub const CHECKPOINT_INTERVAL: u64 = 60 * 1;
+pub const CHECKPOINT_INTERVAL: u64 = 60 * 5;
 pub const MAX_INPUTS: u64 = 20;
 pub const MAX_OUTPUTS: u64 = 100;
 pub const FEE_RATE: u64 = 1;
