@@ -54,6 +54,7 @@ pub enum Command {
     #[cfg(debug_assertions)]
     StartDev(StartDevCmd),
     Send(SendCmd),
+    SendNbtc(SendNbtcCmd),
     Balance(BalanceCmd),
     Delegations(DelegationsCmd),
     Validators(ValidatorsCmd),
@@ -81,6 +82,7 @@ impl Command {
             #[cfg(debug_assertions)]
             StartDev(cmd) => cmd.run().await,
             Send(cmd) => cmd.run().await,
+            SendNbtc(cmd) => cmd.run().await,
             Balance(cmd) => cmd.run().await,
             Delegate(cmd) => cmd.run().await,
             Declare(cmd) => cmd.run().await,
@@ -357,6 +359,21 @@ impl SendCmd {
             .pay_from(async move |client| client.accounts.take_as_funding(MIN_FEE.into()).await)
             .accounts
             .transfer(self.to_addr, self.amount.into())
+            .await?)
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct SendNbtcCmd {
+    to_addr: Address,
+    amount: u64,
+}
+
+impl SendNbtcCmd {
+    async fn run(&self) -> Result<()> {
+        Ok(app_client()
+            .pay_from(async move |client| client.bitcoin.transfer(self.to_addr, self.amount.into()).await)
+            .noop()
             .await?)
     }
 }
