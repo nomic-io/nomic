@@ -196,7 +196,7 @@ impl StartCmd {
                 edit_block_time(&new_config_path, "3s");
             }
 
-            if statesync_start_passed && (!has_old_node || state_sync) {
+            if statesync_start_passed && !started_new_node && (!has_old_node || state_sync) {
                 println!("Configuring node for state sync...");
 
                 // TODO: set default seeds
