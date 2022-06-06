@@ -67,10 +67,10 @@ mod abci {
 
     impl InitChain for InnerApp {
         fn init_chain(&mut self, _ctx: &InitChainCtx) -> Result<()> {
-            self.staking.max_validators = 20;
-            self.staking.max_offline_blocks = 100;
+            self.staking.max_validators = 40;
+            self.staking.max_offline_blocks = 1000;
             self.staking.downtime_jail_seconds = 60 * 30; // 30 minutes
-            self.staking.slash_fraction_downtime = (Amount::new(1) / Amount::new(20))?;
+            self.staking.slash_fraction_downtime = (Amount::new(1) / Amount::new(100))?;
             self.staking.slash_fraction_double_sign = (Amount::new(1) / Amount::new(4))?;
             self.staking.min_self_delegation_min = 0;
 
