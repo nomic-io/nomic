@@ -6,7 +6,7 @@ use orga::plugins::sdk_compat::{sdk, sdk::Tx as SdkTx, ConvertSdkTx};
 use orga::prelude::*;
 use orga::Error;
 
-pub const CHAIN_ID: &str = "nomic-internal-2";
+pub const CHAIN_ID: &str = "nomic-testnet-2";
 pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
 
 #[derive(State, Debug, Clone)]
