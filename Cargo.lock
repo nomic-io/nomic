@@ -1867,7 +1867,7 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.3.0"
-source = "git+https://github.com/nomic-io/orga.git?branch=v3-testnet#2ac2ca596f9171df9262663e25efe0bfa24f7585"
+source = "git+https://github.com/nomic-io/orga.git?branch=v3-testnet#63d63b5e92c9a59ba494518b9c532a65d15baddb"
 dependencies = [
  "abci2",
  "async-trait",
@@ -1887,7 +1887,7 @@ dependencies = [
  "num-rational",
  "num-traits",
  "orga 0.2.0",
- "orga-macros 0.2.3",
+ "orga-macros 0.2.4",
  "prost",
  "reqwest",
  "ripemd",
@@ -1922,8 +1922,8 @@ dependencies = [
 
 [[package]]
 name = "orga-macros"
-version = "0.2.3"
-source = "git+https://github.com/nomic-io/orga.git?branch=v3-testnet#2ac2ca596f9171df9262663e25efe0bfa24f7585"
+version = "0.2.4"
+source = "git+https://github.com/nomic-io/orga.git?branch=v3-testnet#63d63b5e92c9a59ba494518b9c532a65d15baddb"
 dependencies = [
  "heck 0.3.3",
  "proc-macro2",

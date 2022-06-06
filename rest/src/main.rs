@@ -23,6 +23,10 @@ async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
             {
                 "denom": "unom",
                 "amount": balance.to_string(),
+            },
+            {
+                "denom": "nsat",
+                "amount": balance.to_string(),
             }
         ],
         "pagination": {
@@ -107,6 +111,53 @@ async fn txs(tx: &str) -> Result<Value, BadRequest<String>> {
     let tx_bytes = if let Some('{') = tx.chars().next() {
         let tx: TxRequest = serde_json::from_str(tx).unwrap();
         serde_json::to_vec(&tx.tx).unwrap()
+    } else {
+        base64::decode(tx)
+            .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+    };
+    
+    let res = client.broadcast_tx_commit(tx_bytes.into())
+        .await
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+
+    let tx_response = if res.check_tx.code.is_err() {
+        &res.check_tx
+    } else {
+        &res.deliver_tx
+    };
+
+    Ok(json!({
+        "height": "0",
+        "txhash": res.hash,
+        "codespace": tx_response.codespace,
+        "code": tx_response.code,
+        "data": "",
+        "raw_log": "[]",
+        "logs": [ tx_response.log ],
+        "info": tx_response.info,
+        "gas_wanted": tx_response.gas_wanted,
+        "gas_used": tx_response.gas_used,
+        "tx": null,
+        "timestamp": ""
+    }))
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+struct TxRequest2 {
+    tx_bytes: String,
+    mode: String,
+}
+
+#[post("/cosmos/tx/v1beta1/txs", data = "<tx>")]
+async fn txs2(tx: &str) -> Result<Value, BadRequest<String>> {
+    dbg!(tx);
+
+    let client = tm::HttpClient::new("http://localhost:26657").unwrap();
+
+    let tx_bytes = if let Some('{') = tx.chars().next() {
+        let tx: TxRequest2 = serde_json::from_str(tx).unwrap();
+        base64::decode(tx.tx_bytes.as_str())
+            .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
     } else {
         base64::decode(tx)
             .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
@@ -431,6 +482,7 @@ fn rocket() -> _ {
         bank_balances_2,
         auth_accounts,
         txs,
+        txs2,
         query,
         staking_delegators_delegations,
         // staking_delegators_delegations_2,
