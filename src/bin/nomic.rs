@@ -141,21 +141,21 @@ impl StartCmd {
                     old_name,
                     Default::default(),
                 )
-                .with_genesis(include_bytes!("../../genesis/internal-2.json"))
+                .with_genesis(include_bytes!("../../genesis/testnet-2.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
                 .stop_seconds(STOP_SECONDS);
 
                 set_p2p_seeds(
                     &old_config_path,
-                    &["337d4415bbe17251446dd251290d4d766be2e882@192.168.1.126:26656"],
+                    &["edb32208ff79b591dd4cddcf1c879f6405fe6c79@167.99.228.240:26656"],
                 );
 
                 if !started_old_node {
                     // TODO: set default RPC boostrap nodes
                     configure_for_statesync(
                         &old_config_path,
-                        &["http://192.168.1.126:27657", "http://192.168.1.126:28657"],
+                        &["http://167.99.228.240:26667", "http://167.99.228.240:26677"],
                     );
                 }
 
@@ -200,16 +200,16 @@ impl StartCmd {
                 println!("Configuring node for state sync...");
 
                 // TODO: set default seeds
-                set_p2p_seeds(&new_config_path, &[]);
+                set_p2p_seeds(&new_config_path, &["edb32208ff79b591dd4cddcf1c879f6405fe6c79@167.99.228.240:26656"]);
 
                 // TODO: set default RPC boostrap nodes
-                configure_for_statesync(&new_config_path, &[]);
+                configure_for_statesync(&new_config_path, &["http://167.99.228.240:26667", "http://167.99.228.240:26667"]);
             }
 
             println!("Starting node...");
             // TODO: add cfg defaults
             Node::<nomic::app::App>::new(new_name, Default::default())
-                .with_genesis(include_bytes!("../../genesis/internal-3.json"))
+                .with_genesis(include_bytes!("../../genesis/testnet-3.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
                 .run()
@@ -798,11 +798,10 @@ impl DepositCmd {
         // TODO: get network from somewhere
         let btc_addr = bitcoin::Address::from_script(&script, bitcoin::Network::Testnet).unwrap();
 
-        // TODO: use real relayer addresses
         let client = reqwest::Client::new();
         client
             .post(format!(
-                "http://192.168.1.126:9000?addr={}&sigset_index={}",
+                "http://167.99.228.240:9000?addr={}&sigset_index={}",
                 dest_addr,
                 sigset.index()
             ))
