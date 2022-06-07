@@ -116,6 +116,12 @@ impl From<ExtendedPubKey> for Xpub {
     }
 }
 
+impl From<&ExtendedPubKey> for Xpub {
+    fn from(key: &ExtendedPubKey) -> Self {
+        Xpub(*key)
+    }
+}
+
 fn exempt_from_fee() -> Result<()> {
     let paid = Context::resolve::<Paid>()
         .ok_or_else(|| OrgaError::Coins("No Paid context found".into()))?;

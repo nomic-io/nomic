@@ -65,51 +65,62 @@ impl Signer {
         println!("Waiting for a checkpoint to sign...");
 
         loop {
+            if let Err(e) = self.try_sign(&xpub).await {
+                eprintln!("Signer error: {}", e);
+            }
+
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-
-            if self.client.bitcoin.checkpoints.signing().await??.is_none() {
-                continue;
-            }
-
-            let to_sign = self
-                .client
-                .bitcoin
-                .checkpoints
-                .to_sign(xpub.into())
-                .await??;
-            if to_sign.is_empty() {
-                continue;
-            }
-
-            println!("Signing checkpoint... ({} inputs)", to_sign.len());
-
-            let sigs: Vec<_> = to_sign
-                .into_iter()
-                .map(|(msg, index)| {
-                    let privkey = self
-                        .xpriv
-                        .derive_priv(&secp, &[ChildNumber::from_normal_idx(index)?])?
-                        .private_key
-                        .key;
-
-                    Ok(secp
-                        .sign(&Message::from_slice(&msg[..])?, &privkey)
-                        .serialize_compact())
-                })
-                .collect::<Result<_>>()?;
-
-            self.client
-                .clone()
-                .pay_from(async move |client| {
-                    client
-                        .bitcoin
-                        .checkpoints
-                        .sign(xpub.into(), sigs.into())
-                        .await
-                })
-                .noop()
-                .await?;
-            println!("Submitted signatures");
         }
+    }
+
+    async fn try_sign(&mut self, xpub: &ExtendedPubKey) -> Result<()> {
+        let secp = Secp256k1::signing_only();
+
+        if self.client.bitcoin.checkpoints.signing().await??.is_none() {
+            return Ok(());
+        }
+
+        let to_sign = self
+            .client
+            .bitcoin
+            .checkpoints
+            .to_sign(xpub.into())
+            .await??;
+        if to_sign.is_empty() {
+            return Ok(());
+        }
+
+        println!("Signing checkpoint... ({} inputs)", to_sign.len());
+
+        let sigs: Vec<_> = to_sign
+            .into_iter()
+            .map(|(msg, index)| {
+                let privkey = self
+                    .xpriv
+                    .derive_priv(&secp, &[ChildNumber::from_normal_idx(index)?])?
+                    .private_key
+                    .key;
+
+                Ok(secp
+                    .sign(&Message::from_slice(&msg[..])?, &privkey)
+                    .serialize_compact())
+            })
+            .collect::<Result<_>>()?;
+
+        self.client
+            .clone()
+            .pay_from(async move |client| {
+                client
+                    .bitcoin
+                    .checkpoints
+                    .sign(xpub.into(), sigs.into())
+                    .await
+            })
+            .noop()
+            .await?;
+
+        println!("Submitted signatures");
+
+        Ok(())
     }
 }
