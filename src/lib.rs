@@ -2,6 +2,10 @@
 #![feature(never_type)]
 #![allow(incomplete_features)]
 #![feature(specialization)]
+#![feature(generic_associated_types)]
+#![feature(type_alias_impl_trait)]
+#![feature(is_some_with)]
+#![feature(async_closure)]
 
 #[cfg(feature = "full")]
 use orga::abci::TendermintClient;

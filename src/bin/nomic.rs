@@ -6,14 +6,27 @@
 
 use std::path::PathBuf;
 
+use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
 use futures::executor::block_on;
+use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
+use nomicv2::command::Opts as LegacyOpts;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
 
-const STOP_HEIGHT: u64 = 460_000;
+const STOP_SECONDS: i64 = 1654880400;
+const STATE_SYNC_DELAY: i64 = 3 * orga::merk::store::SNAPSHOT_INTERVAL as i64;
+
+fn now_seconds() -> i64 {
+    use std::time::SystemTime;
+
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64
+}
 
 pub fn app_client() -> TendermintClient<nomic::app::App> {
     TendermintClient::new("http://localhost:26657").unwrap()
@@ -37,11 +50,11 @@ pub struct Opts {
 
 #[derive(Parser, Debug)]
 pub enum Command {
-    Init(InitCmd),
     Start(StartCmd),
-    #[cfg(debug)]
+    #[cfg(debug_assertions)]
     StartDev(StartDevCmd),
     Send(SendCmd),
+    SendNbtc(SendNbtcCmd),
     Balance(BalanceCmd),
     Delegations(DelegationsCmd),
     Validators(ValidatorsCmd),
@@ -54,17 +67,22 @@ pub enum Command {
     Claim(ClaimCmd),
     ClaimAirdrop(ClaimAirdropCmd),
     Legacy(LegacyCmd),
+    Relayer(RelayerCmd),
+    Signer(SignerCmd),
+    SetSignatoryKey(SetSignatoryKeyCmd),
+    Deposit(DepositCmd),
+    Withdraw(WithdrawCmd),
 }
 
 impl Command {
     async fn run(&self) -> Result<()> {
         use Command::*;
         match self {
-            Init(cmd) => cmd.run().await,
             Start(cmd) => cmd.run().await,
-            #[cfg(debug)]
+            #[cfg(debug_assertions)]
             StartDev(cmd) => cmd.run().await,
             Send(cmd) => cmd.run().await,
+            SendNbtc(cmd) => cmd.run().await,
             Balance(cmd) => cmd.run().await,
             Delegate(cmd) => cmd.run().await,
             Declare(cmd) => cmd.run().await,
@@ -77,101 +95,72 @@ impl Command {
             Claim(cmd) => cmd.run().await,
             ClaimAirdrop(cmd) => cmd.run().await,
             Legacy(cmd) => cmd.run().await,
+            Relayer(cmd) => cmd.run().await,
+            Signer(cmd) => cmd.run().await,
+            SetSignatoryKey(cmd) => cmd.run().await,
+            Deposit(cmd) => cmd.run().await,
+            Withdraw(cmd) => cmd.run().await,
         }
     }
 }
 
 #[derive(Parser, Debug)]
-pub struct InitCmd {}
-
-impl InitCmd {
-    async fn run(&self) -> Result<()> {
-        tokio::task::spawn_blocking(|| {
-            // TODO: add cfg defaults
-            nomicv1::orga::abci::Node::<nomicv1::app::App>::new(nomicv1::app::CHAIN_ID);
-        })
-        .await
-        .map_err(|err| orga::Error::App(err.to_string()))?;
-        Ok(())
-    }
+pub struct StartCmd {
+    #[clap(long, short)]
+    pub state_sync: bool,
 }
-
-#[derive(Parser, Debug)]
-pub struct StartCmd {}
 
 impl StartCmd {
     async fn run(&self) -> Result<()> {
-        tokio::task::spawn_blocking(|| {
-            let old_name = nomicv1::app::CHAIN_ID;
+        let state_sync = self.state_sync;
+
+        tokio::task::spawn_blocking(move || {
+            let old_name = nomicv2::app::CHAIN_ID;
             let new_name = nomic::app::CHAIN_ID;
 
             let has_old_node = Node::home(old_name).exists();
             let has_new_node = Node::home(new_name).exists();
-            let started_new_node = Node::height(old_name).unwrap() >= STOP_HEIGHT
-                || Node::height(new_name).unwrap() > 0;
+            let started_old_node = Node::height(old_name).unwrap() > 0;
+            let started_new_node = Node::height(new_name).unwrap() > 0;
+            let upgrade_time_passed = now_seconds() > STOP_SECONDS;
+            let statesync_start_passed = now_seconds() > STOP_SECONDS + STATE_SYNC_DELAY;
             if has_old_node {
                 println!("Legacy node height: {}", Node::height(old_name).unwrap());
             }
 
-            if !has_new_node {
-                let new_home = Node::home(new_name);
-                println!("Initializing node at {}...", new_home.display());
-                // TODO: configure default seeds
-                Node::<nomic::app::App>::new(new_name, Default::default());
+            let new_home = Node::home(new_name);
+            let new_config_path = new_home.join("tendermint/config/config.toml");
 
-                let config_path = new_home.join("tendermint/config/config.toml");
+            let old_home = Node::home(old_name);
+            let old_config_path = old_home.join("tendermint/config/config.toml");
 
-                if has_old_node {
-                    let old_home = Node::home(old_name);
-                    println!(
-                        "Legacy network data detected, copying keys and config from {}...",
-                        old_home.display()
-                    );
+            if !upgrade_time_passed && !started_new_node {
+                println!("Starting legacy node for migration...");
 
-                    std::fs::copy(
-                        old_home.join("tendermint/config/priv_validator_key.json"),
-                        new_home.join("tendermint/config/priv_validator_key.json"),
-                    )
-                    .unwrap();
-                    std::fs::copy(
-                        old_home.join("tendermint/config/node_key.json"),
-                        new_home.join("tendermint/config/node_key.json"),
-                    )
-                    .unwrap();
-                    std::fs::copy(
-                        old_home.join("tendermint/config/config.toml"),
-                        new_home.join("tendermint/config/config.toml"),
-                    )
-                    .unwrap();
-                    edit_block_time(&config_path, "3s");
-                } else {
-                    println!("Configuring node for state sync...");
+                let node = nomicv2::orga::abci::Node::<nomicv2::app::App>::new(
+                    old_name,
+                    Default::default(),
+                )
+                .with_genesis(include_bytes!("../../genesis/testnet-2.json"))
+                .stdout(std::process::Stdio::inherit())
+                .stderr(std::process::Stdio::inherit())
+                .stop_seconds(STOP_SECONDS);
 
-                    // TODO: set default seeds
-                    set_p2p_seeds(
-                        &config_path,
-                        &["edb32208ff79b591dd4cddcf1c879f6405fe6c79@167.99.228.240:26656"],
-                    );
+                set_p2p_seeds(
+                    &old_config_path,
+                    &["edb32208ff79b591dd4cddcf1c879f6405fe6c79@167.99.228.240:26656"],
+                );
 
+                if !started_old_node {
                     // TODO: set default RPC boostrap nodes
-                    prepare_for_statesync(
-                        &config_path,
+                    configure_for_statesync(
+                        &old_config_path,
                         &["http://167.99.228.240:26667", "http://167.99.228.240:26677"],
                     );
                 }
-            }
 
-            if has_old_node && !started_new_node {
-                println!("Starting legacy node for migration...");
-
-                let res = nomicv1::orga::abci::Node::<nomicv1::app::App>::new(old_name)
-                    .with_genesis(include_bytes!("../../genesis/nomic-testnet.json"))
-                    .stdout(std::process::Stdio::inherit())
-                    .stderr(std::process::Stdio::inherit())
-                    .stop_height(STOP_HEIGHT)
-                    .run();
-
-                if let Err(nomicv1::orga::Error::ABCI(msg)) = res {
+                let res = node.run();
+                if let Err(nomicv2::orga::Error::ABCI(msg)) = res {
                     if &msg != "Reached stop height" {
                         panic!("{}", msg);
                     }
@@ -180,10 +169,47 @@ impl StartCmd {
                 }
             }
 
+            let has_old_node = Node::home(old_name).exists();
+
+            if !has_new_node {
+                println!("Initializing node at {}...", new_home.display());
+                // TODO: configure default seeds
+                Node::<nomic::app::App>::new(new_name, Default::default());
+
+                if has_old_node {
+                    let old_home = Node::home(old_name);
+                    println!(
+                        "Legacy network data detected, copying keys and config from {}...",
+                        old_home.display(),
+                    );
+
+                    let copy = |file: &str| {
+                        std::fs::copy(old_home.join(file), new_home.join(file)).unwrap();
+                    };
+
+                    copy("tendermint/config/priv_validator_key.json");
+                    copy("tendermint/config/node_key.json");
+                    copy("tendermint/config/config.toml");
+                    deconfigure_statesync(&new_config_path);
+                }
+
+                edit_block_time(&new_config_path, "3s");
+            }
+
+            if statesync_start_passed && !started_new_node && (!has_old_node || state_sync) {
+                println!("Configuring node for state sync...");
+
+                // TODO: set default seeds
+                set_p2p_seeds(&new_config_path, &["edb32208ff79b591dd4cddcf1c879f6405fe6c79@167.99.228.240:26656"]);
+
+                // TODO: set default RPC boostrap nodes
+                configure_for_statesync(&new_config_path, &["http://167.99.228.240:26667", "http://167.99.228.240:26667"]);
+            }
+
             println!("Starting node...");
             // TODO: add cfg defaults
             Node::<nomic::app::App>::new(new_name, Default::default())
-                .with_genesis(include_bytes!("../../genesis/nomic-testnet-2.json"))
+                .with_genesis(include_bytes!("../../genesis/testnet-3.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
                 .run()
@@ -217,13 +243,24 @@ fn edit_block_time(cfg_path: &PathBuf, timeout_commit: &str) {
     });
 }
 
+// TODO: append instead of replace
 fn set_p2p_seeds(cfg_path: &PathBuf, seeds: &[&str]) {
     configure_node(cfg_path, |cfg| {
         cfg["p2p"]["seeds"] = toml_edit::value(seeds.join(","));
     });
 }
 
-fn prepare_for_statesync(cfg_path: &PathBuf, rpc_servers: &[&str]) {
+fn deconfigure_statesync(cfg_path: &PathBuf) {
+    configure_node(cfg_path, |cfg| {
+        cfg["statesync"]["enable"] = toml_edit::value(false);
+        cfg["statesync"]["rpc_servers"] = toml_edit::value("");
+        cfg["statesync"]["trust_height"] = toml_edit::value(0);
+        cfg["statesync"]["trust_hash"] = toml_edit::value("");
+        cfg["statesync"]["trust_period"] = toml_edit::value("216h0m0s");
+    });
+}
+
+fn configure_for_statesync(cfg_path: &PathBuf, rpc_servers: &[&str]) {
     println!("Getting bootstrap state for Tendermint light client...");
     let (height, hash) =
         block_on(get_bootstrap_state(rpc_servers)).expect("Failed to bootstrap state");
@@ -286,14 +323,27 @@ async fn get_bootstrap_state(rpc_servers: &[&str]) -> Result<(i64, String)> {
     Ok((height as i64, hash.unwrap().to_string()))
 }
 
-#[cfg(debug)]
+#[cfg(debug_assertions)]
 #[derive(Parser, Debug)]
 pub struct StartDevCmd {}
 
-#[cfg(debug)]
+#[cfg(debug_assertions)]
 impl StartDevCmd {
     async fn run(&self) -> Result<()> {
-        tokio::task::spawn_blocking(|| unimplemented!())
+        tokio::task::spawn_blocking(move || {
+            let name = format!("{}-test", nomic::app::CHAIN_ID);
+
+            println!("Starting node...");
+            // TODO: add cfg defaults
+            Node::<nomic::app::App>::new(name.as_str(), Default::default())
+                .stdout(std::process::Stdio::inherit())
+                .stderr(std::process::Stdio::inherit())
+                .run()
+                .unwrap();
+        })
+        .await
+        .map_err(|err| orga::Error::App(err.to_string()))?;
+        Ok(())
     }
 }
 
@@ -306,7 +356,7 @@ pub struct SendCmd {
 impl SendCmd {
     async fn run(&self) -> Result<()> {
         Ok(app_client()
-            .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
+            .pay_from(async move |client| client.accounts.take_as_funding(MIN_FEE.into()).await)
             .accounts
             .transfer(self.to_addr, self.amount.into())
             .await?)
@@ -314,15 +364,35 @@ impl SendCmd {
 }
 
 #[derive(Parser, Debug)]
-pub struct BalanceCmd;
+pub struct SendNbtcCmd {
+    to_addr: Address,
+    amount: u64,
+}
+
+impl SendNbtcCmd {
+    async fn run(&self) -> Result<()> {
+        Ok(app_client()
+            .pay_from(async move |client| client.bitcoin.transfer(self.to_addr, self.amount.into()).await)
+            .noop()
+            .await?)
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct BalanceCmd {
+    address: Option<Address>,
+}
 
 impl BalanceCmd {
     async fn run(&self) -> Result<()> {
-        let address = my_address();
+        let address = self.address.unwrap_or_else(|| my_address());
         println!("address: {}", address);
 
         let balance = app_client().accounts.balance(address).await??;
-        println!("balance: {} NOM", balance);
+        println!("{} NOM", balance);
+
+        let balance = app_client().bitcoin.accounts.balance(address).await??;
+        println!("{} NBTC", balance);
 
         Ok(())
     }
@@ -386,7 +456,7 @@ pub struct DelegateCmd {
 impl DelegateCmd {
     async fn run(&self) -> Result<()> {
         Ok(app_client()
-            .pay_from(async move |mut client| {
+            .pay_from(async move |client| {
                 client
                     .accounts
                     .take_as_funding((self.amount + MIN_FEE).into())
@@ -451,7 +521,7 @@ impl DeclareCmd {
         };
 
         Ok(app_client()
-            .pay_from(async move |mut client| {
+            .pay_from(async move |client| {
                 client
                     .accounts
                     .take_as_funding((self.amount + MIN_FEE).into())
@@ -486,7 +556,7 @@ impl EditCmd {
         let info_bytes = info_json.as_bytes().to_vec();
 
         Ok(app_client()
-            .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
+            .pay_from(async move |client| client.accounts.take_as_funding(MIN_FEE.into()).await)
             .staking
             .edit_validator_self(
                 self.commission_rate,
@@ -506,7 +576,7 @@ pub struct UnbondCmd {
 impl UnbondCmd {
     async fn run(&self) -> Result<()> {
         Ok(app_client()
-            .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
+            .pay_from(async move |client| client.accounts.take_as_funding(MIN_FEE.into()).await)
             .staking
             .unbond_self(self.validator_addr, self.amount.into())
             .await?)
@@ -523,7 +593,7 @@ pub struct RedelegateCmd {
 impl RedelegateCmd {
     async fn run(&self) -> Result<()> {
         Ok(app_client()
-            .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
+            .pay_from(async move |client| client.accounts.take_as_funding(MIN_FEE.into()).await)
             .staking
             .redelegate_self(
                 self.src_validator_addr,
@@ -540,7 +610,7 @@ pub struct UnjailCmd {}
 impl UnjailCmd {
     async fn run(&self) -> Result<()> {
         Ok(app_client()
-            .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
+            .pay_from(async move |client| client.accounts.take_as_funding(MIN_FEE.into()).await)
             .staking
             .unjail()
             .await?)
@@ -553,7 +623,7 @@ pub struct ClaimCmd;
 impl ClaimCmd {
     async fn run(&self) -> Result<()> {
         Ok(app_client()
-            .pay_from(async move |mut client| client.staking.claim_all().await)
+            .pay_from(async move |client| client.staking.claim_all().await)
             .accounts
             .give_from_funding_all()
             .await?)
@@ -566,7 +636,7 @@ pub struct ClaimAirdropCmd;
 impl ClaimAirdropCmd {
     async fn run(&self) -> Result<()> {
         Ok(app_client()
-            .pay_from(async move |mut client| client.atom_airdrop.claim().await)
+            .pay_from(async move |client| client.atom_airdrop.claim().await)
             .accounts
             .give_from_funding_all()
             .await?)
@@ -576,7 +646,7 @@ impl ClaimAirdropCmd {
 #[derive(Parser, Debug)]
 pub struct LegacyCmd {
     #[clap(subcommand)]
-    cmd: nomicv1::command::Command,
+    cmd: nomicv2::command::Command,
 }
 
 impl LegacyCmd {
@@ -587,11 +657,212 @@ impl LegacyCmd {
     }
 }
 
+#[derive(Parser, Debug)]
+pub struct RelayerCmd {
+    #[clap(short = 'p', long, default_value_t = 8332)]
+    rpc_port: u16,
+
+    #[clap(short = 'u', long)]
+    rpc_user: Option<String>,
+
+    #[clap(short = 'P', long)]
+    rpc_pass: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DepositAddress {
+    addr: String,
+    sigset_index: u32,
+}
+
+impl RelayerCmd {
+    async fn btc_client(&self) -> Result<BtcClient> {
+        let rpc_url = format!("http://localhost:{}", self.rpc_port);
+        let auth = match (self.rpc_user.clone(), self.rpc_pass.clone()) {
+            (Some(user), Some(pass)) => Auth::UserPass(user, pass),
+            _ => Auth::None,
+        };
+
+        let btc_client = BtcClient::new(rpc_url, auth)
+            .await
+            .map_err(|e| orga::Error::App(e.to_string()))?;
+
+        Ok(btc_client)
+    }
+
+    async fn run(&self) -> Result<()> {
+        let create_relayer = async || {
+            let btc_client = self.btc_client().await.unwrap();
+            Relayer::new("deposit_addresses.csv", btc_client, app_client()).await
+        };
+
+        let (send, recv) = tokio::sync::mpsc::channel(1024);
+
+        // TODO: configurable listen address
+        use warp::Filter;
+        let route = warp::post()
+            .and(warp::query::<DepositAddress>())
+            .map(move |query: DepositAddress| (query, send.clone()))
+            .and_then(
+                async move |(query, send): (DepositAddress, tokio::sync::mpsc::Sender<_>)| {
+                    let addr: Address = query.addr.parse().map_err(|_| warp::reject::reject())?;
+                    Ok::<_, warp::Rejection>((addr, query.sigset_index, send))
+                },
+            )
+            .then(
+                async move |(addr, sigset_index, send): (
+                    Address,
+                    u32,
+                    tokio::sync::mpsc::Sender<_>,
+                )| {
+                    println!("{}, {}", addr, sigset_index);
+                    send.send((addr, sigset_index)).await.unwrap();
+                    "OK"
+                },
+            )
+            .with(warp::cors().allow_any_origin());
+        let addr_server = warp::serve(route).run(([0, 0, 0, 0], 9000));
+
+        let mut relayer = create_relayer().await?;
+        let headers = relayer.start_header_relay();
+
+        let mut relayer = create_relayer().await?;
+        let deposits = relayer.start_deposit_relay(recv);
+
+        let mut relayer = create_relayer().await?;
+        let checkpoints = relayer.start_checkpoint_relay();
+
+        futures::try_join!(headers, deposits, checkpoints, async {
+            addr_server.await;
+            Ok(())
+        })
+        .unwrap();
+
+        Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct SignerCmd {
+    #[clap(short, long)]
+    path: Option<String>,
+}
+
+impl SignerCmd {
+    async fn run(&self) -> Result<()> {
+        let signer_dir_path = self
+            .path
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| Node::home(nomic::app::CHAIN_ID).join("signer"));
+        if !signer_dir_path.exists() {
+            std::fs::create_dir(&signer_dir_path)?;
+        }
+        let key_path = signer_dir_path.join("xpriv");
+
+        let signer = Signer::load_or_generate(app_client(), key_path)?;
+        signer.start().await?;
+
+        Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct SetSignatoryKeyCmd {
+    xpub: bitcoin::util::bip32::ExtendedPubKey,
+}
+
+impl SetSignatoryKeyCmd {
+    async fn run(&self) -> Result<()> {
+        app_client()
+            .pay_from(async move |client| client.accounts.take_as_funding(MIN_FEE.into()).await)
+            .bitcoin
+            .set_signatory_key(self.xpub.into())
+            .await?;
+
+        Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct DepositCmd {
+    address: Option<Address>,
+}
+
+impl DepositCmd {
+    async fn run(&self) -> Result<()> {
+        let dest_addr = self.address.unwrap_or_else(|| my_address());
+
+        let sigset = app_client().bitcoin.checkpoints.active_sigset().await??;
+        let script = sigset.output_script(dest_addr)?;
+        // TODO: get network from somewhere
+        let btc_addr = bitcoin::Address::from_script(&script, bitcoin::Network::Testnet).unwrap();
+
+        let client = reqwest::Client::new();
+        client
+            .post(format!(
+                "http://167.99.228.240:9000?addr={}&sigset_index={}",
+                dest_addr,
+                sigset.index()
+            ))
+            .send()
+            .await
+            .map_err(|err| nomic::error::Error::Orga(orga::Error::App(err.to_string())))?;
+
+        println!("Deposit address: {}", btc_addr);
+        println!("Expiration: {}", "TODO");
+        // TODO: show real expiration
+
+        Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct WithdrawCmd {
+    dest: bitcoin::Address,
+    amount: u64,
+}
+
+impl WithdrawCmd {
+    async fn run(&self) -> Result<()> {
+        use nomic::bitcoin::adapter::Adapter;
+
+        let script = self.dest.script_pubkey();
+
+        app_client()
+            .pay_from(async move |client| {
+                client
+                    .bitcoin
+                    .withdraw(Adapter::new(script), self.amount.into())
+                    .await
+            })
+            .noop()
+            .await?;
+
+        Ok(())
+    }
+}
+
 #[tokio::main]
 async fn main() {
-    let opts = Opts::parse();
-    if let Err(err) = opts.cmd.run().await {
-        eprintln!("{}", err);
-        std::process::exit(1);
-    };
+    pretty_env_logger::init();
+    let is_start = std::env::args()
+        .nth(1)
+        .map(|s| s == "start")
+        .unwrap_or(false);
+
+    if is_start || now_seconds() > STOP_SECONDS {
+        let opts = Opts::parse();
+        if let Err(err) = opts.cmd.run().await {
+            eprintln!("{}", err);
+            std::process::exit(1);
+        };
+    } else {
+        let opts = LegacyOpts::parse();
+
+        if let Err(err) = opts.cmd.run().await {
+            eprintln!("{}", err);
+            std::process::exit(1);
+        };
+    }
 }

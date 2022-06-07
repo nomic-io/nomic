@@ -1,10 +1,12 @@
 #![feature(async_closure)]
+#![feature(generic_associated_types)]
 
 use wasm_bindgen::prelude::*;
 use nomic::app::{App, InnerApp, Nom, Airdrop, CHAIN_ID};
 use nomic::orga::prelude::*;
 use nomic::orga::client::AsyncQuery;
 use nomic::orga::merk::ABCIPrefixedProofStore;
+use nomic::bitcoin::signatory::SignatorySet;
 use std::ops::{Deref, DerefMut};
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
@@ -153,7 +155,7 @@ async fn send_sdk_tx(msg: sdk::Msg) -> JsValue {
         account_number: "0".to_string(),
         chain_id: CHAIN_ID.to_string(),
         fee: sdk::Fee {
-            amount: vec![ sdk::Coin { amount: MIN_FEE.to_string(), denom: "unom".to_string() } ],
+            amount: vec![ sdk::Coin { amount: "0".to_string(), denom: "unom".to_string() } ],
             gas: MIN_FEE.to_string(),
         },
         memo: "".to_string(),
@@ -262,8 +264,101 @@ pub async fn nonce(addr: String) -> u64 {
 
 #[wasm_bindgen(js_name = getAddress)]
 pub async fn get_address() -> String {
-    let mut signer = nomic::orga::plugins::keplr::Signer::new();
+    let signer = nomic::orga::plugins::keplr::Signer;
     signer.address().await
+}
+
+#[wasm_bindgen(getter_with_clone)]
+pub struct DepositAddress {
+    pub address: String,
+    #[wasm_bindgen(js_name = sigsetIndex)]
+    pub sigset_index: u32,
+    pub expiration: u64,
+}
+
+#[wasm_bindgen(js_name = generateDepositAddress)]
+pub async fn gen_deposit_addr(dest_addr: String) -> DepositAddress {
+    let client: WebClient<App> = WebClient::new();
+    let dest_addr: Address = dest_addr.parse().unwrap();
+
+    let sigset = client.bitcoin.checkpoints.active_sigset().await.unwrap().unwrap();
+    let script =  sigset.output_script(dest_addr).unwrap();
+    // TODO: get network from somewhere
+    let btc_addr = bitcoin::Address::from_script(&script, bitcoin::Network::Testnet).unwrap();
+
+    DepositAddress {
+        address: btc_addr.to_string(),
+        sigset_index: sigset.index(),
+        expiration: sigset.deposit_timeout() * 1000,
+    }
+}
+
+#[wasm_bindgen(js_name = nbtcBalance)]
+pub async fn nbtc_balance(addr: String) -> u64 {
+    let client: WebClient<App> = WebClient::new();
+    let addr: Address = addr.parse().unwrap();
+
+    client.bitcoin.accounts.balance(addr)
+        .await
+        .unwrap()
+        .unwrap()
+        .into()
+}
+
+#[wasm_bindgen(js_name = valueLocked)]
+pub async fn value_locked() -> u64 {
+    let client: WebClient<App> = WebClient::new();
+    client.bitcoin.value_locked().await.unwrap().unwrap()
+}
+
+#[wasm_bindgen(js_name = latestCheckpointHash)]
+pub async fn latest_checkpoint_hash() -> String {
+    let client: WebClient<App> = WebClient::new();
+
+    let last_checkpoint_id = client.bitcoin.checkpoints.last_completed_tx().await.unwrap().unwrap().txid();
+    return last_checkpoint_id.to_string();
+}
+
+#[wasm_bindgen(js_name = bitcoinHeight)]
+pub async fn bitcoin_height() -> u32 {
+    let client: WebClient<App> = WebClient::new();
+    client.bitcoin.headers.height().await.unwrap().unwrap()
+}
+
+#[wasm_bindgen(js_name = broadcastDepositAddress)]
+pub async fn broadcast_deposit_addr(addr: String, sigset_index: u32, relayers: js_sys::Array) {
+    let window = web_sys::window().unwrap();
+
+    for relayer in relayers.iter() {
+        let relayer = relayer.as_string().unwrap();
+
+        let mut opts = RequestInit::new();
+        opts.method("POST");
+        opts.mode(RequestMode::Cors);
+        let url = format!("{}?addr={}&sigset_index={}", relayer, addr, sigset_index);
+
+        let request = Request::new_with_str_and_init(&url, &opts).unwrap();
+
+        let resp_value = JsFuture::from(window.fetch_with_request(&request)).await.unwrap();
+
+        let res: Response = resp_value.dyn_into().unwrap();
+        let res = JsFuture::from(res.array_buffer().unwrap()).await.unwrap();
+        let res = js_sys::Uint8Array::new(&res).to_vec();
+        let res = String::from_utf8(res).unwrap();
+        web_sys::console::log_1(&format!("response: {}", &res).into());
+    }
+}
+
+#[wasm_bindgen]
+pub async fn withdraw(dest_addr: String, amount: u64) -> JsValue {
+    let mut value = serde_json::Map::new();
+    value.insert("amount".to_string(), amount.to_string().into());
+    value.insert("dst_address".to_string(), dest_addr.into());
+
+    send_sdk_tx(sdk::Msg {
+        type_: "nomic/MsgWithdraw".to_string(),
+        value: value.into(),
+    }).await
 }
 
 pub struct WebClient<T: Client<WebAdapter<T>>> {
@@ -325,7 +420,7 @@ where
 {
     type Call = T::Call;
 
-    async fn call(&mut self, call: Self::Call) -> Result<()> {
+    async fn call(&self, call: Self::Call) -> Result<()> {
         let tx = call.encode()?;
         let tx = base64::encode(&tx);
         web_sys::console::log_1(&format!("call: {}", tx).into());
@@ -345,8 +440,8 @@ where
 
         let resp_value = JsFuture::from(window.fetch_with_request(&request)).await.unwrap();
 
-        let resp: Response = resp_value.dyn_into().unwrap();
-        let res = JsFuture::from(resp.array_buffer().unwrap()).await.unwrap();
+        let res: Response = resp_value.dyn_into().unwrap();
+        let res = JsFuture::from(res.array_buffer().unwrap()).await.unwrap();
         let res = js_sys::Uint8Array::new(&res).to_vec();
         let res = String::from_utf8(res).unwrap();
         web_sys::console::log_1(&format!("response: {}", &res).into());
@@ -359,11 +454,11 @@ where
 #[async_trait::async_trait(?Send)]
 impl<T: Query + State> AsyncQuery for WebAdapter<T> {
     type Query = T::Query;
-    type Response = T;
+    type Response<'a> = std::rc::Rc<T>;
 
     async fn query<F, R>(&self, query: T::Query, mut check: F) -> Result<R>
     where
-        F: FnMut(T) -> Result<R>,
+        F: FnMut(Self::Response<'_>) -> Result<R>,
     {
         let query = query.encode()?;
         let query = hex::encode(&query);
@@ -406,6 +501,6 @@ impl<T: Query + State> AsyncQuery for WebAdapter<T> {
         let store: Shared<ABCIPrefixedProofStore> = Shared::new(ABCIPrefixedProofStore::new(map));
         let state = T::create(Store::new(store.into()), encoding).unwrap();
 
-        check(state)
+        check(std::rc::Rc::new(state))
     }
 }
