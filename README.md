@@ -26,7 +26,7 @@ cargo install --locked --path .
 
 3. Restart your node with `nomic start`.
 
-Your node will automatically perform the upgrade at <TODO>.
+Your node will automatically perform the upgrade on Friday, June 10th at 17:00 UTC.
 
 ## Node setup guide
 
