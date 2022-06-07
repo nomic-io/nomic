@@ -362,12 +362,12 @@ impl SignatoryKeys {
         normalized_xpub.0.depth = 0;
         normalized_xpub.0.parent_fingerprint = Default::default();
 
-        if self.xpubs.contains_key(normalized_xpub.clone())? {
-            return Err(OrgaError::App("Duplicate signatory key".to_string()).into());
-        }
-
         if self.by_cons.contains_key(consensus_key)? {
             return Err(OrgaError::App("Validator already has a signatory key".to_string()).into());
+        }
+
+        if self.xpubs.contains_key(normalized_xpub.clone())? {
+            return Err(OrgaError::App("Duplicate signatory key".to_string()).into());
         }
 
         self.by_cons.insert(consensus_key, xpub)?;

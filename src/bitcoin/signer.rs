@@ -13,7 +13,10 @@ pub struct Signer {
 }
 
 impl Signer {
-    pub fn load_or_generate<P: AsRef<Path>>(client: TendermintClient<App>, key_path: P) -> Result<Self> {
+    pub fn load_or_generate<P: AsRef<Path>>(
+        client: TendermintClient<App>,
+        key_path: P,
+    ) -> Result<Self> {
         let path = key_path.as_ref();
         let xpriv = if path.exists() {
             println!("Loading signatory key from {}", path.display());
@@ -42,10 +45,24 @@ impl Signer {
         Signer { client, xpriv }
     }
 
-    pub async fn start(&self) -> Result<()> {
+    pub async fn start(mut self) -> Result<()> {
         let secp = Secp256k1::signing_only();
-
         let xpub = ExtendedPubKey::from_private(&secp, &self.xpriv);
+
+        let res = self
+            .client
+            .pay_from(async move |client| client.bitcoin.set_signatory_key(xpub.into()).await)
+            .noop()
+            .await;
+        match res {
+            Ok(_) => println!("Submitted signatory key."),
+            Err(e)
+                if e.to_string()
+                    .contains("Validator already has a signatory key") => {}
+            Err(e) => return Err(e.into()),
+        }
+
+        println!("Waiting for a checkpoint to sign...");
 
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
