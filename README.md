@@ -48,9 +48,6 @@ Start by building Nomic - for now this requires Rust nightly.
 # install rustup if you haven't already
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-# nomic currently requires rust nightly
-rustup default nightly
-
 # install required dependencies (ubuntu)
 sudo apt install build-essential libssl-dev pkg-config clang
 # or for systems running fedora
