@@ -148,10 +148,11 @@ Download Bitcoin Core: https://bitcoin.org/en/download
 
 Run it with:
 ```bash
-bitcoind -testnet -daemon -server -rpcuser=satoshi -rpcpassword=nakamoto
+bitcoind -testnet -server -rpcuser=satoshi -rpcpassword=nakamoto
 ```
+(The RPC server only listens on localhost, so the user and password are not critically important.)
 
-The RPC server only listens on localhost, so the user and password are not critically important.
+**NOTE:** To save on disk space, you may want to configure your Bitcoin node to prune block storage. For instance, add `-prune=2000` to only keep a maximum of 2000 MB of blocks. You may also want to use the `-daemon` option to keep the node running in the background.
 
 #### ii. Run the relayer process
 
