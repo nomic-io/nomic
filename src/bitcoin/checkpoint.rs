@@ -467,10 +467,10 @@ impl CheckpointQueue {
     #[query]
     pub fn last_completed_tx(&self) -> Result<Adapter<bitcoin::Transaction>> {
         let index = if self.signing()?.is_some() {
-            self.index - 2
+            self.index.checked_sub(2)
         } else {
-            self.index - 1
-        };
+            self.index.checked_sub(1)
+        }.ok_or_else(|| Error::Orga(OrgaError::App("No completed checkpoints yet".to_string())))?;
 
         Ok(Adapter::new(self.get(index)?.tx()?.0))
     }
