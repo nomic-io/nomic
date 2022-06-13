@@ -669,6 +669,9 @@ pub struct RelayerCmd {
 
     #[clap(short = 'P', long)]
     rpc_pass: Option<String>,
+
+    #[clap(long)]
+    path: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -695,7 +698,17 @@ impl RelayerCmd {
     async fn run(&self) -> Result<()> {
         let create_relayer = async || {
             let btc_client = self.btc_client().await.unwrap();
-            Relayer::new("deposit_addresses.csv", btc_client, app_client()).await
+
+            let relayer_dir_path = self
+                .path
+                .as_ref()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| Node::home(nomic::app::CHAIN_ID).join("relayer"));
+            if !relayer_dir_path.exists() {
+                std::fs::create_dir(&relayer_dir_path)?;
+            }
+
+            Relayer::new(relayer_dir_path, btc_client, app_client()).await
         };
 
         let (send, recv) = tokio::sync::mpsc::channel(1024);
