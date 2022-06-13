@@ -16,7 +16,7 @@ use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
 
-const STOP_SECONDS: i64 = 1654880400;
+const STOP_SECONDS: i64 = 0; //1654880400;
 const STATE_SYNC_DELAY: i64 = 3 * orga::merk::store::SNAPSHOT_INTERVAL as i64;
 
 fn now_seconds() -> i64 {
@@ -200,10 +200,16 @@ impl StartCmd {
                 println!("Configuring node for state sync...");
 
                 // TODO: set default seeds
-                set_p2p_seeds(&new_config_path, &["edb32208ff79b591dd4cddcf1c879f6405fe6c79@167.99.228.240:26656"]);
+                set_p2p_seeds(
+                    &new_config_path,
+                    &["edb32208ff79b591dd4cddcf1c879f6405fe6c79@167.99.228.240:26656"],
+                );
 
                 // TODO: set default RPC boostrap nodes
-                configure_for_statesync(&new_config_path, &["http://167.99.228.240:26667", "http://167.99.228.240:26667"]);
+                configure_for_statesync(
+                    &new_config_path,
+                    &["http://167.99.228.240:26667", "http://167.99.228.240:26667"],
+                );
             }
 
             println!("Starting node...");
@@ -372,7 +378,12 @@ pub struct SendNbtcCmd {
 impl SendNbtcCmd {
     async fn run(&self) -> Result<()> {
         Ok(app_client()
-            .pay_from(async move |client| client.bitcoin.transfer(self.to_addr, self.amount.into()).await)
+            .pay_from(async move |client| {
+                client
+                    .bitcoin
+                    .transfer(self.to_addr, self.amount.into())
+                    .await
+            })
             .noop()
             .await?)
     }

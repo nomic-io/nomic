@@ -470,7 +470,8 @@ impl CheckpointQueue {
             self.index.checked_sub(2)
         } else {
             self.index.checked_sub(1)
-        }.ok_or_else(|| Error::Orga(OrgaError::App("No completed checkpoints yet".to_string())))?;
+        }
+        .ok_or_else(|| Error::Orga(OrgaError::App("No completed checkpoints yet".to_string())))?;
 
         Ok(Adapter::new(self.get(index)?.tx()?.0))
     }
@@ -581,7 +582,7 @@ impl CheckpointQueue {
                 }
 
                 for output in excess_outputs {
-                    let data = output.into_inner().into();
+                    let data = output.into_inner();
                     building.outputs.push_back(data)?;
                 }
             }

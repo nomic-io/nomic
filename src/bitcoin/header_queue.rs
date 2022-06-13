@@ -207,11 +207,9 @@ impl Config {
         let checkpoint_json = include_str!("./checkpoint.json");
         let checkpoint: (u32, BlockHeader) = serde_json::from_str(checkpoint_json).unwrap();
         let (height, header) = checkpoint;
-        
+
         let mut header_bytes = vec![];
-        header
-            .consensus_encode(&mut header_bytes)
-            .unwrap();
+        header.consensus_encode(&mut header_bytes).unwrap();
 
         Self {
             max_length: MAX_LENGTH,
@@ -232,11 +230,9 @@ impl Config {
         let checkpoint_json = include_str!("./testnet_checkpoint.json");
         let checkpoint: (u32, BlockHeader) = serde_json::from_str(checkpoint_json).unwrap();
         let (height, header) = checkpoint;
-        
+
         let mut header_bytes = vec![];
-        header
-            .consensus_encode(&mut header_bytes)
-            .unwrap();
+        header.consensus_encode(&mut header_bytes).unwrap();
 
         Self {
             max_length: MAX_LENGTH,
@@ -312,7 +308,9 @@ impl HeaderQueue {
         let headers: Vec<_> = headers.into();
 
         if headers.len() as u64 > MAX_RELAY {
-            return Err(OrgaError::App("Exceeded maximum amount of relayed headers".to_string()).into());
+            return Err(
+                OrgaError::App("Exceeded maximum amount of relayed headers".to_string()).into(),
+            );
         }
 
         self.add_into_iter(headers)

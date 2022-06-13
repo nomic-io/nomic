@@ -13,10 +13,10 @@ use orga::abci::BeginBlock;
 use orga::call::Call;
 use orga::client::Client;
 use orga::coins::{Accounts, Address, Amount, Symbol};
-use orga::context::{GetContext, Context};
-use orga::plugins::Paid;
 use orga::collections::Map;
+use orga::context::{Context, GetContext};
 use orga::encoding::{Decode, Encode, Terminated};
+use orga::plugins::Paid;
 #[cfg(feature = "full")]
 use orga::plugins::{BeginBlockCtx, Validators};
 use orga::plugins::{Signer, Time};
@@ -242,7 +242,6 @@ impl Bitcoin {
                 "Output has already been relayed".to_string(),
             ))?;
         }
-
         self.processed_outpoints
             .insert(outpoint, sigset.deposit_timeout())?;
 

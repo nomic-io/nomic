@@ -55,11 +55,14 @@ impl SignatorySet {
             Error::Orga(orga::Error::App("No validator context found".to_string()))
         })?;
         let val_set = validators.current_set();
-        let val_iter = val_set.as_ref().ok_or_else(|| {
-            Error::Orga(orga::Error::App(
-                "Could not access validator set".to_string(),
-            ))
-        })?.iter()?;
+        let val_iter = val_set
+            .as_ref()
+            .ok_or_else(|| {
+                Error::Orga(orga::Error::App(
+                    "Could not access validator set".to_string(),
+                ))
+            })?
+            .iter()?;
 
         let secp = bitcoin::secp256k1::Secp256k1::verification_only();
         let derive_path = [ChildNumber::from_normal_idx(index)?];
@@ -71,12 +74,7 @@ impl SignatorySet {
             sigset.possible_vp += entry.power;
 
             let signatory_key = match sig_keys.get(consensus_key)? {
-                Some(xpub) => {
-                    xpub
-                        .derive_pub(&secp, &derive_path)?
-                        .public_key
-                        .into()
-                },
+                Some(xpub) => xpub.derive_pub(&secp, &derive_path)?.public_key.into(),
                 None => continue,
             };
 
@@ -141,9 +139,9 @@ impl SignatorySet {
         let mut iter = self.signatories.iter();
 
         // first signatory
-        let signatory = iter
-            .next()
-            .ok_or_else(|| OrgaError::App("Cannot create redeem script for empty signatory set".to_string()))?;
+        let signatory = iter.next().ok_or_else(|| {
+            OrgaError::App("Cannot create redeem script for empty signatory set".to_string())
+        })?;
         let truncated_voting_power = signatory.voting_power >> truncation;
         let script = script! {
             <signatory.pubkey.as_slice()> OP_CHECKSIG
