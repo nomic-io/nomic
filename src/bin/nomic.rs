@@ -432,7 +432,9 @@ pub struct ValidatorsCmd;
 
 impl ValidatorsCmd {
     async fn run(&self) -> Result<()> {
-        let validators = app_client().staking.all_validators().await??;
+        let mut validators = app_client().staking.all_validators().await??;
+
+        validators.sort_by(|a, b| b.amount_staked.cmp(&a.amount_staked));
 
         for validator in validators {
             let info: DeclareInfo =
