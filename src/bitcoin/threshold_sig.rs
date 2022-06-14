@@ -78,7 +78,7 @@ impl ThresholdSig {
         let res = secp.verify_ecdsa(&msg, &sig, &pubkey)?;
 
         #[cfg(fuzzing)]
-        let res = true;
+        let res = ();
 
         Ok(res)
     }
