@@ -16,7 +16,7 @@ use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
 
-const STOP_SECONDS: i64 = 1654880400;
+const STOP_SECONDS: i64 = 0; //1654880400;
 const STATE_SYNC_DELAY: i64 = 3 * orga::merk::store::SNAPSHOT_INTERVAL as i64;
 
 fn now_seconds() -> i64 {
@@ -200,10 +200,16 @@ impl StartCmd {
                 println!("Configuring node for state sync...");
 
                 // TODO: set default seeds
-                set_p2p_seeds(&new_config_path, &["edb32208ff79b591dd4cddcf1c879f6405fe6c79@167.99.228.240:26656"]);
+                set_p2p_seeds(
+                    &new_config_path,
+                    &["edb32208ff79b591dd4cddcf1c879f6405fe6c79@167.99.228.240:26656"],
+                );
 
                 // TODO: set default RPC boostrap nodes
-                configure_for_statesync(&new_config_path, &["http://167.99.228.240:26667", "http://167.99.228.240:26667"]);
+                configure_for_statesync(
+                    &new_config_path,
+                    &["http://167.99.228.240:26667", "http://167.99.228.240:26667"],
+                );
             }
 
             println!("Starting node...");
@@ -372,7 +378,12 @@ pub struct SendNbtcCmd {
 impl SendNbtcCmd {
     async fn run(&self) -> Result<()> {
         Ok(app_client()
-            .pay_from(async move |client| client.bitcoin.transfer(self.to_addr, self.amount.into()).await)
+            .pay_from(async move |client| {
+                client
+                    .bitcoin
+                    .transfer(self.to_addr, self.amount.into())
+                    .await
+            })
             .noop()
             .await?)
     }
@@ -674,12 +685,6 @@ pub struct RelayerCmd {
     path: Option<String>,
 }
 
-#[derive(Serialize, Deserialize)]
-struct DepositAddress {
-    addr: String,
-    sigset_index: u32,
-}
-
 impl RelayerCmd {
     async fn btc_client(&self) -> Result<BtcClient> {
         let rpc_url = format!("http://localhost:{}", self.rpc_port);
@@ -711,47 +716,16 @@ impl RelayerCmd {
             Relayer::new(relayer_dir_path, btc_client, app_client()).await
         };
 
-        let (send, recv) = tokio::sync::mpsc::channel(1024);
-
-        // TODO: configurable listen address
-        use warp::Filter;
-        let route = warp::post()
-            .and(warp::query::<DepositAddress>())
-            .map(move |query: DepositAddress| (query, send.clone()))
-            .and_then(
-                async move |(query, send): (DepositAddress, tokio::sync::mpsc::Sender<_>)| {
-                    let addr: Address = query.addr.parse().map_err(|_| warp::reject::reject())?;
-                    Ok::<_, warp::Rejection>((addr, query.sigset_index, send))
-                },
-            )
-            .then(
-                async move |(addr, sigset_index, send): (
-                    Address,
-                    u32,
-                    tokio::sync::mpsc::Sender<_>,
-                )| {
-                    println!("{}, {}", addr, sigset_index);
-                    send.send((addr, sigset_index)).await.unwrap();
-                    "OK"
-                },
-            )
-            .with(warp::cors().allow_any_origin());
-        let addr_server = warp::serve(route).run(([0, 0, 0, 0], 9000));
-
         let mut relayer = create_relayer().await?;
         let headers = relayer.start_header_relay();
 
         let mut relayer = create_relayer().await?;
-        let deposits = relayer.start_deposit_relay(recv);
+        let deposits = relayer.start_deposit_relay();
 
         let mut relayer = create_relayer().await?;
         let checkpoints = relayer.start_checkpoint_relay();
 
-        futures::try_join!(headers, deposits, checkpoints, async {
-            addr_server.await;
-            Ok(())
-        })
-        .unwrap();
+        futures::try_join!(headers, deposits, checkpoints).unwrap();
 
         Ok(())
     }

@@ -1,21 +1,22 @@
 use super::SignatorySet;
+use crate::app::App;
 use crate::bitcoin::{adapter::Adapter, header_queue::WrappedHeader};
 use crate::error::Result;
-use crate::app::App;
+use std::future::Future;
 use ::bitcoin::consensus::Decodable as _;
 use bitcoincore_rpc_async::bitcoin;
 use bitcoincore_rpc_async::bitcoin::consensus::Encodable;
 use bitcoincore_rpc_async::bitcoin::{
-    consensus::Decodable,
-    hashes::Hash,
-    Block, BlockHash, Transaction,
+    consensus::Decodable, hashes::Hash, Block, BlockHash, Transaction,
 };
 use bitcoincore_rpc_async::json::GetBlockHeaderResult;
 use bitcoincore_rpc_async::{Client as BitcoinRpcClient, RpcApi};
-use orga::coins::Address;
 use orga::abci::TendermintClient;
+use orga::coins::Address;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use tokio::sync::mpsc::Receiver;
+use futures::{select, FutureExt, pin_mut};
+use serde::{Serialize, Deserialize};
 
 const HEADER_BATCH_SIZE: usize = 25;
 
@@ -84,16 +85,60 @@ impl Relayer {
         }
     }
 
-    pub async fn start_deposit_relay(&mut self, mut recv: Receiver<(Address, u32)>) -> Result<!> {
+    pub async fn start_deposit_relay(&mut self) -> Result<()> {
         println!("Starting deposit relay...");
 
-        loop {
-            if let Err(e) = self.relay_deposits(&mut recv).await {
-                eprintln!("Deposit relay error: {}", e);
-            }
+        let (server, mut recv) = Relayer::create_address_server();
+        let server = server.fuse();
 
-            sleep(2).await;
+        let do_relaying = async {
+            loop {
+                if let Err(e) = self.relay_deposits(&mut recv).await {
+                    eprintln!("Deposit relay error: {}", e);
+                }
+
+                sleep(2).await;
+            }
+        }.fuse();
+
+        pin_mut!(server, do_relaying);
+
+        select! {
+            () = server => Ok(()),
+            () = do_relaying => Ok(())
         }
+    }
+
+    fn create_address_server() -> (impl Future<Output = ()>, Receiver<(Address, u32)>) {
+        let (send, recv) = tokio::sync::mpsc::channel(1024);
+
+        // TODO: configurable listen address
+        use warp::Filter;
+        let route = warp::post()
+            .and(warp::query::<DepositAddress>())
+            .map(move |query: DepositAddress| (query, send.clone()))
+            .and_then(
+                async move |(query, send): (DepositAddress, tokio::sync::mpsc::Sender<_>)| {
+                    let addr: Address = query.addr.parse().map_err(|_| warp::reject::reject())?;
+                    Ok::<_, warp::Rejection>((addr, query.sigset_index, query.deposit_addr, send))
+                },
+            )
+            .then(
+                async move |(addr, sigset_index, deposit_addr, send): (
+                    Address,
+                    u32,
+                    String,
+                    tokio::sync::mpsc::Sender<_>,
+                )| {
+                    println!("{}, {}", addr, sigset_index);
+                    send.send((addr, sigset_index)).await.unwrap();
+                    "OK"
+                },
+            )
+            .with(warp::cors().allow_any_origin());
+            
+            let server = warp::serve(route).run(([0, 0, 0, 0], 9000));
+            (server, recv)
     }
 
     async fn relay_deposits(&mut self, recv: &mut Receiver<(Address, u32)>) -> Result<!> {
@@ -150,13 +195,23 @@ impl Relayer {
     }
 
     async fn relay_checkpoints(&mut self) -> Result<()> {
-        let last_checkpoint = self.app_client.bitcoin.checkpoints.last_completed_tx().await??;
+        let last_checkpoint = self
+            .app_client
+            .bitcoin
+            .checkpoints
+            .last_completed_tx()
+            .await??;
         println!("Last checkpoint tx: {}", last_checkpoint.txid());
 
         let mut relayed = HashSet::new();
 
         loop {
-            let txs = self.app_client.bitcoin.checkpoints.completed_txs().await??;
+            let txs = self
+                .app_client
+                .bitcoin
+                .checkpoints
+                .completed_txs()
+                .await??;
             for tx in txs {
                 if relayed.contains(&tx.txid()) {
                     continue;
@@ -187,7 +242,12 @@ impl Relayer {
 
     async fn insert_announced_addrs(&mut self, recv: &mut Receiver<(Address, u32)>) -> Result<()> {
         while let Ok((addr, sigset_index)) = recv.try_recv() {
-            let checkpoint_res = self.app_client.bitcoin.checkpoints.get(sigset_index).await?;
+            let checkpoint_res = self
+                .app_client
+                .bitcoin
+                .checkpoints
+                .get(sigset_index)
+                .await?;
             let sigset = match &checkpoint_res {
                 Ok(checkpoint) => &checkpoint.sigset,
                 Err(err) => {
@@ -274,7 +334,8 @@ impl Relayer {
         let vout = output.vout;
 
         if self
-            .app_client.bitcoin
+            .app_client
+            .bitcoin
             .processed_outpoints
             .contains(outpoint)
             .await??
@@ -296,22 +357,34 @@ impl Relayer {
 
             let proof = Adapter::new(proof);
 
-            let res = self.app_client.clone()
+            let res = self
+                .app_client
+                .clone()
                 .pay_from(async move |client| {
-                client.bitcoin.relay_deposit(
-                    tx,
-                    height,
-                    proof,
-                    output.vout,
-                    output.sigset_index,
-                    output.dest,
-                )
-                .await}).noop().await;
+                    client
+                        .bitcoin
+                        .relay_deposit(
+                            tx,
+                            height,
+                            proof,
+                            output.vout,
+                            output.sigset_index,
+                            output.dest,
+                        )
+                        .await
+                })
+                .noop()
+                .await;
 
             match res {
-                Err(err) if err.to_string().contains("Deposit amount is below minimum") || err.to_string().contains("Deposit amount is too small to pay its spending fee") => {
+                Err(err)
+                    if err.to_string().contains("Deposit amount is below minimum")
+                        || err
+                            .to_string()
+                            .contains("Deposit amount is too small to pay its spending fee") =>
+                {
                     return Ok(());
-                },
+                }
                 _ => res?,
             };
         }
@@ -353,8 +426,10 @@ impl Relayer {
             batch.len(),
         );
 
-        self.app_client.pay_from(async move |client| {
-            client.bitcoin.headers.add(batch.into()).await}).noop().await?;
+        self.app_client
+            .pay_from(async move |client| client.bitcoin.headers.add(batch.into()).await)
+            .noop()
+            .await?;
         println!("Relayed headers");
 
         Ok(())
@@ -405,6 +480,13 @@ impl Relayer {
 
         Ok(a)
     }
+}
+
+#[derive(Serialize, Deserialize)]
+struct DepositAddress {
+    addr: String,
+    sigset_index: u32,
+    deposit_addr: String,
 }
 
 pub struct OutputMatch {
@@ -505,17 +587,24 @@ pub struct WatchedScriptStore {
 }
 
 impl WatchedScriptStore {
-    pub async fn open<P: AsRef<Path>>(
-        path: P,
-        app_client: &TendermintClient<App>,
-    ) -> Result<Self> {
+    pub async fn open<P: AsRef<Path>>(path: P, app_client: &TendermintClient<App>) -> Result<Self> {
+        let path = path.as_ref().join("watched-addrs.csv");
+
         let mut scripts = WatchedScripts::new();
         Self::maybe_load(&path, &mut scripts, app_client).await?;
 
-        let mut file = File::create(path)?;
+        let tmp_path = path.with_file_name("watched-addrs-tmp.csv");
+        let mut tmp_file = File::create(&tmp_path)?;
         for (addr, sigset_index) in scripts.scripts.values() {
-            Self::write(&mut file, *addr, *sigset_index)?;
+            Self::write(&mut tmp_file, *addr, *sigset_index)?;
         }
+        tmp_file.flush()?;
+        drop(tmp_file);
+        std::fs::rename(tmp_path, &path)?;
+
+        let file = File::options().append(true).create(true).open(&path)?;
+
+        println!("Keeping track of deposit addresses at {}", path.display());
 
         Ok(WatchedScriptStore { scripts, file })
     }
@@ -557,6 +646,8 @@ impl WatchedScriptStore {
         }
 
         scripts.remove_expired()?;
+
+        println!("Loaded {} deposit addresses", scripts.len());
 
         Ok(())
     }
