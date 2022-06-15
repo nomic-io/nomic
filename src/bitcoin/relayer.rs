@@ -13,10 +13,13 @@ use bitcoincore_rpc_async::json::GetBlockHeaderResult;
 use bitcoincore_rpc_async::{Client as BitcoinRpcClient, RpcApi};
 use orga::abci::TendermintClient;
 use orga::coins::Address;
+use warp::reject;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use tokio::sync::mpsc::Receiver;
 use futures::{select, FutureExt, pin_mut};
 use serde::{Serialize, Deserialize};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 const HEADER_BATCH_SIZE: usize = 25;
 
@@ -88,7 +91,7 @@ impl Relayer {
     pub async fn start_deposit_relay(&mut self) -> Result<()> {
         println!("Starting deposit relay...");
 
-        let (server, mut recv) = Relayer::create_address_server();
+        let (server, mut recv) = self.create_address_server();
         let server = server.fuse();
 
         let do_relaying = async {
@@ -109,25 +112,51 @@ impl Relayer {
         }
     }
 
-    fn create_address_server() -> (impl Future<Output = ()>, Receiver<(Address, u32)>) {
+    fn create_address_server(&self) -> (impl Future<Output = ()>, Receiver<(Address, u32)>) {
         let (send, recv) = tokio::sync::mpsc::channel(1024);
+
+        let sigsets = Arc::new(Mutex::new(BTreeMap::new()));
 
         // TODO: configurable listen address
         use warp::Filter;
         let route = warp::post()
             .and(warp::query::<DepositAddress>())
-            .map(move |query: DepositAddress| (query, send.clone()))
+            .map(move |query: DepositAddress| (query, send.clone(), sigsets.clone()))
             .and_then(
-                async move |(query, send): (DepositAddress, tokio::sync::mpsc::Sender<_>)| {
-                    let addr: Address = query.addr.parse().map_err(|_| warp::reject::reject())?;
-                    Ok::<_, warp::Rejection>((addr, query.sigset_index, query.deposit_addr, send))
+                async move |(query, send, sigsets): (DepositAddress, tokio::sync::mpsc::Sender<_>, Arc<Mutex<BTreeMap<_, _>>>)| {
+                    let dest_addr: Address = query.dest_addr.parse().map_err(|_| warp::reject::reject())?;
+
+                    let mut sigsets = sigsets.lock().await;
+                    let app_client = crate::app_client(); // TODO: get from elsewhere
+
+                    let sigset = match sigsets.get(&query.sigset_index) {
+                        Some(sigset) => sigset,
+                        None => {
+                            let sigset = app_client.bitcoin.checkpoints.get(query.sigset_index).await
+                                .map_err(|e| reject())?
+                                .map_err(|e| reject())?
+                                .sigset
+                                .clone();
+                            sigsets.insert(query.sigset_index, sigset);
+                            sigsets.get(&query.sigset_index).unwrap()
+                            // TODO: prune sigsets
+                        }
+                    };
+                    let expected_addr = ::bitcoin::Address::from_script(
+                        &sigset.output_script(dest_addr).map_err(|_| reject())?,
+                        ::bitcoin::Network::Testnet, // TODO: don't hardcode
+                    ).unwrap().to_string();
+                    if expected_addr != query.deposit_addr {
+                        return Err(reject());
+                    }
+
+                    Ok::<_, warp::Rejection>((dest_addr, query.sigset_index, send))
                 },
             )
             .then(
-                async move |(addr, sigset_index, deposit_addr, send): (
+                async move |(addr, sigset_index, send): (
                     Address,
                     u32,
-                    String,
                     tokio::sync::mpsc::Sender<_>,
                 )| {
                     println!("{}, {}", addr, sigset_index);
@@ -484,7 +513,7 @@ impl Relayer {
 
 #[derive(Serialize, Deserialize)]
 struct DepositAddress {
-    addr: String,
+    dest_addr: String,
     sigset_index: u32,
     deposit_addr: String,
 }
