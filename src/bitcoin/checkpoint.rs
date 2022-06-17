@@ -348,8 +348,10 @@ impl<'a> BuildingCheckpointMut<'a> {
         }
 
         let mut in_amount = 0;
+        dbg!(checkpoint.inputs.len());
         for i in 0..checkpoint.inputs.len() {
             let input = checkpoint.inputs.get(i)?.unwrap();
+            dbg!(input.amount);
             in_amount += input.amount;
         }
 
@@ -363,6 +365,10 @@ impl<'a> BuildingCheckpointMut<'a> {
 
         let (mut tx, est_vsize) = signing.tx()?;
         let fee = est_vsize * FEE_RATE;
+        dbg!(out_amount);
+        dbg!(in_amount);
+        dbg!(est_vsize);
+        dbg!(fee);
         let reserve_value = in_amount - out_amount - fee;
         let mut reserve_out = signing.outputs.get_mut(0)?.unwrap();
         reserve_out.value = reserve_value;

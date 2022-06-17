@@ -1,11 +1,4 @@
-use orga::{
-    state::State,
-    call::Call,
-    query::Query,
-    client::Client,
-    collections::Map,
-    Result,
-};
+use orga::{call::Call, client::Client, collections::Map, query::Query, state::State, Result};
 
 pub type Outpoint = ([u8; 32], u32);
 
@@ -22,9 +15,8 @@ impl OutpointSet {
     }
 
     pub fn insert(&mut self, outpoint: Outpoint, expiration: u64) -> Result<()> {
-        self.outpoints.insert(outpoint.clone(), ())?;
-        self.expiration_queue
-            .insert((expiration, outpoint), ())?;
+        self.outpoints.insert(outpoint, ())?;
+        self.expiration_queue.insert((expiration, outpoint), ())?;
         Ok(())
     }
 

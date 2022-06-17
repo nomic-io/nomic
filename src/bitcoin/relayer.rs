@@ -2,7 +2,6 @@ use super::SignatorySet;
 use crate::app::App;
 use crate::bitcoin::{adapter::Adapter, header_queue::WrappedHeader};
 use crate::error::Result;
-use std::future::Future;
 use ::bitcoin::consensus::Decodable as _;
 use bitcoincore_rpc_async::bitcoin;
 use bitcoincore_rpc_async::bitcoin::consensus::Encodable;
@@ -11,15 +10,16 @@ use bitcoincore_rpc_async::bitcoin::{
 };
 use bitcoincore_rpc_async::json::GetBlockHeaderResult;
 use bitcoincore_rpc_async::{Client as BitcoinRpcClient, RpcApi};
+use futures::{pin_mut, select, FutureExt};
 use orga::abci::TendermintClient;
 use orga::coins::Address;
-use warp::reject;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
-use tokio::sync::mpsc::Receiver;
-use futures::{select, FutureExt, pin_mut};
-use serde::{Serialize, Deserialize};
+use std::future::Future;
 use std::sync::Arc;
+use tokio::sync::mpsc::Receiver;
 use tokio::sync::Mutex;
+use warp::reject;
 
 const HEADER_BATCH_SIZE: usize = 25;
 
@@ -31,10 +31,7 @@ pub struct Relayer {
 }
 
 impl Relayer {
-    pub async fn new(
-        btc_client: BitcoinRpcClient,
-        app_client: TendermintClient<App>,
-    ) -> Self {
+    pub async fn new(btc_client: BitcoinRpcClient, app_client: TendermintClient<App>) -> Self {
         Relayer {
             btc_client,
             app_client,
@@ -103,7 +100,8 @@ impl Relayer {
 
                 sleep(2).await;
             }
-        }.fuse();
+        }
+        .fuse();
 
         pin_mut!(server, do_relaying);
 
@@ -124,8 +122,15 @@ impl Relayer {
             .and(warp::query::<DepositAddress>())
             .map(move |query: DepositAddress| (query, send.clone(), sigsets.clone()))
             .and_then(
-                async move |(query, send, sigsets): (DepositAddress, tokio::sync::mpsc::Sender<_>, Arc<Mutex<BTreeMap<_, _>>>)| {
-                    let dest_addr: Address = query.dest_addr.parse().map_err(|_| warp::reject::reject())?;
+                async move |(query, send, sigsets): (
+                    DepositAddress,
+                    tokio::sync::mpsc::Sender<_>,
+                    Arc<Mutex<BTreeMap<_, _>>>,
+                )| {
+                    let dest_addr: Address = query
+                        .dest_addr
+                        .parse()
+                        .map_err(|_| warp::reject::reject())?;
 
                     let mut sigsets = sigsets.lock().await;
                     let app_client = crate::app_client(); // TODO: get from elsewhere
@@ -133,7 +138,11 @@ impl Relayer {
                     let sigset = match sigsets.get(&query.sigset_index) {
                         Some(sigset) => sigset,
                         None => {
-                            let sigset = app_client.bitcoin.checkpoints.get(query.sigset_index).await
+                            let sigset = app_client
+                                .bitcoin
+                                .checkpoints
+                                .get(query.sigset_index)
+                                .await
                                 .map_err(|e| reject())?
                                 .map_err(|e| reject())?
                                 .sigset
@@ -146,7 +155,9 @@ impl Relayer {
                     let expected_addr = ::bitcoin::Address::from_script(
                         &sigset.output_script(dest_addr).map_err(|_| reject())?,
                         ::bitcoin::Network::Testnet, // TODO: don't hardcode
-                    ).unwrap().to_string();
+                    )
+                    .unwrap()
+                    .to_string();
                     if expected_addr != query.deposit_addr {
                         return Err(reject());
                     }
@@ -166,9 +177,9 @@ impl Relayer {
                 },
             )
             .with(warp::cors().allow_any_origin());
-            
-            let server = warp::serve(route).run(([0, 0, 0, 0], 9000));
-            (server, recv)
+
+        let server = warp::serve(route).run(([0, 0, 0, 0], 9000));
+        (server, recv)
     }
 
     async fn relay_deposits(&mut self, recv: &mut Receiver<(Address, u32)>) -> Result<!> {
