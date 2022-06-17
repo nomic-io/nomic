@@ -13,10 +13,10 @@ use orga::abci::BeginBlock;
 use orga::call::Call;
 use orga::client::Client;
 use orga::coins::{Accounts, Address, Amount, Symbol};
-use orga::context::{GetContext, Context};
-use orga::plugins::Paid;
 use orga::collections::Map;
+use orga::context::{Context, GetContext};
 use orga::encoding::{Decode, Encode, Terminated};
+use orga::plugins::Paid;
 #[cfg(feature = "full")]
 use orga::plugins::{BeginBlockCtx, Validators};
 use orga::plugins::{Signer, Time};
@@ -44,6 +44,7 @@ impl Symbol for Nbtc {}
 pub const MIN_DEPOSIT_AMOUNT: u64 = 600;
 pub const MAX_WITHDRAWAL_SCRIPT_LENGTH: u64 = 64;
 pub const TRANSFER_FEE: u64 = 100;
+pub const MIN_CONFIRMATIONS: u32 = 3;
 
 #[derive(State, Call, Query, Client)]
 pub struct Bitcoin {
@@ -187,6 +188,10 @@ impl Bitcoin {
             .get_by_height(btc_height)?
             .ok_or_else(|| OrgaError::App("Invalid bitcoin block height".to_string()))?;
 
+        if self.headers.height()? - btc_height < MIN_CONFIRMATIONS {
+            return Err(OrgaError::App("Block is not sufficiently confirmed".to_string()).into());
+        }
+
         let mut txids = vec![];
         let mut block_indexes = vec![];
         let proof_merkle_root = btc_proof
@@ -242,7 +247,6 @@ impl Bitcoin {
                 "Output has already been relayed".to_string(),
             ))?;
         }
-
         self.processed_outpoints
             .insert(outpoint, sigset.deposit_timeout())?;
 
