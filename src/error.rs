@@ -16,15 +16,6 @@ pub enum Error {
     BitcoinMerkleBlockError,
     #[cfg(feature = "full")]
     #[error(transparent)]
-    SapioBitcoin(#[from] bitcoincore_rpc_async::bitcoin::util::Error),
-    #[cfg(feature = "full")]
-    #[error(transparent)]
-    SapioBitcoinHash(#[from] bitcoincore_rpc_async::bitcoin::hashes::Error),
-    #[cfg(feature = "full")]
-    #[error(transparent)]
-    SapioBitcoinEncode(#[from] bitcoincore_rpc_async::bitcoin::consensus::encode::Error),
-    #[cfg(feature = "full")]
-    #[error(transparent)]
     BitcoinRpc(#[from] bitcoincore_rpc_async::Error),
     #[error("{0}")]
     Header(String),
