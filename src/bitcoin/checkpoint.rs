@@ -21,7 +21,8 @@ use orga::{
 };
 use std::convert::TryFrom;
 
-pub const CHECKPOINT_INTERVAL: u64 = 60 * 5;
+pub const MIN_CHECKPOINT_INTERVAL: u64 = 60 * 1;
+pub const MAX_CHECKPOINT_INTERVAL: u64 = 60 * 5;
 pub const MAX_INPUTS: u64 = 20;
 pub const MAX_OUTPUTS: u64 = 100;
 pub const FEE_RATE: u64 = 1;
@@ -470,7 +471,8 @@ impl CheckpointQueue {
             self.index.checked_sub(2)
         } else {
             self.index.checked_sub(1)
-        }.ok_or_else(|| Error::Orga(OrgaError::App("No completed checkpoints yet".to_string())))?;
+        }
+        .ok_or_else(|| Error::Orga(OrgaError::App("No completed checkpoints yet".to_string())))?;
 
         Ok(Adapter::new(self.get(index)?.tx()?.0))
     }
@@ -536,21 +538,23 @@ impl CheckpointQueue {
                     .ok_or_else(|| OrgaError::App("No time context".to_string()))?
                     .seconds as u64;
                 let elapsed = now - self.building()?.create_time();
-                if elapsed < CHECKPOINT_INTERVAL {
+                if elapsed < MIN_CHECKPOINT_INTERVAL {
                     return Ok(());
                 }
 
-                let building = self.building()?;
-                let has_pending_deposit = if self.index == 0 {
-                    building.inputs.len() > 0
-                } else {
-                    building.inputs.len() > 1
-                };
+                if elapsed < MAX_CHECKPOINT_INTERVAL || self.index == 0 {
+                    let building = self.building()?;
+                    let has_pending_deposit = if self.index == 0 {
+                        building.inputs.len() > 0
+                    } else {
+                        building.inputs.len() > 1
+                    };
 
-                let has_pending_withdrawal = building.outputs.len() > 0;
+                    let has_pending_withdrawal = building.outputs.len() > 0;
 
-                if !has_pending_deposit && !has_pending_withdrawal {
-                    return Ok(());
+                    if !has_pending_deposit && !has_pending_withdrawal {
+                        return Ok(());
+                    }
                 }
             }
 
@@ -581,7 +585,7 @@ impl CheckpointQueue {
                 }
 
                 for output in excess_outputs {
-                    let data = output.into_inner().into();
+                    let data = output.into_inner();
                     building.outputs.push_back(data)?;
                 }
             }
