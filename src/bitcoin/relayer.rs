@@ -27,21 +27,19 @@ pub struct Relayer {
     btc_client: BitcoinRpcClient,
     app_client: TendermintClient<App>,
 
-    scripts: WatchedScriptStore,
+    scripts: Option<WatchedScriptStore>,
 }
 
 impl Relayer {
-    pub async fn new<P: AsRef<Path>>(
-        store_path: P,
+    pub async fn new(
         btc_client: BitcoinRpcClient,
         app_client: TendermintClient<App>,
-    ) -> Result<Self> {
-        let scripts = WatchedScriptStore::open(store_path, &app_client).await?;
-        Ok(Relayer {
+    ) -> Self {
+        Relayer {
             btc_client,
             app_client,
-            scripts,
-        })
+            scripts: None,
+        }
     }
 
     async fn sidechain_block_hash(&self) -> Result<BlockHash> {
@@ -88,8 +86,11 @@ impl Relayer {
         }
     }
 
-    pub async fn start_deposit_relay(&mut self) -> Result<()> {
+    pub async fn start_deposit_relay<P: AsRef<Path>>(&mut self, store_path: P) -> Result<()> {
         println!("Starting deposit relay...");
+
+        let scripts = WatchedScriptStore::open(store_path, &self.app_client).await?;
+        self.scripts = Some(scripts);
 
         let (server, mut recv) = self.create_address_server();
         let server = server.fuse();
@@ -285,10 +286,10 @@ impl Relayer {
                 }
             };
 
-            self.scripts.insert(addr, sigset)?;
+            self.scripts.as_mut().unwrap().insert(addr, sigset)?;
         }
 
-        self.scripts.scripts.remove_expired()?;
+        self.scripts.as_mut().unwrap().scripts.remove_expired()?;
 
         Ok(())
     }
@@ -338,6 +339,8 @@ impl Relayer {
                 let script = ::bitcoin::Script::consensus_decode(script_bytes.as_slice()).unwrap();
 
                 self.scripts
+                    .as_ref()
+                    .unwrap()
                     .scripts
                     .get(&script)
                     .map(|(dest, sigset_index)| OutputMatch {
@@ -691,6 +694,7 @@ impl WatchedScriptStore {
 
     fn write(file: &mut File, addr: Address, sigset_index: u32) -> Result<()> {
         writeln!(file, "{},{}", addr, sigset_index)?;
+        file.flush()?;
         Ok(())
     }
 }

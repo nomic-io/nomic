@@ -212,7 +212,9 @@ impl ConvertSdkTx for InnerApp {
                     .map_err(|e: bech32::Error| Error::App(e.to_string()))?;
 
                 if msg.amount.len() != 1 {
-                    return Err(Error::App("'amount' must have exactly one element".to_string()));
+                    return Err(Error::App(
+                        "'amount' must have exactly one element".to_string(),
+                    ));
                 }
 
                 match msg.amount[0].denom.as_str() {
@@ -234,7 +236,7 @@ impl ConvertSdkTx for InnerApp {
                     }
                     "nsat" => {
                         let amount = get_amount(msg.amount.first(), "nsat")?;
-                       
+
                         let funding_call = BitcoinCall::MethodTransfer(to, amount, vec![]);
                         let funding_call_bytes = funding_call.encode()?;
                         let payer_call = AppCall::FieldBitcoin(funding_call_bytes);
@@ -242,9 +244,9 @@ impl ConvertSdkTx for InnerApp {
                         Ok(PaidCall {
                             payer: payer_call,
                             paid: AppCall::MethodNoop(vec![]),
-                        }) 
-                    },
-                    _ => Err(Error::App("Unknown denom".to_string())) 
+                        })
+                    }
+                    _ => Err(Error::App("Unknown denom".to_string())),
                 }
             }
 

@@ -704,25 +704,24 @@ impl RelayerCmd {
         let create_relayer = async || {
             let btc_client = self.btc_client().await.unwrap();
 
-            let relayer_dir_path = self
-                .path
-                .as_ref()
-                .map(PathBuf::from)
-                .unwrap_or_else(|| Node::home(nomic::app::CHAIN_ID).join("relayer"));
-            if !relayer_dir_path.exists() {
-                std::fs::create_dir(&relayer_dir_path)?;
-            }
-
-            Relayer::new(relayer_dir_path, btc_client, app_client()).await
+            Relayer::new(btc_client, app_client()).await
         };
 
-        let mut relayer = create_relayer().await?;
+        let mut relayer = create_relayer().await;
         let headers = relayer.start_header_relay();
 
-        let mut relayer = create_relayer().await?;
-        let deposits = relayer.start_deposit_relay();
+        let relayer_dir_path = self
+            .path
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| Node::home(nomic::app::CHAIN_ID).join("relayer"));
+        if !relayer_dir_path.exists() {
+            std::fs::create_dir(&relayer_dir_path)?;
+        }
+        let mut relayer = create_relayer().await;
+        let deposits = relayer.start_deposit_relay(relayer_dir_path);
 
-        let mut relayer = create_relayer().await?;
+        let mut relayer = create_relayer().await;
         let checkpoints = relayer.start_checkpoint_relay();
 
         futures::try_join!(headers, deposits, checkpoints).unwrap();
