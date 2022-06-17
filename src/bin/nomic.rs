@@ -789,9 +789,10 @@ impl DepositCmd {
         let client = reqwest::Client::new();
         client
             .post(format!(
-                "http://167.99.228.240:9000?addr={}&sigset_index={}",
+                "http://localhost:9000?dest_addr={}&sigset_index={}&deposit_addr={}",
                 dest_addr,
-                sigset.index()
+                sigset.index(),
+                btc_addr,
             ))
             .send()
             .await
