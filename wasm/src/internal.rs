@@ -260,17 +260,17 @@ pub async fn value_locked() -> Result<u64> {
     Ok(client.bitcoin.value_locked().await??)
 }
 
-// pub async fn latest_checkpoint_hash() -> Result<String> {
-//     let client: WebClient<App> = WebClient::new();
+pub async fn latest_checkpoint_hash() -> Result<String> {
+    let client: WebClient<App> = WebClient::new();
 
-//     let last_checkpoint_id = client
-//         .bitcoin
-//         .checkpoints
-//         .last_completed_tx()
-//         .await??
-//         .txid();
-//     return last_checkpoint_id.to_string();
-// }
+    let last_checkpoint_id = client
+        .bitcoin
+        .checkpoints
+        .last_completed_tx()
+        .await??
+        .txid();
+    Ok(last_checkpoint_id.to_string())
+}
 
 // pub async fn bitcoin_height() -> Result<u32> {
 //     let client: WebClient<App> = WebClient::new();

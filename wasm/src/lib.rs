@@ -112,18 +112,10 @@ pub async fn value_locked() -> Result<u64, JsValue> {
     into_js_res(Internal::value_locked().await)
 }
 
-// // #[wasm_bindgen(js_name = latestCheckpointHash)]
-// // pub async fn latest_checkpoint_hash() -> Result<String> {
-// //     let client: WebClient<App> = WebClient::new();
-
-// //     let last_checkpoint_id = client
-// //         .bitcoin
-// //         .checkpoints
-// //         .last_completed_tx()
-// //         .await??
-// //         .txid();
-// //     return last_checkpoint_id.to_string();
-// // }
+#[wasm_bindgen(js_name = latestCheckpointHash)]
+pub async fn latest_checkpoint_hash() -> Result<String, JsValue> {
+    into_js_res(Internal::latest_checkpoint_hash().await)
+}
 
 // // #[wasm_bindgen(js_name = bitcoinHeight)]
 // // pub async fn bitcoin_height() -> Result<u32> {
