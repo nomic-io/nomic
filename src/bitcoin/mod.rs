@@ -333,8 +333,9 @@ impl Bitcoin {
             .ok_or_else(|| Error::Orga(OrgaError::App("No Signer context available".into())))?
             .signer
             .ok_or_else(|| Error::Orga(OrgaError::App("Call must be signed".into())))?;
-        self.accounts.withdraw(signer, TRANSFER_FEE.into())?.burn();
 
+        let transfer_fee = self.accounts.withdraw(signer, TRANSFER_FEE.into())?;
+        self.reward_pool.give(transfer_fee)?;
         self.accounts.transfer(to, amount)?;
 
         Ok(())
