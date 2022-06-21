@@ -122,34 +122,14 @@ pub async fn bitcoin_height() -> Result<u32, JsValue> {
     into_js_res(Internal::bitcoin_height().await)
 }
 
-// // #[wasm_bindgen(js_name = broadcastDepositAddress)]
-// // pub async fn broadcast_deposit_addr(
-// //     addr: String,
-// //     sigset_index: u32,
-// //     relayers: js_sys::Array,
-// // ) -> Result<()> {
-// //     let window = web_sys::window()?;
-
-// //     for relayer in relayers.iter() {
-// //         let relayer = relayer.as_string()?;
-
-// //         let mut opts = RequestInit::new();
-// //         opts.method("POST");
-// //         opts.mode(RequestMode::Cors);
-// //         let url = format!("{}?addr={}&sigset_index={}", relayer, addr, sigset_index);
-
-// //         let request = Request::new_with_str_and_init(&url, &opts)?;
-
-// //         let resp_value = JsFuture::from(window.fetch_with_request(&request)).await?;
-
-// //         let res: Response = resp_value.dyn_into()?;
-// //         let res = JsFuture::from(res.array_buffer()?).await?;
-// //         let res = js_sys::Uint8Array::new(&res).to_vec();
-// //         let res = String::from_utf8(res)?;
-// //         web_sys::console::log_1(&format!("response: {}", &res).into());
-// //     }
-// //     Ok(())
-// // }
+#[wasm_bindgen(js_name = broadcastDepositAddress)]
+pub async fn broadcast_deposit_addr(
+    addr: String,
+    sigset_index: u32,
+    relayers: js_sys::Array,
+) -> Result<(), JsValue> {
+    into_js_res(Internal::broadcast_deposit_addr(addr, sigset_index, relayers).await)
+}
 
 // // #[wasm_bindgen]
 // // pub async fn withdraw(dest_addr: String, amount: u64) -> Result<JsValue> {

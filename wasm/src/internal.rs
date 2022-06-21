@@ -277,33 +277,40 @@ pub async fn bitcoin_height() -> Result<u32> {
     Ok(client.bitcoin.headers.height().await??)
 }
 
-// pub async fn broadcast_deposit_addr(
-//     addr: String,
-//     sigset_index: u32,
-//     relayers: js_sys::Array,
-// ) -> Result<()> {
-//     let window = web_sys::window()?;
+pub async fn broadcast_deposit_addr(
+    addr: String,
+    sigset_index: u32,
+    relayers: js_sys::Array,
+) -> Result<()> {
+    let window = match web_sys::window() {
+        Some(window) => window,
+        None => return Err(Error::Wasm("Window not found".to_string())),
+    };
 
-//     for relayer in relayers.iter() {
-//         let relayer = relayer.as_string()?;
+    for relayer in relayers.iter() {
+        let relayer = match relayer.as_string() {
+            Some(relayer) => relayer,
+            None => return Err(Error::Wasm("Relayer not found".to_string())),
+        };
 
-//         let mut opts = RequestInit::new();
-//         opts.method("POST");
-//         opts.mode(RequestMode::Cors);
-//         let url = format!("{}?addr={}&sigset_index={}", relayer, addr, sigset_index);
+        let mut opts = RequestInit::new();
+        opts.method("POST");
+        opts.mode(RequestMode::Cors);
+        let url = format!("{}?addr={}&sigset_index={}", relayer, addr, sigset_index);
 
-//         let request = Request::new_with_str_and_init(&url, &opts)?;
+        let request = Request::new_with_str_and_init(&url, &opts)?;
 
-//         let resp_value = JsFuture::from(window.fetch_with_request(&request)).await?;
+        let resp_value = JsFuture::from(window.fetch_with_request(&request)).await?;
 
-//         let res: Response = resp_value.dyn_into()?;
-//         let res = JsFuture::from(res.array_buffer()?).await?;
-//         let res = js_sys::Uint8Array::new(&res).to_vec();
-//         let res = String::from_utf8(res)?;
-//         web_sys::console::log_1(&format!("response: {}", &res).into());
-//     }
-//     Ok(())
-// }
+        let res: Response = resp_value.dyn_into()?;
+        let res_buf = res.array_buffer()?;
+        let res = JsFuture::from(res_buf).await?;
+        let res = js_sys::Uint8Array::new(&res).to_vec();
+        let res = String::from_utf8(res)?;
+        web_sys::console::log_1(&format!("response: {}", &res).into());
+    }
+    Ok(())
+}
 
 // pub async fn withdraw(dest_addr: String, amount: u64) -> Result<JsValue> {
 //     let mut value = serde_json::Map::new();
