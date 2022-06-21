@@ -56,10 +56,10 @@ pub async fn claim() -> Result<JsValue, JsValue> {
     into_js_res(Internal::claim().await)
 }
 
-// #[wasm_bindgen(js_name = claimAirdrop)]
-// pub async fn claim_airdrop() -> Result<JsValue> {
-//     Internal::claim_airdrop.await?
-// }
+#[wasm_bindgen(js_name = claimAirdrop)]
+pub async fn claim_airdrop() -> Result<JsValue, JsValue> {
+    into_js_res(Internal::claim_airdrop().await)
+}
 
 // #[wasm_bindgen]
 // pub async fn delegate(to_addr: String, amount: u64) -> Result<JsValue> {

@@ -167,13 +167,13 @@ pub async fn claim() -> Result<JsValue> {
     .await
 }
 
-// pub async fn claim_airdrop() -> Result<JsValue> {
-//     send_sdk_tx(sdk::Msg {
-//         type_: "nomic/MsgClaimAirdrop".to_string(),
-//         value: serde_json::Map::new().into(),
-//     })
-//     .await
-// }
+pub async fn claim_airdrop() -> Result<JsValue> {
+    send_sdk_tx(sdk::Msg {
+        type_: "nomic/MsgClaimAirdrop".to_string(),
+        value: serde_json::Map::new().into(),
+    })
+    .await
+}
 
 // pub async fn delegate(to_addr: String, amount: u64) -> Result<JsValue> {
 //     let my_addr = get_address().await;
