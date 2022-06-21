@@ -46,16 +46,15 @@ pub async fn delegations(addr: String) -> Result<Array, JsValue> {
     into_js_res(Internal::delegations(addr).await)
 }
 
-
 #[wasm_bindgen(js_name = allValidators)]
 pub async fn all_validators() -> Result<Array, JsValue> {
     into_js_res(Internal::all_validators().await)
 }
 
-// #[wasm_bindgen]
-// pub async fn claim() -> Result<JsValue> {
-//     Internal::claim().await?
-// }
+#[wasm_bindgen]
+pub async fn claim() -> Result<JsValue, JsValue> {
+    into_js_res(Internal::claim().await)
+}
 
 // #[wasm_bindgen(js_name = claimAirdrop)]
 // pub async fn claim_airdrop() -> Result<JsValue> {

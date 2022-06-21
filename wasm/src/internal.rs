@@ -159,13 +159,13 @@ async fn send_sdk_tx(msg: sdk::Msg) -> Result<JsValue> {
     Ok(client.last_res()?)
 }
 
-// pub async fn claim() -> Result<JsValue> {
-//     send_sdk_tx(sdk::Msg {
-//         type_: "nomic/MsgClaimRewards".to_string(),
-//         value: serde_json::Map::new().into(),
-//     })
-//     .await
-// }
+pub async fn claim() -> Result<JsValue> {
+    send_sdk_tx(sdk::Msg {
+        type_: "nomic/MsgClaimRewards".to_string(),
+        value: serde_json::Map::new().into(),
+    })
+    .await
+}
 
 // pub async fn claim_airdrop() -> Result<JsValue> {
 //     send_sdk_tx(sdk::Msg {
