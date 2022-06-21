@@ -51,10 +51,14 @@ pub async fn delegations(addr: String) -> Result<Array, JsValue> {
     }
 }
 
-// #[wasm_bindgen(js_name = allValidators)]
-// pub async fn all_validators() -> Result<Array> {
-//     Internal::all_validators().await?
-// }
+
+#[wasm_bindgen(js_name = allValidators)]
+pub async fn all_validators() -> Result<Array, JsValue> {
+    match Internal::all_validators().await {
+        Ok(res) => Ok(res),
+        Err(err) => Err(err.into()),
+    }
+}
 
 // #[wasm_bindgen]
 // pub async fn claim() -> Result<JsValue> {

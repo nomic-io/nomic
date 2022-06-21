@@ -93,24 +93,36 @@ pub async fn delegations(addr: String) -> Result<Array> {
         .collect())
 }
 
-// pub async fn all_validators() -> Result<Array> {
-//     let mut client: WebClient<App> = WebClient::new();
+#[wasm_bindgen(getter_with_clone)]
+pub struct ValidatorQueryInfo {
+    pub jailed: bool,
+    pub address: String,
+    pub commission: String,
+    #[wasm_bindgen(js_name = inActiveSet)]
+    pub in_active_set: bool,
+    pub info: String,
+    #[wasm_bindgen(js_name = amountStaked)]
+    pub amount_staked: u64,
+}
 
-//     let validators = client.staking.all_validators().await??;
+pub async fn all_validators() -> Result<Array> {
+    let mut client: WebClient<App> = WebClient::new();
 
-//     validators
-//         .iter()
-//         .map(|v| ValidatorQueryInfo {
-//             jailed: v.jailed,
-//             address: v.address.to_string(),
-//             commission: v.commission.rate.to_string(),
-//             in_active_set: v.in_active_set,
-//             info: String::from_utf8(v.info.bytes.clone()).unwrap_or(String::new()),
-//             amount_staked: v.amount_staked.into(),
-//         })
-//         .map(JsValue::from)
-//         .collect()
-// }
+    let validators = client.staking.all_validators().await??;
+
+    Ok(validators
+        .iter()
+        .map(|v| ValidatorQueryInfo {
+            jailed: v.jailed,
+            address: v.address.to_string(),
+            commission: v.commission.rate.to_string(),
+            in_active_set: v.in_active_set,
+            info: String::from_utf8(v.info.bytes.clone()).unwrap_or(String::new()),
+            amount_staked: v.amount_staked.into(),
+        })
+        .map(JsValue::from)
+        .collect())
+}
 
 // use nomic::orga::plugins::sdk_compat::sdk;
 
