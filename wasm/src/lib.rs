@@ -131,15 +131,7 @@ pub async fn broadcast_deposit_addr(
     into_js_res(Internal::broadcast_deposit_addr(addr, sigset_index, relayers).await)
 }
 
-// // #[wasm_bindgen]
-// // pub async fn withdraw(dest_addr: String, amount: u64) -> Result<JsValue> {
-// //     let mut value = serde_json::Map::new();
-// //     value.insert("amount".to_string(), amount.to_string().into());
-// //     value.insert("dst_address".to_string(), dest_addr.into());
-
-// //     send_sdk_tx(sdk::Msg {
-// //         type_: "nomic/MsgWithdraw".to_string(),
-// //         value: value.into(),
-// //     })
-// //     .await
-// // }
+#[wasm_bindgen]
+pub async fn withdraw(dest_addr: String, amount: u64) -> Result<JsValue, JsValue> {
+    into_js_res(Internal::withdraw(dest_addr, amount).await)
+}

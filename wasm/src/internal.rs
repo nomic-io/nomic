@@ -312,14 +312,14 @@ pub async fn broadcast_deposit_addr(
     Ok(())
 }
 
-// pub async fn withdraw(dest_addr: String, amount: u64) -> Result<JsValue> {
-//     let mut value = serde_json::Map::new();
-//     value.insert("amount".to_string(), amount.to_string().into());
-//     value.insert("dst_address".to_string(), dest_addr.into());
+pub async fn withdraw(dest_addr: String, amount: u64) -> Result<JsValue> {
+    let mut value = serde_json::Map::new();
+    value.insert("amount".to_string(), amount.to_string().into());
+    value.insert("dst_address".to_string(), dest_addr.into());
 
-//     send_sdk_tx(sdk::Msg {
-//         type_: "nomic/MsgWithdraw".to_string(),
-//         value: value.into(),
-//     })
-//     .await
-// }
+    send_sdk_tx(sdk::Msg {
+        type_: "nomic/MsgWithdraw".to_string(),
+        value: value.into(),
+    })
+    .await
+}
