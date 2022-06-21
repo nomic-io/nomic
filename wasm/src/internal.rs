@@ -194,24 +194,24 @@ pub async fn delegate(to_addr: String, amount: u64) -> Result<JsValue> {
     .await
 }
 
-// pub async fn unbond(val_addr: String, amount: u64) -> Result<JsValue> {
-//     let my_addr = get_address().await;
+pub async fn unbond(val_addr: String, amount: u64) -> Result<JsValue> {
+    let my_addr = get_address().await?;
 
-//     let mut amount_obj = serde_json::Map::new();
-//     amount_obj.insert("amount".to_string(), amount.to_string().into());
-//     amount_obj.insert("denom".to_string(), "unom".into());
+    let mut amount_obj = serde_json::Map::new();
+    amount_obj.insert("amount".to_string(), amount.to_string().into());
+    amount_obj.insert("denom".to_string(), "unom".into());
 
-//     let mut value = serde_json::Map::new();
-//     value.insert("delegator_address".to_string(), my_addr.into());
-//     value.insert("validator_address".to_string(), val_addr.into());
-//     value.insert("amount".to_string(), amount_obj.into());
+    let mut value = serde_json::Map::new();
+    value.insert("delegator_address".to_string(), my_addr.into());
+    value.insert("validator_address".to_string(), val_addr.into());
+    value.insert("amount".to_string(), amount_obj.into());
 
-//     send_sdk_tx(sdk::Msg {
-//         type_: "cosmos-sdk/MsgUndelegate".to_string(),
-//         value: value.into(),
-//     })
-//     .await
-// }
+    send_sdk_tx(sdk::Msg {
+        type_: "cosmos-sdk/MsgUndelegate".to_string(),
+        value: value.into(),
+    })
+    .await
+}
 
 // pub async fn redelegate(src_addr: String, dst_addr: String, amount: u64) -> Result<JsValue> {
 //     let my_addr = get_address().await;

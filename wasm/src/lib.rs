@@ -66,10 +66,10 @@ pub async fn delegate(to_addr: String, amount: u64) -> Result<JsValue, JsValue> 
     into_js_res(Internal::delegate(to_addr, amount).await)
 }
 
-// #[wasm_bindgen]
-// pub async fn unbond(val_addr: String, amount: u64) -> Result<JsValue> {
-//     Internal::unbond(val_addr, amount).await?
-// }
+#[wasm_bindgen]
+pub async fn unbond(val_addr: String, amount: u64) -> Result<JsValue, JsValue> {
+    into_js_res(Internal::unbond(val_addr, amount).await)
+}
 
 // #[wasm_bindgen]
 // pub async fn redelegate(src_addr: String, dst_addr: String, amount: u64) -> Result<JsValue> {
