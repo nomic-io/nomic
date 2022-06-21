@@ -13,6 +13,13 @@ use js_sys::Array;
 
 const REST_PORT: u64 = 8443;
 
+fn into_js_res<T, E: Into<JsValue>>(res: Result<T, E>) -> Result<T, JsValue> {
+    match res {
+        Ok(res) => Ok(res),
+        Err(err) => Err(err.into()),
+    }
+}
+
 #[wasm_bindgen(start)]
 pub fn main() -> std::result::Result<(), JsValue> {
     console_error_panic_hook::set_once();
@@ -21,43 +28,28 @@ pub fn main() -> std::result::Result<(), JsValue> {
 
 #[wasm_bindgen]
 pub async fn transfer(to_addr: String, amount: u64) -> Result<JsValue, JsValue> {
-    match Internal::transfer(to_addr, amount).await {
-        Ok(res) => Ok(res),
-        Err(err) => Err(err.into()),
-    }
+    into_js_res(Internal::transfer(to_addr, amount).await)
 }
 
 #[wasm_bindgen]
 pub async fn balance(addr: String) -> Result<u64, JsValue> {
-    match Internal::balance(addr).await {
-        Ok(res) => Ok(res),
-        Err(err) => Err(err.into()),
-    }
+    into_js_res(Internal::balance(addr).await)
 }
 
 #[wasm_bindgen(js_name = rewardBalance)]
 pub async fn reward_balance(addr: String) -> Result<u64, JsValue> {
-    match Internal::reward_balance(addr).await {
-        Ok(res) => Ok(res),
-        Err(err) => Err(err.into()),
-    }
+    into_js_res(Internal::reward_balance(addr).await)
 }
 
 #[wasm_bindgen]
 pub async fn delegations(addr: String) -> Result<Array, JsValue> {
-    match Internal::delegations(addr).await {
-        Ok(res) => Ok(res),
-        Err(err) => Err(err.into()),
-    }
+    into_js_res(Internal::delegations(addr).await)
 }
 
 
 #[wasm_bindgen(js_name = allValidators)]
 pub async fn all_validators() -> Result<Array, JsValue> {
-    match Internal::all_validators().await {
-        Ok(res) => Ok(res),
-        Err(err) => Err(err.into()),
-    }
+    into_js_res(Internal::all_validators().await)
 }
 
 // #[wasm_bindgen]
