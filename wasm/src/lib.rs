@@ -90,10 +90,10 @@ pub async fn nonce(addr: String) -> Result<u64, JsValue> {
     into_js_res(Internal::nonce(addr).await)
 }
 
-// #[wasm_bindgen(js_name = getAddress)]
-// pub async fn get_address() -> Result<String> {
-//     Internal::get_address().await?
-// }
+#[wasm_bindgen(js_name = getAddress)]
+pub async fn get_address() -> Result<String, JsValue> {
+    into_js_res(Internal::get_address().await)
+}
 
 // #[wasm_bindgen(js_name = generateDepositAddress)]
 // pub async fn gen_deposit_addr(dest_addr: String) -> Result<DepositAddress> {
