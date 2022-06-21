@@ -2,7 +2,7 @@
 #![feature(generic_associated_types)]
 
 use crate::error::{Error, Result};
-use crate::types::{Delegation, UnbondInfo, ValidatorQueryInfo};
+use crate::types::{Delegation, DepositAddress, UnbondInfo, ValidatorQueryInfo};
 use crate::web_client::WebAdapter;
 use crate::web_client::WebClient;
 use js_sys::{Array, JsString};
@@ -221,27 +221,32 @@ pub async fn nonce(addr: String) -> Result<u64> {
     Ok(client.nonce(address).await?)
 }
 
-// pub async fn gen_deposit_addr(dest_addr: String) -> Result<DepositAddress> {
-//     let client: WebClient<App> = WebClient::new();
-//     let dest_addr: Address = dest_addr.parse()?;
+pub async fn gen_deposit_addr(dest_addr: String) -> Result<DepositAddress> {
+    let client: WebClient<App> = WebClient::new();
+    let dest_addr = dest_addr
+        .parse()
+        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
-//     let sigset = client
-//         .bitcoin
-//         .checkpoints
-//         .active_sigset()
-//         .await
-//         .unwrap()
-//         .unwrap();
-//     let script = sigset.output_script(dest_addr)?;
-//     // TODO: get network from somewhere
-//     let btc_addr = bitcoin::Address::from_script(&script, bitcoin::Network::Testnet)?;
+    let sigset = client
+        .bitcoin
+        .checkpoints
+        .active_sigset()
+        .await
+        .unwrap()
+        .unwrap();
+    let script = sigset.output_script(dest_addr)?;
+    // TODO: get network from somewhere
+    let btc_addr = match bitcoin::Address::from_script(&script, bitcoin::Network::Testnet) {
+        Some(addr) => addr,
+        None => return Err(Error::Wasm("Bitcoin Address not found".to_string())),
+    };
 
-//     Ok(DepositAddress {
-//         address: btc_addr.to_string(),
-//         sigset_index: sigset.index(),
-//         expiration: sigset.deposit_timeout() * 1000,
-//     })
-// }
+    Ok(DepositAddress {
+        address: btc_addr.to_string(),
+        sigset_index: sigset.index(),
+        expiration: sigset.deposit_timeout() * 1000,
+    })
+}
 
 // pub async fn nbtc_balance(addr: String) -> Result<u64> {
 //     let client: WebClient<App> = WebClient::new();

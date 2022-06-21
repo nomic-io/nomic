@@ -10,6 +10,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::error::Error;
 use crate::internal as Internal;
+use crate::types::DepositAddress;
 use js_sys::Array;
 
 const REST_PORT: u64 = 8443;
@@ -96,10 +97,10 @@ pub async fn get_address() -> Result<String, JsValue> {
     into_js_res(Internal::get_address().await)
 }
 
-// #[wasm_bindgen(js_name = generateDepositAddress)]
-// pub async fn gen_deposit_addr(dest_addr: String) -> Result<DepositAddress> {
-//     Internal::gen_deposit_addr(dest_addr).await?
-// }
+#[wasm_bindgen(js_name = generateDepositAddress)]
+pub async fn gen_deposit_addr(dest_addr: String) -> Result<DepositAddress, JsValue> {
+    into_js_res(Internal::gen_deposit_addr(dest_addr).await)
+}
 
 // // #[wasm_bindgen(js_name = nbtcBalance)]
 // // pub async fn nbtc_balance(addr: String) -> Result<u64> {

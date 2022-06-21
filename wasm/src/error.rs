@@ -3,6 +3,8 @@ use nomic::thiserror;
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
+    Nomic(#[from] nomic::error::Error),
+    #[error(transparent)]
     Orga(#[from] nomic::orga::Error),
     #[error("{0}")]
     Wasm(String),
