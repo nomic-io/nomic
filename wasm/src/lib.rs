@@ -85,10 +85,10 @@ pub async fn airdrop_balance(addr: String) -> Result<Option<u64>, JsValue> {
     into_js_res(Internal::airdrop_balance(addr).await)
 }
 
-// #[wasm_bindgen]
-// pub async fn nonce(addr: String) -> Result<u64> {
-//     Internal::nonce(addr).await?
-// }
+#[wasm_bindgen]
+pub async fn nonce(addr: String) -> Result<u64, JsValue> {
+    into_js_res(Internal::nonce(addr).await)
+}
 
 // #[wasm_bindgen(js_name = getAddress)]
 // pub async fn get_address() -> Result<String> {
