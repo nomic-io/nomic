@@ -373,6 +373,9 @@ impl HeaderQueue {
             .first()
             .ok_or_else(|| Error::Header("Passed header list is empty".into()))?
             .height;
+        if first_height == 0 {
+            return Err(Error::Header("Headers must start after height 0".into()));
+        }
 
         let prev_header = [self
             .get_by_height(first_height - 1)?
