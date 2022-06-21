@@ -423,14 +423,29 @@ impl DelegationsCmd {
             if delegations.len() == 1 { "" } else { "s" }
         );
         for (validator, delegation) in delegations {
-            let staked: u64 = delegation.staked.into();
-            let liquid: u64 = delegation.liquid.into();
-            if staked + liquid == 0 {
+            let staked = delegation.staked;
+            let liquid: u64 = delegation.liquid.iter().map(|(_, amount)| -> u64 { (*amount).into() }).sum();
+            if staked == 0 && liquid == 0 {
                 continue;
             }
+
+            use nomic::app::Nom;
+            use nomic::bitcoin::Nbtc;
+            let liquid_nom = delegation
+                .liquid
+                .iter()
+                .find(|(denom, _)| *denom == Nom::INDEX)
+                .unwrap()
+                .1;
+            let liquid_nbtc = delegation
+                .liquid
+                .iter()
+                .find(|(denom, _)| *denom == Nbtc::INDEX)
+                .unwrap()
+                .1;
+
             println!(
-                "- {}: staked={} NOM, liquid={} NOM",
-                validator, staked, liquid
+                "- {validator}: staked={staked} NOM, liquid={liquid_nom} NOM,{liquid_nbtc} NBTC",
             );
         }
 

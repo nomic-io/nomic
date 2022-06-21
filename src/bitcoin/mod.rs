@@ -39,7 +39,9 @@ pub mod txid_set;
 
 #[derive(State, Debug, Clone)]
 pub struct Nbtc(());
-impl Symbol for Nbtc {}
+impl Symbol for Nbtc {
+    const INDEX: u8 = 21;
+}
 
 pub const MIN_DEPOSIT_AMOUNT: u64 = 600;
 pub const MAX_WITHDRAWAL_SCRIPT_LENGTH: u64 = 64;
