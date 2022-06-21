@@ -71,10 +71,14 @@ pub async fn unbond(val_addr: String, amount: u64) -> Result<JsValue, JsValue> {
     into_js_res(Internal::unbond(val_addr, amount).await)
 }
 
-// #[wasm_bindgen]
-// pub async fn redelegate(src_addr: String, dst_addr: String, amount: u64) -> Result<JsValue> {
-//     Internal::redelegate(src_addr, dst_addr, amount).await?
-// }
+#[wasm_bindgen]
+pub async fn redelegate(
+    src_addr: String,
+    dst_addr: String,
+    amount: u64,
+) -> Result<JsValue, JsValue> {
+    into_js_res(Internal::redelegate(src_addr, dst_addr, amount).await)
+}
 
 // #[wasm_bindgen(js_name = airdropBalance)]
 // pub async fn airdrop_balance(addr: String) -> Result<Option<u64>> {
