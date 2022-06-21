@@ -3,6 +3,7 @@
 
 mod error;
 mod internal;
+mod types;
 mod web_client;
 
 use wasm_bindgen::prelude::*;
