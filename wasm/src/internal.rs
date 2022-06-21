@@ -2,6 +2,7 @@
 #![feature(generic_associated_types)]
 
 use crate::error::{Error, Result};
+use crate::types::{Delegation, UnbondInfo, ValidatorQueryInfo};
 use crate::web_client::WebAdapter;
 use crate::web_client::WebClient;
 use js_sys::{Array, JsString};
@@ -53,21 +54,6 @@ pub async fn reward_balance(addr: String) -> Result<u64> {
         .sum::<u64>())
 }
 
-#[wasm_bindgen(getter_with_clone)]
-pub struct Delegation {
-    pub address: String,
-    pub staked: u64,
-    pub liquid: u64,
-    pub unbonding: Vec<JsValue>,
-}
-
-#[wasm_bindgen]
-pub struct UnbondInfo {
-    #[wasm_bindgen(js_name = startSeconds)]
-    pub start_seconds: u64,
-    pub amount: u64,
-}
-
 pub async fn delegations(addr: String) -> Result<Array> {
     let mut client: WebClient<App> = WebClient::new();
     let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
@@ -92,18 +78,6 @@ pub async fn delegations(addr: String) -> Result<Array> {
         })
         .map(JsValue::from)
         .collect())
-}
-
-#[wasm_bindgen(getter_with_clone)]
-pub struct ValidatorQueryInfo {
-    pub jailed: bool,
-    pub address: String,
-    pub commission: String,
-    #[wasm_bindgen(js_name = inActiveSet)]
-    pub in_active_set: bool,
-    pub info: String,
-    #[wasm_bindgen(js_name = amountStaked)]
-    pub amount_staked: u64,
 }
 
 pub async fn all_validators() -> Result<Array> {
