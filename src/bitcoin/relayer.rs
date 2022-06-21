@@ -228,7 +228,9 @@ impl Relayer {
 
         loop {
             if let Err(e) = self.relay_checkpoints().await {
-                eprintln!("Checkpoint relay error: {}", e);
+                if !e.to_string().contains("No completed checkpoints yet") {
+                    eprintln!("Checkpoint relay error: {}", e);
+                }
             }
 
             sleep(2).await;
