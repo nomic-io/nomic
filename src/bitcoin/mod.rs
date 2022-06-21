@@ -45,7 +45,7 @@ impl Symbol for Nbtc {
 
 pub const MIN_DEPOSIT_AMOUNT: u64 = 600;
 pub const MAX_WITHDRAWAL_SCRIPT_LENGTH: u64 = 64;
-pub const TRANSFER_FEE: u64 = 100;
+pub const TRANSFER_FEE: u64 = 1 * UNITS_PER_SAT;
 pub const MIN_CONFIRMATIONS: u32 = 3;
 pub const UNITS_PER_SAT: u64 = 1_000_000;
 
