@@ -107,11 +107,10 @@ pub async fn nbtc_balance(addr: String) -> Result<u64, JsValue> {
     into_js_res(Internal::nbtc_balance(addr).await)
 }
 
-// // #[wasm_bindgen(js_name = valueLocked)]
-// // pub async fn value_locked() -> Result<u64> {
-// //     let client: WebClient<App> = WebClient::new();
-// //     client.bitcoin.value_locked().await??
-// // }
+#[wasm_bindgen(js_name = valueLocked)]
+pub async fn value_locked() -> Result<u64, JsValue> {
+    into_js_res(Internal::value_locked().await)
+}
 
 // // #[wasm_bindgen(js_name = latestCheckpointHash)]
 // // pub async fn latest_checkpoint_hash() -> Result<String> {

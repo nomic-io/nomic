@@ -255,10 +255,10 @@ pub async fn nbtc_balance(addr: String) -> Result<u64> {
     Ok(client.bitcoin.accounts.balance(addr).await??.into())
 }
 
-// pub async fn value_locked() -> Result<u64> {
-//     let client: WebClient<App> = WebClient::new();
-//     client.bitcoin.value_locked().await??
-// }
+pub async fn value_locked() -> Result<u64> {
+    let client: WebClient<App> = WebClient::new();
+    Ok(client.bitcoin.value_locked().await??)
+}
 
 // pub async fn latest_checkpoint_hash() -> Result<String> {
 //     let client: WebClient<App> = WebClient::new();
