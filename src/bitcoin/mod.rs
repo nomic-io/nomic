@@ -12,7 +12,7 @@ use header_queue::HeaderQueue;
 use orga::abci::BeginBlock;
 use orga::call::Call;
 use orga::client::Client;
-use orga::coins::{Accounts, Address, Amount, Symbol};
+use orga::coins::{Accounts, Address, Amount, Symbol, Coin};
 use orga::collections::Map;
 use orga::context::{Context, GetContext};
 use orga::encoding::{Decode, Encode, Terminated};
@@ -55,6 +55,7 @@ pub struct Bitcoin {
     pub checkpoints: CheckpointQueue,
     pub accounts: Accounts<Nbtc>,
     pub signatory_keys: SignatoryKeys,
+    pub(crate) reward_pool: Coin<Nbtc>,
 }
 
 pub type ConsensusKey = [u8; 32];

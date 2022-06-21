@@ -35,6 +35,7 @@ pub struct InnerApp {
     incentive_pool_rewards: Faucet<Nom>,
 
     pub bitcoin: Bitcoin,
+    pub reward_timer: RewardTimer,
 }
 
 impl InnerApp {
@@ -96,7 +97,8 @@ mod abci {
         fn begin_block(&mut self, ctx: &BeginBlockCtx) -> Result<()> {
             self.staking.begin_block(ctx)?;
 
-            if self.staking.staked()? > 0 {
+            let has_stake = self.staking.staked()? > 0;
+            if has_stake {
                 let reward = self.staking_rewards.mint()?;
                 self.staking.give(reward)?;
             }
@@ -112,6 +114,15 @@ mod abci {
             self.incentive_pool.give(ip_reward)?;
 
             self.bitcoin.begin_block(ctx)?;
+
+            let now = ctx.header.time.as_ref().unwrap().seconds;
+            let has_nbtc_rewards = self.bitcoin.reward_pool.amount > 0;
+            if self.reward_timer.tick(now) && has_stake && has_nbtc_rewards {
+                let reward_rate = (Amount::new(1) / Amount::new(2377))?; // ~0.00042069
+                let reward_amount = (self.bitcoin.reward_pool.amount * reward_rate)?.amount()?;
+                let reward = self.bitcoin.reward_pool.take(reward_amount)?;
+                self.staking.give(reward)?;
+            }
 
             Ok(())
         }
@@ -449,4 +460,22 @@ impl ConvertSdkTx for InnerApp {
 pub struct MsgWithdraw {
     pub amount: String,
     pub dst_address: String,
+}
+
+const REWARD_TIMER_PERIOD: i64 = 120;
+
+#[derive(State, Call, Query, Client)]
+pub struct RewardTimer {
+    last_period: i64,
+}
+
+impl RewardTimer {
+    pub fn tick(&mut self, now: i64) -> bool {
+        if now - self.last_period < REWARD_TIMER_PERIOD {
+            return false;
+        }
+
+        self.last_period = now;
+        true
+    }
 }
