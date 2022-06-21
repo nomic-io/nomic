@@ -64,7 +64,7 @@ pub async fn reward_balance(addr: String) -> u64 {
 
     delegations
         .iter()
-        .map(|(_, d)| -> u64 { d.liquid.into() })
+        .map(|(_, d)| -> u64 { d.liquid.iter().find(|(denom, _)| *denom == Nom::INDEX).unwrap_or(&(0, 0.into())).1.into() })
         .sum::<u64>()
 }
 
@@ -79,8 +79,14 @@ pub struct UnbondInfo {
 pub struct Delegation {
     pub address: String,
     pub staked: u64,
-    pub liquid: u64,
+    pub liquid: Vec<JsValue>,
     pub unbonding: Vec<JsValue>,
+}
+
+#[wasm_bindgen(getter_with_clone)]
+pub struct Coin {
+    pub denom: u8,
+    pub amount: u64,
 }
 
 #[wasm_bindgen]
@@ -98,7 +104,7 @@ pub async fn delegations(addr: String) -> Array {
         .map(|(address, delegation)| Delegation {
             address: address.to_string(),
             staked: delegation.staked.into(),
-            liquid: delegation.liquid.into(),
+            liquid: delegation.liquid.iter().map(|(denom, amount)| Coin { denom: *denom, amount: (*amount).into() }.into()).collect(),
             unbonding: delegation.unbonding.iter().map(|u| UnbondInfo {
                 start_seconds: u.start_seconds as u64,
                 amount: u.amount.into(),
