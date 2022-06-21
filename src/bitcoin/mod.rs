@@ -12,7 +12,7 @@ use header_queue::HeaderQueue;
 use orga::abci::BeginBlock;
 use orga::call::Call;
 use orga::client::Client;
-use orga::coins::{Accounts, Address, Amount, Symbol, Coin};
+use orga::coins::{Accounts, Address, Amount, Coin, Symbol, Take, Give};
 use orga::collections::Map;
 use orga::context::{Context, GetContext};
 use orga::encoding::{Decode, Encode, Terminated};
@@ -47,6 +47,11 @@ pub const MIN_DEPOSIT_AMOUNT: u64 = 600;
 pub const MAX_WITHDRAWAL_SCRIPT_LENGTH: u64 = 64;
 pub const TRANSFER_FEE: u64 = 100;
 pub const MIN_CONFIRMATIONS: u32 = 3;
+pub const UNITS_PER_SAT: u64 = 1_000_000;
+
+pub fn calc_deposit_fee(amount: u64) -> u64 {
+    amount / 2
+}
 
 #[derive(State, Call, Query, Client)]
 pub struct Bitcoin {
@@ -262,18 +267,20 @@ impl Bitcoin {
                 .building_mut()?
                 .push_input(prevout, &sigset, dest, output.value)?;
 
-        // TODO: don't credit account until we're done signing including tx
-        let value = output.value.checked_sub(est_vsize * FEE_RATE);
+        // TODO: don't credit account until we're done signing including tx;
 
-        match value {
-            None => {
-                return Err(OrgaError::App(
-                    "Deposit amount is too small to pay its spending fee".to_string(),
-                )
-                .into())
-            }
-            Some(value) => self.accounts.deposit(dest, Nbtc::mint(value))?,
-        };
+        let value = output
+            .value
+            .checked_sub(est_vsize * FEE_RATE)
+            .ok_or_else(|| {
+                OrgaError::App("Deposit amount is too small to pay its spending fee".to_string())
+            })?
+            * UNITS_PER_SAT;
+
+        let mut minted_nbtc = Nbtc::mint(value);
+        let deposit_fee = minted_nbtc.take(calc_deposit_fee(value))?;
+        self.accounts.deposit(dest, minted_nbtc)?;
+        self.reward_pool.give(deposit_fee)?;
 
         Ok(())
     }
@@ -295,7 +302,7 @@ impl Bitcoin {
         self.accounts.withdraw(signer, amount)?.burn();
 
         let fee = (9 + script_pubkey.len() as u64) * FEE_RATE;
-        let value: u64 = amount.into();
+        let value: u64 = Into::<u64>::into(amount) / UNITS_PER_SAT;
         let value = match value.checked_sub(fee) {
             None => {
                 return Err(OrgaError::App(
@@ -335,11 +342,7 @@ impl Bitcoin {
 
     #[query]
     pub fn value_locked(&self) -> Result<u64> {
-        if let Some(checkpoint) = self.checkpoints.back()? {
-            checkpoint.get_tvl()
-        } else {
-            Ok(0)
-        }
+        self.checkpoints.building()?.get_tvl()
     }
 
     pub fn network(&self) -> bitcoin::Network {
