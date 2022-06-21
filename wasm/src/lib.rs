@@ -102,10 +102,10 @@ pub async fn gen_deposit_addr(dest_addr: String) -> Result<DepositAddress, JsVal
     into_js_res(Internal::gen_deposit_addr(dest_addr).await)
 }
 
-// // #[wasm_bindgen(js_name = nbtcBalance)]
-// // pub async fn nbtc_balance(addr: String) -> Result<u64> {
-
-// // }
+#[wasm_bindgen(js_name = nbtcBalance)]
+pub async fn nbtc_balance(addr: String) -> Result<u64, JsValue> {
+    into_js_res(Internal::nbtc_balance(addr).await)
+}
 
 // // #[wasm_bindgen(js_name = valueLocked)]
 // // pub async fn value_locked() -> Result<u64> {

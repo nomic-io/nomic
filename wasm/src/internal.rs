@@ -248,12 +248,12 @@ pub async fn gen_deposit_addr(dest_addr: String) -> Result<DepositAddress> {
     })
 }
 
-// pub async fn nbtc_balance(addr: String) -> Result<u64> {
-//     let client: WebClient<App> = WebClient::new();
-//     let addr: Address = addr.parse()?;
+pub async fn nbtc_balance(addr: String) -> Result<u64> {
+    let client: WebClient<App> = WebClient::new();
+    let addr = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
-//     client.bitcoin.accounts.balance(addr).await??.into()
-// }
+    Ok(client.bitcoin.accounts.balance(addr).await??.into())
+}
 
 // pub async fn value_locked() -> Result<u64> {
 //     let client: WebClient<App> = WebClient::new();
