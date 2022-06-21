@@ -441,7 +441,7 @@ impl DelegationsCmd {
                 .liquid
                 .iter()
                 .find(|(denom, _)| *denom == Nbtc::INDEX)
-                .unwrap()
+                .unwrap_or(&(0, 0.into()))
                 .1;
 
             println!(
