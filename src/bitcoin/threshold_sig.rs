@@ -6,7 +6,8 @@ use orga::encoding::{Decode, Encode, Error as EdError, Result as EdResult, Termi
 use orga::query::Query;
 use orga::state::State;
 use orga::{Error, Result};
-use secp256k1::{
+use bitcoin::secp256k1::{
+    self,
     constants::{COMPACT_SIGNATURE_SIZE, MESSAGE_SIZE, PUBLIC_KEY_SIZE},
     ecdsa, PublicKey, Secp256k1,
 };
@@ -53,9 +54,9 @@ impl Pubkey {
     }
 }
 
-impl From<bitcoin::PublicKey> for Pubkey {
-    fn from(pubkey: bitcoin::PublicKey) -> Self {
-        Pubkey(pubkey.key.serialize())
+impl From<PublicKey> for Pubkey {
+    fn from(pubkey: PublicKey) -> Self {
+        Pubkey(pubkey.serialize())
     }
 }
 
@@ -225,7 +226,7 @@ impl ThresholdSig {
                 share.sig.map_or(Ok(vec![]), |sig| {
                     let sig = ecdsa::Signature::from_compact(sig.as_slice())?;
                     let mut v = sig.serialize_der().to_vec();
-                    v.push(bitcoin::SigHashType::All.as_u32() as u8);
+                    v.push(bitcoin::SigHashType::All.to_u32() as u8);
                     Ok(v)
                 })
             })

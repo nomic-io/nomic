@@ -1619,7 +1619,7 @@ dependencies = [
 [[package]]
 name = "nomic"
 version = "2.0.1"
-source = "git+https://github.com/nomic-io/nomic?branch=v2-legacy-testnet#cb736296a643cb995ac866f134cb31adb9dd410f"
+source = "git+https://github.com/nomic-io/nomic?branch=v2-legacy-testnet#41b8113633775f50091861209508c2afb42c9d1c"
 dependencies = [
  "base64",
  "bech32",
@@ -1647,7 +1647,7 @@ version = "3.0.0"
 dependencies = [
  "base64",
  "bech32",
- "bitcoin 0.27.1",
+ "bitcoin 0.28.1",
  "bitcoin-script",
  "bitcoin_hashes",
  "bitcoincore-rpc-async2",
@@ -1665,7 +1665,6 @@ dependencies = [
  "pretty_env_logger",
  "rand 0.8.5",
  "reqwest",
- "secp256k1 0.21.3",
  "serde",
  "serde_json",
  "tendermint-rpc",
@@ -1857,7 +1856,6 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.3.0"
-source = "git+https://github.com/nomic-io/orga.git?branch=v4-testnet#8beca7d30dd2d291c96786b7b5032a87d32a59e9"
 dependencies = [
  "abci2",
  "async-trait",
@@ -1883,7 +1881,7 @@ dependencies = [
  "ripemd",
  "rust_decimal",
  "rust_decimal_macros",
- "secp256k1 0.21.3",
+ "secp256k1 0.22.1",
  "seq-macro",
  "serde",
  "serde_json",
@@ -1913,7 +1911,6 @@ dependencies = [
 [[package]]
 name = "orga-macros"
 version = "0.2.4"
-source = "git+https://github.com/nomic-io/orga.git?branch=v4-testnet#8beca7d30dd2d291c96786b7b5032a87d32a59e9"
 dependencies = [
  "heck 0.3.3",
  "proc-macro2",
@@ -2617,6 +2614,8 @@ version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "26947345339603ae8395f68e2f3d85a6b0a8ddfe6315818e80b8504415099db0"
 dependencies = [
+ "bitcoin_hashes",
+ "rand 0.6.5",
  "secp256k1-sys 0.5.2",
  "serde",
 ]

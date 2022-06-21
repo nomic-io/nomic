@@ -100,7 +100,7 @@ impl Input {
             previous_output: *self.prevout,
             script_sig: bitcoin::Script::new(),
             sequence: u32::MAX,
-            witness,
+            witness: bitcoin::Witness::from_vec(witness),
         })
     }
 

@@ -98,11 +98,10 @@ impl Signer {
                 let privkey = self
                     .xpriv
                     .derive_priv(&secp, &[ChildNumber::from_normal_idx(index)?])?
-                    .private_key
-                    .key;
+                    .private_key;
 
                 Ok(secp
-                    .sign(&Message::from_slice(&msg[..])?, &privkey)
+                    .sign_ecdsa(&Message::from_slice(&msg[..])?, &privkey)
                     .serialize_compact())
             })
             .collect::<Result<_>>()?;
