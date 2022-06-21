@@ -34,10 +34,13 @@ pub async fn balance(addr: String) -> Result<u64, JsValue> {
     }
 }
 
-// #[wasm_bindgen(js_name = rewardBalance)]
-// pub async fn reward_balance(addr: String) -> Result<u64> {
-//     Internal::reward_balance(addr).await?
-// }
+#[wasm_bindgen(js_name = rewardBalance)]
+pub async fn reward_balance(addr: String) -> Result<u64, JsValue> {
+    match Internal::reward_balance(addr).await {
+        Ok(res) => Ok(res),
+        Err(err) => Err(err.into()),
+    }
+}
 
 // #[wasm_bindgen]
 // pub async fn delegations(addr: String) -> Result<Array> {
