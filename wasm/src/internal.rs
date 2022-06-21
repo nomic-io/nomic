@@ -9,6 +9,7 @@ use nomic::app::{Airdrop, App, InnerApp, Nom, CHAIN_ID};
 use nomic::bitcoin::signatory::SignatorySet;
 use nomic::orga::client::AsyncQuery;
 use nomic::orga::merk::ABCIPrefixedProofStore;
+use nomic::orga::plugins::sdk_compat::sdk;
 use nomic::orga::prelude::AsyncCall;
 use nomic::orga::prelude::MIN_FEE;
 use std::convert::TryInto;
@@ -124,33 +125,39 @@ pub async fn all_validators() -> Result<Array> {
         .collect())
 }
 
-// use nomic::orga::plugins::sdk_compat::sdk;
+pub async fn get_address() -> Result<String> {
+    let signer = nomic::orga::plugins::keplr::Signer;
+    Ok(signer.address().await)
+}
 
-// async fn send_sdk_tx(msg: sdk::Msg) -> Result<JsValue> {
-//     let my_addr = get_address().await;
+async fn send_sdk_tx(msg: sdk::Msg) -> Result<JsValue> {
+    let my_addr = get_address().await?;
+    let address = my_addr
+        .parse()
+        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
-//     let mut client: WebClient<App> = WebClient::new();
-//     let nonce = client.nonce(my_addr.parse()?).await?;
+    let mut client: WebClient<App> = WebClient::new();
+    let nonce = client.nonce(address).await?;
 
-//     client
-//         .send_sdk_tx(sdk::SignDoc {
-//             account_number: "0".to_string(),
-//             chain_id: CHAIN_ID.to_string(),
-//             fee: sdk::Fee {
-//                 amount: vec![sdk::Coin {
-//                     amount: "0".to_string(),
-//                     denom: "unom".to_string(),
-//                 }],
-//                 gas: MIN_FEE.to_string(),
-//             },
-//             memo: "".to_string(),
-//             msgs: vec![msg],
-//             sequence: (nonce + 1).to_string(),
-//         })
-//         .await?;
+    client
+        .send_sdk_tx(sdk::SignDoc {
+            account_number: "0".to_string(),
+            chain_id: CHAIN_ID.to_string(),
+            fee: sdk::Fee {
+                amount: vec![sdk::Coin {
+                    amount: "0".to_string(),
+                    denom: "unom".to_string(),
+                }],
+                gas: MIN_FEE.to_string(),
+            },
+            memo: "".to_string(),
+            msgs: vec![msg],
+            sequence: (nonce + 1).to_string(),
+        })
+        .await?;
 
-//     Ok(client.last_res())
-// }
+    Ok(client.last_res()?)
+}
 
 // pub async fn claim() -> Result<JsValue> {
 //     send_sdk_tx(sdk::Msg {
@@ -238,11 +245,6 @@ pub async fn all_validators() -> Result<Array> {
 //     let address = addr.parse()?;
 
 //     client.nonce(address).await?
-// }
-
-// pub async fn get_address() -> Result<String> {
-//     let signer = nomic::orga::plugins::keplr::Signer;
-//     signer.address().await
 // }
 
 // pub async fn gen_deposit_addr(dest_addr: String) -> Result<DepositAddress> {
