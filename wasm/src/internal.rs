@@ -52,31 +52,46 @@ pub async fn reward_balance(addr: String) -> Result<u64> {
         .sum::<u64>())
 }
 
-// pub async fn delegations(addr: String) -> Result<Array> {
-//     let mut client: WebClient<App> = WebClient::new();
-//     let address = addr.parse()?;
+#[wasm_bindgen(getter_with_clone)]
+pub struct Delegation {
+    pub address: String,
+    pub staked: u64,
+    pub liquid: u64,
+    pub unbonding: Vec<JsValue>,
+}
 
-//     let delegations = client.staking.delegations(address).await??;
+#[wasm_bindgen]
+pub struct UnbondInfo {
+    #[wasm_bindgen(js_name = startSeconds)]
+    pub start_seconds: u64,
+    pub amount: u64,
+}
 
-//     delegations
-//         .iter()
-//         .map(|(address, delegation)| Delegation {
-//             address: address.to_string(),
-//             staked: delegation.staked.into(),
-//             liquid: delegation.liquid.into(),
-//             unbonding: delegation
-//                 .unbonding
-//                 .iter()
-//                 .map(|u| UnbondInfo {
-//                     start_seconds: u.start_seconds as u64,
-//                     amount: u.amount.into(),
-//                 })
-//                 .map(JsValue::from)
-//                 .collect(),
-//         })
-//         .map(JsValue::from)
-//         .collect()
-// }
+pub async fn delegations(addr: String) -> Result<Array> {
+    let mut client: WebClient<App> = WebClient::new();
+    let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+
+    let delegations = client.staking.delegations(address).await??;
+
+    Ok(delegations
+        .iter()
+        .map(|(address, delegation)| Delegation {
+            address: address.to_string(),
+            staked: delegation.staked.into(),
+            liquid: delegation.liquid.into(),
+            unbonding: delegation
+                .unbonding
+                .iter()
+                .map(|u| UnbondInfo {
+                    start_seconds: u.start_seconds as u64,
+                    amount: u.amount.into(),
+                })
+                .map(JsValue::from)
+                .collect(),
+        })
+        .map(JsValue::from)
+        .collect())
+}
 
 // pub async fn all_validators() -> Result<Array> {
 //     let mut client: WebClient<App> = WebClient::new();

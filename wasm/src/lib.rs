@@ -9,6 +9,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::error::Error;
 use crate::internal as Internal;
+use js_sys::Array;
 
 const REST_PORT: u64 = 8443;
 
@@ -42,10 +43,13 @@ pub async fn reward_balance(addr: String) -> Result<u64, JsValue> {
     }
 }
 
-// #[wasm_bindgen]
-// pub async fn delegations(addr: String) -> Result<Array> {
-//     Internal::delegations(addr).await?
-// }
+#[wasm_bindgen]
+pub async fn delegations(addr: String) -> Result<Array, JsValue> {
+    match Internal::delegations(addr).await {
+        Ok(res) => Ok(res),
+        Err(err) => Err(err.into()),
+    }
+}
 
 // #[wasm_bindgen(js_name = allValidators)]
 // pub async fn all_validators() -> Result<Array> {
