@@ -233,12 +233,12 @@ pub async fn redelegate(src_addr: String, dst_addr: String, amount: u64) -> Resu
     .await
 }
 
-// pub async fn airdrop_balance(addr: String) -> Result<Option<u64>> {
-//     let client: WebClient<App> = WebClient::new();
-//     let address = addr.parse()?;
+pub async fn airdrop_balance(addr: String) -> Result<Option<u64>> {
+    let client: WebClient<App> = WebClient::new();
+    let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
-//     client.atom_airdrop.balance(address).await??.map(Into::into)
-// }
+    Ok(client.atom_airdrop.balance(address).await??.map(Into::into))
+}
 
 // pub async fn nonce(addr: String) -> Result<u64> {
 //     let client: WebClient<App> = WebClient::new();
