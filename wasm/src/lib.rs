@@ -117,11 +117,10 @@ pub async fn latest_checkpoint_hash() -> Result<String, JsValue> {
     into_js_res(Internal::latest_checkpoint_hash().await)
 }
 
-// // #[wasm_bindgen(js_name = bitcoinHeight)]
-// // pub async fn bitcoin_height() -> Result<u32> {
-// //     let client: WebClient<App> = WebClient::new();
-// //     client.bitcoin.headers.height().await??
-// // }
+#[wasm_bindgen(js_name = bitcoinHeight)]
+pub async fn bitcoin_height() -> Result<u32, JsValue> {
+    into_js_res(Internal::bitcoin_height().await)
+}
 
 // // #[wasm_bindgen(js_name = broadcastDepositAddress)]
 // // pub async fn broadcast_deposit_addr(

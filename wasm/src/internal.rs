@@ -272,10 +272,10 @@ pub async fn latest_checkpoint_hash() -> Result<String> {
     Ok(last_checkpoint_id.to_string())
 }
 
-// pub async fn bitcoin_height() -> Result<u32> {
-//     let client: WebClient<App> = WebClient::new();
-//     client.bitcoin.headers.height().await??
-// }
+pub async fn bitcoin_height() -> Result<u32> {
+    let client: WebClient<App> = WebClient::new();
+    Ok(client.bitcoin.headers.height().await??)
+}
 
 // pub async fn broadcast_deposit_addr(
 //     addr: String,
