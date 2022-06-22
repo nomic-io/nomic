@@ -16,7 +16,7 @@ use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
 
-const STOP_SECONDS: i64 = 0; //1654880400;
+const STOP_SECONDS: i64 = 1655925000;
 const STATE_SYNC_DELAY: i64 = 3 * orga::merk::store::SNAPSHOT_INTERVAL as i64;
 
 fn now_seconds() -> i64 {
@@ -139,23 +139,23 @@ impl StartCmd {
 
                 let node = nomicv2::orga::abci::Node::<nomicv2::app::App>::new(
                     old_name,
-                    Default::default(),
+                    Default::default(),l
                 )
-                .with_genesis(include_bytes!("../../genesis/testnet-2.json"))
+                .with_genesis(include_bytes!("../../genesis/internal-2.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
                 .stop_seconds(STOP_SECONDS);
 
                 set_p2p_seeds(
                     &old_config_path,
-                    &["337d4415bbe17251446dd251290d4d766be2e882@167.99.228.240:26656"],
+                    &["337d4415bbe17251446dd251290d4d766be2e882@192.168.1.126:26656"],
                 );
 
                 if !started_old_node {
                     // TODO: set default RPC boostrap nodes
                     configure_for_statesync(
                         &old_config_path,
-                        &["http://167.99.228.240:26667", "http://167.99.228.240:26677"],
+                        &["http://192.168.1.126:27657", "http://192.168.1.126:28657"],
                     );
                 }
 
@@ -208,7 +208,7 @@ impl StartCmd {
                 // TODO: set default RPC boostrap nodes
                 configure_for_statesync(
                     &new_config_path,
-                    &["http://192.168.1.126:26667", "http://192.168.1.126:26667"],
+                    &["http://192.168.1.126:27657", "http://192.168.1.126:28657"],
                 );
             }
 
