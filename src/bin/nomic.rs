@@ -139,7 +139,7 @@ impl StartCmd {
 
                 let node = nomicv2::orga::abci::Node::<nomicv2::app::App>::new(
                     old_name,
-                    Default::default(),l
+                    Default::default(),
                 )
                 .with_genesis(include_bytes!("../../genesis/internal-2.json"))
                 .stdout(std::process::Stdio::inherit())
