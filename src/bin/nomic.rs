@@ -141,21 +141,21 @@ impl StartCmd {
                     old_name,
                     Default::default(),
                 )
-                .with_genesis(include_bytes!("../../genesis/internal-2.json"))
+                .with_genesis(include_bytes!("../../genesis/testnet-2.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
                 .stop_seconds(STOP_SECONDS);
 
                 set_p2p_seeds(
                     &old_config_path,
-                    &["337d4415bbe17251446dd251290d4d766be2e882@192.168.1.126:26656"],
+                    &["29af7e39d5ea0a64ca5dedad0e1fedb3e3cee0ee@167.99.228.240:26656"],
                 );
 
                 if !started_old_node {
                     // TODO: set default RPC boostrap nodes
                     configure_for_statesync(
                         &old_config_path,
-                        &["http://192.168.1.126:27657", "http://192.168.1.126:28657"],
+                        &["http://167.99.228.240:26667", "http://167.99.228.240:26677"],
                     );
                 }
 
@@ -202,20 +202,20 @@ impl StartCmd {
                 // TODO: set default seeds
                 set_p2p_seeds(
                     &new_config_path,
-                    &["337d4415bbe17251446dd251290d4d766be2e882@192.168.1.126:26656"],
+                    &["29af7e39d5ea0a64ca5dedad0e1fedb3e3cee0ee@167.99.228.240:26656"],
                 );
 
                 // TODO: set default RPC boostrap nodes
                 configure_for_statesync(
                     &new_config_path,
-                    &["http://192.168.1.126:27657", "http://192.168.1.126:28657"],
+                    &["http://167.99.228.240:26667", "http://167.99.228.240:26677"],
                 );
             }
 
             println!("Starting node...");
             // TODO: add cfg defaults
             Node::<nomic::app::App>::new(new_name, Default::default())
-                .with_genesis(include_bytes!("../../genesis/internal-4.json"))
+                .with_genesis(include_bytes!("../../genesis/testnet-4.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
                 .run()
@@ -803,7 +803,7 @@ impl DepositCmd {
         let client = reqwest::Client::new();
         client
             .post(format!(
-                "http://localhost:9000?dest_addr={}&sigset_index={}&deposit_addr={}",
+                "http://167.99.228.240:9000?dest_addr={}&sigset_index={}&deposit_addr={}",
                 dest_addr,
                 sigset.index(),
                 btc_addr,

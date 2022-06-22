@@ -1,6 +1,6 @@
 {
-  "genesis_time": "2022-06-02T12:40:00Z",
-  "chain_id": "nomic-internal-4",
+  "genesis_time": "2022-06-22T00:00:00Z",
+  "chain_id": "nomic-testnet-4",
   "initial_height": "0",
   "consensus_params": {
     "block": {
@@ -18,16 +18,6 @@
     },
     "version": {}
   },
-  "validators": [
-    {
-      "name": "matt",
-      "address": "35B313B0F0D8DE8F4029C504B4D428E78EC2D381",
-      "pub_key": {
-        "type": "tendermint/PubKeyEd25519",
-        "value": "SmNKeJz4XTd3urZk0edJGWTlbGn7Qd1wP8N8KLeEXtQ="
-      },
-      "power": "10"
-    }
-  ],
+  "validators": [],
   "app_hash": ""
 }
