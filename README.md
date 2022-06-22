@@ -129,7 +129,7 @@ You can run the signer with:
 nomic signer
 ```
 
-This will automatically generate a Bitcoin extended private key and store it at `~/.nomic-testnet-3/signer/xpriv`. It will also prompt you to submit your public key to the network so you can be added to the multisig.
+This will automatically generate a Bitcoin extended private key and store it at `~/.nomic-testnet-4/signer/xpriv`. It will also prompt you to submit your public key to the network so you can be added to the multisig.
 
 Leave this process running, it will automatically sign Bitcoin transactions that the network wants to create.
 
