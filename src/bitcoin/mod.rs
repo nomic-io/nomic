@@ -12,11 +12,11 @@ use header_queue::HeaderQueue;
 use orga::abci::BeginBlock;
 use orga::call::Call;
 use orga::client::Client;
-use orga::coins::{Accounts, Address, Amount, Symbol};
-use orga::context::{GetContext, Context};
-use orga::plugins::Paid;
+use orga::coins::{Accounts, Address, Amount, Coin, Symbol, Take, Give};
 use orga::collections::Map;
+use orga::context::{Context, GetContext};
 use orga::encoding::{Decode, Encode, Terminated};
+use orga::plugins::Paid;
 #[cfg(feature = "full")]
 use orga::plugins::{BeginBlockCtx, Validators};
 use orga::plugins::{Signer, Time};
@@ -39,11 +39,19 @@ pub mod txid_set;
 
 #[derive(State, Debug, Clone)]
 pub struct Nbtc(());
-impl Symbol for Nbtc {}
+impl Symbol for Nbtc {
+    const INDEX: u8 = 21;
+}
 
 pub const MIN_DEPOSIT_AMOUNT: u64 = 600;
 pub const MAX_WITHDRAWAL_SCRIPT_LENGTH: u64 = 64;
-pub const TRANSFER_FEE: u64 = 100;
+pub const TRANSFER_FEE: u64 = 1 * UNITS_PER_SAT;
+pub const MIN_CONFIRMATIONS: u32 = 3;
+pub const UNITS_PER_SAT: u64 = 1_000_000;
+
+pub fn calc_deposit_fee(amount: u64) -> u64 {
+    amount / 2
+}
 
 #[derive(State, Call, Query, Client)]
 pub struct Bitcoin {
@@ -52,6 +60,7 @@ pub struct Bitcoin {
     pub checkpoints: CheckpointQueue,
     pub accounts: Accounts<Nbtc>,
     pub signatory_keys: SignatoryKeys,
+    pub(crate) reward_pool: Coin<Nbtc>,
 }
 
 pub type ConsensusKey = [u8; 32];
@@ -187,6 +196,10 @@ impl Bitcoin {
             .get_by_height(btc_height)?
             .ok_or_else(|| OrgaError::App("Invalid bitcoin block height".to_string()))?;
 
+        if self.headers.height()? - btc_height < MIN_CONFIRMATIONS {
+            return Err(OrgaError::App("Block is not sufficiently confirmed".to_string()).into());
+        }
+
         let mut txids = vec![];
         let mut block_indexes = vec![];
         let proof_merkle_root = btc_proof
@@ -242,7 +255,6 @@ impl Bitcoin {
                 "Output has already been relayed".to_string(),
             ))?;
         }
-
         self.processed_outpoints
             .insert(outpoint, sigset.deposit_timeout())?;
 
@@ -255,18 +267,20 @@ impl Bitcoin {
                 .building_mut()?
                 .push_input(prevout, &sigset, dest, output.value)?;
 
-        // TODO: don't credit account until we're done signing including tx
-        let value = output.value.checked_sub(est_vsize * FEE_RATE);
+        // TODO: don't credit account until we're done signing including tx;
 
-        match value {
-            None => {
-                return Err(OrgaError::App(
-                    "Deposit amount is too small to pay its spending fee".to_string(),
-                )
-                .into())
-            }
-            Some(value) => self.accounts.deposit(dest, Nbtc::mint(value))?,
-        };
+        let value = output
+            .value
+            .checked_sub(est_vsize * FEE_RATE)
+            .ok_or_else(|| {
+                OrgaError::App("Deposit amount is too small to pay its spending fee".to_string())
+            })?
+            * UNITS_PER_SAT;
+
+        let mut minted_nbtc = Nbtc::mint(value);
+        let deposit_fee = minted_nbtc.take(calc_deposit_fee(value))?;
+        self.accounts.deposit(dest, minted_nbtc)?;
+        self.reward_pool.give(deposit_fee)?;
 
         Ok(())
     }
@@ -288,7 +302,7 @@ impl Bitcoin {
         self.accounts.withdraw(signer, amount)?.burn();
 
         let fee = (9 + script_pubkey.len() as u64) * FEE_RATE;
-        let value: u64 = amount.into();
+        let value: u64 = Into::<u64>::into(amount) / UNITS_PER_SAT;
         let value = match value.checked_sub(fee) {
             None => {
                 return Err(OrgaError::App(
@@ -319,8 +333,9 @@ impl Bitcoin {
             .ok_or_else(|| Error::Orga(OrgaError::App("No Signer context available".into())))?
             .signer
             .ok_or_else(|| Error::Orga(OrgaError::App("Call must be signed".into())))?;
-        self.accounts.withdraw(signer, TRANSFER_FEE.into())?.burn();
 
+        let transfer_fee = self.accounts.withdraw(signer, TRANSFER_FEE.into())?;
+        self.reward_pool.give(transfer_fee)?;
         self.accounts.transfer(to, amount)?;
 
         Ok(())
@@ -328,11 +343,7 @@ impl Bitcoin {
 
     #[query]
     pub fn value_locked(&self) -> Result<u64> {
-        if let Some(checkpoint) = self.checkpoints.back()? {
-            checkpoint.get_tvl()
-        } else {
-            Ok(0)
-        }
+        self.checkpoints.building()?.get_tvl()
     }
 
     pub fn network(&self) -> bitcoin::Network {

@@ -42,42 +42,43 @@ pub async fn balance(addr: String) -> Result<u64> {
     Ok(client.accounts.balance(address).await??.into())
 }
 
-pub async fn reward_balance(addr: String) -> Result<u64> {
+pub async fn reward_balance(addr: String) -> u64 {
     let mut client: WebClient<App> = WebClient::new();
-    let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+    let address = addr.parse().unwrap();
 
-    let delegations = client.staking.delegations(address).await??;
+    let delegations = client.staking.delegations(address)
+        .await
+        .unwrap()
+        .unwrap();
 
-    Ok(delegations
+    delegations
         .iter()
-        .map(|(_, d)| -> u64 { d.liquid.into() })
-        .sum::<u64>())
+        .map(|(_, d)| -> u64 { d.liquid.iter().find(|(denom, _)| *denom == Nom::INDEX).unwrap_or(&(0, 0.into())).1.into() })
+        .sum::<u64>()
 }
 
-pub async fn delegations(addr: String) -> Result<Array> {
+pub async fn delegations(addr: String) -> Array {
     let mut client: WebClient<App> = WebClient::new();
-    let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+    let address = addr.parse().unwrap();
 
-    let delegations = client.staking.delegations(address).await??;
+    let delegations = client.staking.delegations(address)
+        .await
+        .unwrap()
+        .unwrap();
 
-    Ok(delegations
+    delegations
         .iter()
         .map(|(address, delegation)| Delegation {
             address: address.to_string(),
             staked: delegation.staked.into(),
-            liquid: delegation.liquid.into(),
-            unbonding: delegation
-                .unbonding
-                .iter()
-                .map(|u| UnbondInfo {
-                    start_seconds: u.start_seconds as u64,
-                    amount: u.amount.into(),
-                })
-                .map(JsValue::from)
-                .collect(),
+            liquid: delegation.liquid.iter().map(|(denom, amount)| Coin { denom: *denom, amount: (*amount).into() }.into()).collect(),
+            unbonding: delegation.unbonding.iter().map(|u| UnbondInfo {
+                start_seconds: u.start_seconds as u64,
+                amount: u.amount.into(),
+            }).map(JsValue::from).collect(),
         })
         .map(JsValue::from)
-        .collect())
+        .collect()
 }
 
 pub async fn all_validators() -> Result<Array> {

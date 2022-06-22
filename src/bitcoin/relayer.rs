@@ -1,21 +1,25 @@
 use super::SignatorySet;
+use crate::app::App;
 use crate::bitcoin::{adapter::Adapter, header_queue::WrappedHeader};
 use crate::error::Result;
-use crate::app::App;
 use ::bitcoin::consensus::Decodable as _;
 use bitcoincore_rpc_async::bitcoin;
 use bitcoincore_rpc_async::bitcoin::consensus::Encodable;
 use bitcoincore_rpc_async::bitcoin::{
-    consensus::Decodable,
-    hashes::Hash,
-    Block, BlockHash, Transaction,
+    consensus::Decodable, hashes::Hash, Block, BlockHash, Transaction,
 };
 use bitcoincore_rpc_async::json::GetBlockHeaderResult;
 use bitcoincore_rpc_async::{Client as BitcoinRpcClient, RpcApi};
-use orga::coins::Address;
+use futures::{pin_mut, select, FutureExt};
 use orga::abci::TendermintClient;
+use orga::coins::Address;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::future::Future;
+use std::sync::Arc;
 use tokio::sync::mpsc::Receiver;
+use tokio::sync::Mutex;
+use warp::reject;
 
 const HEADER_BATCH_SIZE: usize = 25;
 
@@ -23,21 +27,16 @@ pub struct Relayer {
     btc_client: BitcoinRpcClient,
     app_client: TendermintClient<App>,
 
-    scripts: WatchedScriptStore,
+    scripts: Option<WatchedScriptStore>,
 }
 
 impl Relayer {
-    pub async fn new<P: AsRef<Path>>(
-        store_path: P,
-        btc_client: BitcoinRpcClient,
-        app_client: TendermintClient<App>,
-    ) -> Result<Self> {
-        let scripts = WatchedScriptStore::open(store_path, &app_client).await?;
-        Ok(Relayer {
+    pub async fn new(btc_client: BitcoinRpcClient, app_client: TendermintClient<App>) -> Self {
+        Relayer {
             btc_client,
             app_client,
-            scripts,
-        })
+            scripts: None,
+        }
     }
 
     async fn sidechain_block_hash(&self) -> Result<BlockHash> {
@@ -84,16 +83,103 @@ impl Relayer {
         }
     }
 
-    pub async fn start_deposit_relay(&mut self, mut recv: Receiver<(Address, u32)>) -> Result<!> {
+    pub async fn start_deposit_relay<P: AsRef<Path>>(&mut self, store_path: P) -> Result<()> {
         println!("Starting deposit relay...");
 
-        loop {
-            if let Err(e) = self.relay_deposits(&mut recv).await {
-                eprintln!("Deposit relay error: {}", e);
-            }
+        let scripts = WatchedScriptStore::open(store_path, &self.app_client).await?;
+        self.scripts = Some(scripts);
 
-            sleep(2).await;
+        let (server, mut recv) = self.create_address_server();
+        let server = server.fuse();
+
+        let do_relaying = async {
+            loop {
+                if let Err(e) = self.relay_deposits(&mut recv).await {
+                    eprintln!("Deposit relay error: {}", e);
+                }
+
+                sleep(2).await;
+            }
         }
+        .fuse();
+
+        pin_mut!(server, do_relaying);
+
+        select! {
+            () = server => Ok(()),
+            () = do_relaying => Ok(())
+        }
+    }
+
+    fn create_address_server(&self) -> (impl Future<Output = ()>, Receiver<(Address, u32)>) {
+        let (send, recv) = tokio::sync::mpsc::channel(1024);
+
+        let sigsets = Arc::new(Mutex::new(BTreeMap::new()));
+
+        // TODO: configurable listen address
+        use warp::Filter;
+        let route = warp::post()
+            .and(warp::query::<DepositAddress>())
+            .map(move |query: DepositAddress| (query, send.clone(), sigsets.clone()))
+            .and_then(
+                async move |(query, send, sigsets): (
+                    DepositAddress,
+                    tokio::sync::mpsc::Sender<_>,
+                    Arc<Mutex<BTreeMap<_, _>>>,
+                )| {
+                    let dest_addr: Address = query
+                        .dest_addr
+                        .parse()
+                        .map_err(|_| warp::reject::reject())?;
+
+                    let mut sigsets = sigsets.lock().await;
+                    let app_client = crate::app_client(); // TODO: get from elsewhere
+
+                    let sigset = match sigsets.get(&query.sigset_index) {
+                        Some(sigset) => sigset,
+                        None => {
+                            let sigset = app_client
+                                .bitcoin
+                                .checkpoints
+                                .get(query.sigset_index)
+                                .await
+                                .map_err(|e| reject())?
+                                .map_err(|e| reject())?
+                                .sigset
+                                .clone();
+                            sigsets.insert(query.sigset_index, sigset);
+                            sigsets.get(&query.sigset_index).unwrap()
+                            // TODO: prune sigsets
+                        }
+                    };
+                    let expected_addr = ::bitcoin::Address::from_script(
+                        &sigset.output_script(dest_addr).map_err(|_| reject())?,
+                        ::bitcoin::Network::Testnet, // TODO: don't hardcode
+                    )
+                    .unwrap()
+                    .to_string();
+                    if expected_addr != query.deposit_addr {
+                        return Err(reject());
+                    }
+
+                    Ok::<_, warp::Rejection>((dest_addr, query.sigset_index, send))
+                },
+            )
+            .then(
+                async move |(addr, sigset_index, send): (
+                    Address,
+                    u32,
+                    tokio::sync::mpsc::Sender<_>,
+                )| {
+                    println!("{}, {}", addr, sigset_index);
+                    send.send((addr, sigset_index)).await.unwrap();
+                    "OK"
+                },
+            )
+            .with(warp::cors().allow_any_origin());
+
+        let server = warp::serve(route).run(([0, 0, 0, 0], 9000));
+        (server, recv)
     }
 
     async fn relay_deposits(&mut self, recv: &mut Receiver<(Address, u32)>) -> Result<!> {
@@ -142,7 +228,9 @@ impl Relayer {
 
         loop {
             if let Err(e) = self.relay_checkpoints().await {
-                eprintln!("Checkpoint relay error: {}", e);
+                if !e.to_string().contains("No completed checkpoints yet") {
+                    eprintln!("Checkpoint relay error: {}", e);
+                }
             }
 
             sleep(2).await;
@@ -150,13 +238,23 @@ impl Relayer {
     }
 
     async fn relay_checkpoints(&mut self) -> Result<()> {
-        let last_checkpoint = self.app_client.bitcoin.checkpoints.last_completed_tx().await??;
+        let last_checkpoint = self
+            .app_client
+            .bitcoin
+            .checkpoints
+            .last_completed_tx()
+            .await??;
         println!("Last checkpoint tx: {}", last_checkpoint.txid());
 
         let mut relayed = HashSet::new();
 
         loop {
-            let txs = self.app_client.bitcoin.checkpoints.completed_txs().await??;
+            let txs = self
+                .app_client
+                .bitcoin
+                .checkpoints
+                .completed_txs()
+                .await??;
             for tx in txs {
                 if relayed.contains(&tx.txid()) {
                     continue;
@@ -187,7 +285,12 @@ impl Relayer {
 
     async fn insert_announced_addrs(&mut self, recv: &mut Receiver<(Address, u32)>) -> Result<()> {
         while let Ok((addr, sigset_index)) = recv.try_recv() {
-            let checkpoint_res = self.app_client.bitcoin.checkpoints.get(sigset_index).await?;
+            let checkpoint_res = self
+                .app_client
+                .bitcoin
+                .checkpoints
+                .get(sigset_index)
+                .await?;
             let sigset = match &checkpoint_res {
                 Ok(checkpoint) => &checkpoint.sigset,
                 Err(err) => {
@@ -196,10 +299,10 @@ impl Relayer {
                 }
             };
 
-            self.scripts.insert(addr, sigset)?;
+            self.scripts.as_mut().unwrap().insert(addr, sigset)?;
         }
 
-        self.scripts.scripts.remove_expired()?;
+        self.scripts.as_mut().unwrap().scripts.remove_expired()?;
 
         Ok(())
     }
@@ -249,6 +352,8 @@ impl Relayer {
                 let script = ::bitcoin::Script::consensus_decode(script_bytes.as_slice()).unwrap();
 
                 self.scripts
+                    .as_ref()
+                    .unwrap()
                     .scripts
                     .get(&script)
                     .map(|(dest, sigset_index)| OutputMatch {
@@ -274,7 +379,8 @@ impl Relayer {
         let vout = output.vout;
 
         if self
-            .app_client.bitcoin
+            .app_client
+            .bitcoin
             .processed_outpoints
             .contains(outpoint)
             .await??
@@ -296,22 +402,34 @@ impl Relayer {
 
             let proof = Adapter::new(proof);
 
-            let res = self.app_client.clone()
+            let res = self
+                .app_client
+                .clone()
                 .pay_from(async move |client| {
-                client.bitcoin.relay_deposit(
-                    tx,
-                    height,
-                    proof,
-                    output.vout,
-                    output.sigset_index,
-                    output.dest,
-                )
-                .await}).noop().await;
+                    client
+                        .bitcoin
+                        .relay_deposit(
+                            tx,
+                            height,
+                            proof,
+                            output.vout,
+                            output.sigset_index,
+                            output.dest,
+                        )
+                        .await
+                })
+                .noop()
+                .await;
 
             match res {
-                Err(err) if err.to_string().contains("Deposit amount is below minimum") || err.to_string().contains("Deposit amount is too small to pay its spending fee") => {
+                Err(err)
+                    if err.to_string().contains("Deposit amount is below minimum")
+                        || err
+                            .to_string()
+                            .contains("Deposit amount is too small to pay its spending fee") =>
+                {
                     return Ok(());
-                },
+                }
                 _ => res?,
             };
         }
@@ -353,8 +471,10 @@ impl Relayer {
             batch.len(),
         );
 
-        self.app_client.pay_from(async move |client| {
-            client.bitcoin.headers.add(batch.into()).await}).noop().await?;
+        self.app_client
+            .pay_from(async move |client| client.bitcoin.headers.add(batch.into()).await)
+            .noop()
+            .await?;
         println!("Relayed headers");
 
         Ok(())
@@ -405,6 +525,13 @@ impl Relayer {
 
         Ok(a)
     }
+}
+
+#[derive(Serialize, Deserialize)]
+struct DepositAddress {
+    dest_addr: String,
+    sigset_index: u32,
+    deposit_addr: String,
 }
 
 pub struct OutputMatch {
@@ -505,17 +632,24 @@ pub struct WatchedScriptStore {
 }
 
 impl WatchedScriptStore {
-    pub async fn open<P: AsRef<Path>>(
-        path: P,
-        app_client: &TendermintClient<App>,
-    ) -> Result<Self> {
+    pub async fn open<P: AsRef<Path>>(path: P, app_client: &TendermintClient<App>) -> Result<Self> {
+        let path = path.as_ref().join("watched-addrs.csv");
+
         let mut scripts = WatchedScripts::new();
         Self::maybe_load(&path, &mut scripts, app_client).await?;
 
-        let mut file = File::create(path)?;
+        let tmp_path = path.with_file_name("watched-addrs-tmp.csv");
+        let mut tmp_file = File::create(&tmp_path)?;
         for (addr, sigset_index) in scripts.scripts.values() {
-            Self::write(&mut file, *addr, *sigset_index)?;
+            Self::write(&mut tmp_file, *addr, *sigset_index)?;
         }
+        tmp_file.flush()?;
+        drop(tmp_file);
+        std::fs::rename(tmp_path, &path)?;
+
+        let file = File::options().append(true).create(true).open(&path)?;
+
+        println!("Keeping track of deposit addresses at {}", path.display());
 
         Ok(WatchedScriptStore { scripts, file })
     }
@@ -558,6 +692,8 @@ impl WatchedScriptStore {
 
         scripts.remove_expired()?;
 
+        println!("Loaded {} deposit addresses", scripts.len());
+
         Ok(())
     }
 
@@ -571,6 +707,7 @@ impl WatchedScriptStore {
 
     fn write(file: &mut File, addr: Address, sigset_index: u32) -> Result<()> {
         writeln!(file, "{},{}", addr, sigset_index)?;
+        file.flush()?;
         Ok(())
     }
 }

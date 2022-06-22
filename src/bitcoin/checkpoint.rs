@@ -21,7 +21,8 @@ use orga::{
 };
 use std::convert::TryFrom;
 
-pub const CHECKPOINT_INTERVAL: u64 = 60 * 5;
+pub const MIN_CHECKPOINT_INTERVAL: u64 = 60 * 1;
+pub const MAX_CHECKPOINT_INTERVAL: u64 = 60 * 5;
 pub const MAX_INPUTS: u64 = 20;
 pub const MAX_OUTPUTS: u64 = 100;
 pub const FEE_RATE: u64 = 1;
@@ -99,7 +100,7 @@ impl Input {
             previous_output: *self.prevout,
             script_sig: bitcoin::Script::new(),
             sequence: u32::MAX,
-            witness,
+            witness: bitcoin::Witness::from_vec(witness),
         })
     }
 
@@ -347,8 +348,10 @@ impl<'a> BuildingCheckpointMut<'a> {
         }
 
         let mut in_amount = 0;
+        dbg!(checkpoint.inputs.len());
         for i in 0..checkpoint.inputs.len() {
             let input = checkpoint.inputs.get(i)?.unwrap();
+            dbg!(input.amount);
             in_amount += input.amount;
         }
 
@@ -362,6 +365,10 @@ impl<'a> BuildingCheckpointMut<'a> {
 
         let (mut tx, est_vsize) = signing.tx()?;
         let fee = est_vsize * FEE_RATE;
+        dbg!(out_amount);
+        dbg!(in_amount);
+        dbg!(est_vsize);
+        dbg!(fee);
         let reserve_value = in_amount - out_amount - fee;
         let mut reserve_out = signing.outputs.get_mut(0)?.unwrap();
         reserve_out.value = reserve_value;
@@ -400,14 +407,6 @@ impl CheckpointQueue {
     pub fn get_mut(&mut self, index: u32) -> Result<ChildMut<'_, u64, Checkpoint>> {
         let index = self.get_deque_index(index)?;
         Ok(self.queue.get_mut(index as u64)?.unwrap())
-    }
-
-    pub fn front(&self) -> Result<Option<Ref<Checkpoint>>> {
-        Ok(self.queue.front()?)
-    }
-
-    pub fn back(&self) -> Result<Option<Ref<Checkpoint>>> {
-        Ok(self.queue.back()?)
     }
 
     fn get_deque_index(&self, index: u32) -> Result<u32> {
@@ -467,10 +466,11 @@ impl CheckpointQueue {
     #[query]
     pub fn last_completed_tx(&self) -> Result<Adapter<bitcoin::Transaction>> {
         let index = if self.signing()?.is_some() {
-            self.index - 2
+            self.index.checked_sub(2)
         } else {
-            self.index - 1
-        };
+            self.index.checked_sub(1)
+        }
+        .ok_or_else(|| Error::Orga(OrgaError::App("No completed checkpoints yet".to_string())))?;
 
         Ok(Adapter::new(self.get(index)?.tx()?.0))
     }
@@ -536,21 +536,23 @@ impl CheckpointQueue {
                     .ok_or_else(|| OrgaError::App("No time context".to_string()))?
                     .seconds as u64;
                 let elapsed = now - self.building()?.create_time();
-                if elapsed < CHECKPOINT_INTERVAL {
+                if elapsed < MIN_CHECKPOINT_INTERVAL {
                     return Ok(());
                 }
 
-                let building = self.building()?;
-                let has_pending_deposit = if self.index == 0 {
-                    building.inputs.len() > 0
-                } else {
-                    building.inputs.len() > 1
-                };
+                if elapsed < MAX_CHECKPOINT_INTERVAL || self.index == 0 {
+                    let building = self.building()?;
+                    let has_pending_deposit = if self.index == 0 {
+                        building.inputs.len() > 0
+                    } else {
+                        building.inputs.len() > 1
+                    };
 
-                let has_pending_withdrawal = building.outputs.len() > 0;
+                    let has_pending_withdrawal = building.outputs.len() > 0;
 
-                if !has_pending_deposit && !has_pending_withdrawal {
-                    return Ok(());
+                    if !has_pending_deposit && !has_pending_withdrawal {
+                        return Ok(());
+                    }
                 }
             }
 
@@ -581,7 +583,7 @@ impl CheckpointQueue {
                 }
 
                 for output in excess_outputs {
-                    let data = output.into_inner().into();
+                    let data = output.into_inner();
                     building.outputs.push_back(data)?;
                 }
             }

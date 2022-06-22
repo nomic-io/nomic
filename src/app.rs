@@ -12,7 +12,9 @@ pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
 
 #[derive(State, Debug, Clone)]
 pub struct Nom(());
-impl Symbol for Nom {}
+impl Symbol for Nom {
+    const INDEX: u8 = 69;
+}
 
 const DEV_ADDRESS: &str = "nomic14z79y3yrghqx493mwgcj0qd2udy6lm26lmduah";
 const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1d5n325zrf4elfu0heqd59gna5j6xyunhev23cj";
@@ -33,6 +35,7 @@ pub struct InnerApp {
     incentive_pool_rewards: Faucet<Nom>,
 
     pub bitcoin: Bitcoin,
+    pub reward_timer: RewardTimer,
 }
 
 impl InnerApp {
@@ -94,7 +97,8 @@ mod abci {
         fn begin_block(&mut self, ctx: &BeginBlockCtx) -> Result<()> {
             self.staking.begin_block(ctx)?;
 
-            if self.staking.staked()? > 0 {
+            let has_stake = self.staking.staked()? > 0;
+            if has_stake {
                 let reward = self.staking_rewards.mint()?;
                 self.staking.give(reward)?;
             }
@@ -110,6 +114,15 @@ mod abci {
             self.incentive_pool.give(ip_reward)?;
 
             self.bitcoin.begin_block(ctx)?;
+
+            let now = ctx.header.time.as_ref().unwrap().seconds;
+            let has_nbtc_rewards = self.bitcoin.reward_pool.amount > 0;
+            if self.reward_timer.tick(now) && has_stake && has_nbtc_rewards {
+                let reward_rate = (Amount::new(1) / Amount::new(2377))?; // ~0.00042069
+                let reward_amount = (self.bitcoin.reward_pool.amount * reward_rate)?.amount()?;
+                let reward = self.bitcoin.reward_pool.take(reward_amount)?;
+                self.staking.give(reward)?;
+            }
 
             Ok(())
         }
@@ -212,7 +225,9 @@ impl ConvertSdkTx for InnerApp {
                     .map_err(|e: bech32::Error| Error::App(e.to_string()))?;
 
                 if msg.amount.len() != 1 {
-                    return Err(Error::App("'amount' must have exactly one element".to_string()));
+                    return Err(Error::App(
+                        "'amount' must have exactly one element".to_string(),
+                    ));
                 }
 
                 match msg.amount[0].denom.as_str() {
@@ -234,7 +249,7 @@ impl ConvertSdkTx for InnerApp {
                     }
                     "nsat" => {
                         let amount = get_amount(msg.amount.first(), "nsat")?;
-                       
+
                         let funding_call = BitcoinCall::MethodTransfer(to, amount, vec![]);
                         let funding_call_bytes = funding_call.encode()?;
                         let payer_call = AppCall::FieldBitcoin(funding_call_bytes);
@@ -242,9 +257,9 @@ impl ConvertSdkTx for InnerApp {
                         Ok(PaidCall {
                             payer: payer_call,
                             paid: AppCall::MethodNoop(vec![]),
-                        }) 
-                    },
-                    _ => Err(Error::App("Unknown denom".to_string())) 
+                        })
+                    }
+                    _ => Err(Error::App("Unknown denom".to_string())),
                 }
             }
 
@@ -445,4 +460,22 @@ impl ConvertSdkTx for InnerApp {
 pub struct MsgWithdraw {
     pub amount: String,
     pub dst_address: String,
+}
+
+const REWARD_TIMER_PERIOD: i64 = 120;
+
+#[derive(State, Call, Query, Client)]
+pub struct RewardTimer {
+    last_period: i64,
+}
+
+impl RewardTimer {
+    pub fn tick(&mut self, now: i64) -> bool {
+        if now - self.last_period < REWARD_TIMER_PERIOD {
+            return false;
+        }
+
+        self.last_period = now;
+        true
+    }
 }
