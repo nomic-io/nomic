@@ -8,6 +8,7 @@ use crate::web_client::WebClient;
 use js_sys::{Array, JsString};
 use nomic::app::{Airdrop, App, InnerApp, Nom, CHAIN_ID};
 use nomic::bitcoin::signatory::SignatorySet;
+use nomic::bitcoin::Nbtc;
 use nomic::orga::client::AsyncQuery;
 use nomic::orga::merk::ABCIPrefixedProofStore;
 use nomic::orga::plugins::sdk_compat::sdk;
@@ -43,16 +44,29 @@ pub async fn balance(addr: String) -> Result<u64> {
     Ok(client.accounts.balance(address).await??.into())
 }
 
-pub async fn reward_balance(addr: String) -> Result<u64> {
+pub async fn nom_reward_balance(addr: String) -> Result<u64> {
     let mut client: WebClient<App> = WebClient::new();
     let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
-    let delegations = client.staking.delegations(address)
-        .await??;
+    let delegations = client.staking.delegations(address).await??;
 
     Ok(delegations
         .iter()
-        .map(|(_, d)| -> u64 { d.liquid.iter().find(|(denom, _)| *denom == Nom::INDEX).unwrap_or(&(0, 0.into())).1.into() })
+        .map(|(_, d)| -> u64 { d.liquid.iter().find(|(denom, _)| *denom == Nom::INDEX)
+        .unwrap_or(&(0, 0.into())).1.into() })
+        .sum::<u64>())
+}
+
+pub async fn nbtc_reward_balance(addr: String) -> Result<u64> {
+    let mut client: WebClient<App> = WebClient::new();
+    let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+
+    let delegations = client.staking.delegations(address).await??;
+
+    Ok(delegations
+        .iter()
+        .map(|(_, d)| -> u64 { d.liquid.iter().find(|(denom, _)| *denom == Nbtc::INDEX)
+        .unwrap_or(&(0, 0.into())).1.into() })
         .sum::<u64>())
 }
 
@@ -276,7 +290,7 @@ pub async fn bitcoin_height() -> Result<u32> {
 }
 
 pub async fn broadcast_deposit_addr(
-    addr: String,
+    dest_addr: String,
     sigset_index: u32,
     relayers: js_sys::Array,
     deposit_addr: String
@@ -295,7 +309,7 @@ pub async fn broadcast_deposit_addr(
         let mut opts = RequestInit::new();
         opts.method("POST");
         opts.mode(RequestMode::Cors);
-        let url = format!("{}?dest_addr={}&sigset_index={}&deposit_addr={}", relayer, addr, sigset_index, deposit_addr);
+        let url = format!("{}?dest_addr={}&sigset_index={}&deposit_addr={}", relayer, dest_addr, sigset_index, deposit_addr);
 
         let request = Request::new_with_str_and_init(&url, &opts)?;
 

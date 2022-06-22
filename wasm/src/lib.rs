@@ -38,9 +38,14 @@ pub async fn balance(addr: String) -> Result<u64, JsValue> {
     into_js_res(Internal::balance(addr).await)
 }
 
-#[wasm_bindgen(js_name = rewardBalance)]
-pub async fn reward_balance(addr: String) -> Result<u64, JsValue> {
-    into_js_res(Internal::reward_balance(addr).await)
+#[wasm_bindgen(js_name = nomRewardBalance)]
+pub async fn nom_reward_balance(addr: String) -> Result<u64, JsValue> {
+    into_js_res(Internal::nom_reward_balance(addr).await)
+}
+
+#[wasm_bindgen(js_name = nbtcRewardBalance)]
+pub async fn nbtc_reward_balance(addr: String) -> Result<u64, JsValue> {
+    into_js_res(Internal::nbtc_reward_balance(addr).await)
 }
 
 #[wasm_bindgen]
