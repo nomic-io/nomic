@@ -279,6 +279,7 @@ pub async fn broadcast_deposit_addr(
     addr: String,
     sigset_index: u32,
     relayers: js_sys::Array,
+    deposit_addr: String
 ) -> Result<()> {
     let window = match web_sys::window() {
         Some(window) => window,
@@ -294,7 +295,7 @@ pub async fn broadcast_deposit_addr(
         let mut opts = RequestInit::new();
         opts.method("POST");
         opts.mode(RequestMode::Cors);
-        let url = format!("{}?addr={}&sigset_index={}", relayer, addr, sigset_index);
+        let url = format!("{}?dest_addr={}&sigset_index={}&deposit_addr={}", relayer, addr, sigset_index, deposit_addr);
 
         let request = Request::new_with_str_and_init(&url, &opts)?;
 

@@ -127,8 +127,9 @@ pub async fn broadcast_deposit_addr(
     addr: String,
     sigset_index: u32,
     relayers: js_sys::Array,
+    deposit_addr: String
 ) -> Result<(), JsValue> {
-    into_js_res(Internal::broadcast_deposit_addr(addr, sigset_index, relayers).await)
+    into_js_res(Internal::broadcast_deposit_addr(addr, sigset_index, relayers, deposit_addr).await)
 }
 
 #[wasm_bindgen]
