@@ -12,7 +12,7 @@ use header_queue::HeaderQueue;
 use orga::abci::BeginBlock;
 use orga::call::Call;
 use orga::client::Client;
-use orga::coins::{Accounts, Address, Amount, Coin, Symbol, Take, Give};
+use orga::coins::{Accounts, Address, Amount, Coin, Give, Symbol, Take};
 use orga::collections::Map;
 use orga::context::{Context, GetContext};
 use orga::encoding::{Decode, Encode, Terminated};

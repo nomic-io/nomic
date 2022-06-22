@@ -1,4 +1,10 @@
 use super::SignatorySet;
+use bitcoin::blockdata::transaction::EcdsaSighashType;
+use bitcoin::secp256k1::{
+    self,
+    constants::{COMPACT_SIGNATURE_SIZE, MESSAGE_SIZE, PUBLIC_KEY_SIZE},
+    ecdsa, PublicKey, Secp256k1,
+};
 use orga::call::Call;
 use orga::client::Client;
 use orga::collections::{Map, Next};
@@ -6,12 +12,6 @@ use orga::encoding::{Decode, Encode, Error as EdError, Result as EdResult, Termi
 use orga::query::Query;
 use orga::state::State;
 use orga::{Error, Result};
-use bitcoin::secp256k1::{
-    self,
-    constants::{COMPACT_SIGNATURE_SIZE, MESSAGE_SIZE, PUBLIC_KEY_SIZE},
-    ecdsa, PublicKey, Secp256k1,
-};
-use bitcoin::blockdata::transaction::EcdsaSighashType;
 
 pub type Message = [u8; MESSAGE_SIZE];
 pub type Signature = [u8; COMPACT_SIGNATURE_SIZE];

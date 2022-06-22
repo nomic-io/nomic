@@ -1,6 +1,6 @@
 use bitcoin::consensus::Decodable;
 use bitcoin::BlockHeader;
-use bitcoind::bitcoincore_rpc::{self, RpcApi, Error as RpcError};
+use bitcoind::bitcoincore_rpc::{self, Error as RpcError, RpcApi};
 use bitcoind::BitcoinD;
 use bitcoind::Conf;
 use bitcoind::P2P;

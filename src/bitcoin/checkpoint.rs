@@ -375,8 +375,12 @@ impl<'a> BuildingCheckpointMut<'a> {
         for i in 0..signing.inputs.len() {
             let mut input = signing.inputs.get_mut(i)?.unwrap();
             let sighash_type = EcdsaSighashType::All;
-            let sighash =
-                sc.segwit_signature_hash(i as usize, &input.redeem_script, input.amount, sighash_type)?;
+            let sighash = sc.segwit_signature_hash(
+                i as usize,
+                &input.redeem_script,
+                input.amount,
+                sighash_type,
+            )?;
             input.sigs.set_message(sighash.into_inner());
         }
 

@@ -330,7 +330,8 @@ impl HeaderQueue {
 
         let mut removed_work = Uint256::default();
         if first.height <= current_height {
-            let first_replaced = self.get_by_height(first.height)?
+            let first_replaced = self
+                .get_by_height(first.height)?
                 .ok_or_else(|| Error::Header("Header not found".into()))?;
 
             if first_replaced.block_hash() == first.block_hash() {
@@ -343,7 +344,9 @@ impl HeaderQueue {
         let added_work = self.verify_and_add_headers(&headers)?;
 
         if added_work <= removed_work {
-            return Err(Error::Header("New best chain must include more work than old best chain.".into()));
+            return Err(Error::Header(
+                "New best chain must include more work than old best chain.".into(),
+            ));
         }
 
         while self.len() > self.config.max_length {
@@ -498,7 +501,9 @@ impl HeaderQueue {
         let mut work = Uint256::default();
 
         while self.height()? >= height {
-            let header = self.deque.pop_back()?
+            let header = self
+                .deque
+                .pop_back()?
                 .ok_or_else(|| Error::Header("Removed all headers".into()))?;
 
             work = work + header.work();

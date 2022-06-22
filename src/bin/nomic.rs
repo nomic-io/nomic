@@ -424,7 +424,11 @@ impl DelegationsCmd {
         );
         for (validator, delegation) in delegations {
             let staked = delegation.staked;
-            let liquid: u64 = delegation.liquid.iter().map(|(_, amount)| -> u64 { (*amount).into() }).sum();
+            let liquid: u64 = delegation
+                .liquid
+                .iter()
+                .map(|(_, amount)| -> u64 { (*amount).into() })
+                .sum();
             if staked == 0 && liquid == 0 {
                 continue;
             }
