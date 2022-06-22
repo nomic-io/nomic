@@ -11,6 +11,7 @@
 use orga::abci::TendermintClient;
 
 pub use orga;
+pub use thiserror;
 
 pub mod app;
 pub mod bitcoin;
