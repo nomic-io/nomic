@@ -1,6 +1,14 @@
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(getter_with_clone)]
+pub struct DepositAddress {
+    pub address: String,
+    #[wasm_bindgen(js_name = sigsetIndex)]
+    pub sigset_index: u32,
+    pub expiration: u64,
+}
+
+#[wasm_bindgen(getter_with_clone)]
 pub struct ValidatorQueryInfo {
     pub jailed: bool,
     pub address: String,
