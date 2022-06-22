@@ -395,9 +395,7 @@ impl ConvertSdkTx for InnerApp {
                 let claim_call_bytes = claim_call.encode()?;
                 let payer_call = AppCall::FieldStaking(claim_call_bytes);
 
-                let give_call = AccountCall::MethodGiveFromFundingAll(vec![]);
-                let give_call_bytes = give_call.encode()?;
-                let paid_call = AppCall::FieldAccounts(give_call_bytes);
+                let paid_call = AppCall::MethodDepositRewards(vec![]);
 
                 Ok(PaidCall {
                     payer: payer_call,

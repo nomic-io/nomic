@@ -652,8 +652,7 @@ impl ClaimCmd {
     async fn run(&self) -> Result<()> {
         Ok(app_client()
             .pay_from(async move |client| client.staking.claim_all().await)
-            .accounts
-            .give_from_funding_all()
+            .deposit_rewards()
             .await?)
     }
 }
