@@ -9,6 +9,8 @@ pub enum Error {
     #[error(transparent)]
     Bip32(#[from] bitcoin::util::bip32::Error),
     #[error(transparent)]
+    Sighash(#[from] bitcoin::util::sighash::Error),
+    #[error(transparent)]
     TryFrom(#[from] std::num::TryFromIntError),
     #[error(transparent)]
     Secp(#[from] bitcoin::secp256k1::Error),

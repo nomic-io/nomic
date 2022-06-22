@@ -327,7 +327,6 @@ impl HeaderQueue {
         let first = headers
             .first()
             .ok_or_else(|| Error::Header("Passed header list empty".into()))?;
-        let last = headers.last().unwrap();
 
         let mut removed_work = Uint256::default();
         if first.height <= current_height {

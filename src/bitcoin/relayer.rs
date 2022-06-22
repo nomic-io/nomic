@@ -2,7 +2,6 @@ use super::SignatorySet;
 use crate::app::App;
 use crate::bitcoin::{adapter::Adapter, header_queue::WrappedHeader};
 use crate::error::Result;
-use ::bitcoin::consensus::Decodable as _;
 use bitcoincore_rpc_async::bitcoin;
 use bitcoincore_rpc_async::bitcoin::consensus::Encodable;
 use bitcoincore_rpc_async::bitcoin::{
@@ -143,8 +142,8 @@ impl Relayer {
                                 .checkpoints
                                 .get(query.sigset_index)
                                 .await
-                                .map_err(|e| reject())?
-                                .map_err(|e| reject())?
+                                .map_err(|_| reject())?
+                                .map_err(|_| reject())?
                                 .sigset
                                 .clone();
                             sigsets.insert(query.sigset_index, sigset);
@@ -260,7 +259,6 @@ impl Relayer {
                     continue;
                 }
 
-                use ::bitcoin::consensus::Encodable;
                 let mut tx_bytes = vec![];
                 tx.consensus_encode(&mut tx_bytes)?;
 

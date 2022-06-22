@@ -5,7 +5,7 @@ use super::{
     ConsensusKey, Xpub,
 };
 use crate::error::{Error, Result};
-use bitcoin::hashes::Hash;
+use bitcoin::blockdata::transaction::EcdsaSighashType;
 use derive_more::{Deref, DerefMut};
 use orga::{
     call::Call,
@@ -148,7 +148,7 @@ impl Checkpoint {
             tx.output.push((**output).clone());
         }
 
-        est_vsize += tx.get_size() as u64;
+        est_vsize += tx.size() as u64;
 
         Ok((tx, est_vsize))
     }
@@ -365,21 +365,18 @@ impl<'a> BuildingCheckpointMut<'a> {
 
         let (mut tx, est_vsize) = signing.tx()?;
         let fee = est_vsize * FEE_RATE;
-        dbg!(out_amount);
-        dbg!(in_amount);
-        dbg!(est_vsize);
-        dbg!(fee);
         let reserve_value = in_amount - out_amount - fee;
         let mut reserve_out = signing.outputs.get_mut(0)?.unwrap();
         reserve_out.value = reserve_value;
         tx.output[0].value = reserve_value;
 
-        let mut sc = bitcoin::util::bip143::SigHashCache::new(&tx);
+        use bitcoin::hashes::Hash;
+        let mut sc = bitcoin::util::sighash::SighashCache::new(&tx);
         for i in 0..signing.inputs.len() {
             let mut input = signing.inputs.get_mut(i)?.unwrap();
-            let sighash_type = bitcoin::SigHashType::All;
+            let sighash_type = EcdsaSighashType::All;
             let sighash =
-                sc.signature_hash(i as usize, &input.redeem_script, input.amount, sighash_type);
+                sc.segwit_signature_hash(i as usize, &input.redeem_script, input.amount, sighash_type)?;
             input.sigs.set_message(sighash.into_inner());
         }
 

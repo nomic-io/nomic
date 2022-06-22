@@ -35,7 +35,7 @@ impl Signer {
         };
 
         let secp = bitcoin::secp256k1::Secp256k1::signing_only();
-        let xpub = ExtendedPubKey::from_private(&secp, &xpriv);
+        let xpub = ExtendedPubKey::from_priv(&secp, &xpriv);
         println!("Signatory xpub:\n{}", xpub);
 
         Ok(Self::new(client, xpriv))
@@ -47,7 +47,7 @@ impl Signer {
 
     pub async fn start(mut self) -> Result<()> {
         let secp = Secp256k1::signing_only();
-        let xpub = ExtendedPubKey::from_private(&secp, &self.xpriv);
+        let xpub = ExtendedPubKey::from_priv(&secp, &self.xpriv);
 
         let res = self
             .client

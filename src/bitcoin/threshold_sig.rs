@@ -11,6 +11,7 @@ use bitcoin::secp256k1::{
     constants::{COMPACT_SIGNATURE_SIZE, MESSAGE_SIZE, PUBLIC_KEY_SIZE},
     ecdsa, PublicKey, Secp256k1,
 };
+use bitcoin::blockdata::transaction::EcdsaSighashType;
 
 pub type Message = [u8; MESSAGE_SIZE];
 pub type Signature = [u8; COMPACT_SIGNATURE_SIZE];
@@ -226,7 +227,7 @@ impl ThresholdSig {
                 share.sig.map_or(Ok(vec![]), |sig| {
                     let sig = ecdsa::Signature::from_compact(sig.as_slice())?;
                     let mut v = sig.serialize_der().to_vec();
-                    v.push(bitcoin::SigHashType::All.to_u32() as u8);
+                    v.push(EcdsaSighashType::All.to_u32() as u8);
                     Ok(v)
                 })
             })
