@@ -41,6 +41,13 @@ pub struct InnerApp {
 impl InnerApp {
     #[call]
     pub fn noop(&mut self) {}
+
+    #[call]
+    pub fn deposit_rewards(&mut self) -> Result<()> {
+        self.accounts.give_from_funding_all()?;
+        self.bitcoin.accounts.give_from_funding_all()?;
+        Ok(())
+    }
 }
 
 #[cfg(feature = "full")]
