@@ -329,8 +329,7 @@ impl HeaderQueue {
             .ok_or_else(|| Error::Header("Passed header list empty".into()))?;
         let last = headers.last().unwrap();
 
-        let new_work = self.verify_headers(&headers)?;
-
+        let mut removed_work = Uint256::default();
         if first.height <= current_height {
             let first_replaced = self.get_by_height(first.height)?
                 .ok_or_else(|| Error::Header("Header not found".into()))?;
@@ -339,18 +338,13 @@ impl HeaderQueue {
                 return Err(Error::Header("Provided redudant header.".into()));
             }
 
-            let old_work = self.pop_back_to(first.height)?;
-
-            if new_work <= old_work {
-                return Err(Error::Header("New best chain must include more work than old best chain.".into()));
-            }
+            removed_work = self.pop_back_to(first.height)?;
         }
 
-        for header in headers {
-            let chain_work = *self.current_work + header.work();
-            let work_header = WorkHeader::new(header, chain_work);
-            self.deque.push_back(work_header.into())?;
-            self.current_work = Adapter::new(chain_work);
+        let added_work = self.verify_and_add_headers(&headers)?;
+
+        if added_work <= removed_work {
+            return Err(Error::Header("New best chain must include more work than old best chain.".into()));
         }
 
         while self.len() > self.config.max_length {
@@ -368,7 +362,7 @@ impl HeaderQueue {
         Ok(())
     }
 
-    fn verify_headers(&mut self, headers: &[WrappedHeader]) -> Result<Uint256> {
+    fn verify_and_add_headers(&mut self, headers: &[WrappedHeader]) -> Result<Uint256> {
         let first_height = headers
             .first()
             .ok_or_else(|| Error::Header("Passed header list is empty".into()))?
@@ -404,7 +398,13 @@ impl HeaderQueue {
             let target = self.get_next_target(header, prev_header)?;
             header.validate_pow(&target)?;
 
-            work = work + header.work();
+            let header_work = header.work();
+            work = work + header_work;
+
+            let chain_work = *self.current_work + header_work;
+            let work_header = WorkHeader::new(header.clone(), chain_work);
+            self.deque.push_back(work_header.into())?;
+            self.current_work = Adapter::new(chain_work);
         }
 
         Ok(work)
@@ -427,14 +427,14 @@ impl HeaderQueue {
                         && current_header_index % self.config.retarget_interval != 0
                         && current_header.bits() == self.config.max_target
                     {
+                        current_header_index -= 1;
+
                         current_header = match self.get_by_height(current_header_index)? {
                             Some(inner) => inner.header.clone(),
                             None => {
                                 return Err(Error::Header("No previous header exists".into()));
                             }
                         };
-
-                        current_header_index -= 1;
                     }
 
                     return Ok(WrappedHeader::u256_from_compact(current_header.bits()));
