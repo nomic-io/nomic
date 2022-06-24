@@ -305,8 +305,7 @@ async fn get_bootstrap_state(rpc_servers: &[&str]) -> Result<(i64, String)> {
     latest_heights.sort_unstable();
     let latest_height = latest_heights[latest_heights.len() / 2] as u32;
 
-    // start from latest height - 1000
-    let height = latest_height - 1000;
+    let height = latest_height.checked_sub(1000).unwrap_or(2);
 
     // get block hash
     let mut hash = None;
