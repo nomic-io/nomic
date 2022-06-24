@@ -16,7 +16,7 @@ use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
 
-const STOP_SECONDS: i64 = 1656003600;
+const STOP_SECONDS: i64 = 1656090000;
 const STATE_SYNC_DELAY: i64 = 3 * orga::merk::store::SNAPSHOT_INTERVAL as i64;
 
 fn now_seconds() -> i64 {
