@@ -821,7 +821,7 @@ impl DepositCmd {
         let client = reqwest::Client::new();
         client
             .post(format!(
-                "http://164.92.80.157:9000?dest_addr={}&sigset_index={}&deposit_addr={}",
+                "https://relayer.nomic.io:9000?dest_addr={}&sigset_index={}&deposit_addr={}",
                 dest_addr,
                 sigset.index(),
                 btc_addr,
