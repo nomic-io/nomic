@@ -254,8 +254,8 @@ impl ConvertSdkTx for InnerApp {
                             paid: paid_call,
                         })
                     }
-                    "nsat" => {
-                        let amount = get_amount(msg.amount.first(), "nsat")?;
+                    "usat" => {
+                        let amount = get_amount(msg.amount.first(), "usat")?;
 
                         let funding_call = BitcoinCall::MethodTransfer(to, amount, vec![]);
                         let funding_call_bytes = funding_call.encode()?;
