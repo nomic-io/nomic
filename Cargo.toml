@@ -8,7 +8,7 @@ default-run = "nomic"
 [dependencies]
 bitcoin = { version = "0.28.1", features = ["use-serde"] }
 bitcoind = { version = "0.21.0", features = ["22_0"], optional = true }
-orga = { git = "https://github.com/nomic-io/orga.git", branch = "v4-testnet", features = ["merk-verify"] }
+orga = { git = "https://github.com/nomic-io/orga.git", branch = "v3-main", features = ["merk-verify"] }
 thiserror = "1.0.30"
 ed = "0.3.0"
 clap = { version = "3.0.0-rc.4", features = ["derive"], optional = true }
@@ -20,7 +20,7 @@ serde_json = "1.0.74"
 csv = { version = "1.1.6", optional = true }
 bech32 = { version = "0.8.1" }
 futures = "0.3.21"
-nomicv2 = { git = "https://github.com/nomic-io/nomic", branch = "v2-legacy-testnet", package = "nomic", optional = true }
+nomicv2 = { git = "https://github.com/nomic-io/nomic", branch = "v2-legacy-main", package = "nomic", optional = true }
 toml_edit = "0.13.4"
 tendermint-rpc = "0.23.5"
 bitcoincore-rpc-async = { package = "bitcoincore-rpc-async2", version = "4.0.1", optional = true }
