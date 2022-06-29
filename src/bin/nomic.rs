@@ -831,7 +831,7 @@ impl DepositCmd {
             .map_err(|err| nomic::error::Error::Orga(orga::Error::App(err.to_string())))?;
 
         println!("Deposit address: {}", btc_addr);
-        println!("Expiration: {}", "TODO");
+        println!("Expiration: {}", "5 days from now");
         // TODO: show real expiration
 
         Ok(())
