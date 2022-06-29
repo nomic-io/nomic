@@ -77,17 +77,17 @@ mod abci {
 
     impl InitChain for InnerApp {
         fn init_chain(&mut self, _ctx: &InitChainCtx) -> Result<()> {
-            self.staking.max_validators = 40;
-            self.staking.max_offline_blocks = 1000;
+            self.staking.max_validators = 100;
+            self.staking.max_offline_blocks = 20_000;
             self.staking.downtime_jail_seconds = 60 * 30; // 30 minutes
-            self.staking.slash_fraction_downtime = (Amount::new(1) / Amount::new(100))?;
-            self.staking.slash_fraction_double_sign = (Amount::new(1) / Amount::new(4))?;
+            self.staking.slash_fraction_downtime = (Amount::new(1) / Amount::new(1000))?;
+            self.staking.slash_fraction_double_sign = (Amount::new(1) / Amount::new(20))?;
             self.staking.min_self_delegation_min = 0;
 
             let old_home_path = nomicv2::orga::abci::Node::<()>::home(nomicv2::app::CHAIN_ID);
             exec_migration(self, old_home_path.join("merk"), &[0, 1, 0])?;
 
-            self.accounts.allow_transfers(true);
+            self.accounts.allow_transfers(false);
             self.bitcoin.accounts.allow_transfers(true);
 
             let sr_address = STRATEGIC_RESERVE_ADDRESS.parse().unwrap();
