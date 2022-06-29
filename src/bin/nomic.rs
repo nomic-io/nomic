@@ -17,7 +17,6 @@ use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
 
 const STOP_SECONDS: i64 = 1657044000;
-const STATE_SYNC_DELAY: i64 = 3 * orga::merk::store::SNAPSHOT_INTERVAL as i64;
 
 fn now_seconds() -> i64 {
     use std::time::SystemTime;
@@ -123,7 +122,7 @@ impl StartCmd {
             let started_old_node = Node::height(old_name).unwrap() > 0;
             let started_new_node = Node::height(new_name).unwrap() > 0;
             let upgrade_time_passed = now_seconds() > STOP_SECONDS;
-            let statesync_start_passed = now_seconds() > STOP_SECONDS + STATE_SYNC_DELAY;
+
             if has_old_node {
                 println!("Legacy node height: {}", Node::height(old_name).unwrap());
             }
@@ -204,7 +203,7 @@ impl StartCmd {
                 edit_block_time(&new_config_path, "3s");
             }
 
-            if statesync_start_passed && !started_new_node && (!has_old_node || state_sync) {
+            if upgrade_time_passed && !started_new_node && (!has_old_node || state_sync) {
                 println!("Configuring node for state sync...");
 
                 // TODO: set default seeds
@@ -321,7 +320,7 @@ async fn get_bootstrap_state(rpc_servers: &[&str]) -> Result<(i64, String)> {
     latest_heights.sort_unstable();
     let latest_height = latest_heights[latest_heights.len() / 2] as u32;
 
-    let height = latest_height.checked_sub(1000).unwrap_or(2);
+    let height = latest_height.checked_sub(1000).unwrap_or(1);
 
     // get block hash
     let mut hash = None;
