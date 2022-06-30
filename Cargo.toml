@@ -1,15 +1,14 @@
 [package]
 name = "nomic"
-version = "2.0.1"
+version = "3.0.0"
 authors = [ "The Nomic Team <hello@nomic.io>" ]
 edition = "2018"
 default-run = "nomic"
 
 [dependencies]
-bitcoin = { version = "0.27.1", features = ["use-serde"] }
+bitcoin = { version = "0.28.1", features = ["use-serde"] }
 bitcoind = { version = "0.21.0", features = ["22_0"], optional = true }
-bitcoincore-rpc = { version = "0.14.0", optional = true }
-orga = { git = "https://github.com/nomic-io/orga.git", rev = "2e1e8fb44cf6260bf19a153ba5051a7ce3452710", features = ["merk-verify"] }
+orga = { git = "https://github.com/nomic-io/orga.git", branch = "v3-main", features = ["merk-verify"] }
 thiserror = "1.0.30"
 ed = "0.3.0"
 clap = { version = "3.0.0-rc.4", features = ["derive"], optional = true }
@@ -20,11 +19,17 @@ serde = "1.0.133"
 serde_json = "1.0.74"
 csv = { version = "1.1.6", optional = true }
 bech32 = { version = "0.8.1" }
-secp256k1 = "0.21.2"
 futures = "0.3.21"
-nomicv1 = { git = "https://github.com/nomic-io/nomic.git", branch = "stakenet2-legacy", package = "nomic", optional = true }
+nomicv2 = { git = "https://github.com/nomic-io/nomic", branch = "v2-legacy-main", package = "nomic", optional = true }
 toml_edit = "0.13.4"
 tendermint-rpc = "0.23.5"
+bitcoincore-rpc-async = { package = "bitcoincore-rpc-async2", version = "4.0.1", optional = true }
+bitcoin-script = "0.1.1"
+warp = { version = "0.3.2", optional = true }
+derive_more = "0.99.17"
+pretty_env_logger = "0.4.0"
+reqwest = "0.11.10"
+rand = { version = "0.8.5", optional = true }
 
 [dev-dependencies]
 chrono = "0.4.0"
@@ -35,7 +40,7 @@ mutagen = "0.1.2"
 
 [features]
 default = ["full"]
-full = ["bitcoind", "bitcoincore-rpc", "clap", "tokio", "orga/merk-full", "orga/abci", "orga/state-sync", "csv", "nomicv1"]
+full = ["bitcoind", "bitcoincore-rpc-async", "clap", "tokio", "orga/merk-full", "orga/abci", "orga/state-sync", "csv", "nomicv2", "warp", "rand"]
 
 [[bin]]
 name = "nomic"

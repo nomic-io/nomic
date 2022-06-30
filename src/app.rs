@@ -5,13 +5,16 @@ use orga::migrate::{exec_migration, Migrate};
 use orga::plugins::sdk_compat::{sdk, sdk::Tx as SdkTx, ConvertSdkTx};
 use orga::prelude::*;
 use orga::Error;
+use serde::{Deserialize, Serialize};
 
-pub const CHAIN_ID: &str = "nomic-stakenet-2";
+pub const CHAIN_ID: &str = "nomic-stakenet-3";
 pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
 
 #[derive(State, Debug, Clone)]
 pub struct Nom(());
-impl Symbol for Nom {}
+impl Symbol for Nom {
+    const INDEX: u8 = 69;
+}
 
 const DEV_ADDRESS: &str = "nomic14z79y3yrghqx493mwgcj0qd2udy6lm26lmduah";
 const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1d5n325zrf4elfu0heqd59gna5j6xyunhev23cj";
@@ -32,11 +35,24 @@ pub struct InnerApp {
     incentive_pool_rewards: Faucet<Nom>,
 
     pub bitcoin: Bitcoin,
+    pub reward_timer: RewardTimer,
+}
+
+impl InnerApp {
+    #[call]
+    pub fn noop(&mut self) {}
+
+    #[call]
+    pub fn deposit_rewards(&mut self) -> Result<()> {
+        self.accounts.give_from_funding_all()?;
+        self.bitcoin.accounts.give_from_funding_all()?;
+        Ok(())
+    }
 }
 
 #[cfg(feature = "full")]
-impl Migrate<nomicv1::app::InnerApp> for InnerApp {
-    fn migrate(&mut self, legacy: nomicv1::app::InnerApp) -> Result<()> {
+impl Migrate<nomicv2::app::InnerApp> for InnerApp {
+    fn migrate(&mut self, legacy: nomicv2::app::InnerApp) -> Result<()> {
         self.community_pool.migrate(legacy.community_pool())?;
         self.incentive_pool.migrate(legacy.incentive_pool())?;
 
@@ -68,10 +84,11 @@ mod abci {
             self.staking.slash_fraction_double_sign = (Amount::new(1) / Amount::new(20))?;
             self.staking.min_self_delegation_min = 0;
 
-            self.accounts.allow_transfers(false);
-
-            let old_home_path = nomicv1::orga::abci::Node::<()>::home(nomicv1::app::CHAIN_ID);
+            let old_home_path = nomicv2::orga::abci::Node::<()>::home(nomicv2::app::CHAIN_ID);
             exec_migration(self, old_home_path.join("merk"), &[0, 1, 0])?;
+
+            self.accounts.allow_transfers(false);
+            self.bitcoin.accounts.allow_transfers(true);
 
             let sr_address = STRATEGIC_RESERVE_ADDRESS.parse().unwrap();
             self.accounts.add_transfer_exception(sr_address)?;
@@ -87,7 +104,8 @@ mod abci {
         fn begin_block(&mut self, ctx: &BeginBlockCtx) -> Result<()> {
             self.staking.begin_block(ctx)?;
 
-            if self.staking.staked()? > 0 {
+            let has_stake = self.staking.staked()? > 0;
+            if has_stake {
                 let reward = self.staking_rewards.mint()?;
                 self.staking.give(reward)?;
             }
@@ -101,6 +119,17 @@ mod abci {
 
             let ip_reward = self.incentive_pool_rewards.mint()?;
             self.incentive_pool.give(ip_reward)?;
+
+            self.bitcoin.begin_block(ctx)?;
+
+            let now = ctx.header.time.as_ref().unwrap().seconds;
+            let has_nbtc_rewards = self.bitcoin.reward_pool.amount > 0;
+            if self.reward_timer.tick(now) && has_stake && has_nbtc_rewards {
+                let reward_rate = (Amount::new(1) / Amount::new(2377))?; // ~0.00042069
+                let reward_amount = (self.bitcoin.reward_pool.amount * reward_rate)?.amount()?;
+                let reward = self.bitcoin.reward_pool.take(reward_amount)?;
+                self.staking.give(reward)?;
+            }
 
             Ok(())
         }
@@ -144,8 +173,8 @@ impl<S: Symbol> Airdrop<S> {
 }
 
 #[cfg(feature = "full")]
-impl Migrate<nomicv1::app::Airdrop<nomicv1::app::Nom>> for Airdrop<Nom> {
-    fn migrate(&mut self, legacy: nomicv1::app::Airdrop<nomicv1::app::Nom>) -> Result<()> {
+impl Migrate<nomicv2::app::Airdrop<nomicv2::app::Nom>> for Airdrop<Nom> {
+    fn migrate(&mut self, legacy: nomicv2::app::Airdrop<nomicv2::app::Nom>) -> Result<()> {
         self.claimable.migrate(legacy.accounts())
     }
 }
@@ -165,6 +194,7 @@ impl ConvertSdkTx for InnerApp {
         type AccountCall = <Accounts<Nom> as Call>::Call;
         type StakingCall = <Staking<Nom> as Call>::Call;
         type AirdropCall = <Airdrop<Nom> as Call>::Call;
+        type BitcoinCall = <Bitcoin as Call>::Call;
 
         let get_amount = |coin: Option<&sdk::Coin>, expected_denom| -> Result<Amount> {
             let coin = coin.map_or_else(|| Err(Error::App("Empty amount".into())), Ok)?;
@@ -200,20 +230,44 @@ impl ConvertSdkTx for InnerApp {
                     .to_address
                     .parse()
                     .map_err(|e: bech32::Error| Error::App(e.to_string()))?;
-                let amount = get_amount(msg.amount.first(), "unom")?;
 
-                let funding_call = AccountCall::MethodTakeAsFunding(MIN_FEE.into(), vec![]);
-                let funding_call_bytes = funding_call.encode()?;
-                let payer_call = AppCall::FieldAccounts(funding_call_bytes);
+                if msg.amount.len() != 1 {
+                    return Err(Error::App(
+                        "'amount' must have exactly one element".to_string(),
+                    ));
+                }
 
-                let transfer_call = AccountCall::MethodTransfer(to, amount, vec![]);
-                let transfer_call_bytes = transfer_call.encode()?;
-                let paid_call = AppCall::FieldAccounts(transfer_call_bytes);
+                match msg.amount[0].denom.as_str() {
+                    "unom" => {
+                        let amount = get_amount(msg.amount.first(), "unom")?;
 
-                Ok(PaidCall {
-                    payer: payer_call,
-                    paid: paid_call,
-                })
+                        let funding_call = AccountCall::MethodTakeAsFunding(MIN_FEE.into(), vec![]);
+                        let funding_call_bytes = funding_call.encode()?;
+                        let payer_call = AppCall::FieldAccounts(funding_call_bytes);
+
+                        let transfer_call = AccountCall::MethodTransfer(to, amount, vec![]);
+                        let transfer_call_bytes = transfer_call.encode()?;
+                        let paid_call = AppCall::FieldAccounts(transfer_call_bytes);
+
+                        Ok(PaidCall {
+                            payer: payer_call,
+                            paid: paid_call,
+                        })
+                    }
+                    "usat" => {
+                        let amount = get_amount(msg.amount.first(), "usat")?;
+
+                        let funding_call = BitcoinCall::MethodTransfer(to, amount, vec![]);
+                        let funding_call_bytes = funding_call.encode()?;
+                        let payer_call = AppCall::FieldBitcoin(funding_call_bytes);
+
+                        Ok(PaidCall {
+                            payer: payer_call,
+                            paid: AppCall::MethodNoop(vec![]),
+                        })
+                    }
+                    _ => Err(Error::App("Unknown denom".to_string())),
+                }
             }
 
             "cosmos-sdk/MsgDelegate" => {
@@ -341,9 +395,7 @@ impl ConvertSdkTx for InnerApp {
                 let claim_call_bytes = claim_call.encode()?;
                 let payer_call = AppCall::FieldStaking(claim_call_bytes);
 
-                let give_call = AccountCall::MethodGiveFromFundingAll(vec![]);
-                let give_call_bytes = give_call.encode()?;
-                let paid_call = AppCall::FieldAccounts(give_call_bytes);
+                let paid_call = AppCall::MethodDepositRewards(vec![]);
 
                 Ok(PaidCall {
                     payer: payer_call,
@@ -374,7 +426,61 @@ impl ConvertSdkTx for InnerApp {
                 })
             }
 
+            "nomic/MsgWithdraw" => {
+                let msg: MsgWithdraw = serde_json::value::from_value(msg.value.clone())
+                    .map_err(|e| Error::App(e.to_string()))?;
+
+                let dest_addr: bitcoin::Address = msg
+                    .dst_address
+                    .parse()
+                    .map_err(|e: bitcoin::util::address::Error| Error::App(e.to_string()))?;
+                let dest_script = crate::bitcoin::adapter::Adapter::new(dest_addr.script_pubkey());
+
+                let amount: u64 = msg
+                    .amount
+                    .parse()
+                    .map_err(|e: std::num::ParseIntError| Error::App(e.to_string()))?;
+
+                let funding_amt = MIN_FEE;
+                let funding_call = AccountCall::MethodTakeAsFunding(funding_amt.into(), vec![]);
+                let funding_call_bytes = funding_call.encode()?;
+                let payer_call = AppCall::FieldAccounts(funding_call_bytes);
+
+                let withdraw_call = BitcoinCall::MethodWithdraw(dest_script, amount.into(), vec![]);
+                let withdraw_call_bytes = withdraw_call.encode()?;
+                let paid_call = AppCall::FieldBitcoin(withdraw_call_bytes);
+
+                Ok(PaidCall {
+                    payer: payer_call,
+                    paid: paid_call,
+                })
+            }
+
             _ => Err(Error::App("Unsupported message type".into())),
         }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct MsgWithdraw {
+    pub amount: String,
+    pub dst_address: String,
+}
+
+const REWARD_TIMER_PERIOD: i64 = 120;
+
+#[derive(State, Call, Query, Client)]
+pub struct RewardTimer {
+    last_period: i64,
+}
+
+impl RewardTimer {
+    pub fn tick(&mut self, now: i64) -> bool {
+        if now - self.last_period < REWARD_TIMER_PERIOD {
+            return false;
+        }
+
+        self.last_period = now;
+        true
     }
 }

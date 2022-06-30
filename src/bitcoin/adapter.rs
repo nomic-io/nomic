@@ -1,9 +1,9 @@
 use bitcoin::consensus::{Decodable, Encodable};
+use orga::client::{Client, PrimitiveClient};
 use orga::encoding::Result as EncodingResult;
 use orga::prelude::*;
 use orga::state::State;
 use orga::store::Store;
-use orga::client::{Client, PrimitiveClient};
 use std::io::{Read, Write};
 use std::ops::{Deref, DerefMut};
 
@@ -15,6 +15,10 @@ pub struct Adapter<T> {
 impl<T> Adapter<T> {
     pub fn new(inner: T) -> Self {
         Self { inner }
+    }
+
+    pub fn into_inner(self) -> T {
+        self.inner
     }
 }
 
