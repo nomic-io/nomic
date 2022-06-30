@@ -4,15 +4,15 @@
 
 Nomic Bitcoin Bridge
 
-## Bitcoin Bridge Testnet Release
+## Bitcoin Upgrade
 
-This release of the Nomic testnet activates the Bitcoin bridge. Users can now deposit testnet Bitcoin to receive NBTC tokens, transfer them, and withdraw them back to the Bitcoin testnet blockchain.
+This release adds mainnet Bitcoin to the Nomic Stakenet. Users can now deposit Bitcoin to receive NBTC tokens, transfer them, and withdraw them back to the Bitcoin blockchain.
 
-If the testing of this phase goes smoothly, we will deploy the Bitcoin bridge with mainnet BTC on the Nomic Stakenet soon after. Expect rapid improvements to the bridge in the coming months, including the activation of IBC and transfers of the NOM token.
+Expect rapid improvements in the coming months, including the activation of IBC and transfers of the NOM token.
 
 ## Upgrading existing nodes
 
-If you're upgrading your existing testnet node:
+If you're upgrading your existing Nomic node:
 
 1. Rebuild from this branch with:
 
@@ -26,11 +26,11 @@ cargo install --locked --path .
 
 3. Restart your node with `nomic start`.
 
-Your node will automatically perform the upgrade on Friday, June 24th at 17:00 UTC.
+Your node will automatically perform the upgrade on Tuesday, July 5th at 18:00 UTC.
 
 ## Node setup guide
 
-This guide will walk you through setting up a node for the Nomic testnet.
+This guide will walk you through setting up a node for the Nomic Stakenet.
 
 If you need any help getting your node running, join the [Discord](https://discord.gg/jH7U2NRJKn) and ask for the Validator role.
 
@@ -55,9 +55,6 @@ sudo dnf install clang openssl-devel && sudo dnf group install "C Development To
 
 # clone
 git clone https://github.com/nomic-io/nomic.git nomic && cd nomic
-
-# change to testnet branch
-git checkout testnet
 
 # build and install, adding a `nomic` command to your PATH
 cargo install --locked --path .
@@ -122,46 +119,46 @@ nomic declare \
 
 ### 4. Run your Bitcoin signer
 
-The funds in the Bitcoin bridge are held in a large multisig controlled by the Nomic validators. If you are in the top 30 validator slots by voting power, you are part of this multisig and must run a signer.
+The funds in the Bitcoin bridge are held in a large multisig controlled by the Nomic validators. If you are a validator with a significant amount of voting power, it is very important that you run a signer.
 
 You can run the signer with:
 ```bash
 nomic signer
 ```
 
-This will automatically generate a Bitcoin extended private key and store it at `~/.nomic-testnet-4/signer/xpriv`. It will also prompt you to submit your public key to the network so you can be added to the multisig.
+This will automatically generate a Bitcoin extended private key and store it at `~/.nomic-stakenet-3/signer/xpriv`. It will also prompt you to submit your public key to the network so you can be added to the multisig. **KEEP THIS KEY SAFE** - similar to your validator private key, it is important to be mindful of this key so that it is never lost or stolen.
 
 Leave this process running, it will automatically sign Bitcoin transactions that the network wants to create.
 
-In the future, we hope for the community to come up with alternative types of signers which provide for extra security, by e.g. airgapping keys or using HSMs.
+In the future, we hope for the community to come up with alternative types of signers which provide for extra security, by e.g. airgapping keys, using HSMs, or prompting the user for an encryption key.
 
 ### 5. (Optional) Run a relayer
 
 Relayer nodes carry data between the Bitcoin blockchain and the Nomic blockchain. You can help support the health of the network by running a Bitcoin node alongside your Nomic node and running the relayer process.
 
-#### i. Sync a Bitcoin testnet node
+#### i. Sync a Bitcoin node
 
 Download Bitcoin Core: https://bitcoin.org/en/download
 
 Run it with:
 ```bash
-bitcoind -testnet -server -rpcuser=satoshi -rpcpassword=nakamoto
+bitcoind -server -rpcuser=satoshi -rpcpassword=nakamoto
 ```
 (The RPC server only listens on localhost, so the user and password are not critically important.)
 
-**NOTE:** To save on disk space, you may want to configure your Bitcoin node to prune block storage. For instance, add `-prune=2000` to only keep a maximum of 2000 MB of blocks. You may also want to use the `-daemon` option to keep the node running in the background.
+**NOTE:** To save on disk space, you may want to configure your Bitcoin node to prune block storage. For instance, add `-prune=5000` to only keep a maximum of 5000 MB of blocks. You may also want to use the `-daemon` option to keep the node running in the background.
 
 #### ii. Run the relayer process
 
 ```bash
-nomic relayer --rpc-port=18332 --rpc-user=satoshi --rpc-pass=nakamoto
+nomic relayer --rpc-port=8332 --rpc-user=satoshi --rpc-pass=nakamoto
 ```
 
-Leave this running - the relayer will constantly scan the Bitcoin testnet and Nomic testnet chains and broadcast relevant data.
+Leave this running - the relayer will constantly scan the Bitcoin and Nomic chains and broadcast relevant data.
 
-The relayer will also create a server which listens on port 9000 for clients to announce their deposit addresses. To help make the network more reliable, if you run a relayer please open this port and let us know your node's address in Discord or a Github issue so we can have clients make use of your node.
+The relayer will also create a server which listens on port 9000 for clients to announce their deposit addresses. To help make the network more reliable, if you run a relayer please open this port and let us know your node's address in Discord or a Github issue so we can have clients make use of your node. If you're going to make this service public, putting the server behind an HTTP reverse proxy is recommended for extra safety.
 
 ---
 
-Thanks for participating in the Nomic testnet! We'll be updating the network
+Thanks for participating in the Nomic Stakenet! We'll be updating the network
 often so stay tuned in [Discord](https://discord.gg/jH7U2NRJKn) for updates.
