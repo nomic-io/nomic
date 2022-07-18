@@ -1,7 +1,6 @@
 use bitcoin::consensus::Decodable;
 use bitcoin::BlockHeader;
-use bitcoincore_rpc::Error as RpcError;
-use bitcoincore_rpc::RpcApi;
+use bitcoind::bitcoincore_rpc::{self, Error as RpcError, RpcApi};
 use bitcoind::BitcoinD;
 use bitcoind::Conf;
 use bitcoind::P2P;
@@ -204,6 +203,7 @@ fn reorg_competing_chain_similar() {
 }
 
 #[test]
+#[ignore]
 fn reorg_deep() {
     let mut conf = Conf::default();
     conf.p2p = P2P::Yes;

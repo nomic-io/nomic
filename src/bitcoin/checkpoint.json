@@ -1,0 +1,11 @@
+[
+  739872,
+  {
+    "version": 939515904,
+    "prev_blockhash": "000000000000000000050c04aa3e3ca62420b6366e20ebea29ed3042320d2e4b",
+    "merkle_root": "627d7b1d4e9a6978bd178e34232e4f58aadecb1786cc503af3c80afc0124976a",
+    "time": 1654686448,
+    "bits": 386485098,
+    "nonce": 61613729
+  }
+]
