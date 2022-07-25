@@ -14,6 +14,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "abci2"
+version = "0.1.3"
+source = "git+https://github.com/nomic-io/abci2?rev=05dcec67bed744772902580d219fbc31d19053d1#05dcec67bed744772902580d219fbc31d19053d1"
+dependencies = [
+ "log",
+ "prost",
+ "tendermint-proto",
+ "thiserror",
+]
+
+[[package]]
 name = "addr2line"
 version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1814,7 +1825,7 @@ name = "orga"
 version = "0.2.0"
 source = "git+https://github.com/nomic-io/orga?branch=v2-legacy-main#cc9356ddbd5a41c7d0934d2fb9fa3a47181a198d"
 dependencies = [
- "abci2",
+ "abci2 0.1.3-alpha.0",
  "async-trait",
  "base64",
  "bech32",
@@ -1856,9 +1867,9 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.3.0"
-source = "git+https://github.com/nomic-io/orga.git?branch=v3-main#f6de0cb6db5a416f1fa462b581d0dc420e30f475"
+source = "git+https://github.com/nomic-io/orga.git?branch=v3-main#89e4edb67c4e42a6cddbf1e466359c02549bb798"
 dependencies = [
- "abci2",
+ "abci2 0.1.3",
  "async-trait",
  "base64",
  "bech32",
@@ -1912,7 +1923,7 @@ dependencies = [
 [[package]]
 name = "orga-macros"
 version = "0.2.4"
-source = "git+https://github.com/nomic-io/orga.git?branch=v3-main#f6de0cb6db5a416f1fa462b581d0dc420e30f475"
+source = "git+https://github.com/nomic-io/orga.git?branch=v3-main#89e4edb67c4e42a6cddbf1e466359c02549bb798"
 dependencies = [
  "heck 0.3.3",
  "proc-macro2",
