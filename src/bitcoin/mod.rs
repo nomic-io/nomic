@@ -46,6 +46,7 @@ impl Symbol for Nbtc {
 }
 
 pub const MIN_DEPOSIT_AMOUNT: u64 = 600;
+pub const MIN_WITHDRAWAL_AMOUNT: u64 = 600;
 pub const MAX_WITHDRAWAL_SCRIPT_LENGTH: u64 = 64;
 pub const TRANSFER_FEE: u64 = 1 * UNITS_PER_SAT;
 pub const MIN_CONFIRMATIONS: u32 = 0;
@@ -317,6 +318,13 @@ impl Bitcoin {
             }
             Some(value) => value,
         };
+
+        if value < MIN_WITHDRAWAL_AMOUNT {
+            return Err(OrgaError::App(
+                "Withdrawal is smaller than than minimum amount".to_string(),
+            )
+            .into());
+        }
 
         let output = bitcoin::TxOut {
             script_pubkey: script_pubkey.into_inner(),
