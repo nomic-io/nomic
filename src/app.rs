@@ -247,7 +247,7 @@ impl ConvertSdkTx for InnerApp {
                     let funding_call_bytes = funding_call.encode()?;
                     let payer_call = AppCall::FieldAccounts(funding_call_bytes);
 
-                    let deliver_msg_call_bytes = [vec![5], tx_bytes].concat();
+                    let deliver_msg_call_bytes = [vec![2], tx_bytes].concat();
                     let paid_call = AppCall::FieldIbc(deliver_msg_call_bytes);
                     return Ok(PaidCall {
                         payer: payer_call,
