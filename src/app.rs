@@ -12,7 +12,7 @@ use orga::prelude::*;
 use orga::Error;
 use serde::{Deserialize, Serialize};
 
-pub const CHAIN_ID: &str = "nomic-ibc-internal-0";
+pub const CHAIN_ID: &str = "nom-internal-0";
 pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
 
 #[derive(State, Debug, Clone)]
