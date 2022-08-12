@@ -4,6 +4,7 @@
 #![feature(async_closure)]
 #![feature(never_type)]
 
+use std::convert::TryInto;
 use std::path::PathBuf;
 
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
@@ -11,7 +12,7 @@ use clap::Parser;
 use futures::executor::block_on;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
-use nomicv2::command::Opts as LegacyOpts;
+// use nomicv2::command::Opts as LegacyOpts;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
@@ -28,7 +29,7 @@ fn now_seconds() -> i64 {
 }
 
 pub fn app_client() -> TendermintClient<nomic::app::App> {
-    TendermintClient::new("http://localhost:26657").unwrap()
+    TendermintClient::new("http://localhost:26357").unwrap()
 }
 
 fn my_address() -> Address {
@@ -65,12 +66,16 @@ pub enum Command {
     Edit(EditCmd),
     Claim(ClaimCmd),
     ClaimAirdrop(ClaimAirdropCmd),
-    Legacy(LegacyCmd),
+    // Legacy(LegacyCmd),
     Relayer(RelayerCmd),
     Signer(SignerCmd),
     SetSignatoryKey(SetSignatoryKeyCmd),
     Deposit(DepositCmd),
     Withdraw(WithdrawCmd),
+    IbcDepositNbtc(IbcDepositNbtcCmd),
+    IbcWithdrawNbtc(IbcWithdrawNbtcCmd),
+    Grpc(GrpcCmd),
+    IbcTransfer(IbcTransferCmd),
 }
 
 impl Command {
@@ -93,12 +98,16 @@ impl Command {
             Edit(cmd) => cmd.run().await,
             Claim(cmd) => cmd.run().await,
             ClaimAirdrop(cmd) => cmd.run().await,
-            Legacy(cmd) => cmd.run().await,
+            // Legacy(cmd) => cmd.run().await,
             Relayer(cmd) => cmd.run().await,
             Signer(cmd) => cmd.run().await,
             SetSignatoryKey(cmd) => cmd.run().await,
             Deposit(cmd) => cmd.run().await,
             Withdraw(cmd) => cmd.run().await,
+            IbcDepositNbtc(cmd) => cmd.run().await,
+            IbcWithdrawNbtc(cmd) => cmd.run().await,
+            Grpc(cmd) => cmd.run().await,
+            IbcTransfer(cmd) => cmd.run().await,
         }
     }
 }
@@ -114,123 +123,124 @@ impl StartCmd {
         let state_sync = self.state_sync;
 
         tokio::task::spawn_blocking(move || {
-            let old_name = nomicv2::app::CHAIN_ID;
+            // let old_name = nomicv2::app::CHAIN_ID;
             let new_name = nomic::app::CHAIN_ID;
 
-            let has_old_node = Node::home(old_name).exists();
-            let has_new_node = Node::home(new_name).exists();
-            let started_old_node = Node::height(old_name).unwrap() > 0;
-            let started_new_node = Node::height(new_name).unwrap() > 0;
-            let upgrade_time_passed = now_seconds() > STOP_SECONDS;
+            // let has_old_node = Node::home(old_name).exists();
+            // let has_new_node = Node::home(new_name).exists();
+            // let started_old_node = Node::height(old_name).unwrap() > 0;
+            // let started_new_node = Node::height(new_name).unwrap() > 0;
+            // let upgrade_time_passed = now_seconds() > STOP_SECONDS;
 
-            if has_old_node {
-                println!("Legacy node height: {}", Node::height(old_name).unwrap());
-            }
+            // if has_old_node {
+            //     println!("Legacy node height: {}", Node::height(old_name).unwrap());
+            // }
 
-            let new_home = Node::home(new_name);
-            let new_config_path = new_home.join("tendermint/config/config.toml");
+            // let new_home = Node::home(new_name);
+            // let new_config_path = new_home.join("tendermint/config/config.toml");
 
-            let old_home = Node::home(old_name);
-            let old_config_path = old_home.join("tendermint/config/config.toml");
+            // let old_home = Node::home(old_name);
+            // let old_config_path = old_home.join("tendermint/config/config.toml");
 
-            if !upgrade_time_passed && !started_new_node {
-                println!("Starting legacy node for migration...");
+            // if !upgrade_time_passed && !started_new_node {
+            //     println!("Starting legacy node for migration...");
 
-                let node = nomicv2::orga::abci::Node::<nomicv2::app::App>::new(
-                    old_name,
-                    Default::default(),
-                )
-                .with_genesis(include_bytes!("../../genesis/stakenet-2.json"))
-                .stdout(std::process::Stdio::inherit())
-                .stderr(std::process::Stdio::inherit())
-                .stop_seconds(STOP_SECONDS);
+            //     let node = nomicv2::orga::abci::Node::<nomicv2::app::App>::new(
+            //         old_name,
+            //         Default::default(),
+            //     )
+            //     .with_genesis(include_bytes!("../../genesis/stakenet-2.json"))
+            //     .stdout(std::process::Stdio::inherit())
+            //     .stderr(std::process::Stdio::inherit())
+            //     .stop_seconds(STOP_SECONDS);
 
-                set_p2p_seeds(
-                    &old_config_path,
-                    &[
-                        "238120dfe716082754048057c1fdc3d6f09609b5@161.35.51.124:26656",
-                        "a67d7a4d90f84d5c67bfc196aac68441ba9484a6@167.99.119.196:26656",
-                        "26814903a767984b3f46970160c8b6e46f3e35e6@66.94.126.60:26656",
-                    ],
-                );
+            //     set_p2p_seeds(
+            //         &old_config_path,
+            //         &[
+            //             "238120dfe716082754048057c1fdc3d6f09609b5@161.35.51.124:26656",
+            //             "a67d7a4d90f84d5c67bfc196aac68441ba9484a6@167.99.119.196:26656",
+            //             "26814903a767984b3f46970160c8b6e46f3e35e6@66.94.126.60:26656",
+            //         ],
+            //     );
 
-                if !started_old_node {
-                    // TODO: set default RPC boostrap nodes
-                    configure_for_statesync(
-                        &old_config_path,
-                        &[
-                            "http://161.35.51.124:26667",
-                            "http://167.99.119.196:26657",
-                            "https://nomic-rpc.polkachu.com:443",
-                        ],
-                    );
-                }
+            //     if !started_old_node {
+            //         // TODO: set default RPC boostrap nodes
+            //         configure_for_statesync(
+            //             &old_config_path,
+            //             &[
+            //                 "http://161.35.51.124:26667",
+            //                 "http://167.99.119.196:26657",
+            //                 "https://nomic-rpc.polkachu.com:443",
+            //             ],
+            //         );
+            //     }
 
-                let res = node.run();
-                if let Err(nomicv2::orga::Error::ABCI(msg)) = res {
-                    if &msg != "Reached stop height" {
-                        panic!("{}", msg);
-                    }
-                } else {
-                    res.unwrap();
-                }
-            }
+            //     let res = node.run();
+            //     if let Err(nomicv2::orga::Error::ABCI(msg)) = res {
+            //         if &msg != "Reached stop height" {
+            //             panic!("{}", msg);
+            //         }
+            //     } else {
+            //         res.unwrap();
+            //     }
+            // }
 
-            let has_old_node = Node::home(old_name).exists();
+            // let has_old_node = Node::home(old_name).exists();
 
-            if !has_new_node {
-                println!("Initializing node at {}...", new_home.display());
-                // TODO: configure default seeds
-                Node::<nomic::app::App>::new(new_name, Default::default());
+            // if !has_new_node {
+            //     println!("Initializing node at {}...", new_home.display());
+            //     // TODO: configure default seeds
+            //     Node::<nomic::app::App>::new(new_name, Default::default());
 
-                if has_old_node {
-                    let old_home = Node::home(old_name);
-                    println!(
-                        "Legacy network data detected, copying keys and config from {}...",
-                        old_home.display(),
-                    );
+            //     if has_old_node {
+            //         let old_home = Node::home(old_name);
+            //         println!(
+            //             "Legacy network data detected, copying keys and config from {}...",
+            //             old_home.display(),
+            //         );
 
-                    let copy = |file: &str| {
-                        std::fs::copy(old_home.join(file), new_home.join(file)).unwrap();
-                    };
+            //         let copy = |file: &str| {
+            //             std::fs::copy(old_home.join(file), new_home.join(file)).unwrap();
+            //         };
 
-                    copy("tendermint/config/priv_validator_key.json");
-                    copy("tendermint/config/node_key.json");
-                    copy("tendermint/config/config.toml");
-                    deconfigure_statesync(&new_config_path);
-                }
+            //         copy("tendermint/config/priv_validator_key.json");
+            //         copy("tendermint/config/node_key.json");
+            //         copy("tendermint/config/config.toml");
+            //         deconfigure_statesync(&new_config_path);
+            //     }
 
-                edit_block_time(&new_config_path, "3s");
-            }
+            //     edit_block_time(&new_config_path, "3s");
+            // }
 
-            if upgrade_time_passed && !started_new_node && (!has_old_node || state_sync) {
-                println!("Configuring node for state sync...");
+            // if upgrade_time_passed && !started_new_node && (!has_old_node || state_sync) {
+            //     println!("Configuring node for state sync...");
 
-                // TODO: set default seeds
-                set_p2p_seeds(
-                    &new_config_path,
-                    &[
-                        "238120dfe716082754048057c1fdc3d6f09609b5@161.35.51.124:26656",
-                        "a67d7a4d90f84d5c67bfc196aac68441ba9484a6@167.99.119.196:26656",
-                        "26814903a767984b3f46970160c8b6e46f3e35e6@66.94.126.60:26656",
-                    ],
-                );
+            //     // TODO: set default seeds
+            //     set_p2p_seeds(
+            //         &new_config_path,
+            //         &[
+            //             "238120dfe716082754048057c1fdc3d6f09609b5@161.35.51.124:26656",
+            //             "a67d7a4d90f84d5c67bfc196aac68441ba9484a6@167.99.119.196:26656",
+            //             "26814903a767984b3f46970160c8b6e46f3e35e6@66.94.126.60:26656",
+            //         ],
+            //     );
 
-                // TODO: set default RPC boostrap nodes
-                configure_for_statesync(
-                    &new_config_path,
-                    &[
-                        "http://161.35.51.124:26667",
-                        "http://167.99.119.196:26657",
-                        "https://nomic-rpc.polkachu.com:443",
-                    ],
-                );
-            }
+            //     // TODO: set default RPC boostrap nodes
+            //     configure_for_statesync(
+            //         &new_config_path,
+            //         &[
+            //             "http://161.35.51.124:26667",
+            //             "http://167.99.119.196:26657",
+            //             "https://nomic-rpc.polkachu.com:443",
+            //         ],
+            //     );
+            // }
 
             println!("Starting node...");
             // TODO: add cfg defaults
             Node::<nomic::app::App>::new(new_name, Default::default())
-                .with_genesis(include_bytes!("../../genesis/stakenet-3.json"))
+                // .reset()
+                .with_genesis(include_bytes!("../../genesis/ibc-internal-0.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
                 .run()
@@ -688,19 +698,19 @@ impl ClaimAirdropCmd {
     }
 }
 
-#[derive(Parser, Debug)]
-pub struct LegacyCmd {
-    #[clap(subcommand)]
-    cmd: nomicv2::command::Command,
-}
+// #[derive(Parser, Debug)]
+// pub struct LegacyCmd {
+//     #[clap(subcommand)]
+//     cmd: nomicv2::command::Command,
+// }
 
-impl LegacyCmd {
-    async fn run(&self) -> Result<()> {
-        self.cmd.run().await.unwrap();
+// impl LegacyCmd {
+//     async fn run(&self) -> Result<()> {
+//         self.cmd.run().await.unwrap();
 
-        Ok(())
-    }
-}
+//         Ok(())
+//     }
+// }
 
 #[derive(Parser, Debug)]
 pub struct RelayerCmd {
@@ -719,7 +729,7 @@ pub struct RelayerCmd {
 
 impl RelayerCmd {
     async fn btc_client(&self) -> Result<BtcClient> {
-        let rpc_url = format!("http://localhost:{}", self.rpc_port);
+        let rpc_url = format!("http://192.168.1.126:{}", self.rpc_port);
         let auth = match (self.rpc_user.clone(), self.rpc_pass.clone()) {
             (Some(user), Some(pass)) => Auth::UserPass(user, pass),
             _ => Auth::None,
@@ -816,12 +826,12 @@ impl DepositCmd {
         let sigset = app_client().bitcoin.checkpoints.active_sigset().await??;
         let script = sigset.output_script(dest_addr)?;
         // TODO: get network from somewhere
-        let btc_addr = bitcoin::Address::from_script(&script, bitcoin::Network::Bitcoin).unwrap();
+        let btc_addr = bitcoin::Address::from_script(&script, bitcoin::Network::Testnet).unwrap();
 
         let client = reqwest::Client::new();
         client
             .post(format!(
-                "https://relayer.nomic.io:8443?dest_addr={}&sigset_index={}&deposit_addr={}",
+                "http://localhost:9000?dest_addr={}&sigset_index={}&deposit_addr={}",
                 dest_addr,
                 sigset.index(),
                 btc_addr,
@@ -864,6 +874,89 @@ impl WithdrawCmd {
     }
 }
 
+#[derive(Parser, Debug)]
+pub struct IbcDepositNbtcCmd {
+    to: Address,
+    amount: u64,
+}
+
+impl IbcDepositNbtcCmd {
+    async fn run(&self) -> Result<()> {
+        Ok(app_client()
+            .pay_from(async move |client| {
+                client.ibc_deposit_nbtc(self.to, self.amount.into()).await
+            })
+            .noop()
+            .await?)
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct IbcWithdrawNbtcCmd {
+    amount: u64,
+}
+
+impl IbcWithdrawNbtcCmd {
+    async fn run(&self) -> Result<()> {
+        Ok(app_client()
+            .pay_from(async move |client| client.ibc_withdraw_nbtc(self.amount.into()).await)
+            .noop()
+            .await?)
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct GrpcCmd {
+    #[clap(default_value_t = 9001)]
+    port: u16,
+}
+
+impl GrpcCmd {
+    async fn run(&self) -> Result<()> {
+        let ibc_client = app_client().ibc.clone();
+        orga::ibc::start_grpc(
+            app_client(),
+            ibc_client,
+            &|client| client.ibc.clone(),
+            self.port,
+        )
+        .await;
+
+        Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct IbcTransferCmd {
+    to: Address,
+    amount: u64,
+    channel_id: String,
+    port_id: String,
+    denom: String,
+    receiver: String,
+}
+
+use orga::ibc::TransferArgs;
+impl IbcTransferCmd {
+    async fn run(&self) -> Result<()> {
+        let transfer_args = TransferArgs {
+            amount: self.amount.into(),
+            channel_id: self.channel_id.clone(),
+            port_id: self.port_id.clone(),
+            denom: self.denom.clone(),
+            receiver: self.receiver.clone(),
+        };
+
+        Ok(app_client()
+            .pay_from(async move |client| {
+                client.ibc_deposit_nbtc(self.to, self.amount.into()).await
+            })
+            .ibc
+            .transfer(transfer_args.try_into()?)
+            .await?)
+    }
+}
+
 #[tokio::main]
 async fn main() {
     pretty_env_logger::init();
@@ -872,18 +965,18 @@ async fn main() {
         .map(|s| s == "start")
         .unwrap_or(false);
 
-    if is_start || now_seconds() > STOP_SECONDS {
-        let opts = Opts::parse();
-        if let Err(err) = opts.cmd.run().await {
-            eprintln!("{}", err);
-            std::process::exit(1);
-        };
-    } else {
-        let opts = LegacyOpts::parse();
+    // if is_start || now_seconds() > STOP_SECONDS {
+    let opts = Opts::parse();
+    if let Err(err) = opts.cmd.run().await {
+        eprintln!("{}", err);
+        std::process::exit(1);
+    };
+    // } else {
+    //     let opts = LegacyOpts::parse();
 
-        if let Err(err) = opts.cmd.run().await {
-            eprintln!("{}", err);
-            std::process::exit(1);
-        };
-    }
+    //     if let Err(err) = opts.cmd.run().await {
+    //         eprintln!("{}", err);
+    //         std::process::exit(1);
+    //     };
+    // }
 }

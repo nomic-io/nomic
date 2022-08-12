@@ -153,7 +153,7 @@ impl Relayer {
                     };
                     let expected_addr = ::bitcoin::Address::from_script(
                         &sigset.output_script(dest_addr).map_err(|_| reject())?,
-                        ::bitcoin::Network::Bitcoin, // TODO: don't hardcode
+                        ::bitcoin::Network::Testnet, // TODO: don't hardcode
                     )
                     .unwrap()
                     .to_string();

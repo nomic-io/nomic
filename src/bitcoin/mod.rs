@@ -46,7 +46,7 @@ impl Symbol for Nbtc {
 pub const MIN_DEPOSIT_AMOUNT: u64 = 600;
 pub const MAX_WITHDRAWAL_SCRIPT_LENGTH: u64 = 64;
 pub const TRANSFER_FEE: u64 = 1 * UNITS_PER_SAT;
-pub const MIN_CONFIRMATIONS: u32 = 3;
+pub const MIN_CONFIRMATIONS: u32 = 0;
 pub const UNITS_PER_SAT: u64 = 1_000_000;
 
 pub fn calc_deposit_fee(amount: u64) -> u64 {
@@ -55,9 +55,12 @@ pub fn calc_deposit_fee(amount: u64) -> u64 {
 
 #[derive(State, Call, Query, Client)]
 pub struct Bitcoin {
+    #[call]
     pub headers: HeaderQueue,
     pub processed_outpoints: OutpointSet,
+    #[call]
     pub checkpoints: CheckpointQueue,
+    #[call]
     pub accounts: Accounts<Nbtc>,
     pub signatory_keys: SignatoryKeys,
     pub(crate) reward_pool: Coin<Nbtc>,
@@ -65,7 +68,7 @@ pub struct Bitcoin {
 
 pub type ConsensusKey = [u8; 32];
 
-#[derive(Call, Query, Client, Clone)]
+#[derive(Call, Query, Client, Clone, Debug)]
 pub struct Xpub(ExtendedPubKey);
 
 pub const XPUB_LENGTH: usize = 78;
@@ -131,7 +134,7 @@ impl From<&ExtendedPubKey> for Xpub {
     }
 }
 
-fn exempt_from_fee() -> Result<()> {
+pub fn exempt_from_fee() -> Result<()> {
     let paid = Context::resolve::<Paid>()
         .ok_or_else(|| OrgaError::Coins("No Paid context found".into()))?;
 
@@ -196,9 +199,9 @@ impl Bitcoin {
             .get_by_height(btc_height)?
             .ok_or_else(|| OrgaError::App("Invalid bitcoin block height".to_string()))?;
 
-        if self.headers.height()? - btc_height < MIN_CONFIRMATIONS {
-            return Err(OrgaError::App("Block is not sufficiently confirmed".to_string()).into());
-        }
+        // if self.headers.height()? - btc_height < MIN_CONFIRMATIONS {
+        //     return Err(OrgaError::App("Block is not sufficiently confirmed".to_string()).into());
+        // }
 
         let mut txids = vec![];
         let mut block_indexes = vec![];
