@@ -39,8 +39,9 @@ mutagen = "0.1.2"
 chrono = "0.4.19"
 
 [features]
-default = ["full"]
-full = ["bitcoind", "bitcoincore-rpc-async", "clap", "tokio", "orga/merk-full", "orga/feat-ibc", "orga/abci", "orga/state-sync", "csv", "warp", "rand" ]
+default = ["full", "feat-ibc"]
+full = ["bitcoind", "bitcoincore-rpc-async", "clap", "tokio", "orga/merk-full", "orga/abci", "orga/state-sync", "csv", "warp", "rand" ]
+feat-ibc = ["orga/feat-ibc"]
 
 [[bin]]
 name = "nomic"
