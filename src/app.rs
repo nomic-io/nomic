@@ -5,6 +5,7 @@ use crate::bitcoin::Bitcoin;
 use orga::cosmrs::bank::MsgSend;
 // #[cfg(feature = "full")]
 // use orga::migrate::{exec_migration, Migrate};
+#[cfg(feature = "feat-ibc")]
 use orga::ibc::{Ibc, IbcTx};
 use orga::plugins::sdk_compat::{sdk, sdk::Tx as SdkTx, ConvertSdkTx};
 use orga::prelude::*;
