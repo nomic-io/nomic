@@ -208,7 +208,7 @@ impl StartCmd {
                 // TODO: set default RPC boostrap nodes
                 configure_for_statesync(
                     &new_config_path,
-                    &["http://138.197.71.46:26657"],
+                    &["http://138.197.71.46:26657", "http://138.197.71.46:26657"],
                 );
             }
 
