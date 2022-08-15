@@ -202,13 +202,13 @@ impl StartCmd {
                 // TODO: set default seeds
                 set_p2p_seeds(
                     &new_config_path,
-                    &["edb32208ff79b591dd4cddcf1c879f6405fe6c79@167.99.228.240:26656"],
+                    &["238120dfe716082754048057c1fdc3d6f09609b5@161.35.51.124:26656", "a67d7a4d90f84d5c67bfc196aac68441ba9484a6@167.99.119.196:26659"],
                 );
 
                 // TODO: set default RPC boostrap nodes
                 configure_for_statesync(
                     &new_config_path,
-                    &["http://167.99.228.240:26667", "http://167.99.228.240:26677"],
+                    &["http://167.99.228.240:26667", "http://167.99.228.240:26677", "http://138.197.71.46:26657"],
                 );
             }
 
