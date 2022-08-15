@@ -81,6 +81,16 @@ impl InnerApp {
         Ok(())
     }
 
+    #[query]
+    pub fn escrowed_nbtc(&self, address: Address) -> Result<Amount> {
+        Ok(*self
+            .ibc
+            .bank()
+            .balances
+            .get_or_default("usat".parse()?)?
+            .get_or_default(address)?)
+    }
+
     fn signer(&mut self) -> Result<Address> {
         self.context::<Signer>()
             .ok_or_else(|| Error::Signer("No Signer context available".into()))?

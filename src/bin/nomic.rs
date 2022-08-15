@@ -429,6 +429,9 @@ impl BalanceCmd {
         let balance = app_client().bitcoin.accounts.balance(address).await??;
         println!("{} NBTC", balance);
 
+        let balance = app_client().escrowed_nbtc(address).await??;
+        println!("{} IBC-escrowed NBTC", balance);
+
         Ok(())
     }
 }
