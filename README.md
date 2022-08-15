@@ -53,8 +53,8 @@ sudo apt install build-essential libssl-dev pkg-config clang
 # or for systems running fedora
 sudo dnf install clang openssl-devel && sudo dnf group install "C Development Tools and Libraries"
 
-# clone
-git clone https://github.com/nomic-io/nomic.git nomic && cd nomic
+# clone and check ouit current build
+git clone https://github.com/nomic-io/nomic.git nomic && cd nomic && git checkout testnet
 
 # build and install, adding a `nomic` command to your PATH
 cargo install --locked --path .
