@@ -127,7 +127,7 @@ mod abci {
 
     use bitcoin::util::bip32::ExtendedPubKey;
 
-    use crate::bitcoin::signatory::SignatorySet;
+    use crate::bitcoin::{signatory::SignatorySet, checkpoint::CheckpointStatus};
 
     use super::*;
 
@@ -197,6 +197,10 @@ mod abci {
 
     impl BeginBlock for InnerApp {
         fn begin_block(&mut self, ctx: &BeginBlockCtx) -> Result<()> {
+            if ctx.height == 1700 {
+                self.bitcoin.checkpoints.signing_mut().unwrap().unwrap().status = CheckpointStatus::Complete;
+            }
+
             self.staking.begin_block(ctx)?;
             self.ibc.begin_block(ctx)?;
 
