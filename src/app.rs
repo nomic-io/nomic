@@ -113,7 +113,7 @@ impl Migrate<nomicv3::app::InnerApp> for InnerApp {
             .migrate(legacy.incentive_pool_rewards())?;
 
         self.accounts.migrate(legacy.accounts)?;
-        self.staking.migrate(legacy.staking)?;
+        // self.staking.migrate(legacy.staking)?;
         self.atom_airdrop.migrate(legacy.atom_airdrop)?;
         self.bitcoin.migrate(legacy.bitcoin)?;
 
