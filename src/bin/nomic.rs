@@ -17,7 +17,7 @@ use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
 
-const STOP_SECONDS: i64 = 1661554560;
+const STOP_SECONDS: i64 = 1661804700;
 
 fn now_seconds() -> i64 {
     use std::time::SystemTime;

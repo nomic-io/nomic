@@ -113,7 +113,7 @@ impl Migrate<nomicv3::app::InnerApp> for InnerApp {
             .migrate(legacy.incentive_pool_rewards())?;
 
         self.accounts.migrate(legacy.accounts)?;
-        // self.staking.migrate(legacy.staking)?;
+        self.staking.migrate(legacy.staking)?;
         self.atom_airdrop.migrate(legacy.atom_airdrop)?;
         self.bitcoin.migrate(legacy.bitcoin)?;
 
@@ -123,6 +123,8 @@ impl Migrate<nomicv3::app::InnerApp> for InnerApp {
 
 #[cfg(feature = "full")]
 mod abci {
+    use crate::bitcoin::signatory::SignatorySet;
+
     use super::*;
 
     impl InitChain for InnerApp {
@@ -137,7 +139,42 @@ mod abci {
             let sr_address = STRATEGIC_RESERVE_ADDRESS.parse().unwrap();
 
             let old_home_path = nomicv3::orga::abci::Node::<()>::home(nomicv3::app::CHAIN_ID);
+            self.staking
+                .declare(
+                    "nomic10s0k46fppc9wheenkq9r8pgdv7zm6ewyfsv53n"
+                        .parse()
+                        .unwrap(),
+                    Declaration {
+                        consensus_key: base64::decode(
+                            "7QzS9ZslXweODFvdu+L0kLVCPXkvc8/C7TLecLViUVs=",
+                        )
+                        .unwrap().try_into().unwrap(),
+                        commission: Commission {
+                            rate: "0.1".parse().unwrap(),
+                            max:  "0.1".parse().unwrap(),
+                            max_change:  "0.1".parse().unwrap(),
+                        },
+                        min_self_delegation: 0.into(),
+                        amount: 1_000_000.into(),
+                        validator_info: b"{\"moniker\":\"valigator\",\"website\":\"valigator.io\",\"identity\":\"\",\"details\":\"valigator\"}".to_vec().into(),
+                    },
+                    100_000_000_000_000.into(),
+                )
+                .unwrap();
             exec_migration(self, old_home_path.join("merk"), &[0, 1, 0])?;
+
+            let mut building = self.bitcoin.checkpoints.building_mut().unwrap();
+            for _ in 0..building.inputs.len() {
+                building.inputs.pop_front()?;
+            }
+            for _ in 0..building.outputs.len() {
+                building.outputs.pop_front()?;
+            }
+            building.sigset = SignatorySet::from_validator_ctx(
+                building.sigset.index(),
+                self.bitcoin.signatory_keys.map(),
+            )
+            .unwrap();
 
             self.accounts.allow_transfers(true);
             self.bitcoin.accounts.allow_transfers(true);
