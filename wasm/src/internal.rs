@@ -248,7 +248,8 @@ pub async fn gen_deposit_addr(dest_addr: String) -> Result<DepositAddress> {
         .unwrap();
     let script = sigset.output_script(dest_addr)?;
     // TODO: get network from somewhere
-    let btc_addr = match bitcoin::Address::from_script(&script, bitcoin::Network::Bitcoin) {
+    // TODO: make test/mainnet option configurable
+    let btc_addr = match bitcoin::Address::from_script(&script, bitcoin::Network::Testnet) {
         Some(addr) => addr,
         None => return Err(Error::Wasm("Bitcoin Address not found".to_string())),
     };
