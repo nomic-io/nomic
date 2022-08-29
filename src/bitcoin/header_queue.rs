@@ -253,8 +253,8 @@ impl Config {
 
 #[derive(Call, Query, Client)]
 pub struct HeaderQueue {
-    deque: Deque<WorkHeader>,
-    current_work: Adapter<Uint256>,
+    pub(super) deque: Deque<WorkHeader>,
+    pub(super) current_work: Adapter<Uint256>,
     config: Config,
 }
 

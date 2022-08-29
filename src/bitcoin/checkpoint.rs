@@ -167,8 +167,8 @@ impl Checkpoint {
 
 #[derive(State, Call, Query, Client)]
 pub struct CheckpointQueue {
-    queue: Deque<Checkpoint>,
-    index: u32,
+    pub(super) queue: Deque<Checkpoint>,
+    pub(super) index: u32,
 }
 
 #[derive(Deref)]

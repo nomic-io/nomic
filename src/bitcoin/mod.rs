@@ -29,6 +29,7 @@ use txid_set::OutpointSet;
 pub mod adapter;
 pub mod checkpoint;
 pub mod header_queue;
+mod migrate;
 #[cfg(feature = "full")]
 pub mod relayer;
 pub mod signatory;

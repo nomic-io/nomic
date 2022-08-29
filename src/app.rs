@@ -3,16 +3,16 @@ use std::convert::TryInto;
 use crate::bitcoin::Bitcoin;
 
 use orga::cosmrs::bank::MsgSend;
-// #[cfg(feature = "full")]
-// use orga::migrate::{exec_migration, Migrate};
 #[cfg(feature = "feat-ibc")]
 use orga::ibc::{Ibc, IbcTx};
+#[cfg(feature = "full")]
+use orga::migrate::{exec_migration, Migrate};
 use orga::plugins::sdk_compat::{sdk, sdk::Tx as SdkTx, ConvertSdkTx};
 use orga::prelude::*;
 use orga::Error;
 use serde::{Deserialize, Serialize};
 
-pub const CHAIN_ID: &str = "nom-internal-0";
+pub const CHAIN_ID: &str = "nom-internal-1";
 pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
 
 #[derive(State, Debug, Clone)]
@@ -99,26 +99,27 @@ impl InnerApp {
     }
 }
 
-// #[cfg(feature = "full")]
-// impl Migrate<nomicv2::app::InnerApp> for InnerApp {
-//     fn migrate(&mut self, legacy: nomicv2::app::InnerApp) -> Result<()> {
-//         self.community_pool.migrate(legacy.community_pool())?;
-//         self.incentive_pool.migrate(legacy.incentive_pool())?;
+#[cfg(feature = "full")]
+impl Migrate<nomicv3::app::InnerApp> for InnerApp {
+    fn migrate(&mut self, legacy: nomicv3::app::InnerApp) -> Result<()> {
+        self.community_pool.migrate(legacy.community_pool())?;
+        self.incentive_pool.migrate(legacy.incentive_pool())?;
 
-//         self.staking_rewards.migrate(legacy.staking_rewards())?;
-//         self.dev_rewards.migrate(legacy.dev_rewards())?;
-//         self.community_pool_rewards
-//             .migrate(legacy.community_pool_rewards())?;
-//         self.incentive_pool_rewards
-//             .migrate(legacy.incentive_pool_rewards())?;
+        self.staking_rewards.migrate(legacy.staking_rewards())?;
+        self.dev_rewards.migrate(legacy.dev_rewards())?;
+        self.community_pool_rewards
+            .migrate(legacy.community_pool_rewards())?;
+        self.incentive_pool_rewards
+            .migrate(legacy.incentive_pool_rewards())?;
 
-//         self.accounts.migrate(legacy.accounts)?;
-//         self.staking.migrate(legacy.staking)?;
-//         self.atom_airdrop.migrate(legacy.atom_airdrop)?;
+        self.accounts.migrate(legacy.accounts)?;
+        self.staking.migrate(legacy.staking)?;
+        self.atom_airdrop.migrate(legacy.atom_airdrop)?;
+        self.bitcoin.migrate(legacy.bitcoin)?;
 
-//         Ok(())
-//     }
-// }
+        Ok(())
+    }
+}
 
 #[cfg(feature = "full")]
 mod abci {
@@ -134,11 +135,9 @@ mod abci {
             self.staking.min_self_delegation_min = 0;
 
             let sr_address = STRATEGIC_RESERVE_ADDRESS.parse().unwrap();
-            self.accounts
-                .deposit(sr_address, 1_000_000_000_000.into())?;
 
-            // let old_home_path = nomicv2::orga::abci::Node::<()>::home(nomicv2::app::CHAIN_ID);
-            // exec_migration(self, old_home_path.join("merk"), &[0, 1, 0])?;
+            let old_home_path = nomicv3::orga::abci::Node::<()>::home(nomicv3::app::CHAIN_ID);
+            exec_migration(self, old_home_path.join("merk"), &[0, 1, 0])?;
 
             self.accounts.allow_transfers(true);
             self.bitcoin.accounts.allow_transfers(true);
@@ -158,20 +157,20 @@ mod abci {
             self.ibc.begin_block(ctx)?;
 
             let has_stake = self.staking.staked()? > 0;
-            // if has_stake {
-            //     let reward = self.staking_rewards.mint()?;
-            //     self.staking.give(reward)?;
-            // }
+            if has_stake {
+                let reward = self.staking_rewards.mint()?;
+                self.staking.give(reward)?;
+            }
 
-            // let dev_reward = self.dev_rewards.mint()?;
-            // let dev_address = DEV_ADDRESS.parse().unwrap();
-            // self.accounts.deposit(dev_address, dev_reward)?;
+            let dev_reward = self.dev_rewards.mint()?;
+            let dev_address = DEV_ADDRESS.parse().unwrap();
+            self.accounts.deposit(dev_address, dev_reward)?;
 
-            // let cp_reward = self.community_pool_rewards.mint()?;
-            // self.community_pool.give(cp_reward)?;
+            let cp_reward = self.community_pool_rewards.mint()?;
+            self.community_pool.give(cp_reward)?;
 
-            // let ip_reward = self.incentive_pool_rewards.mint()?;
-            // self.incentive_pool.give(ip_reward)?;
+            let ip_reward = self.incentive_pool_rewards.mint()?;
+            self.incentive_pool.give(ip_reward)?;
 
             self.bitcoin.begin_block(ctx)?;
 
@@ -231,12 +230,12 @@ impl<S: Symbol> Airdrop<S> {
     }
 }
 
-// #[cfg(feature = "full")]
-// impl Migrate<nomicv2::app::Airdrop<nomicv2::app::Nom>> for Airdrop<Nom> {
-//     fn migrate(&mut self, legacy: nomicv2::app::Airdrop<nomicv2::app::Nom>) -> Result<()> {
-//         self.claimable.migrate(legacy.accounts())
-//     }
-// }
+#[cfg(feature = "full")]
+impl Migrate<nomicv3::app::Airdrop<nomicv3::app::Nom>> for Airdrop<Nom> {
+    fn migrate(&mut self, legacy: nomicv3::app::Airdrop<nomicv3::app::Nom>) -> Result<()> {
+        self.claimable.migrate(legacy.accounts())
+    }
+}
 
 impl ConvertSdkTx for InnerApp {
     type Output = PaidCall<<InnerApp as Call>::Call>;
