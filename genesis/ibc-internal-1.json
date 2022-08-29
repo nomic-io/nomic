@@ -1,5 +1,5 @@
 {
-  "genesis_time": "2022-08-20T00:00:00Z",
+  "genesis_time": "2022-08-28T00:00:00Z",
   "chain_id": "nom-internal-1",
   "initial_height": "0",
   "consensus_params": {
