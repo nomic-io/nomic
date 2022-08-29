@@ -123,6 +123,10 @@ impl Migrate<nomicv3::app::InnerApp> for InnerApp {
 
 #[cfg(feature = "full")]
 mod abci {
+    use std::str::FromStr;
+
+    use bitcoin::util::bip32::ExtendedPubKey;
+
     use crate::bitcoin::signatory::SignatorySet;
 
     use super::*;
@@ -139,16 +143,17 @@ mod abci {
             let sr_address = STRATEGIC_RESERVE_ADDRESS.parse().unwrap();
 
             let old_home_path = nomicv3::orga::abci::Node::<()>::home(nomicv3::app::CHAIN_ID);
+            let con_key = base64::decode("7QzS9ZslXweODFvdu+L0kLVCPXkvc8/C7TLecLViUVs=")
+                .unwrap()
+                .try_into()
+                .unwrap();
             self.staking
                 .declare(
                     "nomic10s0k46fppc9wheenkq9r8pgdv7zm6ewyfsv53n"
                         .parse()
                         .unwrap(),
                     Declaration {
-                        consensus_key: base64::decode(
-                            "7QzS9ZslXweODFvdu+L0kLVCPXkvc8/C7TLecLViUVs=",
-                        )
-                        .unwrap().try_into().unwrap(),
+                        consensus_key: con_key,
                         commission: Commission {
                             rate: "0.1".parse().unwrap(),
                             max:  "0.1".parse().unwrap(),
@@ -163,7 +168,9 @@ mod abci {
                 .unwrap();
             exec_migration(self, old_home_path.join("merk"), &[0, 1, 0])?;
 
+            self.bitcoin.signatory_keys.insert(con_key, "tpubD6NzVbkrYhZ4Xakcy8JrKutnbbC8StGSu5x37DZ3rZPsGv6SnxDJy74z6PKrwKqP3X5uaBryLxaHzZh972LHhFcpcpDqiRZ4vNarTjYjSdV".parse::<ExtendedPubKey>().unwrap().into()).unwrap();
             let mut building = self.bitcoin.checkpoints.building_mut().unwrap();
+
             for _ in 0..building.inputs.len() {
                 building.inputs.pop_front()?;
             }
