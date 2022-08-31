@@ -23,8 +23,8 @@ use std::convert::TryFrom;
 
 pub const MIN_CHECKPOINT_INTERVAL: u64 = 60 * 5;
 pub const MAX_CHECKPOINT_INTERVAL: u64 = 60 * 60 * 8;
-pub const MAX_INPUTS: u64 = 20;
-pub const MAX_OUTPUTS: u64 = 100;
+pub const MAX_INPUTS: u64 = 40;
+pub const MAX_OUTPUTS: u64 = 200;
 pub const FEE_RATE: u64 = 1;
 
 #[derive(Debug, Encode, Decode)]
@@ -167,8 +167,8 @@ impl Checkpoint {
 
 #[derive(State, Call, Query, Client)]
 pub struct CheckpointQueue {
-    queue: Deque<Checkpoint>,
-    index: u32,
+    pub(super) queue: Deque<Checkpoint>,
+    pub(super) index: u32,
 }
 
 #[derive(Deref)]

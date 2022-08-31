@@ -4,8 +4,8 @@ pub type Outpoint = ([u8; 32], u32);
 
 #[derive(State, Call, Query, Client)]
 pub struct OutpointSet {
-    expiration_queue: Map<(u64, Outpoint), ()>,
-    outpoints: Map<Outpoint, ()>,
+    pub(super) expiration_queue: Map<(u64, Outpoint), ()>,
+    pub(super) outpoints: Map<Outpoint, ()>,
 }
 
 impl OutpointSet {

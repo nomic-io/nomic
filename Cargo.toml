@@ -1,6 +1,6 @@
 [package]
 name = "nomic"
-version = "3.0.0"
+version = "4.0.0"
 authors = [ "The Nomic Team <hello@nomic.io>" ]
 edition = "2018"
 default-run = "nomic"
@@ -8,10 +8,10 @@ default-run = "nomic"
 [dependencies]
 bitcoin = { version = "0.28.1", features = ["use-serde"] }
 bitcoind = { version = "0.21.0", features = ["22_0"], optional = true }
-orga = { git = "https://github.com/nomic-io/orga.git", branch = "v4-testnet", features = ["merk-verify"] }
+orga = { git = "https://github.com/nomic-io/orga.git", branch = "v4", features = ["merk-verify"] }
 thiserror = "1.0.30"
 ed = "0.3.0"
-clap = { version = "3.0.0-rc.4", features = ["derive"], optional = true }
+clap = { version = "3.2.16", features = ["derive"], optional = true }
 tokio = { version = "1.14.0", features = ["full"], optional = true }
 base64 = "0.13.0"
 js-sys = { version = "0.3.55" }
@@ -20,9 +20,9 @@ serde_json = "1.0.74"
 csv = { version = "1.1.6", optional = true }
 bech32 = { version = "0.8.1" }
 futures = "0.3.21"
-nomicv2 = { git = "https://github.com/nomic-io/nomic", branch = "v2-legacy-testnet", package = "nomic", optional = true }
+nomicv3 = { git = "https://github.com/nomic-io/nomic", branch = "v4a-legacy-testnet", package = "nomic", optional = true }
 toml_edit = "0.13.4"
-tendermint-rpc = "0.23.5"
+tendermint-rpc = "=0.23.7"
 bitcoincore-rpc-async = { package = "bitcoincore-rpc-async2", version = "4.0.1", optional = true }
 bitcoin-script = "0.1.1"
 warp = { version = "0.3.2", optional = true }
@@ -32,18 +32,24 @@ reqwest = "0.11.10"
 rand = { version = "0.8.5", optional = true }
 
 [dev-dependencies]
-chrono = "0.4.0"
 bitcoin_hashes = "0.10.0"
 serde_json = "1.0.68"
 serde = "1.0.130"
 mutagen = "0.1.2"
+chrono = "0.4.19"
 
 [features]
-default = ["full"]
-full = ["bitcoind", "bitcoincore-rpc-async", "clap", "tokio", "orga/merk-full", "orga/abci", "orga/state-sync", "csv", "nomicv2", "warp", "rand"]
+default = ["full", "feat-ibc"]
+full = ["bitcoind", "bitcoincore-rpc-async", "clap", "tokio", "orga/merk-full", "orga/abci", "orga/state-sync", "csv", "warp", "rand", "nomicv3" ]
+feat-ibc = ["orga/feat-ibc"]
 
 [[bin]]
 name = "nomic"
 
 [[bin]]
 name = "create-checkpoint"
+
+[patch.crates-io]
+ibc = { git = "https://github.com/informalsystems/ibc-rs.git", rev = "e8c98d4" }
+ibc-proto = { git = "https://github.com/informalsystems/ibc-rs.git", rev = "e8c98d4" }
+

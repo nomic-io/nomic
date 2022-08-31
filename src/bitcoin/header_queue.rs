@@ -91,6 +91,7 @@ impl WrappedHeader {
     }
 }
 
+#[derive(Debug)]
 pub struct HeaderList(Vec<WrappedHeader>);
 
 impl From<Vec<WrappedHeader>> for HeaderList {
@@ -198,7 +199,7 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Config::mainnet()
+        Config::testnet()
     }
 }
 
@@ -252,8 +253,8 @@ impl Config {
 
 #[derive(Call, Query, Client)]
 pub struct HeaderQueue {
-    deque: Deque<WorkHeader>,
-    current_work: Adapter<Uint256>,
+    pub(super) deque: Deque<WorkHeader>,
+    pub(super) current_work: Adapter<Uint256>,
     config: Config,
 }
 

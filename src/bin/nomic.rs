@@ -4,6 +4,7 @@
 #![feature(async_closure)]
 #![feature(never_type)]
 
+use std::convert::TryInto;
 use std::path::PathBuf;
 
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
@@ -11,13 +12,12 @@ use clap::Parser;
 use futures::executor::block_on;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
-use nomicv2::command::Opts as LegacyOpts;
+use nomicv3::command::Opts as LegacyOpts;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
 
-const STOP_SECONDS: i64 = 1656090000;
-const STATE_SYNC_DELAY: i64 = 3 * orga::merk::store::SNAPSHOT_INTERVAL as i64;
+const STOP_SECONDS: i64 = 1662138000;
 
 fn now_seconds() -> i64 {
     use std::time::SystemTime;
@@ -66,12 +66,15 @@ pub enum Command {
     Edit(EditCmd),
     Claim(ClaimCmd),
     ClaimAirdrop(ClaimAirdropCmd),
-    Legacy(LegacyCmd),
     Relayer(RelayerCmd),
     Signer(SignerCmd),
     SetSignatoryKey(SetSignatoryKeyCmd),
     Deposit(DepositCmd),
     Withdraw(WithdrawCmd),
+    IbcDepositNbtc(IbcDepositNbtcCmd),
+    IbcWithdrawNbtc(IbcWithdrawNbtcCmd),
+    Grpc(GrpcCmd),
+    IbcTransfer(IbcTransferCmd),
 }
 
 impl Command {
@@ -94,12 +97,16 @@ impl Command {
             Edit(cmd) => cmd.run().await,
             Claim(cmd) => cmd.run().await,
             ClaimAirdrop(cmd) => cmd.run().await,
-            Legacy(cmd) => cmd.run().await,
+            // Legacy(cmd) => cmd.run().await,
             Relayer(cmd) => cmd.run().await,
             Signer(cmd) => cmd.run().await,
             SetSignatoryKey(cmd) => cmd.run().await,
             Deposit(cmd) => cmd.run().await,
             Withdraw(cmd) => cmd.run().await,
+            IbcDepositNbtc(cmd) => cmd.run().await,
+            IbcWithdrawNbtc(cmd) => cmd.run().await,
+            Grpc(cmd) => cmd.run().await,
+            IbcTransfer(cmd) => cmd.run().await,
         }
     }
 }
@@ -115,7 +122,7 @@ impl StartCmd {
         let state_sync = self.state_sync;
 
         tokio::task::spawn_blocking(move || {
-            let old_name = nomicv2::app::CHAIN_ID;
+            let old_name = nomicv3::app::CHAIN_ID;
             let new_name = nomic::app::CHAIN_ID;
 
             let has_old_node = Node::home(old_name).exists();
@@ -123,7 +130,7 @@ impl StartCmd {
             let started_old_node = Node::height(old_name).unwrap() > 0;
             let started_new_node = Node::height(new_name).unwrap() > 0;
             let upgrade_time_passed = now_seconds() > STOP_SECONDS;
-            let statesync_start_passed = now_seconds() > STOP_SECONDS + STATE_SYNC_DELAY;
+
             if has_old_node {
                 println!("Legacy node height: {}", Node::height(old_name).unwrap());
             }
@@ -137,11 +144,11 @@ impl StartCmd {
             if !upgrade_time_passed && !started_new_node {
                 println!("Starting legacy node for migration...");
 
-                let node = nomicv2::orga::abci::Node::<nomicv2::app::App>::new(
+                let node = nomicv3::orga::abci::Node::<nomicv3::app::App>::new(
                     old_name,
                     Default::default(),
                 )
-                .with_genesis(include_bytes!("../../genesis/testnet-2.json"))
+                .with_genesis(include_bytes!("../../genesis/testnet-4.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
                 .stop_seconds(STOP_SECONDS);
@@ -160,7 +167,7 @@ impl StartCmd {
                 }
 
                 let res = node.run();
-                if let Err(nomicv2::orga::Error::ABCI(msg)) = res {
+                if let Err(nomicv3::orga::Error::ABCI(msg)) = res {
                     if &msg != "Reached stop height" {
                         panic!("{}", msg);
                     }
@@ -196,7 +203,7 @@ impl StartCmd {
                 edit_block_time(&new_config_path, "3s");
             }
 
-            if statesync_start_passed && !started_new_node && (!has_old_node || state_sync) {
+            if upgrade_time_passed && !started_new_node && (!has_old_node || state_sync) {
                 println!("Configuring node for state sync...");
 
                 // TODO: set default seeds
@@ -215,7 +222,7 @@ impl StartCmd {
             println!("Starting node...");
             // TODO: add cfg defaults
             Node::<nomic::app::App>::new(new_name, Default::default())
-                .with_genesis(include_bytes!("../../genesis/testnet-4.json"))
+                .with_genesis(include_bytes!("../../genesis/testnet-4b.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
                 .run()
@@ -305,7 +312,7 @@ async fn get_bootstrap_state(rpc_servers: &[&str]) -> Result<(i64, String)> {
     latest_heights.sort_unstable();
     let latest_height = latest_heights[latest_heights.len() / 2] as u32;
 
-    let height = latest_height.checked_sub(1000).unwrap_or(2);
+    let height = latest_height.checked_sub(1000).unwrap_or(1);
 
     // get block hash
     let mut hash = None;
@@ -403,6 +410,9 @@ impl BalanceCmd {
 
         let balance = app_client().bitcoin.accounts.balance(address).await??;
         println!("{} NBTC", balance);
+
+        let balance = app_client().escrowed_nbtc(address).await??;
+        println!("{} IBC-escrowed NBTC", balance);
 
         Ok(())
     }
@@ -523,7 +533,6 @@ struct DeclareInfo {
 
 impl DeclareCmd {
     async fn run(&self) -> Result<()> {
-        use std::convert::TryInto;
         let consensus_key: [u8; 32] = base64::decode(&self.consensus_key)
             .map_err(|_| orga::Error::App("invalid consensus key".to_string()))?
             .try_into()
@@ -674,20 +683,6 @@ impl ClaimAirdropCmd {
 }
 
 #[derive(Parser, Debug)]
-pub struct LegacyCmd {
-    #[clap(subcommand)]
-    cmd: nomicv2::command::Command,
-}
-
-impl LegacyCmd {
-    async fn run(&self) -> Result<()> {
-        self.cmd.run().await.unwrap();
-
-        Ok(())
-    }
-}
-
-#[derive(Parser, Debug)]
 pub struct RelayerCmd {
     #[clap(short = 'p', long, default_value_t = 8332)]
     rpc_port: u16,
@@ -806,7 +801,7 @@ impl DepositCmd {
         let client = reqwest::Client::new();
         client
             .post(format!(
-                "http://167.99.228.240:9000?dest_addr={}&sigset_index={}&deposit_addr={}",
+                "https://testnet-relayer.nomic.io:8443?dest_addr={}&sigset_index={}&deposit_addr={}",
                 dest_addr,
                 sigset.index(),
                 btc_addr,
@@ -816,7 +811,7 @@ impl DepositCmd {
             .map_err(|err| nomic::error::Error::Orga(orga::Error::App(err.to_string())))?;
 
         println!("Deposit address: {}", btc_addr);
-        println!("Expiration: {}", "TODO");
+        println!("Expiration: {}", "5 days from now");
         // TODO: show real expiration
 
         Ok(())
@@ -846,6 +841,90 @@ impl WithdrawCmd {
             .await?;
 
         Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct IbcDepositNbtcCmd {
+    to: Address,
+    amount: u64,
+}
+
+impl IbcDepositNbtcCmd {
+    async fn run(&self) -> Result<()> {
+        Ok(app_client()
+            .pay_from(async move |client| {
+                client.ibc_deposit_nbtc(self.to, self.amount.into()).await
+            })
+            .noop()
+            .await?)
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct IbcWithdrawNbtcCmd {
+    amount: u64,
+}
+
+impl IbcWithdrawNbtcCmd {
+    async fn run(&self) -> Result<()> {
+        Ok(app_client()
+            .pay_from(async move |client| client.ibc_withdraw_nbtc(self.amount.into()).await)
+            .noop()
+            .await?)
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct GrpcCmd {
+    #[clap(default_value_t = 9001)]
+    port: u16,
+}
+
+impl GrpcCmd {
+    async fn run(&self) -> Result<()> {
+        let ibc_client = app_client().ibc.clone();
+        orga::ibc::start_grpc(
+            app_client(),
+            ibc_client,
+            &|client| client.ibc.clone(),
+            self.port,
+        )
+        .await;
+
+        Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct IbcTransferCmd {
+    receiver: String,
+    amount: u64,
+    channel_id: String,
+    port_id: String,
+    denom: String,
+}
+
+use orga::ibc::TransferArgs;
+impl IbcTransferCmd {
+    async fn run(&self) -> Result<()> {
+        let transfer_args = TransferArgs {
+            amount: self.amount.into(),
+            channel_id: self.channel_id.clone(),
+            port_id: self.port_id.clone(),
+            denom: self.denom.clone(),
+            receiver: self.receiver.clone(),
+        };
+
+        Ok(app_client()
+            .pay_from(async move |client| {
+                client
+                    .ibc_deposit_nbtc(my_address(), self.amount.into())
+                    .await
+            })
+            .ibc
+            .transfer(transfer_args.try_into()?)
+            .await?)
     }
 }
 
