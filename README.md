@@ -4,15 +4,13 @@
 
 Nomic Bitcoin Bridge
 
-## Bitcoin Upgrade
+## Testnet Interchain Upgrade
 
-This release adds mainnet Bitcoin to the Nomic Stakenet. Users can now deposit Bitcoin to receive NBTC tokens, transfer them, and withdraw them back to the Bitcoin blockchain.
-
-Expect rapid improvements in the coming months, including the activation of IBC and transfers of the NOM token.
+This testnet upgrade adds preliminary IBC support.
 
 ## Upgrading existing nodes
 
-If you're upgrading your existing Nomic node:
+If you're upgrading your existing testnet node:
 
 1. Rebuild from this branch with:
 
@@ -26,7 +24,7 @@ cargo install --locked --path .
 
 3. Restart your node with `nomic start`.
 
-Your node will automatically perform the upgrade on Tuesday, July 5th at 18:00 UTC.
+Your node will automatically perform the upgrade on Tuesday, September 2nd at 17:00 UTC.
 
 ## Node setup guide
 
@@ -142,7 +140,7 @@ Download Bitcoin Core: https://bitcoin.org/en/download
 
 Run it with:
 ```bash
-bitcoind -server -rpcuser=satoshi -rpcpassword=nakamoto
+bitcoind -server -testnet -rpcuser=satoshi -rpcpassword=nakamoto
 ```
 (The RPC server only listens on localhost, so the user and password are not critically important.)
 
@@ -151,7 +149,7 @@ bitcoind -server -rpcuser=satoshi -rpcpassword=nakamoto
 #### ii. Run the relayer process
 
 ```bash
-nomic relayer --rpc-port=8332 --rpc-user=satoshi --rpc-pass=nakamoto
+nomic relayer --rpc-port=18332 --rpc-user=satoshi --rpc-pass=nakamoto
 ```
 
 Leave this running - the relayer will constantly scan the Bitcoin and Nomic chains and broadcast relevant data.

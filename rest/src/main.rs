@@ -95,6 +95,40 @@ async fn auth_accounts(addr_str: &str) -> Result<Value, BadRequest<String>> {
     }))
 }
 
+#[get("/cosmos/auth/v1beta1/accounts/<addr_str>")]
+async fn auth_accounts2(addr_str: &str) -> Result<Value, BadRequest<String>> {
+    let address: Address = addr_str.parse().unwrap();
+
+    let balance: u64 = app_client().accounts.balance(address)
+        .await
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+        .into();
+
+    type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
+    let mut nonce: u64 = app_client().query(
+            NonceQuery::Nonce(address),
+            |state| state.nonce(address),
+        )
+        .await
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+        .into();
+    nonce += 1;
+
+    Ok(json!({
+        "account": {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "address": addr_str,
+          "pub_key": {
+            "@type": "/cosmos.crypto.secp256k1.PubKey",
+            "key": "Atl2HeBoLMorGAUPTH0hXk2Sx72reuw8x2V1puqwV+jN"
+          },
+          "account_number": "0",
+          "sequence": nonce.to_string()
+        }
+    }))
+}
+
 use serde::{Serialize, Deserialize};
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 struct TxRequest {
@@ -481,6 +515,7 @@ fn rocket() -> _ {
         bank_balances,
         bank_balances_2,
         auth_accounts,
+        auth_accounts2,
         txs,
         txs2,
         query,
