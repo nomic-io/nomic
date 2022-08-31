@@ -12,7 +12,7 @@ use orga::prelude::*;
 use orga::Error;
 use serde::{Deserialize, Serialize};
 
-pub const CHAIN_ID: &str = "nom-internal-1";
+pub const CHAIN_ID: &str = "nomic-testnet-4b-0";
 pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
 
 #[derive(State, Debug, Clone)]
@@ -20,9 +20,8 @@ pub struct Nom(());
 impl Symbol for Nom {
     const INDEX: u8 = 69;
 }
-
 const DEV_ADDRESS: &str = "nomic14z79y3yrghqx493mwgcj0qd2udy6lm26lmduah";
-const STRATEGIC_RESERVE_ADDRESS: &str = "nomic10s0k46fppc9wheenkq9r8pgdv7zm6ewyfsv53n"; // TODO: change back
+const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1d5n325zrf4elfu0heqd59gna5j6xyunhev23cj";
 const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhqd8dcqeq";
 
 #[derive(State, Call, Query, Client)]
@@ -123,17 +122,12 @@ impl Migrate<nomicv3::app::InnerApp> for InnerApp {
 
 #[cfg(feature = "full")]
 mod abci {
-    use std::str::FromStr;
-
-    use bitcoin::util::bip32::ExtendedPubKey;
-
-    use crate::bitcoin::{signatory::SignatorySet, checkpoint::CheckpointStatus};
 
     use super::*;
 
     impl InitChain for InnerApp {
         fn init_chain(&mut self, _ctx: &InitChainCtx) -> Result<()> {
-            self.staking.max_validators = 100;
+            self.staking.max_validators = 30;
             self.staking.max_offline_blocks = 20_000;
             self.staking.downtime_jail_seconds = 60 * 30; // 30 minutes
             self.staking.slash_fraction_downtime = (Amount::new(1) / Amount::new(1000))?;
@@ -143,45 +137,7 @@ mod abci {
             let sr_address = STRATEGIC_RESERVE_ADDRESS.parse().unwrap();
 
             let old_home_path = nomicv3::orga::abci::Node::<()>::home(nomicv3::app::CHAIN_ID);
-            let con_key = base64::decode("7QzS9ZslXweODFvdu+L0kLVCPXkvc8/C7TLecLViUVs=")
-                .unwrap()
-                .try_into()
-                .unwrap();
-            self.staking
-                .declare(
-                    "nomic10s0k46fppc9wheenkq9r8pgdv7zm6ewyfsv53n"
-                        .parse()
-                        .unwrap(),
-                    Declaration {
-                        consensus_key: con_key,
-                        commission: Commission {
-                            rate: "0.1".parse().unwrap(),
-                            max:  "0.1".parse().unwrap(),
-                            max_change:  "0.1".parse().unwrap(),
-                        },
-                        min_self_delegation: 0.into(),
-                        amount: 1_000_000.into(),
-                        validator_info: b"{\"moniker\":\"valigator\",\"website\":\"valigator.io\",\"identity\":\"\",\"details\":\"valigator\"}".to_vec().into(),
-                    },
-                    100_000_000_000_000.into(),
-                )
-                .unwrap();
             exec_migration(self, old_home_path.join("merk"), &[0, 1, 0])?;
-
-            self.bitcoin.signatory_keys.insert(con_key, "tpubD6NzVbkrYhZ4Xakcy8JrKutnbbC8StGSu5x37DZ3rZPsGv6SnxDJy74z6PKrwKqP3X5uaBryLxaHzZh972LHhFcpcpDqiRZ4vNarTjYjSdV".parse::<ExtendedPubKey>().unwrap().into()).unwrap();
-            let mut building = self.bitcoin.checkpoints.building_mut().unwrap();
-
-            for _ in 0..building.inputs.len() {
-                building.inputs.pop_front()?;
-            }
-            for _ in 0..building.outputs.len() {
-                building.outputs.pop_front()?;
-            }
-            building.sigset = SignatorySet::from_validator_ctx(
-                building.sigset.index(),
-                self.bitcoin.signatory_keys.map(),
-            )
-            .unwrap();
 
             self.accounts.allow_transfers(true);
             self.bitcoin.accounts.allow_transfers(true);
@@ -197,10 +153,6 @@ mod abci {
 
     impl BeginBlock for InnerApp {
         fn begin_block(&mut self, ctx: &BeginBlockCtx) -> Result<()> {
-            if ctx.height == 1700 {
-                self.bitcoin.checkpoints.signing_mut().unwrap().unwrap().status = CheckpointStatus::Complete;
-            }
-
             self.staking.begin_block(ctx)?;
             self.ibc.begin_block(ctx)?;
 

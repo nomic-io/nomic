@@ -17,7 +17,7 @@ use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
 
-const STOP_SECONDS: i64 = 1661804700;
+const STOP_SECONDS: i64 = 1662138000;
 
 fn now_seconds() -> i64 {
     use std::time::SystemTime;
@@ -209,20 +209,20 @@ impl StartCmd {
                 // TODO: set default seeds
                 set_p2p_seeds(
                     &new_config_path,
-                    &["10c75e29b765c534ebf4babc2de93b60b22dec2c@192.168.1.113:26656"],
+                    &["edb32208ff79b591dd4cddcf1c879f6405fe6c79@167.99.228.240:26656"],
                 );
 
                 // TODO: set default RPC boostrap nodes
                 configure_for_statesync(
                     &new_config_path,
-                    &["http://192.168.1.113:26657", "http://192.168.1.113:26667"],
+                    &["http://167.99.228.240:26667", "http://167.99.228.240:26677"],
                 );
             }
 
             println!("Starting node...");
             // TODO: add cfg defaults
             Node::<nomic::app::App>::new(new_name, Default::default())
-                .with_genesis(include_bytes!("../../genesis/ibc-internal-1.json"))
+                .with_genesis(include_bytes!("../../genesis/testnet-4b.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
                 .run()
@@ -699,7 +699,7 @@ pub struct RelayerCmd {
 
 impl RelayerCmd {
     async fn btc_client(&self) -> Result<BtcClient> {
-        let rpc_url = format!("http://192.168.1.126:{}", self.rpc_port);
+        let rpc_url = format!("http://localhost:{}", self.rpc_port);
         let auth = match (self.rpc_user.clone(), self.rpc_pass.clone()) {
             (Some(user), Some(pass)) => Auth::UserPass(user, pass),
             _ => Auth::None,
@@ -801,7 +801,7 @@ impl DepositCmd {
         let client = reqwest::Client::new();
         client
             .post(format!(
-                "http://localhost:9000?dest_addr={}&sigset_index={}&deposit_addr={}",
+                "https://testnet-relayer.nomic.io:8443?dest_addr={}&sigset_index={}&deposit_addr={}",
                 dest_addr,
                 sigset.index(),
                 btc_addr,
