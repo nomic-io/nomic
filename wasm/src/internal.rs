@@ -99,6 +99,14 @@ pub async fn nbtc_reward_balance(addr: String) -> Result<u64> {
         .sum::<u64>())
 }
 
+pub async fn incoming_ibc_nbtc_balance(addr: String) -> Result<u64> {
+    let client: WebClient<App> = WebClient::new();
+    let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+
+    let balance = client.ibc.transfers.escrowed_balance(address, "usat".parse().unwrap()).await??;
+    Ok(balance.into())
+}
+
 pub async fn delegations(addr: String) -> Result<Array> {
     let mut client: WebClient<App> = WebClient::new();
     let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
