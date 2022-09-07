@@ -22,6 +22,7 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{Request, RequestInit, RequestMode, Response};
 use nomic::orga::coins::Symbol;
+use nomic::orga::ibc::TransferArgs;
 
 pub async fn transfer(to_addr: String, amount: u64) -> Result<JsValue> {
     let mut client: WebClient<App> = WebClient::new();
@@ -34,6 +35,34 @@ pub async fn transfer(to_addr: String, amount: u64) -> Result<JsValue> {
         .accounts
         .transfer(address, amount.into())
         .await?;
+    Ok(client.last_res()?)
+}
+
+pub async fn ibc_transfer_out(amount: u64, channel_id: String, port_id: String, denom: String, self_address: String, receiver_address: String) -> Result<JsValue> {
+    let mut client: WebClient<App> = WebClient::new();
+
+    let self_address = self_address
+        .parse()
+        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+
+    let transfer_args = TransferArgs {
+        amount: amount.into(),
+        channel_id,
+        port_id,
+        denom,
+        receiver: receiver_address,
+    };
+
+    client
+        .pay_from(async move |client| {
+            client
+                .ibc_deposit_nbtc(self_address, amount.into())
+                .await
+        })
+        .ibc
+        .transfer(transfer_args.try_into()?)
+        .await?;
+
     Ok(client.last_res()?)
 }
 
