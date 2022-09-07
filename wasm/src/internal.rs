@@ -198,6 +198,20 @@ pub async fn claim_airdrop() -> Result<JsValue> {
     .await
 }
 
+pub async fn claim_incoming_ibc_btc() -> Result<JsValue> {
+    let mut client: WebClient<App> = WebClient::new();
+    let my_addr = get_address().await?;
+
+    let amount = incoming_ibc_nbtc_balance(my_addr).await?;
+
+    client
+        .pay_from(async move |client| client.ibc_withdraw_nbtc(amount.into()).await)
+        .noop()
+        .await?;
+
+    Ok(client.last_res()?)
+}
+
 pub async fn delegate(to_addr: String, amount: u64) -> Result<JsValue> {
     let my_addr = get_address().await?;
 

@@ -68,6 +68,11 @@ pub async fn claim_airdrop() -> Result<JsValue, JsValue> {
     into_js_res(Internal::claim_airdrop().await)
 }
 
+#[wasm_bindgen(js_name = claimIncomingIbcBtc)]
+pub async fn claim_incoming_ibc_btc() -> Result<JsValue, JsValue> {
+    into_js_res(Internal::claim_incoming_ibc_btc().await)
+}
+
 #[wasm_bindgen]
 pub async fn delegate(to_addr: String, amount: u64) -> Result<JsValue, JsValue> {
     into_js_res(Internal::delegate(to_addr, amount).await)
