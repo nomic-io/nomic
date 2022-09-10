@@ -40,7 +40,7 @@ If you need any help getting your node running, join the [Discord](https://disco
 - &gt;= 100GB of storage
 - Linux or macOS _(Windows support coming soon)_
 
-### 1. Build Nomic
+### 1(a). Build Nomic [Mainnet]
 
 Start by building Nomic - for now this requires Rust nightly.
 
@@ -55,6 +55,29 @@ sudo dnf install clang openssl-devel && sudo dnf group install "C Development To
 
 # clone
 git clone https://github.com/nomic-io/nomic.git nomic && cd nomic
+
+# build and install, adding a `nomic` command to your PATH
+cargo install --locked --path .
+```
+
+### 1(b). Build Nomic [Testnet]
+
+Start by building Nomic - for now this requires Rust nightly.
+
+```bash
+# install rustup if you haven't already
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# install required dependencies (ubuntu)
+sudo apt install build-essential libssl-dev pkg-config clang
+# or for systems running fedora
+sudo dnf install clang openssl-devel && sudo dnf group install "C Development Tools and Libraries"
+
+# clone
+git clone https://github.com/nomic-io/nomic.git nomic && cd nomic
+
+# checkout testnet
+git checkout testnet
 
 # build and install, adding a `nomic` command to your PATH
 cargo install --locked --path .
