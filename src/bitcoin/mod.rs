@@ -367,7 +367,7 @@ impl Bitcoin {
 #[cfg(feature = "full")]
 impl BeginBlock for Bitcoin {
     fn begin_block(&mut self, ctx: &BeginBlockCtx) -> OrgaResult<()> {
-        let reset_height = 450_000;
+        let reset_height = 440_000;
 
         if ctx.height == reset_height {
             self.signatory_keys.reset()?;
