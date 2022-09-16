@@ -299,20 +299,12 @@ impl Bitcoin {
             return Err(OrgaError::App("Script exceeds maximum length".to_string()).into());
         }
 
-        let reserve_amount = if self.checkpoints.len()? == 0 {
-            0
-        } else {
-            self.checkpoints
-                .building()?
-                .inputs
-                .get(0)?
-                .map(|i| i.amount)
-                .unwrap_or(0)
-        };
-        if amount > reserve_amount {
-            return Err(
-                OrgaError::App("Withdrawal is larger than reserve amount".to_string()).into(),
-            );
+        if self.checkpoints.len()? < 10 {
+            return Err(OrgaError::App(
+                "Withdrawals are disabled until the network has produced at least 10 checkpoints"
+                    .to_string(),
+            )
+            .into());
         }
 
         let signer = self
