@@ -379,8 +379,6 @@ impl BeginBlock for Bitcoin {
             .maybe_step(self.signatory_keys.map())
             .map_err(|err| OrgaError::App(err.to_string()))?;
 
-        dbg!(ctx.height);
-
         Ok(())
     }
 }
