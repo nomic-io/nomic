@@ -299,6 +299,22 @@ impl Bitcoin {
             return Err(OrgaError::App("Script exceeds maximum length".to_string()).into());
         }
 
+        let reserve_amount = if self.checkpoints.len()? == 0 {
+            0
+        } else {
+            self.checkpoints
+                .building()?
+                .inputs
+                .get(0)?
+                .map(|i| i.amount)
+                .unwrap_or(0)
+        };
+        if amount > reserve_amount {
+            return Err(
+                OrgaError::App("Withdrawal is larger than reserve amount".to_string()).into(),
+            );
+        }
+
         let signer = self
             .context::<Signer>()
             .ok_or_else(|| Error::Orga(OrgaError::App("No Signer context available".into())))?
