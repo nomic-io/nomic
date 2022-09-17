@@ -58,7 +58,6 @@ impl Signer {
         loop {
             self.maybe_submit_xpub(&xpub).await?;
 
-            println!("Waiting for a checkpoint to sign...");
             if let Err(e) = self.try_sign(&xpub).await {
                 eprintln!("Signer error: {}", e);
             }
