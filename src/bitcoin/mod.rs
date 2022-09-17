@@ -80,6 +80,10 @@ impl Xpub {
     pub fn new(key: ExtendedPubKey) -> Self {
         Xpub(key)
     }
+
+    pub fn inner(&self) -> &ExtendedPubKey {
+        &self.0
+    }
 }
 
 impl State for Xpub {
@@ -435,6 +439,11 @@ impl SignatoryKeys {
         self.xpubs.insert(normalized_xpub, ())?;
 
         Ok(())
+    }
+
+    #[query]
+    pub fn get(&self, cons_key: ConsensusKey) -> Result<Option<Xpub>> {
+        Ok(self.by_cons.get(cons_key)?.map(|x| x.clone()))
     }
 }
 

@@ -760,7 +760,7 @@ impl SignerCmd {
         }
         let key_path = signer_dir_path.join("xpriv");
 
-        let signer = Signer::load_or_generate(app_client(), key_path)?;
+        let signer = Signer::load_or_generate(my_address(), app_client(), key_path)?;
         signer.start().await?;
 
         Ok(())
