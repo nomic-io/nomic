@@ -7,6 +7,8 @@ use rand::Rng;
 use std::fs;
 use std::path::Path;
 
+use super::checkpoint::SigningCheckpoint;
+
 pub struct Signer {
     op_addr: Address,
     client: TendermintClient<App>,
@@ -92,9 +94,13 @@ impl Signer {
     async fn try_sign(&mut self, xpub: &ExtendedPubKey) -> Result<()> {
         let secp = Secp256k1::signing_only();
 
-        if self.client.bitcoin.checkpoints.signing().await??.is_none() {
-            return Ok(());
-        }
+        let signing = match self.client.bitcoin.checkpoints.signing().await?? {
+            None => return Ok(()),
+            Some(signing) => signing,
+        };
+
+        self.check_withdrawal_rate().await?;
+        self.check_sigset_change_rate().await?;
 
         let to_sign = self
             .client
@@ -136,6 +142,17 @@ impl Signer {
 
         println!("Submitted signatures");
 
+        Ok(())
+    }
+    
+    async fn check_withdrawal_rate(&self) -> Result<()> {
+        let rate = self.client.bitcoin.checkpoints.withdrawal_rate(60 * 60 * 24).await??;
+        println!("withdrawal rate: {}", rate);
+        Ok(())
+    }
+
+    async fn check_sigset_change_rate(&self) -> Result<()> {
+        // todo!()
         Ok(())
     }
 }
