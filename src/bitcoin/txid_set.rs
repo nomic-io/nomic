@@ -9,6 +9,13 @@ pub struct OutpointSet {
 }
 
 impl OutpointSet {
+    pub fn reset(&mut self) -> Result<()> {
+        super::clear_map(&mut self.expiration_queue)?;
+        super::clear_map(&mut self.outpoints)?;
+
+        Ok(())
+    }
+
     #[query]
     pub fn contains(&self, outpoint: Outpoint) -> Result<bool> {
         self.outpoints.contains_key(outpoint)

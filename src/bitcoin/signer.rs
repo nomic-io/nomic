@@ -2,18 +2,20 @@ use crate::app::App;
 use crate::error::Result;
 use bitcoin::secp256k1::{Message, Secp256k1};
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
-use orga::abci::TendermintClient;
+use orga::{abci::TendermintClient, coins::Address};
 use rand::Rng;
 use std::fs;
 use std::path::Path;
 
 pub struct Signer {
+    op_addr: Address,
     client: TendermintClient<App>,
     xpriv: ExtendedPrivKey,
 }
 
 impl Signer {
     pub fn load_or_generate<P: AsRef<Path>>(
+        op_addr: Address,
         client: TendermintClient<App>,
         key_path: P,
     ) -> Result<Self> {
@@ -38,39 +40,53 @@ impl Signer {
         let xpub = ExtendedPubKey::from_priv(&secp, &xpriv);
         println!("Signatory xpub:\n{}", xpub);
 
-        Ok(Self::new(client, xpriv))
+        Ok(Self::new(op_addr, client, xpriv))
     }
 
-    pub fn new(client: TendermintClient<App>, xpriv: ExtendedPrivKey) -> Self {
-        Signer { client, xpriv }
+    pub fn new(op_addr: Address, client: TendermintClient<App>, xpriv: ExtendedPrivKey) -> Self {
+        Signer {
+            op_addr,
+            client,
+            xpriv,
+        }
     }
 
     pub async fn start(mut self) -> Result<()> {
         let secp = Secp256k1::signing_only();
         let xpub = ExtendedPubKey::from_priv(&secp, &self.xpriv);
 
-        let res = self
-            .client
-            .pay_from(async move |client| client.bitcoin.set_signatory_key(xpub.into()).await)
-            .noop()
-            .await;
-        match res {
-            Ok(_) => println!("Submitted signatory key."),
-            Err(e)
-                if e.to_string()
-                    .contains("Validator already has a signatory key") => {}
-            Err(e) => return Err(e.into()),
-        }
-
-        println!("Waiting for a checkpoint to sign...");
-
         loop {
+            self.maybe_submit_xpub(&xpub).await?;
+
             if let Err(e) = self.try_sign(&xpub).await {
                 eprintln!("Signer error: {}", e);
             }
 
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         }
+    }
+
+    async fn maybe_submit_xpub(&mut self, xpub: &ExtendedPubKey) -> Result<()> {
+        let cons_key = self.client.staking.consensus_key(self.op_addr).await??;
+        let onchain_xpub = self.client.bitcoin.signatory_keys.get(cons_key).await??;
+
+        match onchain_xpub {
+            None => self.submit_xpub(xpub).await,
+            Some(onchain_xpub) if onchain_xpub.inner() != xpub => Err(orga::Error::App(
+                "Local xpub does not match xpub found on chain".to_string(),
+            )
+            .into()),
+            Some(_) => Ok(()),
+        }
+    }
+
+    async fn submit_xpub(&mut self, xpub: &ExtendedPubKey) -> Result<()> {
+        self.client
+            .pay_from(async move |client| client.bitcoin.set_signatory_key(xpub.into()).await)
+            .noop()
+            .await?;
+        println!("Submitted signatory key.");
+        Ok(())
     }
 
     async fn try_sign(&mut self, xpub: &ExtendedPubKey) -> Result<()> {

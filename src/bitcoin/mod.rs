@@ -80,6 +80,10 @@ impl Xpub {
     pub fn new(key: ExtendedPubKey) -> Self {
         Xpub(key)
     }
+
+    pub fn inner(&self) -> &ExtendedPubKey {
+        &self.0
+    }
 }
 
 impl State for Xpub {
@@ -299,6 +303,14 @@ impl Bitcoin {
             return Err(OrgaError::App("Script exceeds maximum length".to_string()).into());
         }
 
+        if self.checkpoints.len()? < 10 {
+            return Err(OrgaError::App(
+                "Withdrawals are disabled until the network has produced at least 10 checkpoints"
+                    .to_string(),
+            )
+            .into());
+        }
+
         let signer = self
             .context::<Signer>()
             .ok_or_else(|| Error::Orga(OrgaError::App("No Signer context available".into())))?
@@ -366,7 +378,15 @@ impl Bitcoin {
 
 #[cfg(feature = "full")]
 impl BeginBlock for Bitcoin {
-    fn begin_block(&mut self, _ctx: &BeginBlockCtx) -> OrgaResult<()> {
+    fn begin_block(&mut self, ctx: &BeginBlockCtx) -> OrgaResult<()> {
+        let reset_height = 440_000;
+
+        if ctx.height == reset_height {
+            self.signatory_keys.reset()?;
+            self.processed_outpoints.reset()?;
+            self.checkpoints.reset()?;
+        }
+
         self.checkpoints
             .maybe_step(self.signatory_keys.map())
             .map_err(|err| OrgaError::App(err.to_string()))?;
@@ -382,6 +402,21 @@ pub struct SignatoryKeys {
 }
 
 impl SignatoryKeys {
+    pub fn reset(&mut self) -> OrgaResult<()> {
+        let mut xpubs = vec![];
+        for entry in self.by_cons.iter()? {
+            let (_k, v) = entry?;
+            xpubs.push(v.clone());
+        }
+        for xpub in xpubs {
+            self.xpubs.remove(xpub)?;
+        }
+
+        clear_map(&mut self.by_cons)?;
+
+        Ok(())
+    }
+
     pub fn map(&self) -> &Map<ConsensusKey, Xpub> {
         &self.by_cons
     }
@@ -405,4 +440,39 @@ impl SignatoryKeys {
 
         Ok(())
     }
+
+    #[query]
+    pub fn get(&self, cons_key: ConsensusKey) -> Result<Option<Xpub>> {
+        Ok(self.by_cons.get(cons_key)?.map(|x| x.clone()))
+    }
+}
+
+use orga::collections::{Deque, Next};
+fn clear_map<K, V>(map: &mut Map<K, V>) -> OrgaResult<()>
+where
+    K: Encode + Decode + Terminated + Next + Clone,
+    V: State,
+{
+    let mut keys = vec![];
+    for entry in map.iter()? {
+        let (k, _v) = entry?;
+        keys.push(k.clone());
+    }
+
+    for key in keys {
+        map.remove(key)?;
+    }
+
+    Ok(())
+}
+
+fn clear_deque<V>(deque: &mut Deque<V>) -> OrgaResult<()>
+where
+    V: State,
+{
+    while !deque.is_empty() {
+        deque.pop_back()?;
+    }
+
+    Ok(())
 }

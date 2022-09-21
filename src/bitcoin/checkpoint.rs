@@ -399,6 +399,13 @@ impl<'a> BuildingCheckpointMut<'a> {
 }
 
 impl CheckpointQueue {
+    pub fn reset(&mut self) -> OrgaResult<()> {
+        self.index = 0;
+        super::clear_deque(&mut self.queue)?;
+
+        Ok(())
+    }
+
     #[query]
     pub fn get(&self, index: u32) -> Result<Ref<'_, Checkpoint>> {
         let index = self.get_deque_index(index)?;
