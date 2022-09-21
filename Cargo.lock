@@ -2294,11 +2294,7 @@ dependencies = [
 [[package]]
 name = "orga-macros"
 version = "0.3.1"
-<<<<<<< HEAD
-source = "git+https://github.com/nomic-io/orga.git?branch=v4#42142f58cb940342c01a877e3d6d218edd3c4aa9"
-=======
 source = "git+https://github.com/nomic-io/orga.git?branch=v4#4db028c959b8892dc96bb1c1034d2eed875021f1"
->>>>>>> testnet
 dependencies = [
  "heck 0.3.3",
  "proc-macro2",
