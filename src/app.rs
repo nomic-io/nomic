@@ -630,6 +630,27 @@ impl ConvertSdkTx for InnerApp {
                         })
                     }
 
+                    "nomic/MsgClaimIbcBitcoin" => {
+                        let msg = msg
+                            .value
+                            .as_object()
+                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
+                        if !msg.is_empty() {
+                            return Err(Error::App("Message should be empty".to_string()));
+                        }
+
+                        let claim_call = AppCall::MethodClaimEscrowedNbtc(vec![]);
+                        let claim_call_bytes = claim_call.encode()?;
+                        let payer_call = AppCall::FieldStaking(claim_call_bytes);
+
+                        let paid_call = AppCall::MethodDepositRewards(vec![]);
+
+                        Ok(PaidCall {
+                            payer: payer_call,
+                            paid: paid_call,
+                        })
+                    }
+
                     _ => Err(Error::App("Unsupported message type".into())),
                 }
             }
