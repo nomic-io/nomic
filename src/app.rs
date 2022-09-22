@@ -90,6 +90,13 @@ impl InnerApp {
             .get_or_default(address)?)
     }
 
+    #[call]
+    pub fn claim_escrowed_nbtc(&mut self) -> crate::error::Result<()> {
+        let signer = self.signer()?;
+        let balance = self.escrowed_nbtc(signer)?;
+        self.ibc_withdraw_nbtc(balance)
+    }
+
     fn signer(&mut self) -> Result<Address> {
         self.context::<Signer>()
             .ok_or_else(|| Error::Signer("No Signer context available".into()))?
