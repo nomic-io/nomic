@@ -639,11 +639,8 @@ impl ConvertSdkTx for InnerApp {
                             return Err(Error::App("Message should be empty".to_string()));
                         }
 
-                        let claim_call = AppCall::MethodClaimEscrowedNbtc(vec![]);
-                        let claim_call_bytes = claim_call.encode()?;
-                        let payer_call = AppCall::FieldStaking(claim_call_bytes);
-
-                        let paid_call = AppCall::MethodDepositRewards(vec![]);
+                        let payer_call = AppCall::MethodClaimEscrowedNbtc(vec![]);
+                        let paid_call = AppCall::MethodNoop(vec![]);
 
                         Ok(PaidCall {
                             payer: payer_call,
