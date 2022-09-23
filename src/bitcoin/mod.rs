@@ -383,6 +383,9 @@ impl Bitcoin {
             .checkpoints
             .signing()?
             .ok_or_else(|| OrgaError::App("No checkpoint to be signed".to_string()))?;
+        if now > interval && now - interval > signing.create_time() {
+            return Ok(ChangeRates::default());
+        }
         let now = signing.create_time().max(now);
 
         let completed = self.checkpoints.completed()?;
@@ -402,7 +405,7 @@ impl Bitcoin {
 
         let vp_shares = |sigset: &SignatorySet| -> Result<_> {
             let secp = bitcoin::secp256k1::Secp256k1::verification_only();
-            let sigset_index = signing.sigset.index();
+            let sigset_index = sigset.index();
             let total_vp = sigset.present_vp() as f64;
             let sigset_fractions: HashMap<_, _> = sigset
                 .iter()
@@ -442,7 +445,7 @@ impl Bitcoin {
     }
 }
 
-#[derive(Encode, Decode, Query, Client)]
+#[derive(Encode, Decode, Query, Client, Default)]
 pub struct ChangeRates {
     pub withdrawal: u16,
     pub sigset_change: u16,
