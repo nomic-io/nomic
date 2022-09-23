@@ -744,8 +744,19 @@ impl RelayerCmd {
 
 #[derive(Parser, Debug)]
 pub struct SignerCmd {
+    /// Path to the signatory private key
     #[clap(short, long)]
     path: Option<String>,
+    /// Limits the fraction of the total reserve that may be withdrawn within
+    /// the trailing 24-hour period
+    #[clap(long, default_value_t = 0.04)]
+    max_withdrawal_rate: f64,
+    /// Limits the maximum allowed signatory set change within 24 hours
+    ///
+    /// The Total Variation Distance between a day-old signatory set and the
+    /// newly-proposed signatory set may not exceed this value
+    #[clap(long, default_value_t = 0.04)]
+    max_sigset_change_rate: f64,
 }
 
 impl SignerCmd {
@@ -760,7 +771,13 @@ impl SignerCmd {
         }
         let key_path = signer_dir_path.join("xpriv");
 
-        let signer = Signer::load_or_generate(my_address(), app_client(), key_path)?;
+        let signer = Signer::load_or_generate(
+            my_address(),
+            app_client(),
+            key_path,
+            self.max_withdrawal_rate,
+            self.max_sigset_change_rate,
+        )?;
         signer.start().await?;
 
         Ok(())

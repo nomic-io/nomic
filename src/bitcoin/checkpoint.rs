@@ -669,28 +669,4 @@ impl CheckpointQueue {
     pub fn sigset(&self, index: u32) -> Result<SignatorySet> {
         Ok(self.get(index)?.sigset.clone())
     }
-
-    #[query]
-    pub fn withdrawal_rate(&self, interval: u64) -> Result<u16> {
-        let signing = self.signing()?
-            .ok_or_else(|| OrgaError::App("No checkpoint to be signed".to_string()))?;
-        let now = signing.create_time();
-
-        let completed = self.completed()?;
-        let prev = completed
-            .iter()
-            .rev()
-            .find(|c| (now - c.create_time()) > interval)
-            .unwrap_or_else(|| completed.first().unwrap());
-
-        let amount_now = signing.inputs.get(0)?.unwrap().amount;
-        let amount_prev = prev.inputs.get(0)?.unwrap().amount;
-        let decrease = if amount_now > amount_prev {
-            0
-        } else {
-            amount_prev - amount_now
-        };
-
-        Ok((decrease * 10000 / amount_prev) as u16)
-    }
 }

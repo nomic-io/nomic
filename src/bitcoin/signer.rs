@@ -6,13 +6,14 @@ use orga::{abci::TendermintClient, coins::Address};
 use rand::Rng;
 use std::fs;
 use std::path::Path;
-
-use super::checkpoint::SigningCheckpoint;
+use std::time::SystemTime;
 
 pub struct Signer {
     op_addr: Address,
     client: TendermintClient<App>,
     xpriv: ExtendedPrivKey,
+    max_withdrawal_rate: f64,
+    max_sigset_change_rate: f64,
 }
 
 impl Signer {
@@ -20,6 +21,8 @@ impl Signer {
         op_addr: Address,
         client: TendermintClient<App>,
         key_path: P,
+        max_withdrawal_rate: f64,
+        max_sigset_change_rate: f64,
     ) -> Result<Self> {
         let path = key_path.as_ref();
         let xpriv = if path.exists() {
@@ -42,14 +45,28 @@ impl Signer {
         let xpub = ExtendedPubKey::from_priv(&secp, &xpriv);
         println!("Signatory xpub:\n{}", xpub);
 
-        Ok(Self::new(op_addr, client, xpriv))
+        Ok(Self::new(
+            op_addr,
+            client,
+            xpriv,
+            max_withdrawal_rate,
+            max_sigset_change_rate,
+        ))
     }
 
-    pub fn new(op_addr: Address, client: TendermintClient<App>, xpriv: ExtendedPrivKey) -> Self {
+    pub fn new(
+        op_addr: Address,
+        client: TendermintClient<App>,
+        xpriv: ExtendedPrivKey,
+        max_withdrawal_rate: f64,
+        max_sigset_change_rate: f64,
+    ) -> Self {
         Signer {
             op_addr,
             client,
             xpriv,
+            max_withdrawal_rate,
+            max_sigset_change_rate,
         }
     }
 
@@ -94,13 +111,10 @@ impl Signer {
     async fn try_sign(&mut self, xpub: &ExtendedPubKey) -> Result<()> {
         let secp = Secp256k1::signing_only();
 
-        let signing = match self.client.bitcoin.checkpoints.signing().await?? {
+        let _signing = match self.client.bitcoin.checkpoints.signing().await?? {
             None => return Ok(()),
             Some(signing) => signing,
         };
-
-        self.check_withdrawal_rate().await?;
-        self.check_sigset_change_rate().await?;
 
         let to_sign = self
             .client
@@ -112,6 +126,7 @@ impl Signer {
             return Ok(());
         }
 
+        self.check_change_rates().await?;
         println!("Signing checkpoint... ({} inputs)", to_sign.len());
 
         let sigs: Vec<_> = to_sign
@@ -144,15 +159,37 @@ impl Signer {
 
         Ok(())
     }
-    
-    async fn check_withdrawal_rate(&self) -> Result<()> {
-        let rate = self.client.bitcoin.checkpoints.withdrawal_rate(60 * 60 * 24).await??;
-        println!("withdrawal rate: {}", rate);
-        Ok(())
-    }
 
-    async fn check_sigset_change_rate(&self) -> Result<()> {
-        // todo!()
+    async fn check_change_rates(&self) -> Result<()> {
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let rates = self
+            .client
+            .bitcoin
+            .change_rates(60 * 60 * 24, now)
+            .await??;
+
+        let withdrawal_rate = rates.withdrawal as f64 / 10_000.0;
+        let sigset_change_rate = rates.sigset_change as f64 / 10_000.0;
+
+        if withdrawal_rate > self.max_withdrawal_rate {
+            return Err(orga::Error::App(format!(
+                "Withdrawal rate of {} is above maximum of {}",
+                withdrawal_rate, self.max_withdrawal_rate
+            ))
+            .into());
+        }
+
+        if sigset_change_rate > self.max_sigset_change_rate {
+            return Err(orga::Error::App(format!(
+                "Signatory set change rate of {} is above maximum of {}",
+                sigset_change_rate, self.max_sigset_change_rate
+            ))
+            .into());
+        }
+
         Ok(())
     }
 }

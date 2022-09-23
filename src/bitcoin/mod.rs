@@ -1,6 +1,8 @@
+use std::collections::HashMap;
 use std::ops::Deref;
 
 use crate::error::{Error, Result};
+use ::bitcoin::util::bip32::ChildNumber;
 use adapter::Adapter;
 use bitcoin::hashes::Hash;
 use bitcoin::util::bip32::ExtendedPubKey;
@@ -374,6 +376,76 @@ impl Bitcoin {
     pub fn network(&self) -> bitcoin::Network {
         self.headers.network()
     }
+
+    #[query]
+    pub fn change_rates(&self, interval: u64, now: u64) -> Result<ChangeRates> {
+        let signing = self
+            .checkpoints
+            .signing()?
+            .ok_or_else(|| OrgaError::App("No checkpoint to be signed".to_string()))?;
+        let now = signing.create_time().max(now);
+
+        let completed = self.checkpoints.completed()?;
+        let prev = completed
+            .iter()
+            .rev()
+            .find(|c| (now - c.create_time()) > interval)
+            .unwrap_or_else(|| completed.first().unwrap());
+
+        let amount_now = signing.inputs.get(0)?.unwrap().amount;
+        let amount_prev = prev.inputs.get(0)?.unwrap().amount;
+        let decrease = if amount_now > amount_prev {
+            0
+        } else {
+            amount_prev - amount_now
+        };
+
+        let vp_shares = |sigset: &SignatorySet| -> Result<_> {
+            let secp = bitcoin::secp256k1::Secp256k1::verification_only();
+            let sigset_index = signing.sigset.index();
+            let total_vp = sigset.present_vp() as f64;
+            let sigset_fractions: HashMap<_, _> = sigset
+                .iter()
+                .map(|v| (v.pubkey.as_slice(), v.voting_power as f64 / total_vp))
+                .collect();
+            let mut sigset: HashMap<_, _> = Default::default();
+            for entry in self.signatory_keys.map().iter()? {
+                let (_, xpub) = entry?;
+                let derive_path = [ChildNumber::from_normal_idx(sigset_index)?];
+                let pubkey: threshold_sig::Pubkey =
+                    xpub.derive_pub(&secp, &derive_path)?.public_key.into();
+                sigset.insert(
+                    xpub.inner().encode(),
+                    *sigset_fractions.get(pubkey.as_slice()).unwrap_or(&0.0),
+                );
+            }
+
+            Ok(sigset)
+        };
+
+        let now_sigset = vp_shares(&signing.sigset)?;
+        let prev_sigset = vp_shares(&prev.sigset)?;
+        let sigset_change = now_sigset.iter().fold(0.0, |acc, (k, v)| {
+            let prev_share = prev_sigset.get(k).unwrap_or(&0.0);
+            if v > prev_share {
+                acc + (v - prev_share)
+            } else {
+                acc
+            }
+        });
+        let sigset_change = (sigset_change * 10_000.0) as u16;
+
+        Ok(ChangeRates {
+            withdrawal: (decrease * 10_000 / amount_prev) as u16,
+            sigset_change,
+        })
+    }
+}
+
+#[derive(Encode, Decode, Query, Client)]
+pub struct ChangeRates {
+    pub withdrawal: u16,
+    pub sigset_change: u16,
 }
 
 #[cfg(feature = "full")]
