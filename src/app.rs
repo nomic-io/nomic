@@ -3,6 +3,7 @@ use std::convert::TryInto;
 use crate::bitcoin::Bitcoin;
 
 use orga::cosmrs::bank::MsgSend;
+use orga::ibc::TransferArgs;
 #[cfg(feature = "feat-ibc")]
 use orga::ibc::{Ibc, IbcTx};
 #[cfg(feature = "full")]
@@ -254,6 +255,7 @@ impl ConvertSdkTx for InnerApp {
         type StakingCall = <Staking<Nom> as Call>::Call;
         type AirdropCall = <Airdrop<Nom> as Call>::Call;
         type BitcoinCall = <Bitcoin as Call>::Call;
+        type IbcCall = <Ibc as Call>::Call;
         match sdk_tx {
             SdkTx::Protobuf(tx) => {
                 let tx_bytes = sdk_tx.encode()?;
@@ -648,6 +650,54 @@ impl ConvertSdkTx for InnerApp {
                         })
                     }
 
+                    "nomic/MsgIbcTransferOut" => {
+                        let msg: MsgIbcTransfer = serde_json::value::from_value(msg.value.clone())
+                            .map_err(|e| Error::App(e.to_string()))?;
+
+                        let channel_id = msg
+                            .channel_id
+                            .parse()
+                            .map_err(|e: std::string::ParseError| Error::App(e.to_string()))?;
+
+                        let port_id = msg
+                            .port_id
+                            .parse()
+                            .map_err(|e: std::string::ParseError| Error::App(e.to_string()))?;
+
+                        let denom: String = msg
+                            .denom
+                            .parse()
+                            .map_err(|e: std::string::ParseError| Error::App(e.to_string()))?;
+
+                        let amount: u64 = msg
+                            .amount
+                            .parse()
+                            .map_err(|e: std::num::ParseIntError| Error::App(e.to_string()))?;
+
+                        let receiver = msg
+                            .receiver
+                            .parse()
+                            .map_err(|e: std::string::ParseError| Error::App(e.to_string()))?;
+
+                        let transfer_args = TransferArgs {
+                            amount: amount.into(),
+                            channel_id,
+                            port_id,
+                            denom,
+                            receiver,
+                        };
+
+                        let ibc_call = IbcCall::MethodTransfer(transfer_args.try_into()?, vec![]);
+                        let ibc_call_bytes = ibc_call.encode()?;
+                        let payer_call = AppCall::FieldIbc(ibc_call_bytes);
+
+                        let paid_call = AppCall::MethodNoop(vec![]);
+                        Ok(PaidCall {
+                            payer: payer_call,
+                            paid: paid_call,
+                        })
+                    }
+
                     _ => Err(Error::App("Unsupported message type".into())),
                 }
             }
@@ -659,6 +709,15 @@ impl ConvertSdkTx for InnerApp {
 pub struct MsgWithdraw {
     pub amount: String,
     pub dst_address: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct MsgIbcTransfer {
+    pub channel_id: String,
+    pub port_id: String,
+    pub amount: String,
+    pub denom: String,
+    pub receiver: String,
 }
 
 const REWARD_TIMER_PERIOD: i64 = 120;
