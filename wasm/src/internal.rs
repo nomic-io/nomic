@@ -41,29 +41,19 @@ pub async fn transfer(to_addr: String, amount: u64) -> Result<JsValue> {
 pub async fn ibc_transfer_out(amount: u64, channel_id: String, port_id: String, denom: String, self_address: String, receiver_address: String) -> Result<JsValue> {
     let mut client: WebClient<App> = WebClient::new();
 
-    let self_address = self_address
-        .parse()
-        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+    let mut value = serde_json::Map::new();
+    value.insert("amount".to_string(), amount.to_string().into());
+    value.insert("denom".to_string(), denom.into());
+    value.insert("channel_id".to_string(), channel_id.into());
+    value.insert("port_id".to_string(), port_id.into());
+    value.insert("receiver".to_string(), receiver_address.into());
 
-    let transfer_args = TransferArgs {
-        amount: amount.into(),
-        channel_id,
-        port_id,
-        denom,
-        receiver: receiver_address,
-    };
 
-    client
-        .pay_from(async move |client| {
-            client
-                .ibc_deposit_nbtc(self_address, amount.into())
-                .await
-        })
-        .ibc
-        .transfer(transfer_args.try_into()?)
-        .await?;
-
-    Ok(client.last_res()?)
+    send_sdk_tx(sdk::Msg {
+        type_: "nomic/MsgIbcTransferOut".to_string(),
+        value: value.into(),
+    })
+    .await
 }
 
 pub async fn balance(addr: String) -> Result<u64> {
