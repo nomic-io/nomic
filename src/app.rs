@@ -128,6 +128,7 @@ impl InnerApp {
                     source_channel,
                     receiver,
                     sender,
+                    timeout_timestamp,
                 } = dest;
                 let msg_transfer = MsgTransfer {
                     sender: sender.clone().into_inner(),
@@ -139,7 +140,8 @@ impl InnerApp {
                     },
                     receiver: receiver.into_inner(),
                     timeout_height: TimeoutHeight::Never,
-                    timeout_timestamp: Timestamp::from_nanoseconds(u64::MAX).unwrap(),
+                    timeout_timestamp: Timestamp::from_nanoseconds(timeout_timestamp)
+                        .map_err(|e| Error::App(e.to_string()))?,
                 };
                 self.ibc.bank_mut().mint(
                     sender
@@ -717,6 +719,7 @@ pub struct IbcDepositCommitment {
     pub source_channel: IbcAdapter<ChannelId>,
     pub receiver: IbcAdapter<IbcSigner>,
     pub sender: IbcAdapter<IbcSigner>,
+    pub timeout_timestamp: u64,
 }
 
 impl DepositCommitment {
