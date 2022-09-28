@@ -21,8 +21,12 @@ pub enum Error {
     BitcoinRpc(#[from] bitcoincore_rpc_async::Error),
     #[error("{0}")]
     Header(String),
+    #[error("{0}")]
+    Ibc(String),
     #[error(transparent)]
     Orga(#[from] orga::Error),
+    #[error(transparent)]
+    Ed(#[from] ed::Error),
     #[error("{0}")]
     Relayer(String),
     #[error(transparent)]

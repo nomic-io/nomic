@@ -1,15 +1,24 @@
 use std::convert::TryInto;
 
+use crate::bitcoin::adapter::Adapter;
 use crate::bitcoin::Bitcoin;
 
+use bitcoin::util::merkleblock::PartialMerkleTree;
+use bitcoin::Transaction;
 use orga::cosmrs::bank::MsgSend;
+use orga::ibc::ibc_rs::applications::transfer::context::{
+    cosmos_adr028_escrow_address, Ics20Reader,
+};
+use orga::ibc::ibc_rs::core::ics04_channel::timeout::TimeoutHeight;
+use orga::ibc::ibc_rs::core::ics24_host::identifier::{ChannelId, PortId};
+use orga::ibc::ibc_rs::timestamp::Timestamp;
 #[cfg(feature = "feat-ibc")]
 use orga::ibc::{Ibc, IbcTx};
 #[cfg(feature = "full")]
 use orga::migrate::{exec_migration, Migrate};
 use orga::plugins::sdk_compat::{sdk, sdk::Tx as SdkTx, ConvertSdkTx};
-use orga::prelude::*;
 use orga::Error;
+use orga::{ibc, prelude::*};
 use serde::{Deserialize, Serialize};
 
 pub const CHAIN_ID: &str = "nomic-testnet-4b-0";
@@ -88,6 +97,63 @@ impl InnerApp {
             .balances
             .get_or_default("usat".parse()?)?
             .get_or_default(address)?)
+    }
+
+    #[call]
+    pub fn relay_deposit(
+        &mut self,
+        btc_tx: Adapter<Transaction>,
+        btc_height: u32,
+        btc_proof: Adapter<PartialMerkleTree>,
+        btc_vout: u32,
+        sigset_index: u32,
+        dest: DepositCommitment,
+    ) -> crate::error::Result<()> {
+        let nbtc = self.bitcoin.relay_deposit(
+            btc_tx,
+            btc_height,
+            btc_proof,
+            btc_vout,
+            sigset_index,
+            dest.commitment_bytes()?.as_slice(),
+        )?;
+        match dest {
+            DepositCommitment::Address(addr) => self.bitcoin.accounts.deposit(addr, nbtc.into())?,
+            DepositCommitment::Ibc(dest) => {
+                use orga::ibc::ibc_rs::applications::transfer::msgs::transfer::MsgTransfer;
+                use orga::ibc::proto::cosmos::base::v1beta1::Coin;
+
+                let IbcDepositCommitment {
+                    source_port,
+                    source_channel,
+                    receiver,
+                    sender,
+                } = dest;
+                let msg_transfer = MsgTransfer {
+                    sender: sender.clone().into_inner(),
+                    source_port: source_port.into_inner(),
+                    source_channel: source_channel.into_inner(),
+                    token: Coin {
+                        amount: nbtc.to_string(),
+                        denom: "usat".to_string(),
+                    },
+                    receiver: receiver.into_inner(),
+                    timeout_height: TimeoutHeight::Never,
+                    timeout_timestamp: Timestamp::from_nanoseconds(u64::MAX).unwrap(),
+                };
+                self.ibc.bank_mut().mint(
+                    sender
+                        .into_inner()
+                        .try_into()
+                        .map_err(|_| Error::App("Invalid sender address".into()))?,
+                    nbtc,
+                    "usat".parse()?,
+                )?;
+                self.ibc.raw_transfer(msg_transfer)?
+            }
+        }
+
+        Ok(())
     }
 
     fn signer(&mut self) -> Result<Address> {
@@ -634,6 +700,47 @@ impl ConvertSdkTx for InnerApp {
 pub struct MsgWithdraw {
     pub amount: String,
     pub dst_address: String,
+}
+
+use ibc::encoding::Adapter as IbcAdapter;
+use ibc::ibc_rs::signer::Signer as IbcSigner;
+
+#[derive(Encode, Decode, Debug, Clone)]
+pub enum DepositCommitment {
+    Address(Address),
+    Ibc(IbcDepositCommitment),
+}
+
+#[derive(Encode, Decode, Clone, Debug)]
+pub struct IbcDepositCommitment {
+    pub source_port: IbcAdapter<PortId>,
+    pub source_channel: IbcAdapter<ChannelId>,
+    pub receiver: IbcAdapter<IbcSigner>,
+    pub sender: IbcAdapter<IbcSigner>,
+}
+
+impl DepositCommitment {
+    pub fn commitment_bytes(&self) -> Result<Vec<u8>> {
+        use sha2::{Digest, Sha256};
+        use DepositCommitment::*;
+        let bytes = match self {
+            Address(addr) => addr.bytes().into(),
+            Ibc(dest) => Sha256::digest(dest.encode()?).to_vec(),
+        };
+
+        Ok(bytes)
+    }
+
+    pub fn from_base64(s: &str) -> Result<Self> {
+        let bytes =
+            base64::decode(s).map_err(|_| Error::App("Failed to decode base64".to_string()))?;
+        Ok(Self::decode(&mut &bytes[..])?)
+    }
+
+    pub fn to_base64(&self) -> Result<String> {
+        let bytes = self.encode()?;
+        Ok(base64::encode(bytes))
+    }
 }
 
 const REWARD_TIMER_PERIOD: i64 = 120;

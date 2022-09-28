@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
 use futures::executor::block_on;
+use nomic::app::DepositCommitment;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
 use nomicv3::command::Opts as LegacyOpts;
@@ -811,7 +812,11 @@ impl DepositCmd {
         let dest_addr = self.address.unwrap_or_else(|| my_address());
 
         let sigset = app_client().bitcoin.checkpoints.active_sigset().await??;
-        let script = sigset.output_script(dest_addr)?;
+        let script = sigset.output_script(
+            DepositCommitment::Address(dest_addr)
+                .commitment_bytes()?
+                .as_slice(),
+        )?;
         // TODO: get network from somewhere
         let btc_addr = bitcoin::Address::from_script(&script, bitcoin::Network::Testnet).unwrap();
 

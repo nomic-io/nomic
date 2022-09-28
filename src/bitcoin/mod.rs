@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::ops::Deref;
 
+use crate::app::DepositCommitment;
 use crate::error::{Error, Result};
 use ::bitcoin::util::bip32::ChildNumber;
 use adapter::Adapter;
@@ -17,6 +18,7 @@ use orga::client::Client;
 use orga::coins::{Accounts, Address, Amount, Coin, Give, Symbol, Take};
 use orga::collections::Map;
 use orga::context::{Context, GetContext};
+use orga::cosmrs::proto::cosmos::gov::v1beta1::Deposit;
 use orga::encoding::{Decode, Encode, Terminated};
 use orga::plugins::Paid;
 #[cfg(feature = "full")]
@@ -187,7 +189,6 @@ impl Bitcoin {
         Ok(())
     }
 
-    #[call]
     pub fn relay_deposit(
         &mut self,
         btc_tx: Adapter<Transaction>,
@@ -195,13 +196,9 @@ impl Bitcoin {
         btc_proof: Adapter<PartialMerkleTree>,
         btc_vout: u32,
         sigset_index: u32,
-        dest: Address,
-    ) -> Result<()> {
+        dest: &[u8],
+    ) -> Result<Amount> {
         exempt_from_fee()?;
-
-        if dest.is_null() {
-            return Err(OrgaError::App("Cannot deposit to null address".to_string()).into());
-        }
 
         let btc_header = self
             .headers
@@ -291,10 +288,9 @@ impl Bitcoin {
 
         let mut minted_nbtc = Nbtc::mint(value);
         let deposit_fee = minted_nbtc.take(calc_deposit_fee(value))?;
-        self.accounts.deposit(dest, minted_nbtc)?;
         self.reward_pool.give(deposit_fee)?;
 
-        Ok(())
+        Ok(minted_nbtc.amount)
     }
 
     #[call]
