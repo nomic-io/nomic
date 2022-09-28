@@ -4,7 +4,6 @@ use bitcoin::Script;
 use bitcoin_script::bitcoin_script as script;
 use orga::call::Call;
 use orga::client::Client;
-use orga::coins::Address;
 use orga::collections::Map;
 use orga::context::Context;
 use orga::encoding::{Decode, Encode};

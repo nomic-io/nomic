@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::ops::Deref;
 
-use crate::app::DepositCommitment;
 use crate::error::{Error, Result};
 use ::bitcoin::util::bip32::ChildNumber;
 use adapter::Adapter;
@@ -18,7 +17,6 @@ use orga::client::Client;
 use orga::coins::{Accounts, Address, Amount, Coin, Give, Symbol, Take};
 use orga::collections::Map;
 use orga::context::{Context, GetContext};
-use orga::cosmrs::proto::cosmos::gov::v1beta1::Deposit;
 use orga::encoding::{Decode, Encode, Terminated};
 use orga::plugins::Paid;
 #[cfg(feature = "full")]

@@ -10,7 +10,6 @@ use derive_more::{Deref, DerefMut};
 use orga::{
     call::Call,
     client::Client,
-    coins::Address,
     collections::{map::ReadOnly, ChildMut, Deque, Map, Ref},
     context::GetContext,
     encoding::{Decode, Encode},

@@ -6,9 +6,6 @@ use crate::bitcoin::Bitcoin;
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::Transaction;
 use orga::cosmrs::bank::MsgSend;
-use orga::ibc::ibc_rs::applications::transfer::context::{
-    cosmos_adr028_escrow_address, Ics20Reader,
-};
 use orga::ibc::ibc_rs::core::ics04_channel::timeout::TimeoutHeight;
 use orga::ibc::ibc_rs::core::ics24_host::identifier::{ChannelId, PortId};
 use orga::ibc::ibc_rs::timestamp::Timestamp;

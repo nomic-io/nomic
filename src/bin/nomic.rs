@@ -843,8 +843,9 @@ impl DepositCmd {
 
 #[derive(Parser, Debug)]
 pub struct InterchainDepositCmd {
-    to_address: String,
-    #[clap(long)]
+    #[clap(long, value_name = "ADDRESS")]
+    receiver: String,
+    #[clap(long, value_name = "CHANNEL_ID")]
     channel: String,
 }
 
@@ -853,7 +854,7 @@ impl InterchainDepositCmd {
         use orga::ibc::encoding::Adapter;
         let now_ns = now_seconds() as u64 * 1_000_000_000;
         let dest = DepositCommitment::Ibc(IbcDepositCommitment {
-            receiver: Adapter::new(self.to_address.parse().unwrap()),
+            receiver: Adapter::new(self.receiver.parse().unwrap()),
             sender: Adapter::new(my_address().to_string().parse().unwrap()),
             source_channel: Adapter::new(self.channel.parse().unwrap()),
             source_port: Adapter::new("transfer".parse().unwrap()),
