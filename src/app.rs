@@ -532,7 +532,7 @@ impl ConvertSdkTx for InnerApp {
                         })
                     }
 
-                    "nomic/MsgClaimAirdrop" => {
+                    "nomic/MsgClaimAirdrop1" => {
                         let msg = msg
                             .value
                             .as_object()
@@ -541,9 +541,78 @@ impl ConvertSdkTx for InnerApp {
                             return Err(Error::App("Message should be empty".to_string()));
                         }
 
-                        let claim_call = AirdropCall::MethodClaim(vec![]);
+                        let claim_call = AirdropCall::MethodClaimAirdrop1(vec![]);
                         let claim_call_bytes = claim_call.encode()?;
-                        let payer_call = AppCall::FieldAtomAirdrop(claim_call_bytes);
+                        let payer_call = AppCall::FieldAirdrop(claim_call_bytes);
+
+                        let give_call = AccountCall::MethodGiveFromFundingAll(vec![]);
+                        let give_call_bytes = give_call.encode()?;
+                        let paid_call = AppCall::FieldAccounts(give_call_bytes);
+
+                        Ok(PaidCall {
+                            payer: payer_call,
+                            paid: paid_call,
+                        })
+                    }
+
+                    "nomic/MsgClaimBtcDepositAirdrop" => {
+                        let msg = msg
+                            .value
+                            .as_object()
+                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
+                        if !msg.is_empty() {
+                            return Err(Error::App("Message should be empty".to_string()));
+                        }
+
+                        let claim_call = AirdropCall::MethodClaimBtcDeposit(vec![]);
+                        let claim_call_bytes = claim_call.encode()?;
+                        let payer_call = AppCall::FieldAirdrop(claim_call_bytes);
+
+                        let give_call = AccountCall::MethodGiveFromFundingAll(vec![]);
+                        let give_call_bytes = give_call.encode()?;
+                        let paid_call = AppCall::FieldAccounts(give_call_bytes);
+
+                        Ok(PaidCall {
+                            payer: payer_call,
+                            paid: paid_call,
+                        })
+                    }
+
+                    "nomic/MsgClaimBtcWithdrawAirdrop" => {
+                        let msg = msg
+                            .value
+                            .as_object()
+                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
+                        if !msg.is_empty() {
+                            return Err(Error::App("Message should be empty".to_string()));
+                        }
+
+                        let claim_call = AirdropCall::MethodClaimBtcWithdraw(vec![]);
+                        let claim_call_bytes = claim_call.encode()?;
+                        let payer_call = AppCall::FieldAirdrop(claim_call_bytes);
+
+                        let give_call = AccountCall::MethodGiveFromFundingAll(vec![]);
+                        let give_call_bytes = give_call.encode()?;
+                        let paid_call = AppCall::FieldAccounts(give_call_bytes);
+
+                        Ok(PaidCall {
+                            payer: payer_call,
+                            paid: paid_call,
+                        })
+                    }
+
+                    "nomic/MsgClaimIbcTransferAirdrop" => {
+                        let msg = msg
+                            .value
+                            .as_object()
+                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
+                        if !msg.is_empty() {
+                            return Err(Error::App("Message should be empty".to_string()));
+                        }
+
+                        let claim_call = AirdropCall::MethodClaimIbcTransfer(vec![]);
+                        let claim_call_bytes = claim_call.encode()?;
+                        let payer_call = AppCall::FieldAirdrop(claim_call_bytes);
 
                         let give_call = AccountCall::MethodGiveFromFundingAll(vec![]);
                         let give_call_bytes = give_call.encode()?;
