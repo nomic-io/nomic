@@ -1,6 +1,7 @@
 use std::convert::TryInto;
 
 use crate::bitcoin::Bitcoin;
+use crate::airdrop::Airdrop;
 
 use orga::cosmrs::bank::MsgSend;
 #[cfg(feature = "feat-ibc")]
@@ -31,7 +32,7 @@ pub struct InnerApp {
     #[call]
     pub staking: Staking<Nom>,
     #[call]
-    pub atom_airdrop: Airdrop<Nom>,
+    pub airdrop: Airdrop,
 
     community_pool: Coin<Nom>,
     incentive_pool: Coin<Nom>,
@@ -113,7 +114,7 @@ impl Migrate<nomicv3::app::InnerApp> for InnerApp {
 
         self.accounts.migrate(legacy.accounts)?;
         self.staking.migrate(legacy.staking)?;
-        self.atom_airdrop.migrate(legacy.atom_airdrop)?;
+        self.airdrop.migrate(legacy.atom_airdrop)?;
         self.bitcoin.migrate(legacy.bitcoin)?;
 
         Ok(())
@@ -200,43 +201,6 @@ mod abci {
     }
 }
 
-#[derive(State, Query, Call, Client)]
-pub struct Airdrop<S: Symbol> {
-    claimable: Accounts<S>,
-}
-
-impl<S: Symbol> Airdrop<S> {
-    #[query]
-    pub fn balance(&self, address: Address) -> Result<Option<Amount>> {
-        let exists = self.claimable.exists(address)?;
-        if !exists {
-            return Ok(None);
-        }
-
-        let balance = self.claimable.balance(address)?;
-        Ok(Some(balance))
-    }
-
-    #[call]
-    pub fn claim(&mut self) -> Result<()> {
-        let signer = self
-            .context::<Signer>()
-            .ok_or_else(|| Error::Signer("No Signer context available".into()))?
-            .signer
-            .ok_or_else(|| Error::Coins("Unauthorized account action".into()))?;
-
-        let amount = self.claimable.balance(signer)?;
-        self.claimable.take_as_funding(amount)
-    }
-}
-
-#[cfg(feature = "full")]
-impl Migrate<nomicv3::app::Airdrop<nomicv3::app::Nom>> for Airdrop<Nom> {
-    fn migrate(&mut self, legacy: nomicv3::app::Airdrop<nomicv3::app::Nom>) -> Result<()> {
-        self.claimable.migrate(legacy.accounts())
-    }
-}
-
 impl ConvertSdkTx for InnerApp {
     type Output = PaidCall<<InnerApp as Call>::Call>;
 
@@ -245,7 +209,7 @@ impl ConvertSdkTx for InnerApp {
         type AppCall = <InnerApp as Call>::Call;
         type AccountCall = <Accounts<Nom> as Call>::Call;
         type StakingCall = <Staking<Nom> as Call>::Call;
-        type AirdropCall = <Airdrop<Nom> as Call>::Call;
+        type AirdropCall = <Airdrop as Call>::Call;
         type BitcoinCall = <Bitcoin as Call>::Call;
         match sdk_tx {
             SdkTx::Protobuf(tx) => {
