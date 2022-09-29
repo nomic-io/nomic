@@ -331,6 +331,13 @@ pub async fn broadcast_deposit_addr(
     relayers: js_sys::Array,
     deposit_addr: String
 ) -> Result<()> {
+    //dest_addr needs to be a base64 encoded
+    let dest_addr = dest_addr
+        .parse()
+        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+
+    let commitment = DepositCommitment::Address(dest_addr);
+
     let window = match web_sys::window() {
         Some(window) => window,
         None => return Err(Error::Wasm("Window not found".to_string())),
@@ -345,7 +352,7 @@ pub async fn broadcast_deposit_addr(
         let mut opts = RequestInit::new();
         opts.method("POST");
         opts.mode(RequestMode::Cors);
-        let url = format!("{}?dest_addr={}&sigset_index={}&deposit_addr={}", relayer, dest_addr, sigset_index, deposit_addr);
+        let url = format!("{}?dest_addr={}&sigset_index={}&deposit_addr={}", relayer, commitment.to_base64()?, sigset_index, deposit_addr);
 
         let request = Request::new_with_str_and_init(&url, &opts)?;
 
