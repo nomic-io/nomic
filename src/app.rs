@@ -71,7 +71,9 @@ impl InnerApp {
         let signer = self.signer()?;
         crate::bitcoin::exempt_from_fee()?;
         let _coins = self.bitcoin.accounts.withdraw(signer, amount)?;
-        self.ibc.bank_mut().mint(to, amount, "usat".parse()?)?;
+        self.ibc
+            .bank_mut()
+            .mint(to, after_ibc_fee(amount)?, "usat".parse()?)?;
 
         Ok(())
     }
@@ -132,7 +134,7 @@ impl InnerApp {
                     source_port: source_port.into_inner(),
                     source_channel: source_channel.into_inner(),
                     token: Coin {
-                        amount: nbtc.to_string(),
+                        amount: after_ibc_fee(nbtc)?.to_string(),
                         denom: "usat".to_string(),
                     },
                     receiver: receiver.into_inner(),
@@ -145,7 +147,7 @@ impl InnerApp {
                         .into_inner()
                         .try_into()
                         .map_err(|_| Error::App("Invalid sender address".into()))?,
-                    nbtc,
+                    after_ibc_fee(nbtc)?,
                     "usat".parse()?,
                 )?;
                 self.ibc.raw_transfer(msg_transfer)?
@@ -741,6 +743,11 @@ impl DepositCommitment {
         let bytes = self.encode()?;
         Ok(base64::encode(bytes))
     }
+}
+
+pub fn after_ibc_fee(amount: Amount) -> Result<Amount> {
+    let fee_rate: orga::coins::Decimal = "0.015".parse().unwrap();
+    (amount - amount * fee_rate)?.amount()
 }
 
 const REWARD_TIMER_PERIOD: i64 = 120;
