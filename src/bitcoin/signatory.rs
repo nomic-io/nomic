@@ -4,7 +4,6 @@ use bitcoin::Script;
 use bitcoin_script::bitcoin_script as script;
 use orga::call::Call;
 use orga::client::Client;
-use orga::coins::Address;
 use orga::collections::Map;
 use orga::context::Context;
 use orga::encoding::{Decode, Encode};
@@ -133,7 +132,7 @@ impl SignatorySet {
         self.len() == 0
     }
 
-    pub fn redeem_script(&self, dest: Address) -> Result<Script> {
+    pub fn redeem_script(&self, dest: &[u8]) -> Result<Script> {
         let truncation = self.get_truncation(23);
 
         let mut iter = self.signatories.iter();
@@ -174,14 +173,14 @@ impl SignatorySet {
         bytes.extend(&script.into_bytes());
 
         // depositor data commitment
-        let data = &dest.bytes()[..];
+        let data = &dest.encode()?[..];
         let script = script!(<data> OP_DROP);
         bytes.extend(&script.into_bytes());
 
         Ok(bytes.into())
     }
 
-    pub fn output_script(&self, dest: Address) -> Result<Script> {
+    pub fn output_script(&self, dest: &[u8]) -> Result<Script> {
         Ok(self.redeem_script(dest)?.to_v0_p2wsh())
     }
 

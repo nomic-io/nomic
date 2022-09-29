@@ -6,7 +6,7 @@ use crate::types::*;
 use crate::web_client::WebAdapter;
 use crate::web_client::WebClient;
 use js_sys::{Array, JsString};
-use nomic::app::{Airdrop, App, InnerApp, Nom, CHAIN_ID};
+use nomic::app::{Airdrop, App, DepositCommitment, InnerApp, Nom, CHAIN_ID};
 use nomic::bitcoin::signatory::SignatorySet;
 use nomic::bitcoin::Nbtc;
 use nomic::orga::client::AsyncQuery;
@@ -281,7 +281,7 @@ pub async fn gen_deposit_addr(dest_addr: String) -> Result<DepositAddress> {
         .await
         .unwrap()
         .unwrap();
-    let script = sigset.output_script(dest_addr)?;
+    let script = sigset.output_script(DepositCommitment::Address(dest_addr).commitment_bytes()?.as_slice())?;
     // TODO: get network from somewhere
     // TODO: make test/mainnet option configurable
     let btc_addr = match bitcoin::Address::from_script(&script, bitcoin::Network::Testnet) {

@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
 use futures::executor::block_on;
+use nomic::app::{DepositCommitment, IbcDepositCommitment};
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
 use nomicv3::command::Opts as LegacyOpts;
@@ -70,6 +71,7 @@ pub enum Command {
     Signer(SignerCmd),
     SetSignatoryKey(SetSignatoryKeyCmd),
     Deposit(DepositCmd),
+    InterchainDeposit(InterchainDepositCmd),
     Withdraw(WithdrawCmd),
     IbcDepositNbtc(IbcDepositNbtcCmd),
     IbcWithdrawNbtc(IbcWithdrawNbtcCmd),
@@ -102,6 +104,7 @@ impl Command {
             Signer(cmd) => cmd.run().await,
             SetSignatoryKey(cmd) => cmd.run().await,
             Deposit(cmd) => cmd.run().await,
+            InterchainDeposit(cmd) => cmd.run().await,
             Withdraw(cmd) => cmd.run().await,
             IbcDepositNbtc(cmd) => cmd.run().await,
             IbcWithdrawNbtc(cmd) => cmd.run().await,
@@ -744,8 +747,19 @@ impl RelayerCmd {
 
 #[derive(Parser, Debug)]
 pub struct SignerCmd {
+    /// Path to the signatory private key
     #[clap(short, long)]
     path: Option<String>,
+    /// Limits the fraction of the total reserve that may be withdrawn within
+    /// the trailing 24-hour period
+    #[clap(long, default_value_t = 0.04)]
+    max_withdrawal_rate: f64,
+    /// Limits the maximum allowed signatory set change within 24 hours
+    ///
+    /// The Total Variation Distance between a day-old signatory set and the
+    /// newly-proposed signatory set may not exceed this value
+    #[clap(long, default_value_t = 0.04)]
+    max_sigset_change_rate: f64,
 }
 
 impl SignerCmd {
@@ -760,7 +774,13 @@ impl SignerCmd {
         }
         let key_path = signer_dir_path.join("xpriv");
 
-        let signer = Signer::load_or_generate(my_address(), app_client(), key_path)?;
+        let signer = Signer::load_or_generate(
+            my_address(),
+            app_client(),
+            key_path,
+            self.max_withdrawal_rate,
+            self.max_sigset_change_rate,
+        )?;
         signer.start().await?;
 
         Ok(())
@@ -784,6 +804,30 @@ impl SetSignatoryKeyCmd {
     }
 }
 
+async fn deposit(dest: DepositCommitment) -> Result<()> {
+    let sigset = app_client().bitcoin.checkpoints.active_sigset().await??;
+    let script = sigset.output_script(dest.commitment_bytes()?.as_slice())?;
+    // TODO: get network from somewhere
+    let btc_addr = bitcoin::Address::from_script(&script, bitcoin::Network::Testnet).unwrap();
+
+    let client = reqwest::Client::new();
+    client
+        .post(format!(
+            "https://testnet-relayer.nomic.io:8443?dest_addr={}&sigset_index={}&deposit_addr={}",
+            dest.to_base64()?,
+            sigset.index(),
+            btc_addr,
+        ))
+        .send()
+        .await
+        .map_err(|err| nomic::error::Error::Orga(orga::Error::App(err.to_string())))?;
+
+    println!("Deposit address: {}", btc_addr);
+    println!("Expiration: {}", "5 days from now");
+    // TODO: show real expiration
+    Ok(())
+}
+
 #[derive(Parser, Debug)]
 pub struct DepositCmd {
     address: Option<Address>,
@@ -793,28 +837,31 @@ impl DepositCmd {
     async fn run(&self) -> Result<()> {
         let dest_addr = self.address.unwrap_or_else(|| my_address());
 
-        let sigset = app_client().bitcoin.checkpoints.active_sigset().await??;
-        let script = sigset.output_script(dest_addr)?;
-        // TODO: get network from somewhere
-        let btc_addr = bitcoin::Address::from_script(&script, bitcoin::Network::Testnet).unwrap();
+        deposit(DepositCommitment::Address(dest_addr)).await
+    }
+}
 
-        let client = reqwest::Client::new();
-        client
-            .post(format!(
-                "https://testnet-relayer.nomic.io:8443?dest_addr={}&sigset_index={}&deposit_addr={}",
-                dest_addr,
-                sigset.index(),
-                btc_addr,
-            ))
-            .send()
-            .await
-            .map_err(|err| nomic::error::Error::Orga(orga::Error::App(err.to_string())))?;
+#[derive(Parser, Debug)]
+pub struct InterchainDepositCmd {
+    #[clap(long, value_name = "ADDRESS")]
+    receiver: String,
+    #[clap(long, value_name = "CHANNEL_ID")]
+    channel: String,
+}
 
-        println!("Deposit address: {}", btc_addr);
-        println!("Expiration: {}", "5 days from now");
-        // TODO: show real expiration
+impl InterchainDepositCmd {
+    async fn run(&self) -> Result<()> {
+        use orga::ibc::encoding::Adapter;
+        let now_ns = now_seconds() as u64 * 1_000_000_000;
+        let dest = DepositCommitment::Ibc(IbcDepositCommitment {
+            receiver: Adapter::new(self.receiver.parse().unwrap()),
+            sender: Adapter::new(my_address().to_string().parse().unwrap()),
+            source_channel: Adapter::new(self.channel.parse().unwrap()),
+            source_port: Adapter::new("transfer".parse().unwrap()),
+            timeout_timestamp: now_ns + 8 * 60 * 60 * 1_000_000_000,
+        });
 
-        Ok(())
+        deposit(dest).await
     }
 }
 

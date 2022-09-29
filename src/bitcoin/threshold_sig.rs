@@ -258,7 +258,7 @@ pub struct Share {
 use derive_more::{Deref, DerefMut, Into};
 use std::convert::{TryFrom, TryInto};
 
-#[derive(Deref, DerefMut, Encode, Into, Default, Debug)]
+#[derive(Deref, DerefMut, Encode, Into, Default, Debug, Query, Client)]
 pub struct LengthVec<P, T>
 where
     P: Encode + Terminated,
