@@ -49,6 +49,10 @@ name = "nomic"
 [[bin]]
 name = "create-checkpoint"
 
+[[bin]]
+name = "create-airdrop"
+required-features = ["csv"]
+
 [patch.crates-io]
 ibc = { git = "https://github.com/informalsystems/ibc-rs.git", rev = "e8c98d4" }
 ibc-proto = { git = "https://github.com/informalsystems/ibc-rs.git", rev = "e8c98d4" }
