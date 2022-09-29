@@ -1,15 +1,18 @@
 use orga::call::Call;
 use orga::client::Client;
 use orga::coins::{Address, Amount, Coin, Symbol};
-use orga::collections::{Map, ChildMut};
+use orga::collections::{ChildMut, Map};
 use orga::context::GetContext;
 use orga::migrate::Migrate;
-use orga::plugins::{Signer, Paid};
+use orga::plugins::{Paid, Signer};
 use orga::query::Query;
 use orga::state::State;
 use orga::{Error, Result};
 
 use super::app::Nom;
+
+const MAX_STAKED: u64 = 10_000_000_000;
+const AIRDROP_II_TOTAL: u64 = 3_500_000_000_000;
 
 #[derive(State, Query, Call, Client)]
 pub struct Airdrop {
@@ -29,8 +32,7 @@ impl Airdrop {
             .signer
             .ok_or_else(|| Error::Coins("Unauthorized account action".into()))?;
 
-        self
-            .accounts
+        self.accounts
             .get_mut(signer)?
             .ok_or_else(|| Error::Coins("No airdrop account for signer".into()))
     }
@@ -74,6 +76,76 @@ impl Airdrop {
         self.pay_as_funding(amount)?;
         Ok(())
     }
+
+    pub fn init_from_csv(&mut self, data: &[u8]) -> Result<()> {
+        let recipients = Self::get_recipients_from_csv(data);
+        
+        let len = recipients[0].1.len();
+        let mut totals = vec![0u64; len];
+
+        for (_, networks) in recipients.iter() {
+            for (i, (staked, count)) in networks.iter().enumerate() {
+                let score = Self::score(*staked, *count);
+                totals[i] += score;
+            }
+        }
+
+        let precision = 1_000_000_000;
+        let unom_per_network = AIRDROP_II_TOTAL / len as u64;
+        let unom_per_score: Vec<_> = totals.iter().map(|n| {
+            unom_per_network * precision / n
+        }).collect();
+
+        dbg!(&unom_per_score);
+
+        let total_airdropped: u64 = recipients.iter().map(|(addr, networks)| {
+            let unom: u64 = networks.iter().enumerate().map(|(i, (staked, count))| {
+                let score = Self::score(*staked, *count);
+                let unom_per_score = unom_per_score[i];
+                score * unom_per_score / precision
+            }).sum();
+
+            self.airdrop_to(*addr, unom)?;
+
+            Ok(unom)
+        }).sum::<Result<_>>()?;
+
+        dbg!(AIRDROP_II_TOTAL);
+        dbg!(total_airdropped);
+
+        Ok(())
+    }
+
+    fn airdrop_to(&mut self, addr: Address, unom: u64) -> Result<()> {
+        let mut acct = Account::default();
+        acct.btc_deposit.locked = unom / 3;
+        acct.btc_withdraw.locked = unom / 3;
+        acct.ibc_transfer.locked = unom / 3;
+
+        self.accounts.insert(addr, acct.into())
+    }
+
+    fn score(staked: u64, count: u64) -> u64 {
+        staked.min(MAX_STAKED) * count
+    }
+
+    fn get_recipients_from_csv(data: &[u8]) -> Vec<(Address, Vec<(u64, u64)>)> {
+        let mut reader = csv::Reader::from_reader(data);
+
+        reader.records().map(|row| {
+            let row = row.unwrap();
+
+            let addr: Address = row[0].parse().unwrap();
+            let values: Vec<_> = row
+                .into_iter()
+                .skip(1)
+                .map(|s| -> u64 { s.parse().unwrap() })
+                .collect();
+            let pairs: Vec<_> = values.chunks_exact(2).map(|arr| (arr[0], arr[1])).collect();
+
+            (addr, pairs)
+        }).collect()
+    }
 }
 
 #[cfg(feature = "full")]
@@ -84,7 +156,7 @@ impl Migrate<nomicv3::app::Airdrop<nomicv3::app::Nom>> for Airdrop {
     }
 }
 
-#[derive(State, Query, Call, Client, Clone, Debug)]
+#[derive(State, Query, Call, Client, Clone, Debug, Default)]
 pub struct Account {
     pub airdrop1: Part,
     pub btc_deposit: Part,
@@ -92,7 +164,7 @@ pub struct Account {
     pub ibc_transfer: Part,
 }
 
-#[derive(State, Query, Call, Client, Clone, Debug)]
+#[derive(State, Query, Call, Client, Clone, Debug, Default)]
 pub struct Part {
     pub locked: u64,
     pub claimable: u64,
