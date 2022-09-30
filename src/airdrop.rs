@@ -152,7 +152,6 @@ impl Airdrop {
                 let row = row.unwrap();
 
                 if row[0].len() != 44 {
-                    println!("{}", &row[0]);
                     return None;
                 }
                 let addr: Address = row[0].parse().unwrap();
