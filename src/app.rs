@@ -1,5 +1,6 @@
 use std::convert::TryInto;
 
+use crate::airdrop::Airdrop;
 use crate::bitcoin::adapter::Adapter;
 use crate::bitcoin::Bitcoin;
 
@@ -38,7 +39,7 @@ pub struct InnerApp {
     #[call]
     pub staking: Staking<Nom>,
     #[call]
-    pub atom_airdrop: Airdrop<Nom>,
+    pub airdrop: Airdrop,
 
     community_pool: Coin<Nom>,
     incentive_pool: Coin<Nom>,
@@ -193,7 +194,7 @@ impl Migrate<nomicv3::app::InnerApp> for InnerApp {
 
         self.accounts.migrate(legacy.accounts)?;
         self.staking.migrate(legacy.staking)?;
-        self.atom_airdrop.migrate(legacy.atom_airdrop)?;
+        self.airdrop.migrate(legacy.atom_airdrop)?;
         self.bitcoin.migrate(legacy.bitcoin)?;
 
         Ok(())
@@ -215,6 +216,11 @@ mod abci {
             self.staking.min_self_delegation_min = 0;
 
             let sr_address = STRATEGIC_RESERVE_ADDRESS.parse().unwrap();
+
+            self.airdrop
+                .init_from_airdrop1_csv(include_bytes!("../airdrop1_snapshot.csv"))?;
+            self.airdrop
+                .init_from_airdrop2_csv(include_bytes!("../airdrop2_snapshot.csv"))?;
 
             let old_home_path = nomicv3::orga::abci::Node::<()>::home(nomicv3::app::CHAIN_ID);
             exec_migration(self, old_home_path.join("merk"), &[0, 1, 0])?;
@@ -280,43 +286,6 @@ mod abci {
     }
 }
 
-#[derive(State, Query, Call, Client)]
-pub struct Airdrop<S: Symbol> {
-    claimable: Accounts<S>,
-}
-
-impl<S: Symbol> Airdrop<S> {
-    #[query]
-    pub fn balance(&self, address: Address) -> Result<Option<Amount>> {
-        let exists = self.claimable.exists(address)?;
-        if !exists {
-            return Ok(None);
-        }
-
-        let balance = self.claimable.balance(address)?;
-        Ok(Some(balance))
-    }
-
-    #[call]
-    pub fn claim(&mut self) -> Result<()> {
-        let signer = self
-            .context::<Signer>()
-            .ok_or_else(|| Error::Signer("No Signer context available".into()))?
-            .signer
-            .ok_or_else(|| Error::Coins("Unauthorized account action".into()))?;
-
-        let amount = self.claimable.balance(signer)?;
-        self.claimable.take_as_funding(amount)
-    }
-}
-
-#[cfg(feature = "full")]
-impl Migrate<nomicv3::app::Airdrop<nomicv3::app::Nom>> for Airdrop<Nom> {
-    fn migrate(&mut self, legacy: nomicv3::app::Airdrop<nomicv3::app::Nom>) -> Result<()> {
-        self.claimable.migrate(legacy.accounts())
-    }
-}
-
 impl ConvertSdkTx for InnerApp {
     type Output = PaidCall<<InnerApp as Call>::Call>;
 
@@ -325,7 +294,7 @@ impl ConvertSdkTx for InnerApp {
         type AppCall = <InnerApp as Call>::Call;
         type AccountCall = <Accounts<Nom> as Call>::Call;
         type StakingCall = <Staking<Nom> as Call>::Call;
-        type AirdropCall = <Airdrop<Nom> as Call>::Call;
+        type AirdropCall = <Airdrop as Call>::Call;
         type BitcoinCall = <Bitcoin as Call>::Call;
         type IbcCall = <Ibc as Call>::Call;
         match sdk_tx {
@@ -649,7 +618,7 @@ impl ConvertSdkTx for InnerApp {
                         })
                     }
 
-                    "nomic/MsgClaimAirdrop" => {
+                    "nomic/MsgClaimAirdrop1" => {
                         let msg = msg
                             .value
                             .as_object()
@@ -658,9 +627,78 @@ impl ConvertSdkTx for InnerApp {
                             return Err(Error::App("Message should be empty".to_string()));
                         }
 
-                        let claim_call = AirdropCall::MethodClaim(vec![]);
+                        let claim_call = AirdropCall::MethodClaimAirdrop1(vec![]);
                         let claim_call_bytes = claim_call.encode()?;
-                        let payer_call = AppCall::FieldAtomAirdrop(claim_call_bytes);
+                        let payer_call = AppCall::FieldAirdrop(claim_call_bytes);
+
+                        let give_call = AccountCall::MethodGiveFromFundingAll(vec![]);
+                        let give_call_bytes = give_call.encode()?;
+                        let paid_call = AppCall::FieldAccounts(give_call_bytes);
+
+                        Ok(PaidCall {
+                            payer: payer_call,
+                            paid: paid_call,
+                        })
+                    }
+
+                    "nomic/MsgClaimBtcDepositAirdrop" => {
+                        let msg = msg
+                            .value
+                            .as_object()
+                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
+                        if !msg.is_empty() {
+                            return Err(Error::App("Message should be empty".to_string()));
+                        }
+
+                        let claim_call = AirdropCall::MethodClaimBtcDeposit(vec![]);
+                        let claim_call_bytes = claim_call.encode()?;
+                        let payer_call = AppCall::FieldAirdrop(claim_call_bytes);
+
+                        let give_call = AccountCall::MethodGiveFromFundingAll(vec![]);
+                        let give_call_bytes = give_call.encode()?;
+                        let paid_call = AppCall::FieldAccounts(give_call_bytes);
+
+                        Ok(PaidCall {
+                            payer: payer_call,
+                            paid: paid_call,
+                        })
+                    }
+
+                    "nomic/MsgClaimBtcWithdrawAirdrop" => {
+                        let msg = msg
+                            .value
+                            .as_object()
+                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
+                        if !msg.is_empty() {
+                            return Err(Error::App("Message should be empty".to_string()));
+                        }
+
+                        let claim_call = AirdropCall::MethodClaimBtcWithdraw(vec![]);
+                        let claim_call_bytes = claim_call.encode()?;
+                        let payer_call = AppCall::FieldAirdrop(claim_call_bytes);
+
+                        let give_call = AccountCall::MethodGiveFromFundingAll(vec![]);
+                        let give_call_bytes = give_call.encode()?;
+                        let paid_call = AppCall::FieldAccounts(give_call_bytes);
+
+                        Ok(PaidCall {
+                            payer: payer_call,
+                            paid: paid_call,
+                        })
+                    }
+
+                    "nomic/MsgClaimIbcTransferAirdrop" => {
+                        let msg = msg
+                            .value
+                            .as_object()
+                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
+                        if !msg.is_empty() {
+                            return Err(Error::App("Message should be empty".to_string()));
+                        }
+
+                        let claim_call = AirdropCall::MethodClaimIbcTransfer(vec![]);
+                        let claim_call_bytes = claim_call.encode()?;
+                        let payer_call = AppCall::FieldAirdrop(claim_call_bytes);
 
                         let give_call = AccountCall::MethodGiveFromFundingAll(vec![]);
                         let give_call_bytes = give_call.encode()?;

@@ -15,6 +15,7 @@ pub use thiserror;
 
 pub mod app;
 pub mod bitcoin;
+pub mod airdrop;
 pub mod error;
 
 #[cfg(feature = "full")]
