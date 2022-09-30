@@ -1,5 +1,6 @@
 use js_sys::{Array, JsString};
-use nomic::app::{Airdrop, App, InnerApp, Nom, CHAIN_ID};
+use nomic::app::{App, InnerApp, Nom, CHAIN_ID};
+use nomic::airdrop::Airdrop;
 use nomic::bitcoin::signatory::SignatorySet;
 use nomic::orga::call::Call;
 use nomic::orga::client::{AsyncCall, AsyncQuery, Client};
