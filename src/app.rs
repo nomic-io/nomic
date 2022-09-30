@@ -2,6 +2,7 @@ use std::convert::TryInto;
 
 use crate::bitcoin::adapter::Adapter;
 use crate::bitcoin::Bitcoin;
+use orga::ibc::ibc::IbcAdapter;
 
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::Transaction;
@@ -9,7 +10,7 @@ use orga::cosmrs::bank::MsgSend;
 use orga::ibc::ibc_rs::core::ics04_channel::timeout::TimeoutHeight;
 use orga::ibc::ibc_rs::core::ics24_host::identifier::{ChannelId, PortId};
 use orga::ibc::ibc_rs::timestamp::Timestamp;
-use orga::ibc::TransferArgs;
+use orga::ibc::TransferOpts;
 #[cfg(feature = "feat-ibc")]
 use orga::ibc::{Ibc, IbcTx};
 #[cfg(feature = "full")]
@@ -724,42 +725,53 @@ impl ConvertSdkTx for InnerApp {
 
                         let channel_id = msg
                             .channel_id
-                            .parse()
-                            .map_err(|e: std::string::ParseError| Error::App(e.to_string()))?;
+                            .parse::<ChannelId>()
+                            .map_err(|_| Error::Ibc("Invalid channel id".into()))?
+                            .into();
 
-                        let port_id = msg
+                        let port_id: IbcAdapter<PortId> = msg
                             .port_id
-                            .parse()
-                            .map_err(|e: std::string::ParseError| Error::App(e.to_string()))?;
+                            .parse::<PortId>()
+                            .map_err(|_| Error::Ibc("Invalid port".into()))?
+                            .into();
 
-                        let denom: String = msg
-                            .denom
-                            .parse()
-                            .map_err(|e: std::string::ParseError| Error::App(e.to_string()))?;
+                        let denom = msg.denom.as_str().parse().unwrap();
 
-                        let amount: u64 = msg
-                            .amount
-                            .parse()
-                            .map_err(|e: std::num::ParseIntError| Error::App(e.to_string()))?;
+                        let amount = msg.amount;
 
-                        let receiver = msg
+                        let receiver: IbcAdapter<IbcSigner> = msg
                             .receiver
-                            .parse()
-                            .map_err(|e: std::string::ParseError| Error::App(e.to_string()))?;
+                            .parse::<IbcSigner>()
+                            .map_err(|_| Error::Ibc("Invalid receiver address".into()))?
+                            .into();
 
-                        let transfer_args = TransferArgs {
+                        let sender: Address = msg
+                            .sender
+                            .parse::<Address>()
+                            .map_err(|_| Error::Ibc("Invalid sender address".into()))?;
+
+                        let timeout_timestamp: IbcAdapter<Timestamp> =
+                            Timestamp::from_nanoseconds(msg.timeout_timestamp * 1_000_000_000)
+                                .map_err(|_| Error::Ibc("Invalid timeout timestamp".into()))?
+                                .into();
+
+                        let transfer_opts = TransferOpts {
                             amount: amount.into(),
                             channel_id,
                             port_id,
                             denom,
                             receiver,
+                            timeout_height: TimeoutHeight::Never.into(),
+                            timeout_timestamp,
                         };
 
-                        let ibc_call = IbcCall::MethodTransfer(transfer_args.try_into()?, vec![]);
-                        let ibc_call_bytes = ibc_call.encode()?;
-                        let payer_call = AppCall::FieldIbc(ibc_call_bytes);
+                        let payer_call =
+                            AppCall::MethodIbcDepositNbtc(sender.into(), amount.into(), vec![]);
 
-                        let paid_call = AppCall::MethodNoop(vec![]);
+                        let ibc_call = IbcCall::MethodTransfer(transfer_opts, vec![]);
+                        let ibc_call_bytes = ibc_call.encode()?;
+                        let paid_call = AppCall::FieldIbc(ibc_call_bytes);
+
                         Ok(PaidCall {
                             payer: payer_call,
                             paid: paid_call,
@@ -783,9 +795,11 @@ pub struct MsgWithdraw {
 pub struct MsgIbcTransfer {
     pub channel_id: String,
     pub port_id: String,
-    pub amount: String,
+    pub amount: u64,
     pub denom: String,
     pub receiver: String,
+    pub sender: String,
+    pub timeout_timestamp: u64,
 }
 
 use ibc::encoding::Adapter as IbcAdapter;
