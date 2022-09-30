@@ -38,16 +38,17 @@ pub async fn transfer(to_addr: String, amount: u64) -> Result<JsValue> {
     Ok(client.last_res()?)
 }
 
-pub async fn ibc_transfer_out(amount: u64, channel_id: String, port_id: String, denom: String, self_address: String, receiver_address: String) -> Result<JsValue> {
+pub async fn ibc_transfer_out(amount: u64, channel_id: String, port_id: String, denom: String, self_address: String, receiver_address: String, timeout_timestamp: u64) -> Result<JsValue> {
     let mut client: WebClient<App> = WebClient::new();
 
     let mut value = serde_json::Map::new();
-    value.insert("amount".to_string(), amount.to_string().into());
+    value.insert("amount".to_string(), amount.into());
     value.insert("denom".to_string(), denom.into());
     value.insert("channel_id".to_string(), channel_id.into());
     value.insert("port_id".to_string(), port_id.into());
     value.insert("receiver".to_string(), receiver_address.into());
-
+    value.insert("sender".to_string(), self_address.into());
+    value.insert("timeout_timestamp".to_string(), timeout_timestamp.into());
 
     send_sdk_tx(sdk::Msg {
         type_: "nomic/MsgIbcTransferOut".to_string(),
