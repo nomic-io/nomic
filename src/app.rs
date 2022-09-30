@@ -72,9 +72,11 @@ impl InnerApp {
         let signer = self.signer()?;
         crate::bitcoin::exempt_from_fee()?;
         let _coins = self.bitcoin.accounts.withdraw(signer, amount)?;
+        let fee = ibc_fee(amount)?;
         self.ibc
             .bank_mut()
-            .mint(to, after_ibc_fee(amount)?, "usat".parse()?)?;
+            .mint(to, (amount - fee).result()?, "usat".parse()?)?;
+        self.bitcoin.reward_pool.give(fee.into())?;
 
         Ok(())
     }
@@ -129,7 +131,8 @@ impl InnerApp {
             DepositCommitment::Ibc(dest) => {
                 use orga::ibc::ibc_rs::applications::transfer::msgs::transfer::MsgTransfer;
                 use orga::ibc::proto::cosmos::base::v1beta1::Coin;
-
+                let fee = ibc_fee(nbtc)?;
+                let nbtc_after_fee = (nbtc - fee).result()?;
                 let IbcDepositCommitment {
                     source_port,
                     source_channel,
@@ -142,7 +145,7 @@ impl InnerApp {
                     source_port: source_port.into_inner(),
                     source_channel: source_channel.into_inner(),
                     token: Coin {
-                        amount: after_ibc_fee(nbtc)?.to_string(),
+                        amount: nbtc_after_fee.to_string(),
                         denom: "usat".to_string(),
                     },
                     receiver: receiver.into_inner(),
@@ -155,9 +158,10 @@ impl InnerApp {
                         .into_inner()
                         .try_into()
                         .map_err(|_| Error::App("Invalid sender address".into()))?,
-                    after_ibc_fee(nbtc)?,
+                    nbtc_after_fee,
                     "usat".parse()?,
                 )?;
+                self.bitcoin.reward_pool.give(fee.into())?;
                 #[cfg(feature = "full")]
                 self.ibc.raw_transfer(msg_transfer)?
             }
@@ -830,9 +834,9 @@ impl DepositCommitment {
     }
 }
 
-pub fn after_ibc_fee(amount: Amount) -> Result<Amount> {
+pub fn ibc_fee(amount: Amount) -> Result<Amount> {
     let fee_rate: orga::coins::Decimal = "0.015".parse().unwrap();
-    (amount - amount * fee_rate)?.amount()
+    (amount * fee_rate)?.amount()
 }
 
 const REWARD_TIMER_PERIOD: i64 = 120;
