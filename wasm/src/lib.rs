@@ -75,12 +75,12 @@ pub async fn claim_btc_deposit_airdrop() -> Result<JsValue, JsValue> {
 
 #[wasm_bindgen(js_name = claimBtcWithdrawAirdrop)]
 pub async fn claim_btc_withdraw_airdrop() -> Result<JsValue, JsValue> {
-    into_js_res(Internal::claim_btc_withdraw_airdrop.await)
+    into_js_res(Internal::claim_btc_withdraw_airdrop().await)
 }
 
 #[wasm_bindgen(js_name = claimIbcTransferAirdrop)]
 pub async fn claim_ibc_transfer_airdrop() -> Result<JsValue, JsValue> {
-    into_js_res(Internal::claim_ibc_transfer_airdrop.await)
+    into_js_res(Internal::claim_ibc_transfer_airdrop().await)
 }
 
 #[wasm_bindgen(js_name = claimIncomingIbcBtc)]
