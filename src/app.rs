@@ -1,7 +1,7 @@
 use std::convert::TryInto;
 
-use crate::bitcoin::Bitcoin;
 use crate::airdrop::Airdrop;
+use crate::bitcoin::Bitcoin;
 
 use orga::cosmrs::bank::MsgSend;
 #[cfg(feature = "feat-ibc")]
@@ -136,6 +136,11 @@ mod abci {
             self.staking.min_self_delegation_min = 0;
 
             let sr_address = STRATEGIC_RESERVE_ADDRESS.parse().unwrap();
+
+            self.airdrop
+                .init_from_airdrop1_csv(include_bytes!("../airdrop1_snapshot.csv"))?;
+            self.airdrop
+                .init_from_airdrop2_csv(include_bytes!("../airdrop2_snapshot.csv"))?;
 
             let old_home_path = nomicv3::orga::abci::Node::<()>::home(nomicv3::app::CHAIN_ID);
             exec_migration(self, old_home_path.join("merk"), &[0, 1, 0])?;
