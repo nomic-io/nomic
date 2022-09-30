@@ -2,7 +2,6 @@ use std::convert::TryInto;
 
 use crate::bitcoin::adapter::Adapter;
 use crate::bitcoin::Bitcoin;
-use orga::ibc::ibc::IbcAdapter;
 
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::Transaction;
