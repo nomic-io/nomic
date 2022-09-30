@@ -183,10 +183,31 @@ pub async fn claim() -> Result<JsValue> {
 
 pub async fn claim_airdrop() -> Result<JsValue> {
     send_sdk_tx(sdk::Msg {
-        type_: "nomic/MsgClaimAirdrop".to_string(),
+        type_: "nomic/MsgClaimAirdrop1".to_string(),
         value: serde_json::Map::new().into(),
     })
     .await
+}
+
+pub async fn claim_btc_deposit_airdrop() -> Result<JsValue> {
+    send_sdk_tx(sdk::Msg {
+        type_: "nomic/ClaimBtcDepositAirdrop",
+        value: serde_json::Map::new().into(),
+    })
+}
+
+pub async fn claim_btc_withdraw_airdrop() -> Result<JsValue> {
+    send_sdk_tx(sdk::Msg {
+        type_: "nomic/ClaimBtcWithdrawAirdrop",
+        value: serde_json::Map::new().into(),
+    })
+}
+
+pub async fn claim_ibc_transfer_airdrop() -> Result<JsValue> {
+    send_sdk_tx(sdk::Msg {
+        type_: "nomic/ClaimIbcTransferAirdrop",
+        value: serde_json::Map::new().into(),
+    })
 }
 
 pub async fn claim_incoming_ibc_btc() -> Result<JsValue> {
