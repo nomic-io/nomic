@@ -5,6 +5,7 @@ use orga::collections::{ChildMut, Map};
 use orga::context::GetContext;
 use orga::migrate::Migrate;
 use orga::plugins::{Paid, Signer};
+use orga::prelude::Decimal;
 use orga::query::Query;
 use orga::state::State;
 use orga::{Error, Result};
@@ -77,9 +78,11 @@ impl Airdrop {
         Ok(())
     }
 
-    pub fn init_from_csv(&mut self, data: &[u8]) -> Result<()> {
+    pub fn init_from_airdrop2_csv(&mut self, data: &[u8]) -> Result<()> {
+        println!("Initializing balances from airdrop 2 snapshot...");
+
         let recipients = Self::get_recipients_from_csv(data);
-        
+
         let len = recipients[0].1.len();
         let mut totals = vec![0u64; len];
 
@@ -90,39 +93,50 @@ impl Airdrop {
             }
         }
 
-        let precision = 1_000_000_000;
-        let unom_per_network = AIRDROP_II_TOTAL / len as u64;
-        let unom_per_score: Vec<_> = totals.iter().map(|n| {
-            unom_per_network * precision / n
-        }).collect();
+        let precision = 1_000_000u128;
+        let unom_per_network = AIRDROP_II_TOTAL / (len as u64);
+        let unom_per_score: Vec<_> = totals
+            .iter()
+            .map(|n| unom_per_network as u128 * precision / *n as u128)
+            .collect();
 
-        dbg!(&unom_per_score);
+        let mut accounts = 0;
+        let total_airdropped: u64 = recipients
+            .iter()
+            .map(|(addr, networks)| {
+                let unom: u64 = networks
+                    .iter()
+                    .zip(unom_per_score.iter())
+                    .map(|((staked, count), unom_per_score)| {
+                        let score = Self::score(*staked, *count) as u128;
+                        (score * unom_per_score / precision) as u64
+                    })
+                    .sum();
 
-        let total_airdropped: u64 = recipients.iter().map(|(addr, networks)| {
-            let unom: u64 = networks.iter().enumerate().map(|(i, (staked, count))| {
-                let score = Self::score(*staked, *count);
-                let unom_per_score = unom_per_score[i];
-                score * unom_per_score / precision
-            }).sum();
+                self.airdrop_to(*addr, unom)?;
+                accounts += 1;
 
-            self.airdrop_to(*addr, unom)?;
+                Ok(unom)
+            })
+            .sum::<Result<_>>()?;
 
-            Ok(unom)
-        }).sum::<Result<_>>()?;
-
-        dbg!(AIRDROP_II_TOTAL);
-        dbg!(total_airdropped);
+        println!(
+            "Total amount minted for airdrop 2: {} uNOM across {} accounts",
+            total_airdropped,
+            accounts,
+        );
 
         Ok(())
     }
 
     fn airdrop_to(&mut self, addr: Address, unom: u64) -> Result<()> {
-        let mut acct = Account::default();
+        let mut acct = self.accounts.entry(addr)?.or_insert_default()?;
+
         acct.btc_deposit.locked = unom / 3;
         acct.btc_withdraw.locked = unom / 3;
         acct.ibc_transfer.locked = unom / 3;
 
-        self.accounts.insert(addr, acct.into())
+        Ok(())
     }
 
     fn score(staked: u64, _count: u64) -> u64 {
@@ -132,27 +146,119 @@ impl Airdrop {
     fn get_recipients_from_csv(data: &[u8]) -> Vec<(Address, Vec<(u64, u64)>)> {
         let mut reader = csv::Reader::from_reader(data);
 
-        reader.records().map(|row| {
-            let row = row.unwrap();
+        reader
+            .records()
+            .filter_map(|row| {
+                let row = row.unwrap();
 
-            let addr: Address = row[0].parse().unwrap();
-            let values: Vec<_> = row
-                .into_iter()
-                .skip(1)
-                .map(|s| -> u64 { s.parse().unwrap() })
-                .collect();
-            let pairs: Vec<_> = values.chunks_exact(2).map(|arr| (arr[0], arr[1])).collect();
+                if row[0].len() != 44 {
+                    println!("{}", &row[0]);
+                    return None;
+                }
+                let addr: Address = row[0].parse().unwrap();
+                let values: Vec<_> = row
+                    .into_iter()
+                    .skip(1)
+                    .map(|s| -> u64 { s.parse().unwrap() })
+                    .collect();
+                let pairs: Vec<_> = values.chunks_exact(2).map(|arr| (arr[0], arr[1])).collect();
 
-            (addr, pairs)
-        }).collect()
+                Some((addr, pairs))
+            })
+            .collect()
+    }
+
+    fn init_airdrop1_amount(
+        &mut self,
+        addr: Address,
+        liquid: Amount,
+        staked: Amount,
+    ) -> Result<Amount> {
+        let liquid_capped = Amount::min(liquid, 1_000_000_000.into());
+        let staked_capped = Amount::min(staked, 1_000_000_000.into());
+
+        let units = (liquid_capped + staked_capped * Amount::from(4))?;
+        let units_per_nom = Decimal::from(20_299325) / Decimal::from(1_000_000);
+        let nom_amount = (Decimal::from(units) / units_per_nom)?.amount()?;
+
+        let mut acct = self.accounts.entry(addr)?.or_insert_default()?;
+        acct.airdrop1.claimable = nom_amount.into();
+
+        Ok(nom_amount)
+    }
+
+    pub fn init_from_airdrop1_csv(&mut self, data: &[u8]) -> Result<()> {
+        use std::convert::TryInto;
+
+        let mut rdr = csv::Reader::from_reader(data);
+        let snapshot = rdr.records();
+
+        println!("Initializing balances from airdrop 1 snapshot...");
+
+        let mut minted = Amount::from(0);
+        let mut accounts = 0;
+        
+        for row in snapshot {
+            let row = row.map_err(|e| Error::App(e.to_string()))?;
+
+            let (_, address_b32, _) = bech32::decode(&row[0]).unwrap();
+            let address_vec: Vec<u8> = bech32::FromBase32::from_base32(&address_b32).unwrap();
+            let address_buf: [u8; 20] = address_vec.try_into().unwrap();
+
+            let liquid: u64 = row[1].parse().unwrap();
+            let staked: u64 = row[2].parse().unwrap();
+
+            let minted_for_account =
+                self.init_airdrop1_amount(address_buf.into(), liquid.into(), staked.into())?;
+            minted = (minted + minted_for_account)?;
+            accounts += 1;
+        }
+
+        println!("Total amount minted for airdrop 1: {} uNOM across {} accounts", minted, accounts);
+
+        Ok(())
     }
 }
 
 #[cfg(feature = "full")]
 impl Migrate<nomicv3::app::Airdrop<nomicv3::app::Nom>> for Airdrop {
     fn migrate(&mut self, legacy: nomicv3::app::Airdrop<nomicv3::app::Nom>) -> Result<()> {
-        // self.claimable.migrate(legacy.accounts())
-        todo!()
+        println!("Migrating state of claimed airdrop 1 balances...");
+
+        let mut claimed = vec![];
+
+        for entry in self.accounts.iter()? {
+            let (addr, acct) = entry?;
+
+            if acct.airdrop1.claimable == 0 {
+                continue;
+            }
+
+            let legacy_addr = addr.bytes().into();
+            match legacy.balance(legacy_addr).unwrap() {
+                None => claimed.push(*addr),
+                Some(n) if n == 0 => claimed.push(*addr),
+                Some(_) => continue,
+            };
+        }
+
+        let claim_count = claimed.len();
+        let mut total_claimed = 0;
+        for addr in claimed {
+            let mut acct = self.accounts.get_mut(addr)?.unwrap();
+            let amount = acct.airdrop1.claimable;
+            acct.airdrop1.claimable = 0;
+            acct.airdrop1.claimed = amount;
+            total_claimed += amount;
+        }
+
+        println!(
+            "Airdrop 1 migration: {} uNOM has been claimed across {} accounts",
+            total_claimed,
+            claim_count,
+        );
+
+        Ok(())
     }
 }
 
