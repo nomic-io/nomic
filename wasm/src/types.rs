@@ -41,6 +41,7 @@ pub struct Coin {
     pub amount: u64,
 }
 
+#[derive(Clone)]
 #[wasm_bindgen]
 pub struct AirdropDetails {
     pub claimed: bool,
@@ -48,6 +49,7 @@ pub struct AirdropDetails {
     pub amount: u64,
 }
 
+#[derive(Clone)]
 #[wasm_bindgen(getter_with_clone)]
 pub struct Airdrop {
     pub airdrop1: AirdropDetails,
