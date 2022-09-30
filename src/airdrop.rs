@@ -11,7 +11,7 @@ use orga::{Error, Result};
 
 use super::app::Nom;
 
-const MAX_STAKED: u64 = 10_000_000_000;
+const MAX_STAKED: u64 = 1_000_000_000;
 const AIRDROP_II_TOTAL: u64 = 3_500_000_000_000;
 
 #[derive(State, Query, Call, Client)]
@@ -125,8 +125,8 @@ impl Airdrop {
         self.accounts.insert(addr, acct.into())
     }
 
-    fn score(staked: u64, count: u64) -> u64 {
-        staked.min(MAX_STAKED) * count
+    fn score(staked: u64, _count: u64) -> u64 {
+        staked.min(MAX_STAKED)
     }
 
     fn get_recipients_from_csv(data: &[u8]) -> Vec<(Address, Vec<(u64, u64)>)> {
