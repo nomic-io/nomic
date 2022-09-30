@@ -40,3 +40,21 @@ pub struct Coin {
     pub denom: u8,
     pub amount: u64,
 }
+
+#[wasm_bindgen]
+pub struct AirdropDetails {
+    pub claimed: bool,
+    pub claimable: bool,
+    pub amount: u64,
+}
+
+#[wasm_bindgen(getter_with_clone)]
+pub struct Airdrop {
+    pub airdrop1: AirdropDetails,
+    #[wasm_bindgen(js_name = btcDeposit)]
+    pub btc_deposit: AirdropDetails,
+    #[wasm_bindgen(js_name = btcWithdraw)]
+    pub btc_withdraw: AirdropDetails,
+    #[wasm_bindgen(js_name = ibcTransfer)]
+    pub ibc_transfer: AirdropDetails,
+}
