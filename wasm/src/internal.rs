@@ -276,11 +276,25 @@ pub async fn redelegate(src_addr: String, dst_addr: String, amount: u64) -> Resu
     .await
 }
 
-pub async fn airdrop_balance(addr: String) -> Result<Option<u64>> {
+fn parse_part(part: nomic::airdrop::Part) -> Part {
+    Part {
+        claimed: part.claimed > 0,
+        claimable: part.claimable > 0,
+        amount: part.claimed + part.claimable + part.locked
+    }
+}
+
+pub async fn airdrop_balances(addr: String) -> Result<Airdrop> {
     let client: WebClient<App> = WebClient::new();
     let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
-    Ok(client.atom_airdrop.balance(address).await??.map(Into::into))
+    let account = client.airdrop.get(address).await?;
+    Ok(Airdrop {
+        airdrop1: parse_part(account.airdrop1),
+        btc_deposit: parse_part(account.btc_deposit),
+        btc_withdraw: parse_part(account.btc_withdraw),
+        ibc_transfer: parse_part(account.ibc_transfer),
+    })
 }
 
 pub async fn nonce(addr: String) -> Result<u64> {
