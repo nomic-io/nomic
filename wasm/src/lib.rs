@@ -108,7 +108,7 @@ pub async fn redelegate(
 }
 
 #[wasm_bindgen(js_name = airdropBalances)]
-pub async fn airdrop_balances(addr: String) -> Result<JsValue, JsValue> {
+pub async fn airdrop_balances(addr: String) -> Result<types::Airdrop, JsValue> {
     into_js_res(Internal::airdrop_balances(addr).await)
 }
 
