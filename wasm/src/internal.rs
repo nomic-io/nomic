@@ -6,7 +6,7 @@ use crate::types::*;
 use crate::web_client::WebAdapter;
 use crate::web_client::WebClient;
 use js_sys::{Array, JsString};
-use nomic::app::{Airdrop, App, DepositCommitment, InnerApp, Nom, CHAIN_ID};
+use nomic::app::{App, DepositCommitment, InnerApp, Nom, CHAIN_ID};
 use nomic::bitcoin::signatory::SignatorySet;
 use nomic::bitcoin::Nbtc;
 use nomic::orga::client::AsyncQuery;
@@ -291,13 +291,16 @@ pub async fn airdrop_balances(addr: String) -> Result<Airdrop> {
     let client: WebClient<App> = WebClient::new();
     let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
-    let account = client.airdrop.get(address).await?;
-    Ok(Airdrop {
-        airdrop1: parse_part(account.airdrop1),
-        btc_deposit: parse_part(account.btc_deposit),
-        btc_withdraw: parse_part(account.btc_withdraw),
-        ibc_transfer: parse_part(account.ibc_transfer),
-    })
+    if let Some(account) = client.airdrop.get(address).await?? {
+        Ok(Airdrop {
+            airdrop1: parse_part(account.airdrop1),
+            btc_deposit: parse_part(account.btc_deposit),
+            btc_withdraw: parse_part(account.btc_withdraw),
+            ibc_transfer: parse_part(account.ibc_transfer),
+        })
+    } else {
+        Err(Error::Wasm(format!("Account: {:?} not found", addr)))
+    }
 }
 
 pub async fn nonce(addr: String) -> Result<u64> {
