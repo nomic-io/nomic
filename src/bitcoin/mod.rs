@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::ops::Deref;
 
+pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Testnet;
+
 use crate::error::{Error, Result};
 use ::bitcoin::util::bip32::ChildNumber;
 use adapter::Adapter;
