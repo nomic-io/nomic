@@ -738,9 +738,9 @@ impl ConvertSdkTx for InnerApp {
                             .map_err(|_| Error::Ibc("Invalid port".into()))?
                             .into();
 
-                        let denom = msg.denom.as_str().parse().unwrap();
+                        let denom = msg.denom.as_str().parse()?;
 
-                        let amount = msg.amount;
+                        let amount = msg.amount.into();
 
                         let receiver: IbcAdapter<IbcSigner> = msg
                             .receiver
@@ -754,12 +754,14 @@ impl ConvertSdkTx for InnerApp {
                             .map_err(|_| Error::Ibc("Invalid sender address".into()))?;
 
                         let timeout_timestamp: IbcAdapter<Timestamp> =
-                            Timestamp::from_nanoseconds(msg.timeout_timestamp * 1_000_000_000)
+                            Timestamp::from_nanoseconds(msg.timeout_timestamp)
                                 .map_err(|_| Error::Ibc("Invalid timeout timestamp".into()))?
                                 .into();
 
+                        let ibc_fee = ibc_fee(amount)?;
+
                         let transfer_opts = TransferOpts {
-                            amount: amount.into(),
+                            amount: (amount - ibc_fee).result()?,
                             channel_id,
                             port_id,
                             denom,
@@ -769,7 +771,7 @@ impl ConvertSdkTx for InnerApp {
                         };
 
                         let payer_call =
-                            AppCall::MethodIbcDepositNbtc(sender.into(), amount.into(), vec![]);
+                            AppCall::MethodIbcDepositNbtc(sender.into(), amount, vec![]);
 
                         let ibc_call = IbcCall::MethodTransfer(transfer_opts, vec![]);
                         let ibc_call_bytes = ibc_call.encode()?;
