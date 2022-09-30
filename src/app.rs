@@ -738,7 +738,7 @@ impl ConvertSdkTx for InnerApp {
                             .map_err(|_| Error::Ibc("Invalid port".into()))?
                             .into();
 
-                        let denom = msg.denom.as_str().parse().unwrap();
+                        let denom = msg.denom.as_str().parse()?;
 
                         let amount = msg.amount;
 
