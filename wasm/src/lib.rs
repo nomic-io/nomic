@@ -154,5 +154,5 @@ pub async fn withdraw(dest_addr: String, amount: u64) -> Result<JsValue, JsValue
 
 #[wasm_bindgen]
 pub async fn ibc_transfer_out(amount: u64, channel_id: String, port_id: String, denom: String, self_address: String, receiver_address: String, ns_timeout_timestamp: u64) -> Result<JsValue, JsValue> {
-    into_js_res(Internal::ibc_transfer_out(amount, channel_id, port_id, denom, self_address, receiver_address, timeout_timestamp).await)
+    into_js_res(Internal::ibc_transfer_out(amount, channel_id, port_id, denom, self_address, receiver_address, ns_timeout_timestamp).await)
 }
