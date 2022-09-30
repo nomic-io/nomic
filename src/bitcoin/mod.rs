@@ -449,14 +449,6 @@ pub struct ChangeRates {
 #[cfg(feature = "full")]
 impl BeginBlock for Bitcoin {
     fn begin_block(&mut self, ctx: &BeginBlockCtx) -> OrgaResult<()> {
-        let reset_height = 440_000;
-
-        if ctx.height == reset_height {
-            self.signatory_keys.reset()?;
-            self.processed_outpoints.reset()?;
-            self.checkpoints.reset()?;
-        }
-
         self.checkpoints
             .maybe_step(self.signatory_keys.map())
             .map_err(|err| OrgaError::App(err.to_string()))?;

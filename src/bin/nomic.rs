@@ -687,7 +687,7 @@ impl AirdropCmd {
         let acct = match client.airdrop.get(addr).await?? {
             None => {
                 println!("Address is not eligible for airdrop");
-                return Ok(())
+                return Ok(());
             }
             Some(acct) => acct,
         };
@@ -711,7 +711,7 @@ impl ClaimAirdropCmd {
         let acct = match client.airdrop.get(addr).await?? {
             None => {
                 println!("Address is not eligible for airdrop");
-                return Ok(())
+                return Ok(());
             }
             Some(acct) => acct,
         };
@@ -734,7 +734,10 @@ impl ClaimAirdropCmd {
                 .accounts
                 .give_from_funding_all()
                 .await?;
-            println!("Claimed BTC deposit airdrop ({} uNOM)", acct.btc_deposit.claimable);
+            println!(
+                "Claimed BTC deposit airdrop ({} uNOM)",
+                acct.btc_deposit.claimable
+            );
             claimed = true;
         }
 
@@ -744,7 +747,10 @@ impl ClaimAirdropCmd {
                 .accounts
                 .give_from_funding_all()
                 .await?;
-            println!("Claimed BTC withdraw airdrop ({} uNOM)", acct.btc_withdraw.claimable);
+            println!(
+                "Claimed BTC withdraw airdrop ({} uNOM)",
+                acct.btc_withdraw.claimable
+            );
             claimed = true;
         }
 
@@ -754,7 +760,10 @@ impl ClaimAirdropCmd {
                 .accounts
                 .give_from_funding_all()
                 .await?;
-            println!("Claimed IBC transfer airdrop ({} uNOM)", acct.ibc_transfer.claimable);
+            println!(
+                "Claimed IBC transfer airdrop ({} uNOM)",
+                acct.ibc_transfer.claimable
+            );
             claimed = true;
         }
 
