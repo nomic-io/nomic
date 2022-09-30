@@ -160,14 +160,14 @@ impl StartCmd {
 
                 set_p2p_seeds(
                     &old_config_path,
-                    &["edb32208ff79b591dd4cddcf1c879f6405fe6c79@167.99.228.240:26656"],
+                    &["a1ceb2dc09ecf29a79538c1593bc027bee87363e@192.168.1.126:26656"],
                 );
 
                 if !started_old_node {
                     // TODO: set default RPC boostrap nodes
                     configure_for_statesync(
                         &old_config_path,
-                        &["http://167.99.228.240:26667", "http://167.99.228.240:26677"],
+                        &["http://192.168.1.126:26667", "http://192.168.1.126:26677"],
                     );
                 }
 
@@ -214,20 +214,20 @@ impl StartCmd {
                 // TODO: set default seeds
                 set_p2p_seeds(
                     &new_config_path,
-                    &["edb32208ff79b591dd4cddcf1c879f6405fe6c79@167.99.228.240:26656"],
+                    &["a1ceb2dc09ecf29a79538c1593bc027bee87363e@192.168.1.126:26656"],
                 );
 
                 // TODO: set default RPC boostrap nodes
                 configure_for_statesync(
                     &new_config_path,
-                    &["http://167.99.228.240:26667", "http://167.99.228.240:26677"],
+                    &["http://192.168.1.126:26667", "http://192.168.1.126:26677"],
                 );
             }
 
             println!("Starting node...");
             // TODO: add cfg defaults
             Node::<nomic::app::App>::new(new_name, Default::default())
-                .with_genesis(include_bytes!("../../genesis/testnet-4b.json"))
+                .with_genesis(include_bytes!("../../genesis/internal-4c.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
                 .run()
