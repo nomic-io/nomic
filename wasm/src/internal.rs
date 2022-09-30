@@ -279,8 +279,9 @@ pub async fn redelegate(src_addr: String, dst_addr: String, amount: u64) -> Resu
     .await
 }
 
-fn parse_part(part: nomic::airdrop::Part) -> Part {
-    Part {
+#[cfg(feature = "full")]
+fn parse_part(part: nomic::airdrop::Part) -> AirdropDetails {
+    AirdropDetails {
         claimed: part.claimed > 0,
         claimable: part.claimable > 0,
         amount: part.claimed + part.claimable + part.locked
