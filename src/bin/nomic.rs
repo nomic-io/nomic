@@ -955,8 +955,10 @@ pub struct IbcTransferCmd {
 use orga::ibc::TransferArgs;
 impl IbcTransferCmd {
     async fn run(&self) -> Result<()> {
+        let fee: u64 = nomic::app::ibc_fee(self.amount.into())?.into();
+        let amount_after_fee = self.amount - fee;
         let transfer_args = TransferArgs {
-            amount: self.amount.into(),
+            amount: amount_after_fee.into(),
             channel_id: self.channel_id.clone(),
             port_id: self.port_id.clone(),
             denom: self.denom.clone(),
