@@ -70,9 +70,14 @@ impl InnerApp {
 
     #[call]
     pub fn ibc_deposit_nbtc(&mut self, to: Address, amount: Amount) -> crate::error::Result<()> {
-        let signer = self.signer()?;
         crate::bitcoin::exempt_from_fee()?;
+
+        let signer = self.signer()?;
         let _coins = self.bitcoin.accounts.withdraw(signer, amount)?;
+        self.airdrop
+            .get_mut(signer)?
+            .map(|mut acct| acct.ibc_transfer.unlock());
+
         let fee = ibc_fee(amount)?;
         self.ibc
             .bank_mut()
@@ -84,8 +89,9 @@ impl InnerApp {
 
     #[call]
     pub fn ibc_withdraw_nbtc(&mut self, amount: Amount) -> crate::error::Result<()> {
-        let signer = self.signer()?;
         crate::bitcoin::exempt_from_fee()?;
+
+        let signer = self.signer()?;
         self.ibc.bank_mut().burn(signer, amount, "usat".parse()?)?;
         self.bitcoin.accounts.deposit(signer, amount.into())?;
 
@@ -128,7 +134,12 @@ impl InnerApp {
             dest.commitment_bytes()?.as_slice(),
         )?;
         match dest {
-            DepositCommitment::Address(addr) => self.bitcoin.accounts.deposit(addr, nbtc.into())?,
+            DepositCommitment::Address(addr) => {
+                self.airdrop
+                    .get_mut(addr)?
+                    .map(|mut acct| acct.btc_deposit.unlock());
+                self.bitcoin.accounts.deposit(addr, nbtc.into())?
+            }
             DepositCommitment::Ibc(dest) => {
                 use orga::ibc::ibc_rs::applications::transfer::msgs::transfer::MsgTransfer;
                 use orga::ibc::proto::cosmos::base::v1beta1::Coin;
@@ -171,6 +182,20 @@ impl InnerApp {
         Ok(())
     }
 
+    #[call]
+    pub fn withdraw_nbtc(
+        &mut self,
+        script_pubkey: Adapter<bitcoin::Script>,
+        amount: Amount,
+    ) -> crate::error::Result<()> {
+        let signer = self.signer()?;
+        self.airdrop
+            .get_mut(signer)?
+            .map(|mut acct| acct.btc_withdraw.unlock());
+
+        self.bitcoin.withdraw(script_pubkey, amount)
+    }
+
     fn signer(&mut self) -> Result<Address> {
         self.context::<Signer>()
             .ok_or_else(|| Error::Signer("No Signer context available".into()))?
@@ -203,7 +228,6 @@ impl Migrate<nomicv3::app::InnerApp> for InnerApp {
 
 #[cfg(feature = "full")]
 mod abci {
-
     use super::*;
 
     impl InitChain for InnerApp {
@@ -731,10 +755,8 @@ impl ConvertSdkTx for InnerApp {
                         let funding_call_bytes = funding_call.encode()?;
                         let payer_call = AppCall::FieldAccounts(funding_call_bytes);
 
-                        let withdraw_call =
-                            BitcoinCall::MethodWithdraw(dest_script, amount.into(), vec![]);
-                        let withdraw_call_bytes = withdraw_call.encode()?;
-                        let paid_call = AppCall::FieldBitcoin(withdraw_call_bytes);
+                        let paid_call =
+                            AppCall::MethodWithdrawNbtc(dest_script, amount.into(), vec![]);
 
                         Ok(PaidCall {
                             payer: payer_call,

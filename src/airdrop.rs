@@ -26,6 +26,10 @@ impl Airdrop {
         Ok(self.accounts.get(address)?.map(|a| a.clone()))
     }
 
+    pub fn get_mut(&mut self, address: Address) -> Result<Option<ChildMut<Address, Account>>> {
+        self.accounts.get_mut(address)
+    }
+
     pub fn signer_acct_mut(&mut self) -> Result<ChildMut<Address, Account>> {
         let signer = self
             .context::<Signer>()

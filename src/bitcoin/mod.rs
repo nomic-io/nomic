@@ -293,7 +293,6 @@ impl Bitcoin {
         Ok(minted_nbtc.amount)
     }
 
-    #[call]
     pub fn withdraw(&mut self, script_pubkey: Adapter<Script>, amount: Amount) -> Result<()> {
         exempt_from_fee()?;
 

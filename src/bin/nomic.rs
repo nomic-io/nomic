@@ -960,8 +960,7 @@ impl WithdrawCmd {
         app_client()
             .pay_from(async move |client| {
                 client
-                    .bitcoin
-                    .withdraw(Adapter::new(script), self.amount.into())
+                    .withdraw_nbtc(Adapter::new(script), self.amount.into())
                     .await
             })
             .noop()
