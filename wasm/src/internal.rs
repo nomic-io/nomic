@@ -194,6 +194,7 @@ pub async fn claim_btc_deposit_airdrop() -> Result<JsValue> {
         type_: "nomic/ClaimBtcDepositAirdrop",
         value: serde_json::Map::new().into(),
     })
+    .await
 }
 
 pub async fn claim_btc_withdraw_airdrop() -> Result<JsValue> {
@@ -201,6 +202,7 @@ pub async fn claim_btc_withdraw_airdrop() -> Result<JsValue> {
         type_: "nomic/ClaimBtcWithdrawAirdrop",
         value: serde_json::Map::new().into(),
     })
+    .await
 }
 
 pub async fn claim_ibc_transfer_airdrop() -> Result<JsValue> {
@@ -208,6 +210,7 @@ pub async fn claim_ibc_transfer_airdrop() -> Result<JsValue> {
         type_: "nomic/ClaimIbcTransferAirdrop",
         value: serde_json::Map::new().into(),
     })
+    .await
 }
 
 pub async fn claim_incoming_ibc_btc() -> Result<JsValue> {
