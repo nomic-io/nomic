@@ -900,16 +900,19 @@ async fn deposit(dest: DepositCommitment) -> Result<()> {
     let btc_addr = bitcoin::Address::from_script(&script, nomic::bitcoin::NETWORK).unwrap();
 
     let client = reqwest::Client::new();
-    client
-        .post(format!(
-            "https://testnet-relayer.nomic.io:8443?dest_addr={}&sigset_index={}&deposit_addr={}",
-            dest.to_base64()?,
-            sigset.index(),
-            btc_addr,
-        ))
+    let res = client
+        .post("http://localhost:9000")
+        .query(&[
+            ("dest_bytes", dest.to_base64()?),
+            ("sigset_index", sigset.index().to_string()),
+            ("deposit_addr", btc_addr.to_string()),
+        ])
         .send()
         .await
         .map_err(|err| nomic::error::Error::Orga(orga::Error::App(err.to_string())))?;
+    if res.status() != 200 {
+        return Err(orga::Error::App(format!("Relayer responded with code {}", res.status()).to_string()).into());
+    }
 
     println!("Deposit address: {}", btc_addr);
     println!("Expiration: {}", "5 days from now");
