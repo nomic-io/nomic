@@ -191,7 +191,7 @@ pub async fn claim_airdrop() -> Result<JsValue> {
 
 pub async fn claim_btc_deposit_airdrop() -> Result<JsValue> {
     send_sdk_tx(sdk::Msg {
-        type_: "nomic/ClaimBtcDepositAirdrop".to_string(),
+        type_: "nomic/MsgClaimBtcDepositAirdrop".to_string(),
         value: serde_json::Map::new().into(),
     })
     .await
@@ -199,7 +199,7 @@ pub async fn claim_btc_deposit_airdrop() -> Result<JsValue> {
 
 pub async fn claim_btc_withdraw_airdrop() -> Result<JsValue> {
     send_sdk_tx(sdk::Msg {
-        type_: "nomic/ClaimBtcWithdrawAirdrop".to_string(),
+        type_: "nomic/MsgClaimBtcWithdrawAirdrop".to_string(),
         value: serde_json::Map::new().into(),
     })
     .await
@@ -207,7 +207,7 @@ pub async fn claim_btc_withdraw_airdrop() -> Result<JsValue> {
 
 pub async fn claim_ibc_transfer_airdrop() -> Result<JsValue> {
     send_sdk_tx(sdk::Msg {
-        type_: "nomic/ClaimIbcTransferAirdrop".to_string(),
+        type_: "nomic/MsgClaimIbcTransferAirdrop".to_string(),
         value: serde_json::Map::new().into(),
     })
     .await
@@ -299,7 +299,7 @@ pub async fn airdrop_balances(addr: String) -> Result<Airdrop> {
             ibc_transfer: parse_part(account.ibc_transfer),
         })
     } else {
-        Err(Error::Wasm(format!("Account: {:?} not found", addr)))
+        Ok(Airdrop::default())
     }
 }
 
