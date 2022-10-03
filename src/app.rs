@@ -813,8 +813,10 @@ impl ConvertSdkTx for InnerApp {
                             .parse::<Address>()
                             .map_err(|_| Error::Ibc("Invalid sender address".into()))?;
 
+                        let timestamp = msg.timeout_timestamp.parse::<u64>()
+                            .map_err(|_| Error::Ibc("Invalid timeout timestamp".into()))?;
                         let timeout_timestamp: IbcAdapter<Timestamp> =
-                            Timestamp::from_nanoseconds(msg.timeout_timestamp)
+                            Timestamp::from_nanoseconds(timestamp)
                                 .map_err(|_| Error::Ibc("Invalid timeout timestamp".into()))?
                                 .into();
 
@@ -864,7 +866,7 @@ pub struct MsgIbcTransfer {
     pub denom: String,
     pub receiver: String,
     pub sender: String,
-    pub timeout_timestamp: u64,
+    pub timeout_timestamp: String,
 }
 
 use ibc::encoding::Adapter as IbcAdapter;
