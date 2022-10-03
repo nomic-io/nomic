@@ -38,7 +38,7 @@ pub async fn transfer(to_addr: String, amount: u64) -> Result<JsValue> {
     Ok(client.last_res()?)
 }
 
-pub async fn ibc_transfer_out(amount: u64, channel_id: String, port_id: String, denom: String, self_address: String, receiver_address: String, timeout_timestamp: u64) -> Result<JsValue> {
+pub async fn ibc_transfer_out(amount: u64, channel_id: String, port_id: String, denom: String, self_address: String, receiver_address: String, timeout_timestamp: String) -> Result<JsValue> {
     let mut client: WebClient<App> = WebClient::new();
 
     let mut value = serde_json::Map::new();
