@@ -60,3 +60,14 @@ pub struct Airdrop {
     #[wasm_bindgen(js_name = ibcTransfer)]
     pub ibc_transfer: AirdropDetails,
 }
+
+#[wasm_bindgen]
+impl Airdrop {
+    #[wasm_bindgen(js_name = airdropTotal)]
+    pub fn airdrop_total(&self) -> u64 {
+        self.airdrop1.amount
+            + self.btc_deposit.amount
+            + self.btc_withdraw.amount
+            + self.ibc_transfer.amount
+    }
+}
