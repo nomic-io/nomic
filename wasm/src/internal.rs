@@ -320,9 +320,7 @@ pub async fn gen_deposit_addr(dest_addr: String) -> Result<DepositAddress> {
         .bitcoin
         .checkpoints
         .active_sigset()
-        .await
-        .unwrap()
-        .unwrap();
+        .await??;
     let script = sigset.output_script(DepositCommitment::Address(dest_addr).commitment_bytes()?.as_slice())?;
     // TODO: get network from somewhere
     // TODO: make test/mainnet option configurable
@@ -373,7 +371,6 @@ pub async fn broadcast_deposit_addr(
     relayers: js_sys::Array,
     deposit_addr: String
 ) -> Result<()> {
-    //dest_addr needs to be a base64 encoded
     let dest_addr = dest_addr
         .parse()
         .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
@@ -394,17 +391,22 @@ pub async fn broadcast_deposit_addr(
         let mut opts = RequestInit::new();
         opts.method("POST");
         opts.mode(RequestMode::Cors);
-        let url = format!("{}?dest_addr={}&sigset_index={}&deposit_addr={}", relayer, commitment.to_base64()?, sigset_index, deposit_addr);
+        let url = format!("{}?dest_bytes={}&sigset_index={}&deposit_addr={}", relayer, commitment.to_base64()?, sigset_index, deposit_addr);
 
         let request = Request::new_with_str_and_init(&url, &opts)?;
 
         let resp_value = JsFuture::from(window.fetch_with_request(&request)).await?;
 
         let res: Response = resp_value.dyn_into()?;
+        let status = res.status();
+        if status != 200 {
+            return Err(Error::Relayer(format!("Relayer response returned with error code: {}", status)));
+        }  
         let res_buf = res.array_buffer()?;
         let res = JsFuture::from(res_buf).await?;
         let res = js_sys::Uint8Array::new(&res).to_vec();
         let res = String::from_utf8(res)?;
+        
         web_sys::console::log_1(&format!("response: {}", &res).into());
     }
     Ok(())
