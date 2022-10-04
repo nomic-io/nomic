@@ -68,6 +68,21 @@ pub async fn claim_airdrop() -> Result<JsValue, JsValue> {
     into_js_res(Internal::claim_airdrop().await)
 }
 
+#[wasm_bindgen(js_name = claimBtcDepositAirdrop)]
+pub async fn claim_btc_deposit_airdrop() -> Result<JsValue, JsValue> {
+    into_js_res(Internal::claim_btc_deposit_airdrop().await)
+}
+
+#[wasm_bindgen(js_name = claimBtcWithdrawAirdrop)]
+pub async fn claim_btc_withdraw_airdrop() -> Result<JsValue, JsValue> {
+    into_js_res(Internal::claim_btc_withdraw_airdrop().await)
+}
+
+#[wasm_bindgen(js_name = claimIbcTransferAirdrop)]
+pub async fn claim_ibc_transfer_airdrop() -> Result<JsValue, JsValue> {
+    into_js_res(Internal::claim_ibc_transfer_airdrop().await)
+}
+
 #[wasm_bindgen(js_name = claimIncomingIbcBtc)]
 pub async fn claim_incoming_ibc_btc() -> Result<JsValue, JsValue> {
     into_js_res(Internal::claim_incoming_ibc_btc().await)
@@ -92,9 +107,9 @@ pub async fn redelegate(
     into_js_res(Internal::redelegate(src_addr, dst_addr, amount).await)
 }
 
-#[wasm_bindgen(js_name = airdropBalance)]
-pub async fn airdrop_balance(addr: String) -> Result<Option<u64>, JsValue> {
-    into_js_res(Internal::airdrop_balance(addr).await)
+#[wasm_bindgen(js_name = airdropBalances)]
+pub async fn airdrop_balances(addr: String) -> Result<types::Airdrop, JsValue> {
+    into_js_res(Internal::airdrop_balances(addr).await)
 }
 
 #[wasm_bindgen]
@@ -153,6 +168,6 @@ pub async fn withdraw(dest_addr: String, amount: u64) -> Result<JsValue, JsValue
 }
 
 #[wasm_bindgen]
-pub async fn ibc_transfer_out(amount: u64, channel_id: String, port_id: String, denom: String, self_address: String, receiver_address: String, ns_timeout_timestamp: u64) -> Result<JsValue, JsValue> {
+pub async fn ibc_transfer_out(amount: u64, channel_id: String, port_id: String, denom: String, self_address: String, receiver_address: String, ns_timeout_timestamp: String) -> Result<JsValue, JsValue> {
     into_js_res(Internal::ibc_transfer_out(amount, channel_id, port_id, denom, self_address, receiver_address, ns_timeout_timestamp).await)
 }

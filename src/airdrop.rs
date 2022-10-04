@@ -3,6 +3,7 @@ use orga::client::Client;
 use orga::coins::{Address, Amount, Coin, Symbol};
 use orga::collections::{ChildMut, Map};
 use orga::context::GetContext;
+#[cfg(feature = "full")]
 use orga::migrate::Migrate;
 use orga::plugins::{Paid, Signer};
 use orga::prelude::Decimal;
@@ -82,6 +83,7 @@ impl Airdrop {
         Ok(())
     }
 
+    #[cfg(feature = "full")]
     pub fn init_from_airdrop2_csv(&mut self, data: &[u8]) -> Result<()> {
         println!("Initializing balances from airdrop 2 snapshot...");
 
@@ -126,8 +128,7 @@ impl Airdrop {
 
         println!(
             "Total amount minted for airdrop 2: {} uNOM across {} accounts",
-            total_airdropped,
-            accounts,
+            total_airdropped, accounts,
         );
 
         Ok(())
@@ -147,6 +148,7 @@ impl Airdrop {
         staked.min(MAX_STAKED)
     }
 
+    #[cfg(feature = "full")]
     fn get_recipients_from_csv(data: &[u8]) -> Vec<(Address, Vec<(u64, u64)>)> {
         let mut reader = csv::Reader::from_reader(data);
 
@@ -190,6 +192,7 @@ impl Airdrop {
         Ok(nom_amount)
     }
 
+    #[cfg(feature = "full")]
     pub fn init_from_airdrop1_csv(&mut self, data: &[u8]) -> Result<()> {
         use std::convert::TryInto;
 
@@ -200,7 +203,7 @@ impl Airdrop {
 
         let mut minted = Amount::from(0);
         let mut accounts = 0;
-        
+
         for row in snapshot {
             let row = row.map_err(|e| Error::App(e.to_string()))?;
 
@@ -217,7 +220,10 @@ impl Airdrop {
             accounts += 1;
         }
 
-        println!("Total amount minted for airdrop 1: {} uNOM across {} accounts", minted, accounts);
+        println!(
+            "Total amount minted for airdrop 1: {} uNOM across {} accounts",
+            minted, accounts
+        );
 
         Ok(())
     }
@@ -257,8 +263,7 @@ impl Migrate<nomicv3::app::Airdrop<nomicv3::app::Nom>> for Airdrop {
 
         println!(
             "Airdrop 1 migration: {} uNOM has been claimed across {} accounts",
-            total_claimed,
-            claim_count,
+            total_claimed, claim_count,
         );
 
         Ok(())
