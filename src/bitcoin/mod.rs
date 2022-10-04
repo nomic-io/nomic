@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 use std::ops::Deref;
 
-pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Testnet;
-
 use crate::error::{Error, Result};
 use ::bitcoin::util::bip32::ChildNumber;
 use adapter::Adapter;
@@ -49,6 +47,8 @@ impl Symbol for Nbtc {
     const INDEX: u8 = 21;
 }
 
+pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Testnet;
+pub const MIN_WITHDRAWAL_CHECKPOINTS: u32 = 4;
 pub const MIN_DEPOSIT_AMOUNT: u64 = 600;
 pub const MIN_WITHDRAWAL_AMOUNT: u64 = 600;
 pub const MAX_WITHDRAWAL_SCRIPT_LENGTH: u64 = 64;
@@ -300,11 +300,11 @@ impl Bitcoin {
             return Err(OrgaError::App("Script exceeds maximum length".to_string()).into());
         }
 
-        if self.checkpoints.len()? < 10 {
-            return Err(OrgaError::App(
-                "Withdrawals are disabled until the network has produced at least 10 checkpoints"
-                    .to_string(),
-            )
+        if self.checkpoints.len()? < MIN_WITHDRAWAL_CHECKPOINTS {
+            return Err(OrgaError::App(format!(
+                "Withdrawals are disabled until the network has produced at least {} checkpoints",
+                MIN_WITHDRAWAL_CHECKPOINTS
+            ))
             .into());
         }
 
@@ -384,6 +384,9 @@ impl Bitcoin {
         let now = signing.create_time().max(now);
 
         let completed = self.checkpoints.completed()?;
+        if completed.is_empty() {
+            return Ok(ChangeRates::default());
+        }
         let prev = completed
             .iter()
             .rev()

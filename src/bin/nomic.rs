@@ -901,7 +901,7 @@ async fn deposit(dest: DepositCommitment) -> Result<()> {
 
     let client = reqwest::Client::new();
     let res = client
-        .post("http://localhost:9000")
+        .post("http://192.168.1.126:9000")
         .query(&[
             ("dest_bytes", dest.to_base64()?),
             ("sigset_index", sigset.index().to_string()),
