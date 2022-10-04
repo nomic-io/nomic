@@ -902,7 +902,7 @@ async fn deposit(dest: DepositCommitment) -> Result<()> {
     let client = reqwest::Client::new();
     client
         .post(format!(
-            "https://testnet-relayer.nomic.io:8443?dest_addr={}&sigset_index={}&deposit_addr={}",
+            "http://192.168.1.126:9000?dest_bytes={}&sigset_index={}&deposit_addr={}",
             dest.to_base64()?,
             sigset.index(),
             btc_addr,
