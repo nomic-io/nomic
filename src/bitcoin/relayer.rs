@@ -160,9 +160,11 @@ impl Relayer {
                     };
                     let expected_addr = ::bitcoin::Address::from_script(
                         &sigset
-                            .output_script(dest.commitment_bytes().unwrap().as_slice()) // TODO: remove unwrap
+                            .output_script(
+                                dest.commitment_bytes().map_err(|_| reject())?.as_slice(),
+                            )
                             .map_err(|_| reject())?,
-                        ::bitcoin::Network::Testnet, // TODO: don't hardcode
+                        super::NETWORK,
                     )
                     .unwrap()
                     .to_string();

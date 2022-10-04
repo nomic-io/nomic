@@ -15,6 +15,8 @@ pub enum Error {
     Utf8(#[from] FromUtf8Error),
     #[error("{0}")]
     Wasm(String),
+    #[error("{0}")]
+    Relayer(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

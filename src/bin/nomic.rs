@@ -66,6 +66,7 @@ pub enum Command {
     Unjail(UnjailCmd),
     Edit(EditCmd),
     Claim(ClaimCmd),
+    Airdrop(AirdropCmd),
     ClaimAirdrop(ClaimAirdropCmd),
     Relayer(RelayerCmd),
     Signer(SignerCmd),
@@ -99,6 +100,7 @@ impl Command {
             Edit(cmd) => cmd.run().await,
             Claim(cmd) => cmd.run().await,
             ClaimAirdrop(cmd) => cmd.run().await,
+            Airdrop(cmd) => cmd.run().await,
             // Legacy(cmd) => cmd.run().await,
             Relayer(cmd) => cmd.run().await,
             Signer(cmd) => cmd.run().await,
@@ -158,14 +160,14 @@ impl StartCmd {
 
                 set_p2p_seeds(
                     &old_config_path,
-                    &["edb32208ff79b591dd4cddcf1c879f6405fe6c79@167.99.228.240:26656"],
+                    &["a1ceb2dc09ecf29a79538c1593bc027bee87363e@192.168.1.126:26656"],
                 );
 
                 if !started_old_node {
                     // TODO: set default RPC boostrap nodes
                     configure_for_statesync(
                         &old_config_path,
-                        &["http://167.99.228.240:26667", "http://167.99.228.240:26677"],
+                        &["http://192.168.1.126:26667", "http://192.168.1.126:26677"],
                     );
                 }
 
@@ -212,20 +214,20 @@ impl StartCmd {
                 // TODO: set default seeds
                 set_p2p_seeds(
                     &new_config_path,
-                    &["edb32208ff79b591dd4cddcf1c879f6405fe6c79@167.99.228.240:26656"],
+                    &["a1ceb2dc09ecf29a79538c1593bc027bee87363e@192.168.1.126:26656"],
                 );
 
                 // TODO: set default RPC boostrap nodes
                 configure_for_statesync(
                     &new_config_path,
-                    &["http://167.99.228.240:26667", "http://167.99.228.240:26677"],
+                    &["http://192.168.1.126:26667", "http://192.168.1.126:26677"],
                 );
             }
 
             println!("Starting node...");
             // TODO: add cfg defaults
             Node::<nomic::app::App>::new(new_name, Default::default())
-                .with_genesis(include_bytes!("../../genesis/testnet-4b.json"))
+                .with_genesis(include_bytes!("../../genesis/internal-4c.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
                 .run()
@@ -673,15 +675,103 @@ impl ClaimCmd {
 }
 
 #[derive(Parser, Debug)]
-pub struct ClaimAirdropCmd;
+pub struct AirdropCmd {
+    address: Option<Address>,
+}
+
+impl AirdropCmd {
+    async fn run(&self) -> Result<()> {
+        let client = app_client();
+
+        let addr = self.address.unwrap_or_else(|| my_address());
+        let acct = match client.airdrop.get(addr).await?? {
+            None => {
+                println!("Address is not eligible for airdrop");
+                return Ok(());
+            }
+            Some(acct) => acct,
+        };
+
+        println!("{:#?}", acct);
+
+        Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct ClaimAirdropCmd {
+    address: Option<Address>,
+}
 
 impl ClaimAirdropCmd {
     async fn run(&self) -> Result<()> {
-        Ok(app_client()
-            .pay_from(async move |client| client.atom_airdrop.claim().await)
-            .accounts
-            .give_from_funding_all()
-            .await?)
+        let client = app_client();
+
+        let addr = self.address.unwrap_or_else(|| my_address());
+        let acct = match client.airdrop.get(addr).await?? {
+            None => {
+                println!("Address is not eligible for airdrop");
+                return Ok(());
+            }
+            Some(acct) => acct,
+        };
+
+        let mut claimed = false;
+
+        if acct.airdrop1.claimable > 0 {
+            app_client()
+                .pay_from(async move |client| client.airdrop.claim_airdrop1().await)
+                .accounts
+                .give_from_funding_all()
+                .await?;
+            println!("Claimed airdrop 1 ({} uNOM)", acct.airdrop1.claimable);
+            claimed = true;
+        }
+
+        if acct.btc_deposit.claimable > 0 {
+            app_client()
+                .pay_from(async move |client| client.airdrop.claim_btc_deposit().await)
+                .accounts
+                .give_from_funding_all()
+                .await?;
+            println!(
+                "Claimed BTC deposit airdrop ({} uNOM)",
+                acct.btc_deposit.claimable
+            );
+            claimed = true;
+        }
+
+        if acct.btc_withdraw.claimable > 0 {
+            app_client()
+                .pay_from(async move |client| client.airdrop.claim_btc_withdraw().await)
+                .accounts
+                .give_from_funding_all()
+                .await?;
+            println!(
+                "Claimed BTC withdraw airdrop ({} uNOM)",
+                acct.btc_withdraw.claimable
+            );
+            claimed = true;
+        }
+
+        if acct.ibc_transfer.claimable > 0 {
+            app_client()
+                .pay_from(async move |client| client.airdrop.claim_ibc_transfer().await)
+                .accounts
+                .give_from_funding_all()
+                .await?;
+            println!(
+                "Claimed IBC transfer airdrop ({} uNOM)",
+                acct.ibc_transfer.claimable
+            );
+            claimed = true;
+        }
+
+        if !claimed {
+            println!("No claimable airdrops");
+        }
+
+        Ok(())
     }
 }
 
@@ -807,13 +897,12 @@ impl SetSignatoryKeyCmd {
 async fn deposit(dest: DepositCommitment) -> Result<()> {
     let sigset = app_client().bitcoin.checkpoints.active_sigset().await??;
     let script = sigset.output_script(dest.commitment_bytes()?.as_slice())?;
-    // TODO: get network from somewhere
-    let btc_addr = bitcoin::Address::from_script(&script, bitcoin::Network::Testnet).unwrap();
+    let btc_addr = bitcoin::Address::from_script(&script, nomic::bitcoin::NETWORK).unwrap();
 
     let client = reqwest::Client::new();
     client
         .post(format!(
-            "https://testnet-relayer.nomic.io:8443?dest_addr={}&sigset_index={}&deposit_addr={}",
+            "http://192.168.1.126:9000?dest_bytes={}&sigset_index={}&deposit_addr={}",
             dest.to_base64()?,
             sigset.index(),
             btc_addr,
@@ -880,8 +969,7 @@ impl WithdrawCmd {
         app_client()
             .pay_from(async move |client| {
                 client
-                    .bitcoin
-                    .withdraw(Adapter::new(script), self.amount.into())
+                    .withdraw_nbtc(Adapter::new(script), self.amount.into())
                     .await
             })
             .noop()
@@ -955,8 +1043,10 @@ pub struct IbcTransferCmd {
 use orga::ibc::TransferArgs;
 impl IbcTransferCmd {
     async fn run(&self) -> Result<()> {
+        let fee: u64 = nomic::app::ibc_fee(self.amount.into())?.into();
+        let amount_after_fee = self.amount - fee;
         let transfer_args = TransferArgs {
-            amount: self.amount.into(),
+            amount: amount_after_fee.into(),
             channel_id: self.channel_id.clone(),
             port_id: self.port_id.clone(),
             denom: self.denom.clone(),

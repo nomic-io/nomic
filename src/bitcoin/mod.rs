@@ -47,6 +47,8 @@ impl Symbol for Nbtc {
     const INDEX: u8 = 21;
 }
 
+pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Testnet;
+pub const MIN_WITHDRAWAL_CHECKPOINTS: u32 = 4;
 pub const MIN_DEPOSIT_AMOUNT: u64 = 600;
 pub const MIN_WITHDRAWAL_AMOUNT: u64 = 600;
 pub const MAX_WITHDRAWAL_SCRIPT_LENGTH: u64 = 64;
@@ -291,7 +293,6 @@ impl Bitcoin {
         Ok(minted_nbtc.amount)
     }
 
-    #[call]
     pub fn withdraw(&mut self, script_pubkey: Adapter<Script>, amount: Amount) -> Result<()> {
         exempt_from_fee()?;
 
@@ -299,11 +300,11 @@ impl Bitcoin {
             return Err(OrgaError::App("Script exceeds maximum length".to_string()).into());
         }
 
-        if self.checkpoints.len()? < 10 {
-            return Err(OrgaError::App(
-                "Withdrawals are disabled until the network has produced at least 10 checkpoints"
-                    .to_string(),
-            )
+        if self.checkpoints.len()? < MIN_WITHDRAWAL_CHECKPOINTS {
+            return Err(OrgaError::App(format!(
+                "Withdrawals are disabled until the network has produced at least {} checkpoints",
+                MIN_WITHDRAWAL_CHECKPOINTS
+            ))
             .into());
         }
 
@@ -383,6 +384,9 @@ impl Bitcoin {
         let now = signing.create_time().max(now);
 
         let completed = self.checkpoints.completed()?;
+        if completed.is_empty() {
+            return Ok(ChangeRates::default());
+        }
         let prev = completed
             .iter()
             .rev()
@@ -448,14 +452,6 @@ pub struct ChangeRates {
 #[cfg(feature = "full")]
 impl BeginBlock for Bitcoin {
     fn begin_block(&mut self, ctx: &BeginBlockCtx) -> OrgaResult<()> {
-        let reset_height = 440_000;
-
-        if ctx.height == reset_height {
-            self.signatory_keys.reset()?;
-            self.processed_outpoints.reset()?;
-            self.checkpoints.reset()?;
-        }
-
         self.checkpoints
             .maybe_step(self.signatory_keys.map())
             .map_err(|err| OrgaError::App(err.to_string()))?;

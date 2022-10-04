@@ -199,7 +199,11 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Config::testnet()
+        match super::NETWORK {
+            bitcoin::Network::Bitcoin => Config::mainnet(),
+            bitcoin::Network::Testnet => Config::testnet(),
+            _ => unimplemented!(),
+        }
     }
 }
 

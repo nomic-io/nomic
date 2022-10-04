@@ -1,5 +1,6 @@
 use std::convert::TryInto;
 
+use crate::airdrop::Airdrop;
 use crate::bitcoin::adapter::Adapter;
 use crate::bitcoin::Bitcoin;
 
@@ -19,7 +20,7 @@ use orga::Error;
 use orga::{ibc, prelude::*};
 use serde::{Deserialize, Serialize};
 
-pub const CHAIN_ID: &str = "nomic-testnet-4b-0";
+pub const CHAIN_ID: &str = "nomic-internal-4c";
 pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
 
 #[derive(State, Debug, Clone)]
@@ -38,7 +39,7 @@ pub struct InnerApp {
     #[call]
     pub staking: Staking<Nom>,
     #[call]
-    pub atom_airdrop: Airdrop<Nom>,
+    pub airdrop: Airdrop,
 
     community_pool: Coin<Nom>,
     incentive_pool: Coin<Nom>,
@@ -69,9 +70,14 @@ impl InnerApp {
 
     #[call]
     pub fn ibc_deposit_nbtc(&mut self, to: Address, amount: Amount) -> crate::error::Result<()> {
-        let signer = self.signer()?;
         crate::bitcoin::exempt_from_fee()?;
+
+        let signer = self.signer()?;
         let _coins = self.bitcoin.accounts.withdraw(signer, amount)?;
+        self.airdrop
+            .get_mut(signer)?
+            .map(|mut acct| acct.ibc_transfer.unlock());
+
         let fee = ibc_fee(amount)?;
         self.ibc
             .bank_mut()
@@ -83,8 +89,9 @@ impl InnerApp {
 
     #[call]
     pub fn ibc_withdraw_nbtc(&mut self, amount: Amount) -> crate::error::Result<()> {
-        let signer = self.signer()?;
         crate::bitcoin::exempt_from_fee()?;
+
+        let signer = self.signer()?;
         self.ibc.bank_mut().burn(signer, amount, "usat".parse()?)?;
         self.bitcoin.accounts.deposit(signer, amount.into())?;
 
@@ -127,7 +134,12 @@ impl InnerApp {
             dest.commitment_bytes()?.as_slice(),
         )?;
         match dest {
-            DepositCommitment::Address(addr) => self.bitcoin.accounts.deposit(addr, nbtc.into())?,
+            DepositCommitment::Address(addr) => {
+                self.airdrop
+                    .get_mut(addr)?
+                    .map(|mut acct| acct.btc_deposit.unlock());
+                self.bitcoin.accounts.deposit(addr, nbtc.into())?
+            }
             DepositCommitment::Ibc(dest) => {
                 use orga::ibc::ibc_rs::applications::transfer::msgs::transfer::MsgTransfer;
                 use orga::ibc::proto::cosmos::base::v1beta1::Coin;
@@ -170,6 +182,20 @@ impl InnerApp {
         Ok(())
     }
 
+    #[call]
+    pub fn withdraw_nbtc(
+        &mut self,
+        script_pubkey: Adapter<bitcoin::Script>,
+        amount: Amount,
+    ) -> crate::error::Result<()> {
+        let signer = self.signer()?;
+        self.airdrop
+            .get_mut(signer)?
+            .map(|mut acct| acct.btc_withdraw.unlock());
+
+        self.bitcoin.withdraw(script_pubkey, amount)
+    }
+
     fn signer(&mut self) -> Result<Address> {
         self.context::<Signer>()
             .ok_or_else(|| Error::Signer("No Signer context available".into()))?
@@ -192,9 +218,9 @@ impl Migrate<nomicv3::app::InnerApp> for InnerApp {
             .migrate(legacy.incentive_pool_rewards())?;
 
         self.accounts.migrate(legacy.accounts)?;
-        self.staking.migrate(legacy.staking)?;
-        self.atom_airdrop.migrate(legacy.atom_airdrop)?;
-        self.bitcoin.migrate(legacy.bitcoin)?;
+        // self.staking.migrate(legacy.staking)?;
+        self.airdrop.migrate(legacy.atom_airdrop)?;
+        // self.bitcoin.migrate(legacy.bitcoin)?;
 
         Ok(())
     }
@@ -202,7 +228,6 @@ impl Migrate<nomicv3::app::InnerApp> for InnerApp {
 
 #[cfg(feature = "full")]
 mod abci {
-
     use super::*;
 
     impl InitChain for InnerApp {
@@ -215,6 +240,11 @@ mod abci {
             self.staking.min_self_delegation_min = 0;
 
             let sr_address = STRATEGIC_RESERVE_ADDRESS.parse().unwrap();
+
+            self.airdrop
+                .init_from_airdrop1_csv(include_bytes!("../airdrop1_snapshot.csv"))?;
+            self.airdrop
+                .init_from_airdrop2_csv(include_bytes!("../airdrop2_snapshot.csv"))?;
 
             let old_home_path = nomicv3::orga::abci::Node::<()>::home(nomicv3::app::CHAIN_ID);
             exec_migration(self, old_home_path.join("merk"), &[0, 1, 0])?;
@@ -280,43 +310,6 @@ mod abci {
     }
 }
 
-#[derive(State, Query, Call, Client)]
-pub struct Airdrop<S: Symbol> {
-    claimable: Accounts<S>,
-}
-
-impl<S: Symbol> Airdrop<S> {
-    #[query]
-    pub fn balance(&self, address: Address) -> Result<Option<Amount>> {
-        let exists = self.claimable.exists(address)?;
-        if !exists {
-            return Ok(None);
-        }
-
-        let balance = self.claimable.balance(address)?;
-        Ok(Some(balance))
-    }
-
-    #[call]
-    pub fn claim(&mut self) -> Result<()> {
-        let signer = self
-            .context::<Signer>()
-            .ok_or_else(|| Error::Signer("No Signer context available".into()))?
-            .signer
-            .ok_or_else(|| Error::Coins("Unauthorized account action".into()))?;
-
-        let amount = self.claimable.balance(signer)?;
-        self.claimable.take_as_funding(amount)
-    }
-}
-
-#[cfg(feature = "full")]
-impl Migrate<nomicv3::app::Airdrop<nomicv3::app::Nom>> for Airdrop<Nom> {
-    fn migrate(&mut self, legacy: nomicv3::app::Airdrop<nomicv3::app::Nom>) -> Result<()> {
-        self.claimable.migrate(legacy.accounts())
-    }
-}
-
 impl ConvertSdkTx for InnerApp {
     type Output = PaidCall<<InnerApp as Call>::Call>;
 
@@ -325,7 +318,7 @@ impl ConvertSdkTx for InnerApp {
         type AppCall = <InnerApp as Call>::Call;
         type AccountCall = <Accounts<Nom> as Call>::Call;
         type StakingCall = <Staking<Nom> as Call>::Call;
-        type AirdropCall = <Airdrop<Nom> as Call>::Call;
+        type AirdropCall = <Airdrop as Call>::Call;
         type BitcoinCall = <Bitcoin as Call>::Call;
         type IbcCall = <Ibc as Call>::Call;
         match sdk_tx {
@@ -649,7 +642,7 @@ impl ConvertSdkTx for InnerApp {
                         })
                     }
 
-                    "nomic/MsgClaimAirdrop" => {
+                    "nomic/MsgClaimAirdrop1" => {
                         let msg = msg
                             .value
                             .as_object()
@@ -658,9 +651,78 @@ impl ConvertSdkTx for InnerApp {
                             return Err(Error::App("Message should be empty".to_string()));
                         }
 
-                        let claim_call = AirdropCall::MethodClaim(vec![]);
+                        let claim_call = AirdropCall::MethodClaimAirdrop1(vec![]);
                         let claim_call_bytes = claim_call.encode()?;
-                        let payer_call = AppCall::FieldAtomAirdrop(claim_call_bytes);
+                        let payer_call = AppCall::FieldAirdrop(claim_call_bytes);
+
+                        let give_call = AccountCall::MethodGiveFromFundingAll(vec![]);
+                        let give_call_bytes = give_call.encode()?;
+                        let paid_call = AppCall::FieldAccounts(give_call_bytes);
+
+                        Ok(PaidCall {
+                            payer: payer_call,
+                            paid: paid_call,
+                        })
+                    }
+
+                    "nomic/MsgClaimBtcDepositAirdrop" => {
+                        let msg = msg
+                            .value
+                            .as_object()
+                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
+                        if !msg.is_empty() {
+                            return Err(Error::App("Message should be empty".to_string()));
+                        }
+
+                        let claim_call = AirdropCall::MethodClaimBtcDeposit(vec![]);
+                        let claim_call_bytes = claim_call.encode()?;
+                        let payer_call = AppCall::FieldAirdrop(claim_call_bytes);
+
+                        let give_call = AccountCall::MethodGiveFromFundingAll(vec![]);
+                        let give_call_bytes = give_call.encode()?;
+                        let paid_call = AppCall::FieldAccounts(give_call_bytes);
+
+                        Ok(PaidCall {
+                            payer: payer_call,
+                            paid: paid_call,
+                        })
+                    }
+
+                    "nomic/MsgClaimBtcWithdrawAirdrop" => {
+                        let msg = msg
+                            .value
+                            .as_object()
+                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
+                        if !msg.is_empty() {
+                            return Err(Error::App("Message should be empty".to_string()));
+                        }
+
+                        let claim_call = AirdropCall::MethodClaimBtcWithdraw(vec![]);
+                        let claim_call_bytes = claim_call.encode()?;
+                        let payer_call = AppCall::FieldAirdrop(claim_call_bytes);
+
+                        let give_call = AccountCall::MethodGiveFromFundingAll(vec![]);
+                        let give_call_bytes = give_call.encode()?;
+                        let paid_call = AppCall::FieldAccounts(give_call_bytes);
+
+                        Ok(PaidCall {
+                            payer: payer_call,
+                            paid: paid_call,
+                        })
+                    }
+
+                    "nomic/MsgClaimIbcTransferAirdrop" => {
+                        let msg = msg
+                            .value
+                            .as_object()
+                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
+                        if !msg.is_empty() {
+                            return Err(Error::App("Message should be empty".to_string()));
+                        }
+
+                        let claim_call = AirdropCall::MethodClaimIbcTransfer(vec![]);
+                        let claim_call_bytes = claim_call.encode()?;
+                        let payer_call = AppCall::FieldAirdrop(claim_call_bytes);
 
                         let give_call = AccountCall::MethodGiveFromFundingAll(vec![]);
                         let give_call_bytes = give_call.encode()?;
@@ -693,10 +755,8 @@ impl ConvertSdkTx for InnerApp {
                         let funding_call_bytes = funding_call.encode()?;
                         let payer_call = AppCall::FieldAccounts(funding_call_bytes);
 
-                        let withdraw_call =
-                            BitcoinCall::MethodWithdraw(dest_script, amount.into(), vec![]);
-                        let withdraw_call_bytes = withdraw_call.encode()?;
-                        let paid_call = AppCall::FieldBitcoin(withdraw_call_bytes);
+                        let paid_call =
+                            AppCall::MethodWithdrawNbtc(dest_script, amount.into(), vec![]);
 
                         Ok(PaidCall {
                             payer: payer_call,
@@ -753,8 +813,10 @@ impl ConvertSdkTx for InnerApp {
                             .parse::<Address>()
                             .map_err(|_| Error::Ibc("Invalid sender address".into()))?;
 
+                        let timestamp = msg.timeout_timestamp.parse::<u64>()
+                            .map_err(|_| Error::Ibc("Invalid timeout timestamp".into()))?;
                         let timeout_timestamp: IbcAdapter<Timestamp> =
-                            Timestamp::from_nanoseconds(msg.timeout_timestamp)
+                            Timestamp::from_nanoseconds(timestamp)
                                 .map_err(|_| Error::Ibc("Invalid timeout timestamp".into()))?
                                 .into();
 
@@ -804,7 +866,7 @@ pub struct MsgIbcTransfer {
     pub denom: String,
     pub receiver: String,
     pub sender: String,
-    pub timeout_timestamp: u64,
+    pub timeout_timestamp: String,
 }
 
 use ibc::encoding::Adapter as IbcAdapter;
