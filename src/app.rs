@@ -20,7 +20,7 @@ use orga::Error;
 use orga::{ibc, prelude::*};
 use serde::{Deserialize, Serialize};
 
-pub const CHAIN_ID: &str = "nomic-internal-4c";
+pub const CHAIN_ID: &str = "nomic-testnet-4c";
 pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
 
 #[derive(State, Debug, Clone)]
@@ -218,7 +218,7 @@ impl Migrate<nomicv3::app::InnerApp> for InnerApp {
             .migrate(legacy.incentive_pool_rewards())?;
 
         self.accounts.migrate(legacy.accounts)?;
-        // self.staking.migrate(legacy.staking)?;
+        self.staking.migrate(legacy.staking)?;
         self.airdrop.migrate(legacy.atom_airdrop)?;
         // self.bitcoin.migrate(legacy.bitcoin)?;
 

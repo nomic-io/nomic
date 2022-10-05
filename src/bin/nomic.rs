@@ -18,7 +18,7 @@ use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
 
-const STOP_SECONDS: i64 = 1662138000;
+const STOP_SECONDS: i64 = 1665162000;
 
 fn now_seconds() -> i64 {
     use std::time::SystemTime;
@@ -153,21 +153,21 @@ impl StartCmd {
                     old_name,
                     Default::default(),
                 )
-                .with_genesis(include_bytes!("../../genesis/testnet-4.json"))
+                .with_genesis(include_bytes!("../../genesis/testnet-4b.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
                 .stop_seconds(STOP_SECONDS);
 
                 set_p2p_seeds(
                     &old_config_path,
-                    &["a1ceb2dc09ecf29a79538c1593bc027bee87363e@192.168.1.126:26656"],
+                    &["edb32208ff79b591dd4cddcf1c879f6405fe6c79@167.99.228.240:26656"],
                 );
 
                 if !started_old_node {
                     // TODO: set default RPC boostrap nodes
                     configure_for_statesync(
                         &old_config_path,
-                        &["http://192.168.1.126:26667", "http://192.168.1.126:26677"],
+                        &["http://167.99.228.240:26667", "http://167.99.228.240:26677"],
                     );
                 }
 
@@ -196,12 +196,17 @@ impl StartCmd {
                     );
 
                     let copy = |file: &str| {
-                        std::fs::copy(old_home.join(file), new_home.join(file)).unwrap();
+                        std::fs::copy(old_home.join(file), new_home.join(file))
                     };
 
-                    copy("tendermint/config/priv_validator_key.json");
-                    copy("tendermint/config/node_key.json");
-                    copy("tendermint/config/config.toml");
+                    copy("tendermint/config/priv_validator_key.json").unwrap();
+                    copy("tendermint/config/node_key.json").unwrap();
+                    copy("tendermint/config/config.toml").unwrap();
+                    if let Err(e) = copy("signer/xpriv") {
+                        if e.kind() != std::io::ErrorKind::NotFound {
+                            panic!("{}", e);
+                        }
+                    }
                     deconfigure_statesync(&new_config_path);
                 }
 
@@ -214,20 +219,20 @@ impl StartCmd {
                 // TODO: set default seeds
                 set_p2p_seeds(
                     &new_config_path,
-                    &["a1ceb2dc09ecf29a79538c1593bc027bee87363e@192.168.1.126:26656"],
+                    &["edb32208ff79b591dd4cddcf1c879f6405fe6c79@167.99.228.240:26656"],
                 );
 
                 // TODO: set default RPC boostrap nodes
                 configure_for_statesync(
                     &new_config_path,
-                    &["http://192.168.1.126:26667", "http://192.168.1.126:26677"],
+                    &["http://167.99.228.240:26667", "http://167.99.228.240:26677"],
                 );
             }
 
             println!("Starting node...");
             // TODO: add cfg defaults
             Node::<nomic::app::App>::new(new_name, Default::default())
-                .with_genesis(include_bytes!("../../genesis/internal-4c.json"))
+                .with_genesis(include_bytes!("../../genesis/testnet-4c.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
                 .run()
@@ -901,7 +906,7 @@ async fn deposit(dest: DepositCommitment) -> Result<()> {
 
     let client = reqwest::Client::new();
     let res = client
-        .post("http://192.168.1.126:9000")
+        .post("https://testnet-relayer.nomic.io:8443")
         .query(&[
             ("dest_bytes", dest.to_base64()?),
             ("sigset_index", sigset.index().to_string()),
