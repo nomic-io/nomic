@@ -12,7 +12,6 @@ use bitcoincore_rpc_async::json::GetBlockHeaderResult;
 use bitcoincore_rpc_async::{Client as BitcoinRpcClient, RpcApi};
 use futures::{pin_mut, select, FutureExt};
 use orga::abci::TendermintClient;
-use orga::encoding::Decode;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::future::Future;

@@ -451,7 +451,7 @@ pub struct ChangeRates {
 
 #[cfg(feature = "full")]
 impl BeginBlock for Bitcoin {
-    fn begin_block(&mut self, ctx: &BeginBlockCtx) -> OrgaResult<()> {
+    fn begin_block(&mut self, _ctx: &BeginBlockCtx) -> OrgaResult<()> {
         self.checkpoints
             .maybe_step(self.signatory_keys.map())
             .map_err(|err| OrgaError::App(err.to_string()))?;

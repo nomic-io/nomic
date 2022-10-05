@@ -1,6 +1,6 @@
 use orga::call::Call;
 use orga::client::Client;
-use orga::coins::{Address, Amount, Coin, Symbol};
+use orga::coins::{Address, Amount};
 use orga::collections::{ChildMut, Map};
 use orga::context::GetContext;
 #[cfg(feature = "full")]
