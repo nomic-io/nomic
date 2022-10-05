@@ -160,6 +160,10 @@ impl Signer {
     }
 
     async fn check_change_rates(&self) -> Result<()> {
+        if self.client.bitcoin.checkpoints.index().await? < 20 {
+            return Ok(());
+        }
+
         let now = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
