@@ -153,7 +153,7 @@ impl StartCmd {
                     old_name,
                     Default::default(),
                 )
-                .with_genesis(include_bytes!("../../genesis/testnet-4b.json"))
+                .with_genesis(include_bytes!("../../genesis/testnet-4.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
                 .stop_seconds(STOP_SECONDS);
