@@ -1,6 +1,6 @@
 [package]
 name = "nomic"
-version = "4.0.1"
+version = "4.1.0"
 authors = [ "The Nomic Team <hello@nomic.io>" ]
 edition = "2018"
 default-run = "nomic"
@@ -30,6 +30,7 @@ derive_more = "0.99.17"
 pretty_env_logger = "0.4.0"
 reqwest = "0.11.10"
 rand = { version = "0.8.5", optional = true }
+sha2 = "0.10.6"
 
 [dev-dependencies]
 bitcoin_hashes = "0.10.0"
@@ -50,7 +51,7 @@ name = "nomic"
 name = "create-checkpoint"
 
 [[bin]]
-name = "create-airdrop"
+name = "create-airdrop-snapshot"
 required-features = ["csv"]
 
 [patch.crates-io]

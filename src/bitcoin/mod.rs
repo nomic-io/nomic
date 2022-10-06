@@ -1,6 +1,8 @@
+use std::collections::HashMap;
 use std::ops::Deref;
 
 use crate::error::{Error, Result};
+use ::bitcoin::util::bip32::ChildNumber;
 use adapter::Adapter;
 use bitcoin::hashes::Hash;
 use bitcoin::util::bip32::ExtendedPubKey;
@@ -45,6 +47,8 @@ impl Symbol for Nbtc {
     const INDEX: u8 = 21;
 }
 
+pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Testnet;
+pub const MIN_WITHDRAWAL_CHECKPOINTS: u32 = 4;
 pub const MIN_DEPOSIT_AMOUNT: u64 = 600;
 pub const MIN_WITHDRAWAL_AMOUNT: u64 = 600;
 pub const MAX_WITHDRAWAL_SCRIPT_LENGTH: u64 = 64;
@@ -185,7 +189,6 @@ impl Bitcoin {
         Ok(())
     }
 
-    #[call]
     pub fn relay_deposit(
         &mut self,
         btc_tx: Adapter<Transaction>,
@@ -193,13 +196,9 @@ impl Bitcoin {
         btc_proof: Adapter<PartialMerkleTree>,
         btc_vout: u32,
         sigset_index: u32,
-        dest: Address,
-    ) -> Result<()> {
+        dest: &[u8],
+    ) -> Result<Amount> {
         exempt_from_fee()?;
-
-        if dest.is_null() {
-            return Err(OrgaError::App("Cannot deposit to null address".to_string()).into());
-        }
 
         let btc_header = self
             .headers
@@ -289,13 +288,11 @@ impl Bitcoin {
 
         let mut minted_nbtc = Nbtc::mint(value);
         let deposit_fee = minted_nbtc.take(calc_deposit_fee(value))?;
-        self.accounts.deposit(dest, minted_nbtc)?;
         self.reward_pool.give(deposit_fee)?;
 
-        Ok(())
+        Ok(minted_nbtc.amount)
     }
 
-    #[call]
     pub fn withdraw(&mut self, script_pubkey: Adapter<Script>, amount: Amount) -> Result<()> {
         exempt_from_fee()?;
 
@@ -303,11 +300,11 @@ impl Bitcoin {
             return Err(OrgaError::App("Script exceeds maximum length".to_string()).into());
         }
 
-        if self.checkpoints.len()? < 10 {
-            return Err(OrgaError::App(
-                "Withdrawals are disabled until the network has produced at least 10 checkpoints"
-                    .to_string(),
-            )
+        if self.checkpoints.len()? < MIN_WITHDRAWAL_CHECKPOINTS {
+            return Err(OrgaError::App(format!(
+                "Withdrawals are disabled until the network has produced at least {} checkpoints",
+                MIN_WITHDRAWAL_CHECKPOINTS
+            ))
             .into());
         }
 
@@ -374,19 +371,87 @@ impl Bitcoin {
     pub fn network(&self) -> bitcoin::Network {
         self.headers.network()
     }
+
+    #[query]
+    pub fn change_rates(&self, interval: u64, now: u64) -> Result<ChangeRates> {
+        let signing = self
+            .checkpoints
+            .signing()?
+            .ok_or_else(|| OrgaError::App("No checkpoint to be signed".to_string()))?;
+        if now > interval && now - interval > signing.create_time() {
+            return Ok(ChangeRates::default());
+        }
+        let now = signing.create_time().max(now);
+
+        let completed = self.checkpoints.completed()?;
+        if completed.is_empty() {
+            return Ok(ChangeRates::default());
+        }
+        let prev = completed
+            .iter()
+            .rev()
+            .find(|c| (now - c.create_time()) > interval)
+            .unwrap_or_else(|| completed.first().unwrap());
+
+        let amount_now = signing.inputs.get(0)?.unwrap().amount;
+        let amount_prev = prev.inputs.get(0)?.unwrap().amount;
+        let decrease = if amount_now > amount_prev {
+            0
+        } else {
+            amount_prev - amount_now
+        };
+
+        let vp_shares = |sigset: &SignatorySet| -> Result<_> {
+            let secp = bitcoin::secp256k1::Secp256k1::verification_only();
+            let sigset_index = sigset.index();
+            let total_vp = sigset.present_vp() as f64;
+            let sigset_fractions: HashMap<_, _> = sigset
+                .iter()
+                .map(|v| (v.pubkey.as_slice(), v.voting_power as f64 / total_vp))
+                .collect();
+            let mut sigset: HashMap<_, _> = Default::default();
+            for entry in self.signatory_keys.map().iter()? {
+                let (_, xpub) = entry?;
+                let derive_path = [ChildNumber::from_normal_idx(sigset_index)?];
+                let pubkey: threshold_sig::Pubkey =
+                    xpub.derive_pub(&secp, &derive_path)?.public_key.into();
+                sigset.insert(
+                    xpub.inner().encode(),
+                    *sigset_fractions.get(pubkey.as_slice()).unwrap_or(&0.0),
+                );
+            }
+
+            Ok(sigset)
+        };
+
+        let now_sigset = vp_shares(&signing.sigset)?;
+        let prev_sigset = vp_shares(&prev.sigset)?;
+        let sigset_change = now_sigset.iter().fold(0.0, |acc, (k, v)| {
+            let prev_share = prev_sigset.get(k).unwrap_or(&0.0);
+            if v > prev_share {
+                acc + (v - prev_share)
+            } else {
+                acc
+            }
+        });
+        let sigset_change = (sigset_change * 10_000.0) as u16;
+
+        Ok(ChangeRates {
+            withdrawal: (decrease * 10_000 / amount_prev) as u16,
+            sigset_change,
+        })
+    }
+}
+
+#[derive(Encode, Decode, Query, Client, Default)]
+pub struct ChangeRates {
+    pub withdrawal: u16,
+    pub sigset_change: u16,
 }
 
 #[cfg(feature = "full")]
 impl BeginBlock for Bitcoin {
-    fn begin_block(&mut self, ctx: &BeginBlockCtx) -> OrgaResult<()> {
-        let reset_height = 440_000;
-
-        if ctx.height == reset_height {
-            self.signatory_keys.reset()?;
-            self.processed_outpoints.reset()?;
-            self.checkpoints.reset()?;
-        }
-
+    fn begin_block(&mut self, _ctx: &BeginBlockCtx) -> OrgaResult<()> {
         self.checkpoints
             .maybe_step(self.signatory_keys.map())
             .map_err(|err| OrgaError::App(err.to_string()))?;

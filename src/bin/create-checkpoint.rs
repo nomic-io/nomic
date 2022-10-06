@@ -19,7 +19,7 @@ pub struct Opts {
 pub async fn main() {
     let opts = Opts::parse();
 
-    let rpc_url = format!("http://192.168.1.126:{}", opts.rpc_port);
+    let rpc_url = format!("http://localhost:{}", opts.rpc_port);
     let auth = match (opts.rpc_user, opts.rpc_pass) {
         (Some(user), Some(pass)) => Auth::UserPass(user, pass),
         _ => Auth::None,

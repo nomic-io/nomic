@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
 use futures::executor::block_on;
+use nomic::app::{DepositCommitment, IbcDepositCommitment};
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
 use nomicv3::command::Opts as LegacyOpts;
@@ -17,7 +18,7 @@ use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
 
-const STOP_SECONDS: i64 = 1662138000;
+const STOP_SECONDS: i64 = 1665162000;
 
 fn now_seconds() -> i64 {
     use std::time::SystemTime;
@@ -65,11 +66,13 @@ pub enum Command {
     Unjail(UnjailCmd),
     Edit(EditCmd),
     Claim(ClaimCmd),
+    Airdrop(AirdropCmd),
     ClaimAirdrop(ClaimAirdropCmd),
     Relayer(RelayerCmd),
     Signer(SignerCmd),
     SetSignatoryKey(SetSignatoryKeyCmd),
     Deposit(DepositCmd),
+    InterchainDeposit(InterchainDepositCmd),
     Withdraw(WithdrawCmd),
     IbcDepositNbtc(IbcDepositNbtcCmd),
     IbcWithdrawNbtc(IbcWithdrawNbtcCmd),
@@ -97,11 +100,13 @@ impl Command {
             Edit(cmd) => cmd.run().await,
             Claim(cmd) => cmd.run().await,
             ClaimAirdrop(cmd) => cmd.run().await,
+            Airdrop(cmd) => cmd.run().await,
             // Legacy(cmd) => cmd.run().await,
             Relayer(cmd) => cmd.run().await,
             Signer(cmd) => cmd.run().await,
             SetSignatoryKey(cmd) => cmd.run().await,
             Deposit(cmd) => cmd.run().await,
+            InterchainDeposit(cmd) => cmd.run().await,
             Withdraw(cmd) => cmd.run().await,
             IbcDepositNbtc(cmd) => cmd.run().await,
             IbcWithdrawNbtc(cmd) => cmd.run().await,
@@ -191,12 +196,17 @@ impl StartCmd {
                     );
 
                     let copy = |file: &str| {
-                        std::fs::copy(old_home.join(file), new_home.join(file)).unwrap();
+                        std::fs::copy(old_home.join(file), new_home.join(file))
                     };
 
-                    copy("tendermint/config/priv_validator_key.json");
-                    copy("tendermint/config/node_key.json");
-                    copy("tendermint/config/config.toml");
+                    copy("tendermint/config/priv_validator_key.json").unwrap();
+                    copy("tendermint/config/node_key.json").unwrap();
+                    copy("tendermint/config/config.toml").unwrap();
+                    if let Err(e) = copy("signer/xpriv") {
+                        if e.kind() != std::io::ErrorKind::NotFound {
+                            panic!("{}", e);
+                        }
+                    }
                     deconfigure_statesync(&new_config_path);
                 }
 
@@ -222,7 +232,7 @@ impl StartCmd {
             println!("Starting node...");
             // TODO: add cfg defaults
             Node::<nomic::app::App>::new(new_name, Default::default())
-                .with_genesis(include_bytes!("../../genesis/testnet-4b.json"))
+                .with_genesis(include_bytes!("../../genesis/testnet-4c.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
                 .run()
@@ -287,7 +297,9 @@ fn configure_for_statesync(cfg_path: &PathBuf, rpc_servers: &[&str]) {
         cfg["statesync"]["rpc_servers"] = toml_edit::value(rpc_servers.join(","));
         cfg["statesync"]["trust_height"] = toml_edit::value(height);
         cfg["statesync"]["trust_hash"] = toml_edit::value(hash.clone());
-        cfg["statesync"]["trust_period"] = toml_edit::value("216h0m0s");
+        if cfg["statesync"]["trust_period"].to_string() == "0" {
+            cfg["statesync"]["trust_period"] = toml_edit::value("216h0m0s");
+        }
     });
 }
 
@@ -670,15 +682,103 @@ impl ClaimCmd {
 }
 
 #[derive(Parser, Debug)]
-pub struct ClaimAirdropCmd;
+pub struct AirdropCmd {
+    address: Option<Address>,
+}
+
+impl AirdropCmd {
+    async fn run(&self) -> Result<()> {
+        let client = app_client();
+
+        let addr = self.address.unwrap_or_else(|| my_address());
+        let acct = match client.airdrop.get(addr).await?? {
+            None => {
+                println!("Address is not eligible for airdrop");
+                return Ok(());
+            }
+            Some(acct) => acct,
+        };
+
+        println!("{:#?}", acct);
+
+        Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct ClaimAirdropCmd {
+    address: Option<Address>,
+}
 
 impl ClaimAirdropCmd {
     async fn run(&self) -> Result<()> {
-        Ok(app_client()
-            .pay_from(async move |client| client.atom_airdrop.claim().await)
-            .accounts
-            .give_from_funding_all()
-            .await?)
+        let client = app_client();
+
+        let addr = self.address.unwrap_or_else(|| my_address());
+        let acct = match client.airdrop.get(addr).await?? {
+            None => {
+                println!("Address is not eligible for airdrop");
+                return Ok(());
+            }
+            Some(acct) => acct,
+        };
+
+        let mut claimed = false;
+
+        if acct.airdrop1.claimable > 0 {
+            app_client()
+                .pay_from(async move |client| client.airdrop.claim_airdrop1().await)
+                .accounts
+                .give_from_funding_all()
+                .await?;
+            println!("Claimed airdrop 1 ({} uNOM)", acct.airdrop1.claimable);
+            claimed = true;
+        }
+
+        if acct.btc_deposit.claimable > 0 {
+            app_client()
+                .pay_from(async move |client| client.airdrop.claim_btc_deposit().await)
+                .accounts
+                .give_from_funding_all()
+                .await?;
+            println!(
+                "Claimed BTC deposit airdrop ({} uNOM)",
+                acct.btc_deposit.claimable
+            );
+            claimed = true;
+        }
+
+        if acct.btc_withdraw.claimable > 0 {
+            app_client()
+                .pay_from(async move |client| client.airdrop.claim_btc_withdraw().await)
+                .accounts
+                .give_from_funding_all()
+                .await?;
+            println!(
+                "Claimed BTC withdraw airdrop ({} uNOM)",
+                acct.btc_withdraw.claimable
+            );
+            claimed = true;
+        }
+
+        if acct.ibc_transfer.claimable > 0 {
+            app_client()
+                .pay_from(async move |client| client.airdrop.claim_ibc_transfer().await)
+                .accounts
+                .give_from_funding_all()
+                .await?;
+            println!(
+                "Claimed IBC transfer airdrop ({} uNOM)",
+                acct.ibc_transfer.claimable
+            );
+            claimed = true;
+        }
+
+        if !claimed {
+            println!("No claimable airdrops");
+        }
+
+        Ok(())
     }
 }
 
@@ -744,8 +844,19 @@ impl RelayerCmd {
 
 #[derive(Parser, Debug)]
 pub struct SignerCmd {
+    /// Path to the signatory private key
     #[clap(short, long)]
     path: Option<String>,
+    /// Limits the fraction of the total reserve that may be withdrawn within
+    /// the trailing 24-hour period
+    #[clap(long, default_value_t = 0.04)]
+    max_withdrawal_rate: f64,
+    /// Limits the maximum allowed signatory set change within 24 hours
+    ///
+    /// The Total Variation Distance between a day-old signatory set and the
+    /// newly-proposed signatory set may not exceed this value
+    #[clap(long, default_value_t = 0.04)]
+    max_sigset_change_rate: f64,
 }
 
 impl SignerCmd {
@@ -760,7 +871,13 @@ impl SignerCmd {
         }
         let key_path = signer_dir_path.join("xpriv");
 
-        let signer = Signer::load_or_generate(my_address(), app_client(), key_path)?;
+        let signer = Signer::load_or_generate(
+            my_address(),
+            app_client(),
+            key_path,
+            self.max_withdrawal_rate,
+            self.max_sigset_change_rate,
+        )?;
         signer.start().await?;
 
         Ok(())
@@ -784,6 +901,32 @@ impl SetSignatoryKeyCmd {
     }
 }
 
+async fn deposit(dest: DepositCommitment) -> Result<()> {
+    let sigset = app_client().bitcoin.checkpoints.active_sigset().await??;
+    let script = sigset.output_script(dest.commitment_bytes()?.as_slice())?;
+    let btc_addr = bitcoin::Address::from_script(&script, nomic::bitcoin::NETWORK).unwrap();
+
+    let client = reqwest::Client::new();
+    let res = client
+        .post("https://testnet-relayer.nomic.io:8443")
+        .query(&[
+            ("dest_bytes", dest.to_base64()?),
+            ("sigset_index", sigset.index().to_string()),
+            ("deposit_addr", btc_addr.to_string()),
+        ])
+        .send()
+        .await
+        .map_err(|err| nomic::error::Error::Orga(orga::Error::App(err.to_string())))?;
+    if res.status() != 200 {
+        return Err(orga::Error::App(format!("Relayer responded with code {}", res.status()).to_string()).into());
+    }
+
+    println!("Deposit address: {}", btc_addr);
+    println!("Expiration: {}", "5 days from now");
+    // TODO: show real expiration
+    Ok(())
+}
+
 #[derive(Parser, Debug)]
 pub struct DepositCmd {
     address: Option<Address>,
@@ -793,28 +936,31 @@ impl DepositCmd {
     async fn run(&self) -> Result<()> {
         let dest_addr = self.address.unwrap_or_else(|| my_address());
 
-        let sigset = app_client().bitcoin.checkpoints.active_sigset().await??;
-        let script = sigset.output_script(dest_addr)?;
-        // TODO: get network from somewhere
-        let btc_addr = bitcoin::Address::from_script(&script, bitcoin::Network::Testnet).unwrap();
+        deposit(DepositCommitment::Address(dest_addr)).await
+    }
+}
 
-        let client = reqwest::Client::new();
-        client
-            .post(format!(
-                "https://testnet-relayer.nomic.io:8443?dest_addr={}&sigset_index={}&deposit_addr={}",
-                dest_addr,
-                sigset.index(),
-                btc_addr,
-            ))
-            .send()
-            .await
-            .map_err(|err| nomic::error::Error::Orga(orga::Error::App(err.to_string())))?;
+#[derive(Parser, Debug)]
+pub struct InterchainDepositCmd {
+    #[clap(long, value_name = "ADDRESS")]
+    receiver: String,
+    #[clap(long, value_name = "CHANNEL_ID")]
+    channel: String,
+}
 
-        println!("Deposit address: {}", btc_addr);
-        println!("Expiration: {}", "5 days from now");
-        // TODO: show real expiration
+impl InterchainDepositCmd {
+    async fn run(&self) -> Result<()> {
+        use orga::ibc::encoding::Adapter;
+        let now_ns = now_seconds() as u64 * 1_000_000_000;
+        let dest = DepositCommitment::Ibc(IbcDepositCommitment {
+            receiver: Adapter::new(self.receiver.parse().unwrap()),
+            sender: Adapter::new(my_address().to_string().parse().unwrap()),
+            source_channel: Adapter::new(self.channel.parse().unwrap()),
+            source_port: Adapter::new("transfer".parse().unwrap()),
+            timeout_timestamp: now_ns + 8 * 60 * 60 * 1_000_000_000,
+        });
 
-        Ok(())
+        deposit(dest).await
     }
 }
 
@@ -833,8 +979,7 @@ impl WithdrawCmd {
         app_client()
             .pay_from(async move |client| {
                 client
-                    .bitcoin
-                    .withdraw(Adapter::new(script), self.amount.into())
+                    .withdraw_nbtc(Adapter::new(script), self.amount.into())
                     .await
             })
             .noop()
@@ -908,8 +1053,10 @@ pub struct IbcTransferCmd {
 use orga::ibc::TransferArgs;
 impl IbcTransferCmd {
     async fn run(&self) -> Result<()> {
+        let fee: u64 = nomic::app::ibc_fee(self.amount.into())?.into();
+        let amount_after_fee = self.amount - fee;
         let transfer_args = TransferArgs {
-            amount: self.amount.into(),
+            amount: amount_after_fee.into(),
             channel_id: self.channel_id.clone(),
             port_id: self.port_id.clone(),
             denom: self.denom.clone(),

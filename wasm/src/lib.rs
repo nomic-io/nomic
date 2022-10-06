@@ -68,6 +68,26 @@ pub async fn claim_airdrop() -> Result<JsValue, JsValue> {
     into_js_res(Internal::claim_airdrop().await)
 }
 
+#[wasm_bindgen(js_name = claimBtcDepositAirdrop)]
+pub async fn claim_btc_deposit_airdrop() -> Result<JsValue, JsValue> {
+    into_js_res(Internal::claim_btc_deposit_airdrop().await)
+}
+
+#[wasm_bindgen(js_name = claimBtcWithdrawAirdrop)]
+pub async fn claim_btc_withdraw_airdrop() -> Result<JsValue, JsValue> {
+    into_js_res(Internal::claim_btc_withdraw_airdrop().await)
+}
+
+#[wasm_bindgen(js_name = claimIbcTransferAirdrop)]
+pub async fn claim_ibc_transfer_airdrop() -> Result<JsValue, JsValue> {
+    into_js_res(Internal::claim_ibc_transfer_airdrop().await)
+}
+
+#[wasm_bindgen(js_name = claimIncomingIbcBtc)]
+pub async fn claim_incoming_ibc_btc() -> Result<JsValue, JsValue> {
+    into_js_res(Internal::claim_incoming_ibc_btc().await)
+}
+
 #[wasm_bindgen]
 pub async fn delegate(to_addr: String, amount: u64) -> Result<JsValue, JsValue> {
     into_js_res(Internal::delegate(to_addr, amount).await)
@@ -87,9 +107,9 @@ pub async fn redelegate(
     into_js_res(Internal::redelegate(src_addr, dst_addr, amount).await)
 }
 
-#[wasm_bindgen(js_name = airdropBalance)]
-pub async fn airdrop_balance(addr: String) -> Result<Option<u64>, JsValue> {
-    into_js_res(Internal::airdrop_balance(addr).await)
+#[wasm_bindgen(js_name = airdropBalances)]
+pub async fn airdrop_balances(addr: String) -> Result<types::Airdrop, JsValue> {
+    into_js_res(Internal::airdrop_balances(addr).await)
 }
 
 #[wasm_bindgen]
@@ -110,6 +130,11 @@ pub async fn gen_deposit_addr(dest_addr: String) -> Result<DepositAddress, JsVal
 #[wasm_bindgen(js_name = nbtcBalance)]
 pub async fn nbtc_balance(addr: String) -> Result<u64, JsValue> {
     into_js_res(Internal::nbtc_balance(addr).await)
+}
+
+#[wasm_bindgen(js_name = incomingIbcNbtcBalance)]
+pub async fn incoming_ibc_nbtc_balance(addr: String) -> Result<u64, JsValue> {
+    into_js_res(Internal::incoming_ibc_nbtc_balance(addr).await)
 }
 
 #[wasm_bindgen(js_name = valueLocked)]
@@ -140,4 +165,9 @@ pub async fn broadcast_deposit_addr(
 #[wasm_bindgen]
 pub async fn withdraw(dest_addr: String, amount: u64) -> Result<JsValue, JsValue> {
     into_js_res(Internal::withdraw(dest_addr, amount).await)
+}
+
+#[wasm_bindgen(js_name = ibcTransferOut)]
+pub async fn ibc_transfer_out(amount: u64, channel_id: String, port_id: String, denom: String, self_address: String, receiver_address: String, ns_timeout_timestamp: String) -> Result<JsValue, JsValue> {
+    into_js_res(Internal::ibc_transfer_out(amount, channel_id, port_id, denom, self_address, receiver_address, ns_timeout_timestamp).await)
 }

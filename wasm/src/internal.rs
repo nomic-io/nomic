@@ -6,7 +6,7 @@ use crate::types::*;
 use crate::web_client::WebAdapter;
 use crate::web_client::WebClient;
 use js_sys::{Array, JsString};
-use nomic::app::{Airdrop, App, InnerApp, Nom, CHAIN_ID};
+use nomic::app::{App, DepositCommitment, InnerApp, Nom, CHAIN_ID};
 use nomic::bitcoin::signatory::SignatorySet;
 use nomic::bitcoin::Nbtc;
 use nomic::orga::client::AsyncQuery;
@@ -22,6 +22,7 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{Request, RequestInit, RequestMode, Response};
 use nomic::orga::coins::Symbol;
+use nomic::orga::ibc::TransferArgs;
 
 pub async fn transfer(to_addr: String, amount: u64) -> Result<JsValue> {
     let mut client: WebClient<App> = WebClient::new();
@@ -35,6 +36,25 @@ pub async fn transfer(to_addr: String, amount: u64) -> Result<JsValue> {
         .transfer(address, amount.into())
         .await?;
     Ok(client.last_res()?)
+}
+
+pub async fn ibc_transfer_out(amount: u64, channel_id: String, port_id: String, denom: String, self_address: String, receiver_address: String, timeout_timestamp: String) -> Result<JsValue> {
+    let mut client: WebClient<App> = WebClient::new();
+
+    let mut value = serde_json::Map::new();
+    value.insert("amount".to_string(), amount.into());
+    value.insert("denom".to_string(), denom.into());
+    value.insert("channel_id".to_string(), channel_id.into());
+    value.insert("port_id".to_string(), port_id.into());
+    value.insert("receiver".to_string(), receiver_address.into());
+    value.insert("sender".to_string(), self_address.into());
+    value.insert("timeout_timestamp".to_string(), timeout_timestamp.into());
+
+    send_sdk_tx(sdk::Msg {
+        type_: "nomic/MsgIbcTransferOut".to_string(),
+        value: value.into(),
+    })
+    .await
 }
 
 pub async fn balance(addr: String) -> Result<u64> {
@@ -68,6 +88,14 @@ pub async fn nbtc_reward_balance(addr: String) -> Result<u64> {
         .map(|(_, d)| -> u64 { d.liquid.iter().find(|(denom, _)| *denom == Nbtc::INDEX)
         .unwrap_or(&(0, 0.into())).1.into() })
         .sum::<u64>())
+}
+
+pub async fn incoming_ibc_nbtc_balance(addr: String) -> Result<u64> {
+    let client: WebClient<App> = WebClient::new();
+    let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+
+    let balance = client.ibc.transfers.escrowed_balance(address, "usat".parse().unwrap()).await??;
+    Ok(balance.into())
 }
 
 pub async fn delegations(addr: String) -> Result<Array> {
@@ -155,7 +183,39 @@ pub async fn claim() -> Result<JsValue> {
 
 pub async fn claim_airdrop() -> Result<JsValue> {
     send_sdk_tx(sdk::Msg {
-        type_: "nomic/MsgClaimAirdrop".to_string(),
+        type_: "nomic/MsgClaimAirdrop1".to_string(),
+        value: serde_json::Map::new().into(),
+    })
+    .await
+}
+
+pub async fn claim_btc_deposit_airdrop() -> Result<JsValue> {
+    send_sdk_tx(sdk::Msg {
+        type_: "nomic/MsgClaimBtcDepositAirdrop".to_string(),
+        value: serde_json::Map::new().into(),
+    })
+    .await
+}
+
+pub async fn claim_btc_withdraw_airdrop() -> Result<JsValue> {
+    send_sdk_tx(sdk::Msg {
+        type_: "nomic/MsgClaimBtcWithdrawAirdrop".to_string(),
+        value: serde_json::Map::new().into(),
+    })
+    .await
+}
+
+pub async fn claim_ibc_transfer_airdrop() -> Result<JsValue> {
+    send_sdk_tx(sdk::Msg {
+        type_: "nomic/MsgClaimIbcTransferAirdrop".to_string(),
+        value: serde_json::Map::new().into(),
+    })
+    .await
+}
+
+pub async fn claim_incoming_ibc_btc() -> Result<JsValue> {
+    send_sdk_tx(sdk::Msg {
+        type_: "nomic/MsgClaimIbcBitcoin".to_string(),
         value: serde_json::Map::new().into(),
     })
     .await
@@ -219,11 +279,28 @@ pub async fn redelegate(src_addr: String, dst_addr: String, amount: u64) -> Resu
     .await
 }
 
-pub async fn airdrop_balance(addr: String) -> Result<Option<u64>> {
+fn parse_part(part: nomic::airdrop::Part) -> AirdropDetails {
+    AirdropDetails {
+        claimed: part.claimed > 0,
+        claimable: part.claimable > 0,
+        amount: part.claimed + part.claimable + part.locked
+    }
+}
+
+pub async fn airdrop_balances(addr: String) -> Result<Airdrop> {
     let client: WebClient<App> = WebClient::new();
     let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
-    Ok(client.atom_airdrop.balance(address).await??.map(Into::into))
+    if let Some(account) = client.airdrop.get(address).await?? {
+        Ok(Airdrop {
+            airdrop1: parse_part(account.airdrop1),
+            btc_deposit: parse_part(account.btc_deposit),
+            btc_withdraw: parse_part(account.btc_withdraw),
+            ibc_transfer: parse_part(account.ibc_transfer),
+        })
+    } else {
+        Ok(Airdrop::default())
+    }
 }
 
 pub async fn nonce(addr: String) -> Result<u64> {
@@ -243,10 +320,8 @@ pub async fn gen_deposit_addr(dest_addr: String) -> Result<DepositAddress> {
         .bitcoin
         .checkpoints
         .active_sigset()
-        .await
-        .unwrap()
-        .unwrap();
-    let script = sigset.output_script(dest_addr)?;
+        .await??;
+    let script = sigset.output_script(DepositCommitment::Address(dest_addr).commitment_bytes()?.as_slice())?;
     // TODO: get network from somewhere
     // TODO: make test/mainnet option configurable
     let btc_addr = match bitcoin::Address::from_script(&script, bitcoin::Network::Testnet) {
@@ -296,6 +371,12 @@ pub async fn broadcast_deposit_addr(
     relayers: js_sys::Array,
     deposit_addr: String
 ) -> Result<()> {
+    let dest_addr = dest_addr
+        .parse()
+        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+
+    let commitment = DepositCommitment::Address(dest_addr);
+
     let window = match web_sys::window() {
         Some(window) => window,
         None => return Err(Error::Wasm("Window not found".to_string())),
@@ -310,17 +391,22 @@ pub async fn broadcast_deposit_addr(
         let mut opts = RequestInit::new();
         opts.method("POST");
         opts.mode(RequestMode::Cors);
-        let url = format!("{}?dest_addr={}&sigset_index={}&deposit_addr={}", relayer, dest_addr, sigset_index, deposit_addr);
+        let url = format!("{}?dest_bytes={}&sigset_index={}&deposit_addr={}", relayer, commitment.to_base64()?, sigset_index, deposit_addr);
 
         let request = Request::new_with_str_and_init(&url, &opts)?;
 
         let resp_value = JsFuture::from(window.fetch_with_request(&request)).await?;
 
         let res: Response = resp_value.dyn_into()?;
+        let status = res.status();
+        if status != 200 {
+            return Err(Error::Relayer(format!("Relayer response returned with error code: {}", status)));
+        }  
         let res_buf = res.array_buffer()?;
         let res = JsFuture::from(res_buf).await?;
         let res = js_sys::Uint8Array::new(&res).to_vec();
         let res = String::from_utf8(res)?;
+        
         web_sys::console::log_1(&format!("response: {}", &res).into());
     }
     Ok(())

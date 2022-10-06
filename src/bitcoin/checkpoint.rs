@@ -10,7 +10,6 @@ use derive_more::{Deref, DerefMut};
 use orga::{
     call::Call,
     client::Client,
-    coins::Address,
     collections::{map::ReadOnly, ChildMut, Deque, Map, Ref},
     context::GetContext,
     encoding::{Decode, Encode},
@@ -83,7 +82,7 @@ pub struct Input {
     pub script_pubkey: Adapter<bitcoin::Script>,
     pub redeem_script: Adapter<bitcoin::Script>,
     pub sigset_index: u32,
-    pub dest: Address,
+    pub dest: LengthVec<u16, u8>,
     pub amount: u64,
     pub est_witness_vsize: u64,
     pub sigs: ThresholdSig,
@@ -153,6 +152,7 @@ impl Checkpoint {
         Ok((tx, est_vsize))
     }
 
+    #[query]
     pub fn get_tvl(&self) -> Result<u64> {
         let mut tvl = 0;
         for i in 0..self.inputs.len() {
@@ -292,7 +292,7 @@ impl<'a> BuildingCheckpointMut<'a> {
         &mut self,
         prevout: bitcoin::OutPoint,
         sigset: &SignatorySet,
-        dest: Address,
+        dest: &[u8],
         amount: u64,
     ) -> Result<u64> {
         let script_pubkey = sigset.output_script(dest)?;
@@ -304,7 +304,7 @@ impl<'a> BuildingCheckpointMut<'a> {
             Adapter::new(script_pubkey),
             Adapter::new(redeem_script),
             sigset.index(),
-            dest.into(),
+            dest.encode()?.into(),
             amount,
             sigset.est_witness_vsize(),
             <ThresholdSig as State>::Encoding::default(),
@@ -331,7 +331,7 @@ impl<'a> BuildingCheckpointMut<'a> {
 
         let reserve_out = bitcoin::TxOut {
             value: 0, // will be updated after counting ins/outs and fees
-            script_pubkey: checkpoint.sigset.output_script(Address::NULL)?,
+            script_pubkey: checkpoint.sigset.output_script(&vec![0u8])?, // TODO: double-check safety
         };
         checkpoint.outputs.push_front(Adapter::new(reserve_out))?;
 
@@ -576,7 +576,12 @@ impl CheckpointQueue {
 
                 let mut building = self.building_mut()?;
 
-                building.push_input(reserve_outpoint, &sigset, Address::NULL, reserve_value)?;
+                building.push_input(
+                    reserve_outpoint,
+                    &sigset,
+                    &vec![0u8], // TODO: double-check safety
+                    reserve_value,
+                )?;
 
                 for input in excess_inputs {
                     let shares = input.sigs.shares()?;
@@ -664,6 +669,7 @@ impl CheckpointQueue {
             .to_sign(xpub)
     }
 
+    #[query]
     pub fn sigset(&self, index: u32) -> Result<SignatorySet> {
         Ok(self.get(index)?.sigset.clone())
     }

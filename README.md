@@ -6,7 +6,7 @@ Nomic Bitcoin Bridge
 
 ## Testnet Interchain Upgrade
 
-This testnet upgrade adds preliminary IBC support.
+This testnet version is the release candidate for the upcoming Stakenet upgrade.
 
 ## Upgrading existing nodes
 
@@ -24,7 +24,7 @@ cargo install --locked --path .
 
 3. Restart your node with `nomic start`.
 
-Your node will automatically perform the upgrade on Tuesday, September 2nd at 17:00 UTC.
+Your node will automatically perform the upgrade on Friday, October 7 at 17:00 UTC.
 
 ## Node setup guide
 
@@ -124,7 +124,7 @@ You can run the signer with:
 nomic signer
 ```
 
-This will automatically generate a Bitcoin extended private key and store it at `~/.nomic-stakenet-3/signer/xpriv`. It will also prompt you to submit your public key to the network so you can be added to the multisig. **KEEP THIS KEY SAFE** - similar to your validator private key, it is important to be mindful of this key so that it is never lost or stolen.
+This will automatically generate a Bitcoin extended private key and store it at `~/.nomic-testnet-4c/signer/xpriv`. It will also prompt you to submit your public key to the network so you can be added to the multisig. **KEEP THIS KEY SAFE** - similar to your validator private key, it is important to be mindful of this key so that it is never lost or stolen.
 
 Leave this process running, it will automatically sign Bitcoin transactions that the network wants to create.
 
@@ -158,5 +158,5 @@ The relayer will also create a server which listens on port 9000 for clients to 
 
 ---
 
-Thanks for participating in the Nomic Stakenet! We'll be updating the network
+Thanks for participating in the Nomic Testnet! We'll be updating the network
 often so stay tuned in [Discord](https://discord.gg/jH7U2NRJKn) for updates.

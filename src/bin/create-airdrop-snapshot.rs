@@ -1,7 +1,7 @@
 #![feature(hash_drain_filter)]
 
 use clap::Parser;
-use std::{collections::{BTreeMap, HashMap, HashSet}, convert::TryInto};
+use std::collections::HashMap;
 
 #[derive(Parser, Debug)]
 pub struct Opts {
@@ -90,7 +90,11 @@ fn get_included_vals(data: &serde_json::Value, skip_validators: usize) -> HashMa
         .collect()
 }
 
-fn get_recipients(data: &serde_json::Value, skip_validators: usize, trim_decimals: u32) -> Recipients {
+fn get_recipients(
+    data: &serde_json::Value,
+    skip_validators: usize,
+    trim_decimals: u32,
+) -> Recipients {
     let vals = get_included_vals(data, skip_validators);
 
     let mut recipients = HashMap::new();
@@ -137,9 +141,10 @@ fn to_rows(networks: Vec<Network>, min_balance: u64) -> Vec<Vec<String>> {
         for (addr, (staked, count)) in recipients {
             let extend = |row: &mut (u64, Vec<String>)| {
                 row.0 += staked;
-                row.1.extend([ staked.to_string(), count.to_string() ])
+                row.1.extend([staked.to_string(), count.to_string()])
             };
-            combined.entry(encode_addr(addr))
+            combined
+                .entry(encode_addr(addr))
                 .and_modify(extend)
                 .or_insert_with(|| {
                     let mut row = (0, vec!["0".to_string(); len - 2]);
@@ -156,11 +161,13 @@ fn to_rows(networks: Vec<Network>, min_balance: u64) -> Vec<Vec<String>> {
 
     combined.drain_filter(|_, (balance, _)| *balance < min_balance);
 
-    let mut rows: Vec<_> = std::iter::once(headers).chain(combined.into_iter().map(|(addr, (_, fields))| {
-        let mut row = vec![addr];
-        row.extend(fields);
-        row
-    })).collect();
+    let mut rows: Vec<_> = std::iter::once(headers)
+        .chain(combined.into_iter().map(|(addr, (_, fields))| {
+            let mut row = vec![addr];
+            row.extend(fields);
+            row
+        }))
+        .collect();
 
     rows.sort_by(|a, b| a[0].cmp(&b[0]));
 
@@ -178,3 +185,4 @@ fn encode_addr(data: Vec<u8>) -> String {
     let data = data.to_base32();
     bech32::encode("nomic", data, bech32::Variant::Bech32).unwrap()
 }
+

@@ -1,5 +1,6 @@
 use js_sys::{Array, JsString};
-use nomic::app::{Airdrop, App, InnerApp, Nom, CHAIN_ID};
+use nomic::app::{App, InnerApp, Nom, CHAIN_ID};
+use nomic::airdrop::Airdrop;
 use nomic::bitcoin::signatory::SignatorySet;
 use nomic::orga::call::Call;
 use nomic::orga::client::{AsyncCall, AsyncQuery, Client};
@@ -99,17 +100,14 @@ where
             None => return Err(Error::App("Window not found".to_string())),
         };
 
-        let location = window.location();
-        let rest_server = format!(
-            "{}//{}:{}",
-            location
-                .protocol()
-                .map_err(|e| Error::App(format!("{:?}", e)))?,
-            location
-                .hostname()
-                .map_err(|e| Error::App(format!("{:?}", e)))?,
-            REST_PORT
-        );
+        let storage = window
+            .local_storage()
+            .map_err(|_| Error::App("Could not get local storage".into()))?
+            .unwrap();
+        let rest_server = storage
+            .get("nomic/rest_server")
+            .map_err(|_| Error::App("Could not load from local storage".into()))?
+            .unwrap();
 
         let mut opts = RequestInit::new();
         opts.method("POST");
@@ -162,17 +160,14 @@ impl<T: Query + State> AsyncQuery for WebAdapter<T> {
             Some(window) => window,
             None => return Err(Error::App("Window not found".to_string())),
         };
-        let location = window.location();
-        let rest_server = format!(
-            "{}//{}:{}",
-            location
-                .protocol()
-                .map_err(|e| Error::App(format!("{:?}", e)))?,
-            location
-                .hostname()
-                .map_err(|e| Error::App(format!("{:?}", e)))?,
-            REST_PORT
-        );
+        let storage = window
+            .local_storage()
+            .map_err(|_| Error::App("Could not get local storage".into()))?
+            .unwrap();
+        let rest_server = storage
+            .get("nomic/rest_server")
+            .map_err(|_| Error::App("Could not load from local storage".into()))?
+            .unwrap();
 
         let mut opts = RequestInit::new();
         opts.method("GET");
