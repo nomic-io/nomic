@@ -160,7 +160,7 @@ impl Signer {
     }
 
     async fn check_change_rates(&self) -> Result<()> {
-        if self.client.bitcoin.checkpoints.index().await? < 20 {
+        if self.client.bitcoin.checkpoints.index().await? < 100 {
             return Ok(());
         }
 
