@@ -20,7 +20,7 @@ use orga::Error;
 use orga::{ibc, prelude::*};
 use serde::{Deserialize, Serialize};
 
-pub const CHAIN_ID: &str = "nomic-testnet-4c";
+pub const CHAIN_ID: &str = "nomic-testnet-4d";
 pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
 
 #[derive(State, Debug, Clone)]

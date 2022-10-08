@@ -1859,7 +1859,7 @@ dependencies = [
 [[package]]
 name = "merk"
 version = "2.0.0"
-source = "git+https://github.com/nomic-io/merk?rev=5d13c77206891ce774c36ebe8f6f4c8673e5f81e#5d13c77206891ce774c36ebe8f6f4c8673e5f81e"
+source = "git+https://github.com/nomic-io/merk?rev=8009dff26de5718eec709d3aea6d71f7c5188adb#8009dff26de5718eec709d3aea6d71f7c5188adb"
 dependencies = [
  "byteorder",
  "colored 2.0.0",
@@ -2016,7 +2016,7 @@ dependencies = [
 
 [[package]]
 name = "nomic"
-version = "4.1.0"
+version = "4.1.1"
 dependencies = [
  "base64",
  "bech32",
@@ -2230,7 +2230,7 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.3.1"
-source = "git+https://github.com/nomic-io/orga.git?branch=v4#ee2a9b8a852b982b8816a48379957e779c8ff0d6"
+source = "git+https://github.com/nomic-io/orga.git?branch=v4#c9a56142dd65bc10d139f5bcb493473e3f8c49f1"
 dependencies = [
  "abci2",
  "async-trait",
@@ -2295,7 +2295,7 @@ dependencies = [
 [[package]]
 name = "orga-macros"
 version = "0.3.1"
-source = "git+https://github.com/nomic-io/orga.git?branch=v4#ee2a9b8a852b982b8816a48379957e779c8ff0d6"
+source = "git+https://github.com/nomic-io/orga.git?branch=v4#c9a56142dd65bc10d139f5bcb493473e3f8c49f1"
 dependencies = [
  "heck 0.3.3",
  "proc-macro2",
