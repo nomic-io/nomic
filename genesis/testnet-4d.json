@@ -1,6 +1,6 @@
 {
   "genesis_time": "2022-10-05T00:00:00Z",
-  "chain_id": "nomic-testnet-4c",
+  "chain_id": "nomic-testnet-4d",
   "initial_height": "0",
   "consensus_params": {
     "block": {
