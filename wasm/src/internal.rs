@@ -23,6 +23,7 @@ use wasm_bindgen_futures::JsFuture;
 use web_sys::{Request, RequestInit, RequestMode, Response};
 use nomic::orga::coins::Symbol;
 use nomic::orga::ibc::TransferArgs;
+use urlencoding::encode;
 
 pub async fn transfer(to_addr: String, amount: u64) -> Result<JsValue> {
     let mut client: WebClient<App> = WebClient::new();
@@ -391,7 +392,7 @@ pub async fn broadcast_deposit_addr(
         let mut opts = RequestInit::new();
         opts.method("POST");
         opts.mode(RequestMode::Cors);
-        let url = format!("{}?dest_bytes={}&sigset_index={}&deposit_addr={}", relayer, commitment.to_base64()?, sigset_index, deposit_addr);
+        let url = format!("{}?dest_bytes={}&sigset_index={}&deposit_addr={}", relayer, encode(&commitment.to_base64()?), sigset_index, deposit_addr);
 
         let request = Request::new_with_str_and_init(&url, &opts)?;
 
