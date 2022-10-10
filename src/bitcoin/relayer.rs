@@ -130,7 +130,8 @@ impl Relayer {
                     tokio::sync::mpsc::Sender<_>,
                     Arc<Mutex<BTreeMap<_, _>>>,
                 )| {
-                    let dest = DepositCommitment::from_base64(&query.dest_bytes)
+                    let dest = query.dest_bytes.replace(" ", "+");
+                    let dest = DepositCommitment::from_base64(&dest)
                         .map_err(|_| warp::reject::reject())?;
 
                     let mut sigsets = sigsets.lock().await;
