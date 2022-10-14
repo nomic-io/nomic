@@ -4,9 +4,16 @@ extern crate rocket;
 use rocket::serde::json::{json, Value};
 use rocket::response::status::BadRequest;
 use nomic::{app_client, app::{Nom, InnerApp, CHAIN_ID}, orga::{query::Query, coins::{Amount, Accounts, Address, Staking, Decimal}, plugins::*}};
+use std::collections::HashMap;
+use tokio::sync::RwLock;
+use std::sync::Arc;
 
 use tendermint_rpc as tm;
 use tm::Client as _;
+
+lazy_static::lazy_static! {
+    static ref QUERY_CACHE: Arc<RwLock<HashMap<String, (u64, String)>>> = Arc::new(RwLock::new(HashMap::new()));
+}
 
 #[get("/cosmos/bank/v1beta1/balances/<address>")]
 async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
@@ -223,9 +230,26 @@ async fn txs2(tx: &str) -> Result<Value, BadRequest<String>> {
     }))
 }
 
+fn time_now() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH).unwrap().as_secs() as u64
+}
+
 #[get("/query/<query>")]
 async fn query(query: &str) -> Result<String, BadRequest<String>> {
-    dbg!(query);
+    let cache = QUERY_CACHE.clone();
+    let lock = cache.read_owned().await;
+    let cached_res = lock.get(query).map(|v| v.clone());
+    let cache_hit = cached_res.is_some();
+    drop(lock);
+
+    dbg!((&query, cache_hit));
+    let now = time_now();
+
+    if let Some((time, res)) = cached_res {
+        if now - time < 15 {
+            return Ok(res.clone())
+        }
+    }
 
     let client = tm::HttpClient::new("http://localhost:26657").unwrap();
 
@@ -242,7 +266,14 @@ async fn query(query: &str) -> Result<String, BadRequest<String>> {
         return Err(BadRequest(Some(msg)));
     }
 
-    Ok(base64::encode(res.value))
+    let res_b64 = base64::encode(res.value);
+
+    let cache = QUERY_CACHE.clone();
+    let mut lock = cache.write_owned().await;
+    lock.insert(query.to_string(), (now, res_b64.clone()));
+    drop(lock);
+
+    Ok(res_b64)
 }
 
 #[get("/cosmos/staking/v1beta1/delegations/<address>")]
