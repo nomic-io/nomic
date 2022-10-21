@@ -83,6 +83,28 @@ impl Airdrop {
         Ok(())
     }
 
+    #[call]
+    pub fn join_accounts(&mut self, addr: Address) -> Result<()> {
+        let mut acct = self.signer_acct_mut()?;
+        let src = acct.clone();
+        *acct = Account::default();
+
+        let mut dest = self.accounts.entry(addr)?.or_default()?;
+
+        let add_part = |dest: &mut Part, src: Part| {
+            dest.locked += src.locked;
+            dest.claimable += src.claimable;
+            dest.claimed += src.claimed;
+        };
+
+        add_part(&mut dest.airdrop1, src.airdrop1);
+        add_part(&mut dest.btc_deposit, src.btc_deposit);
+        add_part(&mut dest.ibc_transfer, src.ibc_transfer);
+        add_part(&mut dest.btc_withdraw, src.btc_withdraw);
+
+        Ok(())
+    }
+
     #[cfg(feature = "full")]
     pub fn init_from_airdrop2_csv(&mut self, data: &[u8]) -> Result<()> {
         println!("Initializing balances from airdrop 2 snapshot...");
