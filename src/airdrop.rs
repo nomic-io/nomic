@@ -6,7 +6,7 @@ use orga::context::GetContext;
 #[cfg(feature = "full")]
 use orga::migrate::Migrate;
 use orga::plugins::{Paid, Signer};
-use orga::prelude::Decimal;
+use orga::prelude::{Decimal, MIN_FEE};
 use orga::query::Query;
 use orga::state::State;
 use orga::{Error, Result};
@@ -84,12 +84,18 @@ impl Airdrop {
     }
 
     #[call]
-    pub fn join_accounts(&mut self, addr: Address) -> Result<()> {
+    pub fn join_accounts(&mut self, dest_addr: Address) -> Result<()> {
         let mut acct = self.signer_acct_mut()?;
+        if acct.is_empty() {
+            return Err(Error::App("Account has no airdrop balance".to_string()));
+        }
+
+        self.pay_as_funding(MIN_FEE)?;
+
         let src = acct.clone();
         *acct = Account::default();
 
-        let mut dest = self.accounts.entry(addr)?.or_default()?;
+        let mut dest = self.accounts.entry(dest_addr)?.or_default()?;
 
         let add_part = |dest: &mut Part, src: Part| {
             dest.locked += src.locked;
@@ -300,6 +306,15 @@ pub struct Account {
     pub ibc_transfer: Part,
 }
 
+impl Account {
+    pub fn is_empty(&self) -> bool {
+        self.airdrop1.is_empty()
+            && self.btc_deposit.is_empty()
+            && self.btc_withdraw.is_empty()
+            && self.ibc_transfer.is_empty()
+    }
+}
+
 #[derive(State, Query, Call, Client, Clone, Debug, Default)]
 pub struct Part {
     pub locked: u64,
@@ -322,5 +337,9 @@ impl Part {
         self.claimed += amount;
         self.claimable = 0;
         Ok(amount)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        (self.locked + self.claimable + self.claimed) == 0
     }
 }
