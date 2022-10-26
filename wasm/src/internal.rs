@@ -14,6 +14,7 @@ use nomic::orga::merk::ABCIPrefixedProofStore;
 use nomic::orga::plugins::sdk_compat::sdk;
 use nomic::orga::prelude::AsyncCall;
 use nomic::orga::prelude::MIN_FEE;
+use nomic::orga::coins::Address;
 use std::convert::TryInto;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Mutex};
@@ -51,7 +52,7 @@ pub async fn ibc_transfer_out(amount: u64, channel_id: String, port_id: String, 
     value.insert("sender".to_string(), self_address.into());
     value.insert("timeout_timestamp".to_string(), timeout_timestamp.into());
 
-    send_sdk_tx(sdk::Msg {
+    send_sdk_tx_keplr(sdk::Msg {
         type_: "nomic/MsgIbcTransferOut".to_string(),
         value: value.into(),
     })
@@ -145,7 +146,7 @@ pub async fn get_address() -> Result<String> {
     Ok(signer.address().await)
 }
 
-async fn send_sdk_tx(msg: sdk::Msg) -> Result<JsValue> {
+async fn send_sdk_tx_keplr(msg: sdk::Msg) -> Result<JsValue> {
     let my_addr = get_address().await?;
     let address = my_addr
         .parse()
@@ -174,8 +175,24 @@ async fn send_sdk_tx(msg: sdk::Msg) -> Result<JsValue> {
     Ok(client.last_res()?)
 }
 
+pub fn convert_eth_address(str: String) -> Result<String> {
+    if !str.starts_with("0x") {
+        return Err(Error::Wasm("Address must start with 0x".to_string()));
+    }
+    if str.len() != 42 {
+        return Err(Error::Wasm("Address must be 20 bytes".to_string()));
+    }
+
+    let bytes = hex::decode(&str[2..]).map_err(|_| Error::Wasm("Invalid address".to_string()))?;
+    let mut arr = [0; Address::LENGTH];
+    arr.copy_from_slice(&bytes[..]);
+    let addr: Address = arr.into();
+
+    Ok(addr.to_string())
+}
+
 pub async fn claim() -> Result<JsValue> {
-    send_sdk_tx(sdk::Msg {
+    send_sdk_tx_keplr(sdk::Msg {
         type_: "nomic/MsgClaimRewards".to_string(),
         value: serde_json::Map::new().into(),
     })
@@ -183,7 +200,7 @@ pub async fn claim() -> Result<JsValue> {
 }
 
 pub async fn claim_airdrop() -> Result<JsValue> {
-    send_sdk_tx(sdk::Msg {
+    send_sdk_tx_keplr(sdk::Msg {
         type_: "nomic/MsgClaimAirdrop1".to_string(),
         value: serde_json::Map::new().into(),
     })
@@ -191,7 +208,7 @@ pub async fn claim_airdrop() -> Result<JsValue> {
 }
 
 pub async fn claim_btc_deposit_airdrop() -> Result<JsValue> {
-    send_sdk_tx(sdk::Msg {
+    send_sdk_tx_keplr(sdk::Msg {
         type_: "nomic/MsgClaimBtcDepositAirdrop".to_string(),
         value: serde_json::Map::new().into(),
     })
@@ -199,7 +216,7 @@ pub async fn claim_btc_deposit_airdrop() -> Result<JsValue> {
 }
 
 pub async fn claim_btc_withdraw_airdrop() -> Result<JsValue> {
-    send_sdk_tx(sdk::Msg {
+    send_sdk_tx_keplr(sdk::Msg {
         type_: "nomic/MsgClaimBtcWithdrawAirdrop".to_string(),
         value: serde_json::Map::new().into(),
     })
@@ -207,7 +224,7 @@ pub async fn claim_btc_withdraw_airdrop() -> Result<JsValue> {
 }
 
 pub async fn claim_ibc_transfer_airdrop() -> Result<JsValue> {
-    send_sdk_tx(sdk::Msg {
+    send_sdk_tx_keplr(sdk::Msg {
         type_: "nomic/MsgClaimIbcTransferAirdrop".to_string(),
         value: serde_json::Map::new().into(),
     })
@@ -215,7 +232,7 @@ pub async fn claim_ibc_transfer_airdrop() -> Result<JsValue> {
 }
 
 pub async fn claim_incoming_ibc_btc() -> Result<JsValue> {
-    send_sdk_tx(sdk::Msg {
+    send_sdk_tx_keplr(sdk::Msg {
         type_: "nomic/MsgClaimIbcBitcoin".to_string(),
         value: serde_json::Map::new().into(),
     })
@@ -234,7 +251,7 @@ pub async fn delegate(to_addr: String, amount: u64) -> Result<JsValue> {
     value.insert("validator_address".to_string(), to_addr.into());
     value.insert("amount".to_string(), amount_obj.into());
 
-    send_sdk_tx(sdk::Msg {
+    send_sdk_tx_keplr(sdk::Msg {
         type_: "cosmos-sdk/MsgDelegate".to_string(),
         value: value.into(),
     })
@@ -253,7 +270,7 @@ pub async fn unbond(val_addr: String, amount: u64) -> Result<JsValue> {
     value.insert("validator_address".to_string(), val_addr.into());
     value.insert("amount".to_string(), amount_obj.into());
 
-    send_sdk_tx(sdk::Msg {
+    send_sdk_tx_keplr(sdk::Msg {
         type_: "cosmos-sdk/MsgUndelegate".to_string(),
         value: value.into(),
     })
@@ -273,7 +290,7 @@ pub async fn redelegate(src_addr: String, dst_addr: String, amount: u64) -> Resu
     value.insert("validator_dst_address".to_string(), dst_addr.into());
     value.insert("amount".to_string(), amount_obj.into());
 
-    send_sdk_tx(sdk::Msg {
+    send_sdk_tx_keplr(sdk::Msg {
         type_: "cosmos-sdk/MsgBeginRedelegate".to_string(),
         value: value.into(),
     })
@@ -418,7 +435,7 @@ pub async fn withdraw(dest_addr: String, amount: u64) -> Result<JsValue> {
     value.insert("amount".to_string(), amount.to_string().into());
     value.insert("dst_address".to_string(), dest_addr.into());
 
-    send_sdk_tx(sdk::Msg {
+    send_sdk_tx_keplr(sdk::Msg {
         type_: "nomic/MsgWithdraw".to_string(),
         value: value.into(),
     })

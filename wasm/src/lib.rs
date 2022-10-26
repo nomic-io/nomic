@@ -171,3 +171,8 @@ pub async fn withdraw(dest_addr: String, amount: u64) -> Result<JsValue, JsValue
 pub async fn ibc_transfer_out(amount: u64, channel_id: String, port_id: String, denom: String, self_address: String, receiver_address: String, ns_timeout_timestamp: String) -> Result<JsValue, JsValue> {
     into_js_res(Internal::ibc_transfer_out(amount, channel_id, port_id, denom, self_address, receiver_address, ns_timeout_timestamp).await)
 }
+
+#[wasm_bindgen(js_name = convertEthAddress)]
+pub fn convert_eth_address(addr: String) -> Result<String, JsValue> {
+    into_js_res(Internal::convert_eth_address(addr))
+}
