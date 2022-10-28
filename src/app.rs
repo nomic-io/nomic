@@ -813,7 +813,9 @@ impl ConvertSdkTx for InnerApp {
                             .parse::<Address>()
                             .map_err(|_| Error::Ibc("Invalid sender address".into()))?;
 
-                        let timestamp = msg.timeout_timestamp.parse::<u64>()
+                        let timestamp = msg
+                            .timeout_timestamp
+                            .parse::<u64>()
                             .map_err(|_| Error::Ibc("Invalid timeout timestamp".into()))?;
                         let timeout_timestamp: IbcAdapter<Timestamp> =
                             Timestamp::from_nanoseconds(timestamp)

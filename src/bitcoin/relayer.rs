@@ -1,3 +1,4 @@
+use super::signatory::Signatory;
 use super::SignatorySet;
 use crate::app::App;
 use crate::app::DepositCommitment;
@@ -12,6 +13,7 @@ use bitcoincore_rpc_async::json::GetBlockHeaderResult;
 use bitcoincore_rpc_async::{Client as BitcoinRpcClient, RpcApi};
 use futures::{pin_mut, select, FutureExt};
 use orga::abci::TendermintClient;
+use orga::encoding::Decode;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::future::Future;
@@ -120,18 +122,21 @@ impl Relayer {
         let sigsets = Arc::new(Mutex::new(BTreeMap::new()));
 
         // TODO: configurable listen address
+        use bytes::Bytes;
         use warp::Filter;
-        let route = warp::post()
+        let bcast_route = warp::post()
+            .and(warp::path("address"))
             .and(warp::query::<DepositAddress>())
-            .map(move |query: DepositAddress| (query, send.clone(), sigsets.clone()))
+            .and(warp::filters::body::bytes())
+            .map(move |query: DepositAddress, body| (query, send.clone(), sigsets.clone(), body))
             .and_then(
-                async move |(query, send, sigsets): (
+                async move |(query, send, sigsets, body): (
                     DepositAddress,
                     tokio::sync::mpsc::Sender<_>,
                     Arc<Mutex<BTreeMap<_, _>>>,
+                    Bytes,
                 )| {
-                    let dest = query.dest_bytes.replace(" ", "+");
-                    let dest = DepositCommitment::from_base64(&dest)
+                    let dest = DepositCommitment::decode(body.to_vec().as_slice())
                         .map_err(|_| warp::reject::reject())?;
 
                     let mut sigsets = sigsets.lock().await;
@@ -181,10 +186,41 @@ impl Relayer {
                     send.send((dest, sigset_index)).await.unwrap();
                     "OK"
                 },
-            )
+            );
+
+        let sigset_route = warp::path("sigset")
+            .and_then(async move || {
+                let app_client = crate::app_client(); // TODO: get from elsewhere
+                let sigset: RawSignatorySet = app_client
+                    .bitcoin
+                    .checkpoints
+                    .active_sigset()
+                    .await
+                    .map_err(|_| reject())?
+                    .map_err(|_| reject())?
+                    .into();
+
+                Ok::<_, warp::Rejection>(warp::reply::json(&sigset))
+            })
             .with(warp::cors().allow_any_origin());
 
-        let server = warp::serve(route).run(([0, 0, 0, 0], 8999));
+        let server = warp::serve(
+            warp::any().and(bcast_route).or(sigset_route).with(
+                warp::cors()
+                    .allow_any_origin()
+                    .allow_headers(vec![
+                        "User-Agent",
+                        "Sec-Fetch-Mode",
+                        "Referer",
+                        "Origin",
+                        "Access-Control-Request-Method",
+                        "Access-Control-Request-Headers",
+                        "content-type",
+                    ])
+                    .allow_method("POST"),
+            ),
+        )
+        .run(([0, 0, 0, 0], 8999));
         (server, recv)
     }
 
@@ -536,7 +572,6 @@ impl Relayer {
 
 #[derive(Serialize, Deserialize)]
 struct DepositAddress {
-    dest_bytes: String,
     sigset_index: u32,
     deposit_addr: String,
 }
@@ -545,6 +580,41 @@ pub struct OutputMatch {
     sigset_index: u32,
     vout: u32,
     dest: DepositCommitment,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RawSignatorySet {
+    pub signatories: Vec<RawSignatory>,
+    pub index: u32,
+}
+
+impl From<SignatorySet> for RawSignatorySet {
+    fn from(sigset: SignatorySet) -> Self {
+        let signatories = sigset
+            .iter()
+            .map(|s| RawSignatory::from(s.clone()))
+            .collect();
+
+        RawSignatorySet {
+            signatories,
+            index: sigset.index(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RawSignatory {
+    pub voting_power: u64,
+    pub pubkey: Vec<u8>,
+}
+
+impl From<Signatory> for RawSignatory {
+    fn from(sig: Signatory) -> Self {
+        RawSignatory {
+            voting_power: sig.voting_power,
+            pubkey: sig.pubkey.as_slice().to_vec(),
+        }
+    }
 }
 
 fn time_now() -> u64 {

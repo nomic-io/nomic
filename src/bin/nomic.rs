@@ -195,9 +195,7 @@ impl StartCmd {
                         old_home.display(),
                     );
 
-                    let copy = |file: &str| {
-                        std::fs::copy(old_home.join(file), new_home.join(file))
-                    };
+                    let copy = |file: &str| std::fs::copy(old_home.join(file), new_home.join(file));
 
                     copy("tendermint/config/priv_validator_key.json").unwrap();
                     copy("tendermint/config/node_key.json").unwrap();
@@ -918,7 +916,10 @@ async fn deposit(dest: DepositCommitment) -> Result<()> {
         .await
         .map_err(|err| nomic::error::Error::Orga(orga::Error::App(err.to_string())))?;
     if res.status() != 200 {
-        return Err(orga::Error::App(format!("Relayer responded with code {}", res.status()).to_string()).into());
+        return Err(orga::Error::App(
+            format!("Relayer responded with code {}", res.status()).to_string(),
+        )
+        .into());
     }
 
     println!("Deposit address: {}", btc_addr);
@@ -948,6 +949,7 @@ pub struct InterchainDepositCmd {
     channel: String,
 }
 
+const ONE_DAY_NS: u64 = 86400 * 1_000_000_000;
 impl InterchainDepositCmd {
     async fn run(&self) -> Result<()> {
         use orga::ibc::encoding::Adapter;
@@ -957,7 +959,7 @@ impl InterchainDepositCmd {
             sender: Adapter::new(my_address().to_string().parse().unwrap()),
             source_channel: Adapter::new(self.channel.parse().unwrap()),
             source_port: Adapter::new("transfer".parse().unwrap()),
-            timeout_timestamp: now_ns + 8 * 60 * 60 * 1_000_000_000,
+            timeout_timestamp: now_ns + 8 * ONE_DAY_NS - (now_ns % ONE_DAY_NS),
         });
 
         deposit(dest).await
