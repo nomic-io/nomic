@@ -28,7 +28,7 @@ Your node will automatically perform the upgrade on Friday, October 7 at 17:00 U
 
 ## Node setup guide
 
-This guide will walk you through setting up a node for the Nomic Stakenet.
+This guide will walk you through setting up a node for the Nomic testnet.
 
 If you need any help getting your node running, join the [Discord](https://discord.gg/jH7U2NRJKn) and ask for the Validator role.
 
@@ -41,26 +41,35 @@ If you need any help getting your node running, join the [Discord](https://disco
 ### 1. Build Nomic
 
 Start by building Nomic - for now this requires Rust nightly.
-
-```bash
-# install rustup if you haven't already
+Install rustup if you haven't already
+```
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
 
-# install required dependencies (ubuntu)
+Install required dependencies (ubuntu)
+```
 sudo apt install build-essential libssl-dev pkg-config clang
-# or for systems running fedora
+```
+
+For systems running fedora
+```
 sudo dnf install clang openssl-devel && sudo dnf group install "C Development Tools and Libraries"
+```
 
-# clone
-git clone https://github.com/nomic-io/nomic.git nomic && cd nomic
+Clone the github folder
+```
+git clone https://github.com/nomic-io/nomic.git && cd nomic
+git checkout testnet
+```
 
-# build and install, adding a `nomic` command to your PATH
+Build and install, adding a `nomic` command to your PATH
+```
 cargo install --locked --path .
 ```
 
 ### 2. Run your node
 
-```bash
+```
 nomic start
 ```
 
@@ -120,7 +129,7 @@ nomic declare \
 The funds in the Bitcoin bridge are held in a large multisig controlled by the Nomic validators. If you are a validator with a significant amount of voting power, it is very important that you run a signer.
 
 You can run the signer with:
-```bash
+```
 nomic signer
 ```
 
@@ -139,7 +148,7 @@ Relayer nodes carry data between the Bitcoin blockchain and the Nomic blockchain
 Download Bitcoin Core: https://bitcoin.org/en/download
 
 Run it with:
-```bash
+```
 bitcoind -server -testnet -rpcuser=satoshi -rpcpassword=nakamoto
 ```
 (The RPC server only listens on localhost, so the user and password are not critically important.)
@@ -148,7 +157,7 @@ bitcoind -server -testnet -rpcuser=satoshi -rpcpassword=nakamoto
 
 #### ii. Run the relayer process
 
-```bash
+```
 nomic relayer --rpc-port=18332 --rpc-user=satoshi --rpc-pass=nakamoto
 ```
 
