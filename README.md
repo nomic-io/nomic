@@ -41,39 +41,39 @@ If you need any help getting your node running, join the [Discord](https://disco
 ### 1. Build Nomic
 
 Start by building Nomic - for now this requires Rust nightly.
-Install rustup if you haven't already
+Install rustup if you haven't already:
 ```
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-Install required dependencies (ubuntu)
+Install required dependencies (ubuntu):
 ```
 sudo apt install build-essential libssl-dev pkg-config clang
 ```
 
-For systems running fedora
+For systems running fedora:
 ```
 sudo dnf install clang openssl-devel && sudo dnf group install "C Development Tools and Libraries"
 ```
 
-Clone the github folder
+Clone the github folder and switch to the correct folder:
 ```
 git clone https://github.com/nomic-io/nomic.git && cd nomic
 git checkout testnet
 ```
 
-Build and install, adding a `nomic` command to your PATH
+Build and install, adding a `nomic` command to your PATH:
 ```
 cargo install --locked --path .
 ```
 
 ### 2. Run your node
-
+Start your Nomic node:
 ```
 nomic start
 ```
 
-This will run the Nomic state machine and a Tendermint process.
+This will run the Nomic state machine and a Tendermint process. For new nodes the statesync process will run automatically to get the node up to speed with the current chain.
 
 ### 3. Acquiring coins and staking for voting power
 
