@@ -45,6 +45,10 @@ Install rustup if you haven't already:
 ```
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
+Install nightly as well (nomic currently requires rust nightly):
+```
+rustup default nightly
+```
 
 Install required dependencies (ubuntu):
 ```
