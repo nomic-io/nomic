@@ -5,6 +5,7 @@ version = 3
 [[package]]
 name = "abci2"
 version = "0.1.3"
+source = "git+https://github.com/nomic-io/abci2?rev=e9d12675bcc8baffe45c976cd6d2a7b76b916da7#e9d12675bcc8baffe45c976cd6d2a7b76b916da7"
 dependencies = [
  "log",
  "prost",
@@ -2075,7 +2076,8 @@ dependencies = [
 
 [[package]]
 name = "orga"
-version = "0.4.0"
+version = "0.3.1"
+source = "git+https://github.com/nomic-io/orga.git?branch=attach#1dcdc0cbc188bc6678346cde6ebfbc57c5c7c9d9"
 dependencies = [
  "abci2",
  "async-trait",
@@ -2128,6 +2130,7 @@ dependencies = [
 [[package]]
 name = "orga-macros"
 version = "0.3.1"
+source = "git+https://github.com/nomic-io/orga.git?branch=attach#1dcdc0cbc188bc6678346cde6ebfbc57c5c7c9d9"
 dependencies = [
  "heck 0.3.3",
  "proc-macro2",
