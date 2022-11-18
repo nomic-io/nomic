@@ -33,14 +33,12 @@ impl<T: Default> Default for Adapter<T> {
 impl<T> Terminated for Adapter<T> {}
 
 impl<T: Encodable + Decodable> State for Adapter<T> {
-    type Encoding = Self;
-
-    fn create(_: Store, data: Self::Encoding) -> orga::Result<Self> {
-        Ok(data)
+    fn attach(&mut self, _: Store) -> orga::Result<()> {
+        Ok(())
     }
 
-    fn flush(self) -> orga::Result<Self::Encoding> {
-        Ok(self)
+    fn flush(&mut self) -> orga::Result<()> {
+        Ok(())
     }
 }
 

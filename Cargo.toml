@@ -2,7 +2,7 @@
 name = "nomic"
 version = "4.1.2"
 authors = [ "The Nomic Team <hello@nomic.io>" ]
-edition = "2018"
+edition = "2021"
 default-run = "nomic"
 
 [dependencies]
@@ -10,7 +10,7 @@ bitcoin = { version = "0.28.1", features = ["use-serde"] }
 bitcoind = { version = "0.21.0", features = ["22_0"], optional = true }
 orga = { git = "https://github.com/nomic-io/orga.git", branch = "v4", features = ["merk-verify"] }
 thiserror = "1.0.30"
-ed = "0.3.0"
+ed = { git = "https://github.com/nomic-io/ed", rev = "9c0e206ffdb59dacb90f083e004e8080713e6ad8" }
 clap = { version = "3.2.16", features = ["derive"], optional = true }
 tokio = { version = "1.14.0", features = ["full"], optional = true }
 base64 = "0.13.0"
@@ -20,7 +20,6 @@ serde_json = "1.0.74"
 csv = { version = "1.1.6", optional = true }
 bech32 = { version = "0.8.1" }
 futures = "0.3.21"
-nomicv3 = { git = "https://github.com/nomic-io/nomic", branch = "v4a-legacy-testnet", package = "nomic", optional = true }
 toml_edit = "0.13.4"
 tendermint-rpc = "=0.23.7"
 bitcoincore-rpc-async = { package = "bitcoincore-rpc-async2", version = "4.0.1", optional = true }
@@ -42,7 +41,7 @@ chrono = "0.4.19"
 
 [features]
 default = ["full", "feat-ibc"]
-full = ["bitcoind", "bitcoincore-rpc-async", "clap", "tokio", "orga/merk-full", "orga/abci", "orga/state-sync", "csv", "warp", "rand", "nomicv3" ]
+full = ["bitcoind", "bitcoincore-rpc-async", "clap", "tokio", "orga/merk-full", "orga/abci", "orga/state-sync", "csv", "warp", "rand"]
 feat-ibc = ["orga/feat-ibc"]
 
 [[bin]]

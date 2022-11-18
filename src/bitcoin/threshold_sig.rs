@@ -63,7 +63,7 @@ impl From<PublicKey> for Pubkey {
 
 // TODO: update for taproot-based design (musig rounds, fallback path)
 
-#[derive(State, Call, Client, Query)]
+#[derive(State, Call, Client, Query, Default, Encode, Decode)]
 pub struct ThresholdSig {
     threshold: u64,
     signed: u64,
@@ -73,6 +73,10 @@ pub struct ThresholdSig {
 }
 
 impl ThresholdSig {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     pub fn len(&self) -> u16 {
         self.len
     }
@@ -248,7 +252,7 @@ impl Debug for ThresholdSig {
     }
 }
 
-#[derive(State, Call, Client, Query, Clone)]
+#[derive(State, Call, Client, Query, Clone, Encode, Decode)]
 pub struct Share {
     power: u64,
     sig: Option<Signature>,
@@ -257,83 +261,3 @@ pub struct Share {
 // TODO: move this into ed
 use derive_more::{Deref, DerefMut, Into};
 use std::convert::{TryFrom, TryInto};
-
-#[derive(Deref, DerefMut, Encode, Into, Default, Debug, Query, Client)]
-pub struct LengthVec<P, T>
-where
-    P: Encode + Terminated,
-    T: Encode + Terminated,
-{
-    len: P,
-
-    #[deref]
-    #[deref_mut]
-    #[into]
-    values: Vec<T>,
-}
-
-impl<P, T> LengthVec<P, T>
-where
-    P: Encode + Terminated,
-    T: Encode + Terminated,
-{
-    pub fn new(len: P, values: Vec<T>) -> Self {
-        LengthVec { len, values }
-    }
-}
-
-impl<P, T> State for LengthVec<P, T>
-where
-    P: Encode + Decode + Terminated + TryInto<usize> + Clone,
-    T: Encode + Decode + Terminated,
-{
-    type Encoding = Self;
-
-    fn create(_: orga::store::Store, data: Self::Encoding) -> Result<Self> {
-        Ok(data)
-    }
-
-    fn flush(self) -> Result<Self::Encoding> {
-        Ok(self)
-    }
-}
-
-impl<P, T> From<Vec<T>> for LengthVec<P, T>
-where
-    P: Encode + Terminated + TryFrom<usize>,
-    T: Encode + Terminated,
-    <P as TryFrom<usize>>::Error: std::fmt::Debug,
-{
-    fn from(values: Vec<T>) -> Self {
-        LengthVec::new(P::try_from(values.len()).unwrap(), values)
-    }
-}
-
-impl<P, T> Terminated for LengthVec<P, T>
-where
-    P: Encode + Terminated,
-    T: Encode + Terminated,
-{
-}
-
-impl<P, T> Decode for LengthVec<P, T>
-where
-    P: Encode + Decode + Terminated + TryInto<usize> + Clone,
-    T: Encode + Decode + Terminated,
-{
-    fn decode<R: std::io::Read>(mut input: R) -> EdResult<Self> {
-        let len = P::decode(&mut input)?;
-        let len_usize = len
-            .clone()
-            .try_into()
-            .map_err(|_| EdError::UnexpectedByte(80))?;
-
-        let mut values = Vec::with_capacity(len_usize);
-        for _ in 0..len_usize {
-            let value = T::decode(&mut input)?;
-            values.push(value);
-        }
-
-        Ok(LengthVec { len, values })
-    }
-}

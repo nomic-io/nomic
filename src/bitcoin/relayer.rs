@@ -71,7 +71,7 @@ impl Relayer {
                 continue;
             }
 
-            if last_hash.is_none() || last_hash.is_some_and(|h| h != &fullnode_hash) {
+            if last_hash.is_none() || last_hash.is_some_and(|h| h != fullnode_hash) {
                 last_hash = Some(fullnode_hash);
                 let info = self.btc_client.get_block_info(&fullnode_hash).await?;
                 println!(

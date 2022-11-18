@@ -32,8 +32,6 @@ pub mod adapter;
 pub mod checkpoint;
 pub mod header_queue;
 #[cfg(feature = "full")]
-mod migrate;
-#[cfg(feature = "full")]
 pub mod relayer;
 pub mod signatory;
 #[cfg(feature = "full")]
@@ -41,7 +39,7 @@ pub mod signer;
 pub mod threshold_sig;
 pub mod txid_set;
 
-#[derive(State, Debug, Clone)]
+#[derive(State, Debug, Clone, Encode, Decode, Default)]
 pub struct Nbtc(());
 impl Symbol for Nbtc {
     const INDEX: u8 = 21;
@@ -60,7 +58,7 @@ pub fn calc_deposit_fee(amount: u64) -> u64 {
     amount / 5
 }
 
-#[derive(State, Call, Query, Client)]
+#[derive(State, Call, Query, Client, Encode, Decode, Default)]
 pub struct Bitcoin {
     #[call]
     pub headers: HeaderQueue,
@@ -91,14 +89,12 @@ impl Xpub {
 }
 
 impl State for Xpub {
-    type Encoding = Self;
-
-    fn create(_: orga::store::Store, data: Self) -> OrgaResult<Self> {
-        Ok(data)
+    fn attach(&mut self, _: orga::store::Store) -> OrgaResult<()> {
+        Ok(())
     }
 
-    fn flush(self) -> OrgaResult<Self> {
-        Ok(self)
+    fn flush(&mut self) -> OrgaResult<()> {
+        Ok(())
     }
 }
 
@@ -460,7 +456,7 @@ impl BeginBlock for Bitcoin {
     }
 }
 
-#[derive(State, Call, Query, Client)]
+#[derive(State, Call, Query, Client, Encode, Decode, Default)]
 pub struct SignatoryKeys {
     by_cons: Map<ConsensusKey, Xpub>,
     xpubs: Map<Xpub, ()>,

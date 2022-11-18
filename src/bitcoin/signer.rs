@@ -148,7 +148,7 @@ impl Signer {
                 client
                     .bitcoin
                     .checkpoints
-                    .sign(xpub.into(), sigs.into())
+                    .sign(xpub.into(), sigs.try_into()?)
                     .await
             })
             .noop()
