@@ -303,12 +303,36 @@ impl Decode for Network {
 
 impl Terminated for Network {}
 
-#[derive(Call, Query, Client, Encode, Decode, Default)]
+#[derive(Call, Query, Client, Default)]
 pub struct HeaderQueue {
     pub(super) deque: Deque<WorkHeader>,
     pub(super) current_work: Adapter<Uint256>,
     config: Config,
 }
+
+impl Decode for HeaderQueue {
+    fn decode<R: std::io::Read>(mut input: R) -> ::ed::Result<Self> {
+        Ok(Self {
+            deque: Decode::decode(&mut input)?,
+            current_work: Decode::decode(&mut input)?,
+            config: Config::testnet(),
+        })
+    }
+}
+
+impl Encode for HeaderQueue {
+    fn encoding_length(&self) -> ::ed::Result<usize> {
+        Ok(self.deque.encoding_length()? + self.current_work.encoding_length()?)
+    }
+    fn encode_into<W: std::io::Write>(&self, dest: &mut W) -> ::ed::Result<()> {
+        dest.write(self.deque.encode()?.as_slice())?;
+        dest.write(self.current_work.encode()?.as_slice())?;
+
+        Ok(())
+    }
+}
+
+impl Terminated for HeaderQueue {}
 
 impl State for HeaderQueue {
     fn attach(&mut self, store: Store) -> OrgaResult<()> {
