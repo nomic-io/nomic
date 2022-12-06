@@ -17,6 +17,7 @@ use orga::client::Client;
 use orga::coins::{Accounts, Address, Amount, Coin, Give, Symbol, Take};
 use orga::collections::Map;
 use orga::context::{Context, GetContext};
+use orga::describe::Describe;
 use orga::encoding::{Decode, Encode, Terminated};
 use orga::plugins::Paid;
 #[cfg(feature = "full")]
@@ -40,7 +41,7 @@ pub mod signer;
 pub mod threshold_sig;
 pub mod txid_set;
 
-#[derive(State, Debug, Clone, Encode, Decode, Default, Serialize, Deserialize)]
+#[derive(State, Debug, Clone, Encode, Decode, Default, Serialize, Deserialize, Describe)]
 pub struct Nbtc(());
 impl Symbol for Nbtc {
     const INDEX: u8 = 21;
@@ -59,7 +60,7 @@ pub fn calc_deposit_fee(amount: u64) -> u64 {
     amount / 5
 }
 
-#[derive(State, Call, Query, Client, Encode, Decode, Default, Serialize, Deserialize)]
+#[derive(State, Call, Query, Client, Encode, Decode, Default, Serialize, Deserialize, Describe)]
 pub struct Bitcoin {
     #[call]
     pub headers: HeaderQueue,

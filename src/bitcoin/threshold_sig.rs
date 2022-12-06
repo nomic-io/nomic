@@ -5,9 +5,11 @@ use bitcoin::secp256k1::{
     constants::{COMPACT_SIGNATURE_SIZE, MESSAGE_SIZE, PUBLIC_KEY_SIZE},
     ecdsa, PublicKey, Secp256k1,
 };
+use derive_more::{Deref, DerefMut, From, Into};
 use orga::call::Call;
 use orga::client::Client;
 use orga::collections::{Map, Next};
+use orga::describe::Describe;
 use orga::encoding::{Decode, Encode, Error as EdError, Result as EdResult, Terminated};
 use orga::query::Query;
 use orga::state::State;
@@ -16,7 +18,11 @@ use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
 
 pub type Message = [u8; MESSAGE_SIZE];
-pub type Signature = [u8; COMPACT_SIGNATURE_SIZE];
+
+#[derive(
+    Encode, Decode, Serialize, Deserialize, State, Describe, Debug, Clone, Deref, From, Copy,
+)]
+pub struct Signature(#[serde(with = "BigArray")] [u8; COMPACT_SIGNATURE_SIZE]);
 
 #[derive(
     Encode,
@@ -34,6 +40,7 @@ pub type Signature = [u8; COMPACT_SIGNATURE_SIZE];
     Ord,
     Serialize,
     Deserialize,
+    Describe,
 )]
 pub struct Pubkey(#[serde(with = "BigArray")] [u8; PUBLIC_KEY_SIZE]);
 
@@ -79,7 +86,7 @@ impl From<PublicKey> for Pubkey {
 
 // TODO: update for taproot-based design (musig rounds, fallback path)
 
-#[derive(State, Call, Client, Query, Default, Encode, Decode, Serialize, Deserialize)]
+#[derive(State, Call, Client, Query, Default, Encode, Decode, Serialize, Deserialize, Describe)]
 pub struct ThresholdSig {
     threshold: u64,
     signed: u64,
@@ -256,6 +263,7 @@ impl ThresholdSig {
 }
 
 use std::fmt::Debug;
+use std::ops::Deref;
 impl Debug for ThresholdSig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ThresholdSig")
@@ -268,12 +276,8 @@ impl Debug for ThresholdSig {
     }
 }
 
-#[derive(State, Call, Client, Query, Clone, Encode, Decode)]
+#[derive(State, Call, Client, Query, Clone, Encode, Decode, Describe, Serialize, Deserialize)]
 pub struct Share {
     power: u64,
     sig: Option<Signature>,
 }
-
-// TODO: move this into ed
-use derive_more::{Deref, DerefMut, Into};
-use std::convert::{TryFrom, TryInto};

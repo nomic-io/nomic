@@ -6,6 +6,7 @@ use orga::call::Call;
 use orga::client::Client;
 use orga::collections::Map;
 use orga::context::Context;
+use orga::describe::Describe;
 use orga::encoding::{Decode, Encode};
 use orga::plugins::Time;
 #[cfg(feature = "full")]
@@ -23,7 +24,18 @@ pub const MAX_DEPOSIT_AGE: u64 = 60 * 60 * 24 * 5;
 pub const MAX_SIGNATORIES: u64 = 20;
 
 #[derive(
-    Encode, Decode, Clone, Debug, PartialOrd, PartialEq, Eq, Ord, State, Serialize, Deserialize,
+    Encode,
+    Decode,
+    Clone,
+    Debug,
+    PartialOrd,
+    PartialEq,
+    Eq,
+    Ord,
+    State,
+    Serialize,
+    Deserialize,
+    Describe,
 )]
 pub struct Signatory {
     pub voting_power: u64,
@@ -31,7 +43,18 @@ pub struct Signatory {
 }
 
 #[derive(
-    State, Call, Query, Client, Clone, Debug, Encode, Decode, Default, Serialize, Deserialize,
+    State,
+    Call,
+    Query,
+    Client,
+    Clone,
+    Debug,
+    Encode,
+    Decode,
+    Default,
+    Serialize,
+    Deserialize,
+    Describe,
 )]
 pub struct SignatorySet {
     create_time: u64,

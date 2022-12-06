@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 pub const CHAIN_ID: &str = "nomic-testnet-4d";
 pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
 
-#[derive(State, Debug, Clone, Encode, Decode, Default, Serialize, Deserialize)]
+#[derive(State, Debug, Clone, Encode, Decode, Default, Serialize, Deserialize, Describe)]
 pub struct Nom(());
 impl Symbol for Nom {
     const INDEX: u8 = 69;
@@ -31,7 +31,7 @@ const DEV_ADDRESS: &str = "nomic14z79y3yrghqx493mwgcj0qd2udy6lm26lmduah";
 const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1d5n325zrf4elfu0heqd59gna5j6xyunhev23cj";
 const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhqd8dcqeq";
 
-#[derive(State, Call, Query, Client, Encode, Decode, Default, Serialize, Deserialize)]
+#[derive(State, Call, Query, Client, Encode, Decode, Default, Serialize, Deserialize, Describe)]
 pub struct InnerApp {
     #[call]
     pub accounts: Accounts<Nom>,

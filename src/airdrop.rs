@@ -3,6 +3,7 @@ use orga::client::Client;
 use orga::coins::{Address, Amount};
 use orga::collections::{ChildMut, Map};
 use orga::context::GetContext;
+use orga::describe::Describe;
 use orga::encoding::{Decode, Encode};
 use orga::plugins::{Paid, Signer};
 use orga::prelude::Decimal;
@@ -16,7 +17,7 @@ use super::app::Nom;
 const MAX_STAKED: u64 = 1_000_000_000;
 const AIRDROP_II_TOTAL: u64 = 3_500_000_000_000;
 
-#[derive(State, Query, Call, Client, Encode, Decode, Default, Serialize, Deserialize)]
+#[derive(State, Query, Call, Client, Encode, Decode, Default, Serialize, Deserialize, Describe)]
 pub struct Airdrop {
     accounts: Map<Address, Account>,
 }

@@ -1,4 +1,5 @@
 use crate::app::App;
+use crate::bitcoin::threshold_sig::Signature;
 use crate::error::Result;
 use bitcoin::secp256k1::{Message, Secp256k1};
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
@@ -138,7 +139,8 @@ impl Signer {
 
                 Ok(secp
                     .sign_ecdsa(&Message::from_slice(&msg[..])?, &privkey)
-                    .serialize_compact())
+                    .serialize_compact()
+                    .into())
             })
             .collect::<Result<_>>()?;
 

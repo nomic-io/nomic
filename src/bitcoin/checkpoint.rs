@@ -7,6 +7,7 @@ use super::{
 use crate::error::{Error, Result};
 use bitcoin::blockdata::transaction::EcdsaSighashType;
 use derive_more::{Deref, DerefMut};
+use orga::describe::Describe;
 use orga::{
     call::Call,
     client::Client,
@@ -70,7 +71,15 @@ impl<U: Send + Clone> Client<U> for CheckpointStatus {
     }
 }
 
-#[derive(State, Call, Query, Client, Debug, Encode, Decode, Serialize, Deserialize, Default)]
+impl Describe for CheckpointStatus {
+    fn describe() -> orga::describe::Descriptor {
+        orga::describe::Builder::new::<Self>().build()
+    }
+}
+
+#[derive(
+    State, Call, Query, Client, Debug, Encode, Decode, Serialize, Deserialize, Default, Describe,
+)]
 pub struct Input {
     pub prevout: Adapter<bitcoin::OutPoint>,
     pub script_pubkey: Adapter<bitcoin::Script>,
@@ -104,7 +113,9 @@ impl Input {
 
 pub type Output = Adapter<bitcoin::TxOut>;
 
-#[derive(State, Call, Query, Client, Debug, Encode, Decode, Default, Serialize, Deserialize)]
+#[derive(
+    State, Call, Query, Client, Debug, Encode, Decode, Default, Serialize, Deserialize, Describe,
+)]
 pub struct Checkpoint {
     pub status: CheckpointStatus,
     pub inputs: Deque<Input>,
@@ -159,7 +170,7 @@ impl Checkpoint {
     }
 }
 
-#[derive(State, Call, Query, Client, Encode, Decode, Default, Serialize, Deserialize)]
+#[derive(State, Call, Query, Client, Encode, Decode, Default, Serialize, Deserialize, Describe)]
 pub struct CheckpointQueue {
     pub(super) queue: Deque<Checkpoint>,
     pub(super) index: u32,

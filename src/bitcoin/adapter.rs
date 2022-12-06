@@ -1,5 +1,6 @@
 use bitcoin::consensus::{Decodable, Encodable};
 use orga::client::{Client, PrimitiveClient};
+use orga::describe::Describe;
 use orga::encoding::Result as EncodingResult;
 use orga::prelude::*;
 use orga::state::State;

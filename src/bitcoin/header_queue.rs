@@ -8,6 +8,7 @@ use bitcoin::TxMerkleNode;
 use orga::call::Call;
 use orga::client::Client;
 use orga::collections::Deque;
+use orga::describe::Describe;
 use orga::encoding as ed;
 use orga::prelude::*;
 use orga::query::Query;
@@ -138,7 +139,7 @@ impl Decode for HeaderList {
 
 impl Terminated for HeaderList {}
 
-#[derive(Clone, Debug, Decode, Encode, State, Call, Client, Serialize, Deserialize)]
+#[derive(Clone, Debug, Decode, Encode, State, Call, Client, Serialize, Deserialize, Describe)]
 pub struct WorkHeader {
     chain_work: Adapter<Uint256>,
     header: WrappedHeader,
@@ -304,7 +305,7 @@ impl Decode for Network {
 
 impl Terminated for Network {}
 
-#[derive(Call, Query, Client, Default, Serialize, Deserialize)]
+#[derive(Call, Query, Client, Default, Serialize, Deserialize, Describe)]
 pub struct HeaderQueue {
     pub(super) deque: Deque<WorkHeader>,
     pub(super) current_work: Adapter<Uint256>,
