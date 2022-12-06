@@ -4,10 +4,11 @@ use orga::encoding::Result as EncodingResult;
 use orga::prelude::*;
 use orga::state::State;
 use orga::store::Store;
+use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::ops::{Deref, DerefMut};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Adapter<T> {
     inner: T,
 }

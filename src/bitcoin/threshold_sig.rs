@@ -12,14 +12,30 @@ use orga::encoding::{Decode, Encode, Error as EdError, Result as EdResult, Termi
 use orga::query::Query;
 use orga::state::State;
 use orga::{Error, Result};
+use serde::{Deserialize, Serialize};
+use serde_big_array::BigArray;
 
 pub type Message = [u8; MESSAGE_SIZE];
 pub type Signature = [u8; COMPACT_SIGNATURE_SIZE];
 
 #[derive(
-    Encode, Decode, State, Query, Call, Client, Clone, Debug, Copy, PartialEq, Eq, PartialOrd, Ord,
+    Encode,
+    Decode,
+    State,
+    Query,
+    Call,
+    Client,
+    Clone,
+    Debug,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
 )]
-pub struct Pubkey([u8; PUBLIC_KEY_SIZE]);
+pub struct Pubkey(#[serde(with = "BigArray")] [u8; PUBLIC_KEY_SIZE]);
 
 impl Next for Pubkey {
     fn next(&self) -> Option<Self> {
@@ -63,7 +79,7 @@ impl From<PublicKey> for Pubkey {
 
 // TODO: update for taproot-based design (musig rounds, fallback path)
 
-#[derive(State, Call, Client, Query, Default, Encode, Decode)]
+#[derive(State, Call, Client, Query, Default, Encode, Decode, Serialize, Deserialize)]
 pub struct ThresholdSig {
     threshold: u64,
     signed: u64,

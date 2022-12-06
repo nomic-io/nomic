@@ -1930,6 +1930,7 @@ dependencies = [
  "rand 0.8.5",
  "reqwest",
  "serde",
+ "serde-big-array",
  "serde_json",
  "sha2 0.10.6",
  "tendermint-rpc",
@@ -3014,6 +3015,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ce31e24b01e1e524df96f1c2fdd054405f8d7376249a5110886fb4b658484789"
 dependencies = [
  "serde_derive",
+]
+
+[[package]]
+name = "serde-big-array"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3323f09a748af288c3dc2474ea6803ee81f118321775bffa3ac8f7e65c5e90e7"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

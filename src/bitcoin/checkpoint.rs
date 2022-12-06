@@ -18,6 +18,7 @@ use orga::{
     state::State,
     Error as OrgaError, Result as OrgaResult,
 };
+use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 
 pub const MIN_CHECKPOINT_INTERVAL: u64 = 60 * 5;
@@ -26,7 +27,7 @@ pub const MAX_INPUTS: u64 = 40;
 pub const MAX_OUTPUTS: u64 = 200;
 pub const FEE_RATE: u64 = 1;
 
-#[derive(Debug, Encode, Decode, Default)]
+#[derive(Debug, Encode, Decode, Default, Serialize, Deserialize)]
 pub enum CheckpointStatus {
     #[default]
     Building,
@@ -69,7 +70,7 @@ impl<U: Send + Clone> Client<U> for CheckpointStatus {
     }
 }
 
-#[derive(State, Call, Query, Client, Debug, Encode, Decode)]
+#[derive(State, Call, Query, Client, Debug, Encode, Decode, Serialize, Deserialize, Default)]
 pub struct Input {
     pub prevout: Adapter<bitcoin::OutPoint>,
     pub script_pubkey: Adapter<bitcoin::Script>,
@@ -103,7 +104,7 @@ impl Input {
 
 pub type Output = Adapter<bitcoin::TxOut>;
 
-#[derive(State, Call, Query, Client, Debug, Encode, Decode, Default)]
+#[derive(State, Call, Query, Client, Debug, Encode, Decode, Default, Serialize, Deserialize)]
 pub struct Checkpoint {
     pub status: CheckpointStatus,
     pub inputs: Deque<Input>,
@@ -158,7 +159,7 @@ impl Checkpoint {
     }
 }
 
-#[derive(State, Call, Query, Client, Encode, Decode, Default)]
+#[derive(State, Call, Query, Client, Encode, Decode, Default, Serialize, Deserialize)]
 pub struct CheckpointQueue {
     pub(super) queue: Deque<Checkpoint>,
     pub(super) index: u32,

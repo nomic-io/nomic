@@ -13,6 +13,7 @@ use orga::plugins::Validators;
 use orga::query::Query;
 use orga::state::State;
 use orga::Error as OrgaError;
+use serde::{Deserialize, Serialize};
 
 use super::threshold_sig::Pubkey;
 use super::ConsensusKey;
@@ -21,13 +22,17 @@ use super::Xpub;
 pub const MAX_DEPOSIT_AGE: u64 = 60 * 60 * 24 * 5;
 pub const MAX_SIGNATORIES: u64 = 20;
 
-#[derive(Encode, Decode, Clone, Debug, PartialOrd, PartialEq, Eq, Ord, State)]
+#[derive(
+    Encode, Decode, Clone, Debug, PartialOrd, PartialEq, Eq, Ord, State, Serialize, Deserialize,
+)]
 pub struct Signatory {
     pub voting_power: u64,
     pub pubkey: Pubkey,
 }
 
-#[derive(State, Call, Query, Client, Clone, Debug, Encode, Decode, Default)]
+#[derive(
+    State, Call, Query, Client, Clone, Debug, Encode, Decode, Default, Serialize, Deserialize,
+)]
 pub struct SignatorySet {
     create_time: u64,
     present_vp: u64,

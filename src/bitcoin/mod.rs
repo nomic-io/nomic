@@ -25,6 +25,7 @@ use orga::plugins::{Signer, Time};
 use orga::query::Query;
 use orga::state::State;
 use orga::{Error as OrgaError, Result as OrgaResult};
+use serde::{Deserialize, Serialize};
 use signatory::SignatorySet;
 use txid_set::OutpointSet;
 
@@ -39,7 +40,7 @@ pub mod signer;
 pub mod threshold_sig;
 pub mod txid_set;
 
-#[derive(State, Debug, Clone, Encode, Decode, Default)]
+#[derive(State, Debug, Clone, Encode, Decode, Default, Serialize, Deserialize)]
 pub struct Nbtc(());
 impl Symbol for Nbtc {
     const INDEX: u8 = 21;
@@ -58,7 +59,7 @@ pub fn calc_deposit_fee(amount: u64) -> u64 {
     amount / 5
 }
 
-#[derive(State, Call, Query, Client, Encode, Decode, Default)]
+#[derive(State, Call, Query, Client, Encode, Decode, Default, Serialize, Deserialize)]
 pub struct Bitcoin {
     #[call]
     pub headers: HeaderQueue,
@@ -456,7 +457,7 @@ impl BeginBlock for Bitcoin {
     }
 }
 
-#[derive(State, Call, Query, Client, Encode, Decode, Default)]
+#[derive(State, Call, Query, Client, Encode, Decode, Default, Serialize, Deserialize)]
 pub struct SignatoryKeys {
     by_cons: Map<ConsensusKey, Xpub>,
     xpubs: Map<Xpub, ()>,

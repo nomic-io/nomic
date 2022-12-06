@@ -15,6 +15,7 @@ use orga::state::State;
 use orga::store::Store;
 use orga::Error as OrgaError;
 use orga::Result as OrgaResult;
+use serde::{Deserialize, Serialize};
 
 const MAX_LENGTH: u64 = 4032;
 const MAX_RELAY: u64 = 25;
@@ -24,7 +25,7 @@ const TARGET_SPACING: u32 = 10 * 60;
 const TARGET_TIMESPAN: u32 = RETARGET_INTERVAL * TARGET_SPACING;
 const MAX_TARGET: u32 = 0x1d00ffff;
 
-#[derive(Clone, Debug, Decode, Encode, PartialEq, State, Query)]
+#[derive(Clone, Debug, Decode, Encode, PartialEq, State, Query, Serialize, Deserialize)]
 pub struct WrappedHeader {
     height: u32,
     header: Adapter<BlockHeader>,
@@ -137,7 +138,7 @@ impl Decode for HeaderList {
 
 impl Terminated for HeaderList {}
 
-#[derive(Clone, Debug, Decode, Encode, State, Call, Client)]
+#[derive(Clone, Debug, Decode, Encode, State, Call, Client, Serialize, Deserialize)]
 pub struct WorkHeader {
     chain_work: Adapter<Uint256>,
     header: WrappedHeader,
@@ -303,10 +304,11 @@ impl Decode for Network {
 
 impl Terminated for Network {}
 
-#[derive(Call, Query, Client, Default)]
+#[derive(Call, Query, Client, Default, Serialize, Deserialize)]
 pub struct HeaderQueue {
     pub(super) deque: Deque<WorkHeader>,
     pub(super) current_work: Adapter<Uint256>,
+    #[serde(skip)]
     config: Config,
 }
 
@@ -325,8 +327,8 @@ impl Encode for HeaderQueue {
         Ok(self.deque.encoding_length()? + self.current_work.encoding_length()?)
     }
     fn encode_into<W: std::io::Write>(&self, dest: &mut W) -> ::ed::Result<()> {
-        dest.write(self.deque.encode()?.as_slice())?;
-        dest.write(self.current_work.encode()?.as_slice())?;
+        dest.write_all(self.deque.encode()?.as_slice())?;
+        dest.write_all(self.current_work.encode()?.as_slice())?;
 
         Ok(())
     }

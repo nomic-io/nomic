@@ -9,13 +9,14 @@ use orga::prelude::Decimal;
 use orga::query::Query;
 use orga::state::State;
 use orga::{Error, Result};
+use serde::{Deserialize, Serialize};
 
 use super::app::Nom;
 
 const MAX_STAKED: u64 = 1_000_000_000;
 const AIRDROP_II_TOTAL: u64 = 3_500_000_000_000;
 
-#[derive(State, Query, Call, Client, Encode, Decode, Default)]
+#[derive(State, Query, Call, Client, Encode, Decode, Default, Serialize, Deserialize)]
 pub struct Airdrop {
     accounts: Map<Address, Account>,
 }
