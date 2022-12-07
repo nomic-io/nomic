@@ -75,8 +75,14 @@ pub struct Bitcoin {
 
 pub type ConsensusKey = [u8; 32];
 
-#[derive(Call, Query, Client, Clone, Debug)]
+#[derive(Call, Query, Client, Clone, Debug, Serialize, Deserialize)]
 pub struct Xpub(ExtendedPubKey);
+
+impl Describe for Xpub {
+    fn describe() -> orga::describe::Descriptor {
+        orga::describe::Builder::new::<Self>().build()
+    }
+}
 
 pub const XPUB_LENGTH: usize = 78;
 
@@ -458,7 +464,7 @@ impl BeginBlock for Bitcoin {
     }
 }
 
-#[derive(State, Call, Query, Client, Encode, Decode, Default, Serialize, Deserialize)]
+#[derive(State, Call, Query, Client, Encode, Decode, Default, Serialize, Deserialize, Describe)]
 pub struct SignatoryKeys {
     by_cons: Map<ConsensusKey, Xpub>,
     xpubs: Map<Xpub, ()>,

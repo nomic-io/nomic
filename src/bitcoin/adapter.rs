@@ -44,6 +44,12 @@ impl<T: Encodable + Decodable> State for Adapter<T> {
     }
 }
 
+impl<T: Encodable + Decodable + 'static> Describe for Adapter<T> {
+    fn describe() -> orga::describe::Descriptor {
+        orga::describe::Builder::new::<Self>().build()
+    }
+}
+
 impl<T> Deref for Adapter<T> {
     type Target = T;
 

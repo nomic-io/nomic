@@ -7,6 +7,7 @@ use crate::bitcoin::Bitcoin;
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::Transaction;
 use orga::cosmrs::bank::MsgSend;
+use orga::describe::Describe;
 use orga::encoding::{Decode, Encode};
 use orga::ibc::ibc_rs::core::ics04_channel::timeout::TimeoutHeight;
 use orga::ibc::ibc_rs::core::ics24_host::identifier::{ChannelId, PortId};
@@ -894,7 +895,7 @@ pub fn ibc_fee(amount: Amount) -> Result<Amount> {
 
 const REWARD_TIMER_PERIOD: i64 = 120;
 
-#[derive(State, Call, Query, Client, Encode, Decode, Default, Serialize, Deserialize)]
+#[derive(State, Call, Query, Client, Encode, Decode, Default, Serialize, Deserialize, Describe)]
 pub struct RewardTimer {
     last_period: i64,
 }

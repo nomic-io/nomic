@@ -26,7 +26,9 @@ const TARGET_SPACING: u32 = 10 * 60;
 const TARGET_TIMESPAN: u32 = RETARGET_INTERVAL * TARGET_SPACING;
 const MAX_TARGET: u32 = 0x1d00ffff;
 
-#[derive(Clone, Debug, Decode, Encode, PartialEq, State, Query, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, Decode, Encode, PartialEq, State, Query, Serialize, Deserialize, Describe,
+)]
 pub struct WrappedHeader {
     height: u32,
     header: Adapter<BlockHeader>,
@@ -184,7 +186,7 @@ impl WorkHeader {
 
 // TODO: implement trait that returns constants for bitcoin::Network variants
 
-#[derive(Clone, Encode, Decode)]
+#[derive(Clone, Encode, Decode, State)]
 pub struct Config {
     pub max_length: u64,
     pub max_time_increase: u32,
@@ -206,6 +208,12 @@ impl Default for Config {
             bitcoin::Network::Testnet => Config::testnet(),
             _ => unimplemented!(),
         }
+    }
+}
+
+impl Describe for Config {
+    fn describe() -> orga::describe::Descriptor {
+        orga::describe::Builder::new::<()>().build()
     }
 }
 
@@ -304,6 +312,16 @@ impl Decode for Network {
 }
 
 impl Terminated for Network {}
+
+impl State for Network {
+    fn attach(&mut self, _: Store) -> OrgaResult<()> {
+        Ok(())
+    }
+
+    fn flush(&mut self) -> OrgaResult<()> {
+        Ok(())
+    }
+}
 
 #[derive(Call, Query, Client, Default, Serialize, Deserialize, Describe)]
 pub struct HeaderQueue {

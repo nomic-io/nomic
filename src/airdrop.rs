@@ -230,7 +230,20 @@ impl Airdrop {
     }
 }
 
-#[derive(State, Query, Call, Client, Clone, Debug, Default, Encode, Decode)]
+#[derive(
+    State,
+    Query,
+    Call,
+    Client,
+    Clone,
+    Debug,
+    Default,
+    Encode,
+    Decode,
+    Serialize,
+    Deserialize,
+    Describe,
+)]
 pub struct Account {
     pub airdrop1: Part,
     pub btc_deposit: Part,
@@ -238,7 +251,20 @@ pub struct Account {
     pub ibc_transfer: Part,
 }
 
-#[derive(State, Query, Call, Client, Clone, Debug, Default, Encode, Decode)]
+#[derive(
+    State,
+    Query,
+    Call,
+    Client,
+    Clone,
+    Debug,
+    Default,
+    Encode,
+    Decode,
+    Serialize,
+    Deserialize,
+    Describe,
+)]
 pub struct Part {
     pub locked: u64,
     pub claimable: u64,
