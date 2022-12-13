@@ -18,6 +18,7 @@ use nomic::orga::coins::Symbol;
 use nomic::orga::ibc::TransferArgs;
 use nomic::orga::merk::ABCIPrefixedProofStore;
 use nomic::orga::plugins::sdk_compat::sdk;
+use nomic::orga::prelude::Address;
 use nomic::orga::prelude::AsyncCall;
 use nomic::orga::prelude::MIN_FEE;
 use nomic::orga::Error as OrgaError;
@@ -38,6 +39,7 @@ pub fn main() -> std::result::Result<(), JsValue> {
     Ok(())
 }
 
+//bytes
 #[wasm_bindgen]
 pub async fn transfer(to_addr: String, amount: u64) -> Result<JsValue, JsError> {
     let mut client: WebClient<App> = WebClient::new();
@@ -159,121 +161,168 @@ pub async fn all_validators() -> Result<Array, JsError> {
 }
 
 #[wasm_bindgen]
-pub async fn claim() -> Result<JsValue, JsError> {
-    send_sdk_tx(sdk::Msg {
-        type_: "nomic/MsgClaimRewards".to_string(),
-        value: serde_json::Map::new().into(),
-    })
+pub async fn claim(address: String) -> Result<String, JsError> {
+    let address = address
+        .parse()
+        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+    gen_call_bytes(
+        address,
+        sdk::Msg {
+            type_: "nomic/MsgClaimRewards".to_string(),
+            value: serde_json::Map::new().into(),
+        },
+    )
     .await
 }
 
 #[wasm_bindgen(js_name = claimAirdrop)]
-pub async fn claim_airdrop() -> Result<JsValue, JsError> {
-    send_sdk_tx(sdk::Msg {
-        type_: "nomic/MsgClaimAirdrop1".to_string(),
-        value: serde_json::Map::new().into(),
-    })
+pub async fn claim_airdrop(address: String) -> Result<String, JsError> {
+    let address = address
+        .parse()
+        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+    gen_call_bytes(
+        address,
+        sdk::Msg {
+            type_: "nomic/MsgClaimAirdrop1".to_string(),
+            value: serde_json::Map::new().into(),
+        },
+    )
     .await
 }
 
 #[wasm_bindgen(js_name = claimBtcDepositAirdrop)]
-pub async fn claim_btc_deposit_airdrop() -> Result<JsValue, JsError> {
-    send_sdk_tx(sdk::Msg {
-        type_: "nomic/MsgClaimBtcDepositAirdrop".to_string(),
-        value: serde_json::Map::new().into(),
-    })
+pub async fn claim_btc_deposit_airdrop(address: String) -> Result<String, JsError> {
+    let address = address
+        .parse()
+        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+    gen_call_bytes(
+        address,
+        sdk::Msg {
+            type_: "nomic/MsgClaimBtcDepositAirdrop".to_string(),
+            value: serde_json::Map::new().into(),
+        },
+    )
     .await
 }
 
 #[wasm_bindgen(js_name = claimBtcWithdrawAirdrop)]
-pub async fn claim_btc_withdraw_airdrop() -> Result<JsValue, JsError> {
-    send_sdk_tx(sdk::Msg {
-        type_: "nomic/MsgClaimBtcWithdrawAirdrop".to_string(),
-        value: serde_json::Map::new().into(),
-    })
+pub async fn claim_btc_withdraw_airdrop(address: String) -> Result<String, JsError> {
+    let address = address
+        .parse()
+        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+    gen_call_bytes(
+        address,
+        sdk::Msg {
+            type_: "nomic/MsgClaimBtcWithdrawAirdrop".to_string(),
+            value: serde_json::Map::new().into(),
+        },
+    )
     .await
 }
 
 #[wasm_bindgen(js_name = claimIbcTransferAirdrop)]
-pub async fn claim_ibc_transfer_airdrop() -> Result<JsValue, JsError> {
-    send_sdk_tx(sdk::Msg {
-        type_: "nomic/MsgClaimIbcTransferAirdrop".to_string(),
-        value: serde_json::Map::new().into(),
-    })
+pub async fn claim_ibc_transfer_airdrop(address: String) -> Result<String, JsError> {
+    let address = address
+        .parse()
+        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+    gen_call_bytes(
+        address,
+        sdk::Msg {
+            type_: "nomic/MsgClaimIbcTransferAirdrop".to_string(),
+            value: serde_json::Map::new().into(),
+        },
+    )
     .await
 }
 
 #[wasm_bindgen(js_name = claimIncomingIbcBtc)]
-pub async fn claim_incoming_ibc_btc() -> Result<JsValue, JsError> {
-    send_sdk_tx(sdk::Msg {
-        type_: "nomic/MsgClaimIbcBitcoin".to_string(),
-        value: serde_json::Map::new().into(),
-    })
+pub async fn claim_incoming_ibc_btc(address: String) -> Result<String, JsError> {
+    let address = address
+        .parse()
+        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+    gen_call_bytes(
+        address,
+        sdk::Msg {
+            type_: "nomic/MsgClaimIbcBitcoin".to_string(),
+            value: serde_json::Map::new().into(),
+        },
+    )
     .await
 }
 
+//bytes
 #[wasm_bindgen]
-pub async fn delegate(to_addr: String, amount: u64) -> Result<JsValue, JsError> {
-    let my_addr: String = get_address().await?;
-
+pub async fn delegate(from_addr: String, to_addr: String, amount: u64) -> Result<String, JsError> {
     let mut amount_obj = serde_json::Map::new();
     amount_obj.insert("amount".to_string(), amount.to_string().into());
     amount_obj.insert("denom".to_string(), "unom".into());
 
     let mut value = serde_json::Map::new();
-    value.insert("delegator_address".to_string(), my_addr.into());
+    value.insert("delegator_address".to_string(), from_addr.clone().into());
     value.insert("validator_address".to_string(), to_addr.into());
     value.insert("amount".to_string(), amount_obj.into());
 
-    send_sdk_tx(sdk::Msg {
-        type_: "cosmos-sdk/MsgDelegate".to_string(),
-        value: value.into(),
-    })
+    gen_call_bytes(
+        from_addr,
+        sdk::Msg {
+            type_: "cosmos-sdk/MsgDelegate".to_string(),
+            value: value.into(),
+        },
+    )
     .await
 }
 
 #[wasm_bindgen]
-pub async fn unbond(val_addr: String, amount: u64) -> Result<JsValue, JsError> {
-    let my_addr = get_address().await?;
-
+pub async fn unbond(address: String, val_addr: String, amount: u64) -> Result<String, JsError> {
     let mut amount_obj = serde_json::Map::new();
     amount_obj.insert("amount".to_string(), amount.to_string().into());
     amount_obj.insert("denom".to_string(), "unom".into());
 
     let mut value = serde_json::Map::new();
-    value.insert("delegator_address".to_string(), my_addr.into());
+    value.insert("delegator_address".to_string(), address.clone().into());
     value.insert("validator_address".to_string(), val_addr.into());
     value.insert("amount".to_string(), amount_obj.into());
 
-    send_sdk_tx(sdk::Msg {
-        type_: "cosmos-sdk/MsgUndelegate".to_string(),
-        value: value.into(),
-    })
+    let address = address
+        .parse()
+        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+    gen_call_bytes(
+        address,
+        sdk::Msg {
+            type_: "cosmos-sdk/MsgUndelegate".to_string(),
+            value: value.into(),
+        },
+    )
     .await
 }
 
 #[wasm_bindgen]
 pub async fn redelegate(
+    address: String,
     src_addr: String,
     dst_addr: String,
     amount: u64,
-) -> Result<JsValue, JsError> {
-    let my_addr = get_address().await?;
-
+) -> Result<String, JsError> {
     let mut amount_obj = serde_json::Map::new();
     amount_obj.insert("amount".to_string(), amount.to_string().into());
     amount_obj.insert("denom".to_string(), "unom".into());
 
     let mut value = serde_json::Map::new();
-    value.insert("delegator_address".to_string(), my_addr.into());
+    value.insert("delegator_address".to_string(), address.clone().into());
     value.insert("validator_src_address".to_string(), src_addr.into());
     value.insert("validator_dst_address".to_string(), dst_addr.into());
     value.insert("amount".to_string(), amount_obj.into());
 
-    send_sdk_tx(sdk::Msg {
-        type_: "cosmos-sdk/MsgBeginRedelegate".to_string(),
-        value: value.into(),
-    })
+    let address = address
+        .parse()
+        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+    gen_call_bytes(
+        address,
+        sdk::Msg {
+            type_: "cosmos-sdk/MsgBeginRedelegate".to_string(),
+            value: value.into(),
+        },
+    )
     .await
 }
 
@@ -310,6 +359,8 @@ pub async fn nonce(addr: String) -> Result<u64, JsError> {
     Ok(client.nonce(address).await?)
 }
 
+//maybe bytes, not sure here
+//actually probably not
 #[wasm_bindgen(js_name = generateDepositAddress)]
 pub async fn gen_deposit_addr(dest_addr: String) -> Result<DepositAddress, JsError> {
     let client: WebClient<App> = WebClient::new();
@@ -451,21 +502,27 @@ pub async fn broadcast_deposit_addr(
         let res = js_sys::Uint8Array::new(&res).to_vec();
         let res = String::from_utf8(res)?;
 
-        web_sys::console::log_1(&format!("response: {}", &res).into());
+        // web_sys::console::log_1(&format!("response: {}", &res).into());
     }
     Ok(())
 }
 
 #[wasm_bindgen]
-pub async fn withdraw(dest_addr: String, amount: u64) -> Result<JsValue, JsError> {
+pub async fn withdraw(address: String, dest_addr: String, amount: u64) -> Result<String, JsError> {
     let mut value = serde_json::Map::new();
     value.insert("amount".to_string(), amount.to_string().into());
     value.insert("dst_address".to_string(), dest_addr.into());
 
-    send_sdk_tx(sdk::Msg {
-        type_: "nomic/MsgWithdraw".to_string(),
-        value: value.into(),
-    })
+    let address = address
+        .parse()
+        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+    gen_call_bytes(
+        address,
+        sdk::Msg {
+            type_: "nomic/MsgWithdraw".to_string(),
+            value: value.into(),
+        },
+    )
     .await
 }
 
@@ -478,7 +535,7 @@ pub async fn ibc_transfer_out(
     self_address: String,
     receiver_address: String,
     timeout_timestamp: String,
-) -> Result<JsValue, JsError> {
+) -> Result<String, JsError> {
     let mut client: WebClient<App> = WebClient::new();
 
     let mut value = serde_json::Map::new();
@@ -487,42 +544,63 @@ pub async fn ibc_transfer_out(
     value.insert("channel_id".to_string(), channel_id.into());
     value.insert("port_id".to_string(), port_id.into());
     value.insert("receiver".to_string(), receiver_address.into());
-    value.insert("sender".to_string(), self_address.into());
+    value.insert("sender".to_string(), self_address.clone().into());
     value.insert("timeout_timestamp".to_string(), timeout_timestamp.into());
 
-    send_sdk_tx(sdk::Msg {
-        type_: "nomic/MsgIbcTransferOut".to_string(),
-        value: value.into(),
-    })
+    let address = self_address
+        .parse()
+        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+    gen_call_bytes(
+        address,
+        sdk::Msg {
+            type_: "nomic/MsgIbcTransferOut".to_string(),
+            value: value.into(),
+        },
+    )
     .await
 }
 
-async fn send_sdk_tx(msg: sdk::Msg) -> Result<JsValue, JsError> {
-    let my_addr = get_address().await?;
-    let address = my_addr
+async fn gen_call_bytes(address: String, msg: sdk::Msg) -> Result<String, JsError> {
+    let address = address
         .parse()
         .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
     let mut client: WebClient<App> = WebClient::new();
     let nonce = client.nonce(address).await?;
+    let sign_doc = sdk::SignDoc {
+        account_number: "0".to_string(),
+        chain_id: CHAIN_ID.to_string(),
+        //does this fee have to be a vec
+        fee: sdk::Fee {
+            amount: vec![sdk::Coin {
+                amount: "0".to_string(),
+                denom: "unom".to_string(),
+            }],
+            gas: MIN_FEE.to_string(),
+        },
+        memo: "".to_string(),
+        //do these messages have to be a vec
+        //might be utility in multiple messages
+        msgs: vec![msg],
+        sequence: (nonce + 1).to_string(),
+    };
 
-    client
-        .send_sdk_tx(sdk::SignDoc {
-            account_number: "0".to_string(),
-            chain_id: CHAIN_ID.to_string(),
-            fee: sdk::Fee {
-                amount: vec![sdk::Coin {
-                    amount: "0".to_string(),
-                    denom: "unom".to_string(),
-                }],
-                gas: MIN_FEE.to_string(),
-            },
-            memo: "".to_string(),
-            msgs: vec![msg],
-            sequence: (nonce + 1).to_string(),
-        })
-        .await
-        .map_err(|e| Error::Wasm(format!("{:?}", e).into()))?;
+    Ok(serde_json::to_string(&sign_doc)?)
+}
 
-    Ok(client.last_res()?)
+#[wasm_bindgen(js_name = convertEthAddress)]
+pub fn convert_eth_address(str: String) -> Result<String, JsError> {
+    if !str.starts_with("0x") {
+        return Err(JsError::new("Address must start with 0x"));
+    }
+    if str.len() != 42 {
+        return Err(JsError::new("Address must be 20 bytes"));
+    }
+
+    let bytes = hex::decode(&str[2..]).map_err(|_| Error::Wasm("Invalid address".to_string()))?;
+    let mut arr = [0; Address::LENGTH];
+    arr.copy_from_slice(&bytes[..]);
+    let addr: Address = arr.into();
+
+    Ok(addr.to_string())
 }
