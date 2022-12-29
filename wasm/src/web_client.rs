@@ -93,6 +93,8 @@ where
     async fn call(&self, call: Self::Call) -> Result<()> {
         let tx = call.encode()?;
         let tx = base64::encode(&tx);
+
+        #[cfg(feature = "logging")]
         web_sys::console::log_1(&format!("call: {}", tx).into());
 
         let window = match web_sys::window() {
@@ -133,6 +135,8 @@ where
         .map_err(|e| Error::App(format!("{:?}", e)))?;
         let res = js_sys::Uint8Array::new(&res).to_vec();
         let res = String::from_utf8(res).map_err(|e| Error::App(format!("{:?}", e)))?;
+
+        #[cfg(feature = "logging")]
         web_sys::console::log_1(&format!("response: {}", &res).into());
 
         self.last_res
@@ -154,6 +158,8 @@ impl<T: Query + State> AsyncQuery for WebAdapter<T> {
     {
         let query = Encode::encode(&query)?;
         let query = hex::encode(&query);
+
+        #[cfg(feature = "logging")]
         web_sys::console::log_1(&format!("query: {}", query).into());
 
         let window = match web_sys::window() {
@@ -194,7 +200,10 @@ impl<T: Query + State> AsyncQuery for WebAdapter<T> {
             .map_err(|e| Error::App(format!("{:?}", e)))?;
         let res = js_sys::Uint8Array::new(&res).to_vec();
         let res = String::from_utf8(res).map_err(|e| Error::App(format!("{:?}", e)))?;
+
+        #[cfg(feature = "logging")]
         web_sys::console::log_1(&format!("response: {}", res).into());
+
         let res = base64::decode(&res).map_err(|e| Error::App(format!("{:?}", e)))?;
 
         // // TODO: we shouldn't need to include the root hash in the result, it
