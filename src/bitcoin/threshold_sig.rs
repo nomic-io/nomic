@@ -5,21 +5,44 @@ use bitcoin::secp256k1::{
     constants::{COMPACT_SIGNATURE_SIZE, MESSAGE_SIZE, PUBLIC_KEY_SIZE},
     ecdsa, PublicKey, Secp256k1,
 };
+use derive_more::{Deref, DerefMut, From, Into};
 use orga::call::Call;
 use orga::client::Client;
 use orga::collections::{Map, Next};
+use orga::describe::Describe;
 use orga::encoding::{Decode, Encode, Error as EdError, Result as EdResult, Terminated};
 use orga::query::Query;
 use orga::state::State;
 use orga::{Error, Result};
+use serde::{Deserialize, Serialize};
+use serde_big_array::BigArray;
 
 pub type Message = [u8; MESSAGE_SIZE];
-pub type Signature = [u8; COMPACT_SIGNATURE_SIZE];
 
 #[derive(
-    Encode, Decode, State, Query, Call, Client, Clone, Debug, Copy, PartialEq, Eq, PartialOrd, Ord,
+    Encode, Decode, Serialize, Deserialize, State, Describe, Debug, Clone, Deref, From, Copy,
 )]
-pub struct Pubkey([u8; PUBLIC_KEY_SIZE]);
+pub struct Signature(#[serde(with = "BigArray")] [u8; COMPACT_SIGNATURE_SIZE]);
+
+#[derive(
+    Encode,
+    Decode,
+    State,
+    Query,
+    Call,
+    Client,
+    Clone,
+    Debug,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
+    Describe,
+)]
+pub struct Pubkey(#[serde(with = "BigArray")] [u8; PUBLIC_KEY_SIZE]);
 
 impl Next for Pubkey {
     fn next(&self) -> Option<Self> {
@@ -63,7 +86,7 @@ impl From<PublicKey> for Pubkey {
 
 // TODO: update for taproot-based design (musig rounds, fallback path)
 
-#[derive(State, Call, Client, Query)]
+#[derive(State, Call, Client, Query, Default, Encode, Decode, Serialize, Deserialize, Describe)]
 pub struct ThresholdSig {
     threshold: u64,
     signed: u64,
@@ -73,6 +96,10 @@ pub struct ThresholdSig {
 }
 
 impl ThresholdSig {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     pub fn len(&self) -> u16 {
         self.len
     }
@@ -236,6 +263,7 @@ impl ThresholdSig {
 }
 
 use std::fmt::Debug;
+use std::ops::Deref;
 impl Debug for ThresholdSig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ThresholdSig")
@@ -248,92 +276,8 @@ impl Debug for ThresholdSig {
     }
 }
 
-#[derive(State, Call, Client, Query, Clone)]
+#[derive(State, Call, Client, Query, Clone, Encode, Decode, Describe, Serialize, Deserialize)]
 pub struct Share {
     power: u64,
     sig: Option<Signature>,
-}
-
-// TODO: move this into ed
-use derive_more::{Deref, DerefMut, Into};
-use std::convert::{TryFrom, TryInto};
-
-#[derive(Deref, DerefMut, Encode, Into, Default, Debug, Query, Client)]
-pub struct LengthVec<P, T>
-where
-    P: Encode + Terminated,
-    T: Encode + Terminated,
-{
-    len: P,
-
-    #[deref]
-    #[deref_mut]
-    #[into]
-    values: Vec<T>,
-}
-
-impl<P, T> LengthVec<P, T>
-where
-    P: Encode + Terminated,
-    T: Encode + Terminated,
-{
-    pub fn new(len: P, values: Vec<T>) -> Self {
-        LengthVec { len, values }
-    }
-}
-
-impl<P, T> State for LengthVec<P, T>
-where
-    P: Encode + Decode + Terminated + TryInto<usize> + Clone,
-    T: Encode + Decode + Terminated,
-{
-    type Encoding = Self;
-
-    fn create(_: orga::store::Store, data: Self::Encoding) -> Result<Self> {
-        Ok(data)
-    }
-
-    fn flush(self) -> Result<Self::Encoding> {
-        Ok(self)
-    }
-}
-
-impl<P, T> From<Vec<T>> for LengthVec<P, T>
-where
-    P: Encode + Terminated + TryFrom<usize>,
-    T: Encode + Terminated,
-    <P as TryFrom<usize>>::Error: std::fmt::Debug,
-{
-    fn from(values: Vec<T>) -> Self {
-        LengthVec::new(P::try_from(values.len()).unwrap(), values)
-    }
-}
-
-impl<P, T> Terminated for LengthVec<P, T>
-where
-    P: Encode + Terminated,
-    T: Encode + Terminated,
-{
-}
-
-impl<P, T> Decode for LengthVec<P, T>
-where
-    P: Encode + Decode + Terminated + TryInto<usize> + Clone,
-    T: Encode + Decode + Terminated,
-{
-    fn decode<R: std::io::Read>(mut input: R) -> EdResult<Self> {
-        let len = P::decode(&mut input)?;
-        let len_usize = len
-            .clone()
-            .try_into()
-            .map_err(|_| EdError::UnexpectedByte(80))?;
-
-        let mut values = Vec::with_capacity(len_usize);
-        for _ in 0..len_usize {
-            let value = T::decode(&mut input)?;
-            values.push(value);
-        }
-
-        Ok(LengthVec { len, values })
-    }
 }

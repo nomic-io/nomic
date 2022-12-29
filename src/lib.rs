@@ -4,8 +4,8 @@
 #![feature(specialization)]
 #![feature(generic_associated_types)]
 #![feature(type_alias_impl_trait)]
-#![feature(is_some_with)]
 #![feature(async_closure)]
+#![feature(is_some_and)]
 
 #[cfg(feature = "full")]
 use orga::abci::TendermintClient;

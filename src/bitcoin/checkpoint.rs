@@ -1,23 +1,25 @@
 use super::{
     adapter::Adapter,
     signatory::SignatorySet,
-    threshold_sig::{LengthVec, Signature, ThresholdSig},
+    threshold_sig::{Signature, ThresholdSig},
     ConsensusKey, Xpub,
 };
 use crate::error::{Error, Result};
 use bitcoin::blockdata::transaction::EcdsaSighashType;
 use derive_more::{Deref, DerefMut};
+use orga::describe::Describe;
 use orga::{
     call::Call,
     client::Client,
     collections::{map::ReadOnly, ChildMut, Deque, Map, Ref},
     context::GetContext,
-    encoding::{Decode, Encode},
+    encoding::{Decode, Encode, LengthVec},
     plugins::Time,
     query::Query,
     state::State,
     Error as OrgaError, Result as OrgaResult,
 };
+use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 
 pub const MIN_CHECKPOINT_INTERVAL: u64 = 60 * 5;
@@ -26,29 +28,22 @@ pub const MAX_INPUTS: u64 = 40;
 pub const MAX_OUTPUTS: u64 = 200;
 pub const FEE_RATE: u64 = 1;
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Encode, Decode, Default, Serialize, Deserialize)]
 pub enum CheckpointStatus {
+    #[default]
     Building,
     Signing,
     Complete,
 }
 
-impl Default for CheckpointStatus {
-    fn default() -> Self {
-        Self::Building
-    }
-}
-
 // TODO: make it easy to derive State for simple types like this
 impl State for CheckpointStatus {
-    type Encoding = Self;
-
-    fn create(_: orga::store::Store, data: Self) -> OrgaResult<Self> {
-        Ok(data)
+    fn attach(&mut self, _: orga::store::Store) -> OrgaResult<()> {
+        Ok(())
     }
 
-    fn flush(self) -> OrgaResult<Self> {
-        Ok(self)
+    fn flush(&mut self) -> OrgaResult<()> {
+        Ok(())
     }
 }
 
@@ -76,7 +71,15 @@ impl<U: Send + Clone> Client<U> for CheckpointStatus {
     }
 }
 
-#[derive(State, Call, Query, Client, Debug)]
+impl Describe for CheckpointStatus {
+    fn describe() -> orga::describe::Descriptor {
+        orga::describe::Builder::new::<Self>().build()
+    }
+}
+
+#[derive(
+    State, Call, Query, Client, Debug, Encode, Decode, Serialize, Deserialize, Default, Describe,
+)]
 pub struct Input {
     pub prevout: Adapter<bitcoin::OutPoint>,
     pub script_pubkey: Adapter<bitcoin::Script>,
@@ -110,7 +113,9 @@ impl Input {
 
 pub type Output = Adapter<bitcoin::TxOut>;
 
-#[derive(State, Call, Query, Client, Debug)]
+#[derive(
+    State, Call, Query, Client, Debug, Encode, Decode, Default, Serialize, Deserialize, Describe,
+)]
 pub struct Checkpoint {
     pub status: CheckpointStatus,
     pub inputs: Deque<Input>,
@@ -165,7 +170,7 @@ impl Checkpoint {
     }
 }
 
-#[derive(State, Call, Query, Client)]
+#[derive(State, Call, Query, Client, Encode, Decode, Default, Serialize, Deserialize, Describe)]
 pub struct CheckpointQueue {
     pub(super) queue: Deque<Checkpoint>,
     pub(super) index: u32,
@@ -298,17 +303,17 @@ impl<'a> BuildingCheckpointMut<'a> {
         let script_pubkey = sigset.output_script(dest)?;
         let redeem_script = sigset.redeem_script(dest)?;
 
-        // TODO: need a better way to initialize state types from values?
-        self.inputs.push_back((
-            Adapter::new(prevout),
-            Adapter::new(script_pubkey),
-            Adapter::new(redeem_script),
-            sigset.index(),
-            dest.encode()?.into(),
+        let input = Input {
+            prevout: Adapter::new(prevout),
+            script_pubkey: Adapter::new(script_pubkey),
+            redeem_script: Adapter::new(redeem_script),
+            sigset_index: sigset.index(),
+            dest: dest.encode()?.try_into()?,
             amount,
-            sigset.est_witness_vsize(),
-            <ThresholdSig as State>::Encoding::default(),
-        ))?;
+            est_witness_vsize: sigset.est_witness_vsize(),
+            sigs: ThresholdSig::new(),
+        };
+        self.inputs.push_back(input)?;
 
         let inputs_len = self.inputs.len();
         let mut input = self.inputs.get_mut(inputs_len - 1)?.unwrap();
@@ -630,11 +635,13 @@ impl CheckpointQueue {
             }
 
             self.index = index;
-            self.queue.push_back(Default::default())?;
-            let mut building = self.building_mut()?;
 
-            building.sigset = sigset;
+            self.queue.push_back(Checkpoint {
+                sigset,
+                ..Default::default()
+            })?;
 
+            let building = self.building_mut()?;
             Ok(Some(building))
         }
     }

@@ -7,14 +7,14 @@ use crate::bitcoin::Bitcoin;
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::Transaction;
 use orga::cosmrs::bank::MsgSend;
+use orga::describe::Describe;
+use orga::encoding::{Decode, Encode};
 use orga::ibc::ibc_rs::core::ics04_channel::timeout::TimeoutHeight;
 use orga::ibc::ibc_rs::core::ics24_host::identifier::{ChannelId, PortId};
 use orga::ibc::ibc_rs::timestamp::Timestamp;
 use orga::ibc::TransferOpts;
 #[cfg(feature = "feat-ibc")]
 use orga::ibc::{Ibc, IbcTx};
-#[cfg(feature = "full")]
-use orga::migrate::{exec_migration, Migrate};
 use orga::plugins::sdk_compat::{sdk, sdk::Tx as SdkTx, ConvertSdkTx};
 use orga::Error;
 use orga::{ibc, prelude::*};
@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 pub const CHAIN_ID: &str = "nomic-testnet-4d";
 pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
 
-#[derive(State, Debug, Clone)]
+#[derive(State, Debug, Clone, Encode, Decode, Default, Serialize, Deserialize, Describe)]
 pub struct Nom(());
 impl Symbol for Nom {
     const INDEX: u8 = 69;
@@ -32,7 +32,7 @@ const DEV_ADDRESS: &str = "nomic14z79y3yrghqx493mwgcj0qd2udy6lm26lmduah";
 const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1d5n325zrf4elfu0heqd59gna5j6xyunhev23cj";
 const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhqd8dcqeq";
 
-#[derive(State, Call, Query, Client)]
+#[derive(State, Call, Query, Client, Encode, Decode, Default, Serialize, Deserialize, Describe)]
 pub struct InnerApp {
     #[call]
     pub accounts: Accounts<Nom>,
@@ -205,28 +205,6 @@ impl InnerApp {
 }
 
 #[cfg(feature = "full")]
-impl Migrate<nomicv3::app::InnerApp> for InnerApp {
-    fn migrate(&mut self, legacy: nomicv3::app::InnerApp) -> Result<()> {
-        self.community_pool.migrate(legacy.community_pool())?;
-        self.incentive_pool.migrate(legacy.incentive_pool())?;
-
-        self.staking_rewards.migrate(legacy.staking_rewards())?;
-        self.dev_rewards.migrate(legacy.dev_rewards())?;
-        self.community_pool_rewards
-            .migrate(legacy.community_pool_rewards())?;
-        self.incentive_pool_rewards
-            .migrate(legacy.incentive_pool_rewards())?;
-
-        self.accounts.migrate(legacy.accounts)?;
-        self.staking.migrate(legacy.staking)?;
-        self.airdrop.migrate(legacy.atom_airdrop)?;
-        // self.bitcoin.migrate(legacy.bitcoin)?;
-
-        Ok(())
-    }
-}
-
-#[cfg(feature = "full")]
 mod abci {
     use super::*;
 
@@ -245,9 +223,6 @@ mod abci {
                 .init_from_airdrop1_csv(include_bytes!("../airdrop1_snapshot.csv"))?;
             self.airdrop
                 .init_from_airdrop2_csv(include_bytes!("../airdrop2_snapshot.csv"))?;
-
-            let old_home_path = nomicv3::orga::abci::Node::<()>::home(nomicv3::app::CHAIN_ID);
-            exec_migration(self, old_home_path.join("merk"), &[0, 1, 0])?;
 
             self.accounts.allow_transfers(true);
             self.bitcoin.accounts.allow_transfers(true);
@@ -857,7 +832,7 @@ impl ConvertSdkTx for InnerApp {
 
                         let dest_addr: Address = msg["dest_address"]
                             .as_str()
-                            .ok_or(|| Error::App("Invalid destination address".to_string()))?
+                            .ok_or_else(|| Error::App("Invalid destination address".to_string()))?
                             .parse()
                             .map_err(|_| Error::App("Invalid destination address".to_string()))?;
 
@@ -945,7 +920,7 @@ pub fn ibc_fee(amount: Amount) -> Result<Amount> {
 
 const REWARD_TIMER_PERIOD: i64 = 120;
 
-#[derive(State, Call, Query, Client)]
+#[derive(State, Call, Query, Client, Encode, Decode, Default, Serialize, Deserialize, Describe)]
 pub struct RewardTimer {
     last_period: i64,
 }

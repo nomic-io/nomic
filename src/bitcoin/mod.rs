@@ -17,6 +17,7 @@ use orga::client::Client;
 use orga::coins::{Accounts, Address, Amount, Coin, Give, Symbol, Take};
 use orga::collections::Map;
 use orga::context::{Context, GetContext};
+use orga::describe::Describe;
 use orga::encoding::{Decode, Encode, Terminated};
 use orga::plugins::Paid;
 #[cfg(feature = "full")]
@@ -25,14 +26,13 @@ use orga::plugins::{Signer, Time};
 use orga::query::Query;
 use orga::state::State;
 use orga::{Error as OrgaError, Result as OrgaResult};
+use serde::{Deserialize, Serialize};
 use signatory::SignatorySet;
 use txid_set::OutpointSet;
 
 pub mod adapter;
 pub mod checkpoint;
 pub mod header_queue;
-#[cfg(feature = "full")]
-mod migrate;
 #[cfg(feature = "full")]
 pub mod relayer;
 pub mod signatory;
@@ -41,7 +41,7 @@ pub mod signer;
 pub mod threshold_sig;
 pub mod txid_set;
 
-#[derive(State, Debug, Clone)]
+#[derive(State, Debug, Clone, Encode, Decode, Default, Serialize, Deserialize, Describe)]
 pub struct Nbtc(());
 impl Symbol for Nbtc {
     const INDEX: u8 = 21;
@@ -60,7 +60,7 @@ pub fn calc_deposit_fee(amount: u64) -> u64 {
     amount / 5
 }
 
-#[derive(State, Call, Query, Client)]
+#[derive(State, Call, Query, Client, Encode, Decode, Default, Serialize, Deserialize, Describe)]
 pub struct Bitcoin {
     #[call]
     pub headers: HeaderQueue,
@@ -75,8 +75,14 @@ pub struct Bitcoin {
 
 pub type ConsensusKey = [u8; 32];
 
-#[derive(Call, Query, Client, Clone, Debug)]
+#[derive(Call, Query, Client, Clone, Debug, Serialize, Deserialize)]
 pub struct Xpub(ExtendedPubKey);
+
+impl Describe for Xpub {
+    fn describe() -> orga::describe::Descriptor {
+        orga::describe::Builder::new::<Self>().build()
+    }
+}
 
 pub const XPUB_LENGTH: usize = 78;
 
@@ -91,14 +97,12 @@ impl Xpub {
 }
 
 impl State for Xpub {
-    type Encoding = Self;
-
-    fn create(_: orga::store::Store, data: Self) -> OrgaResult<Self> {
-        Ok(data)
+    fn attach(&mut self, _: orga::store::Store) -> OrgaResult<()> {
+        Ok(())
     }
 
-    fn flush(self) -> OrgaResult<Self> {
-        Ok(self)
+    fn flush(&mut self) -> OrgaResult<()> {
+        Ok(())
     }
 }
 
@@ -460,7 +464,7 @@ impl BeginBlock for Bitcoin {
     }
 }
 
-#[derive(State, Call, Query, Client)]
+#[derive(State, Call, Query, Client, Encode, Decode, Default, Serialize, Deserialize, Describe)]
 pub struct SignatoryKeys {
     by_cons: Map<ConsensusKey, Xpub>,
     xpubs: Map<Xpub, ()>,

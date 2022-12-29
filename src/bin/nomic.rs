@@ -13,7 +13,6 @@ use futures::executor::block_on;
 use nomic::app::{DepositCommitment, IbcDepositCommitment};
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
-use nomicv3::command::Opts as LegacyOpts;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
@@ -127,93 +126,23 @@ impl StartCmd {
         let state_sync = self.state_sync;
 
         tokio::task::spawn_blocking(move || {
-            let old_name = nomicv3::app::CHAIN_ID;
             let new_name = nomic::app::CHAIN_ID;
 
-            let has_old_node = Node::home(old_name).exists();
             let has_new_node = Node::home(new_name).exists();
-            let started_old_node = Node::height(old_name).unwrap() > 0;
             let started_new_node = Node::height(new_name).unwrap() > 0;
-            let upgrade_time_passed = now_seconds() > STOP_SECONDS;
-
-            if has_old_node {
-                println!("Legacy node height: {}", Node::height(old_name).unwrap());
-            }
 
             let new_home = Node::home(new_name);
             let new_config_path = new_home.join("tendermint/config/config.toml");
-
-            let old_home = Node::home(old_name);
-            let old_config_path = old_home.join("tendermint/config/config.toml");
-
-            if !upgrade_time_passed && !started_new_node {
-                println!("Starting legacy node for migration...");
-
-                let node = nomicv3::orga::abci::Node::<nomicv3::app::App>::new(
-                    old_name,
-                    Default::default(),
-                )
-                .with_genesis(include_bytes!("../../genesis/testnet-4.json"))
-                .stdout(std::process::Stdio::inherit())
-                .stderr(std::process::Stdio::inherit())
-                .stop_seconds(STOP_SECONDS);
-
-                set_p2p_seeds(
-                    &old_config_path,
-                    &["edb32208ff79b591dd4cddcf1c879f6405fe6c79@167.99.228.240:26656"],
-                );
-
-                if !started_old_node {
-                    // TODO: set default RPC boostrap nodes
-                    configure_for_statesync(
-                        &old_config_path,
-                        &["http://167.99.228.240:26667", "http://167.99.228.240:26677"],
-                    );
-                }
-
-                let res = node.run();
-                if let Err(nomicv3::orga::Error::ABCI(msg)) = res {
-                    if &msg != "Reached stop height" {
-                        panic!("{}", msg);
-                    }
-                } else {
-                    res.unwrap();
-                }
-            }
-
-            let has_old_node = Node::home(old_name).exists();
 
             if !has_new_node {
                 println!("Initializing node at {}...", new_home.display());
                 // TODO: configure default seeds
                 Node::<nomic::app::App>::new(new_name, Default::default());
 
-                if has_old_node {
-                    let old_home = Node::home(old_name);
-                    println!(
-                        "Legacy network data detected, copying keys and config from {}...",
-                        old_home.display(),
-                    );
-
-                    let copy = |file: &str| {
-                        std::fs::copy(old_home.join(file), new_home.join(file))
-                    };
-
-                    copy("tendermint/config/priv_validator_key.json").unwrap();
-                    copy("tendermint/config/node_key.json").unwrap();
-                    copy("tendermint/config/config.toml").unwrap();
-                    if let Err(e) = copy("signer/xpriv") {
-                        if e.kind() != std::io::ErrorKind::NotFound {
-                            panic!("{}", e);
-                        }
-                    }
-                    deconfigure_statesync(&new_config_path);
-                }
-
                 edit_block_time(&new_config_path, "3s");
             }
 
-            if upgrade_time_passed && !started_new_node && (!has_old_node || state_sync) {
+            if !started_new_node {
                 println!("Configuring node for state sync...");
 
                 // TODO: set default seeds
@@ -918,7 +847,10 @@ async fn deposit(dest: DepositCommitment) -> Result<()> {
         .await
         .map_err(|err| nomic::error::Error::Orga(orga::Error::App(err.to_string())))?;
     if res.status() != 200 {
-        return Err(orga::Error::App(format!("Relayer responded with code {}", res.status()).to_string()).into());
+        return Err(orga::Error::App(
+            format!("Relayer responded with code {}", res.status()).to_string(),
+        )
+        .into());
     }
 
     println!("Deposit address: {}", btc_addr);
@@ -948,6 +880,7 @@ pub struct InterchainDepositCmd {
     channel: String,
 }
 
+const ONE_DAY_NS: u64 = 86400 * 1_000_000_000;
 impl InterchainDepositCmd {
     async fn run(&self) -> Result<()> {
         use orga::ibc::encoding::Adapter;
@@ -957,7 +890,7 @@ impl InterchainDepositCmd {
             sender: Adapter::new(my_address().to_string().parse().unwrap()),
             source_channel: Adapter::new(self.channel.parse().unwrap()),
             source_port: Adapter::new("transfer".parse().unwrap()),
-            timeout_timestamp: now_ns + 8 * 60 * 60 * 1_000_000_000,
+            timeout_timestamp: now_ns + 8 * ONE_DAY_NS - (now_ns % ONE_DAY_NS),
         });
 
         deposit(dest).await
@@ -1083,18 +1016,9 @@ async fn main() {
         .map(|s| s == "start")
         .unwrap_or(false);
 
-    if is_start || now_seconds() > STOP_SECONDS {
-        let opts = Opts::parse();
-        if let Err(err) = opts.cmd.run().await {
-            eprintln!("{}", err);
-            std::process::exit(1);
-        };
-    } else {
-        let opts = LegacyOpts::parse();
-
-        if let Err(err) = opts.cmd.run().await {
-            eprintln!("{}", err);
-            std::process::exit(1);
-        };
-    }
+    let opts = Opts::parse();
+    if let Err(err) = opts.cmd.run().await {
+        eprintln!("{}", err);
+        std::process::exit(1);
+    };
 }

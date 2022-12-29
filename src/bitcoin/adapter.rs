@@ -1,13 +1,15 @@
 use bitcoin::consensus::{Decodable, Encodable};
 use orga::client::{Client, PrimitiveClient};
+use orga::describe::Describe;
 use orga::encoding::Result as EncodingResult;
 use orga::prelude::*;
 use orga::state::State;
 use orga::store::Store;
+use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::ops::{Deref, DerefMut};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Adapter<T> {
     inner: T,
 }
@@ -33,14 +35,18 @@ impl<T: Default> Default for Adapter<T> {
 impl<T> Terminated for Adapter<T> {}
 
 impl<T: Encodable + Decodable> State for Adapter<T> {
-    type Encoding = Self;
-
-    fn create(_: Store, data: Self::Encoding) -> orga::Result<Self> {
-        Ok(data)
+    fn attach(&mut self, _: Store) -> orga::Result<()> {
+        Ok(())
     }
 
-    fn flush(self) -> orga::Result<Self::Encoding> {
-        Ok(self)
+    fn flush(&mut self) -> orga::Result<()> {
+        Ok(())
+    }
+}
+
+impl<T: Encodable + Decodable + 'static> Describe for Adapter<T> {
+    fn describe() -> orga::describe::Descriptor {
+        orga::describe::Builder::new::<Self>().build()
     }
 }
 
