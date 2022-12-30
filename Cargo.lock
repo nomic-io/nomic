@@ -2269,7 +2269,10 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.3.1"
+<<<<<<< Updated upstream
 source = "git+https://github.com/nomic-io/orga.git?branch=ethereum-sigs#c280d4085680f2b4c504dff76d39e9078c918510"
+=======
+>>>>>>> Stashed changes
 dependencies = [
  "abci2",
  "async-trait",
@@ -2324,7 +2327,10 @@ dependencies = [
 [[package]]
 name = "orga-macros"
 version = "0.3.1"
+<<<<<<< Updated upstream
 source = "git+https://github.com/nomic-io/orga.git?branch=ethereum-sigs#c280d4085680f2b4c504dff76d39e9078c918510"
+=======
+>>>>>>> Stashed changes
 dependencies = [
  "heck 0.3.3",
  "proc-macro2",
@@ -3455,7 +3461,11 @@ version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bdf0c33fae925bdc080598b84bc15c55e7b9a4a43b3c704da051f977469691c9"
 dependencies = [
+<<<<<<< Updated upstream
  "digest 0.10.6",
+=======
+ "digest 0.10.5",
+>>>>>>> Stashed changes
  "keccak",
 ]
 

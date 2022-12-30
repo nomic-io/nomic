@@ -604,3 +604,9 @@ pub fn convert_eth_address(str: String) -> Result<String, JsError> {
 
     Ok(addr.to_string())
 }
+
+#[wasm_bindgen]
+pub async fn describe() -> nomic::orga::describe::Descriptor {
+    use nomic::orga::describe::Describe;
+    nomic::app::App::describe()
+}

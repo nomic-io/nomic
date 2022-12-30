@@ -1,6 +1,6 @@
 use js_sys::{Array, JsString};
-use nomic::app::{App, InnerApp, Nom, CHAIN_ID};
 use nomic::airdrop::Airdrop;
+use nomic::app::{App, InnerApp, Nom, CHAIN_ID};
 use nomic::bitcoin::signatory::SignatorySet;
 use nomic::orga::call::Call;
 use nomic::orga::client::{AsyncCall, AsyncQuery, Client};
@@ -219,9 +219,9 @@ impl<T: Query + State> AsyncQuery for WebAdapter<T> {
             Some(root_value) => root_value,
             None => panic!("Missing root value"),
         };
-        let encoding = T::Encoding::decode(root_value)?;
+        let mut state = T::decode(root_value)?;
         let store: Shared<ABCIPrefixedProofStore> = Shared::new(ABCIPrefixedProofStore::new(map));
-        let state = T::create(Store::new(store.into()), encoding)?;
+        state.attach(Store::new(store.into()))?;
 
         check(std::rc::Rc::new(state))
     }
