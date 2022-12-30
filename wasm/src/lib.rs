@@ -526,6 +526,28 @@ pub async fn withdraw(address: String, dest_addr: String, amount: u64) -> Result
     .await
 }
 
+#[wasm_bindgen(js_name = joinAirdropAccounts)]
+pub async fn join_airdrop_accounts(address: String, dest_addr: String) -> Result<String, JsError> {
+    let address = address
+        .parse()
+        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+    let dest_addr = dest_addr
+        .parse()
+        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+
+    let mut value = serde_json::Map::new();
+    value.insert("dest_address".to_string(), dest_addr);
+
+    gen_call_bytes(
+        address,
+        sdk::Msg {
+            type_: "nomic/MsgJoinAirdropAccounts".to_string(),
+            value: value.into(),
+        },
+    )
+    .await
+}
+
 #[wasm_bindgen(js_name = ibcTransferOut)]
 pub async fn ibc_transfer_out(
     amount: u64,
