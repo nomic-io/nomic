@@ -51,7 +51,7 @@ pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Testnet;
 pub const MIN_WITHDRAWAL_CHECKPOINTS: u32 = 4;
 pub const MIN_DEPOSIT_AMOUNT: u64 = 600;
 pub const MIN_WITHDRAWAL_AMOUNT: u64 = 600;
-pub const MAX_WITHDRAWAL_SCRIPT_LENGTH: u64 = 64;
+pub const MAX_SCRIPT_LENGTH: u64 = 64;
 pub const TRANSFER_FEE: u64 = 1 * UNITS_PER_SAT;
 pub const MIN_CONFIRMATIONS: u32 = 0;
 pub const UNITS_PER_SAT: u64 = 1_000_000;
@@ -69,6 +69,8 @@ pub struct Bitcoin {
     pub checkpoints: CheckpointQueue,
     #[call]
     pub accounts: Accounts<Nbtc>,
+    // TODO: store recovery script data in account struct
+    recovery_scripts: Map<Address, Adapter<Script>>,
     pub signatory_keys: SignatoryKeys,
     pub(crate) reward_pool: Coin<Nbtc>,
 }
@@ -193,6 +195,28 @@ impl Bitcoin {
         Ok(())
     }
 
+    #[call]
+    pub fn set_recovery_script(&mut self, signatory_script: Adapter<Script>) -> Result<()> {
+        #[cfg(feature = "full")]
+        {
+            if signatory_script.len() as u64 > MAX_SCRIPT_LENGTH {
+                return Err(Error::Orga(orga::Error::App(
+                    "Script exceeds maximum length".to_string(),
+                )));
+            }
+
+            let signer = self
+                .context::<Signer>()
+                .ok_or_else(|| Error::Orga(OrgaError::App("No Signer context available".into())))?
+                .signer
+                .ok_or_else(|| Error::Orga(OrgaError::App("Call must be signed".into())))?;
+
+            self.recovery_scripts.insert(signer, signatory_script)?;
+        }
+
+        Ok(())
+    }
+
     pub fn relay_deposit(
         &mut self,
         btc_tx: Adapter<Transaction>,
@@ -300,7 +324,7 @@ impl Bitcoin {
     pub fn withdraw(&mut self, script_pubkey: Adapter<Script>, amount: Amount) -> Result<()> {
         exempt_from_fee()?;
 
-        if script_pubkey.len() as u64 > MAX_WITHDRAWAL_SCRIPT_LENGTH {
+        if script_pubkey.len() as u64 > MAX_SCRIPT_LENGTH {
             return Err(OrgaError::App("Script exceeds maximum length".to_string()).into());
         }
 
