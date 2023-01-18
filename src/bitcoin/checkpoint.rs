@@ -27,6 +27,7 @@ pub const MAX_CHECKPOINT_INTERVAL: u64 = 60 * 60 * 8;
 pub const MAX_INPUTS: u64 = 40;
 pub const MAX_OUTPUTS: u64 = 200;
 pub const FEE_RATE: u64 = 1;
+pub const MAX_AGE: u64 = 60 * 60 * 24 * 7 * 3;
 
 #[derive(Debug, Encode, Decode, Default, Serialize, Deserialize)]
 pub enum CheckpointStatus {
@@ -564,6 +565,14 @@ impl CheckpointQueue {
                     if !has_pending_deposit && !has_pending_withdrawal {
                         return Ok(());
                     }
+                }
+
+                while let Some(first) = self.queue.front()? {
+                    if now - first.create_time() <= MAX_AGE {
+                        break;
+                    }
+
+                    self.queue.pop_front()?;
                 }
             }
 
