@@ -89,13 +89,12 @@ pub struct Input {
     pub dest: LengthVec<u16, u8>,
     pub amount: u64,
     pub est_witness_vsize: u64,
-    pub sigs: ThresholdSig,
 }
 
 impl Input {
-    pub fn to_txin(&self) -> Result<bitcoin::TxIn> {
-        let mut witness = self.sigs.to_witness()?;
-        if self.sigs.done() {
+    pub fn to_txin(&self, sigs: &ThresholdSig) -> Result<bitcoin::TxIn> {
+        let mut witness = sigs.to_witness()?;
+        if sigs.done() {
             witness.push(self.redeem_script.to_bytes());
         }
 
@@ -122,6 +121,7 @@ pub struct Checkpoint {
     pub inputs: Deque<Input>,
     signed_inputs: u16,
     pub outputs: Deque<Output>,
+    pub sig_queue: SignatureQueue,
     pub sigset: SignatorySet,
 }
 
@@ -143,7 +143,8 @@ impl Checkpoint {
         // TODO: use deque iterator
         for i in 0..self.inputs.len() {
             let input = self.inputs.get(i)?.unwrap();
-            tx.input.push(input.to_txin()?);
+            let sigs = &*self.sig_queue.inputs.get(i)?.unwrap();
+            tx.input.push(input.to_txin(sigs)?);
             est_vsize += input.est_witness_vsize;
         }
 
@@ -171,10 +172,19 @@ impl Checkpoint {
     }
 }
 
-#[derive(State, Call, Query, Client, Encode, Decode, Default, Serialize, Deserialize, Describe)]
+#[derive(
+    State, Call, Query, Client, Encode, Decode, Default, Serialize, Deserialize, Describe, Debug,
+)]
 pub struct CheckpointQueue {
     pub(super) queue: Deque<Checkpoint>,
     pub(super) index: u32,
+}
+
+#[derive(
+    State, Call, Query, Client, Encode, Decode, Default, Serialize, Deserialize, Describe, Debug,
+)]
+pub struct SignatureQueue {
+    pub(super) inputs: Deque<ThresholdSig>,
 }
 
 #[derive(Deref)]
@@ -204,6 +214,8 @@ impl<'a> SigningCheckpoint<'a> {
 
         let mut msgs = vec![];
 
+        // TODO: get signatures for active group in signature queue
+
         for i in 0..self.inputs.len() {
             let input = self.inputs.get(i)?.unwrap();
             let pubkey = xpub
@@ -214,8 +226,9 @@ impl<'a> SigningCheckpoint<'a> {
                     )?],
                 )?
                 .public_key;
-            if input.sigs.needs_sig(pubkey.into())? {
-                msgs.push((input.sigs.message(), input.sigset_index));
+            let sigs = self.sig_queue.inputs.get(i)?.unwrap();
+            if sigs.needs_sig(pubkey.into())? {
+                msgs.push((sigs.message(), input.sigset_index));
             }
         }
 
@@ -244,11 +257,12 @@ impl<'a> SigningCheckpointMut<'a> {
                 .public_key
                 .into();
 
-            if !input.sigs.contains_key(pubkey)? {
+            let mut input_sigs = self.sig_queue.inputs.get_mut(i)?.unwrap();
+            if !input_sigs.contains_key(pubkey)? {
                 continue;
             }
 
-            if input.sigs.done() {
+            if input_sigs.done() {
                 sig_index += 1;
                 continue;
             }
@@ -260,9 +274,9 @@ impl<'a> SigningCheckpointMut<'a> {
             let sig = sigs[sig_index];
             sig_index += 1;
 
-            input.sigs.sign(pubkey, sig)?;
+            input_sigs.sign(pubkey, sig)?;
 
-            if input.sigs.done() {
+            if input_sigs.done() {
                 self.signed_inputs += 1;
             }
         }
@@ -312,15 +326,18 @@ impl<'a> BuildingCheckpointMut<'a> {
             dest: dest.encode()?.try_into()?,
             amount,
             est_witness_vsize: sigset.est_witness_vsize(),
-            sigs: ThresholdSig::new(),
         };
+        let est_vsize = input.est_vsize();
         self.inputs.push_back(input)?;
 
+        // TODO: make it possible to populate instance in memory then push,
+        // rather than push then access and modify
+        self.sig_queue.inputs.push_back(ThresholdSig::new())?;
         let inputs_len = self.inputs.len();
-        let mut input = self.inputs.get_mut(inputs_len - 1)?.unwrap();
-        input.sigs.from_sigset(sigset)?;
+        let mut sigs = self.sig_queue.inputs.get_mut(inputs_len - 1)?.unwrap();
+        sigs.from_sigset(sigset)?;
 
-        Ok(input.est_vsize())
+        Ok(est_vsize)
     }
 
     pub fn advance(
@@ -328,7 +345,7 @@ impl<'a> BuildingCheckpointMut<'a> {
     ) -> Result<(
         bitcoin::OutPoint,
         u64,
-        Vec<ReadOnly<Input>>,
+        Vec<(ReadOnly<Input>, ReadOnly<ThresholdSig>)>,
         Vec<ReadOnly<Output>>,
     )> {
         let mut checkpoint = self.0;
@@ -344,7 +361,8 @@ impl<'a> BuildingCheckpointMut<'a> {
         let mut excess_inputs = vec![];
         while checkpoint.inputs.len() > MAX_INPUTS {
             let removed_input = checkpoint.inputs.pop_back()?.unwrap();
-            excess_inputs.push(removed_input);
+            let removed_sigs = checkpoint.sig_queue.inputs.pop_back()?.unwrap();
+            excess_inputs.push((removed_input, removed_sigs));
         }
 
         let mut excess_outputs = vec![];
@@ -385,7 +403,8 @@ impl<'a> BuildingCheckpointMut<'a> {
                 input.amount,
                 sighash_type,
             )?;
-            input.sigs.set_message(sighash.into_inner());
+            let mut sigs = signing.sig_queue.inputs.get_mut(i)?.unwrap();
+            sigs.set_message(sighash.into_inner());
         }
 
         let reserve_outpoint = bitcoin::OutPoint {
@@ -595,15 +614,16 @@ impl CheckpointQueue {
                     reserve_value,
                 )?;
 
-                for input in excess_inputs {
-                    let shares = input.sigs.shares()?;
+                for (input, sigs) in excess_inputs {
+                    let shares = sigs.shares()?;
                     let data = input.into_inner().into();
                     building.inputs.push_back(data)?;
+                    building.sig_queue.inputs.push_back(ThresholdSig::new())?;
                     building
+                        .sig_queue
                         .inputs
                         .back_mut()?
                         .unwrap()
-                        .sigs
                         .from_shares(shares)?;
                 }
 
