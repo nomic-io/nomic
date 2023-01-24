@@ -328,8 +328,8 @@ pub async fn redelegate(
 
 fn parse_part(part: nomic::airdrop::Part) -> AirdropDetails {
     AirdropDetails {
-        claimed: part.claimed > 0,
-        claimable: part.claimable > 0,
+        claimed: part.claimed,
+        claimable: part.claimable,
         amount: part.claimed + part.claimable + part.locked,
     }
 }
