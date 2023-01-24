@@ -527,19 +527,22 @@ pub async fn withdraw(address: String, dest_addr: String, amount: u64) -> Result
 }
 
 #[wasm_bindgen(js_name = joinAirdropAccounts)]
-pub async fn join_airdrop_accounts(address: String, dest_addr: String) -> Result<String, JsError> {
-    let address = address
+pub async fn join_airdrop_accounts(
+    source_address: String,
+    destination_address: String,
+) -> Result<String, JsError> {
+    let address: Address = source_address
         .parse()
-        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
-    let dest_addr = dest_addr
+        .map_err(|e| Error::Wasm("Invalid source address".to_string()))?;
+    let dest_addr: Address = destination_address
         .parse()
-        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+        .map_err(|e| Error::Wasm("Invalid destination address".to_string()))?;
 
     let mut value = serde_json::Map::new();
-    value.insert("dest_address".to_string(), dest_addr);
+    value.insert("dest_address".to_string(), dest_addr.to_string().into());
 
     gen_call_bytes(
-        address,
+        address.to_string(),
         sdk::Msg {
             type_: "nomic/MsgJoinAirdropAccounts".to_string(),
             value: value.into(),
