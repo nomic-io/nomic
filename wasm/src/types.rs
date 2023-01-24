@@ -70,4 +70,12 @@ impl Airdrop {
             + self.btc_withdraw.amount
             + self.ibc_transfer.amount
     }
+
+    #[wasm_bindgen(js_name = claimedTotal)]
+    pub fn claimed_total(&self) -> u64 {
+        self.airdrop1.claimed
+            + self.btc_deposit.claimed
+            + self.btc_withdraw.claimed
+            + self.ibc_transfer.claimed
+    }
 }
