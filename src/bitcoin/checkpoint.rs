@@ -185,6 +185,7 @@ pub struct CheckpointQueue {
 )]
 pub struct SignatureQueue {
     pub(super) inputs: Deque<ThresholdSig>,
+    pub(super) emergency_disbursal: Deque<ThresholdSig>,
 }
 
 #[derive(Deref)]
