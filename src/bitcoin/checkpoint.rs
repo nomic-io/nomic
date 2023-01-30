@@ -534,61 +534,58 @@ impl<'a> BuildingCheckpointMut<'a> {
     }
 
     pub fn advance(
-        self,
+        mut self,
+        nbtc_accounts: &Accounts<Nbtc>,
+        recovery_scripts: &Map<orga::prelude::Address, Adapter<bitcoin::Script>>,
     ) -> Result<(
         bitcoin::OutPoint,
         u64,
         Vec<(ReadOnly<Input>, ReadOnly<ThresholdSig>)>,
         Vec<ReadOnly<Output>>,
     )> {
-        let mut checkpoint = self.0;
-
-        checkpoint.status = CheckpointStatus::Signing;
+        self.0.status = CheckpointStatus::Signing;
 
         let reserve_out = bitcoin::TxOut {
             value: 0, // will be updated after counting ins/outs and fees
-            script_pubkey: checkpoint.sigset.output_script(&vec![0u8])?, // TODO: double-check safety
+            script_pubkey: self.0.sigset.output_script(&vec![0u8])?, // TODO: double-check safety
         };
-        checkpoint.outputs.push_front(Adapter::new(reserve_out))?;
+        self.0.outputs.push_front(Adapter::new(reserve_out))?;
 
         let mut excess_inputs = vec![];
-        while checkpoint.inputs.len() > MAX_INPUTS {
-            let removed_input = checkpoint.inputs.pop_back()?.unwrap();
-            let removed_sigs = checkpoint.sig_queue.inputs.pop_back()?.unwrap();
+        while self.0.inputs.len() > MAX_INPUTS {
+            let removed_input = self.0.inputs.pop_back()?.unwrap();
+            let removed_sigs = self.0.sig_queue.inputs.pop_back()?.unwrap();
             excess_inputs.push((removed_input, removed_sigs));
         }
 
         let mut excess_outputs = vec![];
-        while checkpoint.outputs.len() > MAX_OUTPUTS {
-            let removed_output = checkpoint.outputs.pop_back()?.unwrap();
+        while self.0.outputs.len() > MAX_OUTPUTS {
+            let removed_output = self.0.outputs.pop_back()?.unwrap();
             excess_outputs.push(removed_output);
         }
 
         let mut in_amount = 0;
-        for i in 0..checkpoint.inputs.len() {
-            let input = checkpoint.inputs.get(i)?.unwrap();
+        for i in 0..self.0.inputs.len() {
+            let input = self.0.inputs.get(i)?.unwrap();
             in_amount += input.amount;
         }
 
         let mut out_amount = 0;
-        for i in 0..checkpoint.outputs.len() {
-            let output = checkpoint.outputs.get(i)?.unwrap();
+        for i in 0..self.0.outputs.len() {
+            let output = self.0.outputs.get(i)?.unwrap();
             out_amount += output.value;
         }
 
-        let mut signing = SigningCheckpointMut(checkpoint);
-
-        let (mut tx, est_vsize) = signing.tx()?;
+        let (mut tx, est_vsize) = self.0.tx()?;
         let fee = est_vsize * FEE_RATE;
         let reserve_value = in_amount - out_amount - fee;
-        let mut reserve_out = signing.outputs.get_mut(0)?.unwrap();
+        let mut reserve_out = self.0.outputs.get_mut(0)?.unwrap();
         reserve_out.value = reserve_value;
         tx.output[0].value = reserve_value;
 
-        use bitcoin::hashes::Hash;
         let mut sc = bitcoin::util::sighash::SighashCache::new(&tx);
-        for i in 0..signing.inputs.len() {
-            let mut input = signing.inputs.get_mut(i)?.unwrap();
+        for i in 0..self.0.inputs.len() {
+            let input = self.0.inputs.get_mut(i)?.unwrap();
             let sighash_type = EcdsaSighashType::All;
             let sighash = sc.segwit_signature_hash(
                 i as usize,
@@ -596,7 +593,7 @@ impl<'a> BuildingCheckpointMut<'a> {
                 input.amount,
                 sighash_type,
             )?;
-            let mut sigs = signing.sig_queue.inputs.get_mut(i)?.unwrap();
+            let mut sigs = self.0.sig_queue.inputs.get_mut(i)?.unwrap();
             sigs.set_message(sighash.into_inner());
         }
 
@@ -604,6 +601,8 @@ impl<'a> BuildingCheckpointMut<'a> {
             txid: tx.txid(),
             vout: 0,
         };
+
+        self.generate_emergency_disbursal_txs(nbtc_accounts, recovery_scripts, reserve_outpoint)?;
 
         Ok((
             reserve_outpoint,
@@ -744,7 +743,12 @@ impl CheckpointQueue {
         Ok(BuildingCheckpointMut(last))
     }
 
-    pub fn maybe_step(&mut self, sig_keys: &Map<ConsensusKey, Xpub>) -> Result<()> {
+    pub fn maybe_step(
+        &mut self,
+        sig_keys: &Map<ConsensusKey, Xpub>,
+        nbtc_accounts: &Accounts<Nbtc>,
+        recovery_scripts: &Map<orga::prelude::Address, Adapter<bitcoin::Script>>,
+    ) -> Result<()> {
         #[cfg(not(feature = "full"))]
         unimplemented!();
 
@@ -796,7 +800,7 @@ impl CheckpointQueue {
                 let second = self.get_mut(self.index - 1)?;
                 let sigset = second.sigset.clone();
                 let (reserve_outpoint, reserve_value, excess_inputs, excess_outputs) =
-                    BuildingCheckpointMut(second).advance()?;
+                    BuildingCheckpointMut(second).advance(nbtc_accounts, recovery_scripts)?;
 
                 let mut building = self.building_mut()?;
 
