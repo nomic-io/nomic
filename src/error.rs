@@ -3,9 +3,15 @@ pub enum Error {
     #[error(transparent)]
     Bitcoin(#[from] bitcoin::Error),
     #[error(transparent)]
+    BitcoinAddress(#[from] bitcoin::util::address::Error),
+    #[error(transparent)]
     BitcoinHash(#[from] bitcoin::hashes::Error),
+    #[error("{0}")]
+    BitcoinPubkeyHash(String),
     #[error(transparent)]
     BitcoinEncode(#[from] bitcoin::consensus::encode::Error),
+    #[error("{0}")]
+    BitcoinRecoveryScript(String),
     #[error(transparent)]
     Bip32(#[from] bitcoin::util::bip32::Error),
     #[error(transparent)]
