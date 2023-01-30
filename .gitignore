@@ -1,7 +1,7 @@
 target
 **/target/
 merk.db/
-.vs_code/
+.vscode/
 
 # Added by cargo
 
