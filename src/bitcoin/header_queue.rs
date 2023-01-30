@@ -702,9 +702,9 @@ impl HeaderQueue {
 mod test {
     use super::*;
     use bitcoin::hash_types::TxMerkleNode;
+    use bitcoin::hashes::hex::FromHex;
+    use bitcoin::hashes::sha256d::Hash;
     use bitcoin::BlockHash;
-    use bitcoin_hashes::hex::FromHex;
-    use bitcoin_hashes::sha256d::Hash;
     use chrono::{TimeZone, Utc};
 
     impl HeaderQueue {
