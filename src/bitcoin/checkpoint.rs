@@ -135,6 +135,44 @@ pub struct Checkpoint {
 }
 
 impl Checkpoint {
+    pub fn get_to_sign_msgs(
+        &self,
+        sigs: &Deque<ThresholdSig>,
+        xpub: &Xpub,
+        msgs: &mut Vec<([u8; 32], u32)>,
+    ) -> Result<()> {
+        let secp = bitcoin::secp256k1::Secp256k1::verification_only();
+
+        for i in 0..self.inputs.len() {
+            let input = self.inputs.get(i)?.unwrap();
+            let pubkey = xpub
+                .derive_pub(
+                    &secp,
+                    &[bitcoin::util::bip32::ChildNumber::from_normal_idx(
+                        input.sigset_index,
+                    )?],
+                )?
+                .public_key;
+            let sigs = sigs.get(i)?.unwrap();
+            if sigs.needs_sig(pubkey.into())? {
+                msgs.push((sigs.message(), input.sigset_index));
+            }
+        }
+
+        Ok(())
+    }
+
+    #[query]
+    pub fn to_sign(&self, xpub: Xpub) -> Result<Vec<([u8; 32], u32)>> {
+        let mut msgs = vec![];
+
+        // TODO: get signatures for active group in signature queue
+        self.get_to_sign_msgs(&self.sig_queue.emergency_disbursal, &xpub, &mut msgs)?;
+        self.get_to_sign_msgs(&self.sig_queue.inputs, &xpub, &mut msgs)?;
+
+        Ok(msgs)
+    }
+
     pub fn create_time(&self) -> u64 {
         self.sigset.create_time()
     }
@@ -214,35 +252,6 @@ impl<'a> Query for SigningCheckpoint<'a> {
 
     fn query(&self, _: ()) -> OrgaResult<()> {
         Ok(())
-    }
-}
-
-impl<'a> SigningCheckpoint<'a> {
-    #[query]
-    pub fn to_sign(&self, xpub: Xpub) -> Result<Vec<([u8; 32], u32)>> {
-        let secp = bitcoin::secp256k1::Secp256k1::verification_only();
-
-        let mut msgs = vec![];
-
-        // TODO: get signatures for active group in signature queue
-
-        for i in 0..self.inputs.len() {
-            let input = self.inputs.get(i)?.unwrap();
-            let pubkey = xpub
-                .derive_pub(
-                    &secp,
-                    &[bitcoin::util::bip32::ChildNumber::from_normal_idx(
-                        input.sigset_index,
-                    )?],
-                )?
-                .public_key;
-            let sigs = self.sig_queue.inputs.get(i)?.unwrap();
-            if sigs.needs_sig(pubkey.into())? {
-                msgs.push((sigs.message(), input.sigset_index));
-            }
-        }
-
-        Ok(msgs)
     }
 }
 
