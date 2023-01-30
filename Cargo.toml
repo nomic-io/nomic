@@ -34,7 +34,6 @@ bytes = "1.2.1"
 serde-big-array = "0.4.1"
 
 [dev-dependencies]
-bitcoin_hashes = "0.10.0"
 serde_json = "1.0.68"
 serde = "1.0.130"
 mutagen = "0.1.2"
