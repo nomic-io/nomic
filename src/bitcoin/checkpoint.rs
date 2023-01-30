@@ -264,7 +264,7 @@ impl<'a> SigningCheckpointMut<'a> {
 
         let mut sig_index = 0;
         for i in 0..self.inputs.len() {
-            let mut input = self.inputs.get_mut(i)?.unwrap();
+            let input = self.inputs.get_mut(i)?.unwrap();
 
             let pubkey = xpub
                 .derive_pub(
