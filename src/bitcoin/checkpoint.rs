@@ -4,10 +4,12 @@ use super::{
     threshold_sig::{Signature, ThresholdSig},
     ConsensusKey, Xpub,
 };
+use crate::bitcoin::Nbtc;
 use crate::error::{Error, Result};
-use bitcoin::blockdata::transaction::EcdsaSighashType;
+use bitcoin::hashes::Hash;
+use bitcoin::{blockdata::transaction::EcdsaSighashType, hashes::hex::ToHex};
+// use bitcoin_hashes::Hash;
 use derive_more::{Deref, DerefMut};
-use orga::describe::Describe;
 use orga::{
     call::Call,
     client::Client,
@@ -15,12 +17,14 @@ use orga::{
     context::GetContext,
     encoding::{Decode, Encode, LengthVec},
     plugins::Time,
+    prelude::Context,
     query::Query,
     state::State,
     Error as OrgaError, Result as OrgaResult,
 };
+use orga::{describe::Describe, prelude::Accounts};
 use serde::{Deserialize, Serialize};
-use std::convert::TryFrom;
+use std::{convert::TryFrom, str::FromStr};
 
 pub const MIN_CHECKPOINT_INTERVAL: u64 = 60 * 5;
 pub const MAX_CHECKPOINT_INTERVAL: u64 = 60 * 60 * 8;
@@ -28,6 +32,10 @@ pub const MAX_INPUTS: u64 = 40;
 pub const MAX_OUTPUTS: u64 = 200;
 pub const FEE_RATE: u64 = 1;
 pub const MAX_AGE: u64 = 60 * 60 * 24 * 7 * 3;
+//TODO: Find actual amount for this
+pub const EMERGENCY_DISBURSAL_MIN_TX_AMT: u64 = 0;
+pub const EMERGENCY_DISBURSAL_LOCK_TIME_INTERVAL: u32 = 60 * 24 * 7; //one week
+pub const EMERGENCY_DISBURSAL_MAX_TX_SIZE: u64 = 50_000; //50kB
 
 #[derive(Debug, Encode, Decode, Default, Serialize, Deserialize)]
 pub enum CheckpointStatus {
@@ -119,6 +127,7 @@ pub type Output = Adapter<bitcoin::TxOut>;
 pub struct Checkpoint {
     pub status: CheckpointStatus,
     pub inputs: Deque<Input>,
+    pub emergency_disbursal_txs: Deque<Adapter<bitcoin::Transaction>>,
     signed_inputs: u16,
     pub outputs: Deque<Output>,
     pub sig_queue: SignatureQueue,
