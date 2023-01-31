@@ -13,20 +13,20 @@ use header_queue::HeaderQueue;
 #[cfg(feature = "full")]
 use orga::abci::BeginBlock;
 use orga::call::Call;
-use orga::client::Client;
 use orga::coins::{Accounts, Address, Amount, Coin, Give, Symbol, Take};
 use orga::collections::Map;
 use orga::context::{Context, GetContext};
-use orga::describe::Describe;
 use orga::encoding::{Decode, Encode, Terminated};
+use orga::migrate::MigrateFrom;
+use orga::orga;
 use orga::plugins::Paid;
 #[cfg(feature = "full")]
 use orga::plugins::{BeginBlockCtx, Validators};
 use orga::plugins::{Signer, Time};
 use orga::query::Query;
 use orga::state::State;
+use orga::store::Store;
 use orga::{Error as OrgaError, Result as OrgaResult};
-use serde::{Deserialize, Serialize};
 use signatory::SignatorySet;
 use txid_set::OutpointSet;
 
@@ -41,7 +41,7 @@ pub mod signer;
 pub mod threshold_sig;
 pub mod txid_set;
 
-#[derive(State, Debug, Clone, Encode, Decode, Default, Serialize, Deserialize, Describe)]
+#[derive(State, Debug, Clone, Encode, Decode, Default, MigrateFrom)]
 pub struct Nbtc(());
 impl Symbol for Nbtc {
     const INDEX: u8 = 21;
@@ -60,7 +60,7 @@ pub fn calc_deposit_fee(amount: u64) -> u64 {
     amount / 5
 }
 
-#[derive(State, Call, Query, Client, Encode, Decode, Default, Serialize, Deserialize, Describe)]
+#[orga]
 pub struct Bitcoin {
     #[call]
     pub headers: HeaderQueue,
@@ -75,14 +75,14 @@ pub struct Bitcoin {
 
 pub type ConsensusKey = [u8; 32];
 
-#[derive(Call, Query, Client, Clone, Debug, Serialize, Deserialize)]
+#[derive(Call, Query, Clone, Debug, Client, MigrateFrom)]
 pub struct Xpub(ExtendedPubKey);
 
-impl Describe for Xpub {
-    fn describe() -> orga::describe::Descriptor {
-        orga::describe::Builder::new::<Self>().build()
-    }
-}
+// impl Describe for Xpub {
+//     fn describe() -> orga::describe::Descriptor {
+//         orga::describe::Builder::new::<Self>().build()
+//     }
+// }
 
 pub const XPUB_LENGTH: usize = 78;
 
@@ -97,12 +97,18 @@ impl Xpub {
 }
 
 impl State for Xpub {
-    fn attach(&mut self, _: orga::store::Store) -> OrgaResult<()> {
+    #[inline]
+    fn attach(&mut self, _: Store) -> OrgaResult<()> {
         Ok(())
     }
 
-    fn flush(&mut self) -> OrgaResult<()> {
-        Ok(())
+    #[inline]
+    fn flush<W: std::io::Write>(self, out: &mut W) -> OrgaResult<()> {
+        Ok(self.encode_into(out)?)
+    }
+
+    fn load(_store: Store, bytes: &mut &[u8]) -> OrgaResult<Self> {
+        Ok(Self::decode(bytes)?)
     }
 }
 
@@ -447,7 +453,7 @@ impl Bitcoin {
     }
 }
 
-#[derive(Encode, Decode, Query, Client, Default)]
+#[orga]
 pub struct ChangeRates {
     pub withdrawal: u16,
     pub sigset_change: u16,
@@ -464,7 +470,7 @@ impl BeginBlock for Bitcoin {
     }
 }
 
-#[derive(State, Call, Query, Client, Encode, Decode, Default, Serialize, Deserialize, Describe)]
+#[orga]
 pub struct SignatoryKeys {
     by_cons: Map<ConsensusKey, Xpub>,
     xpubs: Map<Xpub, ()>,

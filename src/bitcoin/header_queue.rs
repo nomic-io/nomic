@@ -6,17 +6,16 @@ use bitcoin::util::uint::Uint256;
 use bitcoin::BlockHash;
 use bitcoin::TxMerkleNode;
 use orga::call::Call;
-use orga::client::Client;
 use orga::collections::Deque;
-use orga::describe::Describe;
 use orga::encoding as ed;
+use orga::migrate::MigrateFrom;
+use orga::orga;
 use orga::prelude::*;
 use orga::query::Query;
 use orga::state::State;
 use orga::store::Store;
 use orga::Error as OrgaError;
 use orga::Result as OrgaResult;
-use serde::{Deserialize, Serialize};
 
 const MAX_LENGTH: u64 = 4032;
 const MAX_RELAY: u64 = 25;
@@ -26,9 +25,8 @@ const TARGET_SPACING: u32 = 10 * 60;
 const TARGET_TIMESPAN: u32 = RETARGET_INTERVAL * TARGET_SPACING;
 const MAX_TARGET: u32 = 0x1d00ffff;
 
-#[derive(
-    Clone, Debug, Decode, Encode, PartialEq, State, Query, Serialize, Deserialize, Describe,
-)]
+#[orga(skip(Default))]
+#[derive(Clone, Debug, PartialEq)]
 pub struct WrappedHeader {
     height: u32,
     header: Adapter<BlockHeader>,
@@ -141,18 +139,11 @@ impl Decode for HeaderList {
 
 impl Terminated for HeaderList {}
 
-#[derive(Clone, Debug, Decode, Encode, State, Call, Client, Serialize, Deserialize, Describe)]
+#[orga(skip(Default))]
+#[derive(Clone)]
 pub struct WorkHeader {
     chain_work: Adapter<Uint256>,
     header: WrappedHeader,
-}
-
-impl Query for WorkHeader {
-    type Query = ();
-
-    fn query(&self, _query: ()) -> OrgaResult<()> {
-        Ok(())
-    }
 }
 
 impl WorkHeader {
@@ -186,7 +177,7 @@ impl WorkHeader {
 
 // TODO: implement trait that returns constants for bitcoin::Network variants
 
-#[derive(Clone, Encode, Decode, State)]
+#[derive(Clone, Encode, Decode, State, MigrateFrom)]
 pub struct Config {
     pub max_length: u64,
     pub max_time_increase: u32,
@@ -211,11 +202,11 @@ impl Default for Config {
     }
 }
 
-impl Describe for Config {
-    fn describe() -> orga::describe::Descriptor {
-        orga::describe::Builder::new::<()>().build()
-    }
-}
+// impl Describe for Config {
+//     fn describe() -> orga::describe::Descriptor {
+//         orga::describe::Builder::new::<()>().build()
+//     }
+// }
 
 impl Config {
     pub fn mainnet() -> Self {
@@ -268,6 +259,12 @@ impl Config {
 #[derive(Clone)]
 pub struct Network(bitcoin::Network);
 
+impl MigrateFrom for Network {
+    fn migrate_from(other: Self) -> OrgaResult<Self> {
+        Ok(other)
+    }
+}
+
 impl From<bitcoin::Network> for Network {
     fn from(value: bitcoin::Network) -> Self {
         Network(value)
@@ -314,43 +311,26 @@ impl Decode for Network {
 impl Terminated for Network {}
 
 impl State for Network {
+    #[inline]
     fn attach(&mut self, _: Store) -> OrgaResult<()> {
         Ok(())
     }
 
-    fn flush(&mut self) -> OrgaResult<()> {
-        Ok(())
+    #[inline]
+    fn flush<W: std::io::Write>(self, out: &mut W) -> OrgaResult<()> {
+        Ok(self.encode_into(out)?)
+    }
+
+    fn load(_store: Store, bytes: &mut &[u8]) -> OrgaResult<Self> {
+        Ok(Self::decode(bytes)?)
     }
 }
 
-#[derive(Call, Query, Client, Default, Serialize, Deserialize, Describe)]
+#[derive(Call, Query, Default, MigrateFrom, Client)]
 pub struct HeaderQueue {
     pub(super) deque: Deque<WorkHeader>,
     pub(super) current_work: Adapter<Uint256>,
-    #[serde(skip)]
     config: Config,
-}
-
-impl Decode for HeaderQueue {
-    fn decode<R: std::io::Read>(mut input: R) -> ::ed::Result<Self> {
-        Ok(Self {
-            deque: Decode::decode(&mut input)?,
-            current_work: Decode::decode(&mut input)?,
-            config: Config::testnet(),
-        })
-    }
-}
-
-impl Encode for HeaderQueue {
-    fn encoding_length(&self) -> ::ed::Result<usize> {
-        Ok(self.deque.encoding_length()? + self.current_work.encoding_length()?)
-    }
-    fn encode_into<W: std::io::Write>(&self, dest: &mut W) -> ::ed::Result<()> {
-        dest.write_all(self.deque.encode()?.as_slice())?;
-        dest.write_all(self.current_work.encode()?.as_slice())?;
-
-        Ok(())
-    }
 }
 
 impl Terminated for HeaderQueue {}
@@ -376,10 +356,21 @@ impl State for HeaderQueue {
         Ok(())
     }
 
-    fn flush(&mut self) -> OrgaResult<()> {
-        self.deque.flush()?;
-        self.current_work.flush()?;
+    #[inline]
+    fn flush<W: std::io::Write>(self, out: &mut W) -> OrgaResult<()> {
+        self.deque.flush(out)?;
+        self.current_work.flush(out)?;
+
         Ok(())
+    }
+
+    fn load(store: Store, bytes: &mut &[u8]) -> OrgaResult<Self> {
+        let mut loader = ::orga::state::Loader::new(store, bytes, 0);
+        Ok(Self {
+            deque: loader.load_child()?,
+            current_work: loader.load_child()?,
+            config: Config::testnet(),
+        })
     }
 }
 

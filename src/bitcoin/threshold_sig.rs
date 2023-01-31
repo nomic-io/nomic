@@ -11,6 +11,7 @@ use orga::client::Client;
 use orga::collections::{Map, Next};
 use orga::describe::Describe;
 use orga::encoding::{Decode, Encode, Error as EdError, Result as EdResult, Terminated};
+use orga::migrate::MigrateFrom;
 use orga::query::Query;
 use orga::state::State;
 use orga::{Error, Result};
@@ -19,10 +20,8 @@ use serde_big_array::BigArray;
 
 pub type Message = [u8; MESSAGE_SIZE];
 
-#[derive(
-    Encode, Decode, Serialize, Deserialize, State, Describe, Debug, Clone, Deref, From, Copy,
-)]
-pub struct Signature(#[serde(with = "BigArray")] [u8; COMPACT_SIGNATURE_SIZE]);
+#[derive(Encode, Decode, State, Debug, Clone, Deref, From, Copy, MigrateFrom)]
+pub struct Signature([u8; COMPACT_SIGNATURE_SIZE]);
 
 #[derive(
     Encode,
@@ -30,7 +29,6 @@ pub struct Signature(#[serde(with = "BigArray")] [u8; COMPACT_SIGNATURE_SIZE]);
     State,
     Query,
     Call,
-    Client,
     Clone,
     Debug,
     Copy,
@@ -38,11 +36,10 @@ pub struct Signature(#[serde(with = "BigArray")] [u8; COMPACT_SIGNATURE_SIZE]);
     Eq,
     PartialOrd,
     Ord,
-    Serialize,
-    Deserialize,
-    Describe,
+    MigrateFrom,
+    Client,
 )]
-pub struct Pubkey(#[serde(with = "BigArray")] [u8; PUBLIC_KEY_SIZE]);
+pub struct Pubkey([u8; PUBLIC_KEY_SIZE]);
 
 impl Next for Pubkey {
     fn next(&self) -> Option<Self> {
@@ -86,7 +83,7 @@ impl From<PublicKey> for Pubkey {
 
 // TODO: update for taproot-based design (musig rounds, fallback path)
 
-#[derive(State, Call, Client, Query, Default, Encode, Decode, Serialize, Deserialize, Describe)]
+#[orga]
 pub struct ThresholdSig {
     threshold: u64,
     signed: u64,
@@ -276,7 +273,7 @@ impl Debug for ThresholdSig {
     }
 }
 
-#[derive(State, Call, Client, Query, Clone, Encode, Decode, Describe, Serialize, Deserialize)]
+#[orga]
 pub struct Share {
     power: u64,
     sig: Option<Signature>,
