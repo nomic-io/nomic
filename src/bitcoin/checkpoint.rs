@@ -509,6 +509,7 @@ impl<'a> BuildingCheckpointMut<'a> {
     ) -> Result<bitcoin::Transaction> {
         let time = Context::resolve::<Time>()
             .ok_or_else(|| OrgaError::Coins("No Time context found".into()))?;
+        //TODO: Use std::time::Duration to safely convert time
         let lock_time = time.seconds as u32 + EMERGENCY_DISBURSAL_LOCK_TIME_INTERVAL;
 
         let mut txs =
