@@ -912,3 +912,45 @@ impl CheckpointQueue {
         Ok(self.get(index)?.sigset.clone())
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::bitcoin::{header_queue::HeaderQueue, Bitcoin};
+    use crate::orga::coins::{Accounts, Address};
+    use crate::orga::collections::map::ChildMut;
+    use crate::orga::collections::Map;
+    use bitcoin::network::constants::Network;
+    use std::ops::Add;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    const DISBURSAL_TEST_PAYOUT_DATE: u64 = 2280025200; // April 2nd, 2042 4:20:00 GMT
+
+    #[test]
+    fn get_raw_emergency_disbursal_txs() {
+        let address = Address::from_str("nomic1e9ypzs3qgrkwzpstvw7z4ag96qzv9qtdhvrcyj").unwrap();
+        let mut nbtc_accounts: Accounts<Nbtc> = Accounts::default();
+        nbtc_accounts.deposit(address, 42_000_000.into()).unwrap();
+
+        let recovery_scripts: Map<orga::prelude::Address, Adapter<bitcoin::Script>> =
+            Map::default();
+
+        let mut checkpoint_queue = CheckpointQueue::default();
+        checkpoint_queue.push(Checkpoint::default()).unwrap();
+
+        let building = checkpoint_queue.building_mut().unwrap();
+
+        let lock_time = Duration::new(DISBURSAL_TEST_PAYOUT_DATE, 0).as_secs() as u32;
+        let txs = building
+            .get_raw_emergency_disbursal_txs(&nbtc_accounts, &recovery_scripts, lock_time)
+            .unwrap();
+
+        let tx = txs.get(0).unwrap();
+        let script_hash = tx.output.get(0).unwrap().script_pubkey.script_hash();
+
+        let nomic_address_hash =
+            bitcoin::hashes::hash160::Hash::from_str(address.bytes().to_hex().as_str()).unwrap();
+
+        assert_eq!(nomic_address_hash, script_hash.as_hash());
+    }
+}
