@@ -834,6 +834,12 @@ impl CheckpointQueue {
         }
     }
 
+    #[cfg(test)]
+    fn push(&mut self, checkpoint: Checkpoint) -> Result<()> {
+        self.index += 1;
+        Ok(self.queue.push_back(checkpoint)?)
+    }
+
     fn maybe_push(
         &mut self,
         sig_keys: &Map<ConsensusKey, Xpub>,
