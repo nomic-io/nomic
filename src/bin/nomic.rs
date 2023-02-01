@@ -422,8 +422,8 @@ impl ValidatorsCmd {
         validators.sort_by(|a, b| b.amount_staked.cmp(&a.amount_staked));
 
         for validator in validators {
-            let info: DeclareInfo =
-                serde_json::from_slice(validator.info.bytes.as_slice()).unwrap();
+            let bytes: Vec<u8> = validator.info.into();
+            let info: DeclareInfo = serde_json::from_slice(bytes.as_slice()).unwrap();
             println!(
                 "- {}\n\tVOTING POWER: {}\n\tMONIKER: {}\n\tDETAILS: {}",
                 validator.address, validator.amount_staked, info.moniker, info.details
@@ -497,7 +497,7 @@ impl DeclareCmd {
         let declaration = Declaration {
             consensus_key,
             amount: self.amount.into(),
-            validator_info: info_bytes.into(),
+            validator_info: info_bytes.try_into().unwrap(),
             commission: Commission {
                 rate: self.commission_rate,
                 max: self.commission_max,
@@ -547,7 +547,7 @@ impl EditCmd {
             .edit_validator_self(
                 self.commission_rate,
                 self.min_self_delegation.into(),
-                info_bytes.into(),
+                info_bytes.try_into().unwrap(),
             )
             .await?)
     }

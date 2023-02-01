@@ -274,6 +274,7 @@ impl Debug for ThresholdSig {
 }
 
 #[orga]
+#[derive(Clone)]
 pub struct Share {
     power: u64,
     sig: Option<Signature>,
