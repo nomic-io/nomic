@@ -5,7 +5,9 @@
 #![feature(never_type)]
 
 use std::convert::TryInto;
+use std::env::Args;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
@@ -13,6 +15,7 @@ use futures::executor::block_on;
 use nomic::app::{DepositCommitment, IbcDepositCommitment};
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
+use nomic::network::Network;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
@@ -117,6 +120,8 @@ impl Command {
 
 #[derive(Parser, Debug)]
 pub struct StartCmd {
+    #[clap(long, short)]
+    pub network: Network,
     #[clap(long, short)]
     pub state_sync: bool,
 }
