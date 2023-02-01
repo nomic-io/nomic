@@ -49,6 +49,9 @@ feat-ibc = ["orga/feat-ibc"]
 name = "nomic"
 
 [[bin]]
+name = "store-diff"
+
+[[bin]]
 name = "create-checkpoint"
 
 [[bin]]
