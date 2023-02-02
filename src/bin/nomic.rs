@@ -254,13 +254,21 @@ async fn get_bootstrap_state(rpc_servers: &[&str]) -> Result<(i64, String)> {
     // get median latest height
     let mut latest_heights = vec![];
     for client in rpc_clients.iter() {
-        let status = client
-            .status()
-            .await
-            .expect("Could not get tendermint status");
+        let status = match client.status().await {
+            Ok(status) => status,
+            Err(_) => continue,
+        };
         let height = status.sync_info.latest_block_height.value();
         latest_heights.push(height);
     }
+
+    if latest_heights.len() < rpc_servers.len() / 2 {
+        return Err(orga::Error::App(
+            "Failed to get state sync bootstrap data from nodes".to_string(),
+        )
+        .into());
+    }
+
     latest_heights.sort_unstable();
     let latest_height = latest_heights[latest_heights.len() / 2] as u32;
 
