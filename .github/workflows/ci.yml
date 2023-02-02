@@ -28,7 +28,7 @@ jobs:
       - name: Use Nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2022-11-18
+          toolchain: nightly-2022-06-07
           override: true
       - name: Test
         uses: actions-rs/cargo@v1
@@ -54,7 +54,7 @@ jobs:
       - name: Use Nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2022-11-18
+          toolchain: nightly-2022-06-07
           override: true
       - name: Test
         uses: actions-rs/cargo@v1
@@ -80,7 +80,7 @@ jobs:
       - name: Use Nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2022-11-18
+          toolchain: nightly-2022-06-07
           components: llvm-tools-preview
           override: true
       - name: Install Coverage Tooling
@@ -118,7 +118,7 @@ jobs:
       - name: Use Nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2022-11-18
+          toolchain: nightly-2022-06-07
           components: rustfmt
           override: true
       - name: Check
@@ -145,7 +145,7 @@ jobs:
       - name: Use Nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2022-11-18
+          toolchain: nightly-2022-06-07
           components: clippy
           override: true
       - name: Check
