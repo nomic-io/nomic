@@ -140,7 +140,7 @@ impl StartCmd {
             let new_config_path = new_home.join("tendermint/config/config.toml");
 
             if !has_new_node {
-                println!("Initializing node at {}...", new_home.display());
+                log::info!("Initializing node at {}...", new_home.display());
                 // TODO: configure default seeds
                 Node::<nomic::app::App>::new(new_name, Default::default());
 
@@ -148,7 +148,7 @@ impl StartCmd {
             }
 
             if !started_new_node {
-                println!("Configuring node for state sync...");
+                log::info!("Configuring node for state sync...");
 
                 // TODO: set default seeds
                 set_p2p_seeds(
@@ -163,7 +163,7 @@ impl StartCmd {
                 );
             }
 
-            println!("Starting node...");
+            log::info!("Starting node...");
             // TODO: add cfg defaults
             Node::<nomic::app::App>::new(new_name, Default::default())
                 .with_genesis(include_bytes!("../../genesis/testnet-4d.json"))
@@ -218,12 +218,13 @@ fn deconfigure_statesync(cfg_path: &PathBuf) {
 }
 
 fn configure_for_statesync(cfg_path: &PathBuf, rpc_servers: &[&str]) {
-    println!("Getting bootstrap state for Tendermint light client...");
+    log::info!("Getting bootstrap state for Tendermint light client...");
     let (height, hash) =
         block_on(get_bootstrap_state(rpc_servers)).expect("Failed to bootstrap state");
-    println!(
+    log::info!(
         "Configuring light client at height {} with hash {}",
-        height, hash
+        height,
+        hash
     );
 
     configure_node(cfg_path, |cfg| {
@@ -291,7 +292,7 @@ impl StartDevCmd {
         tokio::task::spawn_blocking(move || {
             let name = format!("{}-test", nomic::app::CHAIN_ID);
 
-            println!("Starting node...");
+            log::info!("Starting node...");
             // TODO: add cfg defaults
             Node::<nomic::app::App>::new(name.as_str(), Default::default())
                 .stdout(std::process::Stdio::inherit())
@@ -1015,7 +1016,11 @@ impl IbcTransferCmd {
 
 #[tokio::main]
 async fn main() {
-    pretty_env_logger::init();
+    pretty_env_logger::formatted_timed_builder()
+        .parse_env("NOMIC_LOG")
+        .filter_level(log::LevelFilter::Info)
+        .init();
+
     let is_start = std::env::args()
         .nth(1)
         .map(|s| s == "start")
