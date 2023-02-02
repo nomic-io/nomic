@@ -236,6 +236,7 @@ fn configure_for_statesync(cfg_path: &PathBuf, rpc_servers: &[&str]) {
         cfg["statesync"]["rpc_servers"] = toml_edit::value(rpc_servers.join(","));
         cfg["statesync"]["trust_height"] = toml_edit::value(height);
         cfg["statesync"]["trust_hash"] = toml_edit::value(hash.clone());
+        cfg["statesync"]["discovery_time"] = toml_edit::value("8s");
         if cfg["statesync"]["trust_period"].to_string() == "0" {
             cfg["statesync"]["trust_period"] = toml_edit::value("216h0m0s");
         }
