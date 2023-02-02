@@ -124,11 +124,14 @@ pub struct StartCmd {
     pub network: Network,
     #[clap(long, short)]
     pub state_sync: bool,
+    #[clap(long, short)]
+    pub tendermint_logs: bool,
 }
 
 impl StartCmd {
     async fn run(&self) -> Result<()> {
         let state_sync = self.state_sync;
+        let tendermint_logs = self.tendermint_logs;
 
         tokio::task::spawn_blocking(move || {
             let new_name = nomic::app::CHAIN_ID;
@@ -169,6 +172,7 @@ impl StartCmd {
                 .with_genesis(include_bytes!("../../genesis/testnet-4d.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
+                .logs(tendermint_logs)
                 .run()
                 .unwrap();
         })
