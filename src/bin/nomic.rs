@@ -120,7 +120,7 @@ impl Command {
 
 #[derive(Parser, Debug)]
 pub struct StartCmd {
-    #[clap(long, short)]
+    #[clap(long, short, default_value = "mainnet")]
     pub network: Network,
     #[clap(long, short)]
     pub state_sync: bool,
