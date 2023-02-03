@@ -20,6 +20,17 @@ jobs:
       with:
           toolchain: nightly-2022-11-18
           override: true
+    - name: Cache
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          ~/.cargo/registry/src/**/librocksdb-sys-*
+          target/
+        key: ${{ runner.os }}-test-base-${{ hashFiles('Cargo.toml') }}
     - name: Test
       uses: actions-rs/cargo@v1
       with:
@@ -36,6 +47,17 @@ jobs:
       with:
           toolchain: nightly-2022-11-18
           override: true
+    - name: Cache
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          ~/.cargo/registry/src/**/librocksdb-sys-*
+          target/
+        key: ${{ runner.os }}-test-all-features-${{ hashFiles('Cargo.toml') }}
     - name: Test
       uses: actions-rs/cargo@v1
       with:
@@ -53,6 +75,17 @@ jobs:
           toolchain: nightly-2022-11-18
             components: llvm-tools-preview
             override: true
+    - name: Cache
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          ~/.cargo/registry/src/**/librocksdb-sys-*
+          target/
+        key: ${{ runner.os }}-coverage-${{ hashFiles('Cargo.toml') }}
       - name: Install Coverage Tooling
         uses: actions-rs/cargo@v1
         with:
@@ -98,6 +131,17 @@ jobs:
           toolchain: nightly-2022-11-18
           components: clippy
           override: true
+    - name: Cache
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          ~/.cargo/registry/src/**/librocksdb-sys-*
+          target/
+        key: ${{ runner.os }}-clippy-${{ hashFiles('Cargo.toml') }}
     - name: Check
       uses: actions-rs/clippy-check@v1
       with:
