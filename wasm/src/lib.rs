@@ -145,16 +145,19 @@ pub async fn all_validators() -> Result<Array, JsError> {
     let mut client: WebClient<App> = WebClient::new();
 
     let validators = client.staking.all_validators().await??;
-
     Ok(validators
         .iter()
-        .map(|v| ValidatorQueryInfo {
-            jailed: v.jailed,
-            address: v.address.to_string(),
-            commission: v.commission.rate.to_string(),
-            in_active_set: v.in_active_set,
-            info: String::from_utf8(v.info.bytes.clone()).unwrap_or(String::new()),
-            amount_staked: v.amount_staked.into(),
+        .map(|v| {
+            let info_bytes: Vec<u8> = v.info.clone().into();
+
+            ValidatorQueryInfo {
+                jailed: v.jailed,
+                address: v.address.to_string(),
+                commission: v.commission.rate.to_string(),
+                in_active_set: v.in_active_set,
+                info: String::from_utf8(info_bytes).unwrap_or(String::new()),
+                amount_staked: v.amount_staked.into(),
+            }
         })
         .map(JsValue::from)
         .collect())
