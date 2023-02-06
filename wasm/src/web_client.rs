@@ -216,11 +216,12 @@ impl<T: Query + State> AsyncQuery for WebAdapter<T> {
 
         let map = nomic::orga::merk::merk::proofs::query::verify(proof_bytes, root_hash)?;
         let root_value = match map.get(&[])? {
-            Some(root_value) => root_value,
+            Some(root_value) => root_value.to_vec(),
             None => panic!("Missing root value"),
         };
-        let mut state = T::decode(root_value)?;
+
         let store: Shared<ABCIPrefixedProofStore> = Shared::new(ABCIPrefixedProofStore::new(map));
+        let mut state = T::load(Store::new(store.clone().into()), &mut root_value.as_slice())?;
         state.attach(Store::new(store.into()))?;
 
         check(std::rc::Rc::new(state))
