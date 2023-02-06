@@ -12,18 +12,17 @@ use nomic::{
 };
 use rocket::response::status::BadRequest;
 use rocket::serde::json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use tendermint_rpc as tm;
 use tm::Client as _;
 
-//TODO: Get actual query strings for cached queries
-const CACHED_QUERIES: Vec<&str> = vec!["validators/all"];
-
 lazy_static::lazy_static! {
     static ref QUERY_CACHE: Arc<RwLock<HashMap<String, (u64, String)>>> = Arc::new(RwLock::new(HashMap::new()));
+    //TODO: Get actual query strings for cached queries
+    static ref CACHED_QUERIES: HashSet<String> = HashSet::from(["validators/all".to_string()]);
 }
 
 #[get("/cosmos/bank/v1beta1/balances/<address>")]
@@ -253,8 +252,8 @@ fn time_now() -> u64 {
 
 #[get("/query/<query>")]
 async fn query(query: &str) -> Result<String, BadRequest<String>> {
-    if !QUERY_CACHE.contains(query) {
-        return execute_query(query);
+    if !CACHED_QUERIES.contains(query) {
+        return execute_query(query).await;
     }
 
     let cache = QUERY_CACHE.clone();
