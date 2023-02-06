@@ -1,12 +1,20 @@
 #[macro_use]
 extern crate rocket;
 
-use rocket::serde::json::{json, Value};
+use nomic::{
+    app::{InnerApp, Nom, CHAIN_ID},
+    app_client,
+    orga::{
+        coins::{Accounts, Address, Amount, Decimal, Staking},
+        plugins::*,
+        query::Query,
+    },
+};
 use rocket::response::status::BadRequest;
-use nomic::{app_client, app::{Nom, InnerApp, CHAIN_ID}, orga::{query::Query, coins::{Amount, Accounts, Address, Staking, Decimal}, plugins::*}};
+use rocket::serde::json::{json, Value};
 use std::collections::HashMap;
-use tokio::sync::RwLock;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 use tendermint_rpc as tm;
 use tm::Client as _;
@@ -22,7 +30,9 @@ lazy_static::lazy_static! {
 async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
 
-    let balance: u64 = app_client().accounts.balance(address)
+    let balance: u64 = app_client()
+        .accounts
+        .balance(address)
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
@@ -50,7 +60,9 @@ async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
 async fn bank_balances_2(address: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
 
-    let balance: u64 = app_client().accounts.balance(address)
+    let balance: u64 = app_client()
+        .accounts
+        .balance(address)
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
@@ -71,17 +83,17 @@ async fn bank_balances_2(address: &str) -> Result<Value, BadRequest<String>> {
 async fn auth_accounts(addr_str: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = addr_str.parse().unwrap();
 
-    let balance: u64 = app_client().accounts.balance(address)
+    let balance: u64 = app_client()
+        .accounts
+        .balance(address)
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
 
     type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
-    let mut nonce: u64 = app_client().query(
-            NonceQuery::Nonce(address),
-            |state| state.nonce(address),
-        )
+    let mut nonce: u64 = app_client()
+        .query(NonceQuery::Nonce(address), |state| state.nonce(address))
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
@@ -109,17 +121,17 @@ async fn auth_accounts(addr_str: &str) -> Result<Value, BadRequest<String>> {
 async fn auth_accounts2(addr_str: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = addr_str.parse().unwrap();
 
-    let balance: u64 = app_client().accounts.balance(address)
+    let balance: u64 = app_client()
+        .accounts
+        .balance(address)
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
 
     type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
-    let mut nonce: u64 = app_client().query(
-            NonceQuery::Nonce(address),
-            |state| state.nonce(address),
-        )
+    let mut nonce: u64 = app_client()
+        .query(NonceQuery::Nonce(address), |state| state.nonce(address))
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
@@ -139,7 +151,7 @@ async fn auth_accounts2(addr_str: &str) -> Result<Value, BadRequest<String>> {
     }))
 }
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 struct TxRequest {
     tx: serde_json::Value,
@@ -156,11 +168,11 @@ async fn txs(tx: &str) -> Result<Value, BadRequest<String>> {
         let tx: TxRequest = serde_json::from_str(tx).unwrap();
         serde_json::to_vec(&tx.tx).unwrap()
     } else {
-        base64::decode(tx)
-            .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+        base64::decode(tx).map_err(|e| BadRequest(Some(format!("{:?}", e))))?
     };
-    
-    let res = client.broadcast_tx_commit(tx_bytes.into())
+
+    let res = client
+        .broadcast_tx_commit(tx_bytes.into())
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
@@ -200,14 +212,13 @@ async fn txs2(tx: &str) -> Result<Value, BadRequest<String>> {
 
     let tx_bytes = if let Some('{') = tx.chars().next() {
         let tx: TxRequest2 = serde_json::from_str(tx).unwrap();
-        base64::decode(tx.tx_bytes.as_str())
-            .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+        base64::decode(tx.tx_bytes.as_str()).map_err(|e| BadRequest(Some(format!("{:?}", e))))?
     } else {
-        base64::decode(tx)
-            .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+        base64::decode(tx).map_err(|e| BadRequest(Some(format!("{:?}", e))))?
     };
-    
-    let res = client.broadcast_tx_commit(tx_bytes.into())
+
+    let res = client
+        .broadcast_tx_commit(tx_bytes.into())
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
@@ -234,7 +245,10 @@ async fn txs2(tx: &str) -> Result<Value, BadRequest<String>> {
 }
 
 fn time_now() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH).unwrap().as_secs() as u64
+    std::time::SystemTime::now()
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as u64
 }
 
 #[get("/query/<query>")]
@@ -290,12 +304,17 @@ async fn execute_query(query: &str) -> Result<String, BadRequest<String>> {
 async fn staking_delegators_delegations(address: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
 
-    let delegations = app_client().staking.delegations(address)
+    let delegations = app_client()
+        .staking
+        .delegations(address)
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
-    let total_staked: u64 = delegations.iter().map(|(_, d)| -> u64 { d.staked.into() }).sum();
+    let total_staked: u64 = delegations
+        .iter()
+        .map(|(_, d)| -> u64 { d.staked.into() })
+        .sum();
 
     Ok(json!({ "delegation_responses": [
         {
@@ -316,12 +335,17 @@ async fn staking_delegators_delegations(address: &str) -> Result<Value, BadReque
 async fn staking_delegators_delegations_2(address: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
 
-    let delegations = app_client().staking.delegations(address)
+    let delegations = app_client()
+        .staking
+        .delegations(address)
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
-    let total_staked: u64 = delegations.iter().map(|(_, d)| -> u64 { d.staked.into() }).sum();
+    let total_staked: u64 = delegations
+        .iter()
+        .map(|(_, d)| -> u64 { d.staked.into() })
+        .sum();
 
     Ok(json!({ "height": "0", "result": [
         {
@@ -366,7 +390,6 @@ async fn distribution_delegatrs_rewards(address: &str) -> Value {
     //     .await
     //     .unwrap();
 
-
     // let reward = (delegations
     //     .iter()
     //     .map(|(_, d)| -> u64 { d.liquid.into() })
@@ -394,7 +417,6 @@ async fn distribution_delegatrs_rewards(address: &str) -> Value {
       } })
 }
 
-
 #[get("/distribution/delegators/<address>/rewards")]
 async fn distribution_delegatrs_rewards_2(address: &str) -> Value {
     // let address = address.parse().unwrap();
@@ -409,7 +431,6 @@ async fn distribution_delegatrs_rewards_2(address: &str) -> Value {
     //     )
     //     .await
     //     .unwrap();
-
 
     // let reward = (delegations
     //     .iter()
@@ -440,12 +461,17 @@ async fn distribution_delegatrs_rewards_2(address: &str) -> Value {
 
 #[get("/cosmos/mint/v1beta1/inflation")]
 async fn minting_inflation() -> Result<Value, BadRequest<String>> {
-    let validators = app_client().staking.all_validators()
+    let validators = app_client()
+        .staking
+        .all_validators()
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
-    let total_staked: u64 = validators.iter().map(|v| -> u64 { v.amount_staked.into() }).sum();
+    let total_staked: u64 = validators
+        .iter()
+        .map(|v| -> u64 { v.amount_staked.into() })
+        .sum();
     let total_staked = Amount::from(total_staked + 1);
     let yearly_inflation = Decimal::from(64_682_541_340_000);
     let apr = (yearly_inflation / Decimal::from(4) / Decimal::from(total_staked))
@@ -457,12 +483,17 @@ async fn minting_inflation() -> Result<Value, BadRequest<String>> {
 
 #[get("/minting/inflation")]
 async fn minting_inflation_2() -> Result<Value, BadRequest<String>> {
-    let validators = app_client().staking.all_validators()
+    let validators = app_client()
+        .staking
+        .all_validators()
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
-    let total_staked: u64 = validators.iter().map(|v| -> u64 { v.amount_staked.into() }).sum();
+    let total_staked: u64 = validators
+        .iter()
+        .map(|v| -> u64 { v.amount_staked.into() })
+        .sum();
     let total_staked = Amount::from(total_staked + 1);
     let yearly_inflation = Decimal::from(64_682_541_340_000);
     let apr = (yearly_inflation / Decimal::from(4) / Decimal::from(total_staked))
@@ -527,9 +558,9 @@ fn ibc_applications_transfer_params() -> Value {
     })
 }
 
+use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::Header;
 use rocket::{Request, Response};
-use rocket::fairing::{Fairing, Info, Kind};
 
 pub struct CORS;
 
@@ -538,13 +569,16 @@ impl Fairing for CORS {
     fn info(&self) -> Info {
         Info {
             name: "Add CORS headers to responses",
-            kind: Kind::Response
+            kind: Kind::Response,
         }
     }
 
     async fn on_response<'r>(&self, request: &'r Request<'_>, response: &mut Response<'r>) {
         response.set_header(Header::new("Access-Control-Allow-Origin", "*"));
-        response.set_header(Header::new("Access-Control-Allow-Methods", "POST, GET, PATCH, OPTIONS"));
+        response.set_header(Header::new(
+            "Access-Control-Allow-Methods",
+            "POST, GET, PATCH, OPTIONS",
+        ));
         response.set_header(Header::new("Access-Control-Allow-Headers", "*"));
         response.set_header(Header::new("Access-Control-Allow-Credentials", "true"));
     }
@@ -552,27 +586,30 @@ impl Fairing for CORS {
 
 #[launch]
 fn rocket() -> _ {
-    rocket::build().attach(CORS).mount("/", routes![
-        bank_balances,
-        bank_balances_2,
-        auth_accounts,
-        auth_accounts2,
-        txs,
-        txs2,
-        query,
-        staking_delegators_delegations,
-        // staking_delegators_delegations_2,
-        staking_delegators_unbonding_delegations,
-        staking_delegators_unbonding_delegations_2,
-        distribution_delegatrs_rewards,
-        distribution_delegatrs_rewards_2,
-        staking_delegations_2,
-        minting_inflation,
-        staking_pool, 
-        staking_pool_2,
-        bank_total,
-        ibc_apps_transfer_params,
-        ibc_applications_transfer_params,
-        bank_supply_unom,
-    ])
+    rocket::build().attach(CORS).mount(
+        "/",
+        routes![
+            bank_balances,
+            bank_balances_2,
+            auth_accounts,
+            auth_accounts2,
+            txs,
+            txs2,
+            query,
+            staking_delegators_delegations,
+            // staking_delegators_delegations_2,
+            staking_delegators_unbonding_delegations,
+            staking_delegators_unbonding_delegations_2,
+            distribution_delegatrs_rewards,
+            distribution_delegatrs_rewards_2,
+            staking_delegations_2,
+            minting_inflation,
+            staking_pool,
+            staking_pool_2,
+            bank_total,
+            ibc_apps_transfer_params,
+            ibc_applications_transfer_params,
+            bank_supply_unom,
+        ],
+    )
 }
