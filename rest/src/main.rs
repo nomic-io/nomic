@@ -272,7 +272,7 @@ async fn query(query: &str) -> Result<String, BadRequest<String>> {
         }
     }
 
-    let res_b64 = execute_query(query);
+    let res_b64 = execute_query(query).await?;
 
     let cache = QUERY_CACHE.clone();
     let mut lock = cache.write_owned().await;
@@ -297,7 +297,7 @@ async fn execute_query(query: &str) -> Result<String, BadRequest<String>> {
         return Err(BadRequest(Some(msg)));
     }
 
-    base64::encode(res.value)
+    Ok(base64::encode(res.value))
 }
 
 #[get("/cosmos/staking/v1beta1/delegations/<address>")]
