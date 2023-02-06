@@ -16,6 +16,8 @@ use nomic::app::{DepositCommitment, IbcDepositCommitment};
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
 use nomic::network::Network;
+use orga::merk::merk::Merk;
+use orga::merk::MerkStore;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
@@ -54,7 +56,6 @@ pub struct Opts {
 #[derive(Parser, Debug)]
 pub enum Command {
     Start(StartCmd),
-    #[cfg(debug_assertions)]
     StartDev(StartDevCmd),
     Send(SendCmd),
     SendNbtc(SendNbtcCmd),
@@ -87,7 +88,6 @@ impl Command {
         use Command::*;
         match self {
             Start(cmd) => cmd.run().await,
-            #[cfg(debug_assertions)]
             StartDev(cmd) => cmd.run().await,
             Send(cmd) => cmd.run().await,
             SendNbtc(cmd) => cmd.run().await,
@@ -281,20 +281,40 @@ async fn get_bootstrap_state(rpc_servers: &[&str]) -> Result<(i64, String)> {
     Ok((height as i64, hash.unwrap().to_string()))
 }
 
-#[cfg(debug_assertions)]
 #[derive(Parser, Debug)]
-pub struct StartDevCmd {}
+pub struct StartDevCmd {
+    #[clap(long)]
+    pub init_from_store: Option<String>,
+    #[clap(long)]
+    pub reset: bool,
+    #[clap(long)]
+    pub skip_init_chain: bool,
+}
 
-#[cfg(debug_assertions)]
 impl StartDevCmd {
     async fn run(&self) -> Result<()> {
+        let reset = self.reset;
+        let init_from_store = self.init_from_store.clone();
+        let skip_init_chain = self.skip_init_chain;
         tokio::task::spawn_blocking(move || {
             let name = format!("{}-test", nomic::app::CHAIN_ID);
 
             println!("Starting node...");
+
             // TODO: add cfg defaults
-            Node::<nomic::app::App>::new(name.as_str(), Default::default())
-                .stdout(std::process::Stdio::inherit())
+            let mut node = Node::<nomic::app::App>::new(name.as_str(), Default::default());
+
+            if reset {
+                node = node.reset();
+            }
+            if let Some(source) = init_from_store {
+                node = node.init_from_store(source);
+            }
+            if skip_init_chain {
+                node = node.skip_init_chain();
+            }
+
+            node.stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
                 .run()
                 .unwrap();
