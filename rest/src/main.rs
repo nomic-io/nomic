@@ -11,6 +11,9 @@ use std::sync::Arc;
 use tendermint_rpc as tm;
 use tm::Client as _;
 
+//TODO: Get actual query strings for cached queries
+const CACHED_QUERIES: Vec<&str> = vec!["validators/all"];
+
 lazy_static::lazy_static! {
     static ref QUERY_CACHE: Arc<RwLock<HashMap<String, (u64, String)>>> = Arc::new(RwLock::new(HashMap::new()));
 }
@@ -236,6 +239,10 @@ fn time_now() -> u64 {
 
 #[get("/query/<query>")]
 async fn query(query: &str) -> Result<String, BadRequest<String>> {
+    if !QUERY_CACHE.contains(query) {
+        return execute_query(query);
+    }
+
     let cache = QUERY_CACHE.clone();
     let lock = cache.read_owned().await;
     let cached_res = lock.get(query).map(|v| v.clone());
@@ -247,14 +254,24 @@ async fn query(query: &str) -> Result<String, BadRequest<String>> {
 
     if let Some((time, res)) = cached_res {
         if now - time < 15 {
-            return Ok(res.clone())
+            return Ok(res.clone());
         }
     }
 
+    let res_b64 = execute_query(query);
+
+    let cache = QUERY_CACHE.clone();
+    let mut lock = cache.write_owned().await;
+    lock.insert(query.to_string(), (now, res_b64.clone()));
+    drop(lock);
+
+    Ok(res_b64)
+}
+
+async fn execute_query(query: &str) -> Result<String, BadRequest<String>> {
     let client = tm::HttpClient::new("http://localhost:26657").unwrap();
 
-    let query_bytes = hex::decode(query)
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+    let query_bytes = hex::decode(query).map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
     let res = client
         .abci_query(None, query_bytes, None, true)
@@ -266,14 +283,7 @@ async fn query(query: &str) -> Result<String, BadRequest<String>> {
         return Err(BadRequest(Some(msg)));
     }
 
-    let res_b64 = base64::encode(res.value);
-
-    let cache = QUERY_CACHE.clone();
-    let mut lock = cache.write_owned().await;
-    lock.insert(query.to_string(), (now, res_b64.clone()));
-    drop(lock);
-
-    Ok(res_b64)
+    base64::encode(res.value)
 }
 
 #[get("/cosmos/staking/v1beta1/delegations/<address>")]
