@@ -5,7 +5,9 @@
 #![feature(never_type)]
 
 use std::convert::TryInto;
+use std::env::Args;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
@@ -13,6 +15,7 @@ use futures::executor::block_on;
 use nomic::app::{DepositCommitment, IbcDepositCommitment};
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
+use nomic::network::Network;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
@@ -117,6 +120,8 @@ impl Command {
 
 #[derive(Parser, Debug)]
 pub struct StartCmd {
+    #[clap(long, short)]
+    pub network: Network,
     #[clap(long, short)]
     pub state_sync: bool,
 }
@@ -417,8 +422,8 @@ impl ValidatorsCmd {
         validators.sort_by(|a, b| b.amount_staked.cmp(&a.amount_staked));
 
         for validator in validators {
-            let info: DeclareInfo =
-                serde_json::from_slice(validator.info.bytes.as_slice()).unwrap();
+            let bytes: Vec<u8> = validator.info.into();
+            let info: DeclareInfo = serde_json::from_slice(bytes.as_slice()).unwrap();
             println!(
                 "- {}\n\tVOTING POWER: {}\n\tMONIKER: {}\n\tDETAILS: {}",
                 validator.address, validator.amount_staked, info.moniker, info.details
@@ -492,7 +497,7 @@ impl DeclareCmd {
         let declaration = Declaration {
             consensus_key,
             amount: self.amount.into(),
-            validator_info: info_bytes.into(),
+            validator_info: info_bytes.try_into().unwrap(),
             commission: Commission {
                 rate: self.commission_rate,
                 max: self.commission_max,
@@ -542,7 +547,7 @@ impl EditCmd {
             .edit_validator_self(
                 self.commission_rate,
                 self.min_self_delegation.into(),
-                info_bytes.into(),
+                info_bytes.try_into().unwrap(),
             )
             .await?)
     }

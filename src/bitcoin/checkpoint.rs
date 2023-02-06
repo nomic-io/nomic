@@ -7,18 +7,20 @@ use super::{
 use crate::error::{Error, Result};
 use bitcoin::blockdata::transaction::EcdsaSighashType;
 use derive_more::{Deref, DerefMut};
-use orga::describe::Describe;
 use orga::{
     call::Call,
     client::Client,
     collections::{map::ReadOnly, ChildMut, Deque, Map, Ref},
     context::GetContext,
     encoding::{Decode, Encode, LengthVec},
+    migrate::MigrateFrom,
+    orga,
     plugins::Time,
     query::Query,
     state::State,
     Error as OrgaError, Result as OrgaResult,
 };
+use orga::{describe::Describe, store::Store};
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 
@@ -28,7 +30,7 @@ pub const MAX_INPUTS: u64 = 40;
 pub const MAX_OUTPUTS: u64 = 200;
 pub const FEE_RATE: u64 = 1;
 
-#[derive(Debug, Encode, Decode, Default, Serialize, Deserialize)]
+#[derive(Debug, Encode, Decode, Default)]
 pub enum CheckpointStatus {
     #[default]
     Building,
@@ -36,14 +38,26 @@ pub enum CheckpointStatus {
     Complete,
 }
 
+impl MigrateFrom for CheckpointStatus {
+    fn migrate_from(other: Self) -> orga::Result<Self> {
+        Ok(other)
+    }
+}
+
 // TODO: make it easy to derive State for simple types like this
 impl State for CheckpointStatus {
-    fn attach(&mut self, _: orga::store::Store) -> OrgaResult<()> {
+    #[inline]
+    fn attach(&mut self, _: Store) -> OrgaResult<()> {
         Ok(())
     }
 
-    fn flush(&mut self) -> OrgaResult<()> {
-        Ok(())
+    #[inline]
+    fn flush<W: std::io::Write>(self, out: &mut W) -> OrgaResult<()> {
+        Ok(self.encode_into(out)?)
+    }
+
+    fn load(_store: Store, bytes: &mut &[u8]) -> OrgaResult<Self> {
+        Ok(Self::decode(bytes)?)
     }
 }
 
@@ -71,15 +85,14 @@ impl<U: Send + Clone> Client<U> for CheckpointStatus {
     }
 }
 
-impl Describe for CheckpointStatus {
-    fn describe() -> orga::describe::Descriptor {
-        orga::describe::Builder::new::<Self>().build()
-    }
-}
+// impl Describe for CheckpointStatus {
+//     fn describe() -> orga::describe::Descriptor {
+//         orga::describe::Builder::new::<Self>().build()
+//     }
+// }
 
-#[derive(
-    State, Call, Query, Client, Debug, Encode, Decode, Serialize, Deserialize, Default, Describe,
-)]
+#[orga(skip(Client))]
+#[derive(Debug)]
 pub struct Input {
     pub prevout: Adapter<bitcoin::OutPoint>,
     pub script_pubkey: Adapter<bitcoin::Script>,
@@ -113,9 +126,8 @@ impl Input {
 
 pub type Output = Adapter<bitcoin::TxOut>;
 
-#[derive(
-    State, Call, Query, Client, Debug, Encode, Decode, Default, Serialize, Deserialize, Describe,
-)]
+#[orga]
+#[derive(Debug)]
 pub struct Checkpoint {
     pub status: CheckpointStatus,
     pub inputs: Deque<Input>,
@@ -170,7 +182,7 @@ impl Checkpoint {
     }
 }
 
-#[derive(State, Call, Query, Client, Encode, Decode, Default, Serialize, Deserialize, Describe)]
+#[orga]
 pub struct CheckpointQueue {
     pub(super) queue: Deque<Checkpoint>,
     pub(super) index: u32,

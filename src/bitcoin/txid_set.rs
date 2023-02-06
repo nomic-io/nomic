@@ -4,15 +4,18 @@ use orga::{
     client::Client,
     collections::Map,
     encoding::{Decode, Encode},
+    migrate::MigrateFrom,
+    orga,
     query::Query,
     state::State,
     Result,
 };
+
 use serde::{Deserialize, Serialize};
 
 pub type Outpoint = ([u8; 32], u32);
 
-#[derive(State, Call, Query, Client, Encode, Decode, Default, Serialize, Deserialize, Describe)]
+#[orga]
 pub struct OutpointSet {
     pub(super) expiration_queue: Map<(u64, Outpoint), ()>,
     pub(super) outpoints: Map<Outpoint, ()>,

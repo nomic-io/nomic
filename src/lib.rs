@@ -2,7 +2,6 @@
 #![feature(never_type)]
 #![allow(incomplete_features)]
 #![feature(specialization)]
-#![feature(generic_associated_types)]
 #![feature(type_alias_impl_trait)]
 #![feature(async_closure)]
 #![feature(is_some_and)]
@@ -13,10 +12,11 @@ use orga::abci::TendermintClient;
 pub use orga;
 pub use thiserror;
 
+pub mod airdrop;
 pub mod app;
 pub mod bitcoin;
-pub mod airdrop;
 pub mod error;
+pub mod network;
 
 #[cfg(feature = "full")]
 pub fn app_client() -> TendermintClient<app::App> {

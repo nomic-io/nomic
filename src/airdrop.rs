@@ -5,6 +5,8 @@ use orga::collections::{ChildMut, Map};
 use orga::context::GetContext;
 use orga::describe::Describe;
 use orga::encoding::{Decode, Encode};
+use orga::migrate::MigrateFrom;
+use orga::orga;
 use orga::plugins::{Paid, Signer};
 use orga::prelude::{Decimal, MIN_FEE};
 use orga::query::Query;
@@ -17,7 +19,7 @@ use super::app::Nom;
 const MAX_STAKED: u64 = 1_000_000_000;
 const AIRDROP_II_TOTAL: u64 = 3_500_000_000_000;
 
-#[derive(State, Query, Call, Client, Encode, Decode, Default, Serialize, Deserialize, Describe)]
+#[orga]
 pub struct Airdrop {
     accounts: Map<Address, Account>,
 }
@@ -258,20 +260,8 @@ impl Airdrop {
     }
 }
 
-#[derive(
-    State,
-    Query,
-    Call,
-    Client,
-    Clone,
-    Debug,
-    Default,
-    Encode,
-    Decode,
-    Serialize,
-    Deserialize,
-    Describe,
-)]
+#[orga]
+#[derive(Clone, Debug)]
 pub struct Account {
     pub airdrop1: Part,
     pub btc_deposit: Part,
@@ -288,20 +278,8 @@ impl Account {
     }
 }
 
-#[derive(
-    State,
-    Query,
-    Call,
-    Client,
-    Clone,
-    Debug,
-    Default,
-    Encode,
-    Decode,
-    Serialize,
-    Deserialize,
-    Describe,
-)]
+#[orga]
+#[derive(Clone, Debug)]
 pub struct Part {
     pub locked: u64,
     pub claimable: u64,
