@@ -301,6 +301,8 @@ impl StartDevCmd {
 
             println!("Starting node...");
 
+            orga::set_compat_mode(true);
+
             // TODO: add cfg defaults
             let mut node = Node::<nomic::app::App>::new(name.as_str(), Default::default());
 
@@ -312,6 +314,24 @@ impl StartDevCmd {
             }
             if skip_init_chain {
                 node = node.skip_init_chain();
+            }
+
+            let merk_home = Node::home(&name).join("merk");
+            let merk_store = orga::merk::MerkStore::new(merk_home);
+            let store = Shared::new(merk_store);
+            let mut store = Store::new(DefaultBackingStore::Merk(store));
+            let bytes = store.get(&[]).unwrap().unwrap();
+            type OldApp = orga::plugins::ABCIPlugin<nomic::app::AppV0>;
+            type NewApp = orga::plugins::ABCIPlugin<nomic::app::App>;
+            let app = OldApp::load(store.clone(), &mut bytes.as_slice()).unwrap();
+            let mut app: NewApp = app.migrate_into().unwrap();
+            orga::set_compat_mode(false);
+            app.attach(store.clone()).unwrap();
+            let mut bytes = vec![];
+            app.flush(&mut bytes).unwrap();
+            store.put(vec![], bytes).unwrap();
+            if let DefaultBackingStore::Merk(merk_store) = store.into_backing_store().into_inner() {
+                merk_store.into_inner().write(vec![]).unwrap();
             }
 
             node.stdout(std::process::Stdio::inherit())
