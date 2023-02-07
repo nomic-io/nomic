@@ -58,12 +58,10 @@ pub struct InnerApp {
     #[call]
     pub bitcoin: Bitcoin,
     pub reward_timer: RewardTimer,
-
     #[call]
     pub ibc: Ibc,
     #[orga(version(V1))]
-    #[call]
-    pub upgrade: Upgrade,
+    upgrade: Upgrade,
 }
 
 impl InnerApp {
@@ -211,7 +209,11 @@ impl InnerApp {
             .signer
             .ok_or_else(|| Error::Coins("Unauthorized account action".into()))
     }
-}
+
+    #[call]
+    pub fn signal(&mut self, version: Version) -> Result<()> {
+        self.upgrade.signal(version)
+    }
 
 #[cfg(feature = "full")]
 mod abci {
