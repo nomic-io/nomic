@@ -1,9 +1,6 @@
-use std::convert::TryInto;
-
 use crate::airdrop::Airdrop;
 use crate::bitcoin::adapter::Adapter;
 use crate::bitcoin::Bitcoin;
-
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::Transaction;
 use orga::cosmrs::bank::MsgSend;
@@ -18,11 +15,18 @@ use orga::ibc::{Ibc, IbcTx};
 use orga::migrate::{MigrateFrom, MigrateInto};
 use orga::orga;
 use orga::plugins::sdk_compat::{sdk, sdk::Tx as SdkTx, ConvertSdkTx};
+use orga::upgrade::Upgrade;
+use orga::upgrade::Version;
 use orga::Error;
 use orga::{ibc, prelude::*};
 use serde::{Deserialize, Serialize};
+use std::convert::TryInto;
+
+mod migrations;
 
 pub const CHAIN_ID: &str = "nomic-testnet-4d";
+pub const CONSENSUS_VERSION: u8 = 0;
+pub type AppV0 = DefaultPlugins<Nom, InnerAppV0, CHAIN_ID>;
 pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
 
 #[derive(State, Debug, Clone, Encode, Decode, Default, MigrateFrom)]
@@ -34,7 +38,7 @@ const DEV_ADDRESS: &str = "nomic14z79y3yrghqx493mwgcj0qd2udy6lm26lmduah";
 const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1d5n325zrf4elfu0heqd59gna5j6xyunhev23cj";
 const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhqd8dcqeq";
 
-#[orga]
+#[orga(version = 1)]
 pub struct InnerApp {
     #[call]
     pub accounts: Accounts<Nom>,
@@ -57,6 +61,9 @@ pub struct InnerApp {
 
     #[call]
     pub ibc: Ibc,
+    #[orga(version(V1))]
+    #[call]
+    pub upgrade: Upgrade,
 }
 
 impl InnerApp {
@@ -240,6 +247,8 @@ mod abci {
 
     impl BeginBlock for InnerApp {
         fn begin_block(&mut self, ctx: &BeginBlockCtx) -> Result<()> {
+            self.upgrade
+                .step(&vec![CONSENSUS_VERSION].try_into().unwrap())?;
             self.staking.begin_block(ctx)?;
             self.ibc.begin_block(ctx)?;
 
