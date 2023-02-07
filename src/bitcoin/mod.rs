@@ -75,8 +75,14 @@ pub struct Bitcoin {
 
 pub type ConsensusKey = [u8; 32];
 
-#[derive(Call, Query, Clone, Debug, Client, MigrateFrom)]
+#[derive(Call, Query, Clone, Debug, Client)]
 pub struct Xpub(ExtendedPubKey);
+
+impl MigrateFrom for Xpub {
+    fn migrate_from(other: Self) -> OrgaResult<Self> {
+        Ok(other)
+    }
+}
 
 // impl Describe for Xpub {
 //     fn describe() -> orga::describe::Descriptor {
