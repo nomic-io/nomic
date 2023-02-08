@@ -18,6 +18,7 @@ use nomic::error::Result;
 use nomic::network::Network;
 use orga::merk::merk::Merk;
 use orga::merk::MerkStore;
+use orga::migrate::MigrateInto;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;

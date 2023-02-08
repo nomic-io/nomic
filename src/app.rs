@@ -214,6 +214,7 @@ impl InnerApp {
     pub fn signal(&mut self, version: Version) -> Result<()> {
         self.upgrade.signal(version)
     }
+}
 
 #[cfg(feature = "full")]
 mod abci {
