@@ -16,6 +16,8 @@ use nomic::app::{DepositCommitment, IbcDepositCommitment};
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
 use nomic::network::Network;
+use orga::merk::merk::Merk;
+use orga::merk::MerkStore;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
@@ -54,7 +56,6 @@ pub struct Opts {
 #[derive(Parser, Debug)]
 pub enum Command {
     Start(StartCmd),
-    #[cfg(debug_assertions)]
     StartDev(StartDevCmd),
     Send(SendCmd),
     SendNbtc(SendNbtcCmd),
@@ -87,7 +88,6 @@ impl Command {
         use Command::*;
         match self {
             Start(cmd) => cmd.run().await,
-            #[cfg(debug_assertions)]
             StartDev(cmd) => cmd.run().await,
             Send(cmd) => cmd.run().await,
             SendNbtc(cmd) => cmd.run().await,
@@ -295,20 +295,60 @@ async fn get_bootstrap_state(rpc_servers: &[&str]) -> Result<(i64, String)> {
     Ok((height as i64, hash.unwrap().to_string()))
 }
 
-#[cfg(debug_assertions)]
 #[derive(Parser, Debug)]
-pub struct StartDevCmd {}
+pub struct StartDevCmd {
+    #[clap(long)]
+    pub init_from_store: Option<String>,
+    #[clap(long)]
+    pub reset: bool,
+    #[clap(long)]
+    pub skip_init_chain: bool,
+}
 
-#[cfg(debug_assertions)]
 impl StartDevCmd {
     async fn run(&self) -> Result<()> {
+        let reset = self.reset;
+        let init_from_store = self.init_from_store.clone();
+        let skip_init_chain = self.skip_init_chain;
         tokio::task::spawn_blocking(move || {
             let name = format!("{}-test", nomic::app::CHAIN_ID);
 
             log::info!("Starting node...");
+
+            orga::set_compat_mode(true);
+
             // TODO: add cfg defaults
-            Node::<nomic::app::App>::new(name.as_str(), Default::default())
-                .stdout(std::process::Stdio::inherit())
+            let mut node = Node::<nomic::app::App>::new(name.as_str(), Default::default());
+
+            if reset {
+                node = node.reset();
+            }
+            if let Some(source) = init_from_store {
+                node = node.init_from_store(source);
+            }
+            if skip_init_chain {
+                node = node.skip_init_chain();
+            }
+
+            let merk_home = Node::home(&name).join("merk");
+            let merk_store = orga::merk::MerkStore::new(merk_home);
+            let store = Shared::new(merk_store);
+            let mut store = Store::new(DefaultBackingStore::Merk(store));
+            let bytes = store.get(&[]).unwrap().unwrap();
+            type OldApp = orga::plugins::ABCIPlugin<nomic::app::AppV0>;
+            type NewApp = orga::plugins::ABCIPlugin<nomic::app::App>;
+            let app = OldApp::load(store.clone(), &mut bytes.as_slice()).unwrap();
+            let mut app: NewApp = app.migrate_into().unwrap();
+            orga::set_compat_mode(false);
+            app.attach(store.clone()).unwrap();
+            let mut bytes = vec![];
+            app.flush(&mut bytes).unwrap();
+            store.put(vec![], bytes).unwrap();
+            if let DefaultBackingStore::Merk(merk_store) = store.into_backing_store().into_inner() {
+                merk_store.into_inner().write(vec![]).unwrap();
+            }
+
+            node.stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
                 .run()
                 .unwrap();
