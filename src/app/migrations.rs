@@ -21,7 +21,7 @@ impl MigrateFrom<InnerAppV0> for InnerAppV1 {
             ibc: other.ibc.migrate_into()?,
             upgrade: Upgrade {
                 activation_delay_seconds: 20,
-                current_version: vec![1].try_into()?,
+                current_version: vec![0].try_into()?,
                 ..Default::default()
             },
         })
