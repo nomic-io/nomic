@@ -1071,18 +1071,18 @@ impl IbcTransferCmd {
 #[tokio::main]
 async fn main() {
     pretty_env_logger::formatted_timed_builder()
-        .parse_env("NOMIC_LOG")
         .filter_level(log::LevelFilter::Info)
+        .parse_env("NOMIC_LOG")
         .init();
 
-    let is_start = std::env::args()
-        .nth(1)
-        .map(|s| s == "start")
-        .unwrap_or(false);
+    std::panic::set_hook(Box::new(move |info| {
+        log::error!("{}", info);
+        std::process::exit(1);
+    }));
 
     let opts = Opts::parse();
     if let Err(err) = opts.cmd.run().await {
-        eprintln!("{}", err);
+        log::error!("{}", err);
         std::process::exit(1);
     };
 }
