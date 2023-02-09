@@ -1,13 +1,9 @@
-use js_sys::{Array, JsString};
-use nomic::airdrop::Airdrop;
-use nomic::app::{App, InnerApp, Nom, CHAIN_ID};
-use nomic::bitcoin::signatory::SignatorySet;
 use nomic::orga::call::Call;
 use nomic::orga::client::{AsyncCall, AsyncQuery, Client};
-use nomic::orga::encoding::{Decode, Encode};
-use nomic::orga::merk::ABCIPrefixedProofStore;
+use nomic::orga::encoding::Encode;
+use nomic::orga::merk::{BackingStore, ProofStore};
+use nomic::orga::plugins::ABCIPlugin;
 use nomic::orga::prelude::Shared;
-use nomic::orga::prelude::*;
 use nomic::orga::query::Query;
 use nomic::orga::state::State;
 use nomic::orga::store::Store;
@@ -220,10 +216,10 @@ impl<T: Query + State> AsyncQuery for WebAdapter<T> {
             None => panic!("Missing root value"),
         };
 
-        let store: Shared<ABCIPrefixedProofStore> = Shared::new(ABCIPrefixedProofStore::new(map));
-        let mut state = T::load(Store::new(store.clone().into()), &mut root_value.as_slice())?;
-        state.attach(Store::new(store.into()))?;
+        let store: Shared<ProofStore> = Shared::new(ProofStore(map));
+        let store = BackingStore::ProofMap(store);
+        let state = <ABCIPlugin<T>>::load(Store::new(store), &mut root_value.as_slice())?;
 
-        check(std::rc::Rc::new(state))
+        check(std::rc::Rc::new(state.inner))
     }
 }
