@@ -1,5 +1,4 @@
 #![feature(async_closure)]
-#![feature(generic_associated_types)]
 
 mod error;
 mod types;
@@ -7,24 +6,14 @@ mod web_client;
 
 use crate::error::Error;
 use crate::types::*;
-use crate::web_client::WebAdapter;
 use crate::web_client::WebClient;
-use js_sys::{Array, JsString};
-use nomic::app::{App, DepositCommitment, InnerApp, Nom, CHAIN_ID};
-use nomic::bitcoin::signatory::SignatorySet;
+use js_sys::Array;
+use nomic::app::{App, DepositCommitment, Nom, CHAIN_ID};
 use nomic::bitcoin::Nbtc;
-use nomic::orga::client::AsyncQuery;
 use nomic::orga::coins::Symbol;
-use nomic::orga::ibc::TransferArgs;
-use nomic::orga::merk::ABCIPrefixedProofStore;
 use nomic::orga::plugins::sdk_compat::sdk;
 use nomic::orga::prelude::Address;
-use nomic::orga::prelude::AsyncCall;
 use nomic::orga::prelude::MIN_FEE;
-use nomic::orga::Error as OrgaError;
-use std::convert::TryInto;
-use std::ops::{Deref, DerefMut};
-use std::sync::{Arc, Mutex};
 use urlencoding::encode;
 use wasm_bindgen::prelude::{wasm_bindgen, JsError, JsValue};
 use wasm_bindgen::JsCast;
