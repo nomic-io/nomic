@@ -23,8 +23,6 @@ use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
 
-const STOP_SECONDS: i64 = 1665162000;
-
 fn now_seconds() -> i64 {
     use std::time::SystemTime;
 
@@ -104,7 +102,6 @@ impl Command {
             Claim(cmd) => cmd.run().await,
             ClaimAirdrop(cmd) => cmd.run().await,
             Airdrop(cmd) => cmd.run().await,
-            // Legacy(cmd) => cmd.run().await,
             Relayer(cmd) => cmd.run().await,
             Signer(cmd) => cmd.run().await,
             SetSignatoryKey(cmd) => cmd.run().await,
@@ -311,6 +308,7 @@ impl StartDevCmd {
         let reset = self.reset;
         let init_from_store = self.init_from_store.clone();
         let skip_init_chain = self.skip_init_chain;
+
         tokio::task::spawn_blocking(move || {
             let name = format!("{}-test", nomic::app::CHAIN_ID);
 
