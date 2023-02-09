@@ -44,8 +44,8 @@ pub struct Coin {
 #[derive(Clone, Default)]
 #[wasm_bindgen]
 pub struct AirdropDetails {
-    pub claimed: bool,
-    pub claimable: bool,
+    pub claimed: u64,
+    pub claimable: u64,
     pub amount: u64,
 }
 
@@ -69,5 +69,13 @@ impl Airdrop {
             + self.btc_deposit.amount
             + self.btc_withdraw.amount
             + self.ibc_transfer.amount
+    }
+
+    #[wasm_bindgen(js_name = claimedTotal)]
+    pub fn claimed_total(&self) -> u64 {
+        self.airdrop1.claimed
+            + self.btc_deposit.claimed
+            + self.btc_withdraw.claimed
+            + self.ibc_transfer.claimed
     }
 }

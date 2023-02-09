@@ -304,12 +304,14 @@ impl ConvertSdkTx for InnerApp {
 
     fn convert(&self, sdk_tx: &SdkTx) -> Result<PaidCall<<InnerApp as Call>::Call>> {
         let sender_address = sdk_tx.sender_address()?;
+
         type AppCall = <InnerApp as Call>::Call;
         type AccountCall = <Accounts<Nom> as Call>::Call;
         type StakingCall = <Staking<Nom> as Call>::Call;
         type AirdropCall = <Airdrop as Call>::Call;
         type BitcoinCall = <Bitcoin as Call>::Call;
         type IbcCall = <Ibc as Call>::Call;
+
         match sdk_tx {
             SdkTx::Protobuf(tx) => {
                 let tx_bytes = sdk_tx.encode()?;
@@ -829,6 +831,29 @@ impl ConvertSdkTx for InnerApp {
                         let ibc_call = IbcCall::MethodTransfer(transfer_opts, vec![]);
                         let ibc_call_bytes = ibc_call.encode()?;
                         let paid_call = AppCall::FieldIbc(ibc_call_bytes);
+
+                        Ok(PaidCall {
+                            payer: payer_call,
+                            paid: paid_call,
+                        })
+                    }
+
+                    "nomic/MsgJoinAirdropAccounts" => {
+                        let msg = msg
+                            .value
+                            .as_object()
+                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
+
+                        let dest_addr: Address = msg["dest_address"]
+                            .as_str()
+                            .ok_or_else(|| Error::App("Invalid destination address".to_string()))?
+                            .parse()
+                            .map_err(|_| Error::App("Invalid destination address".to_string()))?;
+
+                        let join_call = AirdropCall::MethodJoinAccounts(dest_addr, vec![]);
+                        let payer_call = AppCall::FieldAirdrop(join_call.encode()?);
+
+                        let paid_call = AppCall::MethodNoop(vec![]);
 
                         Ok(PaidCall {
                             payer: payer_call,

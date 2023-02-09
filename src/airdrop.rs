@@ -8,7 +8,7 @@ use orga::encoding::{Decode, Encode};
 use orga::migrate::MigrateFrom;
 use orga::orga;
 use orga::plugins::{Paid, Signer};
-use orga::prelude::Decimal;
+use orga::prelude::{Decimal, MIN_FEE};
 use orga::query::Query;
 use orga::state::State;
 use orga::{Error, Result};
@@ -83,6 +83,34 @@ impl Airdrop {
         let mut acct = self.signer_acct_mut()?;
         let amount = acct.ibc_transfer.claim()?;
         self.pay_as_funding(amount)?;
+        Ok(())
+    }
+
+    #[call]
+    pub fn join_accounts(&mut self, dest_addr: Address) -> Result<()> {
+        self.pay_as_funding(MIN_FEE)?;
+
+        let mut acct = self.signer_acct_mut()?;
+        if acct.is_empty() {
+            return Err(Error::App("Account has no airdrop balance".to_string()));
+        }
+
+        let src = acct.clone();
+        *acct = Account::default();
+
+        let mut dest = self.accounts.entry(dest_addr)?.or_default()?;
+
+        let add_part = |dest: &mut Part, src: Part| {
+            dest.locked += src.locked;
+            dest.claimable += src.claimable;
+            dest.claimed += src.claimed;
+        };
+
+        add_part(&mut dest.airdrop1, src.airdrop1);
+        add_part(&mut dest.btc_deposit, src.btc_deposit);
+        add_part(&mut dest.ibc_transfer, src.ibc_transfer);
+        add_part(&mut dest.btc_withdraw, src.btc_withdraw);
+
         Ok(())
     }
 
@@ -241,6 +269,15 @@ pub struct Account {
     pub ibc_transfer: Part,
 }
 
+impl Account {
+    pub fn is_empty(&self) -> bool {
+        self.airdrop1.is_empty()
+            && self.btc_deposit.is_empty()
+            && self.btc_withdraw.is_empty()
+            && self.ibc_transfer.is_empty()
+    }
+}
+
 #[orga]
 #[derive(Clone, Debug)]
 pub struct Part {
@@ -264,5 +301,9 @@ impl Part {
         self.claimed += amount;
         self.claimable = 0;
         Ok(amount)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        (self.locked + self.claimable + self.claimed) == 0
     }
 }
