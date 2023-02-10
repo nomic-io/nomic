@@ -1,7 +1,7 @@
 use crate::error::{Error, Result};
 use std::str::FromStr;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Network {
     Mainnet,
     Testnet,

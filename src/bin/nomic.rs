@@ -12,7 +12,7 @@ use std::str::FromStr;
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
 use futures::executor::block_on;
-use nomic::app::{DepositCommitment, IbcDepositCommitment};
+use nomic::app::{AppV0, DepositCommitment, IbcDepositCommitment};
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
 use nomic::network::Network;
@@ -55,7 +55,6 @@ pub struct Opts {
 #[derive(Parser, Debug)]
 pub enum Command {
     Start(StartCmd),
-    StartDev(StartDevCmd),
     Send(SendCmd),
     SendNbtc(SendNbtcCmd),
     Balance(BalanceCmd),
@@ -87,7 +86,6 @@ impl Command {
         use Command::*;
         match self {
             Start(cmd) => cmd.run().await,
-            StartDev(cmd) => cmd.run().await,
             Send(cmd) => cmd.run().await,
             SendNbtc(cmd) => cmd.run().await,
             Balance(cmd) => cmd.run().await,
@@ -116,66 +114,113 @@ impl Command {
     }
 }
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 pub struct StartCmd {
-    #[clap(long, short, default_value = "mainnet")]
+    #[clap(long, default_value = "mainnet")]
     pub network: Network,
-    #[clap(long, short)]
+    #[clap(long)]
     pub state_sync: bool,
-    #[clap(long, short)]
+    #[clap(long)]
     pub tendermint_logs: bool,
+    #[clap(long)]
+    pub clone_store: Option<String>,
+    #[clap(long)]
+    pub reset_store_height: bool,
+    #[clap(long)]
+    pub reset: bool,
+    #[clap(long)]
+    pub skip_init_chain: bool,
+    #[clap(long)]
+    pub chain_id: Option<String>,
+    #[clap(long)]
+    pub start_legacy: Option<String>,
+    #[clap(long)]
+    pub home: Option<String>,
+    #[clap(long)]
+    pub migrate: bool,
+    #[clap(long)]
+    pub freeze_valset: bool,
+    pub tendermint_flags: Vec<String>,
 }
 
 impl StartCmd {
     async fn run(&self) -> Result<()> {
-        let state_sync = self.state_sync;
-        let tendermint_logs = self.tendermint_logs;
+        let cmd = self.clone();
 
         tokio::task::spawn_blocking(move || {
-            let new_name = nomic::app::CHAIN_ID;
+            let home = cmd.home.map_or_else(
+                || {
+                    Node::home(
+                        &cmd.chain_id
+                            .expect("Expected a chain-id or home directory to be set"),
+                    )
+                },
+                |home| PathBuf::from_str(&home).unwrap(),
+            );
+            let has_node = home.exists();
+            let started_node = Node::height(&home).unwrap() > 0;
+            let config_path = home.join("tendermint/config/config.toml");
 
-            let has_new_node = Node::home(new_name).exists();
-            let started_new_node = Node::height(new_name).unwrap() > 0;
+            if !has_node {
+                log::info!("Initializing node at {}...", home.display());
+                Node::<nomic::app::App>::new(&home, Default::default());
 
-            let new_home = Node::home(new_name);
-            let new_config_path = new_home.join("tendermint/config/config.toml");
-
-            if !has_new_node {
-                log::info!("Initializing node at {}...", new_home.display());
-                // TODO: configure default seeds
-                Node::<nomic::app::App>::new(new_name, Default::default());
-
-                edit_block_time(&new_config_path, "3s");
+                edit_block_time(&config_path, "3s");
             }
 
-            if !started_new_node {
-                log::info!("Configuring node for state sync...");
+            log::info!("Starting node at {}...", home.display());
+            let mut node = Node::<nomic::app::App>::new(&home, Default::default());
 
-                // TODO: set default seeds
-                set_p2p_seeds(
-                    &new_config_path,
-                    &["edb32208ff79b591dd4cddcf1c879f6405fe6c79@167.99.228.240:26656"],
-                );
-
-                // TODO: set default RPC boostrap nodes
-                configure_for_statesync(
-                    &new_config_path,
-                    &["http://167.99.228.240:26667", "http://167.99.228.240:26677"],
+            if cmd.reset {
+                node = node.reset();
+            }
+            if let Some(source) = cmd.clone_store {
+                let mut source = PathBuf::from_str(&source).unwrap();
+                if std::fs::read_dir(&source)?
+                    .find(|c| c.as_ref().unwrap().file_name() == "merk")
+                    .is_some()
+                {
+                    source = source.join("merk");
+                }
+                log::info!("Cloning store from {}...", source.display());
+                node = node.init_from_store(
+                    source,
+                    if cmd.reset_store_height {
+                        Some(0)
+                    } else {
+                        None
+                    },
                 );
             }
+            if let Some(legacy_cmd) = cmd.start_legacy {
+                log::info!("Starting legacy node... ({})", legacy_cmd);
+                let mut tokens = legacy_cmd.trim().split(' ');
+                let cmd = tokens.next().unwrap();
+                // TODO: verify output (or return code) of legacy node shows it exited cleanly
+                std::process::Command::new(cmd)
+                    .args(tokens)
+                    .spawn()?
+                    .wait()?;
+            }
+            if cmd.migrate {
+                node = node.migrate::<AppV0>();
+            }
+            if cmd.skip_init_chain {
+                node = node.skip_init_chain();
+            }
+            if cmd.freeze_valset {
+                std::env::set_var("ORGA_STATIC_VALSET", "true");
+            }
 
-            log::info!("Starting node...");
-            // TODO: add cfg defaults
-            Node::<nomic::app::App>::new(new_name, Default::default())
-                .with_genesis(include_bytes!("../../genesis/testnet-4d.json"))
-                .stdout(std::process::Stdio::inherit())
+            node.stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
-                .logs(tendermint_logs)
+                .print_tendermint_logs(cmd.tendermint_logs)
+                .tendermint_flags(cmd.tendermint_flags)
                 .run()
-                .unwrap();
         })
         .await
-        .map_err(|err| orga::Error::App(err.to_string()))?;
+        .unwrap()?;
+
         Ok(())
     }
 }
@@ -291,71 +336,6 @@ async fn get_bootstrap_state(rpc_servers: &[&str]) -> Result<(i64, String)> {
     }
 
     Ok((height as i64, hash.unwrap().to_string()))
-}
-
-#[derive(Parser, Debug)]
-pub struct StartDevCmd {
-    #[clap(long)]
-    pub init_from_store: Option<String>,
-    #[clap(long)]
-    pub reset: bool,
-    #[clap(long)]
-    pub skip_init_chain: bool,
-}
-
-impl StartDevCmd {
-    async fn run(&self) -> Result<()> {
-        let reset = self.reset;
-        let init_from_store = self.init_from_store.clone();
-        let skip_init_chain = self.skip_init_chain;
-
-        tokio::task::spawn_blocking(move || {
-            let name = format!("{}-test", nomic::app::CHAIN_ID);
-
-            log::info!("Starting node...");
-
-            orga::set_compat_mode(true);
-
-            // TODO: add cfg defaults
-            let mut node = Node::<nomic::app::App>::new(name.as_str(), Default::default());
-
-            if reset {
-                node = node.reset();
-            }
-            if let Some(source) = init_from_store {
-                node = node.init_from_store(source);
-            }
-            if skip_init_chain {
-                node = node.skip_init_chain();
-            }
-
-            let merk_home = Node::home(&name).join("merk");
-            let merk_store = orga::merk::MerkStore::new(merk_home);
-            let store = Shared::new(merk_store);
-            let mut store = Store::new(DefaultBackingStore::Merk(store));
-            let bytes = store.get(&[]).unwrap().unwrap();
-            type OldApp = orga::plugins::ABCIPlugin<nomic::app::AppV0>;
-            type NewApp = orga::plugins::ABCIPlugin<nomic::app::App>;
-            let app = OldApp::load(store.clone(), &mut bytes.as_slice()).unwrap();
-            let mut app: NewApp = app.migrate_into().unwrap();
-            orga::set_compat_mode(false);
-            app.attach(store.clone()).unwrap();
-            let mut bytes = vec![];
-            app.flush(&mut bytes).unwrap();
-            store.put(vec![], bytes).unwrap();
-            if let DefaultBackingStore::Merk(merk_store) = store.into_backing_store().into_inner() {
-                merk_store.into_inner().write(vec![]).unwrap();
-            }
-
-            node.stdout(std::process::Stdio::inherit())
-                .stderr(std::process::Stdio::inherit())
-                .run()
-                .unwrap();
-        })
-        .await
-        .map_err(|err| orga::Error::App(err.to_string()))?;
-        Ok(())
-    }
 }
 
 #[derive(Parser, Debug)]
