@@ -2360,13 +2360,14 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.3.1"
-source = "git+https://github.com/nomic-io/orga.git?rev=ed302d91cdb96561db4a53006a2f48801bfb2efa#ed302d91cdb96561db4a53006a2f48801bfb2efa"
+source = "git+https://github.com/nomic-io/orga.git?rev=0b174a95cf01592689d611a521f36672797629f5#0b174a95cf01592689d611a521f36672797629f5"
 dependencies = [
  "abci2",
  "async-trait",
  "base64 0.13.1",
  "bech32",
  "bincode",
+ "chrono",
  "cosmrs",
  "derive_more",
  "ed 0.3.0 (git+https://github.com/nomic-io/ed?rev=9c0e206ffdb59dacb90f083e004e8080713e6ad8)",
@@ -2383,6 +2384,7 @@ dependencies = [
  "js-sys",
  "log",
  "merk",
+ "nom",
  "num-rational",
  "num-traits",
  "orga-macros",
@@ -2416,7 +2418,7 @@ dependencies = [
 [[package]]
 name = "orga-macros"
 version = "0.3.1"
-source = "git+https://github.com/nomic-io/orga.git?rev=ed302d91cdb96561db4a53006a2f48801bfb2efa#ed302d91cdb96561db4a53006a2f48801bfb2efa"
+source = "git+https://github.com/nomic-io/orga.git?rev=0b174a95cf01592689d611a521f36672797629f5#0b174a95cf01592689d611a521f36672797629f5"
 dependencies = [
  "darling 0.14.3",
  "heck 0.3.3",
