@@ -143,6 +143,8 @@ pub struct StartCmd {
     pub migrate: bool,
     #[clap(long)]
     pub freeze_valset: bool,
+    #[clap(long)]
+    pub genesis: Option<String>,
     pub tendermint_flags: Vec<String>,
 }
 
@@ -161,24 +163,30 @@ impl StartCmd {
                 |home| PathBuf::from_str(&home).unwrap(),
             );
 
-            if let Some(upgrade_time) = cmd.upgrade_time {
-                let store_path = home.join("merk");
-                let store = MerkStore::new(store_path);
-                let timestamp =
-                    i64::decode(store.merk().get_aux(b"timestamp")?.unwrap().as_slice())?;
-                drop(store);
-                log::debug!("Consensus timestamp: {}", timestamp);
+            match (cmd.legacy_home, cmd.upgrade_time) {
+                (Some(legacy_home), Some(upgrade_time)) => {
+                    let legacy_home = PathBuf::from_str(&legacy_home).unwrap();
 
-                if timestamp < upgrade_time {
-                    let bin_path = home.join("nomic-v4");
-                    let mut cmd = std::process::Command::new(bin_path);
-                    cmd.arg("start").env("STOP_TIME", upgrade_time.to_string());
-                    log::info!("Starting legacy node... ({:#?})", cmd);
-                    // TODO: verify output (or return code) of legacy node shows it exited cleanly
-                    cmd.spawn()?.wait()?;
-                } else {
-                    log::info!("Upgrade time has been passed");
+                    let store_path = legacy_home.join("merk");
+                    let store = MerkStore::new(store_path);
+                    let timestamp =
+                        i64::decode(store.merk().get_aux(b"timestamp")?.unwrap().as_slice())?;
+                    drop(store);
+                    log::debug!("Legacy timestamp: {}", timestamp);
+
+                    if timestamp < upgrade_time {
+                        let bin_path = legacy_home.join("nomic-v4");
+                        let mut cmd = std::process::Command::new(bin_path);
+                        cmd.arg("start").env("STOP_TIME", upgrade_time.to_string());
+                        log::info!("Starting legacy node... ({:#?})", cmd);
+                        // TODO: verify output (or return code) of legacy node shows it exited cleanly
+                        cmd.spawn()?.wait()?;
+                    } else {
+                        log::info!("Upgrade time has been passed");
+                    }
                 }
+                (None, None) => {}
+                _ => panic!("Must specify both --legacy-home and --upgrade-time"),
             }
 
             let has_node = home.exists();
@@ -223,6 +231,10 @@ impl StartCmd {
             }
             if cmd.freeze_valset {
                 std::env::set_var("ORGA_STATIC_VALSET", "true");
+            }
+            if let Some(genesis_path) = cmd.genesis {
+                let genesis_bytes = std::fs::read(genesis_path)?;
+                std::fs::write(home.join("tendermint/config/genesis.json"), genesis_bytes)?;
             }
 
             node.stdout(std::process::Stdio::inherit())
