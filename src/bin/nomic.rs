@@ -16,6 +16,7 @@ use nomic::app::{AppV0, DepositCommitment, IbcDepositCommitment};
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
 use nomic::network::Network;
+use orga::encoding::Decode;
 use orga::merk::merk::Merk;
 use orga::merk::MerkStore;
 use orga::migrate::MigrateInto;
@@ -133,7 +134,9 @@ pub struct StartCmd {
     #[clap(long)]
     pub chain_id: Option<String>,
     #[clap(long)]
-    pub start_legacy: Option<String>,
+    pub legacy_home: Option<String>,
+    #[clap(long)]
+    pub upgrade_time: Option<i64>,
     #[clap(long)]
     pub home: Option<String>,
     #[clap(long)]
@@ -157,10 +160,30 @@ impl StartCmd {
                 },
                 |home| PathBuf::from_str(&home).unwrap(),
             );
+
+            if let Some(upgrade_time) = cmd.upgrade_time {
+                let store_path = home.join("merk");
+                let store = MerkStore::new(store_path);
+                let timestamp =
+                    i64::decode(store.merk().get_aux(b"timestamp")?.unwrap().as_slice())?;
+                drop(store);
+                log::debug!("Consensus timestamp: {}", timestamp);
+
+                if timestamp < upgrade_time {
+                    let bin_path = home.join("nomic-v4");
+                    let mut cmd = std::process::Command::new(bin_path);
+                    cmd.arg("start").env("STOP_TIME", upgrade_time.to_string());
+                    log::info!("Starting legacy node... ({:#?})", cmd);
+                    // TODO: verify output (or return code) of legacy node shows it exited cleanly
+                    cmd.spawn()?.wait()?;
+                } else {
+                    log::info!("Upgrade time has been passed");
+                }
+            }
+
             let has_node = home.exists();
             let started_node = Node::height(&home).unwrap() > 0;
             let config_path = home.join("tendermint/config/config.toml");
-
             if !has_node {
                 log::info!("Initializing node at {}...", home.display());
                 Node::<nomic::app::App>::new(&home, Default::default());
@@ -191,16 +214,6 @@ impl StartCmd {
                         None
                     },
                 );
-            }
-            if let Some(legacy_cmd) = cmd.start_legacy {
-                log::info!("Starting legacy node... ({})", legacy_cmd);
-                let mut tokens = legacy_cmd.trim().split(' ');
-                let cmd = tokens.next().unwrap();
-                // TODO: verify output (or return code) of legacy node shows it exited cleanly
-                std::process::Command::new(cmd)
-                    .args(tokens)
-                    .spawn()?
-                    .wait()?;
             }
             if cmd.migrate {
                 node = node.migrate::<AppV0>();
