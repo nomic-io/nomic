@@ -194,7 +194,27 @@ impl StartCmd {
             let config_path = home.join("tendermint/config/config.toml");
             if !has_node {
                 log::info!("Initializing node at {}...", home.display());
-                Node::<nomic::app::App>::new(&home, Default::default());
+
+                let mut node = Node::<nomic::app::App>::new(&home, Default::default());
+
+                if let Some(source) = cmd.clone_store {
+                    let mut source = PathBuf::from_str(&source).unwrap();
+                    if std::fs::read_dir(&source)?
+                        .find(|c| c.as_ref().unwrap().file_name() == "merk")
+                        .is_some()
+                    {
+                        source = source.join("merk");
+                    }
+                    log::info!("Cloning store from {}...", source.display());
+                    node = node.init_from_store(
+                        source,
+                        if cmd.reset_store_height {
+                            Some(0)
+                        } else {
+                            None
+                        },
+                    );
+                }
 
                 edit_block_time(&config_path, "3s");
             }
@@ -204,24 +224,6 @@ impl StartCmd {
 
             if cmd.reset {
                 node = node.reset();
-            }
-            if let Some(source) = cmd.clone_store {
-                let mut source = PathBuf::from_str(&source).unwrap();
-                if std::fs::read_dir(&source)?
-                    .find(|c| c.as_ref().unwrap().file_name() == "merk")
-                    .is_some()
-                {
-                    source = source.join("merk");
-                }
-                log::info!("Cloning store from {}...", source.display());
-                node = node.init_from_store(
-                    source,
-                    if cmd.reset_store_height {
-                        Some(0)
-                    } else {
-                        None
-                    },
-                );
             }
             if cmd.migrate {
                 node = node.migrate::<AppV0>();
