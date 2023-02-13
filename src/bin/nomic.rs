@@ -221,6 +221,14 @@ impl StartCmd {
                 edit_block_time(&config_path, "3s");
             }
 
+            let bin_path = home.join(format!("bin/nomic-{}", env!("CARGO_PKG_VERSION")));
+            if !bin_path.exists() {
+                log::debug!("Writing binary to {}", bin_path.display());
+                let current_exe_bytes = std::fs::read(std::env::current_exe().unwrap()).unwrap();
+                std::fs::create_dir_all(home.join("bin")).unwrap();
+                std::fs::write(bin_path, current_exe_bytes).unwrap();
+            }
+
             log::info!("Starting node at {}...", home.display());
             let mut node = Node::<nomic::app::App>::new(&home, Default::default());
 
