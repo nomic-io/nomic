@@ -33,6 +33,7 @@ sha2 = "0.10.6"
 bytes = "1.2.1"
 serde-big-array = "0.4.1"
 log = "0.4.17"
+hex = "0.4.3"
 
 [dev-dependencies]
 bitcoin_hashes = "0.10.0"

@@ -145,6 +145,8 @@ pub struct StartCmd {
     pub freeze_valset: bool,
     #[clap(long)]
     pub genesis: Option<String>,
+    #[clap(long)]
+    pub signal_version: Option<String>,
     pub tendermint_flags: Vec<String>,
 }
 
@@ -182,7 +184,7 @@ impl StartCmd {
                         // TODO: verify output (or return code) of legacy node shows it exited cleanly
                         cmd.spawn()?.wait()?;
                     } else {
-                        log::info!("Upgrade time has been passed");
+                        log::info!("Upgrade time has passed");
                     }
                 }
                 (None, None) => {}
@@ -237,6 +239,45 @@ impl StartCmd {
             if let Some(genesis_path) = cmd.genesis {
                 let genesis_bytes = std::fs::read(genesis_path)?;
                 std::fs::write(home.join("tendermint/config/genesis.json"), genesis_bytes)?;
+            }
+            if let Some(signal_version) = cmd.signal_version {
+                let signal_version = hex::decode(signal_version).unwrap();
+                tokio::spawn(async move {
+                    let signal_version = signal_version.clone();
+                    let signal_version2 = signal_version.clone();
+                    let signal_version3 = signal_version.clone();
+                    let done = move || {
+                        std::fs::write(
+                            home.join("SIGNAL"),
+                            format!("{}\n", hex::encode(&signal_version2)),
+                        )
+                        .unwrap();
+                        log::info!("Node has signaled {:?}", signal_version2);
+                    };
+
+                    loop {
+                        let signal_version = signal_version.clone();
+                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                        if let Err(err) = app_client()
+                            .pay_from(async move |client| {
+                                client.signal(signal_version.try_into().unwrap()).await
+                            })
+                            .noop()
+                            .await
+                        {
+                            let msg = err.to_string();
+                            if msg.ends_with("has already been signaled") {
+                                return done();
+                            } else {
+                                log::debug!("Error when signaling: {}", msg);
+                                continue;
+                            }
+                        } else {
+                            log::info!("Signaled version {:?}", signal_version3);
+                            return done();
+                        }
+                    }
+                });
             }
 
             node.stdout(std::process::Stdio::inherit())
@@ -1080,8 +1121,12 @@ async fn main() {
         .parse_env("NOMIC_LOG")
         .init();
 
+    let panic_handler = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         log::error!("{}", info);
+        if !std::env::var("RUST_BACKTRACE").unwrap().is_empty() {
+            panic_handler(info);
+        }
         std::process::exit(1);
     }));
 
