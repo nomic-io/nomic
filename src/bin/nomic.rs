@@ -6,6 +6,9 @@
 
 use std::convert::TryInto;
 use std::env::Args;
+use std::fs::Permissions;
+use std::os::unix::fs::PermissionsExt;
+use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -133,10 +136,18 @@ pub struct StartCmd {
     pub skip_init_chain: bool,
     #[clap(long)]
     pub chain_id: Option<String>,
+    #[cfg(feature = "compat")]
     #[clap(long)]
     pub legacy_home: Option<String>,
+    #[cfg(feature = "compat")]
     #[clap(long)]
     pub upgrade_time: Option<i64>,
+    #[cfg(not(feature = "compat"))]
+    #[clap(long)]
+    pub legacy_bin: Option<String>,
+    #[cfg(not(feature = "compat"))]
+    #[clap(long)]
+    pub legacy_version: Option<String>,
     #[clap(long)]
     pub home: Option<String>,
     #[clap(long)]
@@ -165,6 +176,7 @@ impl StartCmd {
                 |home| PathBuf::from_str(&home).unwrap(),
             );
 
+            #[cfg(feature = "compat")]
             match (cmd.legacy_home, cmd.upgrade_time) {
                 (Some(legacy_home), Some(upgrade_time)) => {
                     let legacy_home = PathBuf::from_str(&legacy_home).unwrap();
@@ -189,6 +201,48 @@ impl StartCmd {
                 }
                 (None, None) => {}
                 _ => panic!("Must specify both --legacy-home and --upgrade-time"),
+            }
+
+            #[cfg(not(feature = "compat"))]
+            if let Some(legacy_bin) = cmd.legacy_bin {
+                let version_hex = hex::encode([nomic::app::CONSENSUS_VERSION]);
+
+                let net_ver_path = home.join("network_version");
+                let up_to_date = if net_ver_path.exists() {
+                    let net_ver = String::from_utf8(std::fs::read(net_ver_path).unwrap())
+                        .unwrap()
+                        .trim()
+                        .to_string();
+                    version_hex == net_ver
+                } else {
+                    false
+                };
+
+                if up_to_date {
+                    log::info!("Node version matches network version, ignoring --legacy-bin");
+                } else {
+                    let mut cmd = std::process::Command::new(legacy_bin);
+                    cmd.args([
+                        "start",
+                        "--signal-version",
+                        &version_hex,
+                        "--home",
+                        home.to_str().unwrap(),
+                    ]);
+                    log::info!("Starting legacy node... ({:#?})", cmd);
+                    let res = cmd.spawn()?.wait()?;
+                    dbg!(res.signal(), res.stopped_signal(), res.code());
+                    match res.code() {
+                        Some(138) => {
+                            log::info!("Legacy node exited for upgrade");
+                        }
+                        Some(code) => {
+                            log::error!("Legacy node exited unexpectedly");
+                            std::process::exit(code);
+                        }
+                        None => panic!("Legacy node exited unexpectedly"),
+                    }
+                }
             }
 
             let has_node = home.exists();
