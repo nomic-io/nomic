@@ -226,7 +226,8 @@ impl StartCmd {
                 log::debug!("Writing binary to {}", bin_path.display());
                 let current_exe_bytes = std::fs::read(std::env::current_exe().unwrap()).unwrap();
                 std::fs::create_dir_all(home.join("bin")).unwrap();
-                std::fs::write(bin_path, current_exe_bytes).unwrap();
+                std::fs::write(&bin_path, current_exe_bytes).unwrap();
+                std::fs::set_permissions(bin_path, Permissions::from_mode(0o777)).unwrap();
             }
 
             log::info!("Starting node at {}...", home.display());
