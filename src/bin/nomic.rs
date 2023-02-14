@@ -1130,11 +1130,17 @@ async fn main() {
         .parse_env("NOMIC_LOG")
         .init();
 
-    let panic_handler = std::panic::take_hook();
+    let backtrace_enabled = std::env::var("RUST_BACKTRACE").is_ok();
+
+    let panic_handler = if backtrace_enabled {
+        Some(std::panic::take_hook())
+    } else {
+        None
+    };
     std::panic::set_hook(Box::new(move |info| {
         log::error!("{}", info);
-        if !std::env::var("RUST_BACKTRACE").unwrap().is_empty() {
-            panic_handler(info);
+        if let Some(f) = panic_handler.as_ref() {
+            f(info)
         }
         std::process::exit(1);
     }));
