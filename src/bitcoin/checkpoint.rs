@@ -460,9 +460,11 @@ impl CheckpointQueue {
         let mut out = Vec::with_capacity(self.queue.len() as usize);
 
         for i in 0..self.queue.len() {
-            let index = self.index - (i as u32);
-            let checkpoint = self.queue.get(index as u64)?.unwrap();
-            out.push((index, checkpoint));
+            let checkpoint = self.queue.get(i)?.unwrap();
+            out.push((
+                (self.index + 1 - (self.queue.len() as u32 - i as u32)),
+                checkpoint,
+            ));
         }
 
         Ok(out)
