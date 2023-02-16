@@ -183,13 +183,19 @@ impl StartCmd {
 
                     let store_path = legacy_home.join("merk");
                     let store = MerkStore::new(store_path);
-                    let timestamp =
-                        i64::decode(store.merk().get_aux(b"timestamp")?.unwrap().as_slice())?;
+                    let timestamp = store
+                        .merk()
+                        .get_aux(b"timestamp")?
+                        .map(|ts| i64::decode(ts.as_slice()))
+                        .transpose()?
+                        .unwrap_or_default();
                     drop(store);
                     log::debug!("Legacy timestamp: {}", timestamp);
 
                     if timestamp < upgrade_time {
                         let bin_path = legacy_home.join("nomic-v4");
+                        // TODO: check version
+
                         let mut cmd = std::process::Command::new(bin_path);
                         cmd.arg("start").env("STOP_TIME", upgrade_time.to_string());
                         log::info!("Starting legacy node... ({:#?})", cmd);
