@@ -145,7 +145,6 @@ pub struct StartCmd {
     #[cfg(not(feature = "compat"))]
     #[clap(long)]
     pub legacy_bin: Option<String>,
-    #[cfg(not(feature = "compat"))]
     #[clap(long)]
     pub legacy_version: Option<String>,
     #[clap(long)]
@@ -194,7 +193,21 @@ impl StartCmd {
 
                     if timestamp < upgrade_time {
                         let bin_path = legacy_home.join("nomic-v4");
-                        // TODO: check version
+
+                        if let Some(legacy_version) = cmd.legacy_version {
+                            let version = String::from_utf8(
+                                std::process::Command::new(&bin_path)
+                                    .arg("--version")
+                                    .output()?
+                                    .stdout,
+                            )
+                            .unwrap();
+                            let expected = format!("nomic {}", legacy_version);
+                            if version.trim() != expected.as_str() {
+                                log::error!("Legacy binary does not match specified version. Expected '{}', got '{}'", expected, version.trim());
+                                std::process::exit(1);
+                            }
+                        }
 
                         let mut cmd = std::process::Command::new(bin_path);
                         cmd.arg("start").env("STOP_TIME", upgrade_time.to_string());
