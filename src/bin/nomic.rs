@@ -174,6 +174,10 @@ impl StartCmd {
                 },
                 |home| PathBuf::from_str(&home).unwrap(),
             );
+            
+            if cmd.freeze_valset {
+                std::env::set_var("ORGA_STATIC_VALSET", "true");
+            }
 
             #[cfg(feature = "compat")]
             match (cmd.legacy_home, cmd.upgrade_time) {
@@ -240,16 +244,17 @@ impl StartCmd {
                 if up_to_date {
                     log::info!("Node version matches network version, ignoring --legacy-bin");
                 } else {
-                    let mut cmd = std::process::Command::new(legacy_bin);
-                    cmd.args([
+                    let mut legacy_cmd = std::process::Command::new(legacy_bin);
+                    legacy_cmd.args([
                         "start",
                         "--signal-version",
                         &version_hex,
                         "--home",
                         home.to_str().unwrap(),
                     ]);
-                    log::info!("Starting legacy node... ({:#?})", cmd);
-                    let res = cmd.spawn()?.wait()?;
+                    legacy_cmd.args(&cmd.tendermint_flags);
+                    log::info!("Starting legacy node... ({:#?})", legacy_cmd);
+                    let res = legacy_cmd.spawn()?.wait()?;
                     dbg!(res.signal(), res.stopped_signal(), res.code());
                     match res.code() {
                         Some(138) => {
@@ -318,9 +323,6 @@ impl StartCmd {
             }
             if cmd.skip_init_chain {
                 node = node.skip_init_chain();
-            }
-            if cmd.freeze_valset {
-                std::env::set_var("ORGA_STATIC_VALSET", "true");
             }
             if let Some(genesis_path) = cmd.genesis {
                 let genesis_bytes = std::fs::read(genesis_path)?;
