@@ -123,7 +123,7 @@ pub struct StartCmd {
     #[clap(long, default_value = "mainnet")]
     pub network: Network,
     #[clap(long)]
-    pub state_sync: bool,
+    pub state_sync_rpcs: Option<String>,
     #[clap(long)]
     pub tendermint_logs: bool,
     #[clap(long)]
@@ -308,6 +308,10 @@ impl StartCmd {
 
             if cmd.unsafe_reset {
                 node = node.reset();
+            }
+            if let Some(servers) = cmd.state_sync_rpcs {
+                let servers: Vec<_> = servers.split(',').collect();
+                configure_for_statesync(&home.join("tendermint/config/config.toml"), &servers);
             }
             if cmd.migrate {
                 node = node.migrate::<AppV0>();
