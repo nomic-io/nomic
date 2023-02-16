@@ -297,6 +297,9 @@ impl StartCmd {
                 }
 
                 edit_block_time(&config_path, "3s");
+            } else if cmd.clone_store.is_some() {
+                log::error!("--clone-store can only be used when initializing a network home");
+                std::process::exit(1);
             }
 
             let bin_path = home.join(format!("bin/nomic-{}", env!("CARGO_PKG_VERSION")));
@@ -314,6 +317,10 @@ impl StartCmd {
             if cmd.unsafe_reset {
                 node = node.reset();
             }
+            if let Some(genesis_path) = cmd.genesis {
+                let genesis_bytes = std::fs::read(genesis_path)?;
+                std::fs::write(home.join("tendermint/config/genesis.json"), genesis_bytes)?;
+            }
             if let Some(servers) = cmd.state_sync_rpcs {
                 let servers: Vec<_> = servers.split(',').collect();
                 configure_for_statesync(&home.join("tendermint/config/config.toml"), &servers);
@@ -323,10 +330,6 @@ impl StartCmd {
             }
             if cmd.skip_init_chain {
                 node = node.skip_init_chain();
-            }
-            if let Some(genesis_path) = cmd.genesis {
-                let genesis_bytes = std::fs::read(genesis_path)?;
-                std::fs::write(home.join("tendermint/config/genesis.json"), genesis_bytes)?;
             }
             if let Some(signal_version) = cmd.signal_version {
                 let signal_version = hex::decode(signal_version).unwrap();
