@@ -131,7 +131,7 @@ pub struct StartCmd {
     #[clap(long)]
     pub reset_store_height: bool,
     #[clap(long)]
-    pub reset: bool,
+    pub unsafe_reset: bool,
     #[clap(long)]
     pub skip_init_chain: bool,
     #[clap(long)]
@@ -293,7 +293,7 @@ impl StartCmd {
             log::info!("Starting node at {}...", home.display());
             let mut node = Node::<nomic::app::App>::new(&home, Default::default());
 
-            if cmd.reset {
+            if cmd.unsafe_reset {
                 node = node.reset();
             }
             if cmd.migrate {
