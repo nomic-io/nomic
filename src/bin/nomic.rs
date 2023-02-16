@@ -310,11 +310,6 @@ impl StartCmd {
                     let signal_version2 = signal_version.clone();
                     let signal_version3 = signal_version.clone();
                     let done = move || {
-                        std::fs::write(
-                            home.join("SIGNAL"),
-                            format!("{}\n", hex::encode(&signal_version2)),
-                        )
-                        .unwrap();
                         log::info!("Node has signaled {:?}", signal_version2);
                     };
 
