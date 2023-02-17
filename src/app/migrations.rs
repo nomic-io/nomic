@@ -5,7 +5,14 @@ use orga::{
 };
 
 impl MigrateFrom<InnerAppV0> for InnerAppV1 {
-    fn migrate_from(other: InnerAppV0) -> orga::Result<Self> {
+    fn migrate_from(mut other: InnerAppV0) -> orga::Result<Self> {
+        other.ibc.clients.prune_host_consensus_states()?;
+        other
+            .bitcoin
+            .checkpoints
+            .prune()
+            .map_err(|e| orga::Error::App(e.to_string()))?;
+
         Ok(Self {
             accounts: other.accounts.migrate_into()?,
             staking: other.staking.migrate_into()?,
