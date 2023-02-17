@@ -174,6 +174,7 @@ impl StartCmd {
                     log::error!("Passed in unexpected genesis");
                     std::process::exit(1);
                 }
+                #[cfg(feature = "compat")]
                 if cmd.config.upgrade_time.is_some() {
                     config.upgrade_time = cmd.config.upgrade_time;
                 }
