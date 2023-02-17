@@ -29,6 +29,7 @@ pub const MAX_CHECKPOINT_INTERVAL: u64 = 60 * 60 * 8;
 pub const MAX_INPUTS: u64 = 40;
 pub const MAX_OUTPUTS: u64 = 200;
 pub const FEE_RATE: u64 = 1;
+pub const MAX_AGE: u64 = 60 * 60 * 24 * 7 * 3;
 
 #[derive(Debug, Encode, Decode, Default)]
 pub enum CheckpointStatus {
@@ -547,6 +548,20 @@ impl CheckpointQueue {
         Ok(BuildingCheckpointMut(last))
     }
 
+    pub fn prune(&mut self) -> Result<()> {
+        let latest = self.building()?.create_time();
+
+        while let Some(oldest) = self.queue.front()? {
+            if latest - oldest.create_time() <= MAX_AGE {
+                break;
+            }
+
+            self.queue.pop_front()?;
+        }
+
+        Ok(())
+    }
+
     pub fn maybe_step(&mut self, sig_keys: &Map<ConsensusKey, Xpub>) -> Result<()> {
         #[cfg(not(feature = "full"))]
         unimplemented!();
@@ -586,6 +601,8 @@ impl CheckpointQueue {
             if self.maybe_push(sig_keys)?.is_none() {
                 return Ok(());
             }
+
+            self.prune()?;
 
             if self.index > 0 {
                 let second = self.get_mut(self.index - 1)?;
