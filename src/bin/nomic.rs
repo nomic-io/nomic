@@ -333,8 +333,7 @@ impl StartCmd {
 
                 edit_block_time(&config_path, "3s");
             } else if cmd.clone_store.is_some() {
-                log::error!("--clone-store can only be used when initializing a network home");
-                std::process::exit(1);
+                log::warn!("--clone-store only applies used when initializing a network home, ignoring");
             }
 
             let bin_path = home.join(format!("bin/nomic-{}", env!("CARGO_PKG_VERSION")));
