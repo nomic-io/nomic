@@ -157,6 +157,10 @@ pub struct StartCmd {
     pub genesis: Option<String>,
     #[clap(long)]
     pub signal_version: Option<String>,
+    #[clap(long)]
+    pub validator_key: Option<String>,
+    #[clap(long)]
+    pub node_key: Option<String>,
     pub tendermint_flags: Vec<String>,
 }
 
@@ -294,6 +298,16 @@ impl StartCmd {
                             None
                         },
                     );
+                }
+                if let Some(val_key) = cmd.validator_key {
+                    let val_key = PathBuf::from_str(&val_key).unwrap();
+                    log::info!("Copying validator key from {}", val_key.display());
+                    std::fs::copy(val_key, home.join("tendermint/config/priv_validator_key.json")).unwrap();
+                }
+                if let Some(node_key) = cmd.node_key {
+                    let node_key = PathBuf::from_str(&node_key).unwrap();
+                    log::info!("Copying node key from {}", node_key.display());
+                    std::fs::copy(node_key, home.join("tendermint/config/node_key.json")).unwrap();
                 }
 
                 edit_block_time(&config_path, "3s");
