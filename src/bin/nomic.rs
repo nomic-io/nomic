@@ -15,7 +15,7 @@ use std::str::FromStr;
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
 use futures::executor::block_on;
-use nomic::app::{AppV0, DepositCommitment, IbcDepositCommitment};
+use nomic::app::{AppV0, DepositCommitment, IbcDepositCommitment, CONSENSUS_VERSION};
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
 use nomic::network::Network;
@@ -149,8 +149,6 @@ pub struct StartCmd {
     #[clap(long)]
     pub home: Option<String>,
     #[clap(long)]
-    pub migrate: bool,
-    #[clap(long)]
     pub freeze_valset: bool,
     #[clap(long)]
     pub signal_version: Option<String>,
@@ -176,7 +174,11 @@ impl StartCmd {
                     log::error!("Passed in unexpected genesis");
                     std::process::exit(1);
                 }
+                
+                // TODO: deduplicate
                 config.state_sync_rpc.extend(cmd.config.state_sync_rpc.into_iter());
+                
+                // TODO: should all built-in tmflags get shadowed by user-specified tmflags?
                 config.tendermint_flags.extend(cmd.config.tendermint_flags.into_iter());
                 
                 cmd.config = config;
@@ -195,12 +197,20 @@ impl StartCmd {
             if cmd.freeze_valset {
                 std::env::set_var("ORGA_STATIC_VALSET", "true");
             }
-
+            
             #[cfg(feature = "compat")]
-            match (cmd.legacy_home, cmd.upgrade_time) {
-                (Some(legacy_home), Some(upgrade_time)) => {
-                    let legacy_home = PathBuf::from_str(&legacy_home).unwrap();
-
+            if let Some(upgrade_time) = cmd.upgrade_time {
+                let legacy_home = if let Some(ref legacy_home) = cmd.legacy_home {
+                    let lh = PathBuf::from_str(&legacy_home).unwrap();
+                    if !lh.exists() {
+                        log::error!("Legacy home does not exist ({})", lh.display());
+                    }
+                    lh
+                } else {
+                    home.clone()
+                };
+                
+                if legacy_home.exists() {
                     let store_path = legacy_home.join("merk");
                     let store = MerkStore::new(store_path);
                     let timestamp = store
@@ -211,10 +221,10 @@ impl StartCmd {
                         .unwrap_or_default();
                     drop(store);
                     log::debug!("Legacy timestamp: {}", timestamp);
-
+    
                     if timestamp < upgrade_time {
                         let bin_path = legacy_home.join("nomic-v4");
-
+    
                         if let Some(legacy_version) = cmd.legacy_version {
                             let version = String::from_utf8(
                                 std::process::Command::new(&bin_path)
@@ -229,7 +239,7 @@ impl StartCmd {
                                 std::process::exit(1);
                             }
                         }
-
+    
                         let mut cmd = std::process::Command::new(bin_path);
                         cmd.arg("start").env("STOP_TIME", upgrade_time.to_string());
                         log::info!("Starting legacy node... ({:#?})", cmd);
@@ -239,8 +249,6 @@ impl StartCmd {
                         log::info!("Upgrade time has passed");
                     }
                 }
-                (None, None) => {}
-                _ => panic!("Must specify both --legacy-home and --upgrade-time"),
             }
 
             #[cfg(not(feature = "compat"))]
@@ -357,8 +365,9 @@ impl StartCmd {
                 let servers: Vec<_> = cmd.config.state_sync_rpc.iter().map(|s| s.as_str()).collect();
                 configure_for_statesync(&home.join("tendermint/config/config.toml"), &servers);
             }
-            if cmd.migrate {
-                node = node.migrate::<AppV0>();
+            #[cfg(feature = "compat")]
+            if cmd.upgrade_time.is_some() {
+                node = node.migrate::<AppV0>(vec![CONSENSUS_VERSION]);
             }
             if cmd.skip_init_chain {
                 node = node.skip_init_chain();
