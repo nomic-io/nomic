@@ -34,6 +34,7 @@ bytes = "1.2.1"
 serde-big-array = "0.4.1"
 log = "0.4.17"
 hex = "0.4.3"
+toml = { version = "0.7.2", features = ["parse"] }
 
 [dev-dependencies]
 bitcoin_hashes = "0.10.0"

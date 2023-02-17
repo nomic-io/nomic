@@ -118,12 +118,13 @@ impl Command {
     }
 }
 
-#[derive(Parser, Debug, Clone)]
+
+#[derive(Parser, Clone, Debug, Serialize, Deserialize)]
 pub struct StartCmd {
-    #[clap(long, default_value = "mainnet")]
-    pub network: Network,
+    #[clap(flatten)]
+    config: nomic::network::Config,
     #[clap(long)]
-    pub state_sync_rpc: Vec<String>,
+    pub network: Option<Network>,
     #[clap(long)]
     pub tendermint_logs: bool,
     #[clap(long)]
@@ -134,8 +135,6 @@ pub struct StartCmd {
     pub unsafe_reset: bool,
     #[clap(long)]
     pub skip_init_chain: bool,
-    #[clap(long)]
-    pub chain_id: Option<String>,
     #[cfg(feature = "compat")]
     #[clap(long)]
     pub legacy_home: Option<String>,
@@ -154,25 +153,39 @@ pub struct StartCmd {
     #[clap(long)]
     pub freeze_valset: bool,
     #[clap(long)]
-    pub genesis: Option<String>,
-    #[clap(long)]
     pub signal_version: Option<String>,
     #[clap(long)]
     pub validator_key: Option<String>,
     #[clap(long)]
     pub node_key: Option<String>,
-    pub tendermint_flags: Vec<String>,
 }
 
 impl StartCmd {
     async fn run(&self) -> Result<()> {
-        let cmd = self.clone();
+        let mut cmd = self.clone();
 
         tokio::task::spawn_blocking(move || {
+            if let Some(network) = cmd.network {
+                let mut config = network.config();
+                
+                if cmd.config.chain_id.is_some() {
+                    log::error!("Passed in unexpected chain-id");
+                    std::process::exit(1);
+                }
+                if cmd.config.genesis.is_some() {
+                    log::error!("Passed in unexpected genesis");
+                    std::process::exit(1);
+                }
+                config.state_sync_rpc.extend(cmd.config.state_sync_rpc.into_iter());
+                config.tendermint_flags.extend(cmd.config.tendermint_flags.into_iter());
+                
+                cmd.config = config;
+            }
+            
             let home = cmd.home.map_or_else(
                 || {
                     Node::home(
-                        &cmd.chain_id
+                        &cmd.config.chain_id
                             .expect("Expected a chain-id or home directory to be set"),
                     )
                 },
@@ -256,7 +269,7 @@ impl StartCmd {
                         "--home",
                         home.to_str().unwrap(),
                     ]);
-                    legacy_cmd.args(&cmd.tendermint_flags);
+                    legacy_cmd.args(&cmd.config.tendermint_flags);
                     log::info!("Starting legacy node... ({:#?})", legacy_cmd);
                     let res = legacy_cmd.spawn()?.wait()?;
                     dbg!(res.signal(), res.stopped_signal(), res.code());
@@ -331,12 +344,17 @@ impl StartCmd {
             if cmd.unsafe_reset {
                 node = node.reset();
             }
-            if let Some(genesis_path) = cmd.genesis {
-                let genesis_bytes = std::fs::read(genesis_path)?;
+            if let Some(genesis) = cmd.config.genesis {
+                let genesis_bytes = if genesis.contains('\n') {
+                   genesis.as_bytes().to_vec()
+                }
+                else {
+                std::fs::read(genesis)?
+                };
                 std::fs::write(home.join("tendermint/config/genesis.json"), genesis_bytes)?;
             }
-            if !cmd.state_sync_rpc.is_empty() {
-                let servers: Vec<_> = cmd.state_sync_rpc.iter().map(|s| s.as_str()).collect();
+            if !cmd.config.state_sync_rpc.is_empty() {
+                let servers: Vec<_> = cmd.config.state_sync_rpc.iter().map(|s| s.as_str()).collect();
                 configure_for_statesync(&home.join("tendermint/config/config.toml"), &servers);
             }
             if cmd.migrate {
@@ -383,7 +401,7 @@ impl StartCmd {
             node.stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
                 .print_tendermint_logs(cmd.tendermint_logs)
-                .tendermint_flags(cmd.tendermint_flags)
+                .tendermint_flags(cmd.config.tendermint_flags.clone())
                 .run()
         })
         .await
