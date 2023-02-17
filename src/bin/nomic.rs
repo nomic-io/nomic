@@ -140,7 +140,7 @@ pub struct StartCmd {
     pub legacy_home: Option<String>,
     #[cfg(feature = "compat")]
     #[clap(long)]
-    pub upgrade_time: Option<i64>,
+    pub migrate: bool,
     #[cfg(not(feature = "compat"))]
     #[clap(long)]
     pub legacy_bin: Option<String>,
@@ -174,6 +174,9 @@ impl StartCmd {
                     log::error!("Passed in unexpected genesis");
                     std::process::exit(1);
                 }
+                if cmd.config.upgrade_time.is_some() {
+                    config.upgrade_time = cmd.config.upgrade_time;
+                }
                 
                 // TODO: deduplicate
                 config.state_sync_rpc.extend(cmd.config.state_sync_rpc.into_iter());
@@ -199,7 +202,9 @@ impl StartCmd {
             }
             
             #[cfg(feature = "compat")]
-            if let Some(upgrade_time) = cmd.upgrade_time {
+            let mut had_legacy = false;
+            #[cfg(feature = "compat")]
+            if let Some(upgrade_time) = cmd.config.upgrade_time {
                 let legacy_home = if let Some(ref legacy_home) = cmd.legacy_home {
                     let lh = PathBuf::from_str(&legacy_home).unwrap();
                     if !lh.exists() {
@@ -221,9 +226,11 @@ impl StartCmd {
                         .unwrap_or_default();
                     drop(store);
                     log::debug!("Legacy timestamp: {}", timestamp);
+                    
+                    let bin_path = legacy_home.join("nomic-v4");
     
-                    if timestamp < upgrade_time {
-                        let bin_path = legacy_home.join("nomic-v4");
+                    if timestamp < upgrade_time && bin_path.exists() {
+                        had_legacy = true;
     
                         if let Some(legacy_version) = cmd.legacy_version {
                             let version = String::from_utf8(
@@ -365,7 +372,7 @@ impl StartCmd {
                 configure_for_statesync(&home.join("tendermint/config/config.toml"), &servers);
             }
             #[cfg(feature = "compat")]
-            if cmd.upgrade_time.is_some() {
+            if cmd.migrate || had_legacy {
                 node = node.migrate::<AppV0>(vec![CONSENSUS_VERSION]);
             }
             if cmd.skip_init_chain {

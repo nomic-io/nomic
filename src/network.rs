@@ -52,4 +52,8 @@ pub struct Config {
     #[clap(long)]
     pub genesis: Option<String>,
     pub tendermint_flags: Vec<String>,
+
+    #[cfg(feature = "compat")]
+    #[clap(long)]
+    pub upgrade_time: Option<i64>,
 }

@@ -10,6 +10,9 @@ tendermint_flags = [
     """,
 ]
 
+# TODO: remove once we don't need compat-mode migration
+upgrade_time = 1234 # TODO: pick upgrade time
+
 genesis = """
 {
   "genesis_time": "2022-10-05T00:00:00Z",
