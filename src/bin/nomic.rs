@@ -123,7 +123,7 @@ pub struct StartCmd {
     #[clap(long, default_value = "mainnet")]
     pub network: Network,
     #[clap(long)]
-    pub state_sync_rpcs: Option<String>,
+    pub state_sync_rpc: Vec<String>,
     #[clap(long)]
     pub tendermint_logs: bool,
     #[clap(long)]
@@ -335,8 +335,8 @@ impl StartCmd {
                 let genesis_bytes = std::fs::read(genesis_path)?;
                 std::fs::write(home.join("tendermint/config/genesis.json"), genesis_bytes)?;
             }
-            if let Some(servers) = cmd.state_sync_rpcs {
-                let servers: Vec<_> = servers.split(',').collect();
+            if !cmd.state_sync_rpc.is_empty() {
+                let servers: Vec<_> = cmd.state_sync_rpc.iter().map(|s| s.as_str()).collect();
                 configure_for_statesync(&home.join("tendermint/config/config.toml"), &servers);
             }
             if cmd.migrate {
