@@ -339,6 +339,10 @@ impl StartCmd {
                 }
 
                 edit_block_time(&config_path, "3s");
+                
+                configure_node(&config_path, |cfg| {
+                    cfg["rpc"]["laddr"] = toml_edit::value("tcp://0.0.0.0:26657");
+                });
             } else if cmd.clone_store.is_some() {
                 log::warn!("--clone-store only applies used when initializing a network home, ignoring");
             }
