@@ -283,6 +283,7 @@ impl StartCmd {
                         &version_hex,
                         "--home",
                         home.to_str().unwrap(),
+                        "--",
                     ]);
                     legacy_cmd.args(&cmd.config.tendermint_flags);
                     log::info!("Starting legacy node... ({:#?})", legacy_cmd);
