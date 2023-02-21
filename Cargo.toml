@@ -1,16 +1,16 @@
 [package]
 name = "nomic"
-version = "4.1.2"
+version = "4.2.0"
 authors = [ "The Nomic Team <hello@nomic.io>" ]
-edition = "2018"
+edition = "2021"
 default-run = "nomic"
 
 [dependencies]
 bitcoin = { version = "0.28.1", features = ["use-serde"] }
 bitcoind = { version = "0.21.0", features = ["22_0"], optional = true }
-orga = { git = "https://github.com/nomic-io/orga.git", branch = "v4", features = ["merk-verify"] }
+orga = { git = "https://github.com/nomic-io/orga.git", rev = "6531c030a01edda6f28ba54c810b931093d6c457", features = ["merk-verify"] }
 thiserror = "1.0.30"
-ed = "0.3.0"
+ed = { git = "https://github.com/nomic-io/ed", rev = "9c0e206ffdb59dacb90f083e004e8080713e6ad8" }
 clap = { version = "3.2.16", features = ["derive"], optional = true }
 tokio = { version = "1.14.0", features = ["full"], optional = true }
 base64 = "0.13.0"
@@ -20,17 +20,21 @@ serde_json = "1.0.74"
 csv = { version = "1.1.6", optional = true }
 bech32 = { version = "0.8.1" }
 futures = "0.3.21"
-nomicv3 = { git = "https://github.com/nomic-io/nomic", branch = "v4a-legacy-testnet", package = "nomic", optional = true }
 toml_edit = "0.13.4"
 tendermint-rpc = "=0.23.7"
 bitcoincore-rpc-async = { package = "bitcoincore-rpc-async2", version = "4.0.1", optional = true }
 bitcoin-script = "0.1.1"
 warp = { version = "0.3.2", optional = true }
 derive_more = "0.99.17"
-pretty_env_logger = "0.4.0"
+pretty_env_logger = { git = "https://github.com/seanmonstar/pretty-env-logger", rev = "f9e35b6dbbf06de55222c944c9e1e176ce73b3a7" }
 reqwest = "0.11.10"
 rand = { version = "0.8.5", optional = true }
 sha2 = "0.10.6"
+bytes = "1.2.1"
+serde-big-array = "0.4.1"
+log = "0.4.17"
+hex = "0.4.3"
+toml = { version = "0.7.2", features = ["parse"] }
 
 [dev-dependencies]
 bitcoin_hashes = "0.10.0"
@@ -41,11 +45,15 @@ chrono = "0.4.19"
 
 [features]
 default = ["full", "feat-ibc"]
-full = ["bitcoind", "bitcoincore-rpc-async", "clap", "tokio", "orga/merk-full", "orga/abci", "orga/state-sync", "csv", "warp", "rand", "nomicv3" ]
+full = ["bitcoind", "bitcoincore-rpc-async", "clap", "tokio", "orga/merk-full", "orga/abci", "orga/state-sync", "csv", "warp", "rand"]
 feat-ibc = ["orga/feat-ibc"]
+compat = []
 
 [[bin]]
 name = "nomic"
+
+[[bin]]
+name = "store-diff"
 
 [[bin]]
 name = "create-checkpoint"

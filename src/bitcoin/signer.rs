@@ -138,7 +138,8 @@ impl Signer {
 
                 Ok(secp
                     .sign_ecdsa(&Message::from_slice(&msg[..])?, &privkey)
-                    .serialize_compact())
+                    .serialize_compact()
+                    .into())
             })
             .collect::<Result<_>>()?;
 
@@ -148,7 +149,7 @@ impl Signer {
                 client
                     .bitcoin
                     .checkpoints
-                    .sign(xpub.into(), sigs.into())
+                    .sign(xpub.into(), sigs.try_into()?)
                     .await
             })
             .noop()

@@ -1,8 +1,8 @@
-use orga::{call::Call, client::Client, collections::Map, query::Query, state::State, Result};
+use orga::{collections::Map, orga, Result};
 
 pub type Outpoint = ([u8; 32], u32);
 
-#[derive(State, Call, Query, Client)]
+#[orga]
 pub struct OutpointSet {
     pub(super) expiration_queue: Map<(u64, Outpoint), ()>,
     pub(super) outpoints: Map<Outpoint, ()>,

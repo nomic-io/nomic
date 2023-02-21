@@ -1,15 +1,22 @@
 use bitcoin::consensus::{Decodable, Encodable};
 use orga::client::{Client, PrimitiveClient};
 use orga::encoding::Result as EncodingResult;
+use orga::migrate::MigrateFrom;
 use orga::prelude::*;
 use orga::state::State;
 use orga::store::Store;
+use orga::Result as OrgaResult;
 use std::io::{Read, Write};
 use std::ops::{Deref, DerefMut};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Adapter<T> {
     inner: T,
+}
+impl<T> MigrateFrom for Adapter<T> {
+    fn migrate_from(other: Self) -> Result<Self> {
+        Ok(other)
+    }
 }
 
 impl<T> Adapter<T> {
@@ -33,16 +40,26 @@ impl<T: Default> Default for Adapter<T> {
 impl<T> Terminated for Adapter<T> {}
 
 impl<T: Encodable + Decodable> State for Adapter<T> {
-    type Encoding = Self;
-
-    fn create(_: Store, data: Self::Encoding) -> orga::Result<Self> {
-        Ok(data)
+    #[inline]
+    fn attach(&mut self, _: Store) -> OrgaResult<()> {
+        Ok(())
     }
 
-    fn flush(self) -> orga::Result<Self::Encoding> {
-        Ok(self)
+    #[inline]
+    fn flush<W: std::io::Write>(self, out: &mut W) -> OrgaResult<()> {
+        Ok(self.encode_into(out)?)
+    }
+
+    fn load(_store: Store, bytes: &mut &[u8]) -> OrgaResult<Self> {
+        Ok(Self::decode(bytes)?)
     }
 }
+
+// impl<T: Encodable + Decodable + 'static> Describe for Adapter<T> {
+//     fn describe() -> orga::describe::Descriptor {
+//         orga::describe::Builder::new::<Self>().build()
+//     }
+// }
 
 impl<T> Deref for Adapter<T> {
     type Target = T;

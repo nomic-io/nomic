@@ -1,14 +1,9 @@
-use orga::call::Call;
-use orga::client::Client;
 use orga::coins::{Address, Amount};
 use orga::collections::{ChildMut, Map};
 use orga::context::GetContext;
-#[cfg(feature = "full")]
-use orga::migrate::Migrate;
+use orga::orga;
 use orga::plugins::{Paid, Signer};
 use orga::prelude::Decimal;
-use orga::query::Query;
-use orga::state::State;
 use orga::{Error, Result};
 
 use super::app::Nom;
@@ -16,7 +11,7 @@ use super::app::Nom;
 const MAX_STAKED: u64 = 1_000_000_000;
 const AIRDROP_II_TOTAL: u64 = 3_500_000_000_000;
 
-#[derive(State, Query, Call, Client)]
+#[orga]
 pub struct Airdrop {
     accounts: Map<Address, Account>,
 }
@@ -194,8 +189,6 @@ impl Airdrop {
 
     #[cfg(feature = "full")]
     pub fn init_from_airdrop1_csv(&mut self, data: &[u8]) -> Result<()> {
-        use std::convert::TryInto;
-
         let mut rdr = csv::Reader::from_reader(data);
         let snapshot = rdr.records();
 
@@ -229,48 +222,8 @@ impl Airdrop {
     }
 }
 
-#[cfg(feature = "full")]
-impl Migrate<nomicv3::app::Airdrop<nomicv3::app::Nom>> for Airdrop {
-    fn migrate(&mut self, legacy: nomicv3::app::Airdrop<nomicv3::app::Nom>) -> Result<()> {
-        println!("Migrating state of claimed airdrop 1 balances...");
-
-        let mut claimed = vec![];
-
-        for entry in self.accounts.iter()? {
-            let (addr, acct) = entry?;
-
-            if acct.airdrop1.claimable == 0 {
-                continue;
-            }
-
-            let legacy_addr = addr.bytes().into();
-            match legacy.balance(legacy_addr).unwrap() {
-                None => claimed.push(*addr),
-                Some(n) if n == 0 => claimed.push(*addr),
-                Some(_) => continue,
-            };
-        }
-
-        let claim_count = claimed.len();
-        let mut total_claimed = 0;
-        for addr in claimed {
-            let mut acct = self.accounts.get_mut(addr)?.unwrap();
-            let amount = acct.airdrop1.claimable;
-            acct.airdrop1.claimable = 0;
-            acct.airdrop1.claimed = amount;
-            total_claimed += amount;
-        }
-
-        println!(
-            "Airdrop 1 migration: {} uNOM has been claimed across {} accounts",
-            total_claimed, claim_count,
-        );
-
-        Ok(())
-    }
-}
-
-#[derive(State, Query, Call, Client, Clone, Debug, Default)]
+#[orga]
+#[derive(Clone, Debug)]
 pub struct Account {
     pub airdrop1: Part,
     pub btc_deposit: Part,
@@ -278,7 +231,8 @@ pub struct Account {
     pub ibc_transfer: Part,
 }
 
-#[derive(State, Query, Call, Client, Clone, Debug, Default)]
+#[orga]
+#[derive(Clone, Debug)]
 pub struct Part {
     pub locked: u64,
     pub claimable: u64,

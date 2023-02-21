@@ -5,12 +5,11 @@ use bitcoin::consensus::Encodable;
 use bitcoin::util::uint::Uint256;
 use bitcoin::BlockHash;
 use bitcoin::TxMerkleNode;
-use orga::call::Call;
-use orga::client::Client;
 use orga::collections::Deque;
 use orga::encoding as ed;
+use orga::migrate::MigrateFrom;
+use orga::orga;
 use orga::prelude::*;
-use orga::query::Query;
 use orga::state::State;
 use orga::store::Store;
 use orga::Error as OrgaError;
@@ -24,7 +23,8 @@ const TARGET_SPACING: u32 = 10 * 60;
 const TARGET_TIMESPAN: u32 = RETARGET_INTERVAL * TARGET_SPACING;
 const MAX_TARGET: u32 = 0x1d00ffff;
 
-#[derive(Clone, Debug, Decode, Encode, PartialEq, State, Query)]
+#[orga(skip(Default))]
+#[derive(Clone, Debug, PartialEq)]
 pub struct WrappedHeader {
     height: u32,
     header: Adapter<BlockHeader>,
@@ -137,18 +137,11 @@ impl Decode for HeaderList {
 
 impl Terminated for HeaderList {}
 
-#[derive(Clone, Debug, Decode, Encode, State, Call, Client)]
+#[orga(skip(Default))]
+#[derive(Clone)]
 pub struct WorkHeader {
     chain_work: Adapter<Uint256>,
     header: WrappedHeader,
-}
-
-impl Query for WorkHeader {
-    type Query = ();
-
-    fn query(&self, _query: ()) -> OrgaResult<()> {
-        Ok(())
-    }
 }
 
 impl WorkHeader {
@@ -182,7 +175,7 @@ impl WorkHeader {
 
 // TODO: implement trait that returns constants for bitcoin::Network variants
 
-#[derive(Clone)]
+#[derive(Clone, Encode, Decode, State, MigrateFrom)]
 pub struct Config {
     pub max_length: u64,
     pub max_time_increase: u32,
@@ -191,10 +184,10 @@ pub struct Config {
     pub target_spacing: u32,
     pub target_timespan: u32,
     pub max_target: u32,
-    pub encoded_trusted_header: Vec<u8>,
     pub retargeting: bool,
     pub min_difficulty_blocks: bool,
-    pub network: bitcoin::Network,
+    pub network: Network,
+    pub encoded_trusted_header: LengthVec<u8, u8>,
 }
 
 impl Default for Config {
@@ -206,6 +199,12 @@ impl Default for Config {
         }
     }
 }
+
+// impl Describe for Config {
+//     fn describe() -> orga::describe::Descriptor {
+//         orga::describe::Builder::new::<()>().build()
+//     }
+// }
 
 impl Config {
     pub fn mainnet() -> Self {
@@ -224,10 +223,10 @@ impl Config {
             target_spacing: TARGET_SPACING,
             target_timespan: TARGET_TIMESPAN,
             max_target: MAX_TARGET,
-            encoded_trusted_header: header_bytes,
+            encoded_trusted_header: header_bytes.try_into().unwrap(),
             retargeting: true,
             min_difficulty_blocks: false,
-            network: bitcoin::Network::Bitcoin,
+            network: bitcoin::Network::Bitcoin.into(),
         }
     }
 
@@ -247,63 +246,148 @@ impl Config {
             target_timespan: TARGET_TIMESPAN,
             max_target: MAX_TARGET,
             trusted_height: height,
-            encoded_trusted_header: header_bytes,
+            encoded_trusted_header: header_bytes.try_into().unwrap(),
             retargeting: true,
             min_difficulty_blocks: true,
-            network: bitcoin::Network::Testnet,
+            network: bitcoin::Network::Testnet.into(),
         }
     }
 }
 
-#[derive(Call, Query, Client)]
+#[derive(Clone)]
+pub struct Network(bitcoin::Network);
+
+impl MigrateFrom for Network {
+    fn migrate_from(other: Self) -> OrgaResult<Self> {
+        Ok(other)
+    }
+}
+
+impl From<bitcoin::Network> for Network {
+    fn from(value: bitcoin::Network) -> Self {
+        Network(value)
+    }
+}
+
+impl From<Network> for bitcoin::Network {
+    fn from(value: Network) -> Self {
+        value.0
+    }
+}
+
+impl Encode for Network {
+    fn encode_into<W: std::io::Write>(&self, dest: &mut W) -> ::ed::Result<()> {
+        let value = match self.0 {
+            bitcoin::Network::Bitcoin => 0,
+            bitcoin::Network::Testnet => 1,
+            bitcoin::Network::Regtest => 2,
+            bitcoin::Network::Signet => 3,
+        };
+        dest.write_all(&[value])?;
+        Ok(())
+    }
+
+    fn encoding_length(&self) -> ::ed::Result<usize> {
+        Ok(1)
+    }
+}
+
+impl Decode for Network {
+    fn decode<R: std::io::Read>(mut input: R) -> ::ed::Result<Self> {
+        let mut byte = [0; 1];
+        input.read_exact(&mut byte[..])?;
+        match byte[0] {
+            0 => Ok(bitcoin::Network::Bitcoin.into()),
+            1 => Ok(bitcoin::Network::Testnet.into()),
+            2 => Ok(bitcoin::Network::Regtest.into()),
+            3 => Ok(bitcoin::Network::Signet.into()),
+            b => Err(ed::Error::UnexpectedByte(b)),
+        }
+    }
+}
+
+impl Terminated for Network {}
+
+impl State for Network {
+    #[inline]
+    fn attach(&mut self, _: Store) -> OrgaResult<()> {
+        Ok(())
+    }
+
+    #[inline]
+    fn flush<W: std::io::Write>(self, out: &mut W) -> OrgaResult<()> {
+        Ok(self.encode_into(out)?)
+    }
+
+    fn load(_store: Store, bytes: &mut &[u8]) -> OrgaResult<Self> {
+        Ok(Self::decode(bytes)?)
+    }
+}
+
+#[orga(skip(Default))]
 pub struct HeaderQueue {
     pub(super) deque: Deque<WorkHeader>,
     pub(super) current_work: Adapter<Uint256>,
+    #[state(skip)]
     config: Config,
 }
 
-impl State for HeaderQueue {
-    type Encoding = (
-        <Deque<WorkHeader> as State>::Encoding,
-        <Adapter<Uint256> as State>::Encoding,
-    );
-
-    fn create(store: Store, data: Self::Encoding) -> OrgaResult<Self> {
-        let mut queue = Self {
-            deque: State::create(store.sub(&[0]), data.0)?,
-            current_work: State::create(store.sub(&[1]), data.1)?,
-            config: Config::testnet(),
-        };
-
-        let height = match queue.height() {
-            Ok(height) => height,
-            Err(err) => return Err(OrgaError::App(err.to_string())),
-        };
-
-        if height == 0 {
-            let decoded_adapter: Adapter<BlockHeader> =
-                Decode::decode(queue.config.encoded_trusted_header.as_slice())?;
-            let wrapped_header = WrappedHeader::new(decoded_adapter, queue.config.trusted_height);
-            let work_header = WorkHeader::new(wrapped_header.clone(), wrapped_header.work());
-            queue.current_work = Adapter::new(work_header.work());
-            queue.deque.push_front(work_header.into())?;
+impl Default for HeaderQueue {
+    fn default() -> Self {
+        let mut deque = Deque::default();
+        let config = Config::default();
+        let decoded_adapter: Adapter<BlockHeader> =
+            Decode::decode(config.encoded_trusted_header.as_slice()).unwrap();
+        let wrapped_header = WrappedHeader::new(decoded_adapter, config.trusted_height);
+        let work_header = WorkHeader::new(wrapped_header.clone(), wrapped_header.work());
+        let current_work = Adapter::new(work_header.work());
+        deque.push_front(work_header).unwrap();
+        Self {
+            deque,
+            current_work,
+            config,
         }
-
-        Ok(queue)
-    }
-
-    fn flush(self) -> OrgaResult<Self::Encoding> {
-        Ok((State::flush(self.deque)?, State::flush(self.current_work)?))
     }
 }
 
-impl From<HeaderQueue> for <HeaderQueue as State>::Encoding {
-    fn from(value: HeaderQueue) -> Self {
-        (value.deque.into(), value.current_work)
-    }
-}
+// impl State for HeaderQueue {
+//     fn attach(&mut self, store: Store) -> OrgaResult<()> {
+//         self.deque.attach(store.sub(&[0]))?;
+//         self.current_work.attach(store.sub(&[1]))?;
 
-impl Terminated for HeaderQueue {}
+//         let height = self
+//             .height()
+//             .map_err(|err| orga::Error::App(err.to_string()))?;
+
+//         if height == 0 {
+//             let decoded_adapter: Adapter<BlockHeader> =
+//                 Decode::decode(self.config.encoded_trusted_header.as_slice())?;
+//             let wrapped_header = WrappedHeader::new(decoded_adapter, self.config.trusted_height);
+//             let work_header = WorkHeader::new(wrapped_header.clone(), wrapped_header.work());
+//             self.current_work = Adapter::new(work_header.work());
+//             self.deque.push_front(work_header.into())?;
+//         }
+
+//         Ok(())
+//     }
+
+//     #[inline]
+//     fn flush<W: std::io::Write>(self, out: &mut W) -> OrgaResult<()> {
+//         self.deque.flush(out)?;
+//         self.current_work.flush(out)?;
+
+//         Ok(())
+//     }
+
+//     fn load(store: Store, bytes: &mut &[u8]) -> OrgaResult<Self> {
+//         let mut loader = ::orga::state::Loader::new(store, bytes, 0);
+//         Ok(Self {
+//             deque: loader.load_child()?,
+//             current_work: loader.load_child()?,
+//             config: Config::testnet(),
+//         })
+//     }
+// }
 
 impl HeaderQueue {
     #[call]
@@ -603,29 +687,20 @@ impl HeaderQueue {
         self.config.trusted_height
     }
 
-    pub fn with_conf(
-        store: Store,
-        data: <Self as State>::Encoding,
-        config: Config,
-    ) -> OrgaResult<Self> {
-        let mut queue = Self {
-            deque: State::create(store.sub(&[0]), data.0)?,
-            current_work: State::create(store.sub(&[1]), data.1)?,
-            config: config.clone(),
-        };
+    pub fn configure(&mut self, config: Config) -> OrgaResult<()> {
         let decoded_adapter: Adapter<BlockHeader> =
             Decode::decode(config.encoded_trusted_header.as_slice())?;
         let wrapped_header = WrappedHeader::new(decoded_adapter, config.trusted_height);
         let work_header = WorkHeader::new(wrapped_header.clone(), wrapped_header.work());
 
-        queue.current_work = Adapter::new(wrapped_header.work());
-        queue.deque.push_front(work_header.into())?;
+        self.current_work = Adapter::new(wrapped_header.work());
+        self.deque.push_front(work_header)?;
 
-        Ok(queue)
+        Ok(())
     }
 
     pub fn network(&self) -> bitcoin::Network {
-        self.config.network
+        self.config.network.clone().into()
     }
 }
 
@@ -638,17 +713,17 @@ mod test {
     use bitcoin_hashes::sha256d::Hash;
     use chrono::{TimeZone, Utc};
 
-    #[test]
-    fn create() {
-        let store = Store::new(Shared::new(MapStore::new()).into());
-        let q = HeaderQueue::create(store, Default::default()).unwrap();
-
-        // let decoded_adapter: Adapter<BlockHeader> =
-        //     Decode::decode(ENCODED_TRUSTED_HEADER.as_slice()).unwrap();
-        // let wrapped_header = WrappedHeader::new(decoded_adapter, TRUSTED_HEIGHT);
-
-        // assert_eq!(q.height().unwrap(), wrapped_header.height());
-        // assert_eq!(*q.current_work, wrapped_header.work());
+    impl HeaderQueue {
+        fn with_conf(store: Store, config: Config) -> Result<Self> {
+            let mut queue = HeaderQueue {
+                config: config.clone(),
+                deque: Deque::new(),
+                current_work: Default::default(),
+            };
+            queue.attach(store)?;
+            queue.configure(config)?;
+            Ok(queue)
+        }
     }
 
     #[test]
@@ -825,11 +900,13 @@ mod test {
                 213, 2, 237, 12, 65, 144, 117, 193, 171, 181, 213, 111, 135, 138, 46, 144, 121,
                 229, 97, 43, 251, 118, 162, 220, 55, 217, 196, 39, 65, 221, 104, 73, 255, 255, 0,
                 29, 43, 144, 157, 214,
-            ],
-            network: bitcoin::Network::Bitcoin,
+            ]
+            .try_into()
+            .unwrap(),
+            network: bitcoin::Network::Bitcoin.into(),
         };
         let store = Store::new(Shared::new(MapStore::new()).into());
-        let mut q = HeaderQueue::with_conf(store, Default::default(), test_config).unwrap();
+        let mut q = HeaderQueue::with_conf(store, test_config).unwrap();
         q.add(header_list.into()).unwrap();
     }
 
@@ -868,20 +945,22 @@ mod test {
                 213, 2, 237, 12, 65, 144, 117, 193, 171, 181, 213, 111, 135, 138, 46, 144, 121,
                 229, 97, 43, 251, 118, 162, 220, 55, 217, 196, 39, 65, 221, 104, 73, 255, 255, 0,
                 29, 43, 144, 157, 214,
-            ],
-            network: bitcoin::Network::Bitcoin,
+            ]
+            .try_into()
+            .unwrap(),
+            network: bitcoin::Network::Bitcoin.into(),
         };
 
         let adapter = Adapter::new(header);
         let header_list = [WrappedHeader::new(adapter, 43)];
         let store = Store::new(Shared::new(MapStore::new()).into());
-        let mut q = HeaderQueue::with_conf(store, Default::default(), test_config.clone()).unwrap();
+        let mut q = HeaderQueue::with_conf(store, test_config.clone()).unwrap();
         q.add_into_iter(header_list).unwrap();
 
         let adapter = Adapter::new(header);
         let header_list = vec![WrappedHeader::new(adapter, 43)];
         let store = Store::new(Shared::new(MapStore::new()).into());
-        let mut q = HeaderQueue::with_conf(store, Default::default(), test_config).unwrap();
+        let mut q = HeaderQueue::with_conf(store, test_config).unwrap();
         q.add_into_iter(header_list).unwrap();
     }
 
@@ -921,14 +1000,16 @@ mod test {
                 213, 2, 237, 12, 65, 144, 117, 193, 171, 181, 213, 111, 135, 138, 46, 144, 121,
                 229, 97, 43, 251, 118, 162, 220, 55, 217, 196, 39, 65, 221, 104, 73, 255, 255, 0,
                 29, 43, 144, 157, 214,
-            ],
-            network: bitcoin::Network::Bitcoin,
+            ]
+            .try_into()
+            .unwrap(),
+            network: bitcoin::Network::Bitcoin.into(),
         };
 
         let adapter = Adapter::new(header);
         let header_list = [WrappedHeader::new(adapter, 43)];
         let store = Store::new(Shared::new(MapStore::new()).into());
-        let mut q = HeaderQueue::with_conf(store, Default::default(), test_config).unwrap();
+        let mut q = HeaderQueue::with_conf(store, test_config).unwrap();
         q.add_into_iter(header_list).unwrap();
     }
 }
