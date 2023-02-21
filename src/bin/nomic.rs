@@ -27,6 +27,15 @@ use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
 
+const BANNER: &str = r#"
+███╗   ██╗  ██████╗  ███╗   ███╗ ██╗  ██████╗
+████╗  ██║ ██╔═══██╗ ████╗ ████║ ██║ ██╔════╝
+██╔██╗ ██║ ██║   ██║ ██╔████╔██║ ██║ ██║
+██║╚██╗██║ ██║   ██║ ██║╚██╔╝██║ ██║ ██║
+██║ ╚████║ ╚██████╔╝ ██║ ╚═╝ ██║ ██║ ╚██████╗
+╚═╝  ╚═══╝  ╚═════╝  ╚═╝     ╚═╝ ╚═╝  ╚═════╝
+"#;
+
 fn now_seconds() -> i64 {
     use std::time::SystemTime;
 
@@ -301,6 +310,8 @@ impl StartCmd {
                     }
                 }
             }
+            
+            println!("{}\nVersion {}\n\n", BANNER, env!("CARGO_PKG_VERSION"));
 
             let has_node = home.exists();
             let config_path = home.join("tendermint/config/config.toml");
