@@ -5,18 +5,15 @@ use bitcoin::secp256k1::{
     constants::{COMPACT_SIGNATURE_SIZE, MESSAGE_SIZE, PUBLIC_KEY_SIZE},
     ecdsa, PublicKey, Secp256k1,
 };
-use derive_more::{Deref, DerefMut, From, Into};
+use derive_more::{Deref, From};
 use orga::call::Call;
 use orga::client::Client;
 use orga::collections::{Map, Next};
-use orga::describe::Describe;
-use orga::encoding::{Decode, Encode, Error as EdError, Result as EdResult, Terminated};
+use orga::encoding::{Decode, Encode};
 use orga::migrate::MigrateFrom;
 use orga::query::Query;
 use orga::state::State;
 use orga::{Error, Result};
-use serde::{Deserialize, Serialize};
-use serde_big_array::BigArray;
 
 pub type Message = [u8; MESSAGE_SIZE];
 
@@ -260,7 +257,6 @@ impl ThresholdSig {
 }
 
 use std::fmt::Debug;
-use std::ops::Deref;
 impl Debug for ThresholdSig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ThresholdSig")

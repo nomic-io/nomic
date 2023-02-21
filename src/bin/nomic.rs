@@ -5,9 +5,9 @@
 #![feature(never_type)]
 
 use std::convert::TryInto;
-use std::env::Args;
 use std::fs::Permissions;
 use std::os::unix::fs::PermissionsExt;
+#[cfg(not(feature = "compat"))]
 use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -15,14 +15,14 @@ use std::str::FromStr;
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
 use futures::executor::block_on;
-use nomic::app::{AppV0, DepositCommitment, IbcDepositCommitment, CONSENSUS_VERSION};
+use nomic::app::{DepositCommitment, IbcDepositCommitment};
+#[cfg(feature = "compat")]
+use nomic::app::{AppV0, CONSENSUS_VERSION};
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
 use nomic::network::Network;
-use orga::encoding::Decode;
-use orga::merk::merk::Merk;
+#[cfg(feature = "compat")]
 use orga::merk::MerkStore;
-use orga::migrate::MigrateInto;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
@@ -303,12 +303,11 @@ impl StartCmd {
             }
 
             let has_node = home.exists();
-            let started_node = Node::height(&home).unwrap() > 0;
             let config_path = home.join("tendermint/config/config.toml");
             if !has_node {
                 log::info!("Initializing node at {}...", home.display());
 
-                let mut node = Node::<nomic::app::App>::new(&home, Default::default());
+                let node = Node::<nomic::app::App>::new(&home, Default::default());
 
                 if let Some(source) = cmd.clone_store {
                     let mut source = PathBuf::from_str(&source).unwrap();
@@ -319,7 +318,7 @@ impl StartCmd {
                         source = source.join("merk");
                     }
                     log::info!("Cloning store from {}...", source.display());
-                    node = node.init_from_store(
+                    node.init_from_store(
                         source,
                         if cmd.reset_store_height {
                             Some(0)
@@ -453,22 +452,6 @@ fn edit_block_time(cfg_path: &PathBuf, timeout_commit: &str) {
     });
 }
 
-// TODO: append instead of replace
-fn set_p2p_seeds(cfg_path: &PathBuf, seeds: &[&str]) {
-    configure_node(cfg_path, |cfg| {
-        cfg["p2p"]["seeds"] = toml_edit::value(seeds.join(","));
-    });
-}
-
-fn deconfigure_statesync(cfg_path: &PathBuf) {
-    configure_node(cfg_path, |cfg| {
-        cfg["statesync"]["enable"] = toml_edit::value(false);
-        cfg["statesync"]["rpc_servers"] = toml_edit::value("");
-        cfg["statesync"]["trust_height"] = toml_edit::value(0);
-        cfg["statesync"]["trust_hash"] = toml_edit::value("");
-        cfg["statesync"]["trust_period"] = toml_edit::value("216h0m0s");
-    });
-}
 
 fn configure_for_statesync(cfg_path: &PathBuf, rpc_servers: &[&str]) {
     log::info!("Getting bootstrap state for Tendermint light client...");

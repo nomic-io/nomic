@@ -7,6 +7,7 @@ use super::{
 use crate::error::{Error, Result};
 use bitcoin::blockdata::transaction::EcdsaSighashType;
 use derive_more::{Deref, DerefMut};
+use orga::store::Store;
 use orga::{
     call::Call,
     client::Client,
@@ -20,8 +21,6 @@ use orga::{
     state::State,
     Error as OrgaError, Result as OrgaResult,
 };
-use orga::{describe::Describe, store::Store};
-use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 
 pub const MIN_CHECKPOINT_INTERVAL: u64 = 60 * 5;
