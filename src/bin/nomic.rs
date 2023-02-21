@@ -240,7 +240,7 @@ impl StartCmd {
                     let bin_path = legacy_home.join("nomic-v4");
                     had_legacy = bin_path.exists();
     
-                    if timestamp < upgrade_time && bin_path.exists() {
+                    if timestamp < upgrade_time && bin_path.exists() || cmd.legacy_version.is_some() {
                         if let Some(legacy_version) = cmd.legacy_version {
                             let version = String::from_utf8(
                                 std::process::Command::new(&bin_path)
