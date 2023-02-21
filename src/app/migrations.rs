@@ -6,6 +6,8 @@ use orga::{
 
 impl MigrateFrom<InnerAppV0> for InnerAppV1 {
     fn migrate_from(mut other: InnerAppV0) -> orga::Result<Self> {
+        other.staking.max_validators = 60;
+
         other.ibc.clients.prune_host_consensus_states()?;
         other
             .bitcoin
@@ -26,11 +28,7 @@ impl MigrateFrom<InnerAppV0> for InnerAppV1 {
             bitcoin: other.bitcoin.migrate_into()?,
             reward_timer: other.reward_timer.migrate_into()?,
             ibc: other.ibc.migrate_into()?,
-            upgrade: Upgrade {
-                activation_delay_seconds: 20,
-                current_version: vec![0].try_into()?,
-                ..Default::default()
-            },
+            upgrade: Upgrade::default(),
         })
     }
 }
