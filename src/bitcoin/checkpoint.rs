@@ -456,28 +456,6 @@ impl<'a> BuildingCheckpointMut<'a> {
         Ok(())
     }
 
-    fn populate_tx_intermediate_inputs(
-        &self,
-        intermediate_tx: &bitcoin::Transaction,
-        txs: &mut Vec<bitcoin::Transaction>,
-    ) -> Result<()> {
-        for (i, tx) in txs.iter_mut().enumerate() {
-            let tx_in = bitcoin::TxIn {
-                previous_output: bitcoin::OutPoint {
-                    txid: intermediate_tx.txid(),
-                    vout: i as u32,
-                },
-                script_sig: vec![].into(),
-                sequence: u32::MAX,
-                witness: bitcoin::Witness::new(),
-            };
-
-            tx.input.push(tx_in);
-        }
-
-        Ok(())
-    }
-
     fn generate_emergency_disbursal_sigs(
         &self,
         txs: &Vec<bitcoin::Transaction>,
@@ -517,7 +495,6 @@ impl<'a> BuildingCheckpointMut<'a> {
 
         let intermediate_tx = self.generate_intermediate_tx(&txs, lock_time, reserve_outpoint)?;
         self.link_intermediate_tx(&intermediate_tx, &mut txs)?;
-        self.populate_tx_intermediate_inputs(&intermediate_tx, &mut txs)?;
 
         self.emergency_disbursal_txs
             .push_back(Adapter::new(intermediate_tx.clone()))?;
