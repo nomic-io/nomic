@@ -117,7 +117,14 @@ impl SignatorySet {
         Ok(sigset)
     }
 
+    #[cfg(not(test))]
     fn insert(&mut self, signatory: Signatory) {
+        self.present_vp += signatory.voting_power;
+        self.signatories.push(signatory);
+    }
+
+    #[cfg(test)]
+    pub fn insert(&mut self, signatory: Signatory) {
         self.present_vp += signatory.voting_power;
         self.signatories.push(signatory);
     }
