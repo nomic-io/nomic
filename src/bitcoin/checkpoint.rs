@@ -7,6 +7,7 @@ use super::{
 use crate::error::{Error, Result};
 use bitcoin::blockdata::transaction::EcdsaSighashType;
 use derive_more::{Deref, DerefMut};
+use orga::store::Store;
 use orga::{
     call::Call,
     client::Client,
@@ -20,8 +21,6 @@ use orga::{
     state::State,
     Error as OrgaError, Result as OrgaResult,
 };
-use orga::{describe::Describe, store::Store};
-use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 
 pub const MIN_CHECKPOINT_INTERVAL: u64 = 60 * 5;
@@ -29,6 +28,7 @@ pub const MAX_CHECKPOINT_INTERVAL: u64 = 60 * 60 * 8;
 pub const MAX_INPUTS: u64 = 40;
 pub const MAX_OUTPUTS: u64 = 200;
 pub const FEE_RATE: u64 = 1;
+pub const MAX_AGE: u64 = 60 * 60 * 24 * 7 * 3;
 
 #[derive(Debug, Encode, Decode, Default)]
 pub enum CheckpointStatus {
@@ -460,9 +460,11 @@ impl CheckpointQueue {
         let mut out = Vec::with_capacity(self.queue.len() as usize);
 
         for i in 0..self.queue.len() {
-            let index = self.index - (i as u32);
-            let checkpoint = self.queue.get(index as u64)?.unwrap();
-            out.push((index, checkpoint));
+            let checkpoint = self.queue.get(i)?.unwrap();
+            out.push((
+                (self.index + 1 - (self.queue.len() as u32 - i as u32)),
+                checkpoint,
+            ));
         }
 
         Ok(out)
@@ -545,6 +547,20 @@ impl CheckpointQueue {
         Ok(BuildingCheckpointMut(last))
     }
 
+    pub fn prune(&mut self) -> Result<()> {
+        let latest = self.building()?.create_time();
+
+        while let Some(oldest) = self.queue.front()? {
+            if latest - oldest.create_time() <= MAX_AGE {
+                break;
+            }
+
+            self.queue.pop_front()?;
+        }
+
+        Ok(())
+    }
+
     pub fn maybe_step(&mut self, sig_keys: &Map<ConsensusKey, Xpub>) -> Result<()> {
         #[cfg(not(feature = "full"))]
         unimplemented!();
@@ -584,6 +600,8 @@ impl CheckpointQueue {
             if self.maybe_push(sig_keys)?.is_none() {
                 return Ok(());
             }
+
+            self.prune()?;
 
             if self.index > 0 {
                 let second = self.get_mut(self.index - 1)?;

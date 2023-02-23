@@ -1,13 +1,11 @@
 use bitcoin::consensus::{Decodable, Encodable};
 use orga::client::{Client, PrimitiveClient};
-use orga::describe::Describe;
 use orga::encoding::Result as EncodingResult;
 use orga::migrate::MigrateFrom;
 use orga::prelude::*;
 use orga::state::State;
 use orga::store::Store;
 use orga::Result as OrgaResult;
-use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::ops::{Deref, DerefMut};
 

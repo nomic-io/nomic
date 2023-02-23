@@ -1,18 +1,12 @@
-use orga::call::Call;
-use orga::client::Client;
 use orga::coins::{Address, Amount};
 use orga::collections::{ChildMut, Map};
 use orga::context::GetContext;
-use orga::describe::Describe;
-use orga::encoding::{Decode, Encode};
-use orga::migrate::MigrateFrom;
 use orga::orga;
 use orga::plugins::{Paid, Signer};
 use orga::prelude::{Decimal, MIN_FEE};
 use orga::query::Query;
 use orga::state::State;
 use orga::{Error, Result};
-use serde::{Deserialize, Serialize};
 
 use super::app::Nom;
 
@@ -225,8 +219,6 @@ impl Airdrop {
 
     #[cfg(feature = "full")]
     pub fn init_from_airdrop1_csv(&mut self, data: &[u8]) -> Result<()> {
-        use std::convert::TryInto;
-
         let mut rdr = csv::Reader::from_reader(data);
         let snapshot = rdr.records();
 
