@@ -44,6 +44,7 @@ pub struct Coin {
 #[derive(Clone, Default)]
 #[wasm_bindgen]
 pub struct AirdropDetails {
+    pub locked: u64,
     pub claimed: u64,
     pub claimable: u64,
     pub amount: u64,
