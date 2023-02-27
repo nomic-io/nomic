@@ -24,7 +24,7 @@ use std::convert::TryInto;
 mod migrations;
 
 pub const CHAIN_ID: &str = "nomic-testnet-4d";
-pub const CONSENSUS_VERSION: u8 = 0;
+pub const CONSENSUS_VERSION: u8 = 1;
 pub type AppV0 = DefaultPlugins<Nom, InnerAppV0, CHAIN_ID>;
 pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
 
