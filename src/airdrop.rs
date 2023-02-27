@@ -95,7 +95,11 @@ impl Airdrop {
         let mut dest = self.accounts.entry(dest_addr)?.or_default()?;
 
         let add_part = |dest: &mut Part, src: Part| {
-            dest.locked += src.locked;
+            if dest.claimable > 0 || dest.claimed > 0 {
+                dest.claimable += src.locked;
+            } else {
+                dest.locked += src.locked;
+            }
             dest.claimable += src.claimable;
             dest.claimed += src.claimed;
         };

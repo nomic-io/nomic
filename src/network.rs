@@ -51,6 +51,8 @@ pub struct Config {
     pub chain_id: Option<String>,
     #[clap(long)]
     pub genesis: Option<String>,
+    #[clap(long)]
+    pub legacy_version: Option<String>,
     pub tendermint_flags: Vec<String>,
 
     #[cfg(feature = "compat")]

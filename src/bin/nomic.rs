@@ -5,7 +5,7 @@
 #![feature(never_type)]
 
 use std::convert::TryInto;
-use std::fs::Permissions;
+use std::fs::{Permissions, self};
 use std::os::unix::fs::PermissionsExt;
 #[cfg(not(feature = "compat"))]
 use std::os::unix::process::ExitStatusExt;
@@ -154,8 +154,6 @@ pub struct StartCmd {
     #[clap(long)]
     pub legacy_bin: Option<String>,
     #[clap(long)]
-    pub legacy_version: Option<String>,
-    #[clap(long)]
     pub home: Option<String>,
     #[clap(long)]
     pub freeze_valset: bool,
@@ -240,8 +238,8 @@ impl StartCmd {
                     let bin_path = legacy_home.join("nomic-v4");
                     had_legacy = bin_path.exists();
     
-                    if timestamp < upgrade_time && bin_path.exists() || cmd.legacy_version.is_some() {
-                        if let Some(legacy_version) = cmd.legacy_version {
+                    if timestamp < upgrade_time && bin_path.exists() || cmd.config.legacy_version.is_some() {
+                        if let Some(legacy_version) = cmd.config.legacy_version {
                             let version = String::from_utf8(
                                 std::process::Command::new(&bin_path)
                                     .arg("--version")
@@ -268,7 +266,7 @@ impl StartCmd {
             }
 
             #[cfg(not(feature = "compat"))]
-            if let Some(legacy_bin) = cmd.legacy_bin {
+            if let Some(legacy_version) = &cmd.config.legacy_version {
                 let version_hex = hex::encode([nomic::app::CONSENSUS_VERSION]);
 
                 let net_ver_path = home.join("network_version");
@@ -283,8 +281,14 @@ impl StartCmd {
                 };
 
                 if up_to_date {
-                    log::info!("Node version matches network version, ignoring --legacy-bin");
+                    log::info!("Node version matches network version, no need to run legacy binary");
                 } else {
+                    let legacy_bin = if let Some(legacy_bin) = cmd.legacy_bin {
+                        PathBuf::from_str(legacy_bin.as_str()).unwrap()
+                    } else {
+                        home.join("bin").join(format!("nomic-{}", legacy_version))
+                    };
+                    
                     let mut legacy_cmd = std::process::Command::new(legacy_bin);
                     legacy_cmd.args([
                         "start",
@@ -308,6 +312,11 @@ impl StartCmd {
                         }
                         None => panic!("Legacy node exited unexpectedly"),
                     }
+                }
+            } else {
+                if cmd.legacy_bin.is_some() {
+                    log::error!("--legacy-version is required when specifying --legacy-bin");
+                    std::process::exit(1);
                 }
             }
             
