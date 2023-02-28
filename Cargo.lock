@@ -231,6 +231,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "bitcoincore-rpc"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dd0e67dbf7a9971e7f4276f6089e9e814ce0f624a03216b7d92d00351ae7fb3e"
+dependencies = [
+ "bitcoincore-rpc-json 0.15.0",
+ "jsonrpc",
+ "log",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "bitcoincore-rpc-async2"
 version = "4.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -273,13 +286,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3cbcfb04a9933a928ce02c2847fb08d0998dd5ec1b90d353cb94b658f9f1e38"
 dependencies = [
  "bitcoin_hashes",
- "bitcoincore-rpc",
+ "bitcoincore-rpc 0.14.0",
  "flate2",
  "home",
  "log",
  "tar",
  "tempfile",
  "ureq",
+]
+
+[[package]]
+name = "bitcoind"
+version = "0.26.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0831b9721892ce845a6acadd111311bee84f9e1cc0c5017b8213ec4437ccdfe2"
+dependencies = [
+ "bitcoin_hashes",
+ "bitcoincore-rpc 0.15.0",
+ "filetime",
+ "flate2",
+ "home",
+ "log",
+ "tar",
+ "tempfile",
+ "ureq",
+ "which",
 ]
 
 [[package]]
@@ -1635,8 +1666,8 @@ dependencies = [
  "base64",
  "bech32",
  "bitcoin 0.27.1",
- "bitcoincore-rpc",
- "bitcoind",
+ "bitcoincore-rpc 0.14.0",
+ "bitcoind 0.21.0",
  "clap",
  "csv",
  "ed 0.3.0",
@@ -1662,7 +1693,7 @@ dependencies = [
  "bitcoin-script",
  "bitcoin_hashes",
  "bitcoincore-rpc-async2",
- "bitcoind",
+ "bitcoind 0.26.1",
  "chrono",
  "clap",
  "csv",
@@ -3656,6 +3687,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aabe153544e473b775453675851ecc86863d2a81d786d741f6b76778f2a48940"
 dependencies = [
  "webpki",
+]
+
+[[package]]
+name = "which"
+version = "4.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2441c784c52b289a054b7201fc93253e288f094e2f4be9058343127c4226a269"
+dependencies = [
+ "either",
+ "libc",
+ "once_cell",
 ]
 
 [[package]]
