@@ -9,6 +9,7 @@ use nomic::bitcoin::header_queue::Config;
 use nomic::bitcoin::header_queue::HeaderQueue;
 use nomic::bitcoin::header_queue::WrappedHeader;
 use orga::encoding::Encode;
+use orga::prelude::{Context, Paid};
 use orga::store::{MapStore, Shared, Store};
 use std::fs;
 
@@ -21,6 +22,9 @@ where
 
 #[test]
 fn reorg() {
+    let ctx = Paid::default();
+    Context::add(ctx);
+
     let mut conf = Conf::default();
     conf.p2p = P2P::Yes;
     let node_1 = BitcoinD::with_conf(bitcoind::downloaded_exe_path().unwrap(), &conf).unwrap();
@@ -111,6 +115,9 @@ fn reorg() {
 
 #[test]
 fn reorg_competing_chain_similar() {
+    let ctx = Paid::default();
+    Context::add(ctx);
+
     let mut conf = Conf::default();
     conf.p2p = P2P::Yes;
     let node_1 = BitcoinD::with_conf(bitcoind::downloaded_exe_path().unwrap(), &conf).unwrap();

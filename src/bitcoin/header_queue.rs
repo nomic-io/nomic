@@ -675,6 +675,9 @@ mod test {
 
     #[test]
     fn add_multiple() {
+        let ctx = Paid::default();
+        Context::add(ctx);
+
         let stamp = Utc.ymd(2009, 1, 10).and_hms(17, 44, 37);
 
         let header_43 = BlockHeader {
