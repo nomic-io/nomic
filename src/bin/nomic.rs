@@ -289,28 +289,32 @@ impl StartCmd {
                         home.join("bin").join(format!("nomic-{}", legacy_version))
                     };
                     
-                    let mut legacy_cmd = std::process::Command::new(legacy_bin);
-                    legacy_cmd.args([
-                        "start",
-                        "--signal-version",
-                        &version_hex,
-                        "--home",
-                        home.to_str().unwrap(),
-                        "--",
-                    ]);
-                    legacy_cmd.args(&cmd.config.tendermint_flags);
-                    log::info!("Starting legacy node... ({:#?})", legacy_cmd);
-                    let res = legacy_cmd.spawn()?.wait()?;
-                    dbg!(res.signal(), res.stopped_signal(), res.code());
-                    match res.code() {
-                        Some(138) => {
-                            log::info!("Legacy node exited for upgrade");
+                    if !legacy_bin.exists() {
+                        log::warn!("Legacy binary does not exist, attempting to skip ahead");
+                    } else {
+                        let mut legacy_cmd = std::process::Command::new(legacy_bin);
+                        legacy_cmd.args([
+                            "start",
+                            "--signal-version",
+                            &version_hex,
+                            "--home",
+                            home.to_str().unwrap(),
+                            "--",
+                        ]);
+                        legacy_cmd.args(&cmd.config.tendermint_flags);
+                        log::info!("Starting legacy node... ({:#?})", legacy_cmd);
+                        let res = legacy_cmd.spawn()?.wait()?;
+                        dbg!(res.signal(), res.stopped_signal(), res.code());
+                        match res.code() {
+                            Some(138) => {
+                                log::info!("Legacy node exited for upgrade");
+                            }
+                            Some(code) => {
+                                log::error!("Legacy node exited unexpectedly");
+                                std::process::exit(code);
+                            }
+                            None => panic!("Legacy node exited unexpectedly"),
                         }
-                        Some(code) => {
-                            log::error!("Legacy node exited unexpectedly");
-                            std::process::exit(code);
-                        }
-                        None => panic!("Legacy node exited unexpectedly"),
                     }
                 }
             } else {
