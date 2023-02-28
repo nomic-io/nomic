@@ -4,8 +4,6 @@ use orga::context::GetContext;
 use orga::orga;
 use orga::plugins::{Paid, Signer};
 use orga::prelude::{Decimal, MIN_FEE};
-use orga::query::Query;
-use orga::state::State;
 use orga::{Error, Result};
 
 use super::app::Nom;

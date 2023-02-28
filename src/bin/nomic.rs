@@ -5,7 +5,7 @@
 #![feature(never_type)]
 
 use std::convert::TryInto;
-use std::fs::{Permissions, self};
+use std::fs::Permissions;
 use std::os::unix::fs::PermissionsExt;
 #[cfg(not(feature = "compat"))]
 use std::os::unix::process::ExitStatusExt;
