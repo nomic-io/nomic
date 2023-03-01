@@ -213,7 +213,7 @@ impl SignatorySet {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    // use super::*;
 
     // #[test]
     // #[should_panic(expected = "Cannot build script for empty signatory set")]
