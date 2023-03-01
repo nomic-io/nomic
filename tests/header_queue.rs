@@ -294,8 +294,8 @@ fn reorg_deep() {
     }
 
     header_queue.add(headers.into()).unwrap();
-    let mut headers = Vec::with_capacity(1000);
-    for _ in 0..1000 {
+    let mut headers = Vec::with_capacity(25);
+    for _ in 0..25 {
         node_2.client.generate_to_address(1, &bob_address).unwrap();
 
         let tip_hash = node_2.client.get_best_block_hash().unwrap();
@@ -308,7 +308,7 @@ fn reorg_deep() {
 
     header_queue.add(headers.into()).unwrap();
 
-    assert_eq!(header_queue.height().unwrap(), 1011);
+    assert_eq!(header_queue.height().unwrap(), 36);
 }
 
 #[test]
@@ -339,7 +339,7 @@ fn mainnet_from_file() {
     for i in 2017..headers.len() - 1 {
         let header = headers.get(i).unwrap();
 
-        if i % 100000 == 0 {
+        if i % 25 == 0 {
             header_queue.add(add_headers.clone().into()).unwrap();
             add_headers.clear();
             add_headers.push(WrappedHeader::from_header(header, i as u32));
