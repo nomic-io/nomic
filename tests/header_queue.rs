@@ -216,6 +216,9 @@ fn reorg_competing_chain_similar() {
 #[test]
 #[ignore]
 fn reorg_deep() {
+    let ctx = Paid::default();
+    Context::add(ctx);
+
     let mut conf = Conf::default();
     conf.p2p = P2P::Yes;
     let node_1 = BitcoinD::with_conf(bitcoind::downloaded_exe_path().unwrap(), &conf).unwrap();
@@ -311,6 +314,9 @@ fn reorg_deep() {
 #[test]
 #[ignore]
 fn mainnet_from_file() {
+    let ctx = Paid::default();
+    Context::add(ctx);
+
     let block_data = fs::read("tests/data/block-data").unwrap();
 
     let headers: Vec<BlockHeader> = block_data
