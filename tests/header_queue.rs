@@ -49,10 +49,12 @@ fn reorg() {
         .height;
     let encoded_header = Encode::encode(&Adapter::new(tip_header)).unwrap();
 
-    let mut config: Config = Default::default();
-    config.encoded_trusted_header = encoded_header;
-    config.trusted_height = tip_height as u32;
-    config.retargeting = false;
+    let config = Config {
+        encoded_trusted_header: encoded_header,
+        trusted_height: tip_height as u32,
+        retargeting: false,
+        ..Config::default()
+    };
 
     let store = Store::new(Shared::new(MapStore::new()).into());
     let mut header_queue = HeaderQueue::with_conf(store, Default::default(), config).unwrap();
@@ -238,10 +240,12 @@ fn reorg_deep() {
         .height;
     let encoded_header = Encode::encode(&Adapter::new(tip_header)).unwrap();
 
-    let mut config: Config = Default::default();
-    config.encoded_trusted_header = encoded_header;
-    config.trusted_height = tip_height as u32;
-    config.retargeting = false;
+    let config = Config {
+        encoded_trusted_header: encoded_header,
+        trusted_height: tip_height as u32,
+        retargeting: false,
+        ..Config::default()
+    };
 
     let store = Store::new(Shared::new(MapStore::new()).into());
     let mut header_queue = HeaderQueue::with_conf(store, Default::default(), config).unwrap();
@@ -316,9 +320,11 @@ fn mainnet_from_file() {
 
     let first_encoded_header = headers.get(2016).unwrap();
 
-    let mut config: Config = Default::default();
-    config.encoded_trusted_header = Encode::encode(&Adapter::new(first_encoded_header)).unwrap();
-    config.trusted_height = 2016;
+    let config = Config {
+        encoded_trusted_header: Encode::encode(&Adapter::new(first_encoded_header)).unwrap(),
+        trusted_height: 2016,
+        ..Config::default()
+    };
 
     let store = Store::new(Shared::new(MapStore::new()).into());
     let mut header_queue = HeaderQueue::with_conf(store, Default::default(), config).unwrap();
