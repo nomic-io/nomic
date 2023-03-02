@@ -710,80 +710,78 @@ impl WatchedScriptStore {
     }
 }
 
-#[cfg(todo)]
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bitcoin::adapter::Adapter;
-    use crate::bitcoin::header_queue::{Config, HeaderQueue};
-    use bitcoincore_rpc::Auth;
+    use crate::app_client;
+    use bitcoincore_rpc_async::Auth;
+    use bitcoind::bitcoincore_rpc::RpcApi;
     use bitcoind::BitcoinD;
-    use orga::encoding::Encode;
-    use orga::store::{MapStore, Shared, Store};
 
-    #[test]
-    fn relayer_seek() {
+    #[tokio::test]
+    async fn relayer_fetch_batch() {
         let bitcoind = BitcoinD::new(bitcoind::downloaded_exe_path().unwrap()).unwrap();
 
         let address = bitcoind.client.get_new_address(None, None).unwrap();
         bitcoind.client.generate_to_address(30, &address).unwrap();
-        let trusted_hash = bitcoind.client.get_block_hash(30).unwrap();
-        let trusted_header = bitcoind.client.get_block_header(&trusted_hash).unwrap();
 
         let bitcoind_url = bitcoind.rpc_url();
         let bitcoin_cookie_file = bitcoind.params.cookie_file.clone();
-        let rpc_client =
-            BitcoinRpcClient::new(&bitcoind_url, Auth::CookieFile(bitcoin_cookie_file)).unwrap();
-
-        let encoded_header = Encode::encode(&Adapter::new(trusted_header)).unwrap();
-        let mut config: Config = Default::default();
-        config.encoded_trusted_header = encoded_header;
-        config.trusted_height = 30;
-        config.retargeting = false;
-
-        bitcoind.client.generate_to_address(100, &address).unwrap();
-
-        let store = Store::new(Shared::new(MapStore::new()).into());
-        let mut header_queue = HeaderQueue::with_conf(store, Default::default(), config).unwrap();
-        let relayer = Relayer::new(rpc_client);
-        relayer.seek_to_tip(&mut header_queue).unwrap();
-        let height = header_queue.height().unwrap();
-
-        assert_eq!(height, 130);
-    }
-
-    #[test]
-    fn relayer_seek_uneven_batch() {
-        let bitcoind = BitcoinD::new(bitcoind::downloaded_exe_path().unwrap()).unwrap();
-
-        let address = bitcoind.client.get_new_address(None, None).unwrap();
-        bitcoind.client.generate_to_address(30, &address).unwrap();
-        let trusted_hash = bitcoind.client.get_block_hash(30).unwrap();
-        let trusted_header = bitcoind.client.get_block_header(&trusted_hash).unwrap();
-
-        let bitcoind_url = bitcoind.rpc_url();
-        let bitcoin_cookie_file = bitcoind.params.cookie_file.clone();
-        let rpc_client =
-            BitcoinRpcClient::new(&bitcoind_url, Auth::CookieFile(bitcoin_cookie_file)).unwrap();
-
-        let encoded_header = Encode::encode(&Adapter::new(trusted_header)).unwrap();
-        let mut config: Config = Default::default();
-        config.encoded_trusted_header = encoded_header;
-        config.trusted_height = 30;
-        config.retargeting = false;
-
-        bitcoind
-            .client
-            .generate_to_address(42 as u64, &address)
+        let rpc_client = BitcoinRpcClient::new(bitcoind_url, Auth::CookieFile(bitcoin_cookie_file))
+            .await
             .unwrap();
 
-        let store = Store::new(Shared::new(MapStore::new()));
+        bitcoind.client.generate_to_address(25, &address).unwrap();
 
-        let mut header_queue = HeaderQueue::with_conf(store, Default::default(), config).unwrap();
-        let relayer = Relayer::new(rpc_client);
-        relayer.seek_to_tip(&mut header_queue).unwrap();
-        let height = header_queue.height().unwrap();
+        let relayer = Relayer::new(rpc_client, app_client()).await;
 
-        assert_eq!(height, 72);
+        let block_hash = bitcoind.client.get_block_hash(30).unwrap();
+        let headers = relayer.get_header_batch(block_hash).await.unwrap();
+
+        assert_eq!(headers.len(), 25);
+
+        for (i, header) in headers.iter().enumerate() {
+            let height = 31 + i;
+            let btc_hash = bitcoind.client.get_block_hash(height as u64).unwrap();
+            let btc_header = bitcoind.client.get_block_header(&btc_hash).unwrap();
+
+            assert_eq!(header.block_hash(), btc_header.block_hash());
+            assert_eq!(header.bits(), btc_header.bits);
+            assert_eq!(header.target(), btc_header.target());
+            assert_eq!(header.work(), btc_header.work());
+        }
+    }
+
+    #[tokio::test]
+    async fn relayer_seek_uneven_batch() {
+        let bitcoind = BitcoinD::new(bitcoind::downloaded_exe_path().unwrap()).unwrap();
+
+        let address = bitcoind.client.get_new_address(None, None).unwrap();
+        bitcoind.client.generate_to_address(30, &address).unwrap();
+
+        let bitcoind_url = bitcoind.rpc_url();
+        let bitcoin_cookie_file = bitcoind.params.cookie_file.clone();
+        let rpc_client = BitcoinRpcClient::new(bitcoind_url, Auth::CookieFile(bitcoin_cookie_file))
+            .await
+            .unwrap();
+
+        bitcoind.client.generate_to_address(7, &address).unwrap();
+
+        let relayer = Relayer::new(rpc_client, app_client()).await;
+        let block_hash = bitcoind.client.get_block_hash(30).unwrap();
+        let headers = relayer.get_header_batch(block_hash).await.unwrap();
+
+        assert_eq!(headers.len(), 7);
+
+        for (i, header) in headers.iter().enumerate() {
+            let height = 31 + i;
+            let btc_hash = bitcoind.client.get_block_hash(height as u64).unwrap();
+            let btc_header = bitcoind.client.get_block_header(&btc_hash).unwrap();
+
+            assert_eq!(header.block_hash(), btc_header.block_hash());
+            assert_eq!(header.bits(), btc_header.bits);
+            assert_eq!(header.target(), btc_header.target());
+            assert_eq!(header.work(), btc_header.work());
+        }
     }
 }
