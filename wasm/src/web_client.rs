@@ -1,12 +1,9 @@
-use js_sys::{Array, JsString};
-use nomic::app::{Airdrop, App, InnerApp, Nom, CHAIN_ID};
-use nomic::bitcoin::signatory::SignatorySet;
 use nomic::orga::call::Call;
 use nomic::orga::client::{AsyncCall, AsyncQuery, Client};
-use nomic::orga::encoding::{Decode, Encode};
-use nomic::orga::merk::ABCIPrefixedProofStore;
+use nomic::orga::encoding::Encode;
+use nomic::orga::merk::{BackingStore, ProofStore};
+use nomic::orga::plugins::ABCIPlugin;
 use nomic::orga::prelude::Shared;
-use nomic::orga::prelude::*;
 use nomic::orga::query::Query;
 use nomic::orga::state::State;
 use nomic::orga::store::Store;
@@ -92,6 +89,8 @@ where
     async fn call(&self, call: Self::Call) -> Result<()> {
         let tx = call.encode()?;
         let tx = base64::encode(&tx);
+
+        #[cfg(feature = "logging")]
         web_sys::console::log_1(&format!("call: {}", tx).into());
 
         let window = match web_sys::window() {
@@ -99,17 +98,14 @@ where
             None => return Err(Error::App("Window not found".to_string())),
         };
 
-        let location = window.location();
-        let rest_server = format!(
-            "{}//{}:{}",
-            location
-                .protocol()
-                .map_err(|e| Error::App(format!("{:?}", e)))?,
-            location
-                .hostname()
-                .map_err(|e| Error::App(format!("{:?}", e)))?,
-            REST_PORT
-        );
+        let storage = window
+            .local_storage()
+            .map_err(|_| Error::App("Could not get local storage".into()))?
+            .unwrap();
+        let rest_server = storage
+            .get("nomic/rest_server")
+            .map_err(|_| Error::App("Could not load from local storage".into()))?
+            .unwrap();
 
         let mut opts = RequestInit::new();
         opts.method("POST");
@@ -135,6 +131,8 @@ where
         .map_err(|e| Error::App(format!("{:?}", e)))?;
         let res = js_sys::Uint8Array::new(&res).to_vec();
         let res = String::from_utf8(res).map_err(|e| Error::App(format!("{:?}", e)))?;
+
+        #[cfg(feature = "logging")]
         web_sys::console::log_1(&format!("response: {}", &res).into());
 
         self.last_res
@@ -156,23 +154,22 @@ impl<T: Query + State> AsyncQuery for WebAdapter<T> {
     {
         let query = Encode::encode(&query)?;
         let query = hex::encode(&query);
+
+        #[cfg(feature = "logging")]
         web_sys::console::log_1(&format!("query: {}", query).into());
 
         let window = match web_sys::window() {
             Some(window) => window,
             None => return Err(Error::App("Window not found".to_string())),
         };
-        let location = window.location();
-        let rest_server = format!(
-            "{}//{}:{}",
-            location
-                .protocol()
-                .map_err(|e| Error::App(format!("{:?}", e)))?,
-            location
-                .hostname()
-                .map_err(|e| Error::App(format!("{:?}", e)))?,
-            REST_PORT
-        );
+        let storage = window
+            .local_storage()
+            .map_err(|_| Error::App("Could not get local storage".into()))?
+            .unwrap();
+        let rest_server = storage
+            .get("nomic/rest_server")
+            .map_err(|_| Error::App("Could not load from local storage".into()))?
+            .unwrap();
 
         let mut opts = RequestInit::new();
         opts.method("GET");
@@ -199,7 +196,10 @@ impl<T: Query + State> AsyncQuery for WebAdapter<T> {
             .map_err(|e| Error::App(format!("{:?}", e)))?;
         let res = js_sys::Uint8Array::new(&res).to_vec();
         let res = String::from_utf8(res).map_err(|e| Error::App(format!("{:?}", e)))?;
+
+        #[cfg(feature = "logging")]
         web_sys::console::log_1(&format!("response: {}", res).into());
+
         let res = base64::decode(&res).map_err(|e| Error::App(format!("{:?}", e)))?;
 
         // // TODO: we shouldn't need to include the root hash in the result, it
@@ -212,13 +212,14 @@ impl<T: Query + State> AsyncQuery for WebAdapter<T> {
 
         let map = nomic::orga::merk::merk::proofs::query::verify(proof_bytes, root_hash)?;
         let root_value = match map.get(&[])? {
-            Some(root_value) => root_value,
+            Some(root_value) => root_value.to_vec(),
             None => panic!("Missing root value"),
         };
-        let encoding = T::Encoding::decode(root_value)?;
-        let store: Shared<ABCIPrefixedProofStore> = Shared::new(ABCIPrefixedProofStore::new(map));
-        let state = T::create(Store::new(store.into()), encoding)?;
 
-        check(std::rc::Rc::new(state))
+        let store: Shared<ProofStore> = Shared::new(ProofStore(map));
+        let store = BackingStore::ProofMap(store);
+        let state = <ABCIPlugin<T>>::load(Store::new(store), &mut root_value.as_slice())?;
+
+        check(std::rc::Rc::new(state.inner))
     }
 }

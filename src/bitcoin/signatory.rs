@@ -2,17 +2,13 @@ use crate::error::{Error, Result};
 use bitcoin::util::bip32::ChildNumber;
 use bitcoin::Script;
 use bitcoin_script::bitcoin_script as script;
-use orga::call::Call;
-use orga::client::Client;
-use orga::coins::Address;
 use orga::collections::Map;
 use orga::context::Context;
-use orga::encoding::{Decode, Encode};
+use orga::encoding::Encode;
+use orga::orga;
 use orga::plugins::Time;
 #[cfg(feature = "full")]
 use orga::plugins::Validators;
-use orga::query::Query;
-use orga::state::State;
 use orga::Error as OrgaError;
 
 use super::threshold_sig::Pubkey;
@@ -22,13 +18,15 @@ use super::Xpub;
 pub const MAX_DEPOSIT_AGE: u64 = 60 * 60 * 24 * 5;
 pub const MAX_SIGNATORIES: u64 = 20;
 
-#[derive(Encode, Decode, Clone, Debug, PartialOrd, PartialEq, Eq, Ord)]
+#[orga]
+#[derive(Clone, Debug, PartialOrd, PartialEq, Eq, Ord)]
 pub struct Signatory {
     pub voting_power: u64,
     pub pubkey: Pubkey,
 }
 
-#[derive(State, Call, Query, Client, Clone, Debug)]
+#[orga]
+#[derive(Clone, Debug)]
 pub struct SignatorySet {
     create_time: u64,
     present_vp: u64,
@@ -133,7 +131,7 @@ impl SignatorySet {
         self.len() == 0
     }
 
-    pub fn redeem_script(&self, dest: Address) -> Result<Script> {
+    pub fn redeem_script(&self, dest: &[u8]) -> Result<Script> {
         let truncation = self.get_truncation(23);
 
         let mut iter = self.signatories.iter();
@@ -174,14 +172,14 @@ impl SignatorySet {
         bytes.extend(&script.into_bytes());
 
         // depositor data commitment
-        let data = &dest.bytes()[..];
+        let data = &dest.encode()?[..];
         let script = script!(<data> OP_DROP);
         bytes.extend(&script.into_bytes());
 
         Ok(bytes.into())
     }
 
-    pub fn output_script(&self, dest: Address) -> Result<Script> {
+    pub fn output_script(&self, dest: &[u8]) -> Result<Script> {
         Ok(self.redeem_script(dest)?.to_v0_p2wsh())
     }
 

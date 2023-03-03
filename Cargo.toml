@@ -1,17 +1,17 @@
 [package]
 name = "nomic"
-version = "3.0.0"
+version = "4.2.1"
 authors = [ "The Nomic Team <hello@nomic.io>" ]
-edition = "2018"
+edition = "2021"
 default-run = "nomic"
 
 [dependencies]
 bitcoin = { version = "0.28.1", features = ["use-serde"] }
 bitcoind = { version = "0.26.0", features = ["22_0"], optional = true }
-orga = { git = "https://github.com/nomic-io/orga.git", branch = "v3-main", features = ["merk-verify"] }
+orga = { git = "https://github.com/nomic-io/orga.git", rev = "a986059b5aaa2b783e8050b9f6bfb0ae4a59f718", features = ["merk-verify"] }
 thiserror = "1.0.30"
-ed = "0.3.0"
-clap = { version = "3.0.0-rc.4", features = ["derive"], optional = true }
+ed = { git = "https://github.com/nomic-io/ed", rev = "9c0e206ffdb59dacb90f083e004e8080713e6ad8" }
+clap = { version = "3.2.16", features = ["derive"], optional = true }
 tokio = { version = "1.14.0", features = ["full"], optional = true }
 base64 = "0.13.0"
 js-sys = { version = "0.3.55" }
@@ -20,30 +20,49 @@ serde_json = "1.0.74"
 csv = { version = "1.1.6", optional = true }
 bech32 = { version = "0.8.1" }
 futures = "0.3.21"
-nomicv2 = { git = "https://github.com/nomic-io/nomic", branch = "v2-legacy-main", package = "nomic", optional = true }
 toml_edit = "0.13.4"
-tendermint-rpc = "0.23.5"
+tendermint-rpc = "=0.23.7"
 bitcoincore-rpc-async = { package = "bitcoincore-rpc-async2", version = "4.0.1", optional = true }
 bitcoin-script = "0.1.1"
 warp = { version = "0.3.2", optional = true }
 derive_more = "0.99.17"
-pretty_env_logger = "0.4.0"
+pretty_env_logger = { git = "https://github.com/seanmonstar/pretty-env-logger", rev = "f9e35b6dbbf06de55222c944c9e1e176ce73b3a7" }
 reqwest = "0.11.10"
 rand = { version = "0.8.5", optional = true }
+sha2 = "0.10.6"
+bytes = "1.2.1"
+serde-big-array = "0.4.1"
+log = "0.4.17"
+hex = "0.4.3"
+toml = { version = "0.7.2", features = ["parse"] }
 
 [dev-dependencies]
-chrono = "0.4.0"
 bitcoin_hashes = "0.10.0"
 serde_json = "1.0.68"
 serde = "1.0.130"
 mutagen = "0.1.2"
+chrono = "0.4.19"
 
 [features]
-default = ["full"]
-full = ["bitcoind", "bitcoincore-rpc-async", "clap", "tokio", "orga/merk-full", "orga/abci", "orga/state-sync", "csv", "nomicv2", "warp", "rand"]
+default = ["full", "feat-ibc"]
+full = ["bitcoind", "bitcoincore-rpc-async", "clap", "tokio", "orga/merk-full", "orga/abci", "orga/state-sync", "csv", "warp", "rand"]
+feat-ibc = ["orga/feat-ibc"]
+compat = []
 
 [[bin]]
 name = "nomic"
 
 [[bin]]
+name = "store-diff"
+
+[[bin]]
 name = "create-checkpoint"
+
+[[bin]]
+name = "create-airdrop-snapshot"
+required-features = ["csv"]
+
+[patch.crates-io]
+ibc = { git = "https://github.com/informalsystems/ibc-rs.git", rev = "e8c98d4" }
+ibc-proto = { git = "https://github.com/informalsystems/ibc-rs.git", rev = "e8c98d4" }
+
