@@ -719,19 +719,6 @@ mod test {
     use bitcoin_hashes::sha256d::Hash;
     use chrono::{TimeZone, Utc};
 
-    impl HeaderQueue {
-        fn with_conf(store: Store, config: Config) -> Result<Self> {
-            let mut queue = HeaderQueue {
-                config: config.clone(),
-                deque: Deque::new(),
-                current_work: Default::default(),
-            };
-            queue.attach(store)?;
-            queue.configure(config)?;
-            Ok(queue)
-        }
-    }
-
     #[test]
     fn primitive_adapter_encode_decode() {
         let stamp = Utc.ymd(2009, 1, 10).and_hms(17, 39, 13);
