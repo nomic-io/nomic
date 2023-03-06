@@ -693,6 +693,8 @@ impl HeaderQueue {
         let wrapped_header = WrappedHeader::new(decoded_adapter, config.trusted_height);
         let work_header = WorkHeader::new(wrapped_header.clone(), wrapped_header.work());
 
+        self.config = config;
+
         self.current_work = Adapter::new(wrapped_header.work());
         self.deque.push_front(work_header)?;
 
