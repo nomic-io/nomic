@@ -896,11 +896,13 @@ mod test {
                 213, 2, 237, 12, 65, 144, 117, 193, 171, 181, 213, 111, 135, 138, 46, 144, 121,
                 229, 97, 43, 251, 118, 162, 220, 55, 217, 196, 39, 65, 221, 104, 73, 255, 255, 0,
                 29, 43, 144, 157, 214,
-            ],
-            network: bitcoin::Network::Bitcoin,
+            ]
+            .try_into()
+            .unwrap(),
+            network: bitcoin::Network::Bitcoin.into(),
         };
-        let store = Store::new(Shared::new(MapStore::new()).into());
-        let mut q = HeaderQueue::with_conf(store, Default::default(), test_config).unwrap();
+        let mut q = HeaderQueue::default();
+        q.configure(test_config);
         q.add(header_list.into()).unwrap();
     }
 
@@ -947,14 +949,8 @@ mod test {
 
         let adapter = Adapter::new(header);
         let header_list = [WrappedHeader::new(adapter, 43)];
-        let store = Store::new(Shared::new(MapStore::new()).into());
-        let mut q = HeaderQueue::with_conf(store, test_config.clone()).unwrap();
-        q.add_into_iter(header_list).unwrap();
-
-        let adapter = Adapter::new(header);
-        let header_list = vec![WrappedHeader::new(adapter, 43)];
-        let store = Store::new(Shared::new(MapStore::new()).into());
-        let mut q = HeaderQueue::with_conf(store, test_config).unwrap();
+        let mut q = HeaderQueue::default();
+        q.configure(test_config.clone());
         q.add_into_iter(header_list).unwrap();
     }
 
@@ -1002,8 +998,8 @@ mod test {
 
         let adapter = Adapter::new(header);
         let header_list = [WrappedHeader::new(adapter, 43)];
-        let store = Store::new(Shared::new(MapStore::new()).into());
-        let mut q = HeaderQueue::with_conf(store, test_config).unwrap();
+        let mut q = HeaderQueue::default();
+        q.configure(test_config);
         q.add_into_iter(header_list).unwrap();
     }
 }
