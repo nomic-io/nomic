@@ -688,6 +688,10 @@ impl HeaderQueue {
     }
 
     pub fn configure(&mut self, config: Config) -> OrgaResult<()> {
+        if (!self.deque.is_empty()) {
+            self.deque = Deque::default();
+        }
+
         let decoded_adapter: Adapter<BlockHeader> =
             Decode::decode(config.encoded_trusted_header.as_slice())?;
         let wrapped_header = WrappedHeader::new(decoded_adapter, config.trusted_height);
