@@ -41,16 +41,20 @@ fn reorg() {
         .unwrap();
 
     let tip_hash = node_1.client.get_best_block_hash().unwrap();
-    let tip_header = node_1.client.get_block_header(&tip_hash).unwrap();
     let tip_height = node_1
         .client
         .get_block_header_info(&tip_hash)
         .unwrap()
         .height;
-    let encoded_header = Encode::encode(&Adapter::new(tip_header)).unwrap();
+
+    let tip_header = node_1.client.get_block_header(&tip_hash).unwrap();
 
     let config = Config {
-        encoded_trusted_header: encoded_header,
+        encoded_trusted_header: Adapter::new(tip_header)
+            .encode()
+            .unwrap()
+            .try_into()
+            .unwrap(),
         trusted_height: tip_height as u32,
         retargeting: false,
         ..Config::default()
@@ -136,16 +140,20 @@ fn reorg_competing_chain_similar() {
         .unwrap();
 
     let tip_hash = node_1.client.get_best_block_hash().unwrap();
-    let tip_header = node_1.client.get_block_header(&tip_hash).unwrap();
     let tip_height = node_1
         .client
         .get_block_header_info(&tip_hash)
         .unwrap()
         .height;
-    let encoded_header = Encode::encode(&Adapter::new(tip_header)).unwrap();
+
+    let tip_header = node_1.client.get_block_header(&tip_hash).unwrap();
 
     let config = Config {
-        encoded_trusted_header: encoded_header,
+        encoded_trusted_header: Adapter::new(tip_header)
+            .encode()
+            .unwrap()
+            .try_into()
+            .unwrap(),
         trusted_height: tip_height as u32,
         retargeting: false,
         ..Config::default()
@@ -235,16 +243,20 @@ fn reorg_deep() {
         .unwrap();
 
     let tip_hash = node_1.client.get_best_block_hash().unwrap();
-    let tip_header = node_1.client.get_block_header(&tip_hash).unwrap();
     let tip_height = node_1
         .client
         .get_block_header_info(&tip_hash)
         .unwrap()
         .height;
-    let encoded_header = Encode::encode(&Adapter::new(tip_header)).unwrap();
+
+    let tip_header = node_1.client.get_block_header(&tip_hash).unwrap();
 
     let config = Config {
-        encoded_trusted_header: encoded_header,
+        encoded_trusted_header: Adapter::new(tip_header)
+            .encode()
+            .unwrap()
+            .try_into()
+            .unwrap(),
         trusted_height: tip_height as u32,
         retargeting: false,
         ..Config::default()
@@ -324,10 +336,14 @@ fn mainnet_from_file() {
         .map(|chunk| BlockHeader::consensus_decode(chunk).unwrap())
         .collect();
 
-    let first_encoded_header = headers.get(2016).unwrap();
+    let mut first_header = headers.get(2016).unwrap();
 
     let config = Config {
-        encoded_trusted_header: Encode::encode(&Adapter::new(first_encoded_header)).unwrap(),
+        encoded_trusted_header: Adapter::new(first_header)
+            .encode()
+            .unwrap()
+            .try_into()
+            .unwrap(),
         trusted_height: 2016,
         ..Config::default()
     };
