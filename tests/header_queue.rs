@@ -345,6 +345,7 @@ fn mainnet_from_file() {
             .try_into()
             .unwrap(),
         trusted_height: 2016,
+        min_difficulty_blocks: false,
         ..Config::default()
     };
 
