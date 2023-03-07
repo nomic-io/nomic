@@ -256,8 +256,13 @@ impl Relayer {
             let height = (base_height - i) as u32;
             for (tx, matches) in self.relevant_txs(&block) {
                 for output in matches {
-                    self.maybe_relay_deposit(tx, height, &block.block_hash(), output)
-                        .await?;
+                    if let Err(err) = self
+                        .maybe_relay_deposit(tx, height, &block.block_hash(), output)
+                        .await
+                    {
+                        // TODO: filter out harmless errors (e.g. deposit too small)
+                        println!("Skipping deposit for error: {}", err);
+                    }
                 }
             }
         }
