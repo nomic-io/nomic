@@ -506,38 +506,36 @@ impl HeaderQueue {
         header: &WrappedHeader,
         previous_header: &WrappedHeader,
     ) -> Result<Uint256> {
-        if header.height() % self.config.retarget_interval != 0 {
-            if self.config.min_difficulty_blocks {
-                if header.time() > previous_header.time() + self.config.target_spacing * 2 {
-                    return Ok(WrappedHeader::u256_from_compact(self.config.max_target));
-                } else {
-                    let mut current_header_index = previous_header.height();
-                    let mut current_header = previous_header.to_owned();
+        if header.height() % self.config.retarget_interval == 0 {
+            let first_reorg_height = header.height() - self.config.retarget_interval;
+            return self.calculate_next_target(previous_header, first_reorg_height);
+        }
 
-                    while current_header_index > 0
-                        && current_header_index % self.config.retarget_interval != 0
-                        && current_header.bits() == self.config.max_target
-                    {
-                        current_header_index -= 1;
-
-                        current_header = match self.get_by_height(current_header_index)? {
-                            Some(inner) => inner.header.clone(),
-                            None => {
-                                return Err(Error::Header("No previous header exists".into()));
-                            }
-                        };
-                    }
-
-                    return Ok(WrappedHeader::u256_from_compact(current_header.bits()));
-                }
-            }
-
+        if !self.config.min_difficulty_blocks {
             return Ok(previous_header.target());
         }
 
-        let first_reorg_height = header.height() - self.config.retarget_interval;
+        if header.time() > previous_header.time() + self.config.target_spacing * 2 {
+            return Ok(WrappedHeader::u256_from_compact(self.config.max_target));
+        }
 
-        self.calculate_next_target(previous_header, first_reorg_height)
+        let mut current_header_index = previous_header.height();
+        let mut current_header = previous_header.to_owned();
+
+        while current_header_index > 0
+            && current_header_index % self.config.retarget_interval != 0
+            && current_header.bits() == self.config.max_target
+        {
+            current_header_index -= 1;
+
+            current_header = match self.get_by_height(current_header_index)? {
+                Some(inner) => inner.header.clone(),
+                None => {
+                    return Err(Error::Header("No previous header exists".into()));
+                }
+            };
+        }
+        return Ok(WrappedHeader::u256_from_compact(current_header.bits()));
     }
 
     fn calculate_next_target(
