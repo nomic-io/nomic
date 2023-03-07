@@ -21,6 +21,7 @@ where
 }
 
 #[test]
+#[serial]
 fn reorg() {
     let ctx = Paid::default();
     Context::add(ctx);
@@ -120,6 +121,7 @@ fn reorg() {
 }
 
 #[test]
+#[serial]
 fn reorg_competing_chain_similar() {
     let ctx = Paid::default();
     Context::add(ctx);
@@ -222,6 +224,7 @@ fn reorg_competing_chain_similar() {
 }
 
 #[test]
+#[serial]
 #[ignore]
 fn reorg_deep() {
     let ctx = Paid::default();
@@ -324,6 +327,7 @@ fn reorg_deep() {
 }
 
 #[test]
+#[serial]
 #[ignore]
 fn mainnet_from_file() {
     let ctx = Paid::default();

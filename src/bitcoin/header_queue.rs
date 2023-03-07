@@ -745,6 +745,7 @@ mod test {
     }
 
     #[test]
+    #[serial]
     fn add_multiple() {
         let ctx = Paid::default();
         Context::add(ctx);
