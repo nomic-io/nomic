@@ -716,6 +716,7 @@ mod test {
     use bitcoin_hashes::hex::FromHex;
     use bitcoin_hashes::sha256d::Hash;
     use chrono::{TimeZone, Utc};
+    use serial_test::serial;
 
     #[test]
     fn primitive_adapter_encode_decode() {

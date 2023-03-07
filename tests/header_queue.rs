@@ -11,6 +11,7 @@ use nomic::bitcoin::header_queue::WrappedHeader;
 use orga::encoding::Encode;
 use orga::prelude::{Context, Paid};
 use orga::store::{MapStore, Shared, Store};
+use serial_test::serial;
 use std::fs;
 
 fn into_json<T>(val: T) -> Result<bitcoincore_rpc::jsonrpc::serde_json::Value, RpcError>
