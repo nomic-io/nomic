@@ -519,11 +519,17 @@ impl Relayer {
             batch.len(),
         );
 
-        self.app_client
+        let res = self
+            .app_client
             .pay_from(async move |client| client.bitcoin.headers.add(batch.into()).await)
             .noop()
-            .await?;
-        info!("Relayed headers");
+            .await;
+        let current_tip = self.sidechain_block_hash().await?;
+        if current_tip == fullnode_hash {
+            info!("Relayed headers");
+        } else {
+            res?;
+        }
 
         Ok(())
     }
