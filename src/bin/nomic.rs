@@ -15,9 +15,9 @@ use std::str::FromStr;
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
 use futures::executor::block_on;
-use nomic::app::{DepositCommitment, IbcDepositCommitment};
 #[cfg(feature = "compat")]
 use nomic::app::{AppV0, CONSENSUS_VERSION};
+use nomic::app::{DepositCommitment, IbcDepositCommitment};
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
 use nomic::network::Network;
@@ -127,7 +127,6 @@ impl Command {
     }
 }
 
-
 #[derive(Parser, Clone, Debug, Serialize, Deserialize)]
 pub struct StartCmd {
     #[clap(flatten)]
@@ -172,7 +171,7 @@ impl StartCmd {
         tokio::task::spawn_blocking(move || {
             if let Some(network) = cmd.network {
                 let mut config = network.config();
-                
+
                 if cmd.config.chain_id.is_some() {
                     log::error!("Passed in unexpected chain-id");
                     std::process::exit(1);
@@ -185,16 +184,16 @@ impl StartCmd {
                 if cmd.config.upgrade_time.is_some() {
                     config.upgrade_time = cmd.config.upgrade_time;
                 }
-                
+
                 // TODO: deduplicate
                 config.state_sync_rpc.extend(cmd.config.state_sync_rpc.into_iter());
-                
+
                 // TODO: should all built-in tmflags get shadowed by user-specified tmflags?
                 config.tendermint_flags.extend(cmd.config.tendermint_flags.into_iter());
-                
+
                 cmd.config = config;
             }
-            
+
             let home = cmd.home.map_or_else(
                 || {
                     Node::home(
@@ -204,11 +203,11 @@ impl StartCmd {
                 },
                 |home| PathBuf::from_str(&home).unwrap(),
             );
-            
+
             if cmd.freeze_valset {
                 std::env::set_var("ORGA_STATIC_VALSET", "true");
             }
-            
+
             #[cfg(feature = "compat")]
             let mut had_legacy = false;
             #[cfg(feature = "compat")]
@@ -222,7 +221,7 @@ impl StartCmd {
                 } else {
                     home.clone()
                 };
-                
+
                 if legacy_home.exists() {
                     let store_path = legacy_home.join("merk");
                     let store = MerkStore::new(store_path);
@@ -234,10 +233,10 @@ impl StartCmd {
                         .unwrap_or_default();
                     drop(store);
                     log::debug!("Legacy timestamp: {}", timestamp);
-                    
+
                     let bin_path = legacy_home.join("nomic-v4");
                     had_legacy = bin_path.exists();
-    
+
                     if timestamp < upgrade_time && bin_path.exists() || cmd.config.legacy_version.is_some() {
                         if let Some(legacy_version) = cmd.config.legacy_version {
                             let version = String::from_utf8(
@@ -253,7 +252,7 @@ impl StartCmd {
                                 std::process::exit(1);
                             }
                         }
-    
+
                         let mut cmd = std::process::Command::new(bin_path);
                         cmd.arg("start").env("STOP_TIME", upgrade_time.to_string());
                         log::info!("Starting legacy node... ({:#?})", cmd);
@@ -288,7 +287,7 @@ impl StartCmd {
                     } else {
                         home.join("bin").join(format!("nomic-{}", legacy_version))
                     };
-                    
+
                     if !legacy_bin.exists() {
                         log::warn!("Legacy binary does not exist, attempting to skip ahead");
                     } else {
@@ -323,7 +322,7 @@ impl StartCmd {
                     std::process::exit(1);
                 }
             }
-            
+
             println!("{}\nVersion {}\n\n", BANNER, env!("CARGO_PKG_VERSION"));
 
             let has_node = home.exists();
@@ -363,7 +362,7 @@ impl StartCmd {
                 }
 
                 edit_block_time(&config_path, "3s");
-                
+
                 configure_node(&config_path, |cfg| {
                     cfg["rpc"]["laddr"] = toml_edit::value("tcp://0.0.0.0:26657");
                 });
@@ -475,7 +474,6 @@ fn edit_block_time(cfg_path: &PathBuf, timeout_commit: &str) {
         cfg["consensus"]["timeout_commit"] = toml_edit::value(timeout_commit);
     });
 }
-
 
 fn configure_for_statesync(cfg_path: &PathBuf, rpc_servers: &[&str]) {
     log::info!("Getting bootstrap state for Tendermint light client...");
