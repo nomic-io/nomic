@@ -12,6 +12,7 @@ use bitcoincore_rpc_async::bitcoin::{
 use bitcoincore_rpc_async::json::GetBlockHeaderResult;
 use bitcoincore_rpc_async::{Client as BitcoinRpcClient, RpcApi};
 use futures::{pin_mut, select, FutureExt};
+use log::{debug, error, info, warn};
 use orga::abci::TendermintClient;
 use orga::encoding::Decode;
 use serde::{Deserialize, Serialize};
@@ -47,11 +48,11 @@ impl Relayer {
     }
 
     pub async fn start_header_relay(&mut self) -> Result<!> {
-        println!("Starting header relay...");
+        info!("Starting header relay...");
 
         loop {
             if let Err(e) = self.relay_headers().await {
-                eprintln!("Header relay error: {}", e);
+                error!("Header relay error: {}", e);
             }
 
             sleep(2).await;
@@ -74,7 +75,7 @@ impl Relayer {
             if last_hash.is_none() || last_hash.is_some_and(|h| h != fullnode_hash) {
                 last_hash = Some(fullnode_hash);
                 let info = self.btc_client.get_block_info(&fullnode_hash).await?;
-                println!(
+                info!(
                     "Sidechain header state is up-to-date:\n\thash={}\n\theight={}",
                     info.hash, info.height
                 );
@@ -85,7 +86,7 @@ impl Relayer {
     }
 
     pub async fn start_deposit_relay<P: AsRef<Path>>(&mut self, store_path: P) -> Result<()> {
-        println!("Starting deposit relay...");
+        info!("Starting deposit relay...");
 
         let scripts = WatchedScriptStore::open(store_path, &self.app_client).await?;
         self.scripts = Some(scripts);
@@ -96,7 +97,7 @@ impl Relayer {
         let do_relaying = async {
             loop {
                 if let Err(e) = self.relay_deposits(&mut recv).await {
-                    eprintln!("Deposit relay error: {}", e);
+                    error!("Deposit relay error: {}", e);
                 }
 
                 sleep(2).await;
@@ -182,7 +183,7 @@ impl Relayer {
                     u32,
                     tokio::sync::mpsc::Sender<_>,
                 )| {
-                    println!("{:?}, {}", dest, sigset_index);
+                    debug!("Received deposit commitment: {:?}, {}", dest, sigset_index);
                     send.send((dest, sigset_index)).await.unwrap();
                     "OK"
                 },
@@ -261,7 +262,7 @@ impl Relayer {
                         .await
                     {
                         // TODO: filter out harmless errors (e.g. deposit too small)
-                        println!("Skipping deposit for error: {}", err);
+                        warn!("Skipping deposit for error: {}", err);
                     }
                 }
             }
@@ -271,12 +272,12 @@ impl Relayer {
     }
 
     pub async fn start_checkpoint_relay(&mut self) -> Result<!> {
-        println!("Starting checkpoint relay...");
+        info!("Starting checkpoint relay...");
 
         loop {
             if let Err(e) = self.relay_checkpoints().await {
                 if !e.to_string().contains("No completed checkpoints yet") {
-                    eprintln!("Checkpoint relay error: {}", e);
+                    error!("Checkpoint relay error: {}", e);
                 }
             }
 
@@ -291,7 +292,7 @@ impl Relayer {
             .checkpoints
             .last_completed_tx()
             .await??;
-        println!("Last checkpoint tx: {}", last_checkpoint.txid());
+        info!("Last checkpoint tx: {}", last_checkpoint.txid());
 
         let mut relayed = HashSet::new();
 
@@ -312,7 +313,7 @@ impl Relayer {
 
                 match self.btc_client.send_raw_transaction(&tx_bytes).await {
                     Ok(_) => {
-                        println!("Relayed checkpoint: {}", tx.txid());
+                        info!("Relayed checkpoint: {}", tx.txid());
                     }
                     Err(err) if err.to_string().contains("bad-txns-inputs-missingorspent") => {}
                     Err(err)
@@ -343,7 +344,7 @@ impl Relayer {
             let sigset = match &checkpoint_res {
                 Ok(checkpoint) => &checkpoint.sigset,
                 Err(err) => {
-                    eprintln!("{}", err);
+                    error!("{}", err);
                     continue;
                 }
             };
@@ -448,7 +449,6 @@ impl Relayer {
             tx.consensus_encode(&mut tx_bytes)?;
             let tx = ::bitcoin::Transaction::consensus_decode(tx_bytes.as_slice())?;
             let tx = Adapter::new(tx.clone());
-
             let proof = Adapter::new(proof);
 
             let res = self
@@ -482,7 +482,7 @@ impl Relayer {
             };
         }
 
-        println!(
+        info!(
             "Relayed deposit: {} sats, {:?}",
             tx.output[vout as usize].value, dest
         );
@@ -512,7 +512,7 @@ impl Relayer {
         let start = self.common_ancestor(fullnode_hash, sidechain_hash).await?;
         let batch = self.get_header_batch(start.hash).await?;
 
-        println!(
+        info!(
             "Relaying headers...\n\thash={}\n\theight={}\n\tbatch_len={}",
             batch[0].block_hash(),
             batch[0].height(),
@@ -523,7 +523,7 @@ impl Relayer {
             .pay_from(async move |client| client.bitcoin.headers.add(batch.into()).await)
             .noop()
             .await?;
-        println!("Relayed headers");
+        info!("Relayed headers");
 
         Ok(())
     }
@@ -735,7 +735,7 @@ impl WatchedScriptStore {
 
         let file = File::options().append(true).create(true).open(&path)?;
 
-        println!("Keeping track of deposit addresses at {}", path.display());
+        info!("Keeping track of deposit addresses at {}", path.display());
 
         Ok(WatchedScriptStore { scripts, file })
     }
@@ -776,7 +776,7 @@ impl WatchedScriptStore {
 
         scripts.remove_expired()?;
 
-        println!("Loaded {} deposit addresses", scripts.len());
+        info!("Loaded {} deposit addresses", scripts.len());
 
         Ok(())
     }
