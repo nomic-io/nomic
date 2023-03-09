@@ -537,7 +537,7 @@ impl Relayer {
     async fn get_header_batch(&self, from_hash: BlockHash) -> Result<Vec<WrappedHeader>> {
         let mut cursor = self.btc_client.get_block_header_info(&from_hash).await?;
 
-        let mut headers = Vec::with_capacity(HEADER_BATCH_SIZE as usize);
+        let mut headers = Vec::with_capacity(HEADER_BATCH_SIZE);
         for _ in 0..HEADER_BATCH_SIZE {
             match cursor.next_block_hash {
                 Some(next_hash) => {

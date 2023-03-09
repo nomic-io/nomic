@@ -494,7 +494,7 @@ impl HeaderQueue {
 
             let chain_work = *self.current_work + header_work;
             let work_header = WorkHeader::new(header.clone(), chain_work);
-            self.deque.push_back(work_header.into())?;
+            self.deque.push_back(work_header)?;
             self.current_work = Adapter::new(chain_work);
         }
 
@@ -607,7 +607,7 @@ impl HeaderQueue {
         for i in 0..11 {
             let index = self.height()? - i;
 
-            let current_item = match self.get_by_height(index as u32)? {
+            let current_item = match self.get_by_height(index)? {
                 Some(inner) => inner,
                 None => return Err(Error::Header("Deque does not contain any elements".into())),
             };
@@ -655,12 +655,14 @@ impl HeaderQueue {
         }
     }
 
+    // TODO: remove this attribute, not sure why clippy is complaining when is_empty is defined
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> u64 {
         self.deque.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.deque.is_empty()
+        self.len() == 0
     }
 
     #[query]

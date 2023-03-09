@@ -213,7 +213,7 @@ impl StartCmd {
             #[cfg(feature = "compat")]
             if let Some(upgrade_time) = cmd.config.upgrade_time {
                 let legacy_home = if let Some(ref legacy_home) = cmd.legacy_home {
-                    let lh = PathBuf::from_str(&legacy_home).unwrap();
+                    let lh = PathBuf::from_str(legacy_home).unwrap();
                     if !lh.exists() {
                         log::error!("Legacy home does not exist ({})", lh.display());
                     }
@@ -316,11 +316,9 @@ impl StartCmd {
                         }
                     }
                 }
-            } else {
-                if cmd.legacy_bin.is_some() {
-                    log::error!("--legacy-version is required when specifying --legacy-bin");
-                    std::process::exit(1);
-                }
+            } else if cmd.legacy_bin.is_some() {
+                log::error!("--legacy-version is required when specifying --legacy-bin");
+                std::process::exit(1);
             }
 
             println!("{}\nVersion {}\n\n", BANNER, env!("CARGO_PKG_VERSION"));
@@ -335,8 +333,7 @@ impl StartCmd {
                 if let Some(source) = cmd.clone_store {
                     let mut source = PathBuf::from_str(&source).unwrap();
                     if std::fs::read_dir(&source)?
-                        .find(|c| c.as_ref().unwrap().file_name() == "merk")
-                        .is_some()
+                        .any(|c| c.as_ref().unwrap().file_name() == "merk")
                     {
                         source = source.join("merk");
                     }
@@ -592,7 +589,7 @@ pub struct BalanceCmd {
 
 impl BalanceCmd {
     async fn run(&self) -> Result<()> {
-        let address = self.address.unwrap_or_else(|| my_address());
+        let address = self.address.unwrap_or_else(my_address);
         println!("address: {}", address);
 
         let balance = app_client().accounts.balance(address).await??;
@@ -868,7 +865,7 @@ impl AirdropCmd {
     async fn run(&self) -> Result<()> {
         let client = app_client();
 
-        let addr = self.address.unwrap_or_else(|| my_address());
+        let addr = self.address.unwrap_or_else(my_address);
         let acct = match client.airdrop.get(addr).await?? {
             None => {
                 println!("Address is not eligible for airdrop");
@@ -892,7 +889,7 @@ impl ClaimAirdropCmd {
     async fn run(&self) -> Result<()> {
         let client = app_client();
 
-        let addr = self.address.unwrap_or_else(|| my_address());
+        let addr = self.address.unwrap_or_else(my_address);
         let acct = match client.airdrop.get(addr).await?? {
             None => {
                 println!("Address is not eligible for airdrop");
@@ -1096,14 +1093,13 @@ async fn deposit(dest: DepositCommitment) -> Result<()> {
         .await
         .map_err(|err| nomic::error::Error::Orga(orga::Error::App(err.to_string())))?;
     if res.status() != 200 {
-        return Err(orga::Error::App(
-            format!("Relayer responded with code {}", res.status()).to_string(),
-        )
-        .into());
+        return Err(
+            orga::Error::App(format!("Relayer responded with code {}", res.status())).into(),
+        );
     }
 
     println!("Deposit address: {}", btc_addr);
-    println!("Expiration: {}", "5 days from now");
+    println!("Expiration: 5 days from now");
     // TODO: show real expiration
     Ok(())
 }
@@ -1115,7 +1111,7 @@ pub struct DepositCmd {
 
 impl DepositCmd {
     async fn run(&self) -> Result<()> {
-        let dest_addr = self.address.unwrap_or_else(|| my_address());
+        let dest_addr = self.address.unwrap_or_else(my_address);
 
         deposit(DepositCommitment::Address(dest_addr)).await
     }
