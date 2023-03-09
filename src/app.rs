@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 use crate::airdrop::Airdrop;
 use crate::bitcoin::adapter::Adapter;
 use crate::bitcoin::Bitcoin;
@@ -80,9 +82,9 @@ impl InnerApp {
 
         let signer = self.signer()?;
         let _coins = self.bitcoin.accounts.withdraw(signer, amount)?;
-        self.airdrop
-            .get_mut(signer)?
-            .map(|mut acct| acct.ibc_transfer.unlock());
+        if let Some(mut acct) = self.airdrop.get_mut(signer)? {
+            acct.ibc_transfer.unlock();
+        }
 
         let fee = ibc_fee(amount)?;
         self.ibc
@@ -141,9 +143,9 @@ impl InnerApp {
         )?;
         match dest {
             DepositCommitment::Address(addr) => {
-                self.airdrop
-                    .get_mut(addr)?
-                    .map(|mut acct| acct.btc_deposit.unlock());
+                if let Some(mut acct) = self.airdrop.get_mut(addr)? {
+                    acct.btc_deposit.unlock();
+                }
                 self.bitcoin.accounts.deposit(addr, nbtc.into())?
             }
             DepositCommitment::Ibc(dest) => {
@@ -195,9 +197,9 @@ impl InnerApp {
         amount: Amount,
     ) -> crate::error::Result<()> {
         let signer = self.signer()?;
-        self.airdrop
-            .get_mut(signer)?
-            .map(|mut acct| acct.btc_withdraw.unlock());
+        if let Some(mut acct) = self.airdrop.get_mut(signer)? {
+            acct.btc_withdraw.unlock();
+        }
 
         self.bitcoin.withdraw(script_pubkey, amount)
     }
@@ -824,8 +826,7 @@ impl ConvertSdkTx for InnerApp {
                             timeout_timestamp,
                         };
 
-                        let payer_call =
-                            AppCall::MethodIbcDepositNbtc(sender.into(), amount, vec![]);
+                        let payer_call = AppCall::MethodIbcDepositNbtc(sender, amount, vec![]);
 
                         let ibc_call = IbcCall::MethodTransfer(transfer_opts, vec![]);
                         let ibc_call_bytes = ibc_call.encode()?;

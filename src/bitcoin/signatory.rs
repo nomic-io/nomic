@@ -1,3 +1,5 @@
+#![allow(clippy::redundant_closure_call)] // TODO: fix bitcoin-script then remove this
+
 use crate::error::{Error, Result};
 use bitcoin::util::bip32::ChildNumber;
 use bitcoin::Script;
@@ -123,6 +125,8 @@ impl SignatorySet {
         self.present_vp >= self.quorum_threshold()
     }
 
+    // TODO: remove this attribute, not sure why clippy is complaining when is_empty is defined
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         self.signatories.len()
     }
