@@ -1,0 +1,70 @@
+use clap::Parser;
+use csv::{Reader, StringRecord};
+use nomic::airdrop::Part;
+use nomic::app::App;
+use orga::merk::BackingStore;
+use orga::merk::MerkStore;
+use orga::prelude::Address;
+use orga::state::State;
+use orga::store::Shared;
+use orga::store::Store;
+use std::str::FromStr;
+
+#[derive(Parser, Debug)]
+pub struct Opts {
+    #[clap(short, long)]
+    merk_path: String,
+    #[clap(short, long)]
+    airdrop_csv_path: String,
+}
+
+fn is_claimed(airdrop_part: &Part) -> bool {
+    airdrop_part.claimed > 0
+}
+pub fn main() {
+    let opts = Opts::parse();
+
+    let mut reader = Reader::from_path(&opts.airdrop_csv_path).unwrap();
+    let mut headers = reader.headers().unwrap().clone();
+    headers.extend([
+        "btc_deposit_claimed",
+        "btc_withdraw_claimed",
+        "ibc_transfer_claimed",
+    ]);
+
+    let merk = MerkStore::new(&opts.merk_path);
+    let app = App::load(
+        Store::new(BackingStore::Merk(Shared::new(merk))),
+        &mut [].as_slice(),
+    )
+    .unwrap();
+
+    let mut writer = csv::Writer::from_writer(std::io::stdout());
+    writer.write_record(&headers).unwrap();
+    for result in reader.records() {
+        let record = result.unwrap();
+        let airdrop_account = app
+            .airdrop
+            .get(Address::from_str(record.get(0).unwrap()).unwrap())
+            .unwrap()
+            .unwrap();
+
+        let mut extended_record = StringRecord::from(record);
+        extended_record.push_field(
+            is_claimed(&airdrop_account.btc_deposit)
+                .to_string()
+                .as_str(),
+        );
+        extended_record.push_field(
+            is_claimed(&airdrop_account.btc_withdraw)
+                .to_string()
+                .as_str(),
+        );
+        extended_record.push_field(
+            is_claimed(&airdrop_account.ibc_transfer)
+                .to_string()
+                .as_str(),
+        );
+        writer.write_record(&extended_record).unwrap();
+    }
+}
