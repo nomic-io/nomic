@@ -10,7 +10,8 @@ use split_iter::Splittable;
 use super::app::Nom;
 
 const MAX_STAKED: u64 = 1_000_000_000;
-const AIRDROP_II_TOTAL: u64 = 3_500_000_000_000;
+const AIRDROP_II_TOTAL: u64 = 3_000_000_000_000;
+const AIRDROP_II_TESTNET_PARTICIPATION_TOTAL: u64 = 500_000_000_000;
 
 #[orga]
 pub struct Airdrop {
