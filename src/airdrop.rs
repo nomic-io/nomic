@@ -5,6 +5,7 @@ use orga::orga;
 use orga::plugins::{Paid, Signer};
 use orga::prelude::{Decimal, MIN_FEE};
 use orga::{Error, Result};
+use split_iter::Splittable;
 
 use super::app::Nom;
 
@@ -119,9 +120,9 @@ impl Airdrop {
         let len = recipients[0].1.len();
         let mut totals = vec![0u64; len];
 
-        for (_, networks) in recipients.iter() {
+        for (_, networks, claims) in recipients.iter() {
             for (i, (staked, count)) in networks.iter().enumerate() {
-                let score = Self::score(*staked, *count);
+                let score = Self::score(*staked, *count, claims);
                 totals[i] += score;
             }
         }
@@ -136,12 +137,12 @@ impl Airdrop {
         let mut accounts = 0;
         let total_airdropped: u64 = recipients
             .iter()
-            .map(|(addr, networks)| {
+            .map(|(addr, networks, claims)| {
                 let unom: u64 = networks
                     .iter()
                     .zip(unom_per_score.iter())
                     .map(|((staked, count), unom_per_score)| {
-                        let score = Self::score(*staked, *count) as u128;
+                        let score = Self::score(*staked, *count, claims) as u128;
                         (score * unom_per_score / precision) as u64
                     })
                     .sum();
@@ -171,12 +172,23 @@ impl Airdrop {
         Ok(())
     }
 
-    fn score(staked: u64, _count: u64) -> u64 {
-        staked.min(MAX_STAKED)
+    fn score(staked: u64, _count: u64, testnet_claims: &Vec<bool>) -> u64 {
+        let claimed: u64 = testnet_claims
+            .into_iter()
+            .filter(|val| **val)
+            .count()
+            .try_into()
+            .unwrap();
+        if claimed == 3 {
+            return staked.min(MAX_STAKED);
+        }
+
+        let modified_stake = staked / 2;
+        MAX_STAKED.min(modified_stake + (modified_stake * claimed / 3))
     }
 
     #[cfg(feature = "full")]
-    fn get_recipients_from_csv(data: &[u8]) -> Vec<(Address, Vec<(u64, u64)>)> {
+    fn get_recipients_from_csv(data: &[u8]) -> Vec<(Address, Vec<(u64, u64)>, Vec<bool>)> {
         let mut reader = csv::Reader::from_reader(data);
 
         reader
@@ -188,14 +200,15 @@ impl Airdrop {
                     return None;
                 }
                 let addr: Address = row[0].parse().unwrap();
-                let values: Vec<_> = row
+                let (claims, values) = row
                     .into_iter()
                     .skip(1)
-                    .map(|s| -> u64 { s.parse().unwrap() })
-                    .collect();
+                    .split(|item| item.parse::<u64>().is_ok());
+                let values: Vec<_> = values.map(|s| -> u64 { s.parse().unwrap() }).collect();
+                let claims: Vec<_> = claims.map(|s| -> bool { s.parse().unwrap() }).collect();
                 let pairs: Vec<_> = values.chunks_exact(2).map(|arr| (arr[0], arr[1])).collect();
 
-                Some((addr, pairs))
+                Some((addr, pairs, claims))
             })
             .collect()
     }
