@@ -338,6 +338,7 @@ pub async fn airdrop_balances(addr: String) -> Result<Airdrop, JsError> {
             btc_deposit: parse_part(account.btc_deposit),
             btc_withdraw: parse_part(account.btc_withdraw),
             ibc_transfer: parse_part(account.ibc_transfer),
+            testnet_participation: parse_part(account.testnet_participation),
         })
     } else {
         Ok(Airdrop::default())
