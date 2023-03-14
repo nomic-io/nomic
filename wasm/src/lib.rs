@@ -227,6 +227,20 @@ pub async fn claim_ibc_transfer_airdrop(address: String) -> Result<String, JsErr
     .await
 }
 
+#[wasm_bindgen(js_name = claimTestnetParticipationAirdrop)]
+pub async fn claim_testnet_participation_airdrop(address: String) -> Result<String, JsError> {
+    let address = address
+        .parse()
+        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+    gen_call_bytes(
+        address,
+        sdk::Msg {
+            type_: "nomic/MsgClaimTestnetParticipationAirdrop".to_string(),
+            value: serde_json::Map::new().into(),
+        },
+    )
+    .await
+}
 #[wasm_bindgen(js_name = claimIncomingIbcBtc)]
 pub async fn claim_incoming_ibc_btc(address: String) -> Result<String, JsError> {
     let address = address
