@@ -274,6 +274,7 @@ pub struct Account {
     pub btc_deposit: Part,
     pub btc_withdraw: Part,
     pub ibc_transfer: Part,
+    pub testnet_participation: Part,
 }
 
 impl Account {
