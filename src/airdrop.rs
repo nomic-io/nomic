@@ -126,13 +126,12 @@ impl Airdrop {
         println!("Initializing balances from airdrop 2 snapshot...");
 
         let recipients = Self::get_recipients_from_csv(data);
-
         let len = recipients[0].1.len();
         let mut totals = vec![0u64; len];
 
-        for (_, networks, claims) in recipients.iter() {
+        for (_, networks, _) in recipients.iter() {
             for (i, (staked, count)) in networks.iter().enumerate() {
-                let score = Self::score(*staked, *count, claims);
+                let score = Self::score(*staked, *count);
                 totals[i] += score;
             }
         }
@@ -182,19 +181,8 @@ impl Airdrop {
         Ok(())
     }
 
-    fn score(staked: u64, _count: u64, testnet_claims: &Vec<bool>) -> u64 {
-        let claimed: u64 = testnet_claims
-            .into_iter()
-            .filter(|val| **val)
-            .count()
-            .try_into()
-            .unwrap();
-        if claimed == 3 {
-            return staked.min(MAX_STAKED);
-        }
-
-        let modified_stake = staked / 2;
-        MAX_STAKED.min(modified_stake + (modified_stake * claimed / 3))
+    fn score(staked: u64, _count: u64) -> u64 {
+        staked.min(MAX_STAKED)
     }
 
     #[cfg(feature = "full")]
