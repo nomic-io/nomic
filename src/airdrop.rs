@@ -185,6 +185,19 @@ impl Airdrop {
         staked.min(MAX_STAKED)
     }
 
+    fn get_individual_testnet_allocation(airdrop: &Account, claims: &Vec<bool>) -> u64 {
+        let num_claims: u64 = claims.len().try_into().unwrap();
+        let claims: u64 = claims
+            .into_iter()
+            .filter(|val| **val)
+            .count()
+            .try_into()
+            .unwrap();
+        airdrop.btc_deposit.locked * claims / num_claims
+            + airdrop.btc_withdraw.locked * claims / num_claims
+            + airdrop.ibc_transfer.locked * claims / num_claims
+    }
+
     #[cfg(feature = "full")]
     fn get_recipients_from_csv(data: &[u8]) -> Vec<(Address, Vec<(u64, u64)>, Vec<bool>)> {
         let mut reader = csv::Reader::from_reader(data);
