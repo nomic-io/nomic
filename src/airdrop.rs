@@ -115,6 +115,7 @@ impl Airdrop {
         add_part(&mut dest.btc_deposit, src.btc_deposit);
         add_part(&mut dest.ibc_transfer, src.ibc_transfer);
         add_part(&mut dest.btc_withdraw, src.btc_withdraw);
+        add_part(&mut dest.testnet_participation, src.testnet_participation);
 
         Ok(())
     }
