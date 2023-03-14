@@ -80,6 +80,14 @@ impl Airdrop {
     }
 
     #[call]
+    pub fn claim_testnet_participation(&mut self) -> Result<()> {
+        let mut acct = self.signer_acct_mut()?;
+        let amount = acct.testnet_participation.claim()?;
+        self.pay_as_funding(amount)?;
+        Ok(())
+    }
+
+    #[call]
     pub fn join_accounts(&mut self, dest_addr: Address) -> Result<()> {
         self.pay_as_funding(MIN_FEE)?;
 
