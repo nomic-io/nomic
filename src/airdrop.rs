@@ -143,31 +143,34 @@ impl Airdrop {
             .map(|n| unom_per_network as u128 * precision / *n as u128)
             .collect();
 
+        let mut modified_recipients = Vec::new();
+        for (address, networks, claims) in recipients.iter() {
+            let unom: u64 = networks
+                .iter()
+                .zip(unom_per_score.iter())
+                .map(|((staked, count), unom_per_score)| {
+                    let score = Self::score(*staked, *count) as u128;
+                    (score * unom_per_score / precision) as u64
+                })
+                .sum();
+
+            self.airdrop_to(*address, unom)?;
+            modified_recipients.push((*address, unom, claims));
+        }
+
         let mut accounts = 0;
-        let total_airdropped: u64 = recipients
-            .iter()
-            .map(|(addr, networks, claims)| {
-                let unom: u64 = networks
-                    .iter()
-                    .zip(unom_per_score.iter())
-                    .map(|((staked, count), unom_per_score)| {
-                        let score = Self::score(*staked, *count, claims) as u128;
-                        (score * unom_per_score / precision) as u64
-                    })
-                    .sum();
-
-                self.airdrop_to(*addr, unom)?;
-                accounts += 1;
-
-                Ok(unom)
-            })
-            .sum::<Result<_>>()?;
+        let mut airdrop_total = 0;
+        for (address, unom, claims) in recipients {
+            let account = self.accounts.entry(address)?.or_default()?;
+            let testnet_allocation = Self::get_individual_testnet_allocation(&*account, &claims);
+            self.airdrop_testnet_allocation_to(&address, testnet_allocation);
+            accounts += 1;
+        }
 
         println!(
             "Total amount minted for airdrop 2: {} uNOM across {} accounts",
-            total_airdropped, accounts,
+            airdrop_total, accounts,
         );
-
         Ok(())
     }
 
