@@ -185,6 +185,13 @@ impl Airdrop {
         staked.min(MAX_STAKED)
     }
 
+    fn airdrop_testnet_allocation_to(&mut self, address: &Address, unom: u64) -> Result<()> {
+        let mut account = self.accounts.entry(*address)?.or_default()?;
+        account.testnet_participation.claimable = unom;
+
+        Ok(())
+    }
+
     fn get_individual_testnet_allocation(airdrop: &Account, claims: &Vec<bool>) -> u64 {
         let num_claims: u64 = claims.len().try_into().unwrap();
         let claims: u64 = claims
