@@ -161,10 +161,10 @@ impl Airdrop {
         }
 
         let mut accounts = 0;
-        for (address, unom, claims) in recipients {
+        for (address, _, claims) in recipients {
             let account = self.accounts.entry(address)?.or_default()?;
             let testnet_allocation = Self::get_individual_testnet_allocation(&*account, &claims)?;
-            self.airdrop_testnet_allocation_to(&address, testnet_allocation);
+            self.airdrop_testnet_allocation_to(&address, testnet_allocation)?;
             airdrop_total += testnet_allocation;
             accounts += 1;
         }
@@ -350,8 +350,7 @@ impl Part {
 #[cfg(test)]
 mod test {
     use super::*;
-    use csv::Writer;
-    use orga::prelude::{Amount, MathResult};
+    use orga::prelude::Amount;
     use std::str::FromStr;
 
     #[test]
@@ -360,7 +359,7 @@ mod test {
         let csv = "address,evmos_9000-1_staked,evmos_9000-1_count,kaiyo-1_staked,kaiyo-1_count,cosmoshub-4_staked,cosmoshub-4_count,juno-1_staked,juno-1_count,osmosis-1_staked,osmosis-1_count,btc_deposit_claimed,btc_withdraw_claimed,ibc_transfer_claimed
 nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x,1,1,1,1,1,1,1,1,1,1,true,true,true".as_bytes();
 
-        airdrop.init_from_airdrop2_csv(csv);
+        airdrop.init_from_airdrop2_csv(csv).unwrap();
 
         let account = airdrop
             .get_mut(Address::from_str("nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x").unwrap())
@@ -384,7 +383,7 @@ nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x,1,1,1,1,1,1,1,1,1,1,true,true,true"
 nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x,1,1,1,1,1,1,1,1,1,1,true,true,true
 nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs,1,1,1,1,1,1,1,1,1,1,true,true,true".as_bytes();
 
-        airdrop.init_from_airdrop2_csv(csv);
+        airdrop.init_from_airdrop2_csv(csv).unwrap();
 
         let account = airdrop
             .get_mut(Address::from_str("nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x").unwrap())
@@ -424,7 +423,7 @@ nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs,1,1,1,1,1,1,1,1,1,1,true,true,true"
 nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x,1,1,1,1,1,1,1,1,1,1,true,true,true
 nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs,1,1,1,1,1,1,1,1,1,1,false,false,false".as_bytes();
 
-        airdrop.init_from_airdrop2_csv(csv);
+        airdrop.init_from_airdrop2_csv(csv).unwrap();
 
         let account = airdrop
             .get_mut(Address::from_str("nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x").unwrap())
@@ -469,7 +468,7 @@ nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs,1,1,1,1,1,1,1,1,1,1,false,false,fal
 nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x,1,1,1,1,1,1,1,1,1,1,true,true,true
 nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs,1,1,1,1,1,1,1,1,1,1,true,false,false".as_bytes();
 
-        airdrop.init_from_airdrop2_csv(csv);
+        airdrop.init_from_airdrop2_csv(csv).unwrap();
 
         let account = airdrop
             .get_mut(Address::from_str("nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x").unwrap())
@@ -514,7 +513,7 @@ nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs,1,1,1,1,1,1,1,1,1,1,true,false,fals
 nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x,1,1,1,1,1,1,1,1,1,1,true,true,true
 nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs,1,1,1,1,1,1,1,1,1,1,true,true,false".as_bytes();
 
-        airdrop.init_from_airdrop2_csv(csv);
+        airdrop.init_from_airdrop2_csv(csv).unwrap();
 
         let account = airdrop
             .get_mut(Address::from_str("nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x").unwrap())
