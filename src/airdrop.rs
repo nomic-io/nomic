@@ -144,6 +144,7 @@ impl Airdrop {
             .collect();
 
         let mut modified_recipients = Vec::new();
+        let mut airdrop_total = 0;
         for (address, networks, claims) in recipients.iter() {
             let unom: u64 = networks
                 .iter()
@@ -155,15 +156,16 @@ impl Airdrop {
                 .sum();
 
             self.airdrop_to(*address, unom)?;
+            airdrop_total += unom;
             modified_recipients.push((*address, unom, claims));
         }
 
         let mut accounts = 0;
-        let mut airdrop_total = 0;
         for (address, unom, claims) in recipients {
             let account = self.accounts.entry(address)?.or_default()?;
             let testnet_allocation = Self::get_individual_testnet_allocation(&*account, &claims);
             self.airdrop_testnet_allocation_to(&address, testnet_allocation);
+            airdrop_total += testnet_allocation;
             accounts += 1;
         }
 
