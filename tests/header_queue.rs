@@ -10,7 +10,6 @@ use nomic::bitcoin::header_queue::HeaderQueue;
 use nomic::bitcoin::header_queue::WrappedHeader;
 use orga::encoding::Encode;
 use orga::prelude::{Context, Paid};
-use orga::store::{MapStore, Shared, Store};
 use serial_test::serial;
 use std::fs;
 
@@ -341,7 +340,7 @@ fn mainnet_from_file() {
         .map(|chunk| BlockHeader::consensus_decode(chunk).unwrap())
         .collect();
 
-    let mut first_header = headers.get(2016).unwrap();
+    let first_header = headers.get(2016).unwrap();
 
     let config = Config {
         encoded_trusted_header: Adapter::new(first_header)

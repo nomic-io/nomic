@@ -720,7 +720,7 @@ mod test {
 
     #[test]
     fn primitive_adapter_encode_decode() {
-        let stamp = Utc.ymd(2009, 1, 10).and_hms(17, 39, 13);
+        let stamp = Utc.with_ymd_and_hms(2009, 1, 10, 17, 39, 13).unwrap();
         //Bitcoin block 42
         let header = BlockHeader {
             version: 0x1,
@@ -751,7 +751,7 @@ mod test {
         let ctx = Paid::default();
         Context::add(ctx);
 
-        let stamp = Utc.ymd(2009, 1, 10).and_hms(17, 44, 37);
+        let stamp = Utc.with_ymd_and_hms(2009, 1, 10, 17, 44, 37).unwrap();
 
         let header_43 = BlockHeader {
             version: 0x1,
@@ -768,7 +768,7 @@ mod test {
             nonce: 2_093_702_200,
         };
 
-        let stamp = Utc.ymd(2009, 1, 10).and_hms(17, 59, 21);
+        let stamp = Utc.with_ymd_and_hms(2009, 1, 10, 17, 59, 21).unwrap();
 
         let header_44 = BlockHeader {
             version: 0x1,
@@ -785,7 +785,7 @@ mod test {
             nonce: 429_798_192,
         };
 
-        let stamp = Utc.ymd(2009, 1, 10).and_hms(18, 11, 8);
+        let stamp = Utc.with_ymd_and_hms(2009, 1, 10, 18, 11, 8).unwrap();
 
         let header_45 = BlockHeader {
             version: 0x1,
@@ -802,7 +802,7 @@ mod test {
             nonce: 2_771_238_433,
         };
 
-        let stamp = Utc.ymd(2009, 1, 10).and_hms(18, 23, 13);
+        let stamp = Utc.with_ymd_and_hms(2009, 1, 10, 18, 23, 13).unwrap();
 
         let header_46 = BlockHeader {
             version: 0x1,
@@ -819,7 +819,7 @@ mod test {
             nonce: 1_626_117_377,
         };
 
-        let stamp = Utc.ymd(2009, 1, 10).and_hms(18, 41, 28);
+        let stamp = Utc.with_ymd_and_hms(2009, 1, 10, 18, 41, 28).unwrap();
 
         let header_47 = BlockHeader {
             version: 0x1,
@@ -836,7 +836,7 @@ mod test {
             nonce: 2_957_174_816,
         };
 
-        let stamp = Utc.ymd(2009, 1, 10).and_hms(18, 45, 40);
+        let stamp = Utc.with_ymd_and_hms(2009, 1, 10, 18, 45, 40).unwrap();
 
         let header_48 = BlockHeader {
             version: 0x1,
@@ -853,7 +853,7 @@ mod test {
             nonce: 3_759_171_867,
         };
 
-        let stamp = Utc.ymd(2009, 1, 10).and_hms(18, 56, 42);
+        let stamp = Utc.with_ymd_and_hms(2009, 1, 10, 18, 56, 42).unwrap();
 
         let header_49 = BlockHeader {
             version: 0x1,
@@ -902,13 +902,13 @@ mod test {
             network: bitcoin::Network::Bitcoin.into(),
         };
         let mut q = HeaderQueue::default();
-        q.configure(test_config);
+        q.configure(test_config).unwrap();
         q.add(header_list.into()).unwrap();
     }
 
     #[test]
     fn add_into_iterator() {
-        let stamp = Utc.ymd(2009, 1, 10).and_hms(17, 44, 37);
+        let stamp = Utc.with_ymd_and_hms(2009, 1, 10, 17, 44, 37).unwrap();
 
         let header = BlockHeader {
             version: 0x1,
@@ -950,14 +950,14 @@ mod test {
         let adapter = Adapter::new(header);
         let header_list = [WrappedHeader::new(adapter, 43)];
         let mut q = HeaderQueue::default();
-        q.configure(test_config.clone());
+        q.configure(test_config.clone()).unwrap();
         q.add_into_iter(header_list).unwrap();
     }
 
     #[test]
     #[should_panic(expected = "Bitcoin(BlockBadTarget)")]
     fn add_wrong_bits_non_retarget() {
-        let stamp = Utc.ymd(2009, 1, 10).and_hms(17, 44, 37);
+        let stamp = Utc.with_ymd_and_hms(2009, 1, 10, 17, 44, 37).unwrap();
 
         let header = BlockHeader {
             version: 0x1,
@@ -999,7 +999,7 @@ mod test {
         let adapter = Adapter::new(header);
         let header_list = [WrappedHeader::new(adapter, 43)];
         let mut q = HeaderQueue::default();
-        q.configure(test_config);
+        q.configure(test_config).unwrap();
         q.add_into_iter(header_list).unwrap();
     }
 }
