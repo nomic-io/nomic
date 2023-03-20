@@ -163,7 +163,7 @@ impl Airdrop {
         let mut accounts = 0;
         for (address, unom, claims) in recipients {
             let account = self.accounts.entry(address)?.or_default()?;
-            let testnet_allocation = Self::get_individual_testnet_allocation(&*account, &claims);
+            let testnet_allocation = Self::get_individual_testnet_allocation(&*account, &claims)?;
             self.airdrop_testnet_allocation_to(&address, testnet_allocation);
             airdrop_total += testnet_allocation;
             accounts += 1;
