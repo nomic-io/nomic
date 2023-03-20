@@ -366,6 +366,25 @@ mod test {
     use orga::prelude::Amount;
     use std::str::FromStr;
 
+    #[cfg(not(feature = "stakenet"))]
+    fn airdrop_allocation_no_testnet() {
+        let mut airdrop = Airdrop::default();
+        let csv = "address,evmos_9000-1_staked,evmos_9000-1_count,kaiyo-1_staked,kaiyo-1_count,cosmoshub-4_staked,cosmoshub-4_count,juno-1_staked,juno-1_count,osmosis-1_staked,osmosis-1_count,btc_deposit_claimed,btc_withdraw_claimed,ibc_transfer_claimed
+nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x,1,1,1,1,1,1,1,1,1,1,true,true,true".as_bytes();
+
+        airdrop.init_from_airdrop2_csv(csv).unwrap();
+
+        let account = airdrop
+            .get_mut(Address::from_str("nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x").unwrap())
+            .unwrap()
+            .unwrap();
+        let airdrop2_total = account.btc_deposit.total()
+            + account.btc_withdraw.total()
+            + account.ibc_transfer.total();
+
+        assert_eq!(airdrop2_total, AIRDROP_II_TOTAL);
+    }
+
     #[cfg(feature = "stakenet")]
     #[test]
     fn airdrop_allocation() {
