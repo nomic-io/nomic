@@ -18,7 +18,7 @@ jobs:
     - name: Use Nightly
       uses: actions-rs/toolchain@v1
       with:
-          toolchain: nightly
+          toolchain: nightly-2022-11-18
           override: true
     - name: Build
       uses: actions-rs/cargo@v1
@@ -35,7 +35,7 @@ jobs:
     - name: Use Nightly
       uses: actions-rs/toolchain@v1
       with:
-          toolchain: nightly
+          toolchain: nightly-2022-11-18
           override: true
     - name: Build
       uses: actions-rs/cargo@v1
@@ -51,14 +51,14 @@ jobs:
     - name: Use Nightly
       uses: actions-rs/toolchain@v1
       with:
-          toolchain: nightly
+          toolchain: nightly-2022-11-18
           override: true
     - name: Test
       uses: actions-rs/cargo@v1
       with:
           command: test
           args: --verbose
-      
+
   test-all-features:
     runs-on: ubuntu-latest
     steps:
@@ -67,7 +67,7 @@ jobs:
     - name: Use Nightly
       uses: actions-rs/toolchain@v1
       with:
-          toolchain: nightly
+          toolchain: nightly-2022-11-18
           override: true
     - name: Test
       uses: actions-rs/cargo@v1
@@ -83,7 +83,7 @@ jobs:
       - name: Use Nightly
         uses: actions-rs/toolchain@v1
         with:
-            toolchain: nightly
+            toolchain: nightly-2022-11-18
             components: llvm-tools-preview
             override: true
       - name: Install Coverage Tooling
@@ -111,7 +111,7 @@ jobs:
     - name: Use Nightly
       uses: actions-rs/toolchain@v1
       with:
-          toolchain: nightly
+          toolchain: nightly-2022-11-18
           components: rustfmt
           override: true
     - name: Check
@@ -121,17 +121,17 @@ jobs:
           args: --all -- --check
 
   clippy:
-    runs-on: ubuntu-latest 
+    runs-on: ubuntu-latest
     steps:
     - name: Checkout
       uses: actions/checkout@v2
     - name: Use Nightly
       uses: actions-rs/toolchain@v1
       with:
-          toolchain: nightly
+          toolchain: nightly-2022-11-18
           components: clippy
           override: true
-    - name: Check 
+    - name: Check
       uses: actions-rs/clippy-check@v1
       with:
         token: ${{ secrets.GITHUB_TOKEN }}

@@ -1,22 +1,17 @@
+#![allow(clippy::redundant_closure_call)] // TODO: fix bitcoin-script then remove this
+
 use crate::error::{Error, Result};
 use bitcoin::util::bip32::ChildNumber;
 use bitcoin::Script;
 use bitcoin_script::bitcoin_script as script;
-use orga::call::Call;
-use orga::client::Client;
 use orga::collections::Map;
 use orga::context::Context;
-use orga::describe::Describe;
-use orga::encoding::{Decode, Encode};
-use orga::migrate::MigrateFrom;
+use orga::encoding::Encode;
 use orga::orga;
 use orga::plugins::Time;
 #[cfg(feature = "full")]
 use orga::plugins::Validators;
-use orga::query::Query;
-use orga::state::State;
 use orga::Error as OrgaError;
-use serde::{Deserialize, Serialize};
 
 use super::threshold_sig::Pubkey;
 use super::ConsensusKey;
@@ -130,6 +125,8 @@ impl SignatorySet {
         self.present_vp >= self.quorum_threshold()
     }
 
+    // TODO: remove this attribute, not sure why clippy is complaining when is_empty is defined
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         self.signatories.len()
     }
@@ -218,7 +215,7 @@ impl SignatorySet {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    // use super::*;
 
     // #[test]
     // #[should_panic(expected = "Cannot build script for empty signatory set")]

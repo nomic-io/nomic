@@ -5,13 +5,11 @@ use bitcoin::consensus::Encodable;
 use bitcoin::util::uint::Uint256;
 use bitcoin::BlockHash;
 use bitcoin::TxMerkleNode;
-use orga::call::Call;
 use orga::collections::Deque;
 use orga::encoding as ed;
 use orga::migrate::MigrateFrom;
 use orga::orga;
 use orga::prelude::*;
-use orga::query::Query;
 use orga::state::State;
 use orga::store::Store;
 use orga::Error as OrgaError;
@@ -326,53 +324,70 @@ impl State for Network {
     }
 }
 
-#[derive(Call, Query, Default, MigrateFrom, Client)]
+#[orga(skip(Default))]
 pub struct HeaderQueue {
     pub(super) deque: Deque<WorkHeader>,
     pub(super) current_work: Adapter<Uint256>,
+    #[state(skip)]
     config: Config,
 }
 
-impl Terminated for HeaderQueue {}
-
-impl State for HeaderQueue {
-    fn attach(&mut self, store: Store) -> OrgaResult<()> {
-        self.deque.attach(store.sub(&[0]))?;
-        self.current_work.attach(store.sub(&[1]))?;
-
-        let height = self
-            .height()
-            .map_err(|err| orga::Error::App(err.to_string()))?;
-
-        if height == 0 {
-            let decoded_adapter: Adapter<BlockHeader> =
-                Decode::decode(self.config.encoded_trusted_header.as_slice())?;
-            let wrapped_header = WrappedHeader::new(decoded_adapter, self.config.trusted_height);
-            let work_header = WorkHeader::new(wrapped_header.clone(), wrapped_header.work());
-            self.current_work = Adapter::new(work_header.work());
-            self.deque.push_front(work_header.into())?;
+impl Default for HeaderQueue {
+    fn default() -> Self {
+        let mut deque = Deque::default();
+        let config = Config::default();
+        let decoded_adapter: Adapter<BlockHeader> =
+            Decode::decode(config.encoded_trusted_header.as_slice()).unwrap();
+        let wrapped_header = WrappedHeader::new(decoded_adapter, config.trusted_height);
+        let work_header = WorkHeader::new(wrapped_header.clone(), wrapped_header.work());
+        let current_work = Adapter::new(work_header.work());
+        deque.push_front(work_header).unwrap();
+        Self {
+            deque,
+            current_work,
+            config,
         }
-
-        Ok(())
-    }
-
-    #[inline]
-    fn flush<W: std::io::Write>(self, out: &mut W) -> OrgaResult<()> {
-        self.deque.flush(out)?;
-        self.current_work.flush(out)?;
-
-        Ok(())
-    }
-
-    fn load(store: Store, bytes: &mut &[u8]) -> OrgaResult<Self> {
-        let mut loader = ::orga::state::Loader::new(store, bytes, 0);
-        Ok(Self {
-            deque: loader.load_child()?,
-            current_work: loader.load_child()?,
-            config: Config::testnet(),
-        })
     }
 }
+
+// impl State for HeaderQueue {
+//     fn attach(&mut self, store: Store) -> OrgaResult<()> {
+//         self.deque.attach(store.sub(&[0]))?;
+//         self.current_work.attach(store.sub(&[1]))?;
+
+//         let height = self
+//             .height()
+//             .map_err(|err| orga::Error::App(err.to_string()))?;
+
+//         if height == 0 {
+//             let decoded_adapter: Adapter<BlockHeader> =
+//                 Decode::decode(self.config.encoded_trusted_header.as_slice())?;
+//             let wrapped_header = WrappedHeader::new(decoded_adapter, self.config.trusted_height);
+//             let work_header = WorkHeader::new(wrapped_header.clone(), wrapped_header.work());
+//             self.current_work = Adapter::new(work_header.work());
+//             self.deque.push_front(work_header.into())?;
+//         }
+
+//         Ok(())
+//     }
+
+//     #[inline]
+//     fn flush<W: std::io::Write>(self, out: &mut W) -> OrgaResult<()> {
+//         self.deque.flush(out)?;
+//         self.current_work.flush(out)?;
+
+//         Ok(())
+//     }
+
+//     fn load(store: Store, bytes: &mut &[u8]) -> OrgaResult<Self> {
+//         let mut loader = ::orga::state::Loader::new(store, bytes, 0);
+//         Ok(Self {
+//             deque: loader.load_child()?,
+//             current_work: loader.load_child()?,
+//             config: Config::testnet(),
+//         })
+//     }
+// }
 
 impl HeaderQueue {
     #[call]
@@ -479,7 +494,7 @@ impl HeaderQueue {
 
             let chain_work = *self.current_work + header_work;
             let work_header = WorkHeader::new(header.clone(), chain_work);
-            self.deque.push_back(work_header.into())?;
+            self.deque.push_back(work_header)?;
             self.current_work = Adapter::new(chain_work);
         }
 
@@ -592,7 +607,7 @@ impl HeaderQueue {
         for i in 0..11 {
             let index = self.height()? - i;
 
-            let current_item = match self.get_by_height(index as u32)? {
+            let current_item = match self.get_by_height(index)? {
                 Some(inner) => inner,
                 None => return Err(Error::Header("Deque does not contain any elements".into())),
             };
@@ -640,12 +655,14 @@ impl HeaderQueue {
         }
     }
 
+    // TODO: remove this attribute, not sure why clippy is complaining when is_empty is defined
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> u64 {
         self.deque.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.deque.is_empty()
+        self.len() == 0
     }
 
     #[query]

@@ -5,18 +5,15 @@ use bitcoin::secp256k1::{
     constants::{COMPACT_SIGNATURE_SIZE, MESSAGE_SIZE, PUBLIC_KEY_SIZE},
     ecdsa, PublicKey, Secp256k1,
 };
-use derive_more::{Deref, DerefMut, From, Into};
+use derive_more::{Deref, From};
 use orga::call::Call;
 use orga::client::Client;
 use orga::collections::{Map, Next};
-use orga::describe::Describe;
-use orga::encoding::{Decode, Encode, Error as EdError, Result as EdResult, Terminated};
+use orga::encoding::{Decode, Encode};
 use orga::migrate::MigrateFrom;
 use orga::query::Query;
 use orga::state::State;
 use orga::{Error, Result};
-use serde::{Deserialize, Serialize};
-use serde_big_array::BigArray;
 
 pub type Message = [u8; MESSAGE_SIZE];
 
@@ -43,7 +40,7 @@ pub struct Pubkey([u8; PUBLIC_KEY_SIZE]);
 
 impl Next for Pubkey {
     fn next(&self) -> Option<Self> {
-        let mut output = self.clone();
+        let mut output = *self;
         for (i, value) in self.0.iter().enumerate().rev() {
             match value.next() {
                 Some(new_value) => {
@@ -97,6 +94,7 @@ impl ThresholdSig {
         Self::default()
     }
 
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> u16 {
         self.len
     }
@@ -118,8 +116,7 @@ impl ThresholdSig {
                 Share {
                     power: signatory.voting_power,
                     sig: None,
-                }
-                .into(),
+                },
             )?;
 
             self.len += 1;
@@ -140,7 +137,7 @@ impl ThresholdSig {
             assert!(share.sig.is_none());
             total_vp += share.power;
             len += 1;
-            self.sigs.insert(pubkey, share.into())?;
+            self.sigs.insert(pubkey, share)?;
         }
 
         // TODO: get threshold ratio from somewhere else
@@ -164,10 +161,7 @@ impl ThresholdSig {
                     Err(e) => return Some(Err(e)),
                     Ok(entry) => entry,
                 };
-                share
-                    .sig
-                    .as_ref()
-                    .map(|sig| Ok((pubkey.clone(), sig.clone())))
+                share.sig.as_ref().map(|sig| Ok((*pubkey, *sig)))
             })
             .collect()
     }
@@ -176,7 +170,7 @@ impl ThresholdSig {
     pub fn shares(&self) -> Result<Vec<(Pubkey, Share)>> {
         self.sigs
             .iter()?
-            .map(|entry| entry.map(|(pubkey, share)| (pubkey.clone(), share.clone())))
+            .map(|entry| entry.map(|(pubkey, share)| (*pubkey, share.clone())))
             .collect()
     }
 
@@ -260,7 +254,6 @@ impl ThresholdSig {
 }
 
 use std::fmt::Debug;
-use std::ops::Deref;
 impl Debug for ThresholdSig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ThresholdSig")
