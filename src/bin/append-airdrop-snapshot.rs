@@ -19,7 +19,7 @@ pub struct Opts {
 }
 
 fn is_claimed(airdrop_part: &Part) -> bool {
-    airdrop_part.claimed > 0
+    airdrop_part.claimed > 0 || airdrop_part.claimable > 0
 }
 pub fn main() {
     let opts = Opts::parse();
