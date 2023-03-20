@@ -197,17 +197,21 @@ impl Airdrop {
         staked.min(MAX_STAKED)
     }
 
-    fn get_individual_testnet_allocation(airdrop: &Account, claims: &Vec<bool>) -> u64 {
-        let num_claims: u64 = claims.len().try_into().unwrap();
-        let claims: u64 = claims
-            .into_iter()
-            .filter(|val| **val)
-            .count()
-            .try_into()
+    fn get_individual_testnet_allocation(airdrop: &Account, claims: &Vec<bool>) -> Result<u64> {
+        let num_claims: u64 = claims.len().try_into()?;
+        let claims: u64 = claims.into_iter().filter(|val| **val).count().try_into()?;
+
+        let airdrop2_allocated_total = Amount::from(
+            airdrop.btc_deposit.locked + airdrop.btc_withdraw.locked + airdrop.ibc_transfer.locked,
+        );
+        let ratio_claimed = airdrop2_allocated_total / Amount::from(AIRDROP_II_TOTAL);
+        let total_claimable = ratio_claimed * Amount::from(AIRDROP_II_TESTNET_PARTICIPATION_TOTAL);
+        let result = (total_claimable * (Amount::from(claims) / Amount::from(num_claims)))
+            .result()
+            .unwrap()
+            .amount()
             .unwrap();
-        airdrop.btc_deposit.locked * claims / num_claims
-            + airdrop.btc_withdraw.locked * claims / num_claims
-            + airdrop.ibc_transfer.locked * claims / num_claims
+        Ok(result.into())
     }
 
     #[cfg(feature = "full")]
