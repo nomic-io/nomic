@@ -21,7 +21,6 @@ use tm::Client as _;
 
 lazy_static::lazy_static! {
     static ref QUERY_CACHE: Arc<RwLock<HashMap<String, (u64, String)>>> = Arc::new(RwLock::new(HashMap::new()));
-    //TODO: Get actual query strings for cached queries
     static ref CACHED_QUERIES: HashSet<String> = HashSet::from(["010209".to_string()]);
 }
 
