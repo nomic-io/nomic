@@ -341,4 +341,8 @@ impl Part {
     pub fn is_empty(&self) -> bool {
         (self.locked + self.claimable + self.claimed) == 0
     }
+
+    pub fn total(&self) -> u64 {
+        self.locked + self.claimable + self.claimed
+    }
 }
