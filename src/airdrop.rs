@@ -367,6 +367,7 @@ mod test {
     use std::str::FromStr;
 
     #[cfg(not(feature = "stakenet"))]
+    #[test]
     fn airdrop_allocation_no_testnet() {
         let mut airdrop = Airdrop::default();
         let csv = "address,evmos_9000-1_staked,evmos_9000-1_count,kaiyo-1_staked,kaiyo-1_count,cosmoshub-4_staked,cosmoshub-4_count,juno-1_staked,juno-1_count,osmosis-1_staked,osmosis-1_count,btc_deposit_claimed,btc_withdraw_claimed,ibc_transfer_claimed
