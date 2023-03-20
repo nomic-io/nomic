@@ -7,7 +7,6 @@ use super::{
 use crate::error::{Error, Result};
 use bitcoin::blockdata::transaction::EcdsaSighashType;
 use derive_more::{Deref, DerefMut};
-use orga::store::Store;
 use orga::{
     call::Call,
     client::Client,
@@ -21,6 +20,7 @@ use orga::{
     state::State,
     Error as OrgaError, Result as OrgaResult,
 };
+use orga::{prelude::Address, store::Store};
 use std::convert::TryFrom;
 
 pub const MIN_CHECKPOINT_INTERVAL: u64 = 60 * 5;
@@ -91,13 +91,16 @@ impl<U: Send + Clone> Client<U> for CheckpointStatus {
 //     }
 // }
 
-#[orga(skip(Client))]
+#[orga(skip(Client), version = 1)]
 #[derive(Debug)]
 pub struct Input {
     pub prevout: Adapter<bitcoin::OutPoint>,
     pub script_pubkey: Adapter<bitcoin::Script>,
     pub redeem_script: Adapter<bitcoin::Script>,
     pub sigset_index: u32,
+    #[orga(version(V0))]
+    pub dest: Address,
+    #[orga(version(V1))]
     pub dest: LengthVec<u16, u8>,
     pub amount: u64,
     pub est_witness_vsize: u64,
@@ -121,6 +124,21 @@ impl Input {
 
     pub fn est_vsize(&self) -> u64 {
         self.est_witness_vsize + 40
+    }
+}
+
+impl MigrateFrom<InputV0> for InputV1 {
+    fn migrate_from(other: InputV0) -> OrgaResult<Self> {
+        Ok(Self {
+            prevout: other.prevout,
+            script_pubkey: other.script_pubkey,
+            redeem_script: other.redeem_script,
+            sigset_index: other.sigset_index,
+            dest: other.dest.encode()?.try_into()?,
+            amount: other.amount,
+            est_witness_vsize: other.est_witness_vsize,
+            sigs: other.sigs,
+        })
     }
 }
 

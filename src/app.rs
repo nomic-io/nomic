@@ -13,7 +13,7 @@ use orga::ibc::ibc_rs::timestamp::Timestamp;
 use orga::ibc::TransferOpts;
 #[cfg(feature = "feat-ibc")]
 use orga::ibc::{Ibc, IbcTx};
-use orga::migrate::MigrateFrom;
+use orga::migrate::{MigrateFrom, MigrateInto};
 use orga::orga;
 use orga::plugins::sdk_compat::{sdk, sdk::Tx as SdkTx, ConvertSdkTx};
 use orga::upgrade::Upgrade;
@@ -22,11 +22,13 @@ use orga::Error;
 use orga::{ibc, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
+use std::fmt::Debug;
+use std::ops::{Deref, DerefMut};
 
 mod migrations;
 
 pub const CHAIN_ID: &str = "nomic-testnet-4d";
-pub const CONSENSUS_VERSION: u8 = 1;
+pub const CONSENSUS_VERSION: u8 = 0;
 pub type AppV0 = DefaultPlugins<Nom, InnerAppV0, CHAIN_ID>;
 pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
 
@@ -60,6 +62,7 @@ pub struct InnerApp {
     pub bitcoin: Bitcoin,
     pub reward_timer: RewardTimer,
     #[call]
+    #[orga(version(V1))]
     pub ibc: Ibc,
     #[orga(version(V1))]
     upgrade: Upgrade,

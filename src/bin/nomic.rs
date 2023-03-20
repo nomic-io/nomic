@@ -15,13 +15,12 @@ use std::str::FromStr;
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
 use futures::executor::block_on;
-#[cfg(feature = "compat")]
 use nomic::app::{AppV0, CONSENSUS_VERSION};
 use nomic::app::{DepositCommitment, IbcDepositCommitment};
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
 use nomic::network::Network;
-#[cfg(feature = "compat")]
+use orga::merk::BackingStore;
 use orga::merk::MerkStore;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -266,7 +265,7 @@ impl StartCmd {
 
             #[cfg(not(feature = "compat"))]
             if let Some(legacy_version) = &cmd.config.legacy_version {
-                let version_hex = hex::encode([nomic::app::CONSENSUS_VERSION]);
+                let version_hex = hex::encode([CONSENSUS_VERSION]);
 
                 let net_ver_path = home.join("network_version");
                 let up_to_date = if net_ver_path.exists() {

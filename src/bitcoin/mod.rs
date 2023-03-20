@@ -47,7 +47,7 @@ impl Symbol for Nbtc {
     const INDEX: u8 = 21;
 }
 
-pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Testnet;
+pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Bitcoin;
 pub const MIN_WITHDRAWAL_CHECKPOINTS: u32 = 4;
 pub const MIN_DEPOSIT_AMOUNT: u64 = 600;
 pub const MIN_WITHDRAWAL_AMOUNT: u64 = 600;
@@ -75,7 +75,7 @@ pub struct Bitcoin {
 
 pub type ConsensusKey = [u8; 32];
 
-#[derive(Call, Query, Clone, Debug, Client)]
+#[derive(Call, Query, Clone, Debug, Client, PartialEq)]
 pub struct Xpub(ExtendedPubKey);
 
 impl MigrateFrom for Xpub {
