@@ -304,6 +304,13 @@ pub struct BuildingCheckpoint<'a>(Ref<'a, Checkpoint>);
 #[derive(Deref, DerefMut)]
 pub struct BuildingCheckpointMut<'a>(ChildMut<'a, u64, Checkpoint>);
 
+type BuildingAdvanceRes = (
+    bitcoin::OutPoint,
+    u64,
+    Vec<ReadOnly<Input>>,
+    Vec<ReadOnly<Output>>,
+);
+
 impl<'a> BuildingCheckpointMut<'a> {
     pub fn push_input(
         &mut self,
@@ -334,21 +341,14 @@ impl<'a> BuildingCheckpointMut<'a> {
         Ok(input.est_vsize())
     }
 
-    pub fn advance(
-        self,
-    ) -> Result<(
-        bitcoin::OutPoint,
-        u64,
-        Vec<ReadOnly<Input>>,
-        Vec<ReadOnly<Output>>,
-    )> {
+    pub fn advance(self) -> Result<BuildingAdvanceRes> {
         let mut checkpoint = self.0;
 
         checkpoint.status = CheckpointStatus::Signing;
 
         let reserve_out = bitcoin::TxOut {
             value: 0, // will be updated after counting ins/outs and fees
-            script_pubkey: checkpoint.sigset.output_script(&vec![0u8])?, // TODO: double-check safety
+            script_pubkey: checkpoint.sigset.output_script(&[0u8])?, // TODO: double-check safety
         };
         checkpoint.outputs.push_front(Adapter::new(reserve_out))?;
 
@@ -443,8 +443,14 @@ impl CheckpointQueue {
         }
     }
 
+    // TODO: remove this attribute, not sure why clippy is complaining when is_empty is defined
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> Result<u32> {
         Ok(u32::try_from(self.queue.len())?)
+    }
+
+    pub fn is_empty(&self) -> Result<bool> {
+        Ok(self.len()? == 0)
     }
 
     #[query]
@@ -584,12 +590,12 @@ impl CheckpointQueue {
                 if elapsed < MAX_CHECKPOINT_INTERVAL || self.index == 0 {
                     let building = self.building()?;
                     let has_pending_deposit = if self.index == 0 {
-                        building.inputs.len() > 0
+                        building.inputs.is_empty()
                     } else {
                         building.inputs.len() > 1
                     };
 
-                    let has_pending_withdrawal = building.outputs.len() > 0;
+                    let has_pending_withdrawal = building.outputs.is_empty();
 
                     if !has_pending_deposit && !has_pending_withdrawal {
                         return Ok(());
@@ -614,13 +620,13 @@ impl CheckpointQueue {
                 building.push_input(
                     reserve_outpoint,
                     &sigset,
-                    &vec![0u8], // TODO: double-check safety
+                    &[0u8], // TODO: double-check safety
                     reserve_value,
                 )?;
 
                 for input in excess_inputs {
                     let shares = input.sigs.shares()?;
-                    let data = input.into_inner().into();
+                    let data = input.into_inner();
                     building.inputs.push_back(data)?;
                     building
                         .inputs
