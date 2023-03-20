@@ -52,7 +52,7 @@ pub const MIN_WITHDRAWAL_CHECKPOINTS: u32 = 4;
 pub const MIN_DEPOSIT_AMOUNT: u64 = 600;
 pub const MIN_WITHDRAWAL_AMOUNT: u64 = 600;
 pub const MAX_WITHDRAWAL_SCRIPT_LENGTH: u64 = 64;
-pub const TRANSFER_FEE: u64 = 1 * UNITS_PER_SAT;
+pub const TRANSFER_FEE: u64 = UNITS_PER_SAT;
 pub const MIN_CONFIRMATIONS: u32 = 0;
 pub const UNITS_PER_SAT: u64 = 1_000_000;
 
@@ -75,8 +75,14 @@ pub struct Bitcoin {
 
 pub type ConsensusKey = [u8; 32];
 
-#[derive(Call, Query, Clone, Debug, Client, MigrateFrom)]
+#[derive(Call, Query, Clone, Debug, Client)]
 pub struct Xpub(ExtendedPubKey);
+
+impl MigrateFrom for Xpub {
+    fn migrate_from(other: Self) -> OrgaResult<Self> {
+        Ok(other)
+    }
+}
 
 // impl Describe for Xpub {
 //     fn describe() -> orga::describe::Descriptor {

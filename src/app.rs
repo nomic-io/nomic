@@ -1,13 +1,11 @@
-use std::convert::TryInto;
+#![allow(clippy::too_many_arguments)]
 
 use crate::airdrop::Airdrop;
 use crate::bitcoin::adapter::Adapter;
 use crate::bitcoin::Bitcoin;
-
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::Transaction;
 use orga::cosmrs::bank::MsgSend;
-use orga::describe::Describe;
 use orga::encoding::{Decode, Encode};
 use orga::ibc::ibc_rs::core::ics04_channel::timeout::TimeoutHeight;
 use orga::ibc::ibc_rs::core::ics24_host::identifier::{ChannelId, PortId};
@@ -15,14 +13,21 @@ use orga::ibc::ibc_rs::timestamp::Timestamp;
 use orga::ibc::TransferOpts;
 #[cfg(feature = "feat-ibc")]
 use orga::ibc::{Ibc, IbcTx};
-use orga::migrate::{MigrateFrom, MigrateInto};
+use orga::migrate::MigrateFrom;
 use orga::orga;
 use orga::plugins::sdk_compat::{sdk, sdk::Tx as SdkTx, ConvertSdkTx};
+use orga::upgrade::Upgrade;
+use orga::upgrade::Version;
 use orga::Error;
 use orga::{ibc, prelude::*};
 use serde::{Deserialize, Serialize};
+use std::convert::TryInto;
+
+mod migrations;
 
 pub const CHAIN_ID: &str = "nomic-testnet-4d";
+pub const CONSENSUS_VERSION: u8 = 1;
+pub type AppV0 = DefaultPlugins<Nom, InnerAppV0, CHAIN_ID>;
 pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
 
 #[derive(State, Debug, Clone, Encode, Decode, Default, MigrateFrom)]
@@ -34,7 +39,7 @@ const DEV_ADDRESS: &str = "nomic14z79y3yrghqx493mwgcj0qd2udy6lm26lmduah";
 const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1d5n325zrf4elfu0heqd59gna5j6xyunhev23cj";
 const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhqd8dcqeq";
 
-#[orga]
+#[orga(version = 1)]
 pub struct InnerApp {
     #[call]
     pub accounts: Accounts<Nom>,
@@ -54,9 +59,10 @@ pub struct InnerApp {
     #[call]
     pub bitcoin: Bitcoin,
     pub reward_timer: RewardTimer,
-
     #[call]
     pub ibc: Ibc,
+    #[orga(version(V1))]
+    upgrade: Upgrade,
 }
 
 impl InnerApp {
@@ -76,9 +82,9 @@ impl InnerApp {
 
         let signer = self.signer()?;
         let _coins = self.bitcoin.accounts.withdraw(signer, amount)?;
-        self.airdrop
-            .get_mut(signer)?
-            .map(|mut acct| acct.ibc_transfer.unlock());
+        if let Some(mut acct) = self.airdrop.get_mut(signer)? {
+            acct.ibc_transfer.unlock();
+        }
 
         let fee = ibc_fee(amount)?;
         self.ibc
@@ -137,9 +143,9 @@ impl InnerApp {
         )?;
         match dest {
             DepositCommitment::Address(addr) => {
-                self.airdrop
-                    .get_mut(addr)?
-                    .map(|mut acct| acct.btc_deposit.unlock());
+                if let Some(mut acct) = self.airdrop.get_mut(addr)? {
+                    acct.btc_deposit.unlock();
+                }
                 self.bitcoin.accounts.deposit(addr, nbtc.into())?
             }
             DepositCommitment::Ibc(dest) => {
@@ -191,9 +197,9 @@ impl InnerApp {
         amount: Amount,
     ) -> crate::error::Result<()> {
         let signer = self.signer()?;
-        self.airdrop
-            .get_mut(signer)?
-            .map(|mut acct| acct.btc_withdraw.unlock());
+        if let Some(mut acct) = self.airdrop.get_mut(signer)? {
+            acct.btc_withdraw.unlock();
+        }
 
         self.bitcoin.withdraw(script_pubkey, amount)
     }
@@ -203,6 +209,11 @@ impl InnerApp {
             .ok_or_else(|| Error::Signer("No Signer context available".into()))?
             .signer
             .ok_or_else(|| Error::Coins("Unauthorized account action".into()))
+    }
+
+    #[call]
+    pub fn signal(&mut self, version: Version) -> Result<()> {
+        self.upgrade.signal(version)
     }
 }
 
@@ -240,6 +251,8 @@ mod abci {
 
     impl BeginBlock for InnerApp {
         fn begin_block(&mut self, ctx: &BeginBlockCtx) -> Result<()> {
+            self.upgrade
+                .step(&vec![CONSENSUS_VERSION].try_into().unwrap())?;
             self.staking.begin_block(ctx)?;
             self.ibc.begin_block(ctx)?;
 
@@ -292,12 +305,14 @@ impl ConvertSdkTx for InnerApp {
 
     fn convert(&self, sdk_tx: &SdkTx) -> Result<PaidCall<<InnerApp as Call>::Call>> {
         let sender_address = sdk_tx.sender_address()?;
+
         type AppCall = <InnerApp as Call>::Call;
         type AccountCall = <Accounts<Nom> as Call>::Call;
         type StakingCall = <Staking<Nom> as Call>::Call;
         type AirdropCall = <Airdrop as Call>::Call;
         type BitcoinCall = <Bitcoin as Call>::Call;
         type IbcCall = <Ibc as Call>::Call;
+
         match sdk_tx {
             SdkTx::Protobuf(tx) => {
                 let tx_bytes = sdk_tx.encode()?;
@@ -811,12 +826,34 @@ impl ConvertSdkTx for InnerApp {
                             timeout_timestamp,
                         };
 
-                        let payer_call =
-                            AppCall::MethodIbcDepositNbtc(sender.into(), amount, vec![]);
+                        let payer_call = AppCall::MethodIbcDepositNbtc(sender, amount, vec![]);
 
                         let ibc_call = IbcCall::MethodTransfer(transfer_opts, vec![]);
                         let ibc_call_bytes = ibc_call.encode()?;
                         let paid_call = AppCall::FieldIbc(ibc_call_bytes);
+
+                        Ok(PaidCall {
+                            payer: payer_call,
+                            paid: paid_call,
+                        })
+                    }
+
+                    "nomic/MsgJoinAirdropAccounts" => {
+                        let msg = msg
+                            .value
+                            .as_object()
+                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
+
+                        let dest_addr: Address = msg["dest_address"]
+                            .as_str()
+                            .ok_or_else(|| Error::App("Invalid destination address".to_string()))?
+                            .parse()
+                            .map_err(|_| Error::App("Invalid destination address".to_string()))?;
+
+                        let join_call = AirdropCall::MethodJoinAccounts(dest_addr, vec![]);
+                        let payer_call = AppCall::FieldAirdrop(join_call.encode()?);
+
+                        let paid_call = AppCall::MethodNoop(vec![]);
 
                         Ok(PaidCall {
                             payer: payer_call,

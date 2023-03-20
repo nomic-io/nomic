@@ -1,7 +1,7 @@
 use std::string::FromUtf8Error;
 
 use nomic::thiserror;
-use wasm_bindgen::JsValue;
+use wasm_bindgen::prelude::JsValue;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -21,9 +21,9 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-impl Into<wasm_bindgen::JsValue> for Error {
-    fn into(self) -> wasm_bindgen::JsValue {
-        wasm_bindgen::JsValue::from_str(&format!("{:?}", self))
+impl Into<JsValue> for Error {
+    fn into(self) -> JsValue {
+        JsValue::from_str(&format!("{:?}", self))
     }
 }
 

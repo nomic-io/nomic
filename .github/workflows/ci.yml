@@ -72,7 +72,7 @@ jobs:
       - name: Use Nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2022-11-18
+            toolchain: nightly-2022-11-18
             components: llvm-tools-preview
             override: true
     - name: Cache
@@ -131,6 +131,11 @@ jobs:
           toolchain: nightly-2022-11-18
           components: clippy
           override: true
+    - name: Check
+      uses: actions-rs/clippy-check@v1
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        args: --all-features -- -D warnings
     - name: Cache
       uses: actions/cache@v3
       with:
@@ -142,9 +147,4 @@ jobs:
           ~/.cargo/registry/src/**/librocksdb-sys-*
           target/
         key: ${{ runner.os }}-clippy-${{ hashFiles('Cargo.toml') }}
-    - name: Check
-      uses: actions-rs/clippy-check@v1
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-        args: --all-features -- -D warnings
 
