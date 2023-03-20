@@ -150,6 +150,7 @@ impl Airdrop {
 
         let mut modified_recipients = Vec::new();
         let mut airdrop_total = 0;
+        let mut accounts = 0;
         for (address, networks, claims) in recipients.iter() {
             let unom: u64 = networks
                 .iter()
@@ -162,6 +163,7 @@ impl Airdrop {
 
             self.airdrop_to(*address, unom)?;
             airdrop_total += unom;
+            accounts += 1;
             modified_recipients.push((*address, unom, claims));
         }
 
