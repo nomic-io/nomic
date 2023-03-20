@@ -724,6 +724,7 @@ impl ConvertSdkTx for InnerApp {
                         })
                     }
 
+                    #[cfg(feature = "stakenet")]
                     "nomic/MsgClaimTestnetParticipationAirdrop" => {
                         let msg = msg
                             .value

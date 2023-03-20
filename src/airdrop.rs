@@ -82,9 +82,12 @@ impl Airdrop {
 
     #[call]
     pub fn claim_testnet_participation(&mut self) -> Result<()> {
-        let mut acct = self.signer_acct_mut()?;
-        let amount = acct.testnet_participation.claim()?;
-        self.pay_as_funding(amount)?;
+        #[cfg(feature = "stakenet")]
+        {
+            let mut acct = self.signer_acct_mut()?;
+            let amount = acct.testnet_participation.claim()?;
+            self.pay_as_funding(amount)?;
+        }
         Ok(())
     }
 
@@ -116,6 +119,8 @@ impl Airdrop {
         add_part(&mut dest.btc_deposit, src.btc_deposit);
         add_part(&mut dest.ibc_transfer, src.ibc_transfer);
         add_part(&mut dest.btc_withdraw, src.btc_withdraw);
+
+        #[cfg(feature = "stakenet")]
         add_part(&mut dest.testnet_participation, src.testnet_participation);
 
         Ok(())
@@ -160,13 +165,15 @@ impl Airdrop {
             modified_recipients.push((*address, unom, claims));
         }
 
-        let mut accounts = 0;
-        for (address, _, claims) in recipients {
-            let account = self.accounts.entry(address)?.or_default()?;
-            let testnet_allocation = Self::get_individual_testnet_allocation(&*account, &claims)?;
-            self.airdrop_testnet_allocation_to(&address, testnet_allocation)?;
-            airdrop_total += testnet_allocation;
-            accounts += 1;
+        #[cfg(feature = "stakenet")]
+        {
+            for (address, _, claims) in recipients {
+                let account = self.accounts.entry(address)?.or_default()?;
+                let testnet_allocation =
+                    Self::get_individual_testnet_allocation(&*account, &claims)?;
+                self.airdrop_testnet_allocation_to(&address, testnet_allocation)?;
+                airdrop_total += testnet_allocation;
+            }
         }
 
         println!(
@@ -187,8 +194,11 @@ impl Airdrop {
     }
 
     fn airdrop_testnet_allocation_to(&mut self, address: &Address, unom: u64) -> Result<()> {
-        let mut account = self.accounts.entry(*address)?.or_default()?;
-        account.testnet_participation.claimable = unom;
+        #[cfg(feature = "stakenet")]
+        {
+            let mut account = self.accounts.entry(*address)?.or_default()?;
+            account.testnet_participation.claimable = unom;
+        }
 
         Ok(())
     }
@@ -301,6 +311,7 @@ pub struct Account {
     pub btc_deposit: Part,
     pub btc_withdraw: Part,
     pub ibc_transfer: Part,
+    #[cfg(feature = "stakenet")]
     pub testnet_participation: Part,
 }
 
@@ -353,6 +364,7 @@ mod test {
     use orga::prelude::Amount;
     use std::str::FromStr;
 
+    #[cfg(feature = "stakenet")]
     #[test]
     fn airdrop_allocation() {
         let mut airdrop = Airdrop::default();
@@ -376,6 +388,7 @@ nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x,1,1,1,1,1,1,1,1,1,1,true,true,true"
         );
     }
 
+    #[cfg(feature = "stakenet")]
     #[test]
     fn airdrop_allocation_multiple() {
         let mut airdrop = Airdrop::default();
@@ -416,6 +429,7 @@ nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs,1,1,1,1,1,1,1,1,1,1,true,true,true"
         assert_eq!(airdrop2_total, expected);
     }
 
+    #[cfg(feature = "stakenet")]
     #[test]
     fn airdrop_allocation_multiple_uneven() {
         let mut airdrop = Airdrop::default();
@@ -461,6 +475,7 @@ nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs,1,1,1,1,1,1,1,1,1,1,false,false,fal
         assert_eq!(airdrop2_total, expected);
     }
 
+    #[cfg(feature = "stakenet")]
     #[test]
     fn airdrop_allocation_multiple_one_claim() {
         let mut airdrop = Airdrop::default();
@@ -506,6 +521,7 @@ nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs,1,1,1,1,1,1,1,1,1,1,true,false,fals
         assert_eq!(airdrop2_total, expected);
     }
 
+    #[cfg(feature = "stakenet")]
     #[test]
     fn airdrop_allocation_multiple_two_claim() {
         let mut airdrop = Airdrop::default();
