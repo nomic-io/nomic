@@ -346,3 +346,219 @@ impl Part {
         self.locked + self.claimable + self.claimed
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use csv::Writer;
+    use orga::prelude::{Amount, MathResult};
+    use std::str::FromStr;
+
+    #[test]
+    fn airdrop_allocation() {
+        let mut airdrop = Airdrop::default();
+        let csv = "address,evmos_9000-1_staked,evmos_9000-1_count,kaiyo-1_staked,kaiyo-1_count,cosmoshub-4_staked,cosmoshub-4_count,juno-1_staked,juno-1_count,osmosis-1_staked,osmosis-1_count,btc_deposit_claimed,btc_withdraw_claimed,ibc_transfer_claimed
+nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x,1,1,1,1,1,1,1,1,1,1,true,true,true".as_bytes();
+
+        airdrop.init_from_airdrop2_csv(csv);
+
+        let account = airdrop
+            .get_mut(Address::from_str("nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x").unwrap())
+            .unwrap()
+            .unwrap();
+        let airdrop2_total = account.btc_deposit.total()
+            + account.btc_withdraw.total()
+            + account.ibc_transfer.total()
+            + account.testnet_participation.total();
+
+        assert_eq!(
+            airdrop2_total,
+            AIRDROP_II_TOTAL + AIRDROP_II_TESTNET_PARTICIPATION_TOTAL
+        );
+    }
+
+    #[test]
+    fn airdrop_allocation_multiple() {
+        let mut airdrop = Airdrop::default();
+        let csv = "address,evmos_9000-1_staked,evmos_9000-1_count,kaiyo-1_staked,kaiyo-1_count,cosmoshub-4_staked,cosmoshub-4_count,juno-1_staked,juno-1_count,osmosis-1_staked,osmosis-1_count,btc_deposit_claimed,btc_withdraw_claimed,ibc_transfer_claimed
+nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x,1,1,1,1,1,1,1,1,1,1,true,true,true
+nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs,1,1,1,1,1,1,1,1,1,1,true,true,true".as_bytes();
+
+        airdrop.init_from_airdrop2_csv(csv);
+
+        let account = airdrop
+            .get_mut(Address::from_str("nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x").unwrap())
+            .unwrap()
+            .unwrap();
+        let airdrop2_total = account.btc_deposit.total()
+            + account.btc_withdraw.total()
+            + account.ibc_transfer.total()
+            + account.testnet_participation.total();
+        let expected: u64 = ((Amount::from(AIRDROP_II_TOTAL)
+            + Amount::from(AIRDROP_II_TESTNET_PARTICIPATION_TOTAL))
+            / Amount::from(2))
+        .result()
+        .unwrap()
+        .amount()
+        .unwrap()
+        .into();
+
+        assert_eq!(airdrop2_total, expected);
+
+        let account = airdrop
+            .get_mut(Address::from_str("nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs").unwrap())
+            .unwrap()
+            .unwrap();
+        let airdrop2_total = account.btc_deposit.total()
+            + account.btc_withdraw.total()
+            + account.ibc_transfer.total()
+            + account.testnet_participation.total();
+
+        assert_eq!(airdrop2_total, expected);
+    }
+
+    #[test]
+    fn airdrop_allocation_multiple_uneven() {
+        let mut airdrop = Airdrop::default();
+        let csv = "address,evmos_9000-1_staked,evmos_9000-1_count,kaiyo-1_staked,kaiyo-1_count,cosmoshub-4_staked,cosmoshub-4_count,juno-1_staked,juno-1_count,osmosis-1_staked,osmosis-1_count,btc_deposit_claimed,btc_withdraw_claimed,ibc_transfer_claimed
+nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x,1,1,1,1,1,1,1,1,1,1,true,true,true
+nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs,1,1,1,1,1,1,1,1,1,1,false,false,false".as_bytes();
+
+        airdrop.init_from_airdrop2_csv(csv);
+
+        let account = airdrop
+            .get_mut(Address::from_str("nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x").unwrap())
+            .unwrap()
+            .unwrap();
+        let airdrop2_total = account.btc_deposit.total()
+            + account.btc_withdraw.total()
+            + account.ibc_transfer.total()
+            + account.testnet_participation.total();
+        let expected: u64 = ((Amount::from(AIRDROP_II_TOTAL)
+            + Amount::from(AIRDROP_II_TESTNET_PARTICIPATION_TOTAL))
+            / Amount::from(2))
+        .result()
+        .unwrap()
+        .amount()
+        .unwrap()
+        .into();
+        assert_eq!(airdrop2_total, expected);
+
+        let account = airdrop
+            .get_mut(Address::from_str("nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs").unwrap())
+            .unwrap()
+            .unwrap();
+        let airdrop2_total = account.btc_deposit.total()
+            + account.btc_withdraw.total()
+            + account.ibc_transfer.total()
+            + account.testnet_participation.total();
+        let expected: u64 = (Amount::from(AIRDROP_II_TOTAL) / Amount::from(2))
+            .result()
+            .unwrap()
+            .amount()
+            .unwrap()
+            .into();
+
+        assert_eq!(airdrop2_total, expected);
+    }
+
+    #[test]
+    fn airdrop_allocation_multiple_one_claim() {
+        let mut airdrop = Airdrop::default();
+        let csv = "address,evmos_9000-1_staked,evmos_9000-1_count,kaiyo-1_staked,kaiyo-1_count,cosmoshub-4_staked,cosmoshub-4_count,juno-1_staked,juno-1_count,osmosis-1_staked,osmosis-1_count,btc_deposit_claimed,btc_withdraw_claimed,ibc_transfer_claimed
+nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x,1,1,1,1,1,1,1,1,1,1,true,true,true
+nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs,1,1,1,1,1,1,1,1,1,1,true,false,false".as_bytes();
+
+        airdrop.init_from_airdrop2_csv(csv);
+
+        let account = airdrop
+            .get_mut(Address::from_str("nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x").unwrap())
+            .unwrap()
+            .unwrap();
+        let airdrop2_total = account.btc_deposit.total()
+            + account.btc_withdraw.total()
+            + account.ibc_transfer.total()
+            + account.testnet_participation.total();
+        let expected: u64 = ((Amount::from(AIRDROP_II_TOTAL)
+            + Amount::from(AIRDROP_II_TESTNET_PARTICIPATION_TOTAL))
+            / Amount::from(2))
+        .result()
+        .unwrap()
+        .amount()
+        .unwrap()
+        .into();
+        assert_eq!(airdrop2_total, expected);
+
+        let account = airdrop
+            .get_mut(Address::from_str("nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs").unwrap())
+            .unwrap()
+            .unwrap();
+        let airdrop2_total = account.btc_deposit.total()
+            + account.btc_withdraw.total()
+            + account.ibc_transfer.total()
+            + account.testnet_participation.total();
+        let expected: u64 = ((Amount::from(AIRDROP_II_TOTAL) / Amount::from(2))
+            + (Amount::from(AIRDROP_II_TESTNET_PARTICIPATION_TOTAL) / Amount::from(6)))
+        .result()
+        .unwrap()
+        .amount()
+        .unwrap()
+        .into();
+        assert_eq!(airdrop2_total, expected);
+    }
+
+    #[test]
+    fn airdrop_allocation_multiple_two_claim() {
+        let mut airdrop = Airdrop::default();
+        let csv = "address,evmos_9000-1_staked,evmos_9000-1_count,kaiyo-1_staked,kaiyo-1_count,cosmoshub-4_staked,cosmoshub-4_count,juno-1_staked,juno-1_count,osmosis-1_staked,osmosis-1_count,btc_deposit_claimed,btc_withdraw_claimed,ibc_transfer_claimed
+nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x,1,1,1,1,1,1,1,1,1,1,true,true,true
+nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs,1,1,1,1,1,1,1,1,1,1,true,true,false".as_bytes();
+
+        airdrop.init_from_airdrop2_csv(csv);
+
+        let account = airdrop
+            .get_mut(Address::from_str("nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x").unwrap())
+            .unwrap()
+            .unwrap();
+        let airdrop_total_1 = account.btc_deposit.total()
+            + account.btc_withdraw.total()
+            + account.ibc_transfer.total()
+            + account.testnet_participation.total();
+        let expected: u64 = ((Amount::from(AIRDROP_II_TOTAL)
+            + Amount::from(AIRDROP_II_TESTNET_PARTICIPATION_TOTAL))
+            / Amount::from(2))
+        .result()
+        .unwrap()
+        .amount()
+        .unwrap()
+        .into();
+        assert_eq!(airdrop_total_1, expected);
+
+        let account = airdrop
+            .get_mut(Address::from_str("nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs").unwrap())
+            .unwrap()
+            .unwrap();
+        let airdrop_total_2 = account.btc_deposit.total()
+            + account.btc_withdraw.total()
+            + account.ibc_transfer.total()
+            + account.testnet_participation.total();
+        let expected: u64 = (Amount::from(AIRDROP_II_TOTAL) / Amount::from(2)
+            + (Amount::from(AIRDROP_II_TESTNET_PARTICIPATION_TOTAL) / Amount::from(3)))
+        .result()
+        .unwrap()
+        .amount()
+        .unwrap()
+        .into();
+        assert_eq!(airdrop_total_2, expected);
+
+        let expected: u64 = (Amount::from(AIRDROP_II_TOTAL)
+            + (Amount::from(AIRDROP_II_TESTNET_PARTICIPATION_TOTAL) * Amount::from(5)
+                / Amount::from(6)))
+        .result()
+        .unwrap()
+        .amount()
+        .unwrap()
+        .into();
+        assert_eq!(airdrop_total_1 + airdrop_total_2, expected);
+    }
+}
