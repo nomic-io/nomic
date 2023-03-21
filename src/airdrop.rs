@@ -11,12 +11,15 @@ use super::app::Nom;
 
 const MAX_STAKED: u64 = 1_000_000_000;
 const AIRDROP_II_TOTAL: u64 = 3_000_000_000_000;
+#[cfg(feature = "stakenet")]
 const AIRDROP_II_TESTNET_PARTICIPATION_TOTAL: u64 = 500_000_000_000;
 
 #[orga]
 pub struct Airdrop {
     accounts: Map<Address, Account>,
 }
+
+type Recipients = Vec<(Address, Vec<(u64, u64)>, Vec<bool>)>;
 
 impl Airdrop {
     #[query]
@@ -195,12 +198,10 @@ impl Airdrop {
         Ok(())
     }
 
+    #[cfg(feature = "stakenet")]
     fn airdrop_testnet_allocation_to(&mut self, address: &Address, unom: u64) -> Result<()> {
-        #[cfg(feature = "stakenet")]
-        {
-            let mut account = self.accounts.entry(*address)?.or_default()?;
-            account.testnet_participation.claimable = unom;
-        }
+        let mut account = self.accounts.entry(*address)?.or_default()?;
+        account.testnet_participation.claimable = unom;
 
         Ok(())
     }
@@ -209,9 +210,10 @@ impl Airdrop {
         staked.min(MAX_STAKED)
     }
 
+    #[cfg(feature = "stakenet")]
     fn get_individual_testnet_allocation(airdrop: &Account, claims: &Vec<bool>) -> Result<u64> {
         let num_claims: u64 = claims.len().try_into()?;
-        let claims: u64 = claims.into_iter().filter(|val| **val).count().try_into()?;
+        let claims: u64 = claims.iter().filter(|val| **val).count().try_into()?;
 
         let airdrop2_allocated_total = Amount::from(
             airdrop.btc_deposit.locked + airdrop.btc_withdraw.locked + airdrop.ibc_transfer.locked,
@@ -227,7 +229,7 @@ impl Airdrop {
     }
 
     #[cfg(feature = "full")]
-    fn get_recipients_from_csv(data: &[u8]) -> Vec<(Address, Vec<(u64, u64)>, Vec<bool>)> {
+    fn get_recipients_from_csv(data: &[u8]) -> Recipients {
         let mut reader = csv::Reader::from_reader(data);
 
         reader
