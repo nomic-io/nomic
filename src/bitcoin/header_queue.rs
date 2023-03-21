@@ -730,7 +730,7 @@ mod test {
 
     #[test]
     fn primitive_adapter_encode_decode() {
-        let stamp = Utc.ymd(2009, 1, 10).and_hms(17, 39, 13);
+        let stamp = Utc.with_ymd_and_hms(2009, 1, 10, 17, 39, 13).unwrap();
         //Bitcoin block 42
         let header = BlockHeader {
             version: 0x1,
@@ -914,7 +914,7 @@ mod test {
 
     #[test]
     fn add_into_iterator() {
-        let stamp = Utc.ymd(2009, 1, 10).and_hms(17, 44, 37);
+        let stamp = Utc.with_ymd_and_hms(2009, 1, 10, 17, 44, 37).unwrap();
 
         let header = BlockHeader {
             version: 0x1,
@@ -969,7 +969,7 @@ mod test {
     #[test]
     #[should_panic(expected = "Bitcoin(BlockBadTarget)")]
     fn add_wrong_bits_non_retarget() {
-        let stamp = Utc.ymd(2009, 1, 10).and_hms(17, 44, 37);
+        let stamp = Utc.with_ymd_and_hms(2009, 1, 10, 17, 44, 37).unwrap();
 
         let header = BlockHeader {
             version: 0x1,

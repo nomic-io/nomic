@@ -597,9 +597,9 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "chrono"
-version = "0.4.23"
+version = "0.4.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16b0a3d9ed01224b22057780a37bb8c5dbfe1be8ba48678e7bf57ec4b385411f"
+checksum = "4e3c5919066adf22df73762e50cffcde3a758f2a848b113b586d1f86728b673b"
 dependencies = [
  "iana-time-zone",
  "js-sys",
@@ -2405,7 +2405,7 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.3.1"
-source = "git+https://github.com/nomic-io/orga.git?rev=a986059b5aaa2b783e8050b9f6bfb0ae4a59f718#a986059b5aaa2b783e8050b9f6bfb0ae4a59f718"
+source = "git+https://github.com/nomic-io/orga.git?rev=e58a61cc0cd74fb91a21161f01d65f9ea8359a44#e58a61cc0cd74fb91a21161f01d65f9ea8359a44"
 dependencies = [
  "abci2",
  "async-trait",
@@ -2463,7 +2463,7 @@ dependencies = [
 [[package]]
 name = "orga-macros"
 version = "0.3.1"
-source = "git+https://github.com/nomic-io/orga.git?rev=a986059b5aaa2b783e8050b9f6bfb0ae4a59f718#a986059b5aaa2b783e8050b9f6bfb0ae4a59f718"
+source = "git+https://github.com/nomic-io/orga.git?rev=e58a61cc0cd74fb91a21161f01d65f9ea8359a44#e58a61cc0cd74fb91a21161f01d65f9ea8359a44"
 dependencies = [
  "darling 0.14.3",
  "heck 0.3.3",
