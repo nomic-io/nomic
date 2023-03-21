@@ -42,29 +42,28 @@ pub fn main() {
     let mut writer = csv::Writer::from_writer(std::io::stdout());
     writer.write_record(&headers).unwrap();
     for result in reader.records() {
-        let record = result.unwrap();
+        let mut record = result.unwrap();
         let airdrop_account = app
             .airdrop
             .get(Address::from_str(record.get(0).unwrap()).unwrap())
             .unwrap()
             .unwrap();
 
-        let mut extended_record = StringRecord::from(record);
-        extended_record.push_field(
+        record.push_field(
             is_claimed(&airdrop_account.btc_deposit)
                 .to_string()
                 .as_str(),
         );
-        extended_record.push_field(
+        record.push_field(
             is_claimed(&airdrop_account.btc_withdraw)
                 .to_string()
                 .as_str(),
         );
-        extended_record.push_field(
+        record.push_field(
             is_claimed(&airdrop_account.ibc_transfer)
                 .to_string()
                 .as_str(),
         );
-        writer.write_record(&extended_record).unwrap();
+        writer.write_record(&record).unwrap();
     }
 }
