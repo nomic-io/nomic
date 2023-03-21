@@ -364,6 +364,7 @@ pub struct Account {
     #[orga(version(V1))]
     pub ibc_transfer: Part,
     #[cfg(not(feature = "testnet"))]
+    #[orga(version(V1))]
     pub testnet_participation: Part,
 }
 
