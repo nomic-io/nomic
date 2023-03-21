@@ -19,10 +19,21 @@ pub struct Accs {
     accounts: Map<Address, Account>,
 }
 
+#[cfg(feature = "mainnet")]
 #[orga(version = 1)]
 pub struct Airdrop {
     #[orga(version(V0))]
     accounts: Accs,
+
+    #[orga(version(V1))]
+    accounts: Map<Address, Account>,
+}
+
+#[cfg(feature = "testnet")]
+#[orga(version = 1)]
+pub struct Airdrop {
+    #[orga(version(V0))]
+    accounts: Map<Address, Account>,
 
     #[orga(version(V1))]
     accounts: Map<Address, Account>,
@@ -266,10 +277,20 @@ impl Airdrop {
     }
 }
 
+#[cfg(feature = "mainnet")]
 impl MigrateFrom<AirdropV0> for AirdropV1 {
     fn migrate_from(other: AirdropV0) -> Result<Self> {
         Ok(Self {
             accounts: other.accounts.accounts.migrate_into()?,
+        })
+    }
+}
+
+#[cfg(feature = "testnet")]
+impl MigrateFrom<AirdropV0> for AirdropV1 {
+    fn migrate_from(other: AirdropV0) -> Result<Self> {
+        Ok(Self {
+            accounts: other.accounts.migrate_into()?,
         })
     }
 }

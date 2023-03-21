@@ -48,6 +48,8 @@ default = ["full", "feat-ibc"]
 full = ["bitcoind", "bitcoincore-rpc-async", "clap", "tokio", "orga/merk-full", "orga/abci", "orga/state-sync", "csv", "warp", "rand"]
 feat-ibc = ["orga/feat-ibc"]
 compat = []
+testnet = []
+mainnet = []
 
 [[bin]]
 name = "nomic"
@@ -65,4 +67,3 @@ required-features = ["csv"]
 [patch.crates-io]
 ibc = { git = "https://github.com/informalsystems/ibc-rs.git", rev = "e8c98d4" }
 ibc-proto = { git = "https://github.com/informalsystems/ibc-rs.git", rev = "e8c98d4" }
-

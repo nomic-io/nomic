@@ -28,6 +28,9 @@ use std::ops::{Deref, DerefMut};
 mod migrations;
 
 pub const CHAIN_ID: &str = "nomic-testnet-4d";
+#[cfg(feature = "testnet")]
+pub const CONSENSUS_VERSION: u8 = 1;
+#[cfg(feature = "mainnet")]
 pub const CONSENSUS_VERSION: u8 = 0;
 pub type AppV0 = DefaultPlugins<Nom, InnerAppV0, CHAIN_ID>;
 pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
@@ -61,9 +64,12 @@ pub struct InnerApp {
     #[call]
     pub bitcoin: Bitcoin,
     pub reward_timer: RewardTimer,
+
+    #[cfg(feature = "testnet")]
     #[call]
     #[orga(version(V1))]
     pub ibc: Ibc,
+
     #[orga(version(V1))]
     upgrade: Upgrade,
 }
@@ -81,49 +87,77 @@ impl InnerApp {
 
     #[call]
     pub fn ibc_deposit_nbtc(&mut self, to: Address, amount: Amount) -> crate::error::Result<()> {
-        crate::bitcoin::exempt_from_fee()?;
-
-        let signer = self.signer()?;
-        let _coins = self.bitcoin.accounts.withdraw(signer, amount)?;
-        if let Some(mut acct) = self.airdrop.get_mut(signer)? {
-            acct.ibc_transfer.unlock();
+        #[cfg(feature = "mainnet")]
+        {
+            return Err(crate::error::Error::Unknown);
         }
+        #[cfg(feature = "testnet")]
+        {
+            crate::bitcoin::exempt_from_fee()?;
 
-        let fee = ibc_fee(amount)?;
-        self.ibc
-            .bank_mut()
-            .mint(to, (amount - fee).result()?, "usat".parse()?)?;
-        self.bitcoin.reward_pool.give(fee.into())?;
+            let signer = self.signer()?;
+            let _coins = self.bitcoin.accounts.withdraw(signer, amount)?;
+            if let Some(mut acct) = self.airdrop.get_mut(signer)? {
+                acct.ibc_transfer.unlock();
+            }
 
-        Ok(())
+            let fee = ibc_fee(amount)?;
+            self.ibc
+                .bank_mut()
+                .mint(to, (amount - fee).result()?, "usat".parse()?)?;
+            self.bitcoin.reward_pool.give(fee.into())?;
+
+            Ok(())
+        }
     }
 
     #[call]
     pub fn ibc_withdraw_nbtc(&mut self, amount: Amount) -> crate::error::Result<()> {
-        crate::bitcoin::exempt_from_fee()?;
+        #[cfg(feature = "mainnet")]
+        {
+            return Err(crate::error::Error::Unknown);
+        }
+        #[cfg(feature = "testnet")]
+        {
+            crate::bitcoin::exempt_from_fee()?;
 
-        let signer = self.signer()?;
-        self.ibc.bank_mut().burn(signer, amount, "usat".parse()?)?;
-        self.bitcoin.accounts.deposit(signer, amount.into())?;
+            let signer = self.signer()?;
+            self.ibc.bank_mut().burn(signer, amount, "usat".parse()?)?;
+            self.bitcoin.accounts.deposit(signer, amount.into())?;
 
-        Ok(())
+            Ok(())
+        }
     }
 
     #[query]
     pub fn escrowed_nbtc(&self, address: Address) -> Result<Amount> {
-        Ok(*self
-            .ibc
-            .bank()
-            .balances
-            .get_or_default("usat".parse()?)?
-            .get_or_default(address)?)
+        #[cfg(feature = "mainnet")]
+        {
+            return Err(Error::Unknown);
+        }
+        #[cfg(feature = "testnet")]
+        {
+            Ok(*self
+                .ibc
+                .bank()
+                .balances
+                .get_or_default("usat".parse()?)?
+                .get_or_default(address)?)
+        }
     }
 
     #[call]
     pub fn claim_escrowed_nbtc(&mut self) -> crate::error::Result<()> {
-        let signer = self.signer()?;
-        let balance = self.escrowed_nbtc(signer)?;
-        self.ibc_withdraw_nbtc(balance)
+        #[cfg(feature = "mainnet")]
+        {
+            return Err(crate::error::Error::Unknown);
+        }
+        #[cfg(feature = "testnet")]
+        {
+            let signer = self.signer()?;
+            let balance = self.escrowed_nbtc(signer)?;
+            self.ibc_withdraw_nbtc(balance)
+        }
     }
 
     #[call]
@@ -152,41 +186,48 @@ impl InnerApp {
                 self.bitcoin.accounts.deposit(addr, nbtc.into())?
             }
             DepositCommitment::Ibc(dest) => {
-                use orga::ibc::ibc_rs::applications::transfer::msgs::transfer::MsgTransfer;
-                use orga::ibc::proto::cosmos::base::v1beta1::Coin;
-                let fee = ibc_fee(nbtc)?;
-                let nbtc_after_fee = (nbtc - fee).result()?;
-                let IbcDepositCommitment {
-                    source_port,
-                    source_channel,
-                    receiver,
-                    sender,
-                    timeout_timestamp,
-                } = dest;
-                let msg_transfer = MsgTransfer {
-                    sender: sender.clone().into_inner(),
-                    source_port: source_port.into_inner(),
-                    source_channel: source_channel.into_inner(),
-                    token: Coin {
-                        amount: nbtc_after_fee.to_string(),
-                        denom: "usat".to_string(),
-                    },
-                    receiver: receiver.into_inner(),
-                    timeout_height: TimeoutHeight::Never,
-                    timeout_timestamp: Timestamp::from_nanoseconds(timeout_timestamp)
-                        .map_err(|e| Error::App(e.to_string()))?,
-                };
-                self.ibc.bank_mut().mint(
-                    sender
-                        .into_inner()
-                        .try_into()
-                        .map_err(|_| Error::App("Invalid sender address".into()))?,
-                    nbtc_after_fee,
-                    "usat".parse()?,
-                )?;
-                self.bitcoin.reward_pool.give(fee.into())?;
-                #[cfg(feature = "full")]
-                self.ibc.raw_transfer(msg_transfer)?
+                #[cfg(feature = "mainnet")]
+                {
+                    return Err(crate::error::Error::Unknown);
+                }
+                #[cfg(feature = "testnet")]
+                {
+                    use orga::ibc::ibc_rs::applications::transfer::msgs::transfer::MsgTransfer;
+                    use orga::ibc::proto::cosmos::base::v1beta1::Coin;
+                    let fee = ibc_fee(nbtc)?;
+                    let nbtc_after_fee = (nbtc - fee).result()?;
+                    let IbcDepositCommitment {
+                        source_port,
+                        source_channel,
+                        receiver,
+                        sender,
+                        timeout_timestamp,
+                    } = dest;
+                    let msg_transfer = MsgTransfer {
+                        sender: sender.clone().into_inner(),
+                        source_port: source_port.into_inner(),
+                        source_channel: source_channel.into_inner(),
+                        token: Coin {
+                            amount: nbtc_after_fee.to_string(),
+                            denom: "usat".to_string(),
+                        },
+                        receiver: receiver.into_inner(),
+                        timeout_height: TimeoutHeight::Never,
+                        timeout_timestamp: Timestamp::from_nanoseconds(timeout_timestamp)
+                            .map_err(|e| Error::App(e.to_string()))?,
+                    };
+                    self.ibc.bank_mut().mint(
+                        sender
+                            .into_inner()
+                            .try_into()
+                            .map_err(|_| Error::App("Invalid sender address".into()))?,
+                        nbtc_after_fee,
+                        "usat".parse()?,
+                    )?;
+                    self.bitcoin.reward_pool.give(fee.into())?;
+                    #[cfg(feature = "full")]
+                    self.ibc.raw_transfer(msg_transfer)?
+                }
             }
         }
 
@@ -257,6 +298,7 @@ mod abci {
             self.upgrade
                 .step(&vec![CONSENSUS_VERSION].try_into().unwrap())?;
             self.staking.begin_block(ctx)?;
+            #[cfg(feature = "testnet")]
             self.ibc.begin_block(ctx)?;
 
             let has_stake = self.staking.staked()? > 0;
@@ -298,7 +340,10 @@ mod abci {
 
     impl AbciQuery for InnerApp {
         fn abci_query(&self, request: &messages::RequestQuery) -> Result<messages::ResponseQuery> {
-            self.ibc.abci_query(request)
+            #[cfg(feature = "testnet")]
+            return self.ibc.abci_query(request);
+            #[cfg(feature = "mainnet")]
+            return Ok(Default::default());
         }
     }
 }
@@ -319,18 +364,23 @@ impl ConvertSdkTx for InnerApp {
         match sdk_tx {
             SdkTx::Protobuf(tx) => {
                 let tx_bytes = sdk_tx.encode()?;
-                if IbcTx::decode(tx_bytes.as_slice()).is_ok() {
-                    let funding_amt = MIN_FEE;
-                    let funding_call = AccountCall::MethodTakeAsFunding(funding_amt.into(), vec![]);
-                    let funding_call_bytes = funding_call.encode()?;
-                    let payer_call = AppCall::FieldAccounts(funding_call_bytes);
 
-                    let deliver_msg_call_bytes = [vec![2], tx_bytes].concat();
-                    let paid_call = AppCall::FieldIbc(deliver_msg_call_bytes);
-                    return Ok(PaidCall {
-                        payer: payer_call,
-                        paid: paid_call,
-                    });
+                #[cfg(feature = "testnet")]
+                {
+                    if IbcTx::decode(tx_bytes.as_slice()).is_ok() {
+                        let funding_amt = MIN_FEE;
+                        let funding_call =
+                            AccountCall::MethodTakeAsFunding(funding_amt.into(), vec![]);
+                        let funding_call_bytes = funding_call.encode()?;
+                        let payer_call = AppCall::FieldAccounts(funding_call_bytes);
+
+                        let deliver_msg_call_bytes = [vec![2], tx_bytes].concat();
+                        let paid_call = AppCall::FieldIbc(deliver_msg_call_bytes);
+                        return Ok(PaidCall {
+                            payer: payer_call,
+                            paid: paid_call,
+                        });
+                    }
                 }
 
                 if tx.body.messages.len() != 1 {
@@ -777,6 +827,7 @@ impl ConvertSdkTx for InnerApp {
                         })
                     }
 
+                    #[cfg(feature = "testnet")]
                     "nomic/MsgIbcTransferOut" => {
                         let msg: MsgIbcTransfer = serde_json::value::from_value(msg.value.clone())
                             .map_err(|e| Error::App(e.to_string()))?;

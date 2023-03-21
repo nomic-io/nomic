@@ -85,11 +85,16 @@ pub enum Command {
     Signer(SignerCmd),
     SetSignatoryKey(SetSignatoryKeyCmd),
     Deposit(DepositCmd),
+    #[cfg(feature = "testnet")]
     InterchainDeposit(InterchainDepositCmd),
     Withdraw(WithdrawCmd),
+    #[cfg(feature = "testnet")]
     IbcDepositNbtc(IbcDepositNbtcCmd),
+    #[cfg(feature = "testnet")]
     IbcWithdrawNbtc(IbcWithdrawNbtcCmd),
+    #[cfg(feature = "testnet")]
     Grpc(GrpcCmd),
+    #[cfg(feature = "testnet")]
     IbcTransfer(IbcTransferCmd),
 }
 
@@ -116,11 +121,16 @@ impl Command {
             Signer(cmd) => cmd.run().await,
             SetSignatoryKey(cmd) => cmd.run().await,
             Deposit(cmd) => cmd.run().await,
+            #[cfg(feature = "testnet")]
             InterchainDeposit(cmd) => cmd.run().await,
             Withdraw(cmd) => cmd.run().await,
+            #[cfg(feature = "testnet")]
             IbcDepositNbtc(cmd) => cmd.run().await,
+            #[cfg(feature = "testnet")]
             IbcWithdrawNbtc(cmd) => cmd.run().await,
+            #[cfg(feature = "testnet")]
             Grpc(cmd) => cmd.run().await,
+            #[cfg(feature = "testnet")]
             IbcTransfer(cmd) => cmd.run().await,
         }
     }
@@ -1116,6 +1126,7 @@ impl DepositCmd {
     }
 }
 
+#[cfg(feature = "testnet")]
 #[derive(Parser, Debug)]
 pub struct InterchainDepositCmd {
     #[clap(long, value_name = "ADDRESS")]
@@ -1124,7 +1135,9 @@ pub struct InterchainDepositCmd {
     channel: String,
 }
 
+#[cfg(feature = "testnet")]
 const ONE_DAY_NS: u64 = 86400 * 1_000_000_000;
+#[cfg(feature = "testnet")]
 impl InterchainDepositCmd {
     async fn run(&self) -> Result<()> {
         use orga::ibc::encoding::Adapter;
@@ -1166,12 +1179,14 @@ impl WithdrawCmd {
     }
 }
 
+#[cfg(feature = "testnet")]
 #[derive(Parser, Debug)]
 pub struct IbcDepositNbtcCmd {
     to: Address,
     amount: u64,
 }
 
+#[cfg(feature = "testnet")]
 impl IbcDepositNbtcCmd {
     async fn run(&self) -> Result<()> {
         Ok(app_client()
@@ -1183,11 +1198,13 @@ impl IbcDepositNbtcCmd {
     }
 }
 
+#[cfg(feature = "testnet")]
 #[derive(Parser, Debug)]
 pub struct IbcWithdrawNbtcCmd {
     amount: u64,
 }
 
+#[cfg(feature = "testnet")]
 impl IbcWithdrawNbtcCmd {
     async fn run(&self) -> Result<()> {
         Ok(app_client()
@@ -1197,12 +1214,14 @@ impl IbcWithdrawNbtcCmd {
     }
 }
 
+#[cfg(feature = "testnet")]
 #[derive(Parser, Debug)]
 pub struct GrpcCmd {
     #[clap(default_value_t = 9001)]
     port: u16,
 }
 
+#[cfg(feature = "testnet")]
 impl GrpcCmd {
     async fn run(&self) -> Result<()> {
         let ibc_client = app_client().ibc.clone();
@@ -1218,6 +1237,7 @@ impl GrpcCmd {
     }
 }
 
+#[cfg(feature = "testnet")]
 #[derive(Parser, Debug)]
 pub struct IbcTransferCmd {
     receiver: String,
@@ -1227,7 +1247,9 @@ pub struct IbcTransferCmd {
     denom: String,
 }
 
+#[cfg(feature = "testnet")]
 use orga::ibc::TransferArgs;
+#[cfg(feature = "testnet")]
 impl IbcTransferCmd {
     async fn run(&self) -> Result<()> {
         let fee: u64 = nomic::app::ibc_fee(self.amount.into())?.into();
