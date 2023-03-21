@@ -12,7 +12,7 @@ use super::app::Nom;
 
 const MAX_STAKED: u64 = 1_000_000_000;
 const AIRDROP_II_TOTAL: u64 = 3_000_000_000_000;
-#[cfg(feature = "stakenet")]
+#[cfg(not(feature = "testnet"))]
 const AIRDROP_II_TESTNET_PARTICIPATION_TOTAL: u64 = 500_000_000_000;
 
 #[orga]
@@ -108,7 +108,7 @@ impl Airdrop {
 
     #[call]
     pub fn claim_testnet_participation(&mut self) -> Result<()> {
-        #[cfg(feature = "stakenet")]
+        #[cfg(not(feature = "testnet"))]
         {
             let mut acct = self.signer_acct_mut()?;
             let amount = acct.testnet_participation.claim()?;
@@ -146,7 +146,7 @@ impl Airdrop {
         add_part(&mut dest.ibc_transfer, src.ibc_transfer);
         add_part(&mut dest.btc_withdraw, src.btc_withdraw);
 
-        #[cfg(feature = "stakenet")]
+        #[cfg(not(feature = "testnet"))]
         add_part(&mut dest.testnet_participation, src.testnet_participation);
 
         Ok(())
@@ -193,7 +193,7 @@ impl Airdrop {
             modified_recipients.push((*address, unom, claims));
         }
 
-        #[cfg(feature = "stakenet")]
+        #[cfg(not(feature = "testnet"))]
         {
             for (address, _, claims) in recipients {
                 let account = self.accounts.entry(address)?.or_default()?;
@@ -221,7 +221,7 @@ impl Airdrop {
         Ok(())
     }
 
-    #[cfg(feature = "stakenet")]
+    #[cfg(not(feature = "testnet"))]
     fn airdrop_testnet_allocation_to(&mut self, address: &Address, unom: u64) -> Result<()> {
         let mut account = self.accounts.entry(*address)?.or_default()?;
         account.testnet_participation.claimable = unom;
@@ -233,7 +233,7 @@ impl Airdrop {
         staked.min(MAX_STAKED)
     }
 
-    #[cfg(feature = "stakenet")]
+    #[cfg(not(feature = "testnet"))]
     fn get_individual_testnet_allocation(airdrop: &Account, claims: &Vec<bool>) -> Result<u64> {
         let num_claims: u64 = claims.len().try_into()?;
         let claims: u64 = claims.iter().filter(|val| **val).count().try_into()?;
@@ -363,7 +363,7 @@ pub struct Account {
     pub btc_withdraw: Part,
     #[orga(version(V1))]
     pub ibc_transfer: Part,
-    #[cfg(feature = "stakenet")]
+    #[cfg(not(feature = "testnet"))]
     pub testnet_participation: Part,
 }
 
@@ -425,7 +425,7 @@ mod test {
     use orga::prelude::Amount;
     use std::str::FromStr;
 
-    #[cfg(not(feature = "stakenet"))]
+    #[cfg(feature = "testnet")]
     #[test]
     fn airdrop_allocation_no_testnet() {
         let mut airdrop = Airdrop::default();
@@ -445,7 +445,7 @@ nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x,1,1,1,1,1,1,1,1,1,1,true,true,true"
         assert_eq!(airdrop2_total, AIRDROP_II_TOTAL);
     }
 
-    #[cfg(feature = "stakenet")]
+    #[cfg(not(feature = "testnet"))]
     #[test]
     fn airdrop_allocation() {
         let mut airdrop = Airdrop::default();
@@ -469,7 +469,7 @@ nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x,1,1,1,1,1,1,1,1,1,1,true,true,true"
         );
     }
 
-    #[cfg(feature = "stakenet")]
+    #[cfg(not(feature = "testnet"))]
     #[test]
     fn airdrop_allocation_multiple() {
         let mut airdrop = Airdrop::default();
@@ -510,7 +510,7 @@ nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs,1,1,1,1,1,1,1,1,1,1,true,true,true"
         assert_eq!(airdrop2_total, expected);
     }
 
-    #[cfg(feature = "stakenet")]
+    #[cfg(not(feature = "testnet"))]
     #[test]
     fn airdrop_allocation_multiple_uneven() {
         let mut airdrop = Airdrop::default();
@@ -556,7 +556,7 @@ nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs,1,1,1,1,1,1,1,1,1,1,false,false,fal
         assert_eq!(airdrop2_total, expected);
     }
 
-    #[cfg(feature = "stakenet")]
+    #[cfg(not(feature = "testnet"))]
     #[test]
     fn airdrop_allocation_multiple_one_claim() {
         let mut airdrop = Airdrop::default();
@@ -602,7 +602,7 @@ nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs,1,1,1,1,1,1,1,1,1,1,true,false,fals
         assert_eq!(airdrop2_total, expected);
     }
 
-    #[cfg(feature = "stakenet")]
+    #[cfg(not(feature = "testnet"))]
     #[test]
     fn airdrop_allocation_multiple_two_claim() {
         let mut airdrop = Airdrop::default();
