@@ -98,8 +98,12 @@ pub struct Input {
     pub script_pubkey: Adapter<bitcoin::Script>,
     pub redeem_script: Adapter<bitcoin::Script>,
     pub sigset_index: u32,
+    #[cfg(feature = "mainnet")]
     #[orga(version(V0))]
     pub dest: Address,
+    #[cfg(feature = "testnet")]
+    #[orga(version(V0))]
+    pub dest: LengthVec<u16, u8>,
     #[orga(version(V1))]
     pub dest: LengthVec<u16, u8>,
     pub amount: u64,
@@ -134,7 +138,10 @@ impl MigrateFrom<InputV0> for InputV1 {
             script_pubkey: other.script_pubkey,
             redeem_script: other.redeem_script,
             sigset_index: other.sigset_index,
+            #[cfg(feature = "mainnet")]
             dest: other.dest.encode()?.try_into()?,
+            #[cfg(feature = "testnet")]
+            dest: other.dest,
             amount: other.amount,
             est_witness_vsize: other.est_witness_vsize,
             sigs: other.sigs,
