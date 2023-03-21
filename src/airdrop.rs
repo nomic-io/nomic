@@ -1,6 +1,7 @@
 use orga::coins::{Address, Amount};
 use orga::collections::{ChildMut, Map};
 use orga::context::GetContext;
+use orga::migrate::{MigrateFrom, MigrateInto};
 use orga::orga;
 use orga::plugins::{Paid, Signer};
 use orga::prelude::{Decimal, MIN_FEE};
@@ -15,7 +16,29 @@ const AIRDROP_II_TOTAL: u64 = 3_000_000_000_000;
 const AIRDROP_II_TESTNET_PARTICIPATION_TOTAL: u64 = 500_000_000_000;
 
 #[orga]
+pub struct Accs {
+    transfers_allowed: bool,
+    transfer_exceptions: Map<Address, ()>,
+    accounts: Map<Address, Account>,
+}
+
+#[cfg(not(feature = "testnet"))]
+#[orga(version = 1)]
 pub struct Airdrop {
+    #[orga(version(V0))]
+    accounts: Accs,
+
+    #[orga(version(V1))]
+    accounts: Map<Address, Account>,
+}
+
+#[cfg(feature = "testnet")]
+#[orga(version = 1)]
+pub struct Airdrop {
+    #[orga(version(V0))]
+    accounts: Map<Address, Account>,
+
+    #[orga(version(V1))]
     accounts: Map<Address, Account>,
 }
 
@@ -308,12 +331,37 @@ impl Airdrop {
     }
 }
 
-#[orga]
+#[cfg(not(feature = "testnet"))]
+impl MigrateFrom<AirdropV0> for AirdropV1 {
+    fn migrate_from(other: AirdropV0) -> Result<Self> {
+        Ok(Self {
+            accounts: other.accounts.accounts.migrate_into()?,
+        })
+    }
+}
+
+#[cfg(feature = "testnet")]
+impl MigrateFrom<AirdropV0> for AirdropV1 {
+    fn migrate_from(other: AirdropV0) -> Result<Self> {
+        Ok(Self {
+            accounts: other.accounts.migrate_into()?,
+        })
+    }
+}
+
+#[orga(version = 1)]
 #[derive(Clone, Debug)]
 pub struct Account {
+    #[orga(version(V0))]
+    pub claimable: Amount,
+
+    #[orga(version(V1))]
     pub airdrop1: Part,
+    #[orga(version(V1))]
     pub btc_deposit: Part,
+    #[orga(version(V1))]
     pub btc_withdraw: Part,
+    #[orga(version(V1))]
     pub ibc_transfer: Part,
     #[cfg(feature = "stakenet")]
     pub testnet_participation: Part,
@@ -325,6 +373,15 @@ impl Account {
             && self.btc_deposit.is_empty()
             && self.btc_withdraw.is_empty()
             && self.ibc_transfer.is_empty()
+    }
+}
+
+impl MigrateFrom<AccountV0> for AccountV1 {
+    fn migrate_from(other: AccountV0) -> Result<Self> {
+        let mut account = AccountV1::default();
+        // TODO: populate airdrop1 claimed
+        account.airdrop1.claimable = other.claimable.into();
+        Ok(account)
     }
 }
 
