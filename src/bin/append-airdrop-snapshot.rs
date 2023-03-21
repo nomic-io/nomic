@@ -1,5 +1,5 @@
 use clap::Parser;
-use csv::{Reader, StringRecord};
+use csv::{Reader};
 use nomic::airdrop::Part;
 use nomic::app::App;
 use orga::merk::BackingStore;
