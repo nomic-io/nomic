@@ -1,12 +1,11 @@
 use super::{InnerAppV0, InnerAppV1};
 use orga::{
-    ibc::Ibc,
     migrate::{MigrateFrom, MigrateInto},
     upgrade::Upgrade,
 };
 
 impl MigrateFrom<InnerAppV0> for InnerAppV1 {
-    fn migrate_from(mut other: InnerAppV0) -> orga::Result<Self> {
+    fn migrate_from(other: InnerAppV0) -> orga::Result<Self> {
         Ok(Self {
             accounts: other.accounts.migrate_into()?,
             staking: other.staking.migrate_into()?,
@@ -20,7 +19,7 @@ impl MigrateFrom<InnerAppV0> for InnerAppV1 {
             bitcoin: other.bitcoin.migrate_into()?,
             reward_timer: other.reward_timer.migrate_into()?,
             #[cfg(feature = "testnet")]
-            ibc: Ibc::default(),
+            ibc: orga::ibc::Ibc::default(),
             upgrade: Upgrade::default(),
         })
     }

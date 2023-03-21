@@ -7,6 +7,7 @@ use super::{
 use crate::error::{Error, Result};
 use bitcoin::blockdata::transaction::EcdsaSighashType;
 use derive_more::{Deref, DerefMut};
+use orga::store::Store;
 use orga::{
     call::Call,
     client::Client,
@@ -20,7 +21,6 @@ use orga::{
     state::State,
     Error as OrgaError, Result as OrgaResult,
 };
-use orga::{prelude::Address, store::Store};
 use std::convert::TryFrom;
 
 pub const MIN_CHECKPOINT_INTERVAL: u64 = 60 * 5;
@@ -98,9 +98,9 @@ pub struct Input {
     pub script_pubkey: Adapter<bitcoin::Script>,
     pub redeem_script: Adapter<bitcoin::Script>,
     pub sigset_index: u32,
-    #[cfg(feature = "mainnet")]
+    #[cfg(not(feature = "testnet"))]
     #[orga(version(V0))]
-    pub dest: Address,
+    pub dest: orga::coins::Address,
     #[cfg(feature = "testnet")]
     #[orga(version(V0))]
     pub dest: LengthVec<u16, u8>,
@@ -138,7 +138,7 @@ impl MigrateFrom<InputV0> for InputV1 {
             script_pubkey: other.script_pubkey,
             redeem_script: other.redeem_script,
             sigset_index: other.sigset_index,
-            #[cfg(feature = "mainnet")]
+            #[cfg(not(feature = "testnet"))]
             dest: other.dest.encode()?.try_into()?,
             #[cfg(feature = "testnet")]
             dest: other.dest,

@@ -15,12 +15,11 @@ use std::str::FromStr;
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
 use futures::executor::block_on;
-use nomic::app::{AppV0, CONSENSUS_VERSION};
-use nomic::app::{DepositCommitment, IbcDepositCommitment};
+use nomic::app::{DepositCommitment, CONSENSUS_VERSION};
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
 use nomic::network::Network;
-use orga::merk::BackingStore;
+#[cfg(feature = "compat")]
 use orga::merk::MerkStore;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -35,6 +34,7 @@ const BANNER: &str = r#"
 ╚═╝  ╚═══╝  ╚═════╝  ╚═╝     ╚═╝ ╚═╝  ╚═════╝
 "#;
 
+#[cfg(feature = "testnet")]
 fn now_seconds() -> i64 {
     use std::time::SystemTime;
 
@@ -406,7 +406,7 @@ impl StartCmd {
             }
             #[cfg(feature = "compat")]
             if cmd.migrate || had_legacy {
-                node = node.migrate::<AppV0>(vec![CONSENSUS_VERSION]);
+                node = node.migrate::<nomic::app::AppV0>(vec![CONSENSUS_VERSION]);
             }
             if cmd.skip_init_chain {
                 node = node.skip_init_chain();
@@ -1142,7 +1142,7 @@ impl InterchainDepositCmd {
     async fn run(&self) -> Result<()> {
         use orga::ibc::encoding::Adapter;
         let now_ns = now_seconds() as u64 * 1_000_000_000;
-        let dest = DepositCommitment::Ibc(IbcDepositCommitment {
+        let dest = DepositCommitment::Ibc(nomic::app::IbcDepositCommitment {
             receiver: Adapter::new(self.receiver.parse().unwrap()),
             sender: Adapter::new(my_address().to_string().parse().unwrap()),
             source_channel: Adapter::new(self.channel.parse().unwrap()),

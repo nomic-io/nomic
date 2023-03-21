@@ -19,7 +19,7 @@ pub struct Accs {
     accounts: Map<Address, Account>,
 }
 
-#[cfg(feature = "mainnet")]
+#[cfg(not(feature = "testnet"))]
 #[orga(version = 1)]
 pub struct Airdrop {
     #[orga(version(V0))]
@@ -277,7 +277,7 @@ impl Airdrop {
     }
 }
 
-#[cfg(feature = "mainnet")]
+#[cfg(not(feature = "testnet"))]
 impl MigrateFrom<AirdropV0> for AirdropV1 {
     fn migrate_from(other: AirdropV0) -> Result<Self> {
         Ok(Self {

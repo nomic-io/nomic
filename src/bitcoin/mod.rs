@@ -47,7 +47,7 @@ impl Symbol for Nbtc {
     const INDEX: u8 = 21;
 }
 
-#[cfg(feature = "mainnet")]
+#[cfg(not(feature = "testnet"))]
 pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Bitcoin;
 #[cfg(feature = "testnet")]
 pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Testnet;
