@@ -12,7 +12,7 @@ use nomic::{
 };
 use rocket::response::status::BadRequest;
 use rocket::serde::json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -21,6 +21,7 @@ use tm::Client as _;
 
 lazy_static::lazy_static! {
     static ref QUERY_CACHE: Arc<RwLock<HashMap<String, (u64, String)>>> = Arc::new(RwLock::new(HashMap::new()));
+    static ref CACHED_QUERIES: HashSet<String> = HashSet::from(["010209".to_string()]);
 }
 
 #[get("/cosmos/bank/v1beta1/balances/<address>")]
@@ -250,6 +251,10 @@ fn time_now() -> u64 {
 
 #[get("/query/<query>")]
 async fn query(query: &str) -> Result<String, BadRequest<String>> {
+    if !CACHED_QUERIES.contains(query) {
+        return execute_query(query).await;
+    }
+
     let cache = QUERY_CACHE.clone();
     let lock = cache.read_owned().await;
     let cached_res = lock.get(query).map(|v| v.clone());
@@ -259,12 +264,23 @@ async fn query(query: &str) -> Result<String, BadRequest<String>> {
     dbg!((&query, cache_hit));
     let now = time_now();
 
-    // if let Some((time, res)) = cached_res {
-    //     if now - time < 15 {
-    //         return Ok(res.clone())
-    //     }
-    // }
+    if let Some((time, res)) = cached_res {
+        if now - time < 15 {
+            return Ok(res.clone());
+        }
+    }
 
+    let res_b64 = execute_query(query).await?;
+
+    let cache = QUERY_CACHE.clone();
+    let mut lock = cache.write_owned().await;
+    lock.insert(query.to_string(), (now, res_b64.clone()));
+    drop(lock);
+
+    Ok(res_b64)
+}
+
+async fn execute_query(query: &str) -> Result<String, BadRequest<String>> {
     let client = tm::HttpClient::new("http://localhost:26657").unwrap();
 
     let query_bytes = hex::decode(query).map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
@@ -279,14 +295,7 @@ async fn query(query: &str) -> Result<String, BadRequest<String>> {
         return Err(BadRequest(Some(msg)));
     }
 
-    let res_b64 = base64::encode(res.value);
-
-    let cache = QUERY_CACHE.clone();
-    let mut lock = cache.write_owned().await;
-    lock.insert(query.to_string(), (now, res_b64.clone()));
-    drop(lock);
-
-    Ok(res_b64)
+    Ok(base64::encode(res.value))
 }
 
 #[get("/cosmos/staking/v1beta1/delegations/<address>")]
