@@ -174,6 +174,12 @@ impl Airdrop {
 
         let mut airdrop_total = 0;
         let mut accounts = 0;
+
+        #[cfg(not(feature = "testnet"))]
+        let mut testnet_locked = 0;
+        #[cfg(not(feature = "testnet"))]
+        let mut testnet_claimable = 0;
+
         #[allow(unused_variables)]
         for (address, networks, testnet_completions) in recipients.iter() {
             let unom: u64 = networks
@@ -185,9 +191,15 @@ impl Airdrop {
                 })
                 .sum();
 
-            self.airdrop_to(*address, unom, *testnet_completions)?;
+            let res = self.airdrop_to(*address, unom, *testnet_completions)?;
             airdrop_total += unom;
             accounts += 1;
+
+            #[cfg(not(feature = "testnet"))]
+            {
+                testnet_locked += res.0;
+                testnet_claimable += res.1;
+            }
         }
 
         log::info!(
@@ -195,11 +207,24 @@ impl Airdrop {
             airdrop_total,
             accounts,
         );
+
+        #[cfg(not(feature = "testnet"))]
+        log::info!(
+            "Testnet participation allocation: {} uNOM locked, {} uNOM claimable",
+            testnet_locked,
+            testnet_claimable,
+        );
+
         Ok(())
     }
 
     #[allow(unused_variables)]
-    fn airdrop_to(&mut self, addr: Address, unom: u64, testnet_completions: u64) -> Result<()> {
+    fn airdrop_to(
+        &mut self,
+        addr: Address,
+        unom: u64,
+        testnet_completions: u64,
+    ) -> Result<(u64, u64)> {
         let mut acct = self.accounts.entry(addr)?.or_insert_default()?;
 
         #[cfg(feature = "testnet")]
@@ -207,6 +232,8 @@ impl Airdrop {
             acct.btc_deposit.locked = unom / 3;
             acct.btc_withdraw.locked = unom / 3;
             acct.ibc_transfer.locked = unom / 3;
+
+            Ok((0, 0))
         }
 
         #[cfg(not(feature = "testnet"))]
@@ -214,11 +241,15 @@ impl Airdrop {
             acct.btc_deposit.locked = unom / 4;
             acct.btc_withdraw.locked = unom / 4;
             acct.ibc_transfer.locked = unom / 4;
+            assert!(testnet_completions <= 3);
             acct.testnet_participation.locked = unom / 12 * (3 - testnet_completions);
             acct.testnet_participation.claimable = unom / 12 * testnet_completions;
-        }
 
-        Ok(())
+            Ok((
+                acct.testnet_participation.locked,
+                acct.testnet_participation.claimable,
+            ))
+        }
     }
 
     fn score(staked: u64, _count: u64) -> u64 {
