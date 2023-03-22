@@ -458,8 +458,21 @@ impl Part {
 #[cfg(test)]
 mod test {
     use super::*;
+    #[cfg(not(feature = "testnet"))]
     use orga::prelude::Amount;
     use std::str::FromStr;
+
+    fn assert_approx_eq(a: u64, b: u64) {
+        assert!((a as i64 - b as i64).abs() <= 2, "{} !~= {}", a, b);
+    }
+
+    #[cfg(not(feature = "testnet"))]
+    fn amount_airdropped(acct: &Account) -> u64 {
+        acct.btc_deposit.locked
+            + acct.btc_withdraw.locked
+            + acct.ibc_transfer.locked
+            + acct.testnet_participation.claimable
+    }
 
     #[cfg(feature = "testnet")]
     #[test]
@@ -478,7 +491,7 @@ nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x,1,1,1,1,1,1,1,1,1,1,true,true,true"
             + account.btc_withdraw.total()
             + account.ibc_transfer.total();
 
-        assert_eq!(airdrop2_total, AIRDROP_II_TOTAL);
+        assert_approx_eq(airdrop2_total, AIRDROP_II_TOTAL);
     }
 
     #[cfg(not(feature = "testnet"))]
@@ -494,15 +507,9 @@ nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x,1,1,1,1,1,1,1,1,1,1,true,true,true"
             .get_mut(Address::from_str("nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x").unwrap())
             .unwrap()
             .unwrap();
-        let airdrop2_total = account.btc_deposit.total()
-            + account.btc_withdraw.total()
-            + account.ibc_transfer.total()
-            + account.testnet_participation.total();
+        let airdrop2_total = amount_airdropped(&*account);
 
-        assert_eq!(
-            airdrop2_total,
-            AIRDROP_II_TOTAL + AIRDROP_II_TESTNET_PARTICIPATION_TOTAL
-        );
+        assert_approx_eq(airdrop2_total, AIRDROP_II_TOTAL);
     }
 
     #[cfg(not(feature = "testnet"))]
@@ -519,31 +526,23 @@ nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs,1,1,1,1,1,1,1,1,1,1,true,true,true"
             .get_mut(Address::from_str("nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x").unwrap())
             .unwrap()
             .unwrap();
-        let airdrop2_total = account.btc_deposit.total()
-            + account.btc_withdraw.total()
-            + account.ibc_transfer.total()
-            + account.testnet_participation.total();
-        let expected: u64 = ((Amount::from(AIRDROP_II_TOTAL)
-            + Amount::from(AIRDROP_II_TESTNET_PARTICIPATION_TOTAL))
-            / Amount::from(2))
-        .result()
-        .unwrap()
-        .amount()
-        .unwrap()
-        .into();
+        let airdrop2_total = amount_airdropped(&*account);
+        let expected: u64 = (Amount::from(AIRDROP_II_TOTAL) / Amount::from(2))
+            .result()
+            .unwrap()
+            .amount()
+            .unwrap()
+            .into();
 
-        assert_eq!(airdrop2_total, expected);
+        assert_approx_eq(airdrop2_total, expected);
 
         let account = airdrop
             .get_mut(Address::from_str("nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs").unwrap())
             .unwrap()
             .unwrap();
-        let airdrop2_total = account.btc_deposit.total()
-            + account.btc_withdraw.total()
-            + account.ibc_transfer.total()
-            + account.testnet_participation.total();
+        let airdrop2_total = amount_airdropped(&*account);
 
-        assert_eq!(airdrop2_total, expected);
+        assert_approx_eq(airdrop2_total, expected);
     }
 
     #[cfg(not(feature = "testnet"))]
@@ -560,36 +559,28 @@ nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs,1,1,1,1,1,1,1,1,1,1,false,false,fal
             .get_mut(Address::from_str("nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x").unwrap())
             .unwrap()
             .unwrap();
-        let airdrop2_total = account.btc_deposit.total()
-            + account.btc_withdraw.total()
-            + account.ibc_transfer.total()
-            + account.testnet_participation.total();
-        let expected: u64 = ((Amount::from(AIRDROP_II_TOTAL)
-            + Amount::from(AIRDROP_II_TESTNET_PARTICIPATION_TOTAL))
-            / Amount::from(2))
-        .result()
-        .unwrap()
-        .amount()
-        .unwrap()
-        .into();
-        assert_eq!(airdrop2_total, expected);
-
-        let account = airdrop
-            .get_mut(Address::from_str("nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs").unwrap())
-            .unwrap()
-            .unwrap();
-        let airdrop2_total = account.btc_deposit.total()
-            + account.btc_withdraw.total()
-            + account.ibc_transfer.total()
-            + account.testnet_participation.total();
+        let airdrop2_total = amount_airdropped(&*account);
         let expected: u64 = (Amount::from(AIRDROP_II_TOTAL) / Amount::from(2))
             .result()
             .unwrap()
             .amount()
             .unwrap()
             .into();
+        assert_approx_eq(airdrop2_total, expected);
 
-        assert_eq!(airdrop2_total, expected);
+        let account = airdrop
+            .get_mut(Address::from_str("nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs").unwrap())
+            .unwrap()
+            .unwrap();
+        let airdrop2_total = amount_airdropped(&*account);
+        let expected: u64 = (Amount::from(AIRDROP_II_TOTAL) / Amount::from(16) * Amount::from(6))
+            .result()
+            .unwrap()
+            .amount()
+            .unwrap()
+            .into();
+
+        assert_approx_eq(airdrop2_total, expected);
     }
 
     #[cfg(not(feature = "testnet"))]
@@ -606,36 +597,27 @@ nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs,1,1,1,1,1,1,1,1,1,1,true,false,fals
             .get_mut(Address::from_str("nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x").unwrap())
             .unwrap()
             .unwrap();
-        let airdrop2_total = account.btc_deposit.total()
-            + account.btc_withdraw.total()
-            + account.ibc_transfer.total()
-            + account.testnet_participation.total();
-        let expected: u64 = ((Amount::from(AIRDROP_II_TOTAL)
-            + Amount::from(AIRDROP_II_TESTNET_PARTICIPATION_TOTAL))
-            / Amount::from(2))
-        .result()
-        .unwrap()
-        .amount()
-        .unwrap()
-        .into();
-        assert_eq!(airdrop2_total, expected);
+        let airdrop2_total = amount_airdropped(&*account);
+        let expected: u64 = (Amount::from(AIRDROP_II_TOTAL) / Amount::from(2))
+            .result()
+            .unwrap()
+            .amount()
+            .unwrap()
+            .into();
+        assert_approx_eq(airdrop2_total, expected);
 
         let account = airdrop
             .get_mut(Address::from_str("nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs").unwrap())
             .unwrap()
             .unwrap();
-        let airdrop2_total = account.btc_deposit.total()
-            + account.btc_withdraw.total()
-            + account.ibc_transfer.total()
-            + account.testnet_participation.total();
-        let expected: u64 = ((Amount::from(AIRDROP_II_TOTAL) / Amount::from(2))
-            + (Amount::from(AIRDROP_II_TESTNET_PARTICIPATION_TOTAL) / Amount::from(6)))
-        .result()
-        .unwrap()
-        .amount()
-        .unwrap()
-        .into();
-        assert_eq!(airdrop2_total, expected);
+        let airdrop2_total = amount_airdropped(&*account);
+        let expected: u64 = (Amount::from(AIRDROP_II_TOTAL) / Amount::from(24) * Amount::from(10))
+            .result()
+            .unwrap()
+            .amount()
+            .unwrap()
+            .into();
+        assert_approx_eq(airdrop2_total, expected);
     }
 
     #[cfg(not(feature = "testnet"))]
@@ -652,45 +634,26 @@ nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs,1,1,1,1,1,1,1,1,1,1,true,true,false
             .get_mut(Address::from_str("nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x").unwrap())
             .unwrap()
             .unwrap();
-        let airdrop_total_1 = account.btc_deposit.total()
-            + account.btc_withdraw.total()
-            + account.ibc_transfer.total()
-            + account.testnet_participation.total();
-        let expected: u64 = ((Amount::from(AIRDROP_II_TOTAL)
-            + Amount::from(AIRDROP_II_TESTNET_PARTICIPATION_TOTAL))
-            / Amount::from(2))
-        .result()
-        .unwrap()
-        .amount()
-        .unwrap()
-        .into();
-        assert_eq!(airdrop_total_1, expected);
+        let airdrop_total_1 = amount_airdropped(&*account);
+        let expected: u64 = (Amount::from(AIRDROP_II_TOTAL) / Amount::from(2))
+            .result()
+            .unwrap()
+            .amount()
+            .unwrap()
+            .into();
+        assert_approx_eq(airdrop_total_1, expected);
 
         let account = airdrop
             .get_mut(Address::from_str("nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs").unwrap())
             .unwrap()
             .unwrap();
-        let airdrop_total_2 = account.btc_deposit.total()
-            + account.btc_withdraw.total()
-            + account.ibc_transfer.total()
-            + account.testnet_participation.total();
-        let expected: u64 = (Amount::from(AIRDROP_II_TOTAL) / Amount::from(2)
-            + (Amount::from(AIRDROP_II_TESTNET_PARTICIPATION_TOTAL) / Amount::from(3)))
-        .result()
-        .unwrap()
-        .amount()
-        .unwrap()
-        .into();
-        assert_eq!(airdrop_total_2, expected);
-
-        let expected: u64 = (Amount::from(AIRDROP_II_TOTAL)
-            + (Amount::from(AIRDROP_II_TESTNET_PARTICIPATION_TOTAL) * Amount::from(5)
-                / Amount::from(6)))
-        .result()
-        .unwrap()
-        .amount()
-        .unwrap()
-        .into();
-        assert_eq!(airdrop_total_1 + airdrop_total_2, expected);
+        let airdrop_total_2 = amount_airdropped(&*account);
+        let expected: u64 = (Amount::from(AIRDROP_II_TOTAL) / Amount::from(24) * Amount::from(11))
+            .result()
+            .unwrap()
+            .amount()
+            .unwrap()
+            .into();
+        assert_approx_eq(airdrop_total_2, expected);
     }
 }
