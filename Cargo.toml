@@ -64,6 +64,10 @@ name = "create-checkpoint"
 name = "create-airdrop-snapshot"
 required-features = ["csv"]
 
+[[bin]]
+name = "append-airdrop-snapshot"
+required-features = ["testnet"]
+
 [patch.crates-io]
 ibc = { git = "https://github.com/informalsystems/ibc-rs.git", rev = "e8c98d4" }
 ibc-proto = { git = "https://github.com/informalsystems/ibc-rs.git", rev = "e8c98d4" }
