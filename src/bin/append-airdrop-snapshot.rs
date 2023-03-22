@@ -21,6 +21,7 @@ pub struct Opts {
 fn is_claimed(airdrop_part: &Part) -> bool {
     airdrop_part.claimed > 0 || airdrop_part.claimable > 0
 }
+
 pub fn main() {
     let opts = Opts::parse();
 
@@ -33,9 +34,10 @@ pub fn main() {
     ]);
 
     let merk = MerkStore::new(&opts.merk_path);
-    let app = App::load(
+    let root_bytes = merk.merk().get(&[]).unwrap().unwrap();
+    let app = orga::plugins::ABCIPlugin::<App>::load(
         Store::new(BackingStore::Merk(Shared::new(merk))),
-        &mut [].as_slice(),
+        &mut root_bytes.as_slice(),
     )
     .unwrap();
 
@@ -44,6 +46,7 @@ pub fn main() {
     for result in reader.records() {
         let mut record = result.unwrap();
         let airdrop_account = app
+            .inner
             .airdrop
             .get(Address::from_str(record.get(0).unwrap()).unwrap())
             .unwrap()
