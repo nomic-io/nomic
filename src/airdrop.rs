@@ -360,8 +360,22 @@ impl MigrateFrom<AirdropV0> for AirdropV1 {
 #[orga(version = 1)]
 #[derive(Clone, Debug)]
 pub struct Account {
+    #[cfg(not(feature = "testnet"))]
     #[orga(version(V0))]
     pub claimable: Amount,
+
+    #[cfg(feature = "testnet")]
+    #[orga(version(V0))]
+    pub airdrop1: Part,
+    #[cfg(feature = "testnet")]
+    #[orga(version(V0))]
+    pub btc_deposit: Part,
+    #[cfg(feature = "testnet")]
+    #[orga(version(V0))]
+    pub btc_withdraw: Part,
+    #[cfg(feature = "testnet")]
+    #[orga(version(V0))]
+    pub ibc_transfer: Part,
 
     #[orga(version(V1))]
     pub airdrop1: Part,
@@ -388,8 +402,21 @@ impl Account {
 impl MigrateFrom<AccountV0> for AccountV1 {
     fn migrate_from(other: AccountV0) -> Result<Self> {
         let mut account = AccountV1::default();
-        // TODO: populate airdrop1 claimed
-        account.airdrop1.claimable = other.claimable.into();
+
+        #[cfg(not(feature = "testnet"))]
+        {
+            // TODO: populate airdrop1 claimed
+            account.airdrop1.claimable = other.claimable.into();
+        }
+
+        #[cfg(feature = "testnet")]
+        {
+            account.airdrop1 = other.airdrop1;
+            account.btc_deposit = other.btc_deposit;
+            account.btc_withdraw = other.btc_withdraw;
+            account.ibc_transfer = other.ibc_transfer;
+        }
+
         Ok(account)
     }
 }
