@@ -45,10 +45,14 @@ pub fn main() {
     writer.write_record(&headers).unwrap();
     for result in reader.records() {
         let mut record = result.unwrap();
+        let addr = record.get(0).unwrap();
+        if addr.len() != 44 {
+            continue;
+        }
         let airdrop_account = app
             .inner
             .airdrop
-            .get(Address::from_str(record.get(0).unwrap()).unwrap())
+            .get(Address::from_str(addr).unwrap())
             .unwrap()
             .unwrap();
 
