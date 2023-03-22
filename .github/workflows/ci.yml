@@ -30,7 +30,7 @@ jobs:
             ~/.cargo/git/db/
             ~/.cargo/registry/src/**/librocksdb-sys-*
             target/
-          key: ${{ runner.os }}-test-base-${{ hashFiles('Cargo.toml') }}
+          key: ${{ runner.os }}-test-base-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-test-base-
       - name: Test
@@ -59,7 +59,7 @@ jobs:
             ~/.cargo/git/db/
             ~/.cargo/registry/src/**/librocksdb-sys-*
             target/
-          key: ${{ runner.os }}-test-all-features-${{ hashFiles('Cargo.toml') }}
+          key: ${{ runner.os }}-test-all-features-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-test-all-features-
       - name: Test
@@ -89,7 +89,7 @@ jobs:
             ~/.cargo/git/db/
             ~/.cargo/registry/src/**/librocksdb-sys-*
             target/
-          key: ${{ runner.os }}-coverage-${{ hashFiles('Cargo.toml') }}
+          key: ${{ runner.os }}-coverage-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-coverage-
       - name: Install Coverage Tooling
@@ -147,7 +147,7 @@ jobs:
             ~/.cargo/git/db/
             ~/.cargo/registry/src/**/librocksdb-sys-*
             target/
-          key: ${{ runner.os }}-clippy-${{ hashFiles('Cargo.toml') }}
+          key: ${{ runner.os }}-clippy-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-clippy-
       - name: Check
