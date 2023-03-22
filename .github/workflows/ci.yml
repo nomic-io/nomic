@@ -76,6 +76,7 @@ jobs:
           components: llvm-tools-preview
           override: true
       - name: Cache
+        id: cache
         uses: actions/cache@v3
         with:
           path: |
@@ -84,7 +85,8 @@ jobs:
           key: ${{ runner.os }}-coverage-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-coverage-
-      - name: Install Coverage Tooling
+      - if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+        name: Install Coverage Tooling
         uses: actions-rs/cargo@v1
         with:
           command: install
