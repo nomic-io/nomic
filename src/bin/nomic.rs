@@ -15,9 +15,7 @@ use std::str::FromStr;
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
 use futures::executor::block_on;
-#[cfg(feature = "compat")]
-use nomic::app::{AppV0, CONSENSUS_VERSION};
-use nomic::app::{DepositCommitment, IbcDepositCommitment};
+use nomic::app::{DepositCommitment, CONSENSUS_VERSION};
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
 use nomic::network::Network;
@@ -36,6 +34,7 @@ const BANNER: &str = r#"
 ╚═╝  ╚═══╝  ╚═════╝  ╚═╝     ╚═╝ ╚═╝  ╚═════╝
 "#;
 
+#[cfg(feature = "testnet")]
 fn now_seconds() -> i64 {
     use std::time::SystemTime;
 
@@ -86,11 +85,16 @@ pub enum Command {
     Signer(SignerCmd),
     SetSignatoryKey(SetSignatoryKeyCmd),
     Deposit(DepositCmd),
+    #[cfg(feature = "testnet")]
     InterchainDeposit(InterchainDepositCmd),
     Withdraw(WithdrawCmd),
+    #[cfg(feature = "testnet")]
     IbcDepositNbtc(IbcDepositNbtcCmd),
+    #[cfg(feature = "testnet")]
     IbcWithdrawNbtc(IbcWithdrawNbtcCmd),
+    #[cfg(feature = "testnet")]
     Grpc(GrpcCmd),
+    #[cfg(feature = "testnet")]
     IbcTransfer(IbcTransferCmd),
 }
 
@@ -117,11 +121,16 @@ impl Command {
             Signer(cmd) => cmd.run().await,
             SetSignatoryKey(cmd) => cmd.run().await,
             Deposit(cmd) => cmd.run().await,
+            #[cfg(feature = "testnet")]
             InterchainDeposit(cmd) => cmd.run().await,
             Withdraw(cmd) => cmd.run().await,
+            #[cfg(feature = "testnet")]
             IbcDepositNbtc(cmd) => cmd.run().await,
+            #[cfg(feature = "testnet")]
             IbcWithdrawNbtc(cmd) => cmd.run().await,
+            #[cfg(feature = "testnet")]
             Grpc(cmd) => cmd.run().await,
+            #[cfg(feature = "testnet")]
             IbcTransfer(cmd) => cmd.run().await,
         }
     }
@@ -266,7 +275,7 @@ impl StartCmd {
 
             #[cfg(not(feature = "compat"))]
             if let Some(legacy_version) = &cmd.config.legacy_version {
-                let version_hex = hex::encode([nomic::app::CONSENSUS_VERSION]);
+                let version_hex = hex::encode([CONSENSUS_VERSION]);
 
                 let net_ver_path = home.join("network_version");
                 let up_to_date = if net_ver_path.exists() {
@@ -397,7 +406,7 @@ impl StartCmd {
             }
             #[cfg(feature = "compat")]
             if cmd.migrate || had_legacy {
-                node = node.migrate::<AppV0>(vec![CONSENSUS_VERSION]);
+                node = node.migrate::<nomic::app::AppV0>(vec![CONSENSUS_VERSION]);
             }
             if cmd.skip_init_chain {
                 node = node.skip_init_chain();
@@ -1117,6 +1126,7 @@ impl DepositCmd {
     }
 }
 
+#[cfg(feature = "testnet")]
 #[derive(Parser, Debug)]
 pub struct InterchainDepositCmd {
     #[clap(long, value_name = "ADDRESS")]
@@ -1125,12 +1135,14 @@ pub struct InterchainDepositCmd {
     channel: String,
 }
 
+#[cfg(feature = "testnet")]
 const ONE_DAY_NS: u64 = 86400 * 1_000_000_000;
+#[cfg(feature = "testnet")]
 impl InterchainDepositCmd {
     async fn run(&self) -> Result<()> {
         use orga::ibc::encoding::Adapter;
         let now_ns = now_seconds() as u64 * 1_000_000_000;
-        let dest = DepositCommitment::Ibc(IbcDepositCommitment {
+        let dest = DepositCommitment::Ibc(nomic::app::IbcDepositCommitment {
             receiver: Adapter::new(self.receiver.parse().unwrap()),
             sender: Adapter::new(my_address().to_string().parse().unwrap()),
             source_channel: Adapter::new(self.channel.parse().unwrap()),
@@ -1167,12 +1179,14 @@ impl WithdrawCmd {
     }
 }
 
+#[cfg(feature = "testnet")]
 #[derive(Parser, Debug)]
 pub struct IbcDepositNbtcCmd {
     to: Address,
     amount: u64,
 }
 
+#[cfg(feature = "testnet")]
 impl IbcDepositNbtcCmd {
     async fn run(&self) -> Result<()> {
         Ok(app_client()
@@ -1184,11 +1198,13 @@ impl IbcDepositNbtcCmd {
     }
 }
 
+#[cfg(feature = "testnet")]
 #[derive(Parser, Debug)]
 pub struct IbcWithdrawNbtcCmd {
     amount: u64,
 }
 
+#[cfg(feature = "testnet")]
 impl IbcWithdrawNbtcCmd {
     async fn run(&self) -> Result<()> {
         Ok(app_client()
@@ -1198,12 +1214,14 @@ impl IbcWithdrawNbtcCmd {
     }
 }
 
+#[cfg(feature = "testnet")]
 #[derive(Parser, Debug)]
 pub struct GrpcCmd {
     #[clap(default_value_t = 9001)]
     port: u16,
 }
 
+#[cfg(feature = "testnet")]
 impl GrpcCmd {
     async fn run(&self) -> Result<()> {
         let ibc_client = app_client().ibc.clone();
@@ -1219,6 +1237,7 @@ impl GrpcCmd {
     }
 }
 
+#[cfg(feature = "testnet")]
 #[derive(Parser, Debug)]
 pub struct IbcTransferCmd {
     receiver: String,
@@ -1228,7 +1247,9 @@ pub struct IbcTransferCmd {
     denom: String,
 }
 
+#[cfg(feature = "testnet")]
 use orga::ibc::TransferArgs;
+#[cfg(feature = "testnet")]
 impl IbcTransferCmd {
     async fn run(&self) -> Result<()> {
         let fee: u64 = nomic::app::ibc_fee(self.amount.into())?.into();

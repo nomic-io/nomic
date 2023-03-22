@@ -8,7 +8,7 @@ default-run = "nomic"
 [dependencies]
 bitcoin = { version = "0.28.1", features = ["use-serde"] }
 bitcoind = { version = "0.21.0", features = ["22_0"], optional = true }
-orga = { git = "https://github.com/nomic-io/orga.git", rev = "a986059b5aaa2b783e8050b9f6bfb0ae4a59f718", features = ["merk-verify"] }
+orga = { git = "https://github.com/nomic-io/orga.git", rev = "e58a61cc0cd74fb91a21161f01d65f9ea8359a44", features = ["merk-verify"] }
 thiserror = "1.0.30"
 ed = { git = "https://github.com/nomic-io/ed", rev = "9c0e206ffdb59dacb90f083e004e8080713e6ad8" }
 clap = { version = "3.2.16", features = ["derive"], optional = true }
@@ -48,6 +48,7 @@ default = ["full", "feat-ibc"]
 full = ["bitcoind", "bitcoincore-rpc-async", "clap", "tokio", "orga/merk-full", "orga/abci", "orga/state-sync", "csv", "warp", "rand"]
 feat-ibc = ["orga/feat-ibc"]
 compat = []
+testnet = []
 
 [[bin]]
 name = "nomic"
@@ -65,4 +66,3 @@ required-features = ["csv"]
 [patch.crates-io]
 ibc = { git = "https://github.com/informalsystems/ibc-rs.git", rev = "e8c98d4" }
 ibc-proto = { git = "https://github.com/informalsystems/ibc-rs.git", rev = "e8c98d4" }
-
