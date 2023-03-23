@@ -5,7 +5,13 @@ use orga::{
 };
 
 impl MigrateFrom<InnerAppV0> for InnerAppV1 {
-    fn migrate_from(other: InnerAppV0) -> orga::Result<Self> {
+    #[allow(unused_mut)]
+    fn migrate_from(mut other: InnerAppV0) -> orga::Result<Self> {
+        #[cfg(not(feature = "testnet"))]
+        other
+            .airdrop
+            .init_from_airdrop2_csv(include_bytes!("../../airdrop2_snapshot.csv"))?;
+
         Ok(Self {
             accounts: other.accounts.migrate_into()?,
             staking: other.staking.migrate_into()?,
