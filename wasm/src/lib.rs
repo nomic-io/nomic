@@ -7,10 +7,11 @@ mod web_client;
 use crate::error::Error;
 use crate::types::*;
 use crate::web_client::WebClient;
-use js_sys::Array;
+use js_sys::{Array, Uint8Array};
 use nomic::app::{App, DepositCommitment, Nom, CHAIN_ID};
 use nomic::bitcoin::Nbtc;
 use nomic::orga::coins::Symbol;
+use nomic::orga::encoding::Encode;
 use nomic::orga::plugins::sdk_compat::sdk;
 use nomic::orga::prelude::Address;
 use nomic::orga::prelude::MIN_FEE;
@@ -367,8 +368,6 @@ pub async fn nonce(addr: String) -> Result<u64, JsError> {
     Ok(client.nonce(address).await?)
 }
 
-//maybe bytes, not sure here
-//actually probably not
 #[wasm_bindgen(js_name = generateDepositAddress)]
 pub async fn gen_deposit_addr(dest_addr: String) -> Result<DepositAddress, JsError> {
     let client: WebClient<App> = WebClient::new();
@@ -475,12 +474,12 @@ pub async fn broadcast_deposit_addr(
         let mut opts = RequestInit::new();
         opts.method("POST");
         opts.mode(RequestMode::Cors);
+        opts.body(Some(
+            &(Uint8Array::from(Encode::encode(&commitment)?.as_slice())).into(),
+        ));
         let url = format!(
-            "{}?dest_bytes={}&sigset_index={}&deposit_addr={}",
-            relayer,
-            encode(&commitment.to_base64()?),
-            sigset_index,
-            deposit_addr
+            "{}/address?sigset_index={}&deposit_addr={}",
+            relayer, sigset_index, deposit_addr
         );
 
         let request = Request::new_with_str_and_init(&url, &opts)
