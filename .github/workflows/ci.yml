@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [master, develop]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -24,13 +28,9 @@ jobs:
         uses: actions/cache@v3
         with:
           path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            ~/.cargo/registry/src/**/librocksdb-sys-*
-            target/
-          key: ${{ runner.os }}-test-base-${{ hashFiles('Cargo.toml') }}
+            ~/.cargo
+            ./target
+          key: ${{ runner.os }}-test-base-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-test-base-
       - name: Test
@@ -53,13 +53,9 @@ jobs:
         uses: actions/cache@v3
         with:
           path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            ~/.cargo/registry/src/**/librocksdb-sys-*
-            target/
-          key: ${{ runner.os }}-test-all-features-${{ hashFiles('Cargo.toml') }}
+            ~/.cargo
+            ./target
+          key: ${{ runner.os }}-test-all-features-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-test-all-features-
       - name: Test
@@ -80,19 +76,17 @@ jobs:
           components: llvm-tools-preview
           override: true
       - name: Cache
+        id: cache
         uses: actions/cache@v3
         with:
           path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            ~/.cargo/registry/src/**/librocksdb-sys-*
-            target/
-          key: ${{ runner.os }}-coverage-${{ hashFiles('Cargo.toml') }}
+            ~/.cargo
+            ./target
+          key: ${{ runner.os }}-coverage-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-coverage-
-      - name: Install Coverage Tooling
+      - if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+        name: Install Coverage Tooling
         uses: actions-rs/cargo@v1
         with:
           command: install
@@ -141,13 +135,9 @@ jobs:
         uses: actions/cache@v3
         with:
           path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            ~/.cargo/registry/src/**/librocksdb-sys-*
-            target/
-          key: ${{ runner.os }}-clippy-${{ hashFiles('Cargo.toml') }}
+            ~/.cargo
+            ./target
+          key: ${{ runner.os }}-clippy-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-clippy-
       - name: Check
