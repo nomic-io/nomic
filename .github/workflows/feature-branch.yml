@@ -32,12 +32,6 @@ jobs:
           key: ${{ runner.os }}-shared-build-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-shared-build-
-      - name: list dir
-        run: pwd
-      - name: ls
-        run: ls -a
-      - name: List Cache
-        run: ls -a target/debug/.fingerprint
       - name: Test
         run: cargo test --verbose
 
