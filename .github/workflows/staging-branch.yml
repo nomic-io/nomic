@@ -1,10 +1,8 @@
-name: CI
+name: Staging Branch
 
 on:
   push:
-    branches: [master, develop]
-  pull_request:
-    branches: [master, develop]
+    branches: [develop]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -18,32 +16,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Use Nightly
         uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly-2022-11-18
           override: true
       - name: Cache
-        uses: actions/cache@v3
+        uses: actions/cache/restore@v3
         with:
           path: |
             ~/.cargo
             ./target
-          key: ${{ runner.os }}-test-base-${{ hashFiles('Cargo.lock') }}
+          key: ${{ runner.os }}-shared-build-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-test-base-
+            ${{ runner.os }}-shared-build-
       - name: Test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --verbose
+        run: cargo test --verbose
 
   test-all-features:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Use Nightly
         uses: actions-rs/toolchain@v1
         with:
@@ -55,28 +50,25 @@ jobs:
           path: |
             ~/.cargo
             ./target
-          key: ${{ runner.os }}-test-all-features-${{ hashFiles('Cargo.lock') }}
+          key: ${{ runner.os }}-shared-build-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-test-all-features-
+            ${{ runner.os }}-shared-build-
       - name: Test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --verbose --all-features
+        run: cargo test --verbose --all-features
 
   coverage:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Use Nightly
         uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly-2022-11-18
           components: llvm-tools-preview
           override: true
-      - name: Cache
-        id: cache
+      - id: cache
+        name: Cache
         uses: actions/cache@v3
         with:
           path: |
@@ -87,15 +79,9 @@ jobs:
             ${{ runner.os }}-coverage-
       - if: ${{ steps.cache.outputs.cache-hit != 'true' }}
         name: Install Coverage Tooling
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: cargo-llvm-cov --force
+        run: cargo install cargo-llvm-cov --force
       - name: Run Coverage
-        uses: actions-rs/cargo@v1
-        with:
-          command: llvm-cov
-          args: --all-features --workspace --lcov --output-path lcov.info
+        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v1
         with:
@@ -107,7 +93,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Use Nightly
         uses: actions-rs/toolchain@v1
         with:
@@ -115,16 +101,13 @@ jobs:
           components: rustfmt
           override: true
       - name: Check
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
+        run: cargo fmt --all -- --check
 
   clippy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Use Nightly
         uses: actions-rs/toolchain@v1
         with:
@@ -137,9 +120,9 @@ jobs:
           path: |
             ~/.cargo
             ./target
-          key: ${{ runner.os }}-clippy-${{ hashFiles('Cargo.lock') }}
+          key: ${{ runner.os }}-shared-build-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-clippy-
+            ${{ runner.os }}-shared-build-
       - name: Check
         uses: actions-rs/clippy-check@v1
         with:

@@ -1,0 +1,137 @@
+name: Feature Branch
+
+on:
+  pull_request:
+    branches: [develop, main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_LOG: cargo::core::compiler::fingerprint=info
+
+jobs:
+  test-base:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Use Nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2022-11-18
+          override: true
+      - name: Cache
+        uses: actions/cache/restore@v3
+        with:
+          path: |
+            ~/.cargo
+            ./target
+          key: ${{ runner.os }}-shared-build-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-shared-build-
+      - name: list dir
+        run: pwd
+      - name: ls
+        run: ls -a
+      - name: List Cache
+        run: ls -a target/debug/.fingerprint
+      - name: Test
+        run: cargo test --verbose
+
+  test-all-features:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Use Nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2022-11-18
+          override: true
+      - name: Cache
+        uses: actions/cache/restore@v3
+        with:
+          path: |
+            ~/.cargo
+            ./target
+          key: ${{ runner.os }}-shared-build-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-shared-build-
+      - name: Test
+        run: cargo test --verbose --all-features
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Use Nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2022-11-18
+          components: llvm-tools-preview
+          override: true
+      - id: cache
+        name: Cache
+        uses: actions/cache/restore@v3
+        with:
+          path: |
+            ~/.cargo
+            ./target
+          key: ${{ runner.os }}-coverage-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-coverage-
+      - if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+        name: Install Coverage Tooling
+        run: cargo install cargo-llvm-cov --force
+      - name: Run Coverage
+        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+      - name: Upload to codecov.io
+        uses: codecov/codecov-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: lcov.info
+          fail_ci_if_error: true
+
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Use Nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2022-11-18
+          components: rustfmt
+          override: true
+      - name: Check
+        run: cargo fmt --all -- --check
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Use Nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2022-11-18
+          components: clippy
+          override: true
+      - name: Cache
+        uses: actions/cache/restore@v3
+        with:
+          path: |
+            ~/.cargo
+            ./target
+          key: ${{ runner.os }}-shared-build-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-shared-build-
+      - name: Check
+        uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --all-features -- -D warnings
