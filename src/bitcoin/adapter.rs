@@ -6,10 +6,11 @@ use orga::prelude::*;
 use orga::state::State;
 use orga::store::Store;
 use orga::Result as OrgaResult;
+use serde::Serialize;
 use std::io::{Read, Write};
 use std::ops::{Deref, DerefMut};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Adapter<T> {
     inner: T,
 }

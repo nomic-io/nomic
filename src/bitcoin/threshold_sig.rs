@@ -14,11 +14,12 @@ use orga::migrate::MigrateFrom;
 use orga::query::Query;
 use orga::state::State;
 use orga::{Error, Result};
+use serde::Serialize;
 
 pub type Message = [u8; MESSAGE_SIZE];
 
-#[derive(Encode, Decode, State, Debug, Clone, Deref, From, Copy, MigrateFrom)]
-pub struct Signature([u8; COMPACT_SIGNATURE_SIZE]);
+#[derive(Encode, Decode, State, Debug, Clone, Deref, From, Copy, MigrateFrom, Serialize)]
+pub struct Signature(#[serde(serialize_with = "<[_]>::serialize")] [u8; COMPACT_SIGNATURE_SIZE]);
 
 #[derive(
     Encode,
@@ -35,8 +36,9 @@ pub struct Signature([u8; COMPACT_SIGNATURE_SIZE]);
     Ord,
     MigrateFrom,
     Client,
+    Serialize,
 )]
-pub struct Pubkey([u8; PUBLIC_KEY_SIZE]);
+pub struct Pubkey(#[serde(serialize_with = "<[_]>::serialize")] [u8; PUBLIC_KEY_SIZE]);
 
 impl Next for Pubkey {
     fn next(&self) -> Option<Self> {

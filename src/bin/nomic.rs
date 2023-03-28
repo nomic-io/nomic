@@ -19,7 +19,6 @@ use nomic::app::{DepositCommitment, CONSENSUS_VERSION};
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
 use nomic::network::Network;
-#[cfg(feature = "compat")]
 use orga::merk::MerkStore;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -96,6 +95,7 @@ pub enum Command {
     Grpc(GrpcCmd),
     #[cfg(feature = "testnet")]
     IbcTransfer(IbcTransferCmd),
+    Export(ExportCmd),
 }
 
 impl Command {
@@ -132,6 +132,7 @@ impl Command {
             Grpc(cmd) => cmd.run().await,
             #[cfg(feature = "testnet")]
             IbcTransfer(cmd) => cmd.run().await,
+            Export(cmd) => cmd.run().await,
         }
     }
 }
@@ -1271,6 +1272,30 @@ impl IbcTransferCmd {
             .ibc
             .transfer(transfer_args.try_into()?)
             .await?)
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct ExportCmd {
+    #[clap(long)]
+    home: String,
+}
+
+impl ExportCmd {
+    async fn run(&self) -> Result<()> {
+        let home = PathBuf::from_str(&self.home).unwrap();
+
+        let store_path = home.join("merk");
+        let store = Store::new(orga::merk::BackingStore::Merk(Shared::new(MerkStore::new(
+            store_path,
+        ))));
+        let root_bytes = store.get(&[])?.unwrap();
+
+        let app = ABCIPlugin::<nomic::app::App>::load(store, &mut root_bytes.as_slice())?;
+
+        serde_json::to_writer_pretty(std::io::stdout(), &app).unwrap();
+
+        Ok(())
     }
 }
 

@@ -35,7 +35,7 @@ pub const CONSENSUS_VERSION: u8 = 0;
 pub type AppV0 = DefaultPlugins<Nom, InnerAppV0, CHAIN_ID>;
 pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
 
-#[derive(State, Debug, Clone, Encode, Decode, Default, MigrateFrom)]
+#[derive(State, Debug, Clone, Encode, Decode, Default, MigrateFrom, Serialize)]
 pub struct Nom(());
 impl Symbol for Nom {
     const INDEX: u8 = 69;
