@@ -8,7 +8,7 @@ default-run = "nomic"
 [dependencies]
 bitcoin = { version = "0.28.1", features = ["use-serde"] }
 bitcoind = { version = "0.21.0", features = ["22_0"], optional = true }
-orga = { git = "https://github.com/nomic-io/orga.git", rev = "c57d11dfebb6bda9abaa343ad38ebf1ff0310009", features = ["merk-verify"] }
+orga = { git = "https://github.com/nomic-io/orga.git", rev = "faa15d00862b5ad395f65265631a9093bc3cd140", features = ["merk-verify"] }
 thiserror = "1.0.30"
 ed = { git = "https://github.com/nomic-io/ed", rev = "9c0e206ffdb59dacb90f083e004e8080713e6ad8" }
 clap = { version = "3.2.16", features = ["derive"], optional = true }
