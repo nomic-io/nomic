@@ -687,7 +687,9 @@ impl HeaderQueue {
 
     pub fn configure(&mut self, config: Config) -> OrgaResult<()> {
         if !self.deque.is_empty() {
-            self.deque = Deque::default();
+            while !self.deque.is_empty() {
+                self.deque.pop_back()?;
+            }
         }
 
         let decoded_adapter: Adapter<BlockHeader> =
