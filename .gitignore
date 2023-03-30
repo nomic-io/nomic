@@ -2,6 +2,9 @@ target
 **/target/
 merk.db/
 
+.vscode/
+.DS_Store
+
 
 # Added by cargo
 
