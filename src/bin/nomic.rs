@@ -716,7 +716,7 @@ pub struct DeclareCmd {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct DeclareInfo {
+pub struct DeclareInfo {
     moniker: String,
     website: String,
     identity: String,
