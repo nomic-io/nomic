@@ -33,10 +33,6 @@ pub struct Airdrop {
 #[cfg(feature = "testnet")]
 #[orga(version = 1)]
 pub struct Airdrop {
-    #[orga(version(V0))]
-    accounts: Map<Address, Account>,
-
-    #[orga(version(V1))]
     accounts: Map<Address, Account>,
 }
 
@@ -357,26 +353,13 @@ impl MigrateFrom<AirdropV0> for AirdropV1 {
     }
 }
 
+#[cfg(not(feature = "testnet"))]
 #[orga(version = 1)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Account {
-    #[cfg(not(feature = "testnet"))]
     #[orga(version(V0))]
     pub claimable: Amount,
 
-    #[cfg(feature = "testnet")]
-    #[orga(version(V0))]
-    pub airdrop1: Part,
-    #[cfg(feature = "testnet")]
-    #[orga(version(V0))]
-    pub btc_deposit: Part,
-    #[cfg(feature = "testnet")]
-    #[orga(version(V0))]
-    pub btc_withdraw: Part,
-    #[cfg(feature = "testnet")]
-    #[orga(version(V0))]
-    pub ibc_transfer: Part,
-
     #[orga(version(V1))]
     pub airdrop1: Part,
     #[orga(version(V1))]
@@ -385,17 +368,23 @@ pub struct Account {
     pub btc_withdraw: Part,
     #[orga(version(V1))]
     pub ibc_transfer: Part,
-    #[cfg(not(feature = "testnet"))]
     #[orga(version(V1))]
     pub testnet_participation: Part,
 }
 
+#[cfg(feature = "testnet")]
+#[orga(version = 1)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Account {
+    pub airdrop1: Part,
+    pub btc_deposit: Part,
+    pub btc_withdraw: Part,
+    pub ibc_transfer: Part,
+}
+
 impl Account {
     pub fn is_empty(&self) -> bool {
-        self.airdrop1.is_empty()
-            && self.btc_deposit.is_empty()
-            && self.btc_withdraw.is_empty()
-            && self.ibc_transfer.is_empty()
+        self == &Self::default()
     }
 }
 
@@ -422,7 +411,7 @@ impl MigrateFrom<AccountV0> for AccountV1 {
 }
 
 #[orga]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Part {
     pub locked: u64,
     pub claimable: u64,
@@ -447,7 +436,7 @@ impl Part {
     }
 
     pub fn is_empty(&self) -> bool {
-        (self.locked + self.claimable + self.claimed) == 0
+        self == &Self::default()
     }
 
     pub fn total(&self) -> u64 {
