@@ -32,7 +32,7 @@ pub struct Relayer {
 }
 
 impl Relayer {
-    pub async fn new(btc_client: BitcoinRpcClient, app_client: TendermintClient<App>) -> Self {
+    pub fn new(btc_client: BitcoinRpcClient, app_client: TendermintClient<App>) -> Self {
         Relayer {
             btc_client,
             app_client,
@@ -814,7 +814,7 @@ mod tests {
 
         bitcoind.client.generate_to_address(25, &address).unwrap();
 
-        let relayer = Relayer::new(rpc_client, app_client()).await;
+        let relayer = Relayer::new(rpc_client, app_client());
 
         let block_hash = bitcoind.client.get_block_hash(30).unwrap();
         let headers = relayer.get_header_batch(block_hash).await.unwrap();
@@ -848,7 +848,7 @@ mod tests {
 
         bitcoind.client.generate_to_address(7, &address).unwrap();
 
-        let relayer = Relayer::new(rpc_client, app_client()).await;
+        let relayer = Relayer::new(rpc_client, app_client());
         let block_hash = bitcoind.client.get_block_hash(30).unwrap();
         let headers = relayer.get_header_batch(block_hash).await.unwrap();
 

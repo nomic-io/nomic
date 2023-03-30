@@ -996,7 +996,7 @@ impl RelayerCmd {
         let create_relayer = async || {
             let btc_client = self.btc_client().await.unwrap();
 
-            Relayer::new(btc_client, app_client()).await
+            Relayer::new(btc_client, app_client())
         };
 
         let mut relayer = create_relayer().await;
