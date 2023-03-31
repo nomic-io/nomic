@@ -1,4 +1,5 @@
 use super::SignatorySet;
+use crate::error::Result;
 use bitcoin::blockdata::transaction::EcdsaSighashType;
 use bitcoin::secp256k1::{
     self,
@@ -13,7 +14,7 @@ use orga::encoding::{Decode, Encode};
 use orga::migrate::MigrateFrom;
 use orga::query::Query;
 use orga::state::State;
-use orga::{Error, Result};
+use orga::{Error as OrgaError, Result as OrgaResult};
 
 pub type Message = [u8; MESSAGE_SIZE];
 
@@ -154,7 +155,8 @@ impl ThresholdSig {
 
     #[query]
     pub fn sigs(&self) -> Result<Vec<(Pubkey, Signature)>> {
-        self.sigs
+        Ok(self
+            .sigs
             .iter()?
             .filter_map(|entry| {
                 let (pubkey, share) = match entry {
@@ -166,20 +168,21 @@ impl ThresholdSig {
                     .as_ref()
                     .map(|sig| Ok((pubkey.clone(), sig.clone())))
             })
-            .collect()
+            .collect::<OrgaResult<_>>()?)
     }
 
     // TODO: should be iterator?
     pub fn shares(&self) -> Result<Vec<(Pubkey, Share)>> {
-        self.sigs
+        Ok(self
+            .sigs
             .iter()?
             .map(|entry| entry.map(|(pubkey, share)| (pubkey.clone(), share.clone())))
-            .collect()
+            .collect::<OrgaResult<_>>()?)
     }
 
     #[query]
     pub fn contains_key(&self, pubkey: Pubkey) -> Result<bool> {
-        self.sigs.contains_key(pubkey)
+        Ok(self.sigs.contains_key(pubkey)?)
     }
 
     #[query]
@@ -194,16 +197,16 @@ impl ThresholdSig {
     // TODO: exempt from fee
     pub fn sign(&mut self, pubkey: Pubkey, sig: Signature) -> Result<()> {
         if self.done() {
-            return Err(Error::App("Threshold signature is done".into()));
+            return Err(OrgaError::App("Threshold signature is done".into()))?;
         }
 
         let share = self
             .sigs
             .get(pubkey)?
-            .ok_or_else(|| Error::App("Pubkey is not part of threshold signature".into()))?;
+            .ok_or_else(|| OrgaError::App("Pubkey is not part of threshold signature".into()))?;
 
         if share.sig.is_some() {
-            return Err(Error::App("Pubkey already signed".into()));
+            return Err(OrgaError::App("Pubkey already signed".into()))?;
         }
 
         self.verify(pubkey, sig)?;
@@ -211,7 +214,7 @@ impl ThresholdSig {
         let mut share = self
             .sigs
             .get_mut(pubkey)?
-            .ok_or_else(|| Error::App("Pubkey is not part of threshold signature".into()))?;
+            .ok_or_else(|| OrgaError::App("Pubkey is not part of threshold signature".into()))?;
 
         share.sig = Some(sig);
         self.signed += share.power;
@@ -239,7 +242,7 @@ impl ThresholdSig {
             return Ok(vec![]);
         }
 
-        let mut entries: Vec<_> = self.sigs.iter()?.collect::<Result<_>>()?;
+        let mut entries: Vec<_> = self.sigs.iter()?.collect::<OrgaResult<_>>()?;
         entries.sort_by(|a, b| (a.1.power, &a.0).cmp(&(b.1.power, &b.0)));
 
         entries
