@@ -337,7 +337,7 @@ fn mainnet_from_file() {
 
     let headers: Vec<BlockHeader> = block_data
         .chunks(80)
-        .map(|chunk| BlockHeader::consensus_decode(chunk).unwrap())
+        .map(|mut chunk| BlockHeader::consensus_decode(&mut chunk).unwrap())
         .collect();
 
     let first_header = headers.get(2016).unwrap();
