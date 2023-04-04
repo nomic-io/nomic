@@ -8,7 +8,7 @@ use bitcoin::hashes::Hash;
 use bitcoin::util::bip32::ExtendedPubKey;
 use bitcoin::Script;
 use bitcoin::{util::merkleblock::PartialMerkleTree, Transaction};
-use checkpoint::{CheckpointQueue, FEE_RATE};
+use checkpoint::CheckpointQueue;
 use header_queue::HeaderQueue;
 #[cfg(feature = "full")]
 use orga::abci::BeginBlock;
@@ -296,7 +296,7 @@ impl Bitcoin {
 
         let value = output
             .value
-            .checked_sub(est_vsize * FEE_RATE)
+            .checked_sub(est_vsize * self.checkpoints.config().fee_rate)
             .ok_or_else(|| {
                 OrgaError::App("Deposit amount is too small to pay its spending fee".to_string())
             })?
@@ -332,7 +332,7 @@ impl Bitcoin {
 
         self.accounts.withdraw(signer, amount)?.burn();
 
-        let fee = (9 + script_pubkey.len() as u64) * FEE_RATE;
+        let fee = (9 + script_pubkey.len() as u64) * self.checkpoints.config().fee_rate;
         let value: u64 = Into::<u64>::into(amount) / UNITS_PER_SAT;
         let value = match value.checked_sub(fee) {
             None => {
