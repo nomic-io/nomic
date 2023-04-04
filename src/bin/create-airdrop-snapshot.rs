@@ -185,4 +185,3 @@ fn encode_addr(data: Vec<u8>) -> String {
     let data = data.to_base32();
     bech32::encode("nomic", data, bech32::Variant::Bech32).unwrap()
 }
-

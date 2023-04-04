@@ -15,13 +15,10 @@ use std::str::FromStr;
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
 use futures::executor::block_on;
-use nomic::app::{DepositCommitment, IbcDepositCommitment};
-#[cfg(feature = "compat")]
-use nomic::app::{AppV0, CONSENSUS_VERSION};
+use nomic::app::{DepositCommitment, CONSENSUS_VERSION};
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
 use nomic::network::Network;
-#[cfg(feature = "compat")]
 use orga::merk::MerkStore;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -36,6 +33,7 @@ const BANNER: &str = r#"
 ╚═╝  ╚═══╝  ╚═════╝  ╚═╝     ╚═╝ ╚═╝  ╚═════╝
 "#;
 
+#[cfg(feature = "testnet")]
 fn now_seconds() -> i64 {
     use std::time::SystemTime;
 
@@ -86,12 +84,18 @@ pub enum Command {
     Signer(SignerCmd),
     SetSignatoryKey(SetSignatoryKeyCmd),
     Deposit(DepositCmd),
+    #[cfg(feature = "testnet")]
     InterchainDeposit(InterchainDepositCmd),
     Withdraw(WithdrawCmd),
+    #[cfg(feature = "testnet")]
     IbcDepositNbtc(IbcDepositNbtcCmd),
+    #[cfg(feature = "testnet")]
     IbcWithdrawNbtc(IbcWithdrawNbtcCmd),
+    #[cfg(feature = "testnet")]
     Grpc(GrpcCmd),
+    #[cfg(feature = "testnet")]
     IbcTransfer(IbcTransferCmd),
+    Export(ExportCmd),
 }
 
 impl Command {
@@ -117,16 +121,21 @@ impl Command {
             Signer(cmd) => cmd.run().await,
             SetSignatoryKey(cmd) => cmd.run().await,
             Deposit(cmd) => cmd.run().await,
+            #[cfg(feature = "testnet")]
             InterchainDeposit(cmd) => cmd.run().await,
             Withdraw(cmd) => cmd.run().await,
+            #[cfg(feature = "testnet")]
             IbcDepositNbtc(cmd) => cmd.run().await,
+            #[cfg(feature = "testnet")]
             IbcWithdrawNbtc(cmd) => cmd.run().await,
+            #[cfg(feature = "testnet")]
             Grpc(cmd) => cmd.run().await,
+            #[cfg(feature = "testnet")]
             IbcTransfer(cmd) => cmd.run().await,
+            Export(cmd) => cmd.run().await,
         }
     }
 }
-
 
 #[derive(Parser, Clone, Debug, Serialize, Deserialize)]
 pub struct StartCmd {
@@ -172,7 +181,7 @@ impl StartCmd {
         tokio::task::spawn_blocking(move || {
             if let Some(network) = cmd.network {
                 let mut config = network.config();
-                
+
                 if cmd.config.chain_id.is_some() {
                     log::error!("Passed in unexpected chain-id");
                     std::process::exit(1);
@@ -185,16 +194,16 @@ impl StartCmd {
                 if cmd.config.upgrade_time.is_some() {
                     config.upgrade_time = cmd.config.upgrade_time;
                 }
-                
+
                 // TODO: deduplicate
                 config.state_sync_rpc.extend(cmd.config.state_sync_rpc.into_iter());
-                
+
                 // TODO: should all built-in tmflags get shadowed by user-specified tmflags?
                 config.tendermint_flags.extend(cmd.config.tendermint_flags.into_iter());
-                
+
                 cmd.config = config;
             }
-            
+
             let home = cmd.home.map_or_else(
                 || {
                     Node::home(
@@ -204,17 +213,17 @@ impl StartCmd {
                 },
                 |home| PathBuf::from_str(&home).unwrap(),
             );
-            
+
             if cmd.freeze_valset {
                 std::env::set_var("ORGA_STATIC_VALSET", "true");
             }
-            
+
             #[cfg(feature = "compat")]
             let mut had_legacy = false;
             #[cfg(feature = "compat")]
             if let Some(upgrade_time) = cmd.config.upgrade_time {
                 let legacy_home = if let Some(ref legacy_home) = cmd.legacy_home {
-                    let lh = PathBuf::from_str(&legacy_home).unwrap();
+                    let lh = PathBuf::from_str(legacy_home).unwrap();
                     if !lh.exists() {
                         log::error!("Legacy home does not exist ({})", lh.display());
                     }
@@ -222,7 +231,7 @@ impl StartCmd {
                 } else {
                     home.clone()
                 };
-                
+
                 if legacy_home.exists() {
                     let store_path = legacy_home.join("merk");
                     let store = MerkStore::new(store_path);
@@ -234,10 +243,10 @@ impl StartCmd {
                         .unwrap_or_default();
                     drop(store);
                     log::debug!("Legacy timestamp: {}", timestamp);
-                    
+
                     let bin_path = legacy_home.join("nomic-v4");
                     had_legacy = bin_path.exists();
-    
+
                     if timestamp < upgrade_time && bin_path.exists() || cmd.config.legacy_version.is_some() {
                         if let Some(legacy_version) = cmd.config.legacy_version {
                             let version = String::from_utf8(
@@ -253,7 +262,7 @@ impl StartCmd {
                                 std::process::exit(1);
                             }
                         }
-    
+
                         let mut cmd = std::process::Command::new(bin_path);
                         cmd.arg("start").env("STOP_TIME", upgrade_time.to_string());
                         log::info!("Starting legacy node... ({:#?})", cmd);
@@ -267,7 +276,7 @@ impl StartCmd {
 
             #[cfg(not(feature = "compat"))]
             if let Some(legacy_version) = &cmd.config.legacy_version {
-                let version_hex = hex::encode([nomic::app::CONSENSUS_VERSION]);
+                let version_hex = hex::encode([CONSENSUS_VERSION]);
 
                 let net_ver_path = home.join("network_version");
                 let up_to_date = if net_ver_path.exists() {
@@ -288,7 +297,7 @@ impl StartCmd {
                     } else {
                         home.join("bin").join(format!("nomic-{}", legacy_version))
                     };
-                    
+
                     if !legacy_bin.exists() {
                         log::warn!("Legacy binary does not exist, attempting to skip ahead");
                     } else {
@@ -317,13 +326,11 @@ impl StartCmd {
                         }
                     }
                 }
-            } else {
-                if cmd.legacy_bin.is_some() {
-                    log::error!("--legacy-version is required when specifying --legacy-bin");
-                    std::process::exit(1);
-                }
+            } else if cmd.legacy_bin.is_some() {
+                log::error!("--legacy-version is required when specifying --legacy-bin");
+                std::process::exit(1);
             }
-            
+
             println!("{}\nVersion {}\n\n", BANNER, env!("CARGO_PKG_VERSION"));
 
             let has_node = home.exists();
@@ -336,8 +343,7 @@ impl StartCmd {
                 if let Some(source) = cmd.clone_store {
                     let mut source = PathBuf::from_str(&source).unwrap();
                     if std::fs::read_dir(&source)?
-                        .find(|c| c.as_ref().unwrap().file_name() == "merk")
-                        .is_some()
+                        .any(|c| c.as_ref().unwrap().file_name() == "merk")
                     {
                         source = source.join("merk");
                     }
@@ -363,7 +369,7 @@ impl StartCmd {
                 }
 
                 edit_block_time(&config_path, "3s");
-                
+
                 configure_node(&config_path, |cfg| {
                     cfg["rpc"]["laddr"] = toml_edit::value("tcp://0.0.0.0:26657");
                 });
@@ -401,7 +407,7 @@ impl StartCmd {
             }
             #[cfg(feature = "compat")]
             if cmd.migrate || had_legacy {
-                node = node.migrate::<AppV0>(vec![CONSENSUS_VERSION]);
+                node = node.migrate::<nomic::app::AppV0>(vec![CONSENSUS_VERSION]);
             }
             if cmd.skip_init_chain {
                 node = node.skip_init_chain();
@@ -475,7 +481,6 @@ fn edit_block_time(cfg_path: &PathBuf, timeout_commit: &str) {
         cfg["consensus"]["timeout_commit"] = toml_edit::value(timeout_commit);
     });
 }
-
 
 fn configure_for_statesync(cfg_path: &PathBuf, rpc_servers: &[&str]) {
     log::info!("Getting bootstrap state for Tendermint light client...");
@@ -594,7 +599,7 @@ pub struct BalanceCmd {
 
 impl BalanceCmd {
     async fn run(&self) -> Result<()> {
-        let address = self.address.unwrap_or_else(|| my_address());
+        let address = self.address.unwrap_or_else(my_address);
         println!("address: {}", address);
 
         let balance = app_client().accounts.balance(address).await??;
@@ -870,7 +875,7 @@ impl AirdropCmd {
     async fn run(&self) -> Result<()> {
         let client = app_client();
 
-        let addr = self.address.unwrap_or_else(|| my_address());
+        let addr = self.address.unwrap_or_else(my_address);
         let acct = match client.airdrop.get(addr).await?? {
             None => {
                 println!("Address is not eligible for airdrop");
@@ -894,7 +899,7 @@ impl ClaimAirdropCmd {
     async fn run(&self) -> Result<()> {
         let client = app_client();
 
-        let addr = self.address.unwrap_or_else(|| my_address());
+        let addr = self.address.unwrap_or_else(my_address);
         let acct = match client.airdrop.get(addr).await?? {
             None => {
                 println!("Address is not eligible for airdrop");
@@ -1098,14 +1103,13 @@ async fn deposit(dest: DepositCommitment) -> Result<()> {
         .await
         .map_err(|err| nomic::error::Error::Orga(orga::Error::App(err.to_string())))?;
     if res.status() != 200 {
-        return Err(orga::Error::App(
-            format!("Relayer responded with code {}", res.status()).to_string(),
-        )
-        .into());
+        return Err(
+            orga::Error::App(format!("Relayer responded with code {}", res.status())).into(),
+        );
     }
 
     println!("Deposit address: {}", btc_addr);
-    println!("Expiration: {}", "5 days from now");
+    println!("Expiration: 5 days from now");
     // TODO: show real expiration
     Ok(())
 }
@@ -1117,12 +1121,13 @@ pub struct DepositCmd {
 
 impl DepositCmd {
     async fn run(&self) -> Result<()> {
-        let dest_addr = self.address.unwrap_or_else(|| my_address());
+        let dest_addr = self.address.unwrap_or_else(my_address);
 
         deposit(DepositCommitment::Address(dest_addr)).await
     }
 }
 
+#[cfg(feature = "testnet")]
 #[derive(Parser, Debug)]
 pub struct InterchainDepositCmd {
     #[clap(long, value_name = "ADDRESS")]
@@ -1131,12 +1136,14 @@ pub struct InterchainDepositCmd {
     channel: String,
 }
 
+#[cfg(feature = "testnet")]
 const ONE_DAY_NS: u64 = 86400 * 1_000_000_000;
+#[cfg(feature = "testnet")]
 impl InterchainDepositCmd {
     async fn run(&self) -> Result<()> {
         use orga::ibc::encoding::Adapter;
         let now_ns = now_seconds() as u64 * 1_000_000_000;
-        let dest = DepositCommitment::Ibc(IbcDepositCommitment {
+        let dest = DepositCommitment::Ibc(nomic::app::IbcDepositCommitment {
             receiver: Adapter::new(self.receiver.parse().unwrap()),
             sender: Adapter::new(my_address().to_string().parse().unwrap()),
             source_channel: Adapter::new(self.channel.parse().unwrap()),
@@ -1173,12 +1180,14 @@ impl WithdrawCmd {
     }
 }
 
+#[cfg(feature = "testnet")]
 #[derive(Parser, Debug)]
 pub struct IbcDepositNbtcCmd {
     to: Address,
     amount: u64,
 }
 
+#[cfg(feature = "testnet")]
 impl IbcDepositNbtcCmd {
     async fn run(&self) -> Result<()> {
         Ok(app_client()
@@ -1190,11 +1199,13 @@ impl IbcDepositNbtcCmd {
     }
 }
 
+#[cfg(feature = "testnet")]
 #[derive(Parser, Debug)]
 pub struct IbcWithdrawNbtcCmd {
     amount: u64,
 }
 
+#[cfg(feature = "testnet")]
 impl IbcWithdrawNbtcCmd {
     async fn run(&self) -> Result<()> {
         Ok(app_client()
@@ -1204,12 +1215,14 @@ impl IbcWithdrawNbtcCmd {
     }
 }
 
+#[cfg(feature = "testnet")]
 #[derive(Parser, Debug)]
 pub struct GrpcCmd {
     #[clap(default_value_t = 9001)]
     port: u16,
 }
 
+#[cfg(feature = "testnet")]
 impl GrpcCmd {
     async fn run(&self) -> Result<()> {
         let ibc_client = app_client().ibc.clone();
@@ -1225,6 +1238,7 @@ impl GrpcCmd {
     }
 }
 
+#[cfg(feature = "testnet")]
 #[derive(Parser, Debug)]
 pub struct IbcTransferCmd {
     receiver: String,
@@ -1234,7 +1248,9 @@ pub struct IbcTransferCmd {
     denom: String,
 }
 
+#[cfg(feature = "testnet")]
 use orga::ibc::TransferArgs;
+#[cfg(feature = "testnet")]
 impl IbcTransferCmd {
     async fn run(&self) -> Result<()> {
         let fee: u64 = nomic::app::ibc_fee(self.amount.into())?.into();
@@ -1256,6 +1272,30 @@ impl IbcTransferCmd {
             .ibc
             .transfer(transfer_args.try_into()?)
             .await?)
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct ExportCmd {
+    #[clap(long)]
+    home: String,
+}
+
+impl ExportCmd {
+    async fn run(&self) -> Result<()> {
+        let home = PathBuf::from_str(&self.home).unwrap();
+
+        let store_path = home.join("merk");
+        let store = Store::new(orga::merk::BackingStore::Merk(Shared::new(MerkStore::new(
+            store_path,
+        ))));
+        let root_bytes = store.get(&[])?.unwrap();
+
+        let app = ABCIPlugin::<nomic::app::App>::load(store, &mut root_bytes.as_slice())?;
+
+        serde_json::to_writer_pretty(std::io::stdout(), &app).unwrap();
+
+        Ok(())
     }
 }
 

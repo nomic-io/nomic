@@ -22,9 +22,11 @@ use orga::{
     state::State,
     Error as OrgaError, Result as OrgaResult,
 };
+use serde::Serialize;
+use serde::Serialize;
 use std::convert::TryFrom;
 
-#[derive(Debug, Encode, Decode, Default)]
+#[derive(Debug, Encode, Decode, Default, Serialize)]
 pub enum CheckpointStatus {
     #[default]
     Building,
@@ -85,13 +87,20 @@ impl<U: Send + Clone> Client<U> for CheckpointStatus {
 //     }
 // }
 
-#[orga(skip(Client))]
+#[orga(skip(Client), version = 1)]
 #[derive(Debug)]
 pub struct Input {
     pub prevout: Adapter<bitcoin::OutPoint>,
     pub script_pubkey: Adapter<bitcoin::Script>,
     pub redeem_script: Adapter<bitcoin::Script>,
     pub sigset_index: u32,
+    #[cfg(not(feature = "testnet"))]
+    #[orga(version(V0))]
+    pub dest: orga::coins::Address,
+    #[cfg(feature = "testnet")]
+    #[orga(version(V0))]
+    pub dest: LengthVec<u16, u8>,
+    #[orga(version(V1))]
     pub dest: LengthVec<u16, u8>,
     pub amount: u64,
     pub est_witness_vsize: u64,
@@ -115,6 +124,24 @@ impl Input {
 
     pub fn est_vsize(&self) -> u64 {
         self.est_witness_vsize + 40
+    }
+}
+
+impl MigrateFrom<InputV0> for InputV1 {
+    fn migrate_from(other: InputV0) -> OrgaResult<Self> {
+        Ok(Self {
+            prevout: other.prevout,
+            script_pubkey: other.script_pubkey,
+            redeem_script: other.redeem_script,
+            sigset_index: other.sigset_index,
+            #[cfg(not(feature = "testnet"))]
+            dest: other.dest.encode()?.try_into()?,
+            #[cfg(feature = "testnet")]
+            dest: other.dest,
+            amount: other.amount,
+            est_witness_vsize: other.est_witness_vsize,
+            sigs: other.sigs,
+        })
     }
 }
 
@@ -176,7 +203,7 @@ impl Checkpoint {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub struct Config {
     pub min_checkpoint_interval: u64,
     pub max_checkpoint_interval: u64,
@@ -331,6 +358,13 @@ pub struct BuildingCheckpoint<'a>(Ref<'a, Checkpoint>);
 #[derive(Deref, DerefMut)]
 pub struct BuildingCheckpointMut<'a>(ChildMut<'a, u64, Checkpoint>);
 
+type BuildingAdvanceRes = (
+    bitcoin::OutPoint,
+    u64,
+    Vec<ReadOnly<Input>>,
+    Vec<ReadOnly<Output>>,
+);
+
 impl<'a> BuildingCheckpointMut<'a> {
     pub fn push_input(
         &mut self,
@@ -361,22 +395,14 @@ impl<'a> BuildingCheckpointMut<'a> {
         Ok(input.est_vsize())
     }
 
-    pub fn advance(
-        self,
-        config: &Config,
-    ) -> Result<(
-        bitcoin::OutPoint,
-        u64,
-        Vec<ReadOnly<Input>>,
-        Vec<ReadOnly<Output>>,
-    )> {
+    pub fn advance(self, config: &Config) -> Result<BuildingAdvanceRes> {
         let mut checkpoint = self.0;
 
         checkpoint.status = CheckpointStatus::Signing;
 
         let reserve_out = bitcoin::TxOut {
             value: 0, // will be updated after counting ins/outs and fees
-            script_pubkey: checkpoint.sigset.output_script(&vec![0u8])?, // TODO: double-check safety
+            script_pubkey: checkpoint.sigset.output_script(&[0u8])?, // TODO: double-check safety
         };
         checkpoint.outputs.push_front(Adapter::new(reserve_out))?;
 
@@ -479,8 +505,14 @@ impl CheckpointQueue {
         }
     }
 
+    // TODO: remove this attribute, not sure why clippy is complaining when is_empty is defined
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> Result<u32> {
         Ok(u32::try_from(self.queue.len())?)
+    }
+
+    pub fn is_empty(&self) -> Result<bool> {
+        Ok(self.len()? == 0)
     }
 
     #[query]
@@ -620,12 +652,12 @@ impl CheckpointQueue {
                 if elapsed < self.config.max_checkpoint_interval || self.index == 0 {
                     let building = self.building()?;
                     let has_pending_deposit = if self.index == 0 {
-                        building.inputs.len() > 0
+                        building.inputs.is_empty()
                     } else {
                         building.inputs.len() > 1
                     };
 
-                    let has_pending_withdrawal = building.outputs.len() > 0;
+                    let has_pending_withdrawal = building.outputs.is_empty();
 
                     if !has_pending_deposit && !has_pending_withdrawal {
                         return Ok(());
@@ -651,13 +683,13 @@ impl CheckpointQueue {
                 building.push_input(
                     reserve_outpoint,
                     &sigset,
-                    &vec![0u8], // TODO: double-check safety
+                    &[0u8], // TODO: double-check safety
                     reserve_value,
                 )?;
 
                 for input in excess_inputs {
                     let shares = input.sigs.shares()?;
-                    let data = input.into_inner().into();
+                    let data = input.into_inner();
                     building.inputs.push_back(data)?;
                     building
                         .inputs

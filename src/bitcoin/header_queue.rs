@@ -14,6 +14,7 @@ use orga::state::State;
 use orga::store::Store;
 use orga::Error as OrgaError;
 use orga::Result as OrgaResult;
+use serde::Serialize;
 
 const MAX_LENGTH: u64 = 4032;
 const MAX_RELAY: u64 = 25;
@@ -175,7 +176,7 @@ impl WorkHeader {
 
 // TODO: implement trait that returns constants for bitcoin::Network variants
 
-#[derive(Clone, Encode, Decode, State, MigrateFrom)]
+#[derive(Clone, Encode, Decode, State, MigrateFrom, Serialize)]
 pub struct Config {
     pub max_length: u64,
     pub max_time_increase: u32,
@@ -254,7 +255,7 @@ impl Config {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub struct Network(bitcoin::Network);
 
 impl MigrateFrom for Network {
@@ -494,7 +495,7 @@ impl HeaderQueue {
 
             let chain_work = *self.current_work + header_work;
             let work_header = WorkHeader::new(header.clone(), chain_work);
-            self.deque.push_back(work_header.into())?;
+            self.deque.push_back(work_header)?;
             self.current_work = Adapter::new(chain_work);
         }
 
@@ -605,7 +606,7 @@ impl HeaderQueue {
         for i in 0..11 {
             let index = self.height()? - i;
 
-            let current_item = match self.get_by_height(index as u32)? {
+            let current_item = match self.get_by_height(index)? {
                 Some(inner) => inner,
                 None => return Err(Error::Header("Deque does not contain any elements".into())),
             };
@@ -653,12 +654,14 @@ impl HeaderQueue {
         }
     }
 
+    // TODO: remove this attribute, not sure why clippy is complaining when is_empty is defined
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> u64 {
         self.deque.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.deque.is_empty()
+        self.len() == 0
     }
 
     #[query]

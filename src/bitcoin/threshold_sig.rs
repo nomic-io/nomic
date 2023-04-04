@@ -15,11 +15,12 @@ use orga::migrate::MigrateFrom;
 use orga::query::Query;
 use orga::state::State;
 use orga::{Error as OrgaError, Result as OrgaResult};
+use serde::Serialize;
 
 pub type Message = [u8; MESSAGE_SIZE];
 
-#[derive(Encode, Decode, State, Debug, Clone, Deref, From, Copy, MigrateFrom)]
-pub struct Signature([u8; COMPACT_SIGNATURE_SIZE]);
+#[derive(Encode, Decode, State, Debug, Clone, Deref, From, Copy, MigrateFrom, Serialize)]
+pub struct Signature(#[serde(serialize_with = "<[_]>::serialize")] [u8; COMPACT_SIGNATURE_SIZE]);
 
 #[derive(
     Encode,
@@ -36,12 +37,13 @@ pub struct Signature([u8; COMPACT_SIGNATURE_SIZE]);
     Ord,
     MigrateFrom,
     Client,
+    Serialize,
 )]
-pub struct Pubkey([u8; PUBLIC_KEY_SIZE]);
+pub struct Pubkey(#[serde(serialize_with = "<[_]>::serialize")] [u8; PUBLIC_KEY_SIZE]);
 
 impl Next for Pubkey {
     fn next(&self) -> Option<Self> {
-        let mut output = self.clone();
+        let mut output = *self;
         for (i, value) in self.0.iter().enumerate().rev() {
             match value.next() {
                 Some(new_value) => {
@@ -95,6 +97,7 @@ impl ThresholdSig {
         Self::default()
     }
 
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> u16 {
         self.len
     }
@@ -116,8 +119,7 @@ impl ThresholdSig {
                 Share {
                     power: signatory.voting_power,
                     sig: None,
-                }
-                .into(),
+                },
             )?;
 
             self.len += 1;
@@ -138,7 +140,7 @@ impl ThresholdSig {
             assert!(share.sig.is_none());
             total_vp += share.power;
             len += 1;
-            self.sigs.insert(pubkey, share.into())?;
+            self.sigs.insert(pubkey, share)?;
         }
 
         // TODO: get threshold ratio from somewhere else
@@ -163,10 +165,7 @@ impl ThresholdSig {
                     Err(e) => return Some(Err(e)),
                     Ok(entry) => entry,
                 };
-                share
-                    .sig
-                    .as_ref()
-                    .map(|sig| Ok((pubkey.clone(), sig.clone())))
+                share.sig.as_ref().map(|sig| Ok((*pubkey, *sig)))
             })
             .collect::<OrgaResult<_>>()?)
     }
@@ -176,7 +175,7 @@ impl ThresholdSig {
         Ok(self
             .sigs
             .iter()?
-            .map(|entry| entry.map(|(pubkey, share)| (pubkey.clone(), share.clone())))
+            .map(|entry| entry.map(|(pubkey, share)| (*pubkey, share.clone())))
             .collect::<OrgaResult<_>>()?)
     }
 
