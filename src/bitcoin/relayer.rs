@@ -4,6 +4,7 @@ use crate::app::App;
 use crate::app::DepositCommitment;
 use crate::bitcoin::{adapter::Adapter, header_queue::WrappedHeader};
 use crate::error::Result;
+use bitcoin::Network;
 use bitcoincore_rpc_async::bitcoin;
 use bitcoincore_rpc_async::bitcoin::consensus::Encodable;
 use bitcoincore_rpc_async::bitcoin::{
@@ -24,9 +25,23 @@ use warp::reject;
 
 const HEADER_BATCH_SIZE: usize = 25;
 
+#[derive(Clone)]
+pub struct Config {
+    pub network: Network,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            network: Network::Testnet,
+        }
+    }
+}
+
 pub struct Relayer {
     btc_client: BitcoinRpcClient,
     app_client: TendermintClient<App>,
+    config: Config,
 
     scripts: Option<WatchedScriptStore>,
 }
@@ -37,6 +52,16 @@ impl Relayer {
             btc_client,
             app_client,
             scripts: None,
+            config: Config::default(),
+        }
+    }
+
+    pub fn configure(self, config: Config) -> Self {
+        Relayer {
+            btc_client: self.btc_client,
+            app_client: self.app_client,
+            scripts: self.scripts,
+            config,
         }
     }
 
@@ -124,6 +149,7 @@ impl Relayer {
         // TODO: configurable listen address
         use bytes::Bytes;
         use warp::Filter;
+        let config = self.config.clone();
         let bcast_route = warp::post()
             .and(warp::path("address"))
             .and(warp::query::<DepositAddress>())
@@ -165,7 +191,7 @@ impl Relayer {
                                 dest.commitment_bytes().map_err(|_| reject())?.as_slice(),
                             )
                             .map_err(|_| reject())?,
-                        super::NETWORK,
+                        config.network,
                     )
                     .unwrap()
                     .to_string();
