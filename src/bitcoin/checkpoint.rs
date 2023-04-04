@@ -7,6 +7,7 @@ use super::{
 use crate::error::{Error, Result};
 use bitcoin::{blockdata::transaction::EcdsaSighashType, PackedLockTime, Sequence};
 use derive_more::{Deref, DerefMut};
+use orga::encoding::Terminated;
 use orga::store::Store;
 use orga::{
     call::Call,
@@ -22,13 +23,6 @@ use orga::{
     Error as OrgaError, Result as OrgaResult,
 };
 use std::convert::TryFrom;
-
-pub const MIN_CHECKPOINT_INTERVAL: u64 = 60 * 5;
-pub const MAX_CHECKPOINT_INTERVAL: u64 = 60 * 60 * 8;
-pub const MAX_INPUTS: u64 = 40;
-pub const MAX_OUTPUTS: u64 = 200;
-pub const FEE_RATE: u64 = 1;
-pub const MAX_AGE: u64 = 60 * 60 * 24 * 7 * 3;
 
 #[derive(Debug, Encode, Decode, Default)]
 pub enum CheckpointStatus {
@@ -182,10 +176,43 @@ impl Checkpoint {
     }
 }
 
+#[derive(Clone)]
+pub struct Config {
+    pub min_checkpoint_interval: u64,
+    pub max_checkpoint_interval: u64,
+    pub max_inputs: u64,
+    pub max_outputs: u64,
+    pub fee_rate: u64,
+    pub max_age: u64,
+}
+
+impl Terminated for Config {}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            min_checkpoint_interval: 60 * 5,
+            max_checkpoint_interval: 60 * 60 * 8,
+            max_inputs: 40,
+            max_outputs: 200,
+            fee_rate: 1,
+            max_age: 60 * 60 * 24 * 7 * 3,
+        }
+    }
+}
+
+impl MigrateFrom for Config {
+    fn migrate_from(other: Self) -> orga::Result<Self> {
+        Ok(other)
+    }
+}
+
 #[orga]
 pub struct CheckpointQueue {
     pub(super) queue: Deque<Checkpoint>,
     pub(super) index: u32,
+    #[state(skip)]
+    config: Config,
 }
 
 #[derive(Deref)]
@@ -336,6 +363,7 @@ impl<'a> BuildingCheckpointMut<'a> {
 
     pub fn advance(
         self,
+        config: &Config,
     ) -> Result<(
         bitcoin::OutPoint,
         u64,
@@ -353,13 +381,13 @@ impl<'a> BuildingCheckpointMut<'a> {
         checkpoint.outputs.push_front(Adapter::new(reserve_out))?;
 
         let mut excess_inputs = vec![];
-        while checkpoint.inputs.len() > MAX_INPUTS {
+        while checkpoint.inputs.len() > config.max_inputs {
             let removed_input = checkpoint.inputs.pop_back()?.unwrap();
             excess_inputs.push(removed_input);
         }
 
         let mut excess_outputs = vec![];
-        while checkpoint.outputs.len() > MAX_OUTPUTS {
+        while checkpoint.outputs.len() > config.max_outputs {
             let removed_output = checkpoint.outputs.pop_back()?.unwrap();
             excess_outputs.push(removed_output);
         }
@@ -381,7 +409,7 @@ impl<'a> BuildingCheckpointMut<'a> {
         let mut signing = SigningCheckpointMut(checkpoint);
 
         let (mut tx, est_vsize) = signing.tx()?;
-        let fee = est_vsize * FEE_RATE;
+        let fee = est_vsize * config.fee_rate;
         let reserve_value = in_amount - out_amount - fee;
         let mut reserve_out = signing.outputs.get_mut(0)?.unwrap();
         reserve_out.value = reserve_value;
@@ -416,6 +444,14 @@ impl<'a> BuildingCheckpointMut<'a> {
 }
 
 impl CheckpointQueue {
+    pub fn configure(&mut self, config: Config) {
+        self.config = config;
+    }
+
+    pub fn config(&self) -> Config {
+        self.config.clone()
+    }
+
     pub fn reset(&mut self) -> OrgaResult<()> {
         self.index = 0;
         super::clear_deque(&mut self.queue)?;
@@ -551,7 +587,7 @@ impl CheckpointQueue {
         let latest = self.building()?.create_time();
 
         while let Some(oldest) = self.queue.front()? {
-            if latest - oldest.create_time() <= MAX_AGE {
+            if latest - oldest.create_time() <= self.config.max_age {
                 break;
             }
 
@@ -577,11 +613,11 @@ impl CheckpointQueue {
                     .ok_or_else(|| OrgaError::App("No time context".to_string()))?
                     .seconds as u64;
                 let elapsed = now - self.building()?.create_time();
-                if elapsed < MIN_CHECKPOINT_INTERVAL {
+                if elapsed < self.config.min_checkpoint_interval {
                     return Ok(());
                 }
 
-                if elapsed < MAX_CHECKPOINT_INTERVAL || self.index == 0 {
+                if elapsed < self.config.max_checkpoint_interval || self.index == 0 {
                     let building = self.building()?;
                     let has_pending_deposit = if self.index == 0 {
                         building.inputs.len() > 0
@@ -604,10 +640,11 @@ impl CheckpointQueue {
             self.prune()?;
 
             if self.index > 0 {
+                let config = self.config();
                 let second = self.get_mut(self.index - 1)?;
                 let sigset = second.sigset.clone();
                 let (reserve_outpoint, reserve_value, excess_inputs, excess_outputs) =
-                    BuildingCheckpointMut(second).advance()?;
+                    BuildingCheckpointMut(second).advance(&config)?;
 
                 let mut building = self.building_mut()?;
 
