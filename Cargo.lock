@@ -2413,7 +2413,7 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.3.1"
-source = "git+https://github.com/nomic-io/orga.git?rev=faa15d00862b5ad395f65265631a9093bc3cd140#faa15d00862b5ad395f65265631a9093bc3cd140"
+source = "git+https://github.com/nomic-io/orga.git?rev=bf60998dc539fe0f962b1ce91a13e8d72416294d#bf60998dc539fe0f962b1ce91a13e8d72416294d"
 dependencies = [
  "abci2",
  "async-trait",
@@ -2471,7 +2471,7 @@ dependencies = [
 [[package]]
 name = "orga-macros"
 version = "0.3.1"
-source = "git+https://github.com/nomic-io/orga.git?rev=faa15d00862b5ad395f65265631a9093bc3cd140#faa15d00862b5ad395f65265631a9093bc3cd140"
+source = "git+https://github.com/nomic-io/orga.git?rev=bf60998dc539fe0f962b1ce91a13e8d72416294d#bf60998dc539fe0f962b1ce91a13e8d72416294d"
 dependencies = [
  "darling 0.14.4",
  "heck 0.3.3",
