@@ -362,7 +362,7 @@ impl Relayer {
 
             let mut block_bytes = vec![];
             block.consensus_encode(&mut block_bytes).unwrap();
-            let block = Block::consensus_decode(block_bytes.as_slice()).unwrap();
+            let block = Block::consensus_decode(&mut block_bytes.as_slice()).unwrap();
 
             blocks.push(block);
         }
@@ -393,7 +393,8 @@ impl Relayer {
                     .script_pubkey
                     .consensus_encode(&mut script_bytes)
                     .unwrap();
-                let script = ::bitcoin::Script::consensus_decode(script_bytes.as_slice()).unwrap();
+                let script =
+                    ::bitcoin::Script::consensus_decode(&mut script_bytes.as_slice()).unwrap();
 
                 self.scripts
                     .as_ref()
@@ -436,12 +437,12 @@ impl Relayer {
             .btc_client
             .get_tx_out_proof(&[tx.txid()], Some(block_hash))
             .await?;
-        let proof = ::bitcoin::MerkleBlock::consensus_decode(proof_bytes.as_slice())?.txn;
+        let proof = ::bitcoin::MerkleBlock::consensus_decode(&mut proof_bytes.as_slice())?.txn;
 
         {
             let mut tx_bytes = vec![];
             tx.consensus_encode(&mut tx_bytes)?;
-            let tx = ::bitcoin::Transaction::consensus_decode(tx_bytes.as_slice())?;
+            let tx = ::bitcoin::Transaction::consensus_decode(&mut tx_bytes.as_slice())?;
             let tx = Adapter::new(tx.clone());
 
             let proof = Adapter::new(proof);
@@ -538,7 +539,8 @@ impl Relayer {
             let header = self.btc_client.get_block_header(&cursor.hash).await?;
             let mut header_bytes = vec![];
             header.consensus_encode(&mut header_bytes).unwrap();
-            let header = ::bitcoin::BlockHeader::consensus_decode(header_bytes.as_slice()).unwrap();
+            let header =
+                ::bitcoin::BlockHeader::consensus_decode(&mut header_bytes.as_slice()).unwrap();
 
             let header = WrappedHeader::from_header(&header, cursor.height as u32);
 
