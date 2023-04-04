@@ -83,6 +83,30 @@ impl InnerApp {
             start_seconds: genesis_time + day,
         })?;
 
+        self.dev_rewards.configure(FaucetOptions {
+            num_periods: 9,
+            period_length: year,
+            total_coins: 49_875_000_000_000.into(),
+            period_decay: two_thirds,
+            start_seconds: genesis_time + day,
+        })?;
+
+        self.community_pool_rewards.configure(FaucetOptions {
+            num_periods: 9,
+            period_length: year,
+            total_coins: 9_975_000_000_000.into(),
+            period_decay: two_thirds,
+            start_seconds: genesis_time + day,
+        })?;
+
+        self.incentive_pool_rewards.configure(FaucetOptions {
+            num_periods: 9,
+            period_length: year,
+            total_coins: 89_775_000_000_000.into(),
+            period_decay: two_thirds,
+            start_seconds: genesis_time + day,
+        })?;
+
         Ok(())
     }
 
