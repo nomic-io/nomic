@@ -536,7 +536,7 @@ impl HeaderQueue {
                 }
             };
         }
-        return Ok(WrappedHeader::u256_from_compact(current_header.bits()));
+        Ok(WrappedHeader::u256_from_compact(current_header.bits()))
     }
 
     fn calculate_next_target(
