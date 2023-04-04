@@ -110,10 +110,9 @@ impl Signer {
     async fn try_sign(&mut self, xpub: &ExtendedPubKey) -> Result<()> {
         let secp = Secp256k1::signing_only();
 
-        let _signing = match self.client.bitcoin.checkpoints.signing().await?? {
-            None => return Ok(()),
-            Some(signing) => signing,
-        };
+        if self.client.bitcoin.checkpoints.signing().await??.is_none() {
+            return Ok(());
+        }
 
         let to_sign = self
             .client
