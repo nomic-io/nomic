@@ -20,6 +20,7 @@ use orga::Error;
 use orga::{ibc, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
+use std::time::Duration;
 
 mod migrations;
 
@@ -64,6 +65,27 @@ pub struct InnerApp {
 }
 
 impl InnerApp {
+    fn configure_faucets(&mut self) -> Result<()> {
+        let day = 60 * 60 * 24;
+        let year = Duration::from_secs(60 * 60 * 24 * 365);
+        let two_thirds = (Amount::new(2) / Amount::new(3))?;
+
+        let genesis_time = self
+            .context::<Time>()
+            .ok_or_else(|| Error::App("No Time context available".into()))?
+            .seconds;
+
+        self.staking_rewards.configure(FaucetOptions {
+            num_periods: 9,
+            period_length: year,
+            total_coins: 49_875_000_000_000.into(),
+            period_decay: two_thirds,
+            start_seconds: genesis_time + day,
+        })?;
+
+        Ok(())
+    }
+
     #[call]
     pub fn noop(&mut self) {}
 
@@ -230,11 +252,6 @@ mod abci {
 
             let sr_address = STRATEGIC_RESERVE_ADDRESS.parse().unwrap();
 
-            self.airdrop
-                .init_from_airdrop1_csv(include_bytes!("../airdrop1_snapshot.csv"))?;
-            self.airdrop
-                .init_from_airdrop2_csv(include_bytes!("../airdrop2_snapshot.csv"))?;
-
             self.accounts.allow_transfers(true);
             self.bitcoin.accounts.allow_transfers(true);
 
@@ -243,6 +260,9 @@ mod abci {
             let vb_address = VALIDATOR_BOOTSTRAP_ADDRESS.parse().unwrap();
             self.accounts.add_transfer_exception(vb_address)?;
 
+            self.upgrade.current_version = vec![CONSENSUS_VERSION].try_into().unwrap();
+
+            self.configure_faucets()?;
             Ok(())
         }
     }
