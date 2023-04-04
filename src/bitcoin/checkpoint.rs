@@ -23,7 +23,6 @@ use orga::{
     Error as OrgaError, Result as OrgaResult,
 };
 use serde::Serialize;
-use serde::Serialize;
 use std::convert::TryFrom;
 
 #[derive(Debug, Encode, Decode, Default, Serialize)]
