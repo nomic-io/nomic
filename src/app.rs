@@ -23,8 +23,8 @@ use orga::Error;
 use orga::{ibc, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
-use std::time::Duration;
 use std::fmt::Debug;
+use std::time::Duration;
 
 mod migrations;
 
