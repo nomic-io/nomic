@@ -5,7 +5,7 @@ use super::{
     ConsensusKey, Xpub,
 };
 use crate::error::{Error, Result};
-use bitcoin::blockdata::transaction::EcdsaSighashType;
+use bitcoin::{blockdata::transaction::EcdsaSighashType, PackedLockTime, Sequence};
 use derive_more::{Deref, DerefMut};
 use orga::store::Store;
 use orga::{
@@ -114,7 +114,7 @@ impl Input {
         Ok(bitcoin::TxIn {
             previous_output: *self.prevout,
             script_sig: bitcoin::Script::new(),
-            sequence: u32::MAX,
+            sequence: Sequence(u32::MAX),
             witness: bitcoin::Witness::from_vec(witness),
         })
     }
@@ -144,7 +144,7 @@ impl Checkpoint {
     pub fn tx(&self) -> Result<(bitcoin::Transaction, u64)> {
         let mut tx = bitcoin::Transaction {
             version: 1,
-            lock_time: 0,
+            lock_time: PackedLockTime(0),
             input: vec![],
             output: vec![],
         };
