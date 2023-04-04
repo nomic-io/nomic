@@ -610,9 +610,9 @@ impl Relayer {
 }
 
 #[derive(Serialize, Deserialize)]
-struct DepositAddress {
-    sigset_index: u32,
-    deposit_addr: String,
+pub struct DepositAddress {
+    pub sigset_index: u32,
+    pub deposit_addr: String,
 }
 
 pub struct OutputMatch {
