@@ -14,6 +14,7 @@ use orga::state::State;
 use orga::store::Store;
 use orga::Error as OrgaError;
 use orga::Result as OrgaResult;
+use serde::Serialize;
 
 const MAX_LENGTH: u64 = 4032;
 const MAX_RELAY: u64 = 25;
@@ -175,7 +176,7 @@ impl WorkHeader {
 
 // TODO: implement trait that returns constants for bitcoin::Network variants
 
-#[derive(Clone, Encode, Decode, State, MigrateFrom)]
+#[derive(Clone, Encode, Decode, State, MigrateFrom, Serialize)]
 pub struct Config {
     pub max_length: u64,
     pub max_time_increase: u32,
@@ -254,7 +255,7 @@ impl Config {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub struct Network(bitcoin::Network);
 
 impl MigrateFrom for Network {

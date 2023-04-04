@@ -21,6 +21,7 @@ use orga::{
     state::State,
     Error as OrgaError, Result as OrgaResult,
 };
+use serde::Serialize;
 use std::convert::TryFrom;
 
 pub const MIN_CHECKPOINT_INTERVAL: u64 = 60 * 5;
@@ -30,7 +31,7 @@ pub const MAX_OUTPUTS: u64 = 200;
 pub const FEE_RATE: u64 = 1;
 pub const MAX_AGE: u64 = 60 * 60 * 24 * 7 * 3;
 
-#[derive(Debug, Encode, Decode, Default)]
+#[derive(Debug, Encode, Decode, Default, Serialize)]
 pub enum CheckpointStatus {
     #[default]
     Building,

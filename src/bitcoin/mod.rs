@@ -27,6 +27,7 @@ use orga::query::Query;
 use orga::state::State;
 use orga::store::Store;
 use orga::{Error as OrgaError, Result as OrgaResult};
+use serde::Serialize;
 use signatory::SignatorySet;
 use txid_set::OutpointSet;
 
@@ -41,7 +42,7 @@ pub mod signer;
 pub mod threshold_sig;
 pub mod txid_set;
 
-#[derive(State, Debug, Clone, Encode, Decode, Default, MigrateFrom)]
+#[derive(State, Debug, Clone, Encode, Decode, Default, MigrateFrom, Serialize)]
 pub struct Nbtc(());
 impl Symbol for Nbtc {
     const INDEX: u8 = 21;
@@ -78,7 +79,7 @@ pub struct Bitcoin {
 
 pub type ConsensusKey = [u8; 32];
 
-#[derive(Call, Query, Clone, Debug, Client, PartialEq)]
+#[derive(Call, Query, Clone, Debug, Client, PartialEq, Serialize)]
 pub struct Xpub(ExtendedPubKey);
 
 impl MigrateFrom for Xpub {
