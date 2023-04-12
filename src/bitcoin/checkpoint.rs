@@ -651,12 +651,12 @@ impl CheckpointQueue {
                 if elapsed < self.config.max_checkpoint_interval || self.index == 0 {
                     let building = self.building()?;
                     let has_pending_deposit = if self.index == 0 {
-                        building.inputs.is_empty()
+                        !building.inputs.is_empty()
                     } else {
                         building.inputs.len() > 1
                     };
 
-                    let has_pending_withdrawal = building.outputs.is_empty();
+                    let has_pending_withdrawal = !building.outputs.is_empty();
 
                     if !has_pending_deposit && !has_pending_withdrawal {
                         return Ok(());
