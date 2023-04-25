@@ -176,7 +176,7 @@ pub fn exempt_from_fee() -> Result<()> {
 
 impl Bitcoin {
     #[call]
-    pub fn set_signatory_key(&mut self, signatory_key: Xpub) -> Result<()> {
+    pub fn set_signatory_key(&mut self, _signatory_key: Xpub) -> Result<()> {
         #[cfg(feature = "full")]
         {
             exempt_from_fee()?;

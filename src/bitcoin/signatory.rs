@@ -1,20 +1,28 @@
 #![allow(clippy::redundant_closure_call)] // TODO: fix bitcoin-script then remove this
 
-use crate::error::{Error, Result};
+#[cfg(feature = "full")]
+use crate::error::Error;
+use crate::error::Result;
+#[cfg(feature = "full")]
 use bitcoin::util::bip32::ChildNumber;
 use bitcoin::Script;
 use bitcoin_script::bitcoin_script as script;
+#[cfg(feature = "full")]
 use orga::collections::Map;
+#[cfg(feature = "full")]
 use orga::context::Context;
 use orga::encoding::Encode;
 use orga::orga;
+#[cfg(feature = "full")]
 use orga::plugins::Time;
 #[cfg(feature = "full")]
 use orga::plugins::Validators;
 use orga::Error as OrgaError;
 
 use super::threshold_sig::Pubkey;
+#[cfg(feature = "full")]
 use super::ConsensusKey;
+#[cfg(feature = "full")]
 use super::Xpub;
 
 pub const MAX_DEPOSIT_AGE: u64 = 60 * 60 * 24 * 5;
@@ -90,11 +98,13 @@ impl SignatorySet {
         Ok(sigset)
     }
 
+    #[cfg(feature = "full")]
     fn insert(&mut self, signatory: Signatory) {
         self.present_vp += signatory.voting_power;
         self.signatories.push(signatory);
     }
 
+    #[cfg(feature = "full")]
     fn sort_and_truncate(&mut self) {
         self.signatories.sort_by(|a, b| b.cmp(a));
 

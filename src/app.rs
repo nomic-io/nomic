@@ -24,6 +24,7 @@ use orga::{ibc, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 use std::fmt::Debug;
+#[cfg(feature = "full")]
 use std::time::Duration;
 
 mod migrations;
@@ -41,8 +42,11 @@ pub struct Nom(());
 impl Symbol for Nom {
     const INDEX: u8 = 69;
 }
+#[cfg(feature = "full")]
 const DEV_ADDRESS: &str = "nomic14z79y3yrghqx493mwgcj0qd2udy6lm26lmduah";
+#[cfg(feature = "full")]
 const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1d5n325zrf4elfu0heqd59gna5j6xyunhev23cj";
+#[cfg(feature = "full")]
 const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhqd8dcqeq";
 
 #[orga(version = 1)]
@@ -76,6 +80,7 @@ pub struct InnerApp {
 }
 
 impl InnerApp {
+    #[cfg(feature = "full")]
     fn configure_faucets(&mut self) -> Result<()> {
         let day = 60 * 60 * 24;
         let year = Duration::from_secs(60 * 60 * 24 * 365);
@@ -232,32 +237,30 @@ impl InnerApp {
             }
             #[cfg(feature = "testnet")]
             DepositCommitment::Ibc(dest) => {
+                #[cfg(feature = "full")]
                 use orga::ibc::ibc_rs::applications::transfer::msgs::transfer::MsgTransfer;
+                #[cfg(feature = "full")]
                 use orga::ibc::proto::cosmos::base::v1beta1::Coin;
+
                 let fee = ibc_fee(nbtc)?;
                 let nbtc_after_fee = (nbtc - fee).result()?;
-                let IbcDepositCommitment {
-                    source_port,
-                    source_channel,
-                    receiver,
-                    sender,
-                    timeout_timestamp,
-                } = dest;
+
+                #[cfg(feature = "full")]
                 let msg_transfer = MsgTransfer {
-                    sender: sender.clone().into_inner(),
-                    source_port: source_port.into_inner(),
-                    source_channel: source_channel.into_inner(),
+                    sender: dest.sender.clone().into_inner(),
+                    source_port: dest.source_port.into_inner(),
+                    source_channel: dest.source_channel.into_inner(),
                     token: Coin {
                         amount: nbtc_after_fee.to_string(),
                         denom: "usat".to_string(),
                     },
-                    receiver: receiver.into_inner(),
+                    receiver: dest.receiver.into_inner(),
                     timeout_height: TimeoutHeight::Never,
-                    timeout_timestamp: Timestamp::from_nanoseconds(timeout_timestamp)
+                    timeout_timestamp: Timestamp::from_nanoseconds(dest.timeout_timestamp)
                         .map_err(|e| Error::App(e.to_string()))?,
                 };
                 self.ibc.bank_mut().mint(
-                    sender
+                    dest.sender
                         .into_inner()
                         .try_into()
                         .map_err(|_| Error::App("Invalid sender address".into()))?,

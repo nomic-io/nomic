@@ -1,23 +1,30 @@
+#[cfg(feature = "full")]
+use super::ConsensusKey;
 use super::{
     adapter::Adapter,
     signatory::SignatorySet,
     threshold_sig::{Signature, ThresholdSig},
-    ConsensusKey, Xpub,
+    Xpub,
 };
 use crate::error::{Error, Result};
 use bitcoin::{blockdata::transaction::EcdsaSighashType, PackedLockTime, Sequence};
 use derive_more::{Deref, DerefMut};
+use log::info;
+#[cfg(feature = "full")]
+use orga::collections::Map;
+#[cfg(feature = "full")]
+use orga::context::GetContext;
 use orga::encoding::Terminated;
+#[cfg(feature = "full")]
+use orga::plugins::Time;
 use orga::store::Store;
 use orga::{
     call::Call,
     client::Client,
-    collections::{map::ReadOnly, ChildMut, Deque, Map, Ref},
-    context::GetContext,
+    collections::{map::ReadOnly, ChildMut, Deque, Ref},
     encoding::{Decode, Encode, LengthVec},
     migrate::MigrateFrom,
     orga,
-    plugins::Time,
     query::Query,
     state::State,
     Error as OrgaError, Result as OrgaResult,
@@ -628,120 +635,110 @@ impl CheckpointQueue {
         Ok(())
     }
 
+    #[cfg(feature = "full")]
     pub fn maybe_step(&mut self, sig_keys: &Map<ConsensusKey, Xpub>) -> Result<()> {
-        #[cfg(not(feature = "full"))]
-        unimplemented!();
+        if self.signing()?.is_some() {
+            return Ok(());
+        }
 
-        #[cfg(feature = "full")]
-        {
-            if self.signing()?.is_some() {
+        if !self.queue.is_empty() {
+            let now = self
+                .context::<Time>()
+                .ok_or_else(|| OrgaError::App("No time context".to_string()))?
+                .seconds as u64;
+            let elapsed = now - self.building()?.create_time();
+            if elapsed < self.config.min_checkpoint_interval {
                 return Ok(());
             }
 
-            if !self.queue.is_empty() {
-                let now = self
-                    .context::<Time>()
-                    .ok_or_else(|| OrgaError::App("No time context".to_string()))?
-                    .seconds as u64;
-                let elapsed = now - self.building()?.create_time();
-                if elapsed < self.config.min_checkpoint_interval {
+            if elapsed < self.config.max_checkpoint_interval || self.index == 0 {
+                let building = self.building()?;
+                let has_pending_deposit = if self.index == 0 {
+                    !building.inputs.is_empty()
+                } else {
+                    building.inputs.len() > 1
+                };
+
+                let has_pending_withdrawal = !building.outputs.is_empty();
+
+                if !has_pending_deposit && !has_pending_withdrawal {
                     return Ok(());
                 }
-
-                if elapsed < self.config.max_checkpoint_interval || self.index == 0 {
-                    let building = self.building()?;
-                    let has_pending_deposit = if self.index == 0 {
-                        !building.inputs.is_empty()
-                    } else {
-                        building.inputs.len() > 1
-                    };
-
-                    let has_pending_withdrawal = !building.outputs.is_empty();
-
-                    if !has_pending_deposit && !has_pending_withdrawal {
-                        return Ok(());
-                    }
-                }
             }
-
-            if self.maybe_push(sig_keys)?.is_none() {
-                return Ok(());
-            }
-
-            self.prune()?;
-
-            if self.index > 0 {
-                let config = self.config();
-                let second = self.get_mut(self.index - 1)?;
-                let sigset = second.sigset.clone();
-                let (reserve_outpoint, reserve_value, excess_inputs, excess_outputs) =
-                    BuildingCheckpointMut(second).advance(&config)?;
-
-                let mut building = self.building_mut()?;
-
-                building.push_input(
-                    reserve_outpoint,
-                    &sigset,
-                    &[0u8], // TODO: double-check safety
-                    reserve_value,
-                )?;
-
-                for input in excess_inputs {
-                    let shares = input.sigs.shares()?;
-                    let data = input.into_inner();
-                    building.inputs.push_back(data)?;
-                    building
-                        .inputs
-                        .back_mut()?
-                        .unwrap()
-                        .sigs
-                        .from_shares(shares)?;
-                }
-
-                for output in excess_outputs {
-                    let data = output.into_inner();
-                    building.outputs.push_back(data)?;
-                }
-            }
-
-            Ok(())
         }
+
+        if self.maybe_push(sig_keys)?.is_none() {
+            return Ok(());
+        }
+
+        self.prune()?;
+
+        if self.index > 0 {
+            let config = self.config();
+            let second = self.get_mut(self.index - 1)?;
+            let sigset = second.sigset.clone();
+            let (reserve_outpoint, reserve_value, excess_inputs, excess_outputs) =
+                BuildingCheckpointMut(second).advance(&config)?;
+
+            let mut building = self.building_mut()?;
+
+            building.push_input(
+                reserve_outpoint,
+                &sigset,
+                &[0u8], // TODO: double-check safety
+                reserve_value,
+            )?;
+
+            for input in excess_inputs {
+                let shares = input.sigs.shares()?;
+                let data = input.into_inner();
+                building.inputs.push_back(data)?;
+                building
+                    .inputs
+                    .back_mut()?
+                    .unwrap()
+                    .sigs
+                    .from_shares(shares)?;
+            }
+
+            for output in excess_outputs {
+                let data = output.into_inner();
+                building.outputs.push_back(data)?;
+            }
+        }
+
+        Ok(())
     }
 
+    #[cfg(feature = "full")]
     fn maybe_push(
         &mut self,
         sig_keys: &Map<ConsensusKey, Xpub>,
     ) -> Result<Option<BuildingCheckpointMut>> {
-        #[cfg(not(feature = "full"))]
-        unimplemented!();
-
-        #[cfg(feature = "full")]
-        {
-            let mut index = self.index;
-            if !self.queue.is_empty() {
-                index += 1;
-            }
-
-            let sigset = SignatorySet::from_validator_ctx(index, sig_keys)?;
-
-            if sigset.possible_vp() == 0 {
-                return Ok(None);
-            }
-
-            if !sigset.has_quorum() {
-                return Ok(None);
-            }
-
-            self.index = index;
-
-            self.queue.push_back(Checkpoint {
-                sigset,
-                ..Default::default()
-            })?;
-
-            let building = self.building_mut()?;
-            Ok(Some(building))
+        let mut index = self.index;
+        if !self.queue.is_empty() {
+            index += 1;
         }
+
+        let sigset = SignatorySet::from_validator_ctx(index, sig_keys)?;
+
+        if sigset.possible_vp() == 0 {
+            return Ok(None);
+        }
+
+        if !sigset.has_quorum() {
+            return Ok(None);
+        }
+
+        self.index = index;
+
+        self.queue.push_back(Checkpoint {
+            sigset,
+            ..Default::default()
+        })?;
+
+        let building = self.building_mut()?;
+        Ok(Some(building))
     }
 
     #[query]

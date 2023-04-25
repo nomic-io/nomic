@@ -1,16 +1,23 @@
-use orga::coins::{Address, Amount};
+use orga::coins::Address;
+#[cfg(feature = "full")]
+use orga::coins::Amount;
 use orga::collections::{ChildMut, Map};
 use orga::context::GetContext;
 use orga::migrate::{MigrateFrom, MigrateInto};
 use orga::orga;
 use orga::plugins::{Paid, Signer};
-use orga::prelude::{Decimal, MIN_FEE};
+#[cfg(feature = "full")]
+use orga::prelude::Decimal;
+use orga::prelude::MIN_FEE;
 use orga::{Error, Result};
+#[cfg(feature = "full")]
 use split_iter::Splittable;
 
 use super::app::Nom;
 
+#[cfg(feature = "full")]
 const MAX_STAKED: u64 = 1_000_000_000;
+#[cfg(feature = "full")]
 const AIRDROP_II_TOTAL: u64 = 3_500_000_000_000;
 
 #[orga]
@@ -36,6 +43,7 @@ pub struct Airdrop {
     accounts: Map<Address, Account>,
 }
 
+#[cfg(feature = "full")]
 type Recipients = Vec<(Address, Vec<(u64, u64)>, u64)>;
 
 impl Airdrop {
@@ -215,6 +223,7 @@ impl Airdrop {
     }
 
     #[allow(unused_variables)]
+    #[cfg(feature = "full")]
     fn airdrop_to(
         &mut self,
         addr: Address,
@@ -248,6 +257,7 @@ impl Airdrop {
         }
     }
 
+    #[cfg(feature = "full")]
     fn score(staked: u64, _count: u64) -> u64 {
         staked.min(MAX_STAKED)
     }
@@ -281,6 +291,7 @@ impl Airdrop {
             .collect()
     }
 
+    #[cfg(feature = "full")]
     fn init_airdrop1_amount(
         &mut self,
         addr: Address,
@@ -444,6 +455,7 @@ impl Part {
     }
 }
 
+#[cfg(feature = "full")]
 #[cfg(test)]
 mod test {
     use super::*;
