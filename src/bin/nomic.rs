@@ -722,10 +722,10 @@ pub struct DeclareCmd {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DeclareInfo {
-    moniker: String,
-    website: String,
-    identity: String,
-    details: String,
+    pub moniker: String,
+    pub website: String,
+    pub identity: String,
+    pub details: String,
 }
 
 impl DeclareCmd {
