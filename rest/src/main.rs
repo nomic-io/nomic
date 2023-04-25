@@ -93,8 +93,7 @@ async fn auth_accounts(addr_str: &str) -> Result<Value, BadRequest<String>> {
     let mut nonce: u64 = app_client()
         .query(NonceQuery::Nonce(address), |state| state.nonce(address))
         .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
-        .into();
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
     nonce += 1;
 
     Ok(json!({
@@ -132,8 +131,7 @@ async fn auth_accounts2(addr_str: &str) -> Result<Value, BadRequest<String>> {
     let mut nonce: u64 = app_client()
         .query(NonceQuery::Nonce(address), |state| state.nonce(address))
         .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
-        .into();
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
     nonce += 1;
 
     Ok(json!({
