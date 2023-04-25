@@ -72,7 +72,7 @@ impl Relayer {
         Ok(hash)
     }
 
-    pub async fn start_header_relay(&mut self) -> Result<!> {
+    pub async fn start_header_relay(&mut self) -> Result<()> {
         info!("Starting header relay...");
 
         loop {
@@ -297,7 +297,7 @@ impl Relayer {
         Ok(tip)
     }
 
-    pub async fn start_checkpoint_relay(&mut self) -> Result<!> {
+    pub async fn start_checkpoint_relay(&mut self) -> Result<()> {
         info!("Starting checkpoint relay...");
 
         loop {
