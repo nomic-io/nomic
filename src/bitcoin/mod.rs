@@ -205,7 +205,7 @@ impl Bitcoin {
                 )));
             }
 
-            self.signatory_keys.insert(consensus_key, signatory_key)?;
+            self.signatory_keys.insert(consensus_key, _signatory_key)?;
         }
 
         Ok(())
