@@ -1,27 +1,29 @@
 #![feature(async_closure)]
-
+#![feature(stmt_expr_attributes)]
+#![allow(unused_imports)]
+//TODO: wasm-bindgen-tests
 mod error;
 mod types;
 mod web_client;
+
+use std::str::FromStr;
 
 use crate::error::Error;
 use crate::types::*;
 use crate::web_client::WebClient;
 use js_sys::{Array, Uint8Array};
-use nomic::app::{App, DepositCommitment, Nom, CHAIN_ID};
+use nomic::app::{App, DepositCommitment, Nom};
 use nomic::bitcoin::Nbtc;
 use nomic::orga::coins::Symbol;
 use nomic::orga::encoding::Encode;
 use nomic::orga::plugins::sdk_compat::sdk;
 use nomic::orga::prelude::Address;
 use nomic::orga::prelude::MIN_FEE;
-use urlencoding::encode;
+use nomic::utils::generate_sign_doc;
 use wasm_bindgen::prelude::{wasm_bindgen, JsError, JsValue};
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{Request, RequestInit, RequestMode, Response};
-
-const REST_PORT: u64 = 8443;
 
 #[wasm_bindgen(start)]
 pub fn main() -> std::result::Result<(), JsValue> {
@@ -29,7 +31,6 @@ pub fn main() -> std::result::Result<(), JsValue> {
     Ok(())
 }
 
-//bytes
 #[wasm_bindgen]
 pub async fn transfer(to_addr: String, amount: u64) -> Result<JsValue, JsError> {
     let mut client: WebClient<App> = WebClient::new();
@@ -38,7 +39,7 @@ pub async fn transfer(to_addr: String, amount: u64) -> Result<JsValue, JsError> 
         .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
     client
-        .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
+        .pay_from(async move |client| client.accounts.take_as_funding(MIN_FEE.into()).await)
         .accounts
         .transfer(address, amount.into())
         .await?;
@@ -47,7 +48,7 @@ pub async fn transfer(to_addr: String, amount: u64) -> Result<JsValue, JsError> 
 
 #[wasm_bindgen]
 pub async fn balance(addr: String) -> Result<u64, JsError> {
-    let mut client: WebClient<App> = WebClient::new();
+    let client: WebClient<App> = WebClient::new();
     let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
     Ok(client.accounts.balance(address).await??.into())
@@ -55,7 +56,7 @@ pub async fn balance(addr: String) -> Result<u64, JsError> {
 
 #[wasm_bindgen(js_name = nomRewardBalance)]
 pub async fn nom_reward_balance(addr: String) -> Result<u64, JsError> {
-    let mut client: WebClient<App> = WebClient::new();
+    let client: WebClient<App> = WebClient::new();
     let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
     let delegations = client.staking.delegations(address).await??;
@@ -75,7 +76,7 @@ pub async fn nom_reward_balance(addr: String) -> Result<u64, JsError> {
 
 #[wasm_bindgen(js_name = nbtcRewardBalance)]
 pub async fn nbtc_reward_balance(addr: String) -> Result<u64, JsError> {
-    let mut client: WebClient<App> = WebClient::new();
+    let client: WebClient<App> = WebClient::new();
     let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
     let delegations = client.staking.delegations(address).await??;
@@ -95,7 +96,7 @@ pub async fn nbtc_reward_balance(addr: String) -> Result<u64, JsError> {
 
 #[wasm_bindgen]
 pub async fn delegations(addr: String) -> Result<Array, JsError> {
-    let mut client: WebClient<App> = WebClient::new();
+    let client: WebClient<App> = WebClient::new();
     let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
     let delegations = client.staking.delegations(address).await??;
@@ -132,7 +133,7 @@ pub async fn delegations(addr: String) -> Result<Array, JsError> {
 
 #[wasm_bindgen(js_name = allValidators)]
 pub async fn all_validators() -> Result<Array, JsError> {
-    let mut client: WebClient<App> = WebClient::new();
+    let client: WebClient<App> = WebClient::new();
 
     let validators = client.staking.all_validators().await??;
     Ok(validators
@@ -342,6 +343,7 @@ fn parse_part(part: nomic::airdrop::Part) -> AirdropDetails {
     }
 }
 
+#[cfg(feature = "testnet")]
 #[wasm_bindgen(js_name = airdropBalances)]
 pub async fn airdrop_balances(addr: String) -> Result<Airdrop, JsError> {
     let client: WebClient<App> = WebClient::new();
@@ -507,7 +509,7 @@ pub async fn broadcast_deposit_addr(
             .await
             .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
         let res = js_sys::Uint8Array::new(&res).to_vec();
-        let res = String::from_utf8(res)?;
+        let _res = String::from_utf8(res)?;
 
         // web_sys::console::log_1(&format!("response: {}", &res).into());
     }
@@ -540,10 +542,10 @@ pub async fn join_airdrop_accounts(
 ) -> Result<String, JsError> {
     let address: Address = source_address
         .parse()
-        .map_err(|e| Error::Wasm("Invalid source address".to_string()))?;
+        .map_err(|_| Error::Wasm("Invalid source address".to_string()))?;
     let dest_addr: Address = destination_address
         .parse()
-        .map_err(|e| Error::Wasm("Invalid destination address".to_string()))?;
+        .map_err(|_| Error::Wasm("Invalid destination address".to_string()))?;
 
     let mut value = serde_json::Map::new();
     value.insert("dest_address".to_string(), dest_addr.to_string().into());
@@ -568,8 +570,6 @@ pub async fn ibc_transfer_out(
     receiver_address: String,
     timeout_timestamp: String,
 ) -> Result<String, JsError> {
-    let mut client: WebClient<App> = WebClient::new();
-
     let mut value = serde_json::Map::new();
     value.insert("amount".to_string(), amount.into());
     value.insert("denom".to_string(), denom.into());

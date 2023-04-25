@@ -16,8 +16,6 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{Request, RequestInit, RequestMode, Response};
 
-const REST_PORT: u64 = 8443;
-
 pub struct WebClient<T: Client<WebAdapter<T>>> {
     state_client: T::Client,
     last_res: Arc<Mutex<Option<String>>>,

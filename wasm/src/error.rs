@@ -19,8 +19,6 @@ pub enum Error {
     Relayer(String),
 }
 
-pub type Result<T> = std::result::Result<T, Error>;
-
 impl Into<JsValue> for Error {
     fn into(self) -> JsValue {
         JsValue::from_str(&format!("{:?}", self))
