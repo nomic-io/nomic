@@ -45,7 +45,7 @@ impl<T: Client<WebAdapter<T>>> WebClient<T> {
             None => return Err(Error::App("Lock not found".to_string()))?,
         };
 
-        Ok(js_sys::JSON::parse(&res_json).map_err(|e| Error::App(format!("{:?}", e)))?)
+        js_sys::JSON::parse(&res_json).map_err(|e| Error::App(format!("{:?}", e)))
     }
 }
 
@@ -198,7 +198,7 @@ impl<T: Query + State> AsyncQuery for WebAdapter<T> {
         #[cfg(feature = "logging")]
         web_sys::console::log_1(&format!("response: {}", res).into());
 
-        let res = base64::decode(&res).map_err(|e| Error::App(format!("{:?}", e)))?;
+        let res = base64::decode(res).map_err(|e| Error::App(format!("{:?}", e)))?;
 
         // // TODO: we shouldn't need to include the root hash in the result, it
         // // should come from a trusted source

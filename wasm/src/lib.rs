@@ -146,7 +146,7 @@ pub async fn all_validators() -> Result<Array, JsError> {
                 address: v.address.to_string(),
                 commission: v.commission.rate.to_string(),
                 in_active_set: v.in_active_set,
-                info: String::from_utf8(info_bytes).unwrap_or(String::new()),
+                info: String::from_utf8(info_bytes).unwrap_or_default(),
                 amount_staked: v.amount_staked.into(),
             }
         })
@@ -461,6 +461,7 @@ pub async fn bitcoin_height() -> Result<u32, JsError> {
     Ok(client.bitcoin.headers.height().await??)
 }
 
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = getAddress)]
 pub async fn get_address() -> Result<String, JsError> {
     let signer = nomic::orga::plugins::keplr::Signer;
