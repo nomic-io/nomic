@@ -362,6 +362,24 @@ pub async fn airdrop_balances(addr: String) -> Result<Airdrop, JsError> {
     }
 }
 
+#[cfg(not(feature = "testnet"))]
+#[wasm_bindgen(js_name = airdropBalances)]
+pub async fn airdrop_balances(addr: String) -> Result<Airdrop, JsError> {
+    let client: WebClient<App> = WebClient::new();
+    let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+
+    if let Some(account) = client.airdrop.get(address).await?? {
+        Ok(Airdrop {
+            airdrop1: parse_part(account.airdrop1),
+            btc_deposit: parse_part(account.btc_deposit),
+            btc_withdraw: parse_part(account.btc_withdraw),
+            ibc_transfer: parse_part(account.ibc_transfer),
+        })
+    } else {
+        Ok(Airdrop::default())
+    }
+}
+
 #[wasm_bindgen]
 pub async fn nonce(addr: String) -> Result<u64, JsError> {
     let client: WebClient<App> = WebClient::new();
