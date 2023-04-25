@@ -196,8 +196,10 @@ impl Bitcoin {
                     "Signer does not have a consensus key".to_string(),
                 ))
             })?;
+            let regtest_mode = self.network() == bitcoin::Network::Regtest
+                && _signatory_key.network == bitcoin::Network::Testnet;
 
-            if signatory_key.network != self.network() {
+            if !regtest_mode && _signatory_key.network != self.network() {
                 return Err(Error::Orga(orga::Error::App(
                     "Signatory key network does not match network".to_string(),
                 )));
