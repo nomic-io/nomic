@@ -245,14 +245,14 @@ fn time_now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::SystemTime::UNIX_EPOCH)
         .unwrap()
-        .as_secs() as u64
+        .as_secs()
 }
 
 #[get("/query/<query>")]
 async fn query(query: &str) -> Result<String, BadRequest<String>> {
     let cache = QUERY_CACHE.clone();
     let lock = cache.read_owned().await;
-    let cached_res = lock.get(query).map(|v| v.clone());
+    let cached_res = lock.get(query).cloned();
     let cache_hit = cached_res.is_some();
     drop(lock);
 
@@ -320,52 +320,52 @@ async fn staking_delegators_delegations(address: &str) -> Result<Value, BadReque
     ], "pagination": { "next_key": null, "total": "0" } }))
 }
 
-#[get("/staking/delegators/<address>/delegations")]
-async fn staking_delegators_delegations_2(address: &str) -> Result<Value, BadRequest<String>> {
-    let address: Address = address.parse().unwrap();
+// #[get("/staking/delegators/<address>/delegations")]
+// async fn staking_delegators_delegations_2(address: &str) -> Result<Value, BadRequest<String>> {
+//     let address: Address = address.parse().unwrap();
 
-    let delegations = app_client()
-        .staking
-        .delegations(address)
-        .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+//     let delegations = app_client()
+//         .staking
+//         .delegations(address)
+//         .await
+//         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+//         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
-    let total_staked: u64 = delegations
-        .iter()
-        .map(|(_, d)| -> u64 { d.staked.into() })
-        .sum();
+//     let total_staked: u64 = delegations
+//         .iter()
+//         .map(|(_, d)| -> u64 { d.staked.into() })
+//         .sum();
 
-    Ok(json!({ "height": "0", "result": [
-        {
-            "delegator_address": "",
-            "validator_address": "",
-            "shares": "0",
-            "balance": {
-              "denom": "NOM",
-              "amount": total_staked.to_string(),
-            }
-          }
-    ] }))
-}
+//     Ok(json!({ "height": "0", "result": [
+//         {
+//             "delegator_address": "",
+//             "validator_address": "",
+//             "shares": "0",
+//             "balance": {
+//               "denom": "NOM",
+//               "amount": total_staked.to_string(),
+//             }
+//           }
+//     ] }))
+// }
 
-#[get("/cosmos/staking/v1beta1/delegators/<address>/unbonding_delegations")]
-fn staking_delegators_unbonding_delegations(address: &str) -> Value {
+#[get("/cosmos/staking/v1beta1/delegators/<_address>/unbonding_delegations")]
+fn staking_delegators_unbonding_delegations(_address: &str) -> Value {
     json!({ "unbonding_responses": [], "pagination": { "next_key": null, "total": "0" } })
 }
 
-#[get("/staking/delegators/<address>/unbonding_delegations")]
-fn staking_delegators_unbonding_delegations_2(address: &str) -> Value {
+#[get("/staking/delegators/<_address>/unbonding_delegations")]
+fn staking_delegators_unbonding_delegations_2(_address: &str) -> Value {
     json!({ "height": "0", "result": [] })
 }
 
-#[get("/staking/delegators/<address>/delegations")]
-fn staking_delegations_2(address: &str) -> Value {
+#[get("/staking/delegators/<_address>/delegations")]
+fn staking_delegations_2(_address: &str) -> Value {
     json!({ "height": "0", "result": [] })
 }
 
-#[get("/cosmos/distribution/v1beta1/delegators/<address>/rewards")]
-async fn distribution_delegatrs_rewards(address: &str) -> Value {
+#[get("/cosmos/distribution/v1beta1/delegators/<_address>/rewards")]
+async fn distribution_delegatrs_rewards(_address: &str) -> Value {
     // let address = address.parse().unwrap();
 
     // type AppQuery = <InnerApp as Query>::Query;
@@ -470,30 +470,30 @@ async fn minting_inflation() -> Result<Value, BadRequest<String>> {
     Ok(json!({ "inflation": apr.to_string() }))
 }
 
-#[get("/minting/inflation")]
-async fn minting_inflation_2() -> Result<Value, BadRequest<String>> {
-    let validators = app_client()
-        .staking
-        .all_validators()
-        .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+// #[get("/minting/inflation")]
+// async fn minting_inflation_2() -> Result<Value, BadRequest<String>> {
+//     let validators = app_client()
+//         .staking
+//         .all_validators()
+//         .await
+//         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+//         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
-    let total_staked: u64 = validators
-        .iter()
-        .map(|v| -> u64 { v.amount_staked.into() })
-        .sum();
-    let total_staked = Amount::from(total_staked + 1);
-    let yearly_inflation = Decimal::from(64_682_541_340_000);
-    let apr = (yearly_inflation / Decimal::from(4) / Decimal::from(total_staked))
-        .result()
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+//     let total_staked: u64 = validators
+//         .iter()
+//         .map(|v| -> u64 { v.amount_staked.into() })
+//         .sum();
+//     let total_staked = Amount::from(total_staked + 1);
+//     let yearly_inflation = Decimal::from(64_682_541_340_000);
+//     let apr = (yearly_inflation / Decimal::from(4) / Decimal::from(total_staked))
+//         .result()
+//         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
-    Ok(json!({ "height": "0", "result": apr.to_string() }))
-}
+//     Ok(json!({ "height": "0", "result": apr.to_string() }))
+// }
 
-#[get("/bank/total/<denom>")]
-fn bank_total(denom: &str) -> Value {
+#[get("/bank/total/<_denom>")]
+fn bank_total(_denom: &str) -> Value {
     json!({ "height": "0", "result": "0" })
 }
 
