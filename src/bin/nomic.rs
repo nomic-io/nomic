@@ -4,6 +4,11 @@
 #![feature(async_closure)]
 #![feature(never_type)]
 
+use nomic::bitcoin::relayer::Config as RelayerConfig;
+use nomic::utils::{
+    declare_validator, poll_for_blocks, populate_bitcoin_block, setup_test_app, setup_test_signer,
+    test_bitcoin_client,
+};
 use std::convert::TryInto;
 use std::fs::Permissions;
 use std::os::unix::fs::PermissionsExt;
@@ -11,17 +16,24 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::time::Duration;
 
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
+use bitcoind::{BitcoinD, Conf};
+use chrono::{TimeZone, Utc};
 use clap::Parser;
 use futures::executor::block_on;
+use log::info;
 use nomic::app::{DepositCommitment, CONSENSUS_VERSION};
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
+use nomic::error::Error as NomicError;
 use nomic::error::Result;
 use nomic::network::Network;
+use nomic::utils::start_rest;
 use orga::merk::MerkStore;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
+use tempdir::TempDir;
 use tendermint_rpc::Client as _;
 
 const BANNER: &str = r#"
@@ -84,6 +96,7 @@ pub enum Command {
     Signer(SignerCmd),
     SetSignatoryKey(SetSignatoryKeyCmd),
     Deposit(DepositCmd),
+    Devnet(DevnetCmd),
     #[cfg(feature = "testnet")]
     InterchainDeposit(InterchainDepositCmd),
     Withdraw(WithdrawCmd),
@@ -121,6 +134,7 @@ impl Command {
             Signer(cmd) => cmd.run().await,
             SetSignatoryKey(cmd) => cmd.run().await,
             Deposit(cmd) => cmd.run().await,
+            Devnet(cmd) => cmd.run().await,
             #[cfg(feature = "testnet")]
             InterchainDeposit(cmd) => cmd.run().await,
             Withdraw(cmd) => cmd.run().await,
@@ -1294,6 +1308,83 @@ impl ExportCmd {
         let app = ABCIPlugin::<nomic::app::App>::load(store, &mut root_bytes.as_slice())?;
 
         serde_json::to_writer_pretty(std::io::stdout(), &app).unwrap();
+
+        Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct DevnetCmd {}
+
+impl DevnetCmd {
+    async fn run(&self) -> Result<()> {
+        // pretty_env_logger::init();
+        let genesis_time = Utc.with_ymd_and_hms(2022, 10, 5, 0, 0, 0).unwrap();
+        let ctx = Time::from_seconds(genesis_time.timestamp());
+        Context::add(ctx);
+
+        let home = TempDir::new("nomic-test").unwrap();
+        let path = home.into_path();
+
+        let mut conf = Conf::default();
+        conf.args.push("-txindex");
+        let bitcoind =
+            BitcoinD::with_conf(bitcoind::downloaded_exe_path().unwrap(), &conf).unwrap();
+
+        let block_data = populate_bitcoin_block(&bitcoind);
+
+        let node_path = path.clone();
+        let signer_path = path.clone();
+        let drop_path = path.clone();
+        let header_relayer_path = path.clone();
+
+        std::env::set_var("NOMIC_HOME_DIR", &path);
+
+        let _ = setup_test_app(&path, &block_data);
+
+        std::thread::spawn(move || {
+            info!("Starting Nomic node...");
+            Node::<nomic::app::App>::new(&node_path, Default::default())
+                .run()
+                .unwrap();
+        });
+
+        std::thread::spawn(move || {
+            info!("Starting rest server...");
+            start_rest().unwrap();
+        });
+
+        let relayer_config = RelayerConfig {
+            network: bitcoin::Network::Regtest,
+        };
+
+        let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind).await, app_client())
+            .configure(relayer_config.clone());
+        let headers = relayer.start_header_relay();
+
+        let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind).await, app_client())
+            .configure(relayer_config.clone());
+        let deposits = relayer.start_deposit_relay(&header_relayer_path);
+
+        let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind).await, app_client())
+            .configure(relayer_config.clone());
+        let checkpoints = relayer.start_checkpoint_relay();
+
+        let signer = async {
+            poll_for_blocks().await;
+            tokio::time::sleep(Duration::from_secs(20)).await;
+            setup_test_signer(&signer_path).start().await
+        };
+
+        let declarer = async {
+            poll_for_blocks().await;
+            declare_validator(&path).await.unwrap();
+
+            Err::<(), NomicError>(NomicError::Test("Test completed successfully".to_string()))
+        };
+
+        let _ = futures::join!(headers, deposits, checkpoints, signer, declarer);
+        std::fs::remove_dir_all(drop_path).unwrap();
 
         Ok(())
     }
