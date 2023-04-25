@@ -2,10 +2,10 @@
 extern crate rocket;
 
 use nomic::{
-    app::{InnerApp, Nom, CHAIN_ID},
+    app::{InnerApp, Nom},
     app_client,
     orga::{
-        coins::{Accounts, Address, Amount, Decimal, Staking},
+        coins::{Address, Amount, Decimal},
         plugins::*,
         query::Query,
     },
@@ -118,7 +118,7 @@ async fn auth_accounts(addr_str: &str) -> Result<Value, BadRequest<String>> {
 async fn auth_accounts2(addr_str: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = addr_str.parse().unwrap();
 
-    let balance: u64 = app_client()
+    let _balance: u64 = app_client()
         .accounts
         .balance(address)
         .await
@@ -406,8 +406,8 @@ async fn distribution_delegatrs_rewards(_address: &str) -> Value {
       } })
 }
 
-#[get("/distribution/delegators/<address>/rewards")]
-async fn distribution_delegatrs_rewards_2(address: &str) -> Value {
+#[get("/distribution/delegators/<_address>/rewards")]
+async fn distribution_delegatrs_rewards_2(_address: &str) -> Value {
     // let address = address.parse().unwrap();
 
     // type AppQuery = <InnerApp as Query>::Query;
@@ -562,7 +562,7 @@ impl Fairing for CORS {
         }
     }
 
-    async fn on_response<'r>(&self, request: &'r Request<'_>, response: &mut Response<'r>) {
+    async fn on_response<'r>(&self, _request: &'r Request<'_>, response: &mut Response<'r>) {
         response.set_header(Header::new("Access-Control-Allow-Origin", "*"));
         response.set_header(Header::new(
             "Access-Control-Allow-Methods",
