@@ -220,10 +220,13 @@ impl StartCmd {
 
             let home = cmd.home.map_or_else(
                 || {
-                    Node::home(
-                        &cmd.config.chain_id
-                            .expect("Expected a chain-id or home directory to be set"),
-                    )
+                    match std::env::var("NOMIC_HOME_DIR") {
+                        Ok(home) => PathBuf::from(home),
+                        Err(_) => Node::home(
+                            &cmd.config.chain_id
+                                .expect("Expected a chain-id or home directory to be set"),
+                        )
+                    }
                 },
                 |home| PathBuf::from_str(&home).unwrap(),
             );
