@@ -611,29 +611,9 @@ pub async fn ibc_transfer_out(
 }
 
 async fn gen_call_bytes(address: String, msg: sdk::Msg) -> Result<String, JsError> {
-    let address = address
-        .parse()
-        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
-
-    let mut client: WebClient<App> = WebClient::new();
-    let nonce = client.nonce(address).await?;
-    let sign_doc = sdk::SignDoc {
-        account_number: "0".to_string(),
-        chain_id: CHAIN_ID.to_string(),
-        //does this fee have to be a vec
-        fee: sdk::Fee {
-            amount: vec![sdk::Coin {
-                amount: "0".to_string(),
-                denom: "unom".to_string(),
-            }],
-            gas: MIN_FEE.to_string(),
-        },
-        memo: "".to_string(),
-        //do these messages have to be a vec
-        //might be utility in multiple messages
-        msgs: vec![msg],
-        sequence: (nonce + 1).to_string(),
-    };
+    let client: WebClient<App> = WebClient::new();
+    let nonce = client.nonce(Address::from_str(&address)?).await?;
+    let sign_doc = generate_sign_doc(msg, nonce);
 
     Ok(serde_json::to_string(&sign_doc)?)
 }
