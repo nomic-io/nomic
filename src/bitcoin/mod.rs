@@ -113,14 +113,6 @@ impl MigrateFrom for Config {
     }
 }
 
-pub const MIN_WITHDRAWAL_CHECKPOINTS: u32 = 4;
-pub const MIN_DEPOSIT_AMOUNT: u64 = 600;
-pub const MIN_WITHDRAWAL_AMOUNT: u64 = 600;
-pub const MAX_WITHDRAWAL_SCRIPT_LENGTH: u64 = 64;
-pub const TRANSFER_FEE: u64 = UNITS_PER_SAT;
-pub const MIN_CONFIRMATIONS: u32 = 0;
-pub const UNITS_PER_SAT: u64 = 1_000_000;
-
 pub fn calc_deposit_fee(amount: u64) -> u64 {
     amount / 5
 }
@@ -320,7 +312,7 @@ impl Bitcoin {
         }
         let output = &btc_tx.output[btc_vout as usize];
 
-        if output.value < MIN_DEPOSIT_AMOUNT {
+        if output.value < self.config.min_deposit_amount {
             return Err(OrgaError::App(
                 "Deposit amount is below minimum".to_string(),
             ))?;
@@ -369,7 +361,7 @@ impl Bitcoin {
             .ok_or_else(|| {
                 OrgaError::App("Deposit amount is too small to pay its spending fee".to_string())
             })?
-            * UNITS_PER_SAT;
+            * self.config.units_per_sat;
 
         let mut minted_nbtc = Nbtc::mint(value);
         let deposit_fee = minted_nbtc.take(calc_deposit_fee(value))?;
@@ -381,14 +373,14 @@ impl Bitcoin {
     pub fn withdraw(&mut self, script_pubkey: Adapter<Script>, amount: Amount) -> Result<()> {
         exempt_from_fee()?;
 
-        if script_pubkey.len() as u64 > MAX_WITHDRAWAL_SCRIPT_LENGTH {
+        if script_pubkey.len() as u64 > self.config.max_withdrawal_script_length {
             return Err(OrgaError::App("Script exceeds maximum length".to_string()).into());
         }
 
-        if self.checkpoints.len()? < MIN_WITHDRAWAL_CHECKPOINTS {
+        if self.checkpoints.len()? < self.config.min_withdrawal_checkpoints {
             return Err(OrgaError::App(format!(
                 "Withdrawals are disabled until the network has produced at least {} checkpoints",
-                MIN_WITHDRAWAL_CHECKPOINTS
+                self.config.min_withdrawal_checkpoints
             ))
             .into());
         }
@@ -402,7 +394,7 @@ impl Bitcoin {
         self.accounts.withdraw(signer, amount)?.burn();
 
         let fee = (9 + script_pubkey.len() as u64) * self.checkpoints.config().fee_rate;
-        let value: u64 = Into::<u64>::into(amount) / UNITS_PER_SAT;
+        let value: u64 = Into::<u64>::into(amount) / self.config.units_per_sat;
         let value = match value.checked_sub(fee) {
             None => {
                 return Err(OrgaError::App(
@@ -413,7 +405,7 @@ impl Bitcoin {
             Some(value) => value,
         };
 
-        if value < MIN_WITHDRAWAL_AMOUNT {
+        if value < self.config.min_withdrawal_amount {
             return Err(OrgaError::App(
                 "Withdrawal is smaller than than minimum amount".to_string(),
             )
@@ -441,7 +433,9 @@ impl Bitcoin {
             .signer
             .ok_or_else(|| Error::Orga(OrgaError::App("Call must be signed".into())))?;
 
-        let transfer_fee = self.accounts.withdraw(signer, TRANSFER_FEE.into())?;
+        let transfer_fee = self
+            .accounts
+            .withdraw(signer, self.config.transfer_fee.into())?;
         self.reward_pool.give(transfer_fee)?;
         self.accounts.transfer(to, amount)?;
 
