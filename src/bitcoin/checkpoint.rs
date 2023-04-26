@@ -219,10 +219,19 @@ pub struct Config {
     pub max_age: u64,
 }
 
-impl Terminated for Config {}
+impl Config {
+    fn regtest() -> Self {
+        Self {
+            min_checkpoint_interval: 1,
+            max_checkpoint_interval: 60 * 60 * 8,
+            max_inputs: 40,
+            max_outputs: 200,
+            fee_rate: 1,
+            max_age: 60 * 60 * 24 * 7 * 3,
+        }
+    }
 
-impl Default for Config {
-    fn default() -> Self {
+    fn bitcoin() -> Self {
         Self {
             min_checkpoint_interval: 60 * 5,
             max_checkpoint_interval: 60 * 60 * 8,
@@ -230,6 +239,18 @@ impl Default for Config {
             max_outputs: 200,
             fee_rate: 1,
             max_age: 60 * 60 * 24 * 7 * 3,
+        }
+    }
+}
+
+impl Terminated for Config {}
+
+impl Default for Config {
+    fn default() -> Self {
+        match super::NETWORK {
+            bitcoin::Network::Regtest => Config::regtest(),
+            bitcoin::Network::Testnet | bitcoin::Network::Bitcoin => Config::bitcoin(),
+            _ => unimplemented!(),
         }
     }
 }
