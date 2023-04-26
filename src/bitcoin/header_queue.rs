@@ -139,7 +139,7 @@ impl Decode for HeaderList {
 impl Terminated for HeaderList {}
 
 #[orga(skip(Default))]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct WorkHeader {
     chain_work: Adapter<Uint256>,
     header: WrappedHeader,
