@@ -50,8 +50,69 @@ impl Symbol for Nbtc {
 
 #[cfg(not(feature = "testnet"))]
 pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Bitcoin;
-#[cfg(feature = "testnet")]
+#[cfg(all(feature = "testnet", not(feature = "devnet")))]
 pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Testnet;
+#[cfg(all(feature = "testnet", feature = "devnet"))]
+pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Regtest;
+
+#[derive(Serialize)]
+pub struct Config {
+    min_withdrawal_checkpoints: u32,
+    min_deposit_amount: u64,
+    min_withdrawal_amount: u64,
+    max_withdrawal_amount: u64,
+    max_withdrawal_script_length: u64,
+    transfer_fee: u64,
+    min_confirmations: u32,
+    units_per_sat: u64,
+}
+
+impl Terminated for Config {}
+
+impl Config {
+    fn regtest() -> Self {
+        Self {
+            min_withdrawal_checkpoints: 1,
+            min_deposit_amount: 600,
+            min_withdrawal_amount: 600,
+            max_withdrawal_amount: 64,
+            max_withdrawal_script_length: 64,
+            transfer_fee: 1_000_000,
+            min_confirmations: 0,
+            units_per_sat: 1_000_000,
+        }
+    }
+
+    fn bitcoin() -> Self {
+        Self {
+            min_withdrawal_checkpoints: 4,
+            min_deposit_amount: 600,
+            min_withdrawal_amount: 600,
+            max_withdrawal_amount: 64,
+            max_withdrawal_script_length: 64,
+            transfer_fee: 1_000_000,
+            min_confirmations: 0,
+            units_per_sat: 1_000_000,
+        }
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        match NETWORK {
+            bitcoin::Network::Regtest => Config::regtest(),
+            bitcoin::Network::Testnet | bitcoin::Network::Bitcoin => Config::bitcoin(),
+            _ => unimplemented!(),
+        }
+    }
+}
+
+impl MigrateFrom for Config {
+    fn migrate_from(other: Self) -> orga::Result<Self> {
+        Ok(other)
+    }
+}
+
 pub const MIN_WITHDRAWAL_CHECKPOINTS: u32 = 4;
 pub const MIN_DEPOSIT_AMOUNT: u64 = 600;
 pub const MIN_WITHDRAWAL_AMOUNT: u64 = 600;
@@ -75,6 +136,8 @@ pub struct Bitcoin {
     pub accounts: Accounts<Nbtc>,
     pub signatory_keys: SignatoryKeys,
     pub(crate) reward_pool: Coin<Nbtc>,
+    #[state(skip)]
+    config: Config,
 }
 
 pub type ConsensusKey = [u8; 32];
