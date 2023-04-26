@@ -25,6 +25,13 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{Request, RequestInit, RequestMode, Response};
 
+#[cfg(all(feature = "mainnet", not(feature = "testnet"), not(feature = "devnet")))]
+const BITCOIN_NETWORK: bitcoin::Network = ::bitcoin::Network::Bitcoin;
+#[cfg(all(feature = "testnet", not(feature = "mainnet"), not(feature = "devnet")))]
+const BITCOIN_NETWORK: bitcoin::Network = ::bitcoin::Network::Testnet;
+#[cfg(all(feature = "devnet", not(feature = "mainnet"), not(feature = "testnet")))]
+const BITCOIN_NETWORK: bitcoin::Network = ::bitcoin::Network::Regtest;
+
 #[wasm_bindgen(start)]
 pub fn main() -> std::result::Result<(), JsValue> {
     console_error_panic_hook::set_once();
@@ -402,11 +409,7 @@ pub async fn gen_deposit_addr(dest_addr: String) -> Result<DepositAddress, JsErr
             .as_slice(),
     )?;
     // TODO: get network from somewhere
-    // TODO: make test/mainnet option configurable
-    let btc_addr = match bitcoin::Address::from_script(&script, bitcoin::Network::Testnet) {
-        Some(addr) => addr,
-        None => return Err(Error::Wasm("Bitcoin Address not found".to_string()).into()),
-    };
+    let btc_addr = bitcoin::Address::from_script(&script, BITCOIN_NETWORK)?;
 
     Ok(DepositAddress {
         address: btc_addr.to_string(),
