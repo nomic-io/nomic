@@ -309,7 +309,6 @@ pub fn setup_test_app(home: &Path, block_data: &BitcoinBlockData) -> Vec<KeyData
             .try_into()
             .unwrap(),
         trusted_height: block_data.height,
-        network: bitcoin::Network::Regtest.into(),
         retargeting: false,
         min_difficulty_blocks: true,
         ..Default::default()
