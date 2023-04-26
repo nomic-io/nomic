@@ -778,7 +778,7 @@ impl CheckpointQueue {
         signing.sign(xpub, sigs)?;
 
         if signing.done() {
-            println!("done. {:?}", signing.tx()?);
+            info!("Checkpoint signing complete {:?}", signing.tx()?);
             signing.advance()?;
         }
 
