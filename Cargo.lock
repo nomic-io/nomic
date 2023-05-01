@@ -2142,7 +2142,7 @@ checksum = "2dffe52ecf27772e601905b7522cb4ef790d2cc203488bbd0e2fe85fcb74566d"
 [[package]]
 name = "merk"
 version = "2.0.0"
-source = "git+https://github.com/nomic-io/merk?rev=8009dff26de5718eec709d3aea6d71f7c5188adb#8009dff26de5718eec709d3aea6d71f7c5188adb"
+source = "git+https://github.com/nomic-io/merk?rev=b911313ba188e8d83a04a69fb150734605d0e107#b911313ba188e8d83a04a69fb150734605d0e107"
 dependencies = [
  "byteorder",
  "colored",
@@ -2435,7 +2435,7 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.3.1"
-source = "git+https://github.com/nomic-io/orga.git?rev=c2501fba8bfa32bd6e4b5bf1ee04480bf1a27ebe#c2501fba8bfa32bd6e4b5bf1ee04480bf1a27ebe"
+source = "git+https://github.com/nomic-io/orga.git?rev=714abb6efc628755f9366242f2cd38460996037a#714abb6efc628755f9366242f2cd38460996037a"
 dependencies = [
  "abci2",
  "async-trait",
@@ -2493,7 +2493,7 @@ dependencies = [
 [[package]]
 name = "orga-macros"
 version = "0.3.1"
-source = "git+https://github.com/nomic-io/orga.git?rev=c2501fba8bfa32bd6e4b5bf1ee04480bf1a27ebe#c2501fba8bfa32bd6e4b5bf1ee04480bf1a27ebe"
+source = "git+https://github.com/nomic-io/orga.git?rev=714abb6efc628755f9366242f2cd38460996037a#714abb6efc628755f9366242f2cd38460996037a"
 dependencies = [
  "darling 0.14.4",
  "heck 0.3.3",
