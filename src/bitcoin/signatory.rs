@@ -1,61 +1,42 @@
-use crate::error::{Error, Result};
+#![allow(clippy::redundant_closure_call)] // TODO: fix bitcoin-script then remove this
+
+#[cfg(feature = "full")]
+use crate::error::Error;
+use crate::error::Result;
+#[cfg(feature = "full")]
 use bitcoin::util::bip32::ChildNumber;
 use bitcoin::Script;
 use bitcoin_script::bitcoin_script as script;
-use orga::call::Call;
-use orga::client::Client;
+#[cfg(feature = "full")]
 use orga::collections::Map;
+#[cfg(feature = "full")]
 use orga::context::Context;
-use orga::describe::Describe;
-use orga::encoding::{Decode, Encode};
+use orga::encoding::Encode;
+use orga::orga;
+#[cfg(feature = "full")]
 use orga::plugins::Time;
 #[cfg(feature = "full")]
 use orga::plugins::Validators;
-use orga::query::Query;
-use orga::state::State;
 use orga::Error as OrgaError;
-use serde::{Deserialize, Serialize};
 
 use super::threshold_sig::Pubkey;
+#[cfg(feature = "full")]
 use super::ConsensusKey;
+#[cfg(feature = "full")]
 use super::Xpub;
 
 pub const MAX_DEPOSIT_AGE: u64 = 60 * 60 * 24 * 5;
 pub const MAX_SIGNATORIES: u64 = 20;
 
-#[derive(
-    Encode,
-    Decode,
-    Clone,
-    Debug,
-    PartialOrd,
-    PartialEq,
-    Eq,
-    Ord,
-    State,
-    Serialize,
-    Deserialize,
-    Describe,
-)]
+#[orga]
+#[derive(Clone, Debug, PartialOrd, PartialEq, Eq, Ord)]
 pub struct Signatory {
     pub voting_power: u64,
     pub pubkey: Pubkey,
 }
 
-#[derive(
-    State,
-    Call,
-    Query,
-    Client,
-    Clone,
-    Debug,
-    Encode,
-    Decode,
-    Default,
-    Serialize,
-    Deserialize,
-    Describe,
-)]
+#[orga]
+#[derive(Clone, Debug)]
 pub struct SignatorySet {
     create_time: u64,
     present_vp: u64,
@@ -117,18 +98,13 @@ impl SignatorySet {
         Ok(sigset)
     }
 
-    #[cfg(not(test))]
+    #[cfg(feature = "full")]
     fn insert(&mut self, signatory: Signatory) {
         self.present_vp += signatory.voting_power;
         self.signatories.push(signatory);
     }
 
-    #[cfg(test)]
-    pub fn insert(&mut self, signatory: Signatory) {
-        self.present_vp += signatory.voting_power;
-        self.signatories.push(signatory);
-    }
-
+    #[cfg(feature = "full")]
     fn sort_and_truncate(&mut self) {
         self.signatories.sort_by(|a, b| b.cmp(a));
 
@@ -159,6 +135,8 @@ impl SignatorySet {
         self.present_vp >= self.quorum_threshold()
     }
 
+    // TODO: remove this attribute, not sure why clippy is complaining when is_empty is defined
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         self.signatories.len()
     }
@@ -247,7 +225,7 @@ impl SignatorySet {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    // use super::*;
 
     // #[test]
     // #[should_panic(expected = "Cannot build script for empty signatory set")]

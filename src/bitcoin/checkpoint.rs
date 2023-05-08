@@ -1,22 +1,35 @@
+#[cfg(feature = "full")]
+use super::ConsensusKey;
 use super::{
     adapter::Adapter,
     signatory::SignatorySet,
     threshold_sig::{Signature, ThresholdSig},
-    ConsensusKey, Xpub,
+    Xpub,
 };
 use crate::bitcoin::Nbtc;
 use crate::error::{Error, Result};
 use bitcoin::hashes::Hash;
-use bitcoin::{blockdata::transaction::EcdsaSighashType, hashes::hex::ToHex};
+use bitcoin::{
+    blockdata::transaction::EcdsaSighashType, hashes::hex::ToHex, PackedLockTime, Sequence,
+};
 // use bitcoin_hashes::Hash;
 use derive_more::{Deref, DerefMut};
+use log::info;
+#[cfg(feature = "full")]
+use orga::collections::Map;
+#[cfg(feature = "full")]
+use orga::context::GetContext;
+use orga::encoding::Terminated;
+#[cfg(feature = "full")]
+use orga::plugins::Time;
+use orga::store::Store;
 use orga::{
     call::Call,
     client::Client,
-    collections::{map::ReadOnly, ChildMut, Deque, Map, Ref},
-    context::GetContext,
+    collections::{map::ReadOnly, ChildMut, Deque, Ref},
     encoding::{Decode, Encode, LengthVec},
-    plugins::Time,
+    migrate::MigrateFrom,
+    orga,
     prelude::Context,
     query::Query,
     state::State,
@@ -26,12 +39,6 @@ use orga::{describe::Describe, prelude::Accounts};
 use serde::{Deserialize, Serialize};
 use std::{convert::TryFrom, str::FromStr};
 
-pub const MIN_CHECKPOINT_INTERVAL: u64 = 60 * 5;
-pub const MAX_CHECKPOINT_INTERVAL: u64 = 60 * 60 * 8;
-pub const MAX_INPUTS: u64 = 40;
-pub const MAX_OUTPUTS: u64 = 200;
-pub const FEE_RATE: u64 = 1;
-pub const MAX_AGE: u64 = 60 * 60 * 24 * 7 * 3;
 //TODO: Find actual amount for this
 pub const EMERGENCY_DISBURSAL_MIN_TX_AMT: u64 = 0;
 pub const EMERGENCY_DISBURSAL_LOCK_TIME_INTERVAL: u32 = 60 * 24 * 7; //one week
@@ -45,14 +52,26 @@ pub enum CheckpointStatus {
     Complete,
 }
 
+impl MigrateFrom for CheckpointStatus {
+    fn migrate_from(other: Self) -> orga::Result<Self> {
+        Ok(other)
+    }
+}
+
 // TODO: make it easy to derive State for simple types like this
 impl State for CheckpointStatus {
-    fn attach(&mut self, _: orga::store::Store) -> OrgaResult<()> {
+    #[inline]
+    fn attach(&mut self, _: Store) -> OrgaResult<()> {
         Ok(())
     }
 
-    fn flush(&mut self) -> OrgaResult<()> {
-        Ok(())
+    #[inline]
+    fn flush<W: std::io::Write>(self, out: &mut W) -> OrgaResult<()> {
+        Ok(self.encode_into(out)?)
+    }
+
+    fn load(_store: Store, bytes: &mut &[u8]) -> OrgaResult<Self> {
+        Ok(Self::decode(bytes)?)
     }
 }
 
@@ -80,20 +99,26 @@ impl<U: Send + Clone> Client<U> for CheckpointStatus {
     }
 }
 
-impl Describe for CheckpointStatus {
-    fn describe() -> orga::describe::Descriptor {
-        orga::describe::Builder::new::<Self>().build()
-    }
-}
+// impl Describe for CheckpointStatus {
+//     fn describe() -> orga::describe::Descriptor {
+//         orga::describe::Builder::new::<Self>().build()
+//     }
+// }
 
-#[derive(
-    State, Call, Query, Client, Debug, Encode, Decode, Serialize, Deserialize, Default, Describe,
-)]
+#[orga(skip(Client), version = 1)]
+#[derive(Debug)]
 pub struct Input {
     pub prevout: Adapter<bitcoin::OutPoint>,
     pub script_pubkey: Adapter<bitcoin::Script>,
     pub redeem_script: Adapter<bitcoin::Script>,
     pub sigset_index: u32,
+    #[cfg(not(feature = "testnet"))]
+    #[orga(version(V0))]
+    pub dest: orga::coins::Address,
+    #[cfg(feature = "testnet")]
+    #[orga(version(V0))]
+    pub dest: LengthVec<u16, u8>,
+    #[orga(version(V1))]
     pub dest: LengthVec<u16, u8>,
     pub amount: u64,
     pub est_witness_vsize: u64,
@@ -109,7 +134,7 @@ impl Input {
         Ok(bitcoin::TxIn {
             previous_output: *self.prevout,
             script_sig: bitcoin::Script::new(),
-            sequence: u32::MAX,
+            sequence: Sequence(u32::MAX),
             witness: bitcoin::Witness::from_vec(witness),
         })
     }
@@ -119,11 +144,27 @@ impl Input {
     }
 }
 
+impl MigrateFrom<InputV0> for InputV1 {
+    fn migrate_from(other: InputV0) -> OrgaResult<Self> {
+        Ok(Self {
+            prevout: other.prevout,
+            script_pubkey: other.script_pubkey,
+            redeem_script: other.redeem_script,
+            sigset_index: other.sigset_index,
+            #[cfg(not(feature = "testnet"))]
+            dest: other.dest.encode()?.try_into()?,
+            #[cfg(feature = "testnet")]
+            dest: other.dest,
+            amount: other.amount,
+            est_witness_vsize: other.est_witness_vsize,
+        })
+    }
+}
+
 pub type Output = Adapter<bitcoin::TxOut>;
 
-#[derive(
-    State, Call, Query, Client, Debug, Encode, Decode, Default, Serialize, Deserialize, Describe,
-)]
+#[orga]
+#[derive(Debug)]
 pub struct Checkpoint {
     pub status: CheckpointStatus,
     pub inputs: Deque<Input>,
@@ -180,7 +221,7 @@ impl Checkpoint {
     pub fn tx(&self) -> Result<(bitcoin::Transaction, u64)> {
         let mut tx = bitcoin::Transaction {
             version: 1,
-            lock_time: 0,
+            lock_time: PackedLockTime(0),
             input: vec![],
             output: vec![],
         };
@@ -219,20 +260,76 @@ impl Checkpoint {
     }
 }
 
-#[derive(
-    State, Call, Query, Client, Encode, Decode, Default, Serialize, Deserialize, Describe, Debug,
-)]
+#[derive(Clone, Serialize)]
+pub struct Config {
+    pub min_checkpoint_interval: u64,
+    pub max_checkpoint_interval: u64,
+    pub max_inputs: u64,
+    pub max_outputs: u64,
+    pub fee_rate: u64,
+    pub max_age: u64,
+}
+
+impl Config {
+    fn regtest() -> Self {
+        Self {
+            min_checkpoint_interval: 1,
+            max_checkpoint_interval: 60 * 60 * 8,
+            max_inputs: 40,
+            max_outputs: 200,
+            fee_rate: 1,
+            max_age: 60 * 60 * 24 * 7 * 3,
+        }
+    }
+
+    fn bitcoin() -> Self {
+        Self {
+            min_checkpoint_interval: 60 * 5,
+            max_checkpoint_interval: 60 * 60 * 8,
+            max_inputs: 40,
+            max_outputs: 200,
+            fee_rate: 1,
+            max_age: 60 * 60 * 24 * 7 * 3,
+        }
+    }
+}
+
+impl Terminated for Config {}
+
+impl Default for Config {
+    fn default() -> Self {
+        match super::NETWORK {
+            bitcoin::Network::Regtest => Config::regtest(),
+            bitcoin::Network::Testnet | bitcoin::Network::Bitcoin => Config::bitcoin(),
+            _ => unimplemented!(),
+        }
+    }
+}
+
+impl MigrateFrom for Config {
+    fn migrate_from(other: Self) -> orga::Result<Self> {
+        Ok(other)
+    }
+}
+
+#[orga]
 pub struct CheckpointQueue {
     pub(super) queue: Deque<Checkpoint>,
     pub(super) index: u32,
+    #[state(skip)]
+    config: Config,
 }
 
-#[derive(
-    State, Call, Query, Client, Encode, Decode, Default, Serialize, Deserialize, Describe, Debug,
-)]
+#[derive(State, Call, Query, Client, Encode, Decode, Default, Debug, Serialize)]
 pub struct SignatureQueue {
     pub(super) inputs: Deque<ThresholdSig>,
     pub(super) emergency_disbursal: Deque<ThresholdSig>,
+}
+
+impl MigrateFrom for SignatureQueue {
+    fn migrate_from(other: Self) -> orga::Result<Self> {
+        Ok(other)
+    }
 }
 
 #[derive(Deref)]
@@ -326,6 +423,13 @@ pub struct BuildingCheckpoint<'a>(Ref<'a, Checkpoint>);
 #[derive(Deref, DerefMut)]
 pub struct BuildingCheckpointMut<'a>(ChildMut<'a, u64, Checkpoint>);
 
+type BuildingAdvanceRes = (
+    bitcoin::OutPoint,
+    u64,
+    Vec<(ReadOnly<Input>, ReadOnly<ThresholdSig>)>,
+    Vec<ReadOnly<Output>>,
+);
+
 impl<'a> BuildingCheckpointMut<'a> {
     pub fn push_input(
         &mut self,
@@ -362,7 +466,7 @@ impl<'a> BuildingCheckpointMut<'a> {
     fn provide_empty_tx(lock_time: u32) -> bitcoin::Transaction {
         bitcoin::Transaction {
             version: 1,
-            lock_time: lock_time.into(),
+            lock_time: PackedLockTime(lock_time),
             input: Vec::new(),
             output: Vec::new(),
         }
@@ -420,7 +524,7 @@ impl<'a> BuildingCheckpointMut<'a> {
         let tx_in = bitcoin::TxIn {
             previous_output: reserve_outpoint,
             script_sig: vec![].into(),
-            sequence: u32::MAX,
+            sequence: Sequence(u32::MAX),
             witness: bitcoin::Witness::new(),
         };
         intermediate_tx.input.push(tx_in);
@@ -446,7 +550,7 @@ impl<'a> BuildingCheckpointMut<'a> {
             let intermediate_tx_in = bitcoin::TxIn {
                 previous_output: bitcoin::OutPoint::new(intermediate_tx.txid(), i as u32),
                 script_sig: vec![].into(),
-                sequence: u32::MAX,
+                sequence: Sequence(u32::MAX),
                 witness: bitcoin::Witness::new(),
             };
 
@@ -515,12 +619,8 @@ impl<'a> BuildingCheckpointMut<'a> {
         mut self,
         nbtc_accounts: &Accounts<Nbtc>,
         recovery_scripts: &Map<orga::prelude::Address, Adapter<bitcoin::Script>>,
-    ) -> Result<(
-        bitcoin::OutPoint,
-        u64,
-        Vec<(ReadOnly<Input>, ReadOnly<ThresholdSig>)>,
-        Vec<ReadOnly<Output>>,
-    )> {
+        config: &Config,
+    ) -> Result<BuildingAdvanceRes> {
         self.0.status = CheckpointStatus::Signing;
 
         let reserve_out = bitcoin::TxOut {
@@ -530,14 +630,14 @@ impl<'a> BuildingCheckpointMut<'a> {
         self.0.outputs.push_front(Adapter::new(reserve_out))?;
 
         let mut excess_inputs = vec![];
-        while self.0.inputs.len() > MAX_INPUTS {
+        while self.0.inputs.len() > config.max_inputs {
             let removed_input = self.0.inputs.pop_back()?.unwrap();
             let removed_sigs = self.0.sig_queue.inputs.pop_back()?.unwrap();
             excess_inputs.push((removed_input, removed_sigs));
         }
 
         let mut excess_outputs = vec![];
-        while self.0.outputs.len() > MAX_OUTPUTS {
+        while self.0.outputs.len() > config.max_outputs {
             let removed_output = self.0.outputs.pop_back()?.unwrap();
             excess_outputs.push(removed_output);
         }
@@ -555,7 +655,7 @@ impl<'a> BuildingCheckpointMut<'a> {
         }
 
         let (mut tx, est_vsize) = self.0.tx()?;
-        let fee = est_vsize * FEE_RATE;
+        let fee = est_vsize * config.fee_rate;
         let reserve_value = in_amount - out_amount - fee;
         let mut reserve_out = self.0.outputs.get_mut(0)?.unwrap();
         reserve_out.value = reserve_value;
@@ -592,6 +692,14 @@ impl<'a> BuildingCheckpointMut<'a> {
 }
 
 impl CheckpointQueue {
+    pub fn configure(&mut self, config: Config) {
+        self.config = config;
+    }
+
+    pub fn config(&self) -> Config {
+        self.config.clone()
+    }
+
     pub fn reset(&mut self) -> OrgaResult<()> {
         self.index = 0;
         super::clear_deque(&mut self.queue)?;
@@ -619,8 +727,14 @@ impl CheckpointQueue {
         }
     }
 
+    // TODO: remove this attribute, not sure why clippy is complaining when is_empty is defined
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> Result<u32> {
         Ok(u32::try_from(self.queue.len())?)
+    }
+
+    pub fn is_empty(&self) -> Result<bool> {
+        Ok(self.len()? == 0)
     }
 
     #[query]
@@ -636,9 +750,11 @@ impl CheckpointQueue {
         let mut out = Vec::with_capacity(self.queue.len() as usize);
 
         for i in 0..self.queue.len() {
-            let index = self.index - (i as u32);
-            let checkpoint = self.queue.get(index as u64)?.unwrap();
-            out.push((index, checkpoint));
+            let checkpoint = self.queue.get(i)?.unwrap();
+            out.push((
+                (self.index + 1 - (self.queue.len() as u32 - i as u32)),
+                checkpoint,
+            ));
         }
 
         Ok(out)
@@ -721,95 +837,110 @@ impl CheckpointQueue {
         Ok(BuildingCheckpointMut(last))
     }
 
+    pub fn prune(&mut self) -> Result<()> {
+        let latest = self.building()?.create_time();
+
+        while let Some(oldest) = self.queue.front()? {
+            if latest - oldest.create_time() <= self.config.max_age {
+                break;
+            }
+
+            self.queue.pop_front()?;
+        }
+
+        Ok(())
+    }
+
+    #[cfg(feature = "full")]
     pub fn maybe_step(
         &mut self,
         sig_keys: &Map<ConsensusKey, Xpub>,
         nbtc_accounts: &Accounts<Nbtc>,
         recovery_scripts: &Map<orga::prelude::Address, Adapter<bitcoin::Script>>,
     ) -> Result<()> {
-        #[cfg(not(feature = "full"))]
-        unimplemented!();
+        if self.signing()?.is_some() {
+            return Ok(());
+        }
 
-        #[cfg(feature = "full")]
-        {
-            if self.signing()?.is_some() {
+        if !self.queue.is_empty() {
+            let now = self
+                .context::<Time>()
+                .ok_or_else(|| OrgaError::App("No time context".to_string()))?
+                .seconds as u64;
+            let elapsed = now - self.building()?.create_time();
+            if elapsed < self.config.min_checkpoint_interval {
                 return Ok(());
             }
 
-            if !self.queue.is_empty() {
-                let now = self
-                    .context::<Time>()
-                    .ok_or_else(|| OrgaError::App("No time context".to_string()))?
-                    .seconds as u64;
-                let elapsed = now - self.building()?.create_time();
-                if elapsed < MIN_CHECKPOINT_INTERVAL {
+            if elapsed < self.config.max_checkpoint_interval || self.index == 0 {
+                let building = self.building()?;
+                let has_pending_deposit = if self.index == 0 {
+                    !building.inputs.is_empty()
+                } else {
+                    building.inputs.len() > 1
+                };
+
+                let has_pending_withdrawal = !building.outputs.is_empty();
+
+                if !has_pending_deposit && !has_pending_withdrawal {
                     return Ok(());
                 }
-
-                if elapsed < MAX_CHECKPOINT_INTERVAL || self.index == 0 {
-                    let building = self.building()?;
-                    let has_pending_deposit = if self.index == 0 {
-                        building.inputs.len() > 0
-                    } else {
-                        building.inputs.len() > 1
-                    };
-
-                    let has_pending_withdrawal = building.outputs.len() > 0;
-
-                    if !has_pending_deposit && !has_pending_withdrawal {
-                        return Ok(());
-                    }
-                }
-
-                while let Some(first) = self.queue.front()? {
-                    if now - first.create_time() <= MAX_AGE {
-                        break;
-                    }
-
-                    self.queue.pop_front()?;
-                }
             }
 
-            if self.maybe_push(sig_keys)?.is_none() {
-                return Ok(());
-            }
-
-            if self.index > 0 {
-                let second = self.get_mut(self.index - 1)?;
-                let sigset = second.sigset.clone();
-                let (reserve_outpoint, reserve_value, excess_inputs, excess_outputs) =
-                    BuildingCheckpointMut(second).advance(nbtc_accounts, recovery_scripts)?;
-
-                let mut building = self.building_mut()?;
-
-                building.push_input(
-                    reserve_outpoint,
-                    &sigset,
-                    &vec![0u8], // TODO: double-check safety
-                    reserve_value,
-                )?;
-
-                for (input, sigs) in excess_inputs {
-                    let shares = sigs.shares()?;
-                    let data = input.into_inner().into();
-                    building.inputs.push_back(data)?;
-                    building.sig_queue.inputs.push_back(ThresholdSig::new())?;
-                    building
-                        .sig_queue
-                        .inputs
-                        .back_mut()?
-                        .unwrap()
-                        .from_shares(shares)?;
+            let config = self.config();
+            while let Some(first) = self.queue.front()? {
+                if now - first.create_time() <= config.max_age {
+                    break;
                 }
 
-                for output in excess_outputs {
-                    let data = output.into_inner();
-                    building.outputs.push_back(data)?;
-                }
+                self.queue.pop_front()?;
             }
-
-            Ok(())
         }
+
+        if self.maybe_push(sig_keys)?.is_none() {
+            return Ok(());
+        }
+
+        self.prune()?;
+
+        let mut building = self.building_mut()?;
+
+        if self.index > 0 {
+            let config = self.config();
+            let second = self.get_mut(self.index - 1)?;
+            let sigset = second.sigset.clone();
+            let (reserve_outpoint, reserve_value, excess_inputs, excess_outputs) =
+                BuildingCheckpointMut(second).advance(nbtc_accounts, recovery_scripts, &config)?;
+
+            let mut building = self.building_mut()?;
+
+            building.push_input(
+                reserve_outpoint,
+                &sigset,
+                &vec![0u8], // TODO: double-check safety
+                reserve_value,
+            )?;
+
+            for (input, sigs) in excess_inputs {
+                let shares = sigs.shares()?;
+                let data = input.into_inner().into();
+                building.inputs.push_back(data)?;
+                building.sig_queue.inputs.push_back(ThresholdSig::new())?;
+                building
+                    .sig_queue
+                    .inputs
+                    .back_mut()?
+                    .unwrap()
+                    .from_shares(shares)?;
+            }
+
+            for output in excess_outputs {
+                let data = output.into_inner();
+                building.outputs.push_back(data)?;
+            }
+        }
+
+        Ok(())
     }
 
     #[cfg(test)]
@@ -818,40 +949,35 @@ impl CheckpointQueue {
         Ok(self.queue.push_back(checkpoint)?)
     }
 
+    #[cfg(feature = "full")]
     fn maybe_push(
         &mut self,
         sig_keys: &Map<ConsensusKey, Xpub>,
     ) -> Result<Option<BuildingCheckpointMut>> {
-        #[cfg(not(feature = "full"))]
-        unimplemented!();
-
-        #[cfg(feature = "full")]
-        {
-            let mut index = self.index;
-            if !self.queue.is_empty() {
-                index += 1;
-            }
-
-            let sigset = SignatorySet::from_validator_ctx(index, sig_keys)?;
-
-            if sigset.possible_vp() == 0 {
-                return Ok(None);
-            }
-
-            if !sigset.has_quorum() {
-                return Ok(None);
-            }
-
-            self.index = index;
-
-            self.queue.push_back(Checkpoint {
-                sigset,
-                ..Default::default()
-            })?;
-
-            let building = self.building_mut()?;
-            Ok(Some(building))
+        let mut index = self.index;
+        if !self.queue.is_empty() {
+            index += 1;
         }
+
+        let sigset = SignatorySet::from_validator_ctx(index, sig_keys)?;
+
+        if sigset.possible_vp() == 0 {
+            return Ok(None);
+        }
+
+        if !sigset.has_quorum() {
+            return Ok(None);
+        }
+
+        self.index = index;
+
+        self.queue.push_back(Checkpoint {
+            sigset,
+            ..Default::default()
+        })?;
+
+        let building = self.building_mut()?;
+        Ok(Some(building))
     }
 
     #[query]
@@ -870,7 +996,7 @@ impl CheckpointQueue {
         signing.sign(xpub, sigs)?;
 
         if signing.done() {
-            println!("done. {:?}", signing.tx()?);
+            info!("Checkpoint signing complete {:?}", signing.tx()?);
             signing.advance()?;
         }
 

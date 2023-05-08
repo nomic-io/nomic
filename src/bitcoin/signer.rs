@@ -1,8 +1,8 @@
 use crate::app::App;
-use crate::bitcoin::threshold_sig::Signature;
 use crate::error::Result;
 use bitcoin::secp256k1::{Message, Secp256k1};
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
+use log::info;
 use orga::{abci::TendermintClient, coins::Address};
 use rand::Rng;
 use std::fs;
@@ -27,14 +27,14 @@ impl Signer {
     ) -> Result<Self> {
         let path = key_path.as_ref();
         let xpriv = if path.exists() {
-            println!("Loading signatory key from {}", path.display());
+            info!("Loading signatory key from {}", path.display());
             let bytes = fs::read(path)?;
             let text = String::from_utf8(bytes).unwrap();
             text.trim().parse()?
         } else {
-            println!("Generating signatory key at {}", path.display());
+            info!("Generating signatory key at {}", path.display());
             let seed: [u8; 32] = rand::thread_rng().gen();
-            let xpriv = ExtendedPrivKey::new_master(super::NETWORK, seed.as_slice())?;
+            let xpriv = ExtendedPrivKey::new_master(bitcoin::Network::Testnet, seed.as_slice())?;
 
             fs::write(path, xpriv.to_string().as_bytes())?;
 
@@ -43,7 +43,7 @@ impl Signer {
 
         let secp = bitcoin::secp256k1::Secp256k1::signing_only();
         let xpub = ExtendedPubKey::from_priv(&secp, &xpriv);
-        println!("Signatory xpub:\n{}", xpub);
+        dbg!("Signatory xpub:\n{}", xpub);
 
         Ok(Self::new(
             op_addr,
@@ -104,17 +104,16 @@ impl Signer {
             .pay_from(async move |client| client.bitcoin.set_signatory_key(xpub.into()).await)
             .noop()
             .await?;
-        println!("Submitted signatory key.");
+        info!("Submitted signatory key.");
         Ok(())
     }
 
     async fn try_sign(&mut self, xpub: &ExtendedPubKey) -> Result<()> {
         let secp = Secp256k1::signing_only();
 
-        let _signing = match self.client.bitcoin.checkpoints.signing().await?? {
-            None => return Ok(()),
-            Some(signing) => signing,
-        };
+        if self.client.bitcoin.checkpoints.signing().await??.is_none() {
+            return Ok(());
+        }
 
         let to_sign = self
             .client
@@ -127,7 +126,8 @@ impl Signer {
         }
 
         self.check_change_rates().await?;
-        println!("Signing checkpoint... ({} inputs)", to_sign.len());
+        info!("Signing checkpoint...");
+        dbg!("{} inputs", to_sign.len());
 
         let sigs: Vec<_> = to_sign
             .into_iter()
@@ -156,7 +156,7 @@ impl Signer {
             .noop()
             .await?;
 
-        println!("Submitted signatures");
+        info!("Submitted signatures");
 
         Ok(())
     }

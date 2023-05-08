@@ -1,14 +1,14 @@
 [package]
 name = "nomic"
-version = "4.1.2"
+version = "4.2.1"
 authors = [ "The Nomic Team <hello@nomic.io>" ]
 edition = "2021"
 default-run = "nomic"
 
 [dependencies]
-bitcoin = { version = "0.28.1", features = ["use-serde"] }
-bitcoind = { version = "0.26.0", features = ["22_0"], optional = true }
-orga = { git = "https://github.com/nomic-io/orga.git", rev = "8089899cf983c405b8885a12a0f61c113bf848e0", features = ["merk-verify"] }
+bitcoin = { version = "0.29.2", features = ["serde", "rand"] }
+bitcoind = { version = "0.27.0", features = ["22_0"], optional = true }
+orga = { path="../orga", features = ["merk-verify"] }
 thiserror = "1.0.30"
 ed = { git = "https://github.com/nomic-io/ed", rev = "9c0e206ffdb59dacb90f083e004e8080713e6ad8" }
 clap = { version = "3.2.16", features = ["derive"], optional = true }
@@ -22,30 +22,45 @@ bech32 = { version = "0.8.1" }
 futures = "0.3.21"
 toml_edit = "0.13.4"
 tendermint-rpc = "=0.23.7"
-bitcoincore-rpc-async = { package = "bitcoincore-rpc-async2", version = "4.0.1", optional = true }
+bitcoincore-rpc-async = { package = "bitcoincore-rpc-async2", git = "https://github.com/nomic-io/rust-bitcoincore-rpc-async", rev = "5ff63dada9b538f54645ccd3b64980661986751f", optional = true }
 bitcoin-script = "0.1.1"
 warp = { version = "0.3.2", optional = true }
 derive_more = "0.99.17"
-pretty_env_logger = "0.4.0"
+pretty_env_logger = { git = "https://github.com/seanmonstar/pretty-env-logger", rev = "f9e35b6dbbf06de55222c944c9e1e176ce73b3a7" }
 reqwest = "0.11.10"
 rand = { version = "0.8.5", optional = true }
 sha2 = "0.10.6"
 bytes = "1.2.1"
 serde-big-array = "0.4.1"
+log = "0.4.17"
+hex = "0.4.3"
+toml = { version = "0.7.2", features = ["parse"] }
+split-iter = "0.1.0"
+chrono = "0.4.19"
+tempdir = "0.3.7"
 
 [dev-dependencies]
+bitcoin_hashes = "0.11.0"
 serde_json = "1.0.68"
 serde = "1.0.130"
 mutagen = "0.1.2"
-chrono = "0.4.19"
+serial_test = "1.0.0"
+curl = "0.4.44"
+urlencoding = "2.1.2"
 
 [features]
 default = ["full", "feat-ibc"]
 full = ["bitcoind", "bitcoincore-rpc-async", "clap", "tokio", "orga/merk-full", "orga/abci", "orga/state-sync", "csv", "warp", "rand"]
 feat-ibc = ["orga/feat-ibc"]
+compat = []
+testnet = []
+devnet = ["testnet"]
 
 [[bin]]
 name = "nomic"
+
+[[bin]]
+name = "store-diff"
 
 [[bin]]
 name = "create-checkpoint"
@@ -54,7 +69,10 @@ name = "create-checkpoint"
 name = "create-airdrop-snapshot"
 required-features = ["csv"]
 
+[[bin]]
+name = "append-airdrop-snapshot"
+required-features = ["testnet"]
+
 [patch.crates-io]
 ibc = { git = "https://github.com/informalsystems/ibc-rs.git", rev = "e8c98d4" }
 ibc-proto = { git = "https://github.com/informalsystems/ibc-rs.git", rev = "e8c98d4" }
-

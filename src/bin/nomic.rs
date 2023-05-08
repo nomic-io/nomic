@@ -4,21 +4,48 @@
 #![feature(async_closure)]
 #![feature(never_type)]
 
+use nomic::bitcoin::relayer::Config as RelayerConfig;
+use nomic::utils::{
+    declare_validator, poll_for_blocks, populate_bitcoin_block, setup_test_app, setup_test_signer,
+    test_bitcoin_client,
+};
 use std::convert::TryInto;
+use std::fs::Permissions;
+use std::os::unix::fs::PermissionsExt;
+#[cfg(not(feature = "compat"))]
+use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
+use std::str::FromStr;
+use std::time::Duration;
 
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
+use bitcoind::{BitcoinD, Conf};
+use chrono::{TimeZone, Utc};
 use clap::Parser;
 use futures::executor::block_on;
-use nomic::app::{DepositCommitment, IbcDepositCommitment};
+use log::info;
+use nomic::app::{DepositCommitment, CONSENSUS_VERSION};
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
+use nomic::error::Error as NomicError;
 use nomic::error::Result;
+use nomic::network::Network;
+use nomic::utils::start_rest;
+use orga::merk::MerkStore;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
+use tempdir::TempDir;
 use tendermint_rpc::Client as _;
 
-const STOP_SECONDS: i64 = 1665162000;
+const BANNER: &str = r#"
+███╗   ██╗  ██████╗  ███╗   ███╗ ██╗  ██████╗
+████╗  ██║ ██╔═══██╗ ████╗ ████║ ██║ ██╔════╝
+██╔██╗ ██║ ██║   ██║ ██╔████╔██║ ██║ ██║
+██║╚██╗██║ ██║   ██║ ██║╚██╔╝██║ ██║ ██║
+██║ ╚████║ ╚██████╔╝ ██║ ╚═╝ ██║ ██║ ╚██████╗
+╚═╝  ╚═══╝  ╚═════╝  ╚═╝     ╚═╝ ╚═╝  ╚═════╝
+"#;
 
+#[cfg(feature = "testnet")]
 fn now_seconds() -> i64 {
     use std::time::SystemTime;
 
@@ -51,8 +78,6 @@ pub struct Opts {
 #[derive(Parser, Debug)]
 pub enum Command {
     Start(StartCmd),
-    #[cfg(debug_assertions)]
-    StartDev(StartDevCmd),
     Send(SendCmd),
     SendNbtc(SendNbtcCmd),
     Balance(BalanceCmd),
@@ -71,12 +96,19 @@ pub enum Command {
     Signer(SignerCmd),
     SetSignatoryKey(SetSignatoryKeyCmd),
     Deposit(DepositCmd),
+    Devnet(DevnetCmd),
+    #[cfg(feature = "testnet")]
     InterchainDeposit(InterchainDepositCmd),
     Withdraw(WithdrawCmd),
+    #[cfg(feature = "testnet")]
     IbcDepositNbtc(IbcDepositNbtcCmd),
+    #[cfg(feature = "testnet")]
     IbcWithdrawNbtc(IbcWithdrawNbtcCmd),
+    #[cfg(feature = "testnet")]
     Grpc(GrpcCmd),
+    #[cfg(feature = "testnet")]
     IbcTransfer(IbcTransferCmd),
+    Export(ExportCmd),
 }
 
 impl Command {
@@ -84,8 +116,6 @@ impl Command {
         use Command::*;
         match self {
             Start(cmd) => cmd.run().await,
-            #[cfg(debug_assertions)]
-            StartDev(cmd) => cmd.run().await,
             Send(cmd) => cmd.run().await,
             SendNbtc(cmd) => cmd.run().await,
             Balance(cmd) => cmd.run().await,
@@ -100,75 +130,349 @@ impl Command {
             Claim(cmd) => cmd.run().await,
             ClaimAirdrop(cmd) => cmd.run().await,
             Airdrop(cmd) => cmd.run().await,
-            // Legacy(cmd) => cmd.run().await,
             Relayer(cmd) => cmd.run().await,
             Signer(cmd) => cmd.run().await,
             SetSignatoryKey(cmd) => cmd.run().await,
             Deposit(cmd) => cmd.run().await,
+            Devnet(cmd) => cmd.run().await,
+            #[cfg(feature = "testnet")]
             InterchainDeposit(cmd) => cmd.run().await,
             Withdraw(cmd) => cmd.run().await,
+            #[cfg(feature = "testnet")]
             IbcDepositNbtc(cmd) => cmd.run().await,
+            #[cfg(feature = "testnet")]
             IbcWithdrawNbtc(cmd) => cmd.run().await,
+            #[cfg(feature = "testnet")]
             Grpc(cmd) => cmd.run().await,
+            #[cfg(feature = "testnet")]
             IbcTransfer(cmd) => cmd.run().await,
+            Export(cmd) => cmd.run().await,
         }
     }
 }
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Clone, Debug, Serialize, Deserialize)]
 pub struct StartCmd {
-    #[clap(long, short)]
-    pub state_sync: bool,
+    #[clap(flatten)]
+    config: nomic::network::Config,
+    #[clap(long)]
+    pub network: Option<Network>,
+    #[clap(long)]
+    pub tendermint_logs: bool,
+    #[clap(long)]
+    pub clone_store: Option<String>,
+    #[clap(long)]
+    pub reset_store_height: bool,
+    #[clap(long)]
+    pub unsafe_reset: bool,
+    #[clap(long)]
+    pub skip_init_chain: bool,
+    #[cfg(feature = "compat")]
+    #[clap(long)]
+    pub legacy_home: Option<String>,
+    #[cfg(feature = "compat")]
+    #[clap(long)]
+    pub migrate: bool,
+    #[cfg(not(feature = "compat"))]
+    #[clap(long)]
+    pub legacy_bin: Option<String>,
+    #[clap(long)]
+    pub home: Option<String>,
+    #[clap(long)]
+    pub freeze_valset: bool,
+    #[clap(long)]
+    pub signal_version: Option<String>,
+    #[clap(long)]
+    pub validator_key: Option<String>,
+    #[clap(long)]
+    pub node_key: Option<String>,
 }
 
 impl StartCmd {
     async fn run(&self) -> Result<()> {
-        let state_sync = self.state_sync;
+        let mut cmd = self.clone();
 
         tokio::task::spawn_blocking(move || {
-            let new_name = nomic::app::CHAIN_ID;
+            if let Some(network) = cmd.network {
+                let mut config = network.config();
 
-            let has_new_node = Node::home(new_name).exists();
-            let started_new_node = Node::height(new_name).unwrap() > 0;
+                if cmd.config.chain_id.is_some() {
+                    log::error!("Passed in unexpected chain-id");
+                    std::process::exit(1);
+                }
+                if cmd.config.genesis.is_some() {
+                    log::error!("Passed in unexpected genesis");
+                    std::process::exit(1);
+                }
+                #[cfg(feature = "compat")]
+                if cmd.config.upgrade_time.is_some() {
+                    config.upgrade_time = cmd.config.upgrade_time;
+                }
 
-            let new_home = Node::home(new_name);
-            let new_config_path = new_home.join("tendermint/config/config.toml");
+                // TODO: deduplicate
+                config.state_sync_rpc.extend(cmd.config.state_sync_rpc.into_iter());
 
-            if !has_new_node {
-                println!("Initializing node at {}...", new_home.display());
-                // TODO: configure default seeds
-                Node::<nomic::app::App>::new(new_name, Default::default());
+                // TODO: should all built-in tmflags get shadowed by user-specified tmflags?
+                config.tendermint_flags.extend(cmd.config.tendermint_flags.into_iter());
 
-                edit_block_time(&new_config_path, "3s");
+                cmd.config = config;
             }
 
-            if !started_new_node {
-                println!("Configuring node for state sync...");
+            let home = cmd.home.map_or_else(
+                || {
+                    match std::env::var("NOMIC_HOME_DIR") {
+                        Ok(home) => PathBuf::from(home),
+                        Err(_) => Node::home(
+                            &cmd.config.chain_id
+                                .expect("Expected a chain-id or home directory to be set"),
+                        )
+                    }
+                },
+                |home| PathBuf::from_str(&home).unwrap(),
+            );
 
-                // TODO: set default seeds
-                set_p2p_seeds(
-                    &new_config_path,
-                    &["edb32208ff79b591dd4cddcf1c879f6405fe6c79@167.99.228.240:26656"],
-                );
-
-                // TODO: set default RPC boostrap nodes
-                configure_for_statesync(
-                    &new_config_path,
-                    &["http://167.99.228.240:26667", "http://167.99.228.240:26677"],
-                );
+            if cmd.freeze_valset {
+                std::env::set_var("ORGA_STATIC_VALSET", "true");
             }
 
-            println!("Starting node...");
-            // TODO: add cfg defaults
-            Node::<nomic::app::App>::new(new_name, Default::default())
-                .with_genesis(include_bytes!("../../genesis/testnet-4d.json"))
-                .stdout(std::process::Stdio::inherit())
+            #[cfg(feature = "compat")]
+            let mut had_legacy = false;
+            #[cfg(feature = "compat")]
+            if let Some(upgrade_time) = cmd.config.upgrade_time {
+                let legacy_home = if let Some(ref legacy_home) = cmd.legacy_home {
+                    let lh = PathBuf::from_str(legacy_home).unwrap();
+                    if !lh.exists() {
+                        log::error!("Legacy home does not exist ({})", lh.display());
+                    }
+                    lh
+                } else {
+                    home.clone()
+                };
+
+                if legacy_home.exists() {
+                    let store_path = legacy_home.join("merk");
+                    let store = MerkStore::new(store_path);
+                    let timestamp = store
+                        .merk()
+                        .get_aux(b"timestamp")?
+                        .map(|ts| i64::decode(ts.as_slice()))
+                        .transpose()?
+                        .unwrap_or_default();
+                    drop(store);
+                    log::debug!("Legacy timestamp: {}", timestamp);
+
+                    let bin_path = legacy_home.join("nomic-v4");
+                    had_legacy = bin_path.exists();
+
+                    if timestamp < upgrade_time && bin_path.exists() || cmd.config.legacy_version.is_some() {
+                        if let Some(legacy_version) = cmd.config.legacy_version {
+                            let version = String::from_utf8(
+                                std::process::Command::new(&bin_path)
+                                    .arg("--version")
+                                    .output()?
+                                    .stdout,
+                            )
+                            .unwrap();
+                            let expected = format!("nomic {}", legacy_version);
+                            if version.trim() != expected.as_str() {
+                                log::error!("Legacy binary does not match specified version. Expected '{}', got '{}'", expected, version.trim());
+                                std::process::exit(1);
+                            }
+                        }
+
+                        let mut cmd = std::process::Command::new(bin_path);
+                        cmd.arg("start").env("STOP_TIME", upgrade_time.to_string());
+                        log::info!("Starting legacy node... ({:#?})", cmd);
+                        // TODO: verify output (or return code) of legacy node shows it exited cleanly
+                        cmd.spawn()?.wait()?;
+                    } else {
+                        log::info!("Upgrade time has passed");
+                    }
+                }
+            }
+
+            #[cfg(not(feature = "compat"))]
+            if let Some(legacy_version) = &cmd.config.legacy_version {
+                let version_hex = hex::encode([CONSENSUS_VERSION]);
+
+                let net_ver_path = home.join("network_version");
+                let up_to_date = if net_ver_path.exists() {
+                    let net_ver = String::from_utf8(std::fs::read(net_ver_path).unwrap())
+                        .unwrap()
+                        .trim()
+                        .to_string();
+                    version_hex == net_ver
+                } else {
+                    false
+                };
+
+                if up_to_date {
+                    log::info!("Node version matches network version, no need to run legacy binary");
+                } else {
+                    let legacy_bin = if let Some(legacy_bin) = cmd.legacy_bin {
+                        PathBuf::from_str(legacy_bin.as_str()).unwrap()
+                    } else {
+                        home.join("bin").join(format!("nomic-{}", legacy_version))
+                    };
+
+                    if !legacy_bin.exists() {
+                        log::warn!("Legacy binary does not exist, attempting to skip ahead");
+                    } else {
+                        let mut legacy_cmd = std::process::Command::new(legacy_bin);
+                        legacy_cmd.args([
+                            "start",
+                            "--signal-version",
+                            &version_hex,
+                            "--home",
+                            home.to_str().unwrap(),
+                            "--",
+                        ]);
+                        legacy_cmd.args(&cmd.config.tendermint_flags);
+                        log::info!("Starting legacy node... ({:#?})", legacy_cmd);
+                        let res = legacy_cmd.spawn()?.wait()?;
+                        dbg!(res.signal(), res.stopped_signal(), res.code());
+                        match res.code() {
+                            Some(138) => {
+                                log::info!("Legacy node exited for upgrade");
+                            }
+                            Some(code) => {
+                                log::error!("Legacy node exited unexpectedly");
+                                std::process::exit(code);
+                            }
+                            None => panic!("Legacy node exited unexpectedly"),
+                        }
+                    }
+                }
+            } else if cmd.legacy_bin.is_some() {
+                log::error!("--legacy-version is required when specifying --legacy-bin");
+                std::process::exit(1);
+            }
+
+            println!("{}\nVersion {}\n\n", BANNER, env!("CARGO_PKG_VERSION"));
+
+            let has_node = home.exists();
+            let config_path = home.join("tendermint/config/config.toml");
+            if !has_node {
+                log::info!("Initializing node at {}...", home.display());
+
+                let node = Node::<nomic::app::App>::new(&home, Default::default());
+
+                if let Some(source) = cmd.clone_store {
+                    let mut source = PathBuf::from_str(&source).unwrap();
+                    if std::fs::read_dir(&source)?
+                        .any(|c| c.as_ref().unwrap().file_name() == "merk")
+                    {
+                        source = source.join("merk");
+                    }
+                    log::info!("Cloning store from {}...", source.display());
+                    node.init_from_store(
+                        source,
+                        if cmd.reset_store_height {
+                            Some(0)
+                        } else {
+                            None
+                        },
+                    );
+                }
+                if let Some(val_key) = cmd.validator_key {
+                    let val_key = PathBuf::from_str(&val_key).unwrap();
+                    log::info!("Copying validator key from {}", val_key.display());
+                    std::fs::copy(val_key, home.join("tendermint/config/priv_validator_key.json")).unwrap();
+                }
+                if let Some(node_key) = cmd.node_key {
+                    let node_key = PathBuf::from_str(&node_key).unwrap();
+                    log::info!("Copying node key from {}", node_key.display());
+                    std::fs::copy(node_key, home.join("tendermint/config/node_key.json")).unwrap();
+                }
+
+                edit_block_time(&config_path, "3s");
+
+                configure_node(&config_path, |cfg| {
+                    cfg["rpc"]["laddr"] = toml_edit::value("tcp://0.0.0.0:26657");
+                });
+            } else if cmd.clone_store.is_some() {
+                log::warn!("--clone-store only applies used when initializing a network home, ignoring");
+            }
+
+            let bin_path = home.join(format!("bin/nomic-{}", env!("CARGO_PKG_VERSION")));
+            if !bin_path.exists() {
+                log::debug!("Writing binary to {}", bin_path.display());
+                let current_exe_bytes = std::fs::read(std::env::current_exe().unwrap()).unwrap();
+                std::fs::create_dir_all(home.join("bin")).unwrap();
+                std::fs::write(&bin_path, current_exe_bytes).unwrap();
+                std::fs::set_permissions(bin_path, Permissions::from_mode(0o777)).unwrap();
+            }
+
+            log::info!("Starting node at {}...", home.display());
+            let mut node = Node::<nomic::app::App>::new(&home, Default::default());
+
+            if cmd.unsafe_reset {
+                node = node.reset();
+            }
+            if let Some(genesis) = cmd.config.genesis {
+                let genesis_bytes = if genesis.contains('\n') {
+                   genesis.as_bytes().to_vec()
+                }
+                else {
+                std::fs::read(genesis)?
+                };
+                std::fs::write(home.join("tendermint/config/genesis.json"), genesis_bytes)?;
+            }
+            if !cmd.config.state_sync_rpc.is_empty() {
+                let servers: Vec<_> = cmd.config.state_sync_rpc.iter().map(|s| s.as_str()).collect();
+                configure_for_statesync(&home.join("tendermint/config/config.toml"), &servers);
+            }
+            #[cfg(feature = "compat")]
+            if cmd.migrate || had_legacy {
+                node = node.migrate::<nomic::app::AppV0>(vec![CONSENSUS_VERSION]);
+            }
+            if cmd.skip_init_chain {
+                node = node.skip_init_chain();
+            }
+            if let Some(signal_version) = cmd.signal_version {
+                let signal_version = hex::decode(signal_version).unwrap();
+                tokio::spawn(async move {
+                    let signal_version = signal_version.clone();
+                    let signal_version2 = signal_version.clone();
+                    let signal_version3 = signal_version.clone();
+                    let done = move || {
+                        log::info!("Node has signaled {:?}", signal_version2);
+                    };
+
+                    loop {
+                        let signal_version = signal_version.clone();
+                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                        if let Err(err) = app_client()
+                            .pay_from(async move |client| {
+                                client.signal(signal_version.try_into().unwrap()).await
+                            })
+                            .noop()
+                            .await
+                        {
+                            let msg = err.to_string();
+                            if msg.ends_with("has already been signaled") {
+                                return done();
+                            } else {
+                                log::debug!("Error when signaling: {}", msg);
+                                continue;
+                            }
+                        } else {
+                            log::info!("Signaled version {:?}", signal_version3);
+                            return done();
+                        }
+                    }
+                });
+            }
+
+            node.stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
+                .print_tendermint_logs(cmd.tendermint_logs)
+                .tendermint_flags(cmd.config.tendermint_flags.clone())
                 .run()
-                .unwrap();
         })
         .await
-        .map_err(|err| orga::Error::App(err.to_string()))?;
+        .unwrap()?;
+
         Ok(())
     }
 }
@@ -195,30 +499,14 @@ fn edit_block_time(cfg_path: &PathBuf, timeout_commit: &str) {
     });
 }
 
-// TODO: append instead of replace
-fn set_p2p_seeds(cfg_path: &PathBuf, seeds: &[&str]) {
-    configure_node(cfg_path, |cfg| {
-        cfg["p2p"]["seeds"] = toml_edit::value(seeds.join(","));
-    });
-}
-
-fn deconfigure_statesync(cfg_path: &PathBuf) {
-    configure_node(cfg_path, |cfg| {
-        cfg["statesync"]["enable"] = toml_edit::value(false);
-        cfg["statesync"]["rpc_servers"] = toml_edit::value("");
-        cfg["statesync"]["trust_height"] = toml_edit::value(0);
-        cfg["statesync"]["trust_hash"] = toml_edit::value("");
-        cfg["statesync"]["trust_period"] = toml_edit::value("216h0m0s");
-    });
-}
-
 fn configure_for_statesync(cfg_path: &PathBuf, rpc_servers: &[&str]) {
-    println!("Getting bootstrap state for Tendermint light client...");
+    log::info!("Getting bootstrap state for Tendermint light client...");
     let (height, hash) =
         block_on(get_bootstrap_state(rpc_servers)).expect("Failed to bootstrap state");
-    println!(
+    log::info!(
         "Configuring light client at height {} with hash {}",
-        height, hash
+        height,
+        hash
     );
 
     configure_node(cfg_path, |cfg| {
@@ -226,6 +514,7 @@ fn configure_for_statesync(cfg_path: &PathBuf, rpc_servers: &[&str]) {
         cfg["statesync"]["rpc_servers"] = toml_edit::value(rpc_servers.join(","));
         cfg["statesync"]["trust_height"] = toml_edit::value(height);
         cfg["statesync"]["trust_hash"] = toml_edit::value(hash.clone());
+        cfg["statesync"]["discovery_time"] = toml_edit::value("8s");
         if cfg["statesync"]["trust_period"].to_string() == "0" {
             cfg["statesync"]["trust_period"] = toml_edit::value("216h0m0s");
         }
@@ -243,13 +532,21 @@ async fn get_bootstrap_state(rpc_servers: &[&str]) -> Result<(i64, String)> {
     // get median latest height
     let mut latest_heights = vec![];
     for client in rpc_clients.iter() {
-        let status = client
-            .status()
-            .await
-            .expect("Could not get tendermint status");
+        let status = match client.status().await {
+            Ok(status) => status,
+            Err(_) => continue,
+        };
         let height = status.sync_info.latest_block_height.value();
         latest_heights.push(height);
     }
+
+    if latest_heights.len() < rpc_servers.len() / 2 {
+        return Err(orga::Error::App(
+            "Failed to get state sync bootstrap data from nodes".to_string(),
+        )
+        .into());
+    }
+
     latest_heights.sort_unstable();
     let latest_height = latest_heights[latest_heights.len() / 2] as u32;
 
@@ -274,30 +571,6 @@ async fn get_bootstrap_state(rpc_servers: &[&str]) -> Result<(i64, String)> {
     }
 
     Ok((height as i64, hash.unwrap().to_string()))
-}
-
-#[cfg(debug_assertions)]
-#[derive(Parser, Debug)]
-pub struct StartDevCmd {}
-
-#[cfg(debug_assertions)]
-impl StartDevCmd {
-    async fn run(&self) -> Result<()> {
-        tokio::task::spawn_blocking(move || {
-            let name = format!("{}-test", nomic::app::CHAIN_ID);
-
-            println!("Starting node...");
-            // TODO: add cfg defaults
-            Node::<nomic::app::App>::new(name.as_str(), Default::default())
-                .stdout(std::process::Stdio::inherit())
-                .stderr(std::process::Stdio::inherit())
-                .run()
-                .unwrap();
-        })
-        .await
-        .map_err(|err| orga::Error::App(err.to_string()))?;
-        Ok(())
-    }
 }
 
 #[derive(Parser, Debug)]
@@ -343,7 +616,7 @@ pub struct BalanceCmd {
 
 impl BalanceCmd {
     async fn run(&self) -> Result<()> {
-        let address = self.address.unwrap_or_else(|| my_address());
+        let address = self.address.unwrap_or_else(my_address);
         println!("address: {}", address);
 
         let balance = app_client().accounts.balance(address).await??;
@@ -417,8 +690,8 @@ impl ValidatorsCmd {
         validators.sort_by(|a, b| b.amount_staked.cmp(&a.amount_staked));
 
         for validator in validators {
-            let info: DeclareInfo =
-                serde_json::from_slice(validator.info.bytes.as_slice()).unwrap();
+            let bytes: Vec<u8> = validator.info.into();
+            let info: DeclareInfo = serde_json::from_slice(bytes.as_slice()).unwrap();
             println!(
                 "- {}\n\tVOTING POWER: {}\n\tMONIKER: {}\n\tDETAILS: {}",
                 validator.address, validator.amount_staked, info.moniker, info.details
@@ -465,11 +738,11 @@ pub struct DeclareCmd {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct DeclareInfo {
-    moniker: String,
-    website: String,
-    identity: String,
-    details: String,
+pub struct DeclareInfo {
+    pub moniker: String,
+    pub website: String,
+    pub identity: String,
+    pub details: String,
 }
 
 impl DeclareCmd {
@@ -492,7 +765,7 @@ impl DeclareCmd {
         let declaration = Declaration {
             consensus_key,
             amount: self.amount.into(),
-            validator_info: info_bytes.into(),
+            validator_info: info_bytes.try_into().unwrap(),
             commission: Commission {
                 rate: self.commission_rate,
                 max: self.commission_max,
@@ -542,7 +815,7 @@ impl EditCmd {
             .edit_validator_self(
                 self.commission_rate,
                 self.min_self_delegation.into(),
-                info_bytes.into(),
+                info_bytes.try_into().unwrap(),
             )
             .await?)
     }
@@ -619,7 +892,7 @@ impl AirdropCmd {
     async fn run(&self) -> Result<()> {
         let client = app_client();
 
-        let addr = self.address.unwrap_or_else(|| my_address());
+        let addr = self.address.unwrap_or_else(my_address);
         let acct = match client.airdrop.get(addr).await?? {
             None => {
                 println!("Address is not eligible for airdrop");
@@ -643,7 +916,7 @@ impl ClaimAirdropCmd {
     async fn run(&self) -> Result<()> {
         let client = app_client();
 
-        let addr = self.address.unwrap_or_else(|| my_address());
+        let addr = self.address.unwrap_or_else(my_address);
         let acct = match client.airdrop.get(addr).await?? {
             None => {
                 println!("Address is not eligible for airdrop");
@@ -745,7 +1018,7 @@ impl RelayerCmd {
         let create_relayer = async || {
             let btc_client = self.btc_client().await.unwrap();
 
-            Relayer::new(btc_client, app_client()).await
+            Relayer::new(btc_client, app_client())
         };
 
         let mut relayer = create_relayer().await;
@@ -847,14 +1120,13 @@ async fn deposit(dest: DepositCommitment) -> Result<()> {
         .await
         .map_err(|err| nomic::error::Error::Orga(orga::Error::App(err.to_string())))?;
     if res.status() != 200 {
-        return Err(orga::Error::App(
-            format!("Relayer responded with code {}", res.status()).to_string(),
-        )
-        .into());
+        return Err(
+            orga::Error::App(format!("Relayer responded with code {}", res.status())).into(),
+        );
     }
 
     println!("Deposit address: {}", btc_addr);
-    println!("Expiration: {}", "5 days from now");
+    println!("Expiration: 5 days from now");
     // TODO: show real expiration
     Ok(())
 }
@@ -866,12 +1138,13 @@ pub struct DepositCmd {
 
 impl DepositCmd {
     async fn run(&self) -> Result<()> {
-        let dest_addr = self.address.unwrap_or_else(|| my_address());
+        let dest_addr = self.address.unwrap_or_else(my_address);
 
         deposit(DepositCommitment::Address(dest_addr)).await
     }
 }
 
+#[cfg(feature = "testnet")]
 #[derive(Parser, Debug)]
 pub struct InterchainDepositCmd {
     #[clap(long, value_name = "ADDRESS")]
@@ -880,12 +1153,14 @@ pub struct InterchainDepositCmd {
     channel: String,
 }
 
+#[cfg(feature = "testnet")]
 const ONE_DAY_NS: u64 = 86400 * 1_000_000_000;
+#[cfg(feature = "testnet")]
 impl InterchainDepositCmd {
     async fn run(&self) -> Result<()> {
         use orga::ibc::encoding::Adapter;
         let now_ns = now_seconds() as u64 * 1_000_000_000;
-        let dest = DepositCommitment::Ibc(IbcDepositCommitment {
+        let dest = DepositCommitment::Ibc(nomic::app::IbcDepositCommitment {
             receiver: Adapter::new(self.receiver.parse().unwrap()),
             sender: Adapter::new(my_address().to_string().parse().unwrap()),
             source_channel: Adapter::new(self.channel.parse().unwrap()),
@@ -922,12 +1197,14 @@ impl WithdrawCmd {
     }
 }
 
+#[cfg(feature = "testnet")]
 #[derive(Parser, Debug)]
 pub struct IbcDepositNbtcCmd {
     to: Address,
     amount: u64,
 }
 
+#[cfg(feature = "testnet")]
 impl IbcDepositNbtcCmd {
     async fn run(&self) -> Result<()> {
         Ok(app_client()
@@ -939,11 +1216,13 @@ impl IbcDepositNbtcCmd {
     }
 }
 
+#[cfg(feature = "testnet")]
 #[derive(Parser, Debug)]
 pub struct IbcWithdrawNbtcCmd {
     amount: u64,
 }
 
+#[cfg(feature = "testnet")]
 impl IbcWithdrawNbtcCmd {
     async fn run(&self) -> Result<()> {
         Ok(app_client()
@@ -953,12 +1232,14 @@ impl IbcWithdrawNbtcCmd {
     }
 }
 
+#[cfg(feature = "testnet")]
 #[derive(Parser, Debug)]
 pub struct GrpcCmd {
     #[clap(default_value_t = 9001)]
     port: u16,
 }
 
+#[cfg(feature = "testnet")]
 impl GrpcCmd {
     async fn run(&self) -> Result<()> {
         let ibc_client = app_client().ibc.clone();
@@ -974,6 +1255,7 @@ impl GrpcCmd {
     }
 }
 
+#[cfg(feature = "testnet")]
 #[derive(Parser, Debug)]
 pub struct IbcTransferCmd {
     receiver: String,
@@ -983,7 +1265,9 @@ pub struct IbcTransferCmd {
     denom: String,
 }
 
+#[cfg(feature = "testnet")]
 use orga::ibc::TransferArgs;
+#[cfg(feature = "testnet")]
 impl IbcTransferCmd {
     async fn run(&self) -> Result<()> {
         let fee: u64 = nomic::app::ibc_fee(self.amount.into())?.into();
@@ -1008,17 +1292,132 @@ impl IbcTransferCmd {
     }
 }
 
+#[derive(Parser, Debug)]
+pub struct ExportCmd {
+    #[clap(long)]
+    home: String,
+}
+
+impl ExportCmd {
+    async fn run(&self) -> Result<()> {
+        let home = PathBuf::from_str(&self.home).unwrap();
+
+        let store_path = home.join("merk");
+        let store = Store::new(orga::merk::BackingStore::Merk(Shared::new(MerkStore::new(
+            store_path,
+        ))));
+        let root_bytes = store.get(&[])?.unwrap();
+
+        let app = ABCIPlugin::<nomic::app::App>::load(store, &mut root_bytes.as_slice())?;
+
+        serde_json::to_writer_pretty(std::io::stdout(), &app).unwrap();
+
+        Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct DevnetCmd {}
+
+impl DevnetCmd {
+    async fn run(&self) -> Result<()> {
+        // pretty_env_logger::init();
+        let genesis_time = Utc.with_ymd_and_hms(2022, 10, 5, 0, 0, 0).unwrap();
+        let ctx = Time::from_seconds(genesis_time.timestamp());
+        Context::add(ctx);
+
+        let home = TempDir::new("nomic-test").unwrap();
+        let path = home.into_path();
+
+        let mut conf = Conf::default();
+        conf.args.push("-txindex");
+        let bitcoind =
+            BitcoinD::with_conf(bitcoind::downloaded_exe_path().unwrap(), &conf).unwrap();
+
+        let block_data = populate_bitcoin_block(&bitcoind);
+
+        let node_path = path.clone();
+        let signer_path = path.clone();
+        let drop_path = path.clone();
+        let header_relayer_path = path.clone();
+
+        std::env::set_var("NOMIC_HOME_DIR", &path);
+
+        let _ = setup_test_app(&path, &block_data);
+
+        std::thread::spawn(move || {
+            info!("Starting Nomic node...");
+            Node::<nomic::app::App>::new(&node_path, Default::default())
+                .run()
+                .unwrap();
+        });
+
+        std::thread::spawn(move || {
+            info!("Starting rest server...");
+            start_rest().unwrap();
+        });
+
+        let relayer_config = RelayerConfig {
+            network: bitcoin::Network::Regtest,
+        };
+
+        let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind).await, app_client())
+            .configure(relayer_config.clone());
+        let headers = relayer.start_header_relay();
+
+        let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind).await, app_client())
+            .configure(relayer_config.clone());
+        let deposits = relayer.start_deposit_relay(&header_relayer_path);
+
+        let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind).await, app_client())
+            .configure(relayer_config.clone());
+        let checkpoints = relayer.start_checkpoint_relay();
+
+        let signer = async {
+            poll_for_blocks().await;
+            tokio::time::sleep(Duration::from_secs(20)).await;
+            setup_test_signer(&signer_path).start().await
+        };
+
+        let declarer = async {
+            poll_for_blocks().await;
+            declare_validator(&path).await.unwrap();
+
+            Err::<(), NomicError>(NomicError::Test("Test completed successfully".to_string()))
+        };
+
+        let _ = futures::join!(headers, deposits, checkpoints, signer, declarer);
+        std::fs::remove_dir_all(drop_path).unwrap();
+
+        Ok(())
+    }
+}
+
 #[tokio::main]
 async fn main() {
-    pretty_env_logger::init();
-    let is_start = std::env::args()
-        .nth(1)
-        .map(|s| s == "start")
-        .unwrap_or(false);
+    pretty_env_logger::formatted_timed_builder()
+        .filter_level(log::LevelFilter::Info)
+        .parse_env("NOMIC_LOG")
+        .init();
+
+    let backtrace_enabled = std::env::var("RUST_BACKTRACE").is_ok();
+
+    let panic_handler = if backtrace_enabled {
+        Some(std::panic::take_hook())
+    } else {
+        None
+    };
+    std::panic::set_hook(Box::new(move |info| {
+        log::error!("{}", info);
+        if let Some(f) = panic_handler.as_ref() {
+            f(info)
+        }
+        std::process::exit(1);
+    }));
 
     let opts = Opts::parse();
     if let Err(err) = opts.cmd.run().await {
-        eprintln!("{}", err);
+        log::error!("{}", err);
         std::process::exit(1);
     };
 }

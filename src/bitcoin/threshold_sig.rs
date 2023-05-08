@@ -1,28 +1,26 @@
 use super::SignatorySet;
+use crate::error::Result;
 use bitcoin::blockdata::transaction::EcdsaSighashType;
 use bitcoin::secp256k1::{
     self,
     constants::{COMPACT_SIGNATURE_SIZE, MESSAGE_SIZE, PUBLIC_KEY_SIZE},
     ecdsa, PublicKey, Secp256k1,
 };
-use derive_more::{Deref, DerefMut, From, Into};
+use derive_more::{Deref, From};
 use orga::call::Call;
 use orga::client::Client;
 use orga::collections::{Map, Next};
-use orga::describe::Describe;
-use orga::encoding::{Decode, Encode, Error as EdError, Result as EdResult, Terminated};
+use orga::encoding::{Decode, Encode};
+use orga::migrate::MigrateFrom;
 use orga::query::Query;
 use orga::state::State;
-use orga::{Error, Result};
-use serde::{Deserialize, Serialize};
-use serde_big_array::BigArray;
+use orga::{Error as OrgaError, Result as OrgaResult};
+use serde::Serialize;
 
 pub type Message = [u8; MESSAGE_SIZE];
 
-#[derive(
-    Encode, Decode, Serialize, Deserialize, State, Describe, Debug, Clone, Deref, From, Copy,
-)]
-pub struct Signature(#[serde(with = "BigArray")] [u8; COMPACT_SIGNATURE_SIZE]);
+#[derive(Encode, Decode, State, Debug, Clone, Deref, From, Copy, MigrateFrom, Serialize)]
+pub struct Signature(#[serde(serialize_with = "<[_]>::serialize")] [u8; COMPACT_SIGNATURE_SIZE]);
 
 #[derive(
     Encode,
@@ -30,7 +28,6 @@ pub struct Signature(#[serde(with = "BigArray")] [u8; COMPACT_SIGNATURE_SIZE]);
     State,
     Query,
     Call,
-    Client,
     Clone,
     Debug,
     Copy,
@@ -38,15 +35,15 @@ pub struct Signature(#[serde(with = "BigArray")] [u8; COMPACT_SIGNATURE_SIZE]);
     Eq,
     PartialOrd,
     Ord,
+    MigrateFrom,
+    Client,
     Serialize,
-    Deserialize,
-    Describe,
 )]
-pub struct Pubkey(#[serde(with = "BigArray")] [u8; PUBLIC_KEY_SIZE]);
+pub struct Pubkey(#[serde(serialize_with = "<[_]>::serialize")] [u8; PUBLIC_KEY_SIZE]);
 
 impl Next for Pubkey {
     fn next(&self) -> Option<Self> {
-        let mut output = self.clone();
+        let mut output = *self;
         for (i, value) in self.0.iter().enumerate().rev() {
             match value.next() {
                 Some(new_value) => {
@@ -86,7 +83,7 @@ impl From<PublicKey> for Pubkey {
 
 // TODO: update for taproot-based design (musig rounds, fallback path)
 
-#[derive(State, Call, Client, Query, Default, Encode, Decode, Serialize, Deserialize, Describe)]
+#[orga]
 pub struct ThresholdSig {
     threshold: u64,
     signed: u64,
@@ -100,6 +97,7 @@ impl ThresholdSig {
         Self::default()
     }
 
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> u16 {
         self.len
     }
@@ -121,8 +119,7 @@ impl ThresholdSig {
                 Share {
                     power: signatory.voting_power,
                     sig: None,
-                }
-                .into(),
+                },
             )?;
 
             self.len += 1;
@@ -143,7 +140,7 @@ impl ThresholdSig {
             assert!(share.sig.is_none());
             total_vp += share.power;
             len += 1;
-            self.sigs.insert(pubkey, share.into())?;
+            self.sigs.insert(pubkey, share)?;
         }
 
         // TODO: get threshold ratio from somewhere else
@@ -160,32 +157,31 @@ impl ThresholdSig {
 
     #[query]
     pub fn sigs(&self) -> Result<Vec<(Pubkey, Signature)>> {
-        self.sigs
+        Ok(self
+            .sigs
             .iter()?
             .filter_map(|entry| {
                 let (pubkey, share) = match entry {
                     Err(e) => return Some(Err(e)),
                     Ok(entry) => entry,
                 };
-                share
-                    .sig
-                    .as_ref()
-                    .map(|sig| Ok((pubkey.clone(), sig.clone())))
+                share.sig.as_ref().map(|sig| Ok((*pubkey, *sig)))
             })
-            .collect()
+            .collect::<OrgaResult<_>>()?)
     }
 
     // TODO: should be iterator?
     pub fn shares(&self) -> Result<Vec<(Pubkey, Share)>> {
-        self.sigs
+        Ok(self
+            .sigs
             .iter()?
-            .map(|entry| entry.map(|(pubkey, share)| (pubkey.clone(), share.clone())))
-            .collect()
+            .map(|entry| entry.map(|(pubkey, share)| (*pubkey, share.clone())))
+            .collect::<OrgaResult<_>>()?)
     }
 
     #[query]
     pub fn contains_key(&self, pubkey: Pubkey) -> Result<bool> {
-        self.sigs.contains_key(pubkey)
+        Ok(self.sigs.contains_key(pubkey)?)
     }
 
     #[query]
@@ -200,16 +196,16 @@ impl ThresholdSig {
     // TODO: exempt from fee
     pub fn sign(&mut self, pubkey: Pubkey, sig: Signature) -> Result<()> {
         if self.done() {
-            return Err(Error::App("Threshold signature is done".into()));
+            return Err(OrgaError::App("Threshold signature is done".into()))?;
         }
 
         let share = self
             .sigs
             .get(pubkey)?
-            .ok_or_else(|| Error::App("Pubkey is not part of threshold signature".into()))?;
+            .ok_or_else(|| OrgaError::App("Pubkey is not part of threshold signature".into()))?;
 
         if share.sig.is_some() {
-            return Err(Error::App("Pubkey already signed".into()));
+            return Err(OrgaError::App("Pubkey already signed".into()))?;
         }
 
         self.verify(pubkey, sig)?;
@@ -217,7 +213,7 @@ impl ThresholdSig {
         let mut share = self
             .sigs
             .get_mut(pubkey)?
-            .ok_or_else(|| Error::App("Pubkey is not part of threshold signature".into()))?;
+            .ok_or_else(|| OrgaError::App("Pubkey is not part of threshold signature".into()))?;
 
         share.sig = Some(sig);
         self.signed += share.power;
@@ -245,7 +241,7 @@ impl ThresholdSig {
             return Ok(vec![]);
         }
 
-        let mut entries: Vec<_> = self.sigs.iter()?.collect::<Result<_>>()?;
+        let mut entries: Vec<_> = self.sigs.iter()?.collect::<OrgaResult<_>>()?;
         entries.sort_by(|a, b| (a.1.power, &a.0).cmp(&(b.1.power, &b.0)));
 
         entries
@@ -263,7 +259,6 @@ impl ThresholdSig {
 }
 
 use std::fmt::Debug;
-use std::ops::Deref;
 impl Debug for ThresholdSig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ThresholdSig")
@@ -276,7 +271,8 @@ impl Debug for ThresholdSig {
     }
 }
 
-#[derive(State, Call, Client, Query, Clone, Encode, Decode, Describe, Serialize, Deserialize)]
+#[orga]
+#[derive(Clone)]
 pub struct Share {
     power: u64,
     sig: Option<Signature>,

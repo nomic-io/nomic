@@ -1,13 +1,9 @@
-use js_sys::{Array, JsString};
-use nomic::app::{App, InnerApp, Nom, CHAIN_ID};
-use nomic::airdrop::Airdrop;
-use nomic::bitcoin::signatory::SignatorySet;
 use nomic::orga::call::Call;
 use nomic::orga::client::{AsyncCall, AsyncQuery, Client};
-use nomic::orga::encoding::{Decode, Encode};
-use nomic::orga::merk::ABCIPrefixedProofStore;
+use nomic::orga::encoding::Encode;
+use nomic::orga::merk::{BackingStore, ProofStore};
+use nomic::orga::plugins::ABCIPlugin;
 use nomic::orga::prelude::Shared;
-use nomic::orga::prelude::*;
 use nomic::orga::query::Query;
 use nomic::orga::state::State;
 use nomic::orga::store::Store;
@@ -19,8 +15,6 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{Request, RequestInit, RequestMode, Response};
-
-const REST_PORT: u64 = 8443;
 
 pub struct WebClient<T: Client<WebAdapter<T>>> {
     state_client: T::Client,
@@ -51,7 +45,7 @@ impl<T: Client<WebAdapter<T>>> WebClient<T> {
             None => return Err(Error::App("Lock not found".to_string()))?,
         };
 
-        Ok(js_sys::JSON::parse(&res_json).map_err(|e| Error::App(format!("{:?}", e)))?)
+        js_sys::JSON::parse(&res_json).map_err(|e| Error::App(format!("{:?}", e)))
     }
 }
 
@@ -93,6 +87,8 @@ where
     async fn call(&self, call: Self::Call) -> Result<()> {
         let tx = call.encode()?;
         let tx = base64::encode(&tx);
+
+        #[cfg(feature = "logging")]
         web_sys::console::log_1(&format!("call: {}", tx).into());
 
         let window = match web_sys::window() {
@@ -133,6 +129,8 @@ where
         .map_err(|e| Error::App(format!("{:?}", e)))?;
         let res = js_sys::Uint8Array::new(&res).to_vec();
         let res = String::from_utf8(res).map_err(|e| Error::App(format!("{:?}", e)))?;
+
+        #[cfg(feature = "logging")]
         web_sys::console::log_1(&format!("response: {}", &res).into());
 
         self.last_res
@@ -154,6 +152,8 @@ impl<T: Query + State> AsyncQuery for WebAdapter<T> {
     {
         let query = Encode::encode(&query)?;
         let query = hex::encode(&query);
+
+        #[cfg(feature = "logging")]
         web_sys::console::log_1(&format!("query: {}", query).into());
 
         let window = match web_sys::window() {
@@ -194,8 +194,11 @@ impl<T: Query + State> AsyncQuery for WebAdapter<T> {
             .map_err(|e| Error::App(format!("{:?}", e)))?;
         let res = js_sys::Uint8Array::new(&res).to_vec();
         let res = String::from_utf8(res).map_err(|e| Error::App(format!("{:?}", e)))?;
+
+        #[cfg(feature = "logging")]
         web_sys::console::log_1(&format!("response: {}", res).into());
-        let res = base64::decode(&res).map_err(|e| Error::App(format!("{:?}", e)))?;
+
+        let res = base64::decode(res).map_err(|e| Error::App(format!("{:?}", e)))?;
 
         // // TODO: we shouldn't need to include the root hash in the result, it
         // // should come from a trusted source
@@ -207,13 +210,14 @@ impl<T: Query + State> AsyncQuery for WebAdapter<T> {
 
         let map = nomic::orga::merk::merk::proofs::query::verify(proof_bytes, root_hash)?;
         let root_value = match map.get(&[])? {
-            Some(root_value) => root_value,
+            Some(root_value) => root_value.to_vec(),
             None => panic!("Missing root value"),
         };
-        let encoding = T::Encoding::decode(root_value)?;
-        let store: Shared<ABCIPrefixedProofStore> = Shared::new(ABCIPrefixedProofStore::new(map));
-        let state = T::create(Store::new(store.into()), encoding)?;
 
-        check(std::rc::Rc::new(state))
+        let store: Shared<ProofStore> = Shared::new(ProofStore(map));
+        let store = BackingStore::ProofMap(store);
+        let state = <ABCIPlugin<T>>::load(Store::new(store), &mut root_value.as_slice())?;
+
+        check(std::rc::Rc::new(state.inner))
     }
 }

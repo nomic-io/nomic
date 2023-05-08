@@ -8,25 +8,26 @@ use bitcoin::hashes::Hash;
 use bitcoin::util::bip32::ExtendedPubKey;
 use bitcoin::Script;
 use bitcoin::{util::merkleblock::PartialMerkleTree, Transaction};
-use checkpoint::{CheckpointQueue, FEE_RATE};
+use checkpoint::CheckpointQueue;
 use header_queue::HeaderQueue;
 #[cfg(feature = "full")]
 use orga::abci::BeginBlock;
 use orga::call::Call;
-use orga::client::Client;
 use orga::coins::{Accounts, Address, Amount, Coin, Give, Symbol, Take};
 use orga::collections::Map;
 use orga::context::{Context, GetContext};
-use orga::describe::Describe;
 use orga::encoding::{Decode, Encode, Terminated};
+use orga::migrate::MigrateFrom;
+use orga::orga;
 use orga::plugins::Paid;
 #[cfg(feature = "full")]
 use orga::plugins::{BeginBlockCtx, Validators};
 use orga::plugins::{Signer, Time};
 use orga::query::Query;
 use orga::state::State;
+use orga::store::Store;
 use orga::{Error as OrgaError, Result as OrgaResult};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use signatory::SignatorySet;
 use txid_set::OutpointSet;
 
@@ -41,26 +42,82 @@ pub mod signer;
 pub mod threshold_sig;
 pub mod txid_set;
 
-#[derive(State, Debug, Clone, Encode, Decode, Default, Serialize, Deserialize, Describe)]
+#[derive(State, Debug, Clone, Encode, Decode, Default, MigrateFrom, Serialize)]
 pub struct Nbtc(());
 impl Symbol for Nbtc {
     const INDEX: u8 = 21;
 }
 
+#[cfg(not(feature = "testnet"))]
+pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Bitcoin;
+#[cfg(all(feature = "testnet", not(feature = "devnet")))]
 pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Testnet;
-pub const MIN_WITHDRAWAL_CHECKPOINTS: u32 = 4;
-pub const MIN_DEPOSIT_AMOUNT: u64 = 600;
-pub const MIN_WITHDRAWAL_AMOUNT: u64 = 600;
-pub const MAX_SCRIPT_LENGTH: u64 = 64;
-pub const TRANSFER_FEE: u64 = 1 * UNITS_PER_SAT;
-pub const MIN_CONFIRMATIONS: u32 = 0;
-pub const UNITS_PER_SAT: u64 = 1_000_000;
+#[cfg(all(feature = "testnet", feature = "devnet"))]
+pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Regtest;
+
+#[derive(Serialize)]
+pub struct Config {
+    min_withdrawal_checkpoints: u32,
+    min_deposit_amount: u64,
+    min_withdrawal_amount: u64,
+    max_withdrawal_amount: u64,
+    max_withdrawal_script_length: u64,
+    transfer_fee: u64,
+    min_confirmations: u32,
+    units_per_sat: u64,
+}
+
+impl Terminated for Config {}
+
+impl Config {
+    fn regtest() -> Self {
+        Self {
+            min_withdrawal_checkpoints: 1,
+            min_deposit_amount: 600,
+            min_withdrawal_amount: 600,
+            max_withdrawal_amount: 64,
+            max_withdrawal_script_length: 64,
+            transfer_fee: 1_000_000,
+            min_confirmations: 0,
+            units_per_sat: 1_000_000,
+        }
+    }
+
+    fn bitcoin() -> Self {
+        Self {
+            min_withdrawal_checkpoints: 4,
+            min_deposit_amount: 600,
+            min_withdrawal_amount: 600,
+            max_withdrawal_amount: 64,
+            max_withdrawal_script_length: 64,
+            transfer_fee: 1_000_000,
+            min_confirmations: 0,
+            units_per_sat: 1_000_000,
+        }
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        match NETWORK {
+            bitcoin::Network::Regtest => Config::regtest(),
+            bitcoin::Network::Testnet | bitcoin::Network::Bitcoin => Config::bitcoin(),
+            _ => unimplemented!(),
+        }
+    }
+}
+
+impl MigrateFrom for Config {
+    fn migrate_from(other: Self) -> orga::Result<Self> {
+        Ok(other)
+    }
+}
 
 pub fn calc_deposit_fee(amount: u64) -> u64 {
     amount / 5
 }
 
-#[derive(State, Call, Query, Client, Encode, Decode, Default, Serialize, Deserialize, Describe)]
+#[orga]
 pub struct Bitcoin {
     #[call]
     pub headers: HeaderQueue,
@@ -73,18 +130,26 @@ pub struct Bitcoin {
     recovery_scripts: Map<Address, Adapter<Script>>,
     pub signatory_keys: SignatoryKeys,
     pub(crate) reward_pool: Coin<Nbtc>,
+    #[state(skip)]
+    config: Config,
 }
 
 pub type ConsensusKey = [u8; 32];
 
-#[derive(Call, Query, Client, Clone, Debug, Serialize, Deserialize)]
+#[derive(Call, Query, Clone, Debug, Client, PartialEq, Serialize)]
 pub struct Xpub(ExtendedPubKey);
 
-impl Describe for Xpub {
-    fn describe() -> orga::describe::Descriptor {
-        orga::describe::Builder::new::<Self>().build()
+impl MigrateFrom for Xpub {
+    fn migrate_from(other: Self) -> OrgaResult<Self> {
+        Ok(other)
     }
 }
+
+// impl Describe for Xpub {
+//     fn describe() -> orga::describe::Descriptor {
+//         orga::describe::Builder::new::<Self>().build()
+//     }
+// }
 
 pub const XPUB_LENGTH: usize = 78;
 
@@ -99,12 +164,18 @@ impl Xpub {
 }
 
 impl State for Xpub {
-    fn attach(&mut self, _: orga::store::Store) -> OrgaResult<()> {
+    #[inline]
+    fn attach(&mut self, _: Store) -> OrgaResult<()> {
         Ok(())
     }
 
-    fn flush(&mut self) -> OrgaResult<()> {
-        Ok(())
+    #[inline]
+    fn flush<W: std::io::Write>(self, out: &mut W) -> OrgaResult<()> {
+        Ok(self.encode_into(out)?)
+    }
+
+    fn load(_store: Store, bytes: &mut &[u8]) -> OrgaResult<Self> {
+        Ok(Self::decode(bytes)?)
     }
 }
 
@@ -162,7 +233,7 @@ pub fn exempt_from_fee() -> Result<()> {
 
 impl Bitcoin {
     #[call]
-    pub fn set_signatory_key(&mut self, signatory_key: Xpub) -> Result<()> {
+    pub fn set_signatory_key(&mut self, _signatory_key: Xpub) -> Result<()> {
         #[cfg(feature = "full")]
         {
             exempt_from_fee()?;
@@ -182,14 +253,16 @@ impl Bitcoin {
                     "Signer does not have a consensus key".to_string(),
                 ))
             })?;
+            let regtest_mode = self.network() == bitcoin::Network::Regtest
+                && _signatory_key.network == bitcoin::Network::Testnet;
 
-            if signatory_key.network != self.network() {
+            if !regtest_mode && _signatory_key.network != self.network() {
                 return Err(Error::Orga(orga::Error::App(
                     "Signatory key network does not match network".to_string(),
                 )));
             }
 
-            self.signatory_keys.insert(consensus_key, signatory_key)?;
+            self.signatory_keys.insert(consensus_key, _signatory_key)?;
         }
 
         Ok(())
@@ -199,7 +272,7 @@ impl Bitcoin {
     pub fn set_recovery_script(&mut self, signatory_script: Adapter<Script>) -> Result<()> {
         #[cfg(feature = "full")]
         {
-            if signatory_script.len() as u64 > MAX_SCRIPT_LENGTH {
+            if signatory_script.len() as u64 > self.config.max_withdrawal_script_length {
                 return Err(Error::Orga(orga::Error::App(
                     "Script exceeds maximum length".to_string(),
                 )));
@@ -263,7 +336,7 @@ impl Bitcoin {
         }
         let output = &btc_tx.output[btc_vout as usize];
 
-        if output.value < MIN_DEPOSIT_AMOUNT {
+        if output.value < self.config.min_deposit_amount {
             return Err(OrgaError::App(
                 "Deposit amount is below minimum".to_string(),
             ))?;
@@ -308,11 +381,11 @@ impl Bitcoin {
 
         let value = output
             .value
-            .checked_sub(est_vsize * FEE_RATE)
+            .checked_sub(est_vsize * self.checkpoints.config().fee_rate)
             .ok_or_else(|| {
                 OrgaError::App("Deposit amount is too small to pay its spending fee".to_string())
             })?
-            * UNITS_PER_SAT;
+            * self.config.units_per_sat;
 
         let mut minted_nbtc = Nbtc::mint(value);
         let deposit_fee = minted_nbtc.take(calc_deposit_fee(value))?;
@@ -324,14 +397,14 @@ impl Bitcoin {
     pub fn withdraw(&mut self, script_pubkey: Adapter<Script>, amount: Amount) -> Result<()> {
         exempt_from_fee()?;
 
-        if script_pubkey.len() as u64 > MAX_SCRIPT_LENGTH {
+        if script_pubkey.len() as u64 > self.config.max_withdrawal_script_length {
             return Err(OrgaError::App("Script exceeds maximum length".to_string()).into());
         }
 
-        if self.checkpoints.len()? < MIN_WITHDRAWAL_CHECKPOINTS {
+        if self.checkpoints.len()? < self.config.min_withdrawal_checkpoints {
             return Err(OrgaError::App(format!(
                 "Withdrawals are disabled until the network has produced at least {} checkpoints",
-                MIN_WITHDRAWAL_CHECKPOINTS
+                self.config.min_withdrawal_checkpoints
             ))
             .into());
         }
@@ -344,8 +417,8 @@ impl Bitcoin {
 
         self.accounts.withdraw(signer, amount)?.burn();
 
-        let fee = (9 + script_pubkey.len() as u64) * FEE_RATE;
-        let value: u64 = Into::<u64>::into(amount) / UNITS_PER_SAT;
+        let fee = (9 + script_pubkey.len() as u64) * self.checkpoints.config().fee_rate;
+        let value: u64 = Into::<u64>::into(amount) / self.config.units_per_sat;
         let value = match value.checked_sub(fee) {
             None => {
                 return Err(OrgaError::App(
@@ -356,7 +429,7 @@ impl Bitcoin {
             Some(value) => value,
         };
 
-        if value < MIN_WITHDRAWAL_AMOUNT {
+        if value < self.config.min_withdrawal_amount {
             return Err(OrgaError::App(
                 "Withdrawal is smaller than than minimum amount".to_string(),
             )
@@ -384,7 +457,9 @@ impl Bitcoin {
             .signer
             .ok_or_else(|| Error::Orga(OrgaError::App("Call must be signed".into())))?;
 
-        let transfer_fee = self.accounts.withdraw(signer, TRANSFER_FEE.into())?;
+        let transfer_fee = self
+            .accounts
+            .withdraw(signer, self.config.transfer_fee.into())?;
         self.reward_pool.give(transfer_fee)?;
         self.accounts.transfer(to, amount)?;
 
@@ -471,7 +546,7 @@ impl Bitcoin {
     }
 }
 
-#[derive(Encode, Decode, Query, Client, Default)]
+#[orga]
 pub struct ChangeRates {
     pub withdrawal: u16,
     pub sigset_change: u16,
@@ -481,14 +556,18 @@ pub struct ChangeRates {
 impl BeginBlock for Bitcoin {
     fn begin_block(&mut self, _ctx: &BeginBlockCtx) -> OrgaResult<()> {
         self.checkpoints
-            .maybe_step(self.signatory_keys.map(), &self.accounts, &self.recovery_scripts)
+            .maybe_step(
+                self.signatory_keys.map(),
+                &self.accounts,
+                &self.recovery_scripts,
+            )
             .map_err(|err| OrgaError::App(err.to_string()))?;
 
         Ok(())
     }
 }
 
-#[derive(State, Call, Query, Client, Encode, Decode, Default, Serialize, Deserialize, Describe)]
+#[orga]
 pub struct SignatoryKeys {
     by_cons: Map<ConsensusKey, Xpub>,
     xpubs: Map<Xpub, ()>,

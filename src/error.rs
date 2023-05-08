@@ -1,5 +1,7 @@
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
+    #[error("{0}")]
+    Address(String),
     #[error(transparent)]
     Bitcoin(#[from] bitcoin::Error),
     #[error(transparent)]
@@ -18,6 +20,8 @@ pub enum Error {
     Sighash(#[from] bitcoin::util::sighash::Error),
     #[error(transparent)]
     TryFrom(#[from] std::num::TryFromIntError),
+    #[error("{0}")]
+    Test(String),
     #[error(transparent)]
     Secp(#[from] bitcoin::secp256k1::Error),
     #[error("Could not verify merkle proof")]
