@@ -658,7 +658,7 @@ impl HeaderQueue {
     }
 
     pub fn network(&self) -> bitcoin::Network {
-        super::NETWORK.clone().into()
+        super::NETWORK
     }
 }
 

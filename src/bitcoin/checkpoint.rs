@@ -481,7 +481,9 @@ impl<'a> BuildingCheckpointMut<'a> {
         let mut txs: Vec<bitcoin::Transaction> = Vec::new();
 
         for account in nbtc_accounts.iter()? {
-            let mut curr_tx = txs.pop().unwrap_or(Self::provide_empty_tx(lock_time));
+            let mut curr_tx = txs
+                .pop()
+                .unwrap_or_else(|| Self::provide_empty_tx(lock_time));
             if curr_tx.size() as u64 > EMERGENCY_DISBURSAL_MAX_TX_SIZE {
                 txs.push(curr_tx);
                 curr_tx = Self::provide_empty_tx(lock_time)
@@ -515,7 +517,7 @@ impl<'a> BuildingCheckpointMut<'a> {
 
     fn generate_intermediate_tx(
         &self,
-        txs: &Vec<bitcoin::Transaction>,
+        txs: &[bitcoin::Transaction],
         lock_time: u32,
         reserve_outpoint: bitcoin::OutPoint,
     ) -> Result<bitcoin::Transaction> {
@@ -544,7 +546,7 @@ impl<'a> BuildingCheckpointMut<'a> {
     fn link_intermediate_tx(
         &self,
         intermediate_tx: &bitcoin::Transaction,
-        txs: &mut Vec<bitcoin::Transaction>,
+        txs: &mut [bitcoin::Transaction],
     ) -> Result<()> {
         for (i, tx) in txs.iter_mut().enumerate() {
             let intermediate_tx_in = bitcoin::TxIn {
@@ -562,7 +564,7 @@ impl<'a> BuildingCheckpointMut<'a> {
 
     fn generate_emergency_disbursal_sigs(
         &self,
-        txs: &Vec<bitcoin::Transaction>,
+        txs: &[bitcoin::Transaction],
         intermediate_tx: &bitcoin::Transaction,
     ) -> Result<Vec<ThresholdSig>> {
         let mut sigs = Vec::new();
@@ -625,7 +627,7 @@ impl<'a> BuildingCheckpointMut<'a> {
 
         let reserve_out = bitcoin::TxOut {
             value: 0, // will be updated after counting ins/outs and fees
-            script_pubkey: self.0.sigset.output_script(&vec![0u8])?, // TODO: double-check safety
+            script_pubkey: self.0.sigset.output_script(&[0u8])?, // TODO: double-check safety
         };
         self.0.outputs.push_front(Adapter::new(reserve_out))?;
 
@@ -915,13 +917,13 @@ impl CheckpointQueue {
             building.push_input(
                 reserve_outpoint,
                 &sigset,
-                &vec![0u8], // TODO: double-check safety
+                &[0u8], // TODO: double-check safety
                 reserve_value,
             )?;
 
             for (input, sigs) in excess_inputs {
                 let shares = sigs.shares()?;
-                let data = input.into_inner().into();
+                let data = input.into_inner();
                 building.inputs.push_back(data)?;
                 building.sig_queue.inputs.push_back(ThresholdSig::new())?;
                 building

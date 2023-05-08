@@ -146,7 +146,7 @@ pub async fn test_bitcoin_client(bitcoind: &BitcoinD) -> BitcoinRpcClient {
 }
 
 pub fn address_from_privkey(privkey: &SecretKey) -> Address {
-    let pubkey = secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &privkey);
+    let pubkey = secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), privkey);
     Address::from_pubkey(pubkey.serialize())
 }
 
