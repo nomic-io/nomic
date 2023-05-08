@@ -11,7 +11,6 @@ use orga::migrate::MigrateFrom;
 use orga::orga;
 use orga::prelude::*;
 use orga::state::State;
-use orga::store::Store;
 use orga::Error as OrgaError;
 use orga::Result as OrgaResult;
 use serde::Serialize;

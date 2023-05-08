@@ -22,6 +22,7 @@ use orga::context::GetContext;
 use orga::encoding::Terminated;
 #[cfg(feature = "full")]
 use orga::plugins::Time;
+use orga::prelude::Accounts;
 use orga::store::Store;
 use orga::{
     call::Call,
@@ -35,7 +36,6 @@ use orga::{
     state::State,
     Error as OrgaError, Result as OrgaResult,
 };
-use orga::{describe::Describe, prelude::Accounts};
 use serde::{Deserialize, Serialize};
 use std::{convert::TryFrom, str::FromStr};
 
@@ -903,8 +903,6 @@ impl CheckpointQueue {
 
         self.prune()?;
 
-        let mut building = self.building_mut()?;
-
         if self.index > 0 {
             let config = self.config();
             let second = self.get_mut(self.index - 1)?;
@@ -1019,13 +1017,9 @@ impl CheckpointQueue {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::bitcoin::{header_queue::HeaderQueue, Bitcoin};
     use crate::orga::coins::{Accounts, Address};
-    use crate::orga::collections::map::ChildMut;
     use crate::orga::collections::Map;
-    use bitcoin::network::constants::Network;
-    use std::ops::Add;
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use std::time::Duration;
 
     const DISBURSAL_TEST_PAYOUT_DATE: u64 = 2280025200; // April 2nd, 2042 4:20:00 GMT
 
