@@ -1019,15 +1019,27 @@ impl CheckpointQueue {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::orga::coins::{Accounts, Address};
+    use crate::orga::coins::Accounts;
     use crate::orga::collections::Map;
+    use crate::utils::address_from_privkey;
+    use bitcoin::secp256k1::{rand, SecretKey};
+    use rand::{rngs::StdRng, RngCore, SeedableRng};
     use std::time::Duration;
 
     const DISBURSAL_TEST_PAYOUT_DATE: u64 = 2280025200; // April 2nd, 2042 4:20:00 GMT
 
     #[test]
     fn get_raw_emergency_disbursal_txs() {
-        let address = Address::from_str("nomic1e9ypzs3qgrkwzpstvw7z4ag96qzv9qtdhvrcyj").unwrap();
+        let mut seed_generator = rand::thread_rng();
+        let seed = seed_generator.next_u64();
+
+        dbg!("get_raw_emergency_disbursal_txs seed: {:x}", seed);
+
+        let mut rng = StdRng::seed_from_u64(seed);
+
+        let privkey = SecretKey::new(&mut rng);
+        let address = address_from_privkey(&privkey);
+
         let mut nbtc_accounts: Accounts<Nbtc> = Accounts::default();
         nbtc_accounts.deposit(address, 42_000_000.into()).unwrap();
 
@@ -1045,11 +1057,11 @@ mod test {
             .unwrap();
 
         let tx = txs.get(0).unwrap();
-        let script_hash = tx.output.get(0).unwrap().script_pubkey.script_hash();
+        let script = tx.output.get(0).unwrap().script_pubkey.to_string();
 
         let nomic_address_hash =
             bitcoin::hashes::hash160::Hash::from_str(address.bytes().to_hex().as_str()).unwrap();
 
-        assert_eq!(nomic_address_hash, script_hash.as_hash());
+        assert!(script.contains(nomic_address_hash.to_string().as_str()));
     }
 }
