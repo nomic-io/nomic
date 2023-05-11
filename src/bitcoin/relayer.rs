@@ -324,7 +324,7 @@ impl Relayer {
                 .emergency_disbursal_txs()
                 .await??;
 
-            for tx in dbg!(disbursal_txs).iter() {
+            for tx in disbursal_txs.iter() {
                 if relayed.contains(&tx.txid()) {
                     continue;
                 }
