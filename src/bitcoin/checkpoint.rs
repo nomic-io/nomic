@@ -803,6 +803,18 @@ impl CheckpointQueue {
     }
 
     #[query]
+    pub fn emergency_disbursal_txs(&self) -> Result<Vec<Adapter<bitcoin::Transaction>>> {
+        let mut vec = vec![];
+        if let Some(completed) = self.completed()?.last() {
+            for tx in completed.emergency_disbursal_txs.iter()? {
+                vec.push(tx?.clone());
+            }
+        }
+
+        Ok(vec)
+    }
+
+    #[query]
     pub fn signing(&self) -> Result<Option<SigningCheckpoint<'_>>> {
         if self.queue.len() < 2 {
             return Ok(None);
