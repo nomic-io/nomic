@@ -1,3 +1,4 @@
+use super::checkpoint::EMERGENCY_DISBURSAL_LOCK_TIME_INTERVAL;
 use super::signatory::Signatory;
 use super::SignatorySet;
 use crate::app::App;
@@ -20,6 +21,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::future::Future;
 use std::sync::Arc;
+use std::time::SystemTime;
+use std::time::UNIX_EPOCH;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::Mutex;
 use warp::reject;
@@ -295,6 +298,65 @@ impl Relayer {
         }
 
         Ok(tip)
+    }
+
+    pub async fn start_emergency_disbursal_transaction_relay(&mut self) -> Result<()> {
+        info!("Starting emergency disbursal transaction relay...");
+
+        loop {
+            if let Err(e) = self.relay_emergency_disbursal_transactions().await {
+                if !e.to_string().contains("No completed checkpoints yet") {
+                    error!("Emergency disbursal relay error: {}", e);
+                }
+            }
+
+            sleep(2).await;
+        }
+    }
+
+    async fn relay_emergency_disbursal_transactions(&mut self) -> Result<()> {
+        let mut relayed = HashSet::new();
+        loop {
+            let disbursal_txs = self
+                .app_client
+                .bitcoin
+                .checkpoints
+                .emergency_disbursal_txs()
+                .await??;
+
+            for tx in dbg!(disbursal_txs).iter() {
+                if relayed.contains(&tx.txid()) {
+                    continue;
+                }
+
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+                if now < tx.lock_time.to_u32() as u64 {
+                    continue;
+                }
+
+                let mut tx_bytes = vec![];
+                tx.consensus_encode(&mut tx_bytes)?;
+
+                match self.btc_client.send_raw_transaction(&tx_bytes).await {
+                    Ok(_) => {
+                        info!("Relayed emergency disbursal transactions: {}", tx.txid());
+                    }
+                    Err(err) if err.to_string().contains("bad-txns-inputs-missingorspent") => {}
+                    Err(err)
+                        if err
+                            .to_string()
+                            .contains("Transaction already in block chain") => {}
+                    Err(err) => Err(err)?,
+                }
+
+                relayed.insert(tx.txid());
+            }
+
+            sleep(1).await;
+        }
     }
 
     pub async fn start_checkpoint_relay(&mut self) -> Result<()> {
