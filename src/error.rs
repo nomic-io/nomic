@@ -37,6 +37,8 @@ pub enum Error {
     Header(String),
     #[error("{0}")]
     Ibc(String),
+    #[error("Input index: {0} out of bounds")]
+    InputIndexOutOfBounds(usize),
     #[error(transparent)]
     Orga(#[from] orga::Error),
     #[error(transparent)]
