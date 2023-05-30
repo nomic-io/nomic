@@ -30,6 +30,12 @@ impl<T> Adapter<T> {
     }
 }
 
+impl<T> From<T> for Adapter<T> {
+    fn from(value: T) -> Self {
+        Self::new(value)
+    }
+}
+
 impl<T: Default> Default for Adapter<T> {
     fn default() -> Self {
         Self {
