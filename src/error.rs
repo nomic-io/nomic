@@ -10,6 +10,8 @@ pub enum Error {
     BitcoinAddress(#[from] bitcoin::util::address::Error),
     #[error(transparent)]
     BitcoinHash(#[from] bitcoin::hashes::Error),
+    #[error(transparent)]
+    BitcoinLockTime(#[from] bitcoin::locktime::Error),
     #[error("{0}")]
     BitcoinPubkeyHash(String),
     #[error(transparent)]
