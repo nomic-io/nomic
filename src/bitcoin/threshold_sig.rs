@@ -110,11 +110,12 @@ impl ThresholdSig {
         self.message
     }
 
-    pub fn from_sigset(&mut self, signatories: &SignatorySet) -> Result<()> {
+    pub fn from_sigset(signatories: &SignatorySet) -> Result<Self> {
+        let mut ts = ThresholdSig::default();
         let mut total_vp = 0;
 
         for signatory in signatories.iter() {
-            self.sigs.insert(
+            ts.sigs.insert(
                 signatory.pubkey,
                 Share {
                     power: signatory.voting_power,
@@ -122,17 +123,18 @@ impl ThresholdSig {
                 },
             )?;
 
-            self.len += 1;
+            ts.len += 1;
             total_vp += signatory.voting_power;
         }
 
         // TODO: get threshold ratio from somewhere else
-        self.threshold = ((total_vp as u128) * 2 / 3) as u64;
+        ts.threshold = ((total_vp as u128) * 2 / 3) as u64;
 
-        Ok(())
+        Ok(ts)
     }
 
-    pub fn from_shares(&mut self, shares: Vec<(Pubkey, Share)>) -> Result<()> {
+    pub fn from_shares(shares: Vec<(Pubkey, Share)>) -> Result<Self> {
+        let mut ts = ThresholdSig::default();
         let mut total_vp = 0;
         let mut len = 0;
 
@@ -140,14 +142,14 @@ impl ThresholdSig {
             assert!(share.sig.is_none());
             total_vp += share.power;
             len += 1;
-            self.sigs.insert(pubkey, share)?;
+            ts.sigs.insert(pubkey, share)?;
         }
 
         // TODO: get threshold ratio from somewhere else
-        self.threshold = ((total_vp as u128) * 2 / 3) as u64;
-        self.len = len;
+        ts.threshold = ((total_vp as u128) * 2 / 3) as u64;
+        ts.len = len;
 
-        Ok(())
+        Ok(ts)
     }
 
     #[query]
