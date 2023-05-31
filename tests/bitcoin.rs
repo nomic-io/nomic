@@ -326,3 +326,187 @@ async fn bitcoin_test() {
         }
     }
 }
+
+#[tokio::test]
+#[serial]
+async fn emergency_disbursal() {
+    INIT.call_once(|| {
+        pretty_env_logger::init();
+        setup_time_context();
+    });
+
+    let mut conf = Conf::default();
+    conf.args.push("-txindex");
+    let bitcoind = BitcoinD::with_conf(bitcoind::downloaded_exe_path().unwrap(), &conf).unwrap();
+
+    let block_data = populate_bitcoin_block(&bitcoind);
+
+    let home = TempDir::new("nomic-test").unwrap();
+    let path = home.into_path();
+
+    let node_path = path.clone();
+    let signer_path = path.clone();
+    let drop_path = path.clone();
+    let header_relayer_path = path.clone();
+
+    std::env::set_var("NOMIC_HOME_DIR", &path);
+
+    let funded_accounts = setup_test_app(&path, &block_data);
+
+    std::thread::spawn(move || {
+        info!("Starting Nomic node...");
+        Node::<nomic::app::App>::new(&node_path, Default::default())
+            .run()
+            .unwrap();
+    });
+
+    let relayer_config = RelayerConfig {
+        network: bitcoin::Network::Regtest,
+    };
+
+    let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind).await, app_client())
+        .configure(relayer_config.clone());
+    let headers = relayer.start_header_relay();
+
+    let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind).await, app_client())
+        .configure(relayer_config.clone());
+    let deposits = relayer.start_deposit_relay(&header_relayer_path);
+
+    let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind).await, app_client())
+        .configure(relayer_config.clone());
+    let checkpoints = relayer.start_checkpoint_relay();
+
+    let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind).await, app_client())
+        .configure(relayer_config.clone());
+    let disbursal = relayer.start_emergency_disbursal_transaction_relay();
+
+    let signer = async {
+        tokio::time::sleep(Duration::from_secs(20)).await;
+        setup_test_signer(&signer_path).start().await.unwrap();
+
+        Ok(())
+    };
+
+    let test = async {
+        poll_for_blocks().await;
+        declare_validator(&path).await.unwrap();
+
+        let wallet = retry(|| bitcoind.create_wallet("nomic-integration-test"), 10).unwrap();
+        let wallet_address = wallet.get_new_address(None, None).unwrap();
+
+        retry(
+            || bitcoind.client.generate_to_address(101, &wallet_address),
+            10,
+        )
+        .unwrap();
+
+        let mut retry_count = 0;
+        let mut deposit_address = None;
+        while deposit_address.is_none() && retry_count < 10 {
+            deposit_address = generate_deposit_address(&funded_accounts[0].address)
+                .await
+                .ok();
+            retry_count += 1;
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+
+        broadcast_deposit_addr(
+            funded_accounts[0].address.to_string(),
+            deposit_address.as_ref().unwrap().sigset_index,
+            "http://localhost:8999".to_string(),
+            deposit_address.as_ref().unwrap().deposit_addr.clone(),
+        )
+        .await
+        .unwrap();
+
+        retry(
+            || {
+                bitcoind.client.send_to_address(
+                    &bitcoin::Address::from_str(&deposit_address.as_ref().unwrap().deposit_addr)
+                        .unwrap(),
+                    bitcoin::Amount::from_btc(10.0).unwrap(),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+            },
+            10,
+        )
+        .unwrap();
+
+        retry(
+            || bitcoind.client.generate_to_address(1, &wallet_address),
+            10,
+        )
+        .unwrap();
+
+        poll_for_completed_checkpoint(1).await;
+
+        let balance = app_client()
+            .bitcoin
+            .accounts
+            .balance(funded_accounts[0].address)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(balance, Amount::from(799999873600000));
+
+        let withdraw_sign_doc = withdraw(
+            funded_accounts[0].address.to_string(),
+            wallet_address.to_string(),
+            Amount::from(7000000000).into(),
+        )
+        .await
+        .unwrap();
+
+        sign_and_broadcast(withdraw_sign_doc, &funded_accounts[0]).await;
+
+        retry(
+            || bitcoind.client.generate_to_address(1, &wallet_address),
+            10,
+        )
+        .unwrap();
+
+        poll_for_completed_checkpoint(2).await;
+
+        let balance = app_client()
+            .bitcoin
+            .accounts
+            .balance(funded_accounts[0].address)
+            .await
+            .unwrap()
+            .unwrap();
+        dbg!(app_client().bitcoin.value_locked().await.unwrap().unwrap());
+
+        assert_eq!(balance, Amount::from(799992873600000));
+
+        tokio::time::sleep(Duration::from_secs(60 * 2)).await;
+
+        let balance = app_client()
+            .bitcoin
+            .accounts
+            .balance(funded_accounts[0].address)
+            .await
+            .unwrap()
+            .unwrap();
+
+        println!("Balance after disbursal: {}", balance);
+
+        fs::remove_dir_all(drop_path).unwrap();
+        Err::<(), Error>(Error::Test("Test completed successfully".to_string()))
+    };
+
+    poll_for_blocks().await;
+
+    match futures::try_join!(headers, deposits, checkpoints, disbursal, signer, test) {
+        Err(Error::Test(_)) => (),
+        Ok(_) => (),
+        other => {
+            other.unwrap();
+        }
+    }
+}
