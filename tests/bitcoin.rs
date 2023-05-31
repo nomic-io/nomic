@@ -3,7 +3,6 @@
 use bitcoin::secp256k1;
 use bitcoind::bitcoincore_rpc::RpcApi;
 use bitcoind::{BitcoinD, Conf};
-use chrono::{TimeZone, Utc};
 use log::info;
 use nomic::app::DepositCommitment;
 use nomic::app_client;
@@ -20,7 +19,7 @@ use orga::cosmrs::crypto::secp256k1::SigningKey;
 use orga::encoding::Encode;
 use orga::plugins::sdk_compat::sdk::{PubKey as OrgaPubKey, Signature as OrgaSignature};
 use orga::prelude::sdk_compat::sdk::{self, SignDoc};
-use orga::prelude::{Address, Amount, Context, Time};
+use orga::prelude::{Address, Amount};
 use reqwest::StatusCode;
 use serial_test::serial;
 use std::fs;
