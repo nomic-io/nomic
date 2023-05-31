@@ -3,6 +3,10 @@
 #[cfg(feature = "full")]
 use crate::error::Error;
 use crate::error::Result;
+use bitcoin::secp256k1::Context as SecpContext;
+use bitcoin::secp256k1::PublicKey;
+use bitcoin::secp256k1::Secp256k1;
+use bitcoin::secp256k1::Verification;
 #[cfg(feature = "full")]
 use bitcoin::util::bip32::ChildNumber;
 use bitcoin::Script;
@@ -33,6 +37,20 @@ pub const MAX_SIGNATORIES: u64 = 20;
 pub struct Signatory {
     pub voting_power: u64,
     pub pubkey: Pubkey,
+}
+
+pub fn derive_pubkey<T>(secp: &Secp256k1<T>, xpub: Xpub, sigset_index: u32) -> Result<PublicKey>
+where
+    T: SecpContext + Verification,
+{
+    Ok(xpub
+        .derive_pub(
+            &secp,
+            &[bitcoin::util::bip32::ChildNumber::from_normal_idx(
+                sigset_index,
+            )?],
+        )?
+        .public_key)
 }
 
 #[orga]
