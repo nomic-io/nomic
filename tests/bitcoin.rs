@@ -163,8 +163,10 @@ async fn sign_and_broadcast(sign_doc: SignDoc, account: &KeyData) {
 #[tokio::test]
 #[serial]
 async fn bitcoin_test() {
-    pretty_env_logger::init();
-    setup_time_context();
+    INIT.call_once(|| {
+        pretty_env_logger::init();
+        setup_time_context();
+    });
 
     let mut conf = Conf::default();
     conf.args.push("-txindex");
