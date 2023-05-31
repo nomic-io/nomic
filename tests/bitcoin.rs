@@ -1,34 +1,36 @@
 #![feature(async_closure)]
 
 use bitcoin::secp256k1;
-use chrono::{TimeZone, Utc};
-use log::info;
-use nomic::bitcoin::relayer::DepositAddress;
-use nomic::error::{Error, Result};
-use orga::cosmrs::crypto::secp256k1::SigningKey;
-use orga::encoding::Encode;
-use orga::plugins::sdk_compat::sdk::{PubKey as OrgaPubKey, Signature as OrgaSignature};
-use orga::prelude::sdk_compat::sdk::{self, SignDoc};
-use reqwest::StatusCode;
-use serial_test::serial;
-use std::fs;
-use std::str::FromStr;
-use std::time::Duration;
-use tendermint_rpc::{Client, HttpClient};
-
 use bitcoind::bitcoincore_rpc::RpcApi;
 use bitcoind::{BitcoinD, Conf};
+use chrono::{TimeZone, Utc};
+use log::info;
 use nomic::app::DepositCommitment;
 use nomic::app_client;
 use nomic::bitcoin::relayer::Config as RelayerConfig;
+use nomic::bitcoin::relayer::DepositAddress;
 use nomic::bitcoin::relayer::Relayer;
+use nomic::error::{Error, Result};
 use nomic::orga::prelude::Node;
 use nomic::utils::{
     declare_validator, generate_sign_doc, make_std_tx, poll_for_blocks, populate_bitcoin_block,
     retry, setup_test_app, setup_test_signer, setup_time_context, test_bitcoin_client, KeyData,
 };
+use orga::cosmrs::crypto::secp256k1::SigningKey;
+use orga::encoding::Encode;
+use orga::plugins::sdk_compat::sdk::{PubKey as OrgaPubKey, Signature as OrgaSignature};
+use orga::prelude::sdk_compat::sdk::{self, SignDoc};
 use orga::prelude::{Address, Amount, Context, Time};
+use reqwest::StatusCode;
+use serial_test::serial;
+use std::fs;
+use std::str::FromStr;
+use std::sync::Once;
+use std::time::Duration;
 use tempdir::TempDir;
+use tendermint_rpc::{Client, HttpClient};
+
+static INIT: Once = Once::new();
 
 pub async fn withdraw(address: String, dest_addr: String, amount: u64) -> Result<SignDoc> {
     let mut value = serde_json::Map::new();
