@@ -21,6 +21,7 @@ use bitcoincore_rpc_async::{Auth, Client as BitcoinRpcClient};
 use bitcoind::bitcoincore_rpc::RpcApi;
 #[cfg(feature = "full")]
 use bitcoind::BitcoinD;
+use chrono::{TimeZone, Utc};
 #[cfg(feature = "full")]
 use ed::Encode;
 #[cfg(feature = "full")]
@@ -30,6 +31,8 @@ use orga::merk::BackingStore;
 #[cfg(feature = "full")]
 use orga::merk::MerkStore;
 use orga::prelude::sdk_compat::sdk;
+use orga::prelude::Context;
+use orga::prelude::Time;
 #[cfg(feature = "full")]
 use orga::prelude::{ABCIPlugin, Coin, Commission, Decimal, Declaration, State};
 use orga::prelude::{Address, MIN_FEE};
@@ -134,6 +137,12 @@ pub fn load_consensus_key(dir: &Path) -> Result<[u8; 32]> {
         .map_err(|_| orga::Error::App("invalid consensus key".to_string()))?
         .try_into()
         .map_err(|_| orga::Error::App("invalid consensus key".to_string()))?)
+}
+
+pub fn setup_time_context() {
+    let genesis_time = Utc.with_ymd_and_hms(2022, 10, 5, 0, 0, 0).unwrap();
+    let ctx = Time::from_seconds(genesis_time.timestamp());
+    Context::add(ctx);
 }
 
 #[cfg(feature = "full")]

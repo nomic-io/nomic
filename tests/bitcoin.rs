@@ -25,16 +25,10 @@ use nomic::bitcoin::relayer::Relayer;
 use nomic::orga::prelude::Node;
 use nomic::utils::{
     declare_validator, generate_sign_doc, make_std_tx, poll_for_blocks, populate_bitcoin_block,
-    retry, setup_test_app, setup_test_signer, test_bitcoin_client, KeyData,
+    retry, setup_test_app, setup_test_signer, setup_time_context, test_bitcoin_client, KeyData,
 };
 use orga::prelude::{Address, Amount, Context, Time};
 use tempdir::TempDir;
-
-fn setup_time_context() {
-    let genesis_time = Utc.with_ymd_and_hms(2022, 10, 5, 0, 0, 0).unwrap();
-    let ctx = Time::from_seconds(genesis_time.timestamp());
-    Context::add(ctx);
-}
 
 pub async fn withdraw(address: String, dest_addr: String, amount: u64) -> Result<SignDoc> {
     let mut value = serde_json::Map::new();
