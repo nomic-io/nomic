@@ -45,7 +45,7 @@ where
 {
     Ok(xpub
         .derive_pub(
-            &secp,
+            secp,
             &[bitcoin::util::bip32::ChildNumber::from_normal_idx(
                 sigset_index,
             )?],
