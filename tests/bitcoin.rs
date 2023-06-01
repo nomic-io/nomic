@@ -26,7 +26,7 @@ use std::fs;
 use std::str::FromStr;
 use std::sync::Once;
 use std::time::Duration;
-use tempdir::TempDir;
+use tempfile::tempdir;
 use tendermint_rpc::{Client, HttpClient};
 
 static INIT: Once = Once::new();
@@ -173,7 +173,7 @@ async fn bitcoin_test() {
 
     let block_data = populate_bitcoin_block(&bitcoind);
 
-    let home = TempDir::new("nomic-test").unwrap();
+    let home = tempdir().unwrap();
     let path = home.into_path();
 
     let node_path = path.clone();
@@ -311,7 +311,6 @@ async fn bitcoin_test() {
 
         assert_eq!(balance, Amount::from(799992873600000));
 
-        fs::remove_dir_all(drop_path).unwrap();
         Err::<(), Error>(Error::Test("Test completed successfully".to_string()))
     };
 
@@ -340,7 +339,7 @@ async fn emergency_disbursal() {
 
     let block_data = populate_bitcoin_block(&bitcoind);
 
-    let home = TempDir::new("nomic-test").unwrap();
+    let home = tempdir().unwrap();
     let path = home.into_path();
 
     let node_path = path.clone();
@@ -495,7 +494,6 @@ async fn emergency_disbursal() {
 
         println!("Balance after disbursal: {}", balance);
 
-        fs::remove_dir_all(drop_path).unwrap();
         Err::<(), Error>(Error::Test("Test completed successfully".to_string()))
     };
 
