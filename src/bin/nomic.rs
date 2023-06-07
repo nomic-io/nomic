@@ -33,7 +33,7 @@ use nomic::utils::start_rest;
 use orga::merk::MerkStore;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
-use tempdir::TempDir;
+use tempfile::tempdir;
 use tendermint_rpc::Client as _;
 
 const BANNER: &str = r#"
@@ -1326,7 +1326,7 @@ impl DevnetCmd {
         let ctx = Time::from_seconds(genesis_time.timestamp());
         Context::add(ctx);
 
-        let home = TempDir::new("nomic-test").unwrap();
+        let home = tempdir().unwrap();
         let path = home.into_path();
 
         let mut conf = Conf::default();
