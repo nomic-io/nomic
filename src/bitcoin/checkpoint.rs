@@ -264,96 +264,103 @@ impl BitcoinTx {
 #[derive(Debug)]
 pub struct Checkpoint {
     pub status: CheckpointStatus,
-    pub inputs: Deque<Input>,
-    pub emergency_disbursal_txs: Deque<Adapter<bitcoin::Transaction>>,
-    signed_inputs: u16,
-    pub outputs: Deque<Output>,
-    pub sig_queue: SignatureQueue,
+    pub batches: Deque<Deque<BitcoinTx>>,
+    signed_batches: u16,
     pub sigset: SignatorySet,
 }
 
 impl Checkpoint {
-    pub fn get_to_sign_msgs(
-        &self,
-        sigs: &Deque<ThresholdSig>,
-        xpub: &Xpub,
-        msgs: &mut Vec<([u8; 32], u32)>,
-    ) -> Result<()> {
+    pub fn new(sigset: SignatorySet) -> Result<Self> {
+        let mut checkpoint = Checkpoint {
+            status: CheckpointStatus::default(),
+            batches: Deque::default(),
+            signed_batches: 0,
+            sigset,
+        };
+
+        let disbursal_batch = Deque::default();
+        checkpoint.batches.push_front(disbursal_batch)?;
+
+        let intermediate_tx = BitcoinTx::default();
+        let mut intermediate_tx_batch = Deque::default();
+        intermediate_tx_batch.push_back(intermediate_tx)?;
+        checkpoint.batches.push_back(intermediate_tx_batch)?;
+
+        let checkpoint_tx = BitcoinTx::default();
+        let mut checkpoint_batch = Deque::default();
+        checkpoint_batch.push_back(checkpoint_tx)?;
+        checkpoint.batches.push_back(checkpoint_batch)?;
+
+        Ok(checkpoint)
+    }
+
+    pub fn checkpoint_tx(&self) -> Result<bitcoin::Transaction> {
+        self.batches
+            .back()?
+            .unwrap()
+            .back()?
+            .unwrap()
+            .to_bitcoin_tx()
+    }
+
+    pub fn reserve_output(&self) -> Result<Option<TxOut>> {
+        let checkpoint_tx = self.checkpoint_tx()?;
+        if let Some(output) = checkpoint_tx.output.get(0) {
+            Ok(Some(output.clone()))
+        } else {
+            Ok(None)
+        }
+    }
+
+    //TODO: thread local secpk256k1 context
+    #[query]
+    pub fn to_sign(&self, xpub: Xpub) -> Result<Vec<([u8; 32], u32)>> {
         let secp = bitcoin::secp256k1::Secp256k1::verification_only();
 
-        for i in 0..self.inputs.len() {
-            let input = self.inputs.get(i)?.unwrap();
-            let pubkey = xpub
-                .derive_pub(
-                    &secp,
-                    &[bitcoin::util::bip32::ChildNumber::from_normal_idx(
-                        input.sigset_index,
-                    )?],
-                )?
-                .public_key;
-            let sigs = sigs.get(i)?.unwrap();
-            if sigs.needs_sig(pubkey.into())? {
-                msgs.push((sigs.message(), input.sigset_index));
+        let mut msgs = vec![];
+
+        let batch = self.current_batch()?;
+        if batch.is_none() {
+            return Ok(msgs);
+        }
+
+        for tx in batch.unwrap().iter()? {
+            for input in tx?.input.iter()? {
+                let input = input?;
+
+                let pubkey = derive_pubkey(&secp, xpub.clone(), input.sigset_index)?;
+                if input.signatures.needs_sig(pubkey.into())? {
+                    msgs.push((input.signatures.message(), input.sigset_index));
+                }
             }
         }
 
-        Ok(())
+        Ok(msgs)
     }
 
-    #[query]
-    pub fn to_sign(&self, xpub: Xpub) -> Result<Vec<([u8; 32], u32)>> {
-        let mut msgs = vec![];
+    pub fn current_batch(&self) -> Result<Option<Ref<Deque<BitcoinTx>>>> {
+        if self.signed() {
+            return Ok(None);
+        }
 
-        // TODO: get signatures for active group in signature queue
-        self.get_to_sign_msgs(&self.sig_queue.emergency_disbursal, &xpub, &mut msgs)?;
-        self.get_to_sign_msgs(&self.sig_queue.inputs, &xpub, &mut msgs)?;
-
-        Ok(msgs)
+        Ok(Some(self.batches.get(self.signed_batches as u64)?.unwrap()))
     }
 
     pub fn create_time(&self) -> u64 {
         self.sigset.create_time()
     }
 
-    pub fn tx(&self) -> Result<(bitcoin::Transaction, u64)> {
-        let mut tx = bitcoin::Transaction {
-            version: 1,
-            lock_time: PackedLockTime(0),
-            input: vec![],
-            output: vec![],
-        };
-
-        let mut est_vsize = 0;
-
-        // TODO: use deque iterator
-        for i in 0..self.inputs.len() {
-            let input = self.inputs.get(i)?.unwrap();
-            let sigs = &*self.sig_queue.inputs.get(i)?.unwrap();
-            tx.input.push(input.to_txin(sigs)?);
-            est_vsize += input.est_witness_vsize;
-        }
-
-        // TODO: use deque iterator
-        for i in 0..self.outputs.len() {
-            let output = self.outputs.get(i)?.unwrap();
-            tx.output.push((**output).clone());
-        }
-
-        est_vsize += tx.size() as u64;
-
-        Ok((tx, est_vsize))
-    }
-
     #[query]
     pub fn get_tvl(&self) -> Result<u64> {
-        let mut tvl = 0;
-        for i in 0..self.inputs.len() {
-            if let Some(input) = self.inputs.get(i)? {
-                tvl += input.amount;
-            }
-        }
+        let checkpoint_tx = self.checkpoint_tx()?;
+        Ok(checkpoint_tx.input.iter().fold(0, |mut acc, input| {
+            acc += input.previous_output.vout as u64 * 1_000_000;
+            acc
+        }))
+    }
 
-        Ok(tvl)
+    pub fn signed(&self) -> bool {
+        self.signed_batches as u64 == self.batches.len()
     }
 }
 
