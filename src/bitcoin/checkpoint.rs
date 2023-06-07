@@ -994,30 +994,31 @@ impl CheckpointQueue {
                 BuildingCheckpointMut(second).advance(nbtc_accounts, recovery_scripts, &config)?;
 
             let mut building = self.building_mut()?;
+            let mut building_checkpoint_batch = building
+                .batches
+                .get_mut(BatchType::Checkpoint as u64)?
+                .unwrap();
+            let mut checkpoint_tx = building_checkpoint_batch.get_mut(0)?.unwrap();
 
-            building.push_input(
+            let input = Input::new(
                 reserve_outpoint,
                 &sigset,
                 &[0u8], // TODO: double-check safety
                 reserve_value,
             )?;
 
-            for (input, sigs) in excess_inputs {
-                let shares = sigs.shares()?;
-                let data = input.into_inner();
-                building.inputs.push_back(data)?;
-                building.sig_queue.inputs.push_back(ThresholdSig::new())?;
-                building
-                    .sig_queue
-                    .inputs
-                    .back_mut()?
-                    .unwrap()
-                    .from_shares(shares)?;
+            checkpoint_tx.input.push_back(input)?;
+
+            for input in excess_inputs {
+                let shares = input.signatures.shares()?;
+                let mut data = input.into_inner();
+                data.signatures = ThresholdSig::from_shares(shares)?;
+                checkpoint_tx.input.push_back(data)?;
             }
 
             for output in excess_outputs {
                 let data = output.into_inner();
-                building.outputs.push_back(data)?;
+                checkpoint_tx.output.push_back(data)?;
             }
         }
 
