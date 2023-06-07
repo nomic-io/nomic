@@ -40,9 +40,9 @@ use orga::{
 use serde::{Deserialize, Serialize};
 use std::{convert::TryFrom, str::FromStr};
 
-//TODO: Find actual amount for this
-pub const EMERGENCY_DISBURSAL_MIN_TX_AMT: u64 = 0;
-pub const EMERGENCY_DISBURSAL_LOCK_TIME_INTERVAL: u32 = 60 * 24 * 7; //one week
+pub const EMERGENCY_DISBURSAL_MIN_TX_AMT: u64 = 1000;
+pub const EMERGENCY_DISBURSAL_LOCK_TIME_INTERVAL: u32 = 30; //one week
+
 pub const EMERGENCY_DISBURSAL_MAX_TX_SIZE: u64 = 50_000; //50kB
 
 #[derive(Debug, Encode, Decode, Default, Serialize, Deserialize)]
