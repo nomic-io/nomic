@@ -467,41 +467,45 @@ impl<'a> SigningCheckpointMut<'a> {
     pub fn sign(&mut self, xpub: Xpub, sigs: LengthVec<u16, Signature>) -> Result<()> {
         let secp = bitcoin::secp256k1::Secp256k1::verification_only();
 
+        let batch = self.current_batch_mut()?;
+        if batch.is_none() {
+            return Err(OrgaError::App("No batch to sign".to_string()).into());
+        }
+
         let mut sig_index = 0;
-        for i in 0..self.inputs.len() {
-            let input = self.inputs.get_mut(i)?.unwrap();
+        let mut batch = batch.unwrap();
 
-            let pubkey = xpub
-                .derive_pub(
-                    &secp,
-                    &[bitcoin::util::bip32::ChildNumber::from_normal_idx(
-                        input.sigset_index,
-                    )?],
-                )?
-                .public_key
-                .into();
-
-            let mut input_sigs = self.sig_queue.inputs.get_mut(i)?.unwrap();
-            if !input_sigs.contains_key(pubkey)? {
+        for i in 0..batch.len() {
+            let mut tx = batch.get_mut(i)?.unwrap();
+            if tx.done() {
                 continue;
             }
 
-            if input_sigs.done() {
+            for j in 0..tx.input.len() {
+                let mut input = tx.input.get_mut(j)?.unwrap();
+                let pubkey = derive_pubkey(&secp, xpub.clone(), input.sigset_index)?;
+
+                if !input.signatures.contains_key(pubkey.into())? {
+                    continue;
+                }
+
+                if input.signatures.done() {
+                    sig_index += 1;
+                    continue;
+                }
+
+                if sig_index > sigs.len() {
+                    return Err(OrgaError::App("Not enough signatures supplied".to_string()).into());
+                }
+
+                let sig = sigs[sig_index];
                 sig_index += 1;
-                continue;
-            }
 
-            if sig_index > sigs.len() {
-                return Err(OrgaError::App("Not enough signatures supplied".to_string()).into());
-            }
+                input.signatures.sign(pubkey.into(), sig)?;
 
-            let sig = sigs[sig_index];
-            sig_index += 1;
-
-            input_sigs.sign(pubkey, sig)?;
-
-            if input_sigs.done() {
-                self.signed_inputs += 1;
+                if input.signatures.done() {
+                    tx.signed_inputs += 1;
+                }
             }
         }
 
@@ -509,11 +513,13 @@ impl<'a> SigningCheckpointMut<'a> {
             return Err(OrgaError::App("Excess signatures supplied".to_string()).into());
         }
 
+        self.signed_batches += 1;
+
         Ok(())
     }
 
     pub fn done(&self) -> bool {
-        self.signed_inputs as u64 == self.inputs.len()
+        self.batches.len() == self.signed_batches as u64
     }
 
     pub fn advance(self) -> Result<()> {
@@ -534,75 +540,76 @@ pub struct BuildingCheckpointMut<'a>(ChildMut<'a, u64, Checkpoint>);
 type BuildingAdvanceRes = (
     bitcoin::OutPoint,
     u64,
-    Vec<(ReadOnly<Input>, ReadOnly<ThresholdSig>)>,
+    Vec<ReadOnly<Input>>,
     Vec<ReadOnly<Output>>,
 );
 
 impl<'a> BuildingCheckpointMut<'a> {
-    pub fn push_input(
-        &mut self,
-        prevout: bitcoin::OutPoint,
-        sigset: &SignatorySet,
-        dest: &[u8],
-        amount: u64,
-    ) -> Result<u64> {
-        let script_pubkey = sigset.output_script(dest)?;
-        let redeem_script = sigset.redeem_script(dest)?;
+    fn link_intermediate_tx(&mut self, tx: &mut BitcoinTx) -> Result<()> {
+        let sigset = self.sigset.clone();
+        let output_script = sigset.output_script(&[0u8])?;
+        let tx_value = tx.value()?;
 
-        let input = Input {
-            prevout: Adapter::new(prevout),
-            script_pubkey: Adapter::new(script_pubkey),
-            redeem_script: Adapter::new(redeem_script),
-            sigset_index: sigset.index(),
-            dest: dest.encode()?.try_into()?,
-            amount,
-            est_witness_vsize: sigset.est_witness_vsize(),
+        let mut intermediate_tx_batch = self
+            .batches
+            .get_mut(BatchType::IntermediateTx as u64)?
+            .unwrap();
+        let mut intermediate_tx = intermediate_tx_batch.get_mut(0)?.unwrap();
+        let num_outputs = u32::try_from(intermediate_tx.output.len())?;
+
+        let final_tx_input = Input::new(
+            bitcoin::OutPoint::new(intermediate_tx.txid()?, num_outputs + 1),
+            &sigset,
+            &[0u8],
+            tx_value,
+        )?;
+
+        let intermediate_tx_output = bitcoin::TxOut {
+            value: tx_value,
+            script_pubkey: output_script,
         };
-        let est_vsize = input.est_vsize();
-        self.inputs.push_back(input)?;
 
-        // TODO: make it possible to populate instance in memory then push,
-        // rather than push then access and modify
-        self.sig_queue.inputs.push_back(ThresholdSig::new())?;
-        let inputs_len = self.inputs.len();
-        let mut sigs = self.sig_queue.inputs.get_mut(inputs_len - 1)?.unwrap();
-        sigs.from_sigset(sigset)?;
+        intermediate_tx
+            .output
+            .push_back(intermediate_tx_output.into())?;
 
-        Ok(est_vsize)
+        tx.input.push_back(final_tx_input)?;
+
+        Ok(())
     }
 
-    fn provide_empty_tx(lock_time: u32) -> bitcoin::Transaction {
-        bitcoin::Transaction {
-            version: 1,
-            lock_time: PackedLockTime(lock_time),
-            input: Vec::new(),
-            output: Vec::new(),
-        }
-    }
-
-    fn get_raw_emergency_disbursal_txs(
-        &self,
+    //TODO: Generalize emergency disbursal to dynamic tree structure for intermediate tx overflow
+    fn generate_emergency_disbursal_txs(
+        &mut self,
         nbtc_accounts: &Accounts<Nbtc>,
         recovery_scripts: &Map<orga::prelude::Address, Adapter<bitcoin::Script>>,
-        lock_time: u32,
-    ) -> Result<Vec<bitcoin::Transaction>> {
-        let mut txs: Vec<bitcoin::Transaction> = Vec::new();
+        reserve_outpoint: bitcoin::OutPoint,
+    ) -> Result<()> {
+        let time = Context::resolve::<Time>()
+            .ok_or_else(|| OrgaError::Coins("No Time context found".into()))?;
 
+        let sigset = self.sigset.clone();
+
+        let lock_time = time.seconds as u32 + EMERGENCY_DISBURSAL_LOCK_TIME_INTERVAL;
+
+        if nbtc_accounts.iter()?.last().is_none() {
+            return Err(Error::Account("No Bitcoin accounts present".to_string()));
+        }
+        let mut final_txs = vec![BitcoinTx::with_lock_time(lock_time)];
         for account in nbtc_accounts.iter()? {
-            let mut curr_tx = txs
-                .pop()
-                .unwrap_or_else(|| Self::provide_empty_tx(lock_time));
-            if curr_tx.size() as u64 > EMERGENCY_DISBURSAL_MAX_TX_SIZE {
-                txs.push(curr_tx);
-                curr_tx = Self::provide_empty_tx(lock_time)
-            }
-
             let (address, coins) = account?;
-
             if coins.amount < EMERGENCY_DISBURSAL_MIN_TX_AMT {
                 continue;
             }
 
+            let mut curr_tx = final_txs.pop().unwrap();
+            if curr_tx.size()? >= EMERGENCY_DISBURSAL_MAX_TX_SIZE {
+                self.link_intermediate_tx(&mut curr_tx)?;
+                final_txs.push(curr_tx);
+                curr_tx = BitcoinTx::with_lock_time(lock_time);
+            }
+
+            //TODO: Move address to script logic to a function
             let hash = bitcoin::hashes::hash160::Hash::from_str(address.bytes().to_hex().as_str())
                 .map_err(|err| Error::BitcoinPubkeyHash(err.to_string()))?;
             let pubkey_hash = bitcoin::PubkeyHash::from(hash);
@@ -737,56 +744,62 @@ impl<'a> BuildingCheckpointMut<'a> {
             value: 0, // will be updated after counting ins/outs and fees
             script_pubkey: self.0.sigset.output_script(&[0u8])?, // TODO: double-check safety
         };
-        self.0.outputs.push_front(Adapter::new(reserve_out))?;
+
+        let mut checkpoint_batch = self
+            .0
+            .batches
+            .get_mut(BatchType::Checkpoint as u64)?
+            .unwrap();
+        let mut checkpoint_tx = checkpoint_batch.get_mut(0)?.unwrap();
+
+        checkpoint_tx.output.push_front(Adapter::new(reserve_out))?;
 
         let mut excess_inputs = vec![];
-        while self.0.inputs.len() > config.max_inputs {
-            let removed_input = self.0.inputs.pop_back()?.unwrap();
-            let removed_sigs = self.0.sig_queue.inputs.pop_back()?.unwrap();
-            excess_inputs.push((removed_input, removed_sigs));
+        while checkpoint_tx.input.len() > config.max_inputs {
+            let removed_input = checkpoint_tx.input.pop_back()?.unwrap();
+            excess_inputs.push(removed_input);
         }
 
         let mut excess_outputs = vec![];
-        while self.0.outputs.len() > config.max_outputs {
-            let removed_output = self.0.outputs.pop_back()?.unwrap();
+        while checkpoint_tx.output.len() > config.max_outputs {
+            let removed_output = checkpoint_tx.output.pop_back()?.unwrap();
             excess_outputs.push(removed_output);
         }
 
+        //TODO: Input/Output sum functions
         let mut in_amount = 0;
-        for i in 0..self.0.inputs.len() {
-            let input = self.0.inputs.get(i)?.unwrap();
+        for i in 0..checkpoint_tx.input.len() {
+            let input = checkpoint_tx.input.get(i)?.unwrap();
             in_amount += input.amount;
         }
 
         let mut out_amount = 0;
-        for i in 0..self.0.outputs.len() {
-            let output = self.0.outputs.get(i)?.unwrap();
+        for i in 0..checkpoint_tx.output.len() {
+            let output = checkpoint_tx.output.get(i)?.unwrap();
             out_amount += output.value;
         }
 
-        let (mut tx, est_vsize) = self.0.tx()?;
+        let est_vsize: u64 = checkpoint_tx.to_bitcoin_tx()?.vsize().try_into()?;
         let fee = est_vsize * config.fee_rate;
         let reserve_value = in_amount - out_amount - fee;
-        let mut reserve_out = self.0.outputs.get_mut(0)?.unwrap();
+        let mut reserve_out = checkpoint_tx.output.get_mut(0)?.unwrap();
         reserve_out.value = reserve_value;
-        tx.output[0].value = reserve_value;
 
-        let mut sc = bitcoin::util::sighash::SighashCache::new(&tx);
-        for i in 0..self.0.inputs.len() {
-            let input = self.0.inputs.get_mut(i)?.unwrap();
-            let sighash_type = EcdsaSighashType::All;
+        let bitcoin_tx = checkpoint_tx.to_bitcoin_tx()?;
+        let mut sc = bitcoin::util::sighash::SighashCache::new(&bitcoin_tx);
+        for i in 0..checkpoint_tx.input.len() {
+            let mut input = checkpoint_tx.input.get_mut(i)?.unwrap();
             let sighash = sc.segwit_signature_hash(
                 i as usize,
                 &input.redeem_script,
                 input.amount,
-                sighash_type,
+                EcdsaSighashType::All,
             )?;
-            let mut sigs = self.0.sig_queue.inputs.get_mut(i)?.unwrap();
-            sigs.set_message(sighash.into_inner());
+            input.signatures.set_message(sighash.into_inner());
         }
 
         let reserve_outpoint = bitcoin::OutPoint {
-            txid: tx.txid(),
+            txid: checkpoint_tx.txid()?,
             vout: 0,
         };
 
@@ -899,23 +912,26 @@ impl CheckpointQueue {
         }
         .ok_or_else(|| Error::Orga(OrgaError::App("No completed checkpoints yet".to_string())))?;
 
-        Ok(Adapter::new(self.get(index)?.tx()?.0))
+        let bitcoin_tx = self.get(index)?.checkpoint_tx()?;
+        Ok(Adapter::new(bitcoin_tx))
     }
 
     #[query]
     pub fn completed_txs(&self) -> Result<Vec<Adapter<bitcoin::Transaction>>> {
         self.completed()?
             .into_iter()
-            .map(|c| Ok(Adapter::new(c.tx()?.0)))
+            .map(|c| Ok(Adapter::new(c.checkpoint_tx()?)))
             .collect()
     }
 
     #[query]
     pub fn emergency_disbursal_txs(&self) -> Result<Vec<Adapter<bitcoin::Transaction>>> {
         let mut vec = vec![];
+
         if let Some(completed) = self.completed()?.last() {
-            for tx in completed.emergency_disbursal_txs.iter()? {
-                vec.push(tx?.clone());
+            let disbursal_batch = completed.batches.get(BatchType::Disbursal as u64)?.unwrap();
+            for tx in disbursal_batch.iter()? {
+                vec.push(Adapter::new(tx?.to_bitcoin_tx()?));
             }
         }
 
@@ -996,13 +1012,15 @@ impl CheckpointQueue {
 
             if elapsed < self.config.max_checkpoint_interval || self.index == 0 {
                 let building = self.building()?;
+                let checkpoint_tx = building.checkpoint_tx()?;
+
                 let has_pending_deposit = if self.index == 0 {
-                    !building.inputs.is_empty()
+                    !checkpoint_tx.input.is_empty()
                 } else {
-                    building.inputs.len() > 1
+                    checkpoint_tx.input.len() > 1
                 };
 
-                let has_pending_withdrawal = !building.outputs.is_empty();
+                let has_pending_withdrawal = !checkpoint_tx.output.is_empty();
 
                 if !has_pending_deposit && !has_pending_withdrawal {
                     return Ok(());
@@ -1091,12 +1109,10 @@ impl CheckpointQueue {
 
         self.index = index;
 
-        self.queue.push_back(Checkpoint {
-            sigset,
-            ..Default::default()
-        })?;
+        self.queue.push_back(Checkpoint::new(sigset)?)?;
 
         let building = self.building_mut()?;
+
         Ok(Some(building))
     }
 
@@ -1116,7 +1132,8 @@ impl CheckpointQueue {
         signing.sign(xpub, sigs)?;
 
         if signing.done() {
-            info!("Checkpoint signing complete {:?}", signing.tx()?);
+            let checkpoint_tx = signing.checkpoint_tx()?;
+            info!("Checkpoint signing complete {:?}", checkpoint_tx);
             signing.advance()?;
         }
 
