@@ -444,6 +444,16 @@ impl<'a> Query for SigningCheckpoint<'a> {
     }
 }
 
+impl<'a> SigningCheckpoint<'a> {
+    pub fn current_batch(&self) -> Result<Option<Ref<Deque<BitcoinTx>>>> {
+        if self.signed() {
+            return Ok(None);
+        }
+
+        Ok(Some(self.batches.get(self.signed_batches as u64)?.unwrap()))
+    }
+}
+
 #[derive(Deref, DerefMut)]
 pub struct SigningCheckpointMut<'a>(ChildMut<'a, u64, Checkpoint>);
 
