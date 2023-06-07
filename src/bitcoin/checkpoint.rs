@@ -633,113 +633,45 @@ impl<'a> BuildingCheckpointMut<'a> {
                 script_pubkey: dest_script.into_inner(),
             };
 
-            curr_tx.output.push(tx_out);
-            txs.push(curr_tx);
+            curr_tx.output.push_back(Adapter::new(tx_out))?;
+            final_txs.push(curr_tx);
         }
 
-        Ok(txs)
-    }
+        let intermediate_tx_len = self
+            .batches
+            .get(BatchType::IntermediateTx as u64)?
+            .unwrap()
+            .get(0)?
+            .unwrap()
+            .output
+            .len();
 
-    fn generate_intermediate_tx(
-        &self,
-        txs: &[bitcoin::Transaction],
-        lock_time: u32,
-        reserve_outpoint: bitcoin::OutPoint,
-    ) -> Result<bitcoin::Transaction> {
-        let mut intermediate_tx = Self::provide_empty_tx(lock_time);
-
-        let tx_in = bitcoin::TxIn {
-            previous_output: reserve_outpoint,
-            script_sig: vec![].into(),
-            sequence: Sequence(u32::MAX),
-            witness: bitcoin::Witness::new(),
-        };
-        intermediate_tx.input.push(tx_in);
-
-        for tx in txs.iter() {
-            let intermediate_tx_out = bitcoin::TxOut {
-                value: tx.output.iter().fold(0, |sum, out| sum + out.value),
-                script_pubkey: self.0.sigset.output_script(&[])?,
-            };
-
-            intermediate_tx.output.push(intermediate_tx_out);
+        let disbursal_batch = self.batches.get(BatchType::Disbursal as u64)?.unwrap();
+        if intermediate_tx_len < disbursal_batch.len() {
+            self.link_intermediate_tx(final_txs.last_mut().unwrap())?;
         }
 
-        Ok(intermediate_tx)
-    }
+        let tx_in = Input::new(
+            reserve_outpoint,
+            &sigset,
+            &[0u8],
+            reserve_outpoint.vout as u64,
+        )?;
 
-    fn link_intermediate_tx(
-        &self,
-        intermediate_tx: &bitcoin::Transaction,
-        txs: &mut [bitcoin::Transaction],
-    ) -> Result<()> {
-        for (i, tx) in txs.iter_mut().enumerate() {
-            let intermediate_tx_in = bitcoin::TxIn {
-                previous_output: bitcoin::OutPoint::new(intermediate_tx.txid(), i as u32),
-                script_sig: vec![].into(),
-                sequence: Sequence(u32::MAX),
-                witness: bitcoin::Witness::new(),
-            };
+        let mut intermediate_tx_batch = self
+            .batches
+            .get_mut(BatchType::IntermediateTx as u64)?
+            .unwrap();
+        let mut intermediate_tx = intermediate_tx_batch.get_mut(0)?.unwrap();
 
-            tx.input.push(intermediate_tx_in);
+        intermediate_tx.input.push_back(tx_in)?;
+
+        let mut disbursal_batch = self.batches.get_mut(BatchType::Disbursal as u64)?.unwrap();
+        for tx in final_txs {
+            disbursal_batch.push_back(tx)?;
         }
 
         Ok(())
-    }
-
-    fn generate_emergency_disbursal_sigs(
-        &self,
-        txs: &[bitcoin::Transaction],
-        intermediate_tx: &bitcoin::Transaction,
-    ) -> Result<Vec<ThresholdSig>> {
-        let mut sigs = Vec::new();
-        for (i, tx) in txs.iter().enumerate() {
-            let mut sig = ThresholdSig::new();
-            let owned_tx = tx.to_owned();
-            let mut sc = bitcoin::util::sighash::SighashCache::new(&owned_tx);
-            let spending_output = intermediate_tx.output.get(i).unwrap();
-            let sighash = sc.segwit_signature_hash(
-                0,
-                &self.0.sigset.redeem_script(&[])?,
-                spending_output.value,
-                EcdsaSighashType::All,
-            )?;
-            sig.set_message(sighash.into_inner());
-            sigs.push(sig);
-        }
-        Ok(sigs)
-    }
-
-    fn generate_emergency_disbursal_txs(
-        &mut self,
-        nbtc_accounts: &Accounts<Nbtc>,
-        recovery_scripts: &Map<orga::prelude::Address, Adapter<bitcoin::Script>>,
-        reserve_outpoint: bitcoin::OutPoint,
-    ) -> Result<bitcoin::Transaction> {
-        let time = Context::resolve::<Time>()
-            .ok_or_else(|| OrgaError::Coins("No Time context found".into()))?;
-        //TODO: Use std::time::Duration to safely convert time
-        let lock_time = time.seconds as u32 + EMERGENCY_DISBURSAL_LOCK_TIME_INTERVAL;
-
-        let mut txs =
-            self.get_raw_emergency_disbursal_txs(nbtc_accounts, recovery_scripts, lock_time)?;
-
-        let intermediate_tx = self.generate_intermediate_tx(&txs, lock_time, reserve_outpoint)?;
-        self.link_intermediate_tx(&intermediate_tx, &mut txs)?;
-
-        self.emergency_disbursal_txs
-            .push_back(Adapter::new(intermediate_tx.clone()))?;
-        for tx in txs.iter() {
-            self.emergency_disbursal_txs
-                .push_back(Adapter::new(tx.to_owned()))?;
-        }
-
-        let sigs = self.generate_emergency_disbursal_sigs(&txs, &intermediate_tx)?;
-        for sig in sigs {
-            self.sig_queue.emergency_disbursal.push_back(sig)?;
-        }
-
-        Ok(intermediate_tx)
     }
 
     pub fn advance(
