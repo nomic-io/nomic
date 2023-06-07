@@ -20,6 +20,8 @@ pub enum Error {
     BitcoinRecoveryScript(String),
     #[error(transparent)]
     Bip32(#[from] bitcoin::util::bip32::Error),
+    #[error("{0}")]
+    Checkpoint(String),
     #[error(transparent)]
     Sighash(#[from] bitcoin::util::sighash::Error),
     #[error(transparent)]
