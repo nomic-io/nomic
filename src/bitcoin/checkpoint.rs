@@ -122,6 +122,7 @@ pub struct Input {
     pub dest: LengthVec<u16, u8>,
     pub amount: u64,
     pub est_witness_vsize: u64,
+    pub signatures: ThresholdSig,
 }
 
 impl Input {
@@ -157,6 +158,7 @@ impl MigrateFrom<InputV0> for InputV1 {
             dest: other.dest,
             amount: other.amount,
             est_witness_vsize: other.est_witness_vsize,
+            signatures: other.signatures,
         })
     }
 }
