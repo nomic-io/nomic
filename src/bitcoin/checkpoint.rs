@@ -529,6 +529,16 @@ impl<'a> SigningCheckpointMut<'a> {
 
         Ok(())
     }
+
+    pub fn current_batch_mut(&mut self) -> Result<Option<ChildMut<u64, Deque<BitcoinTx>>>> {
+        if self.done() {
+            return Ok(None);
+        }
+        let signed_batches = self.signed_batches as u64;
+        let batch = self.batches.get_mut(signed_batches)?.unwrap();
+
+        Ok(Some(batch))
+    }
 }
 
 #[derive(Deref)]
