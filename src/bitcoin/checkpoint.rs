@@ -260,6 +260,12 @@ impl BitcoinTx {
     }
 }
 
+pub enum BatchType {
+    Disbursal,
+    IntermediateTx,
+    Checkpoint,
+}
+
 #[orga(skip(Default))]
 #[derive(Debug)]
 pub struct Checkpoint {
