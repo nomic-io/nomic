@@ -140,6 +140,27 @@ impl Input {
         })
     }
 
+    pub fn new(
+        prevout: bitcoin::OutPoint,
+        sigset: &SignatorySet,
+        dest: &[u8],
+        amount: u64,
+    ) -> Result<Self> {
+        let script_pubkey = sigset.output_script(dest)?;
+        let redeem_script = sigset.redeem_script(dest)?;
+
+        Ok(Input {
+            prevout: Adapter::new(prevout),
+            script_pubkey: Adapter::new(script_pubkey),
+            redeem_script: Adapter::new(redeem_script),
+            sigset_index: sigset.index(),
+            dest: dest.encode()?.try_into()?,
+            amount,
+            est_witness_vsize: sigset.est_witness_vsize(),
+            signatures: ThresholdSig::from_sigset(sigset)?,
+        })
+    }
+
     pub fn est_vsize(&self) -> u64 {
         self.est_witness_vsize + 40
     }
