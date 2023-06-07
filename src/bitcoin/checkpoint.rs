@@ -320,18 +320,6 @@ pub struct CheckpointQueue {
     config: Config,
 }
 
-#[derive(State, Call, Query, Client, Encode, Decode, Default, Debug, Serialize)]
-pub struct SignatureQueue {
-    pub(super) inputs: Deque<ThresholdSig>,
-    pub(super) emergency_disbursal: Deque<ThresholdSig>,
-}
-
-impl MigrateFrom for SignatureQueue {
-    fn migrate_from(other: Self) -> orga::Result<Self> {
-        Ok(other)
-    }
-}
-
 #[derive(Deref)]
 pub struct CompletedCheckpoint<'a>(Ref<'a, Checkpoint>);
 
