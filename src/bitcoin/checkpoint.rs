@@ -126,9 +126,9 @@ pub struct Input {
 }
 
 impl Input {
-    pub fn to_txin(&self, sigs: &ThresholdSig) -> Result<bitcoin::TxIn> {
-        let mut witness = sigs.to_witness()?;
-        if sigs.done() {
+    pub fn to_txin(&self) -> Result<TxIn> {
+        let mut witness = self.signatures.to_witness()?;
+        if self.signatures.done() {
             witness.push(self.redeem_script.to_bytes());
         }
 
