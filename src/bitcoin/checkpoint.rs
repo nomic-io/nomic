@@ -260,7 +260,7 @@ impl BitcoinTx {
     }
 }
 
-#[orga]
+#[orga(skip(Default))]
 #[derive(Debug)]
 pub struct Checkpoint {
     pub status: CheckpointStatus,
