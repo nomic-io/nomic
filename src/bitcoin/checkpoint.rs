@@ -6,14 +6,15 @@ use super::{
     threshold_sig::{Signature, ThresholdSig},
     Xpub,
 };
-use crate::bitcoin::Nbtc;
+use crate::bitcoin::{signatory::derive_pubkey, Nbtc};
 use crate::error::{Error, Result};
 use bitcoin::hashes::Hash;
 use bitcoin::{
     blockdata::transaction::EcdsaSighashType, hashes::hex::ToHex, PackedLockTime, Sequence,
+    Transaction, TxIn, TxOut,
 };
-// use bitcoin_hashes::Hash;
 use derive_more::{Deref, DerefMut};
+
 use log::info;
 #[cfg(feature = "full")]
 use orga::collections::Map;
