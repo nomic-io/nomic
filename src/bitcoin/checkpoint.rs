@@ -188,6 +188,80 @@ pub type Output = Adapter<bitcoin::TxOut>;
 
 #[orga]
 #[derive(Debug)]
+pub struct BitcoinTx {
+    pub lock_time: u32,
+    pub signed_inputs: u16,
+    pub input: Deque<Input>,
+    pub output: Deque<Output>,
+}
+
+impl BitcoinTx {
+    pub fn to_bitcoin_tx(&self) -> Result<Transaction> {
+        Ok(bitcoin::Transaction {
+            version: 1,
+            lock_time: PackedLockTime(self.lock_time),
+            input: self
+                .input
+                .iter()?
+                .map(|input| input?.to_txin())
+                .collect::<Result<Vec<TxIn>>>()?,
+            output: self
+                .output
+                .iter()?
+                .map(|output| Ok((**output?).clone()))
+                .collect::<Result<Vec<TxOut>>>()?,
+        })
+    }
+
+    fn with_lock_time(lock_time: u32) -> Self {
+        BitcoinTx {
+            lock_time,
+            ..Default::default()
+        }
+    }
+
+    pub fn done(&self) -> bool {
+        self.signed_inputs as u64 == self.input.len()
+    }
+
+    pub fn size(&self) -> Result<u64> {
+        Ok(self.to_bitcoin_tx()?.vsize().try_into()?)
+    }
+
+    pub fn txid(&self) -> Result<bitcoin::Txid> {
+        let bitcoin_tx = self.to_bitcoin_tx()?;
+        Ok(bitcoin_tx.txid())
+    }
+
+    pub fn value(&self) -> Result<u64> {
+        self.output
+            .iter()?
+            .fold(Ok(0), |sum: Result<u64>, out| Ok(sum? + out?.value))
+    }
+
+    pub fn populate_input_sig_message(&mut self, input_index: usize) -> Result<()> {
+        let bitcoin_tx = self.to_bitcoin_tx()?;
+        let mut sc = bitcoin::util::sighash::SighashCache::new(&bitcoin_tx);
+        let mut input = self
+            .input
+            .get_mut(input_index as u64)?
+            .ok_or(Error::InputIndexOutOfBounds(input_index))?;
+
+        let sighash = sc.segwit_signature_hash(
+            input_index,
+            &input.redeem_script,
+            input.amount,
+            EcdsaSighashType::All,
+        )?;
+
+        input.signatures.set_message(sighash.into_inner());
+
+        Ok(())
+    }
+}
+
+#[orga]
+#[derive(Debug)]
 pub struct Checkpoint {
     pub status: CheckpointStatus,
     pub inputs: Deque<Input>,
