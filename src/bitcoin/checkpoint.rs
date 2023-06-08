@@ -259,6 +259,42 @@ impl BitcoinTx {
 
         Ok(())
     }
+
+    pub fn deduct_fee(&mut self, fee: u64) -> Result<()> {
+        if fee == 0 {
+            return Ok(());
+        }
+
+        if self.output.is_empty() {
+            //TODO: Bitcoin error module
+            return Err(Error::BitcoinFee(fee));
+        }
+
+        let threshold = loop {
+            let threshold = fee / self.output.len();
+            let mut min_output = u64::MAX;
+            self.output.retain_unordered(|output| {
+                if output.value < min_output {
+                    min_output = output.value;
+                }
+                output.value >= threshold
+            })?;
+            if self.output.is_empty() {
+                break fee;
+            }
+            let threshold = fee / self.output.len();
+            if min_output >= threshold {
+                break threshold;
+            }
+        };
+
+        for i in 0..self.output.len() {
+            let mut output = self.output.get_mut(i)?.unwrap();
+            output.value -= threshold;
+        }
+
+        Ok(())
+    }
 }
 
 pub enum BatchType {
@@ -1098,4 +1134,51 @@ impl CheckpointQueue {
 }
 
 #[cfg(test)]
-mod test {}
+mod test {
+    use super::*;
+
+    fn push_bitcoin_tx_output(tx: &mut BitcoinTx, value: u64) {
+        let tx_out = bitcoin::TxOut {
+            value,
+            script_pubkey: bitcoin::Script::new(),
+        };
+        tx.output.push_back(Output::new(tx_out)).unwrap();
+    }
+
+    #[test]
+    fn deduct_fee() {
+        let mut bitcoin_tx = BitcoinTx::default();
+        push_bitcoin_tx_output(&mut bitcoin_tx, 0);
+        push_bitcoin_tx_output(&mut bitcoin_tx, 10000);
+
+        bitcoin_tx.deduct_fee(100).unwrap();
+
+        assert_eq!(bitcoin_tx.output.len(), 1);
+        assert_eq!(bitcoin_tx.output.get(0).unwrap().unwrap().value, 9900);
+    }
+
+    #[test]
+    fn deduct_fee_multi_pass() {
+        let mut bitcoin_tx = BitcoinTx::default();
+        push_bitcoin_tx_output(&mut bitcoin_tx, 60);
+        push_bitcoin_tx_output(&mut bitcoin_tx, 70);
+        push_bitcoin_tx_output(&mut bitcoin_tx, 300);
+
+        bitcoin_tx.deduct_fee(200).unwrap();
+
+        assert_eq!(bitcoin_tx.output.len(), 1);
+        assert_eq!(bitcoin_tx.output.get(0).unwrap().unwrap().value, 100);
+    }
+
+    #[test]
+    fn deduct_fee_multi_pass_empty_result() {
+        let mut bitcoin_tx = BitcoinTx::default();
+        push_bitcoin_tx_output(&mut bitcoin_tx, 60);
+        push_bitcoin_tx_output(&mut bitcoin_tx, 70);
+        push_bitcoin_tx_output(&mut bitcoin_tx, 100);
+
+        bitcoin_tx.deduct_fee(200).unwrap();
+    }
+
+    //TODO: More fee deduction tests
+}
