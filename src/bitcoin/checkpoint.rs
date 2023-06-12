@@ -425,7 +425,7 @@ impl Config {
             max_checkpoint_interval: 60 * 60 * 8,
             max_inputs: 40,
             max_outputs: 200,
-            fee_rate: 102,
+            fee_rate: 2,
             max_age: 60 * 60 * 24 * 7 * 3,
         }
     }
@@ -436,7 +436,7 @@ impl Config {
             max_checkpoint_interval: 60 * 60 * 8,
             max_inputs: 40,
             max_outputs: 200,
-            fee_rate: 102,
+            fee_rate: 2,
             max_age: 60 * 60 * 24 * 7 * 3,
         }
     }
