@@ -617,9 +617,7 @@ impl<'a> BuildingCheckpointMut<'a> {
     }
 
     fn deduct_emergency_disbursal_fees(&mut self, fee_rate: u64) -> Result<()> {
-        //this is removing things that it should not remove
         let intermediate_tx_fee = {
-            //cases where there is no output on the intermediate_tx????
             let mut intermediate_tx_batch = self
                 .batches
                 .get_mut(BatchType::IntermediateTx as u64)?
