@@ -277,7 +277,7 @@ impl BitcoinTx {
                 if output.value < min_output {
                     min_output = output.value;
                 }
-                output.value >= threshold
+                Ok(output.value >= threshold)
             })?;
             if self.output.is_empty() {
                 break fee;
