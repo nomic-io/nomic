@@ -297,6 +297,7 @@ impl BitcoinTx {
     }
 }
 
+#[derive(Debug)]
 pub enum BatchType {
     Disbursal,
     IntermediateTx,
