@@ -672,81 +672,83 @@ impl<'a> BuildingCheckpointMut<'a> {
         fee_rate: u64,
         reserve_value: u64,
     ) -> Result<()> {
-        let time = Context::resolve::<Time>()
-            .ok_or_else(|| OrgaError::Coins("No Time context found".into()))?;
+        {
+            let time = Context::resolve::<Time>()
+                .ok_or_else(|| OrgaError::Coins("No Time context found".into()))?;
 
-        let sigset = self.sigset.clone();
+            let sigset = self.sigset.clone();
 
-        let lock_time = time.seconds as u32 + EMERGENCY_DISBURSAL_LOCK_TIME_INTERVAL;
+            let lock_time = time.seconds as u32 + EMERGENCY_DISBURSAL_LOCK_TIME_INTERVAL;
 
-        if nbtc_accounts.iter()?.last().is_none() {
-            return Err(Error::Account("No Bitcoin accounts present".to_string()));
-        }
-        let mut final_txs = vec![BitcoinTx::with_lock_time(lock_time)];
-        for account in nbtc_accounts.iter()? {
-            let (address, coins) = account?;
-            if coins.amount < EMERGENCY_DISBURSAL_MIN_TX_AMT {
-                continue;
+            if nbtc_accounts.iter()?.last().is_none() {
+                return Err(Error::Account("No Bitcoin accounts present".to_string()));
             }
+            let mut final_txs = vec![BitcoinTx::with_lock_time(lock_time)];
+            let last_account = nbtc_accounts.iter()?.last().unwrap()?;
+            for account in nbtc_accounts.iter()? {
+                let (address, coins) = account?;
+                if coins.amount < EMERGENCY_DISBURSAL_MIN_TX_AMT {
+                    continue;
+                }
 
-            let mut curr_tx = final_txs.pop().unwrap();
-            if curr_tx.size()? >= EMERGENCY_DISBURSAL_MAX_TX_SIZE {
-                self.link_intermediate_tx(&mut curr_tx)?;
+                let mut curr_tx = final_txs.pop().unwrap();
+                if curr_tx.size()? >= EMERGENCY_DISBURSAL_MAX_TX_SIZE {
+                    self.link_intermediate_tx(&mut curr_tx)?;
+                    final_txs.push(curr_tx);
+                    curr_tx = BitcoinTx::with_lock_time(lock_time);
+                }
+
+                //TODO: Move address to script logic to a function
+                let hash =
+                    bitcoin::hashes::hash160::Hash::from_str(address.bytes().to_hex().as_str())
+                        .map_err(|err| Error::BitcoinPubkeyHash(err.to_string()))?;
+                let pubkey_hash = bitcoin::PubkeyHash::from(hash);
+                let dest_script = match recovery_scripts.get(*address)? {
+                    Some(script) => script.clone(),
+                    None => Adapter::new(bitcoin::Script::new_p2pkh(&pubkey_hash)),
+                };
+
+                let tx_out = bitcoin::TxOut {
+                    value: u64::from(coins.amount) / 1_000_000,
+                    script_pubkey: dest_script.into_inner(),
+                };
+
+                curr_tx.output.push_back(Adapter::new(tx_out))?;
+                //what if the last account is the one that fills the tx?
+                if address == last_account.0 {
+                    self.link_intermediate_tx(&mut curr_tx)?;
+                }
                 final_txs.push(curr_tx);
-                curr_tx = BitcoinTx::with_lock_time(lock_time);
             }
 
-            //TODO: Move address to script logic to a function
-            let hash = bitcoin::hashes::hash160::Hash::from_str(address.bytes().to_hex().as_str())
-                .map_err(|err| Error::BitcoinPubkeyHash(err.to_string()))?;
-            let pubkey_hash = bitcoin::PubkeyHash::from(hash);
-            let dest_script = match recovery_scripts.get(*address)? {
-                Some(script) => script.clone(),
-                None => Adapter::new(bitcoin::Script::new_p2pkh(&pubkey_hash)),
-            };
+            let tx_in = Input::new(reserve_outpoint, &sigset, &[0u8], reserve_value)?;
+            let mut intermediate_tx_batch = self
+                .batches
+                .get_mut(BatchType::IntermediateTx as u64)?
+                .unwrap();
+            let mut intermediate_tx = intermediate_tx_batch.get_mut(0)?.unwrap();
 
-            let tx_out = bitcoin::TxOut {
-                value: u64::from(coins.amount) / 1_000_000,
-                script_pubkey: dest_script.into_inner(),
-            };
-
-            curr_tx.output.push_back(Adapter::new(tx_out))?;
-            final_txs.push(curr_tx);
+            intermediate_tx.input.push_back(tx_in)?;
+            let mut disbursal_batch = self.batches.get_mut(BatchType::Disbursal as u64)?.unwrap();
+            for tx in final_txs {
+                disbursal_batch.push_back(tx)?;
+            }
         }
 
-        let intermediate_tx_len = self
-            .batches
-            .get(BatchType::IntermediateTx as u64)?
-            .unwrap()
-            .get(0)?
-            .unwrap()
-            .output
-            .len();
+        self.deduct_emergency_disbursal_fees(fee_rate)?;
 
-        let disbursal_batch = self.batches.get(BatchType::Disbursal as u64)?.unwrap();
-        if intermediate_tx_len < disbursal_batch.len() {
-            self.link_intermediate_tx(final_txs.last_mut().unwrap())?;
+        let mut disbursal_batch = self.batches.get_mut(BatchType::Disbursal as u64)?.unwrap();
+        for i in 0..disbursal_batch.len() {
+            let mut tx = disbursal_batch.get_mut(i)?.unwrap();
+            tx.populate_input_sig_message(i.try_into()?)?;
         }
-
-        let tx_in = Input::new(
-            reserve_outpoint,
-            &sigset,
-            &[0u8],
-            reserve_outpoint.vout as u64,
-        )?;
 
         let mut intermediate_tx_batch = self
             .batches
             .get_mut(BatchType::IntermediateTx as u64)?
             .unwrap();
         let mut intermediate_tx = intermediate_tx_batch.get_mut(0)?.unwrap();
-
-        intermediate_tx.input.push_back(tx_in)?;
-
-        let mut disbursal_batch = self.batches.get_mut(BatchType::Disbursal as u64)?.unwrap();
-        for tx in final_txs {
-            disbursal_batch.push_back(tx)?;
-        }
+        intermediate_tx.populate_input_sig_message(0)?;
 
         Ok(())
     }
