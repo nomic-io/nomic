@@ -487,16 +487,6 @@ impl<'a> Query for SigningCheckpoint<'a> {
     }
 }
 
-impl<'a> SigningCheckpoint<'a> {
-    pub fn current_batch(&self) -> Result<Option<Ref<Deque<BitcoinTx>>>> {
-        if self.signed() {
-            return Ok(None);
-        }
-
-        Ok(Some(self.batches.get(self.signed_batches as u64)?.unwrap()))
-    }
-}
-
 #[derive(Deref, DerefMut)]
 pub struct SigningCheckpointMut<'a>(ChildMut<'a, u64, Checkpoint>);
 
@@ -625,12 +615,62 @@ impl<'a> BuildingCheckpointMut<'a> {
         Ok(())
     }
 
+    fn deduct_emergency_disbursal_fees(&mut self, fee_rate: u64) -> Result<()> {
+        //this is removing things that it should not remove
+        let intermediate_tx_fee = {
+            //cases where there is no output on the intermediate_tx????
+            let mut intermediate_tx_batch = self
+                .batches
+                .get_mut(BatchType::IntermediateTx as u64)?
+                .unwrap();
+            let mut intermediate_tx = intermediate_tx_batch.get_mut(0)?.unwrap();
+            let fee = intermediate_tx.size()? * fee_rate;
+            intermediate_tx.deduct_fee(fee)?;
+            fee
+        };
+
+        let intermediate_tx_batch = self.batches.get(BatchType::IntermediateTx as u64)?.unwrap();
+        let intermediate_tx = intermediate_tx_batch.get(0)?.unwrap();
+        let intermediate_tx_id = intermediate_tx.txid()?;
+        let intermediate_tx_len = intermediate_tx.output.len();
+        let mut intermediate_tx_outputs: Vec<(usize, u64)> = intermediate_tx
+            .output
+            .iter()?
+            .enumerate()
+            .map(|(i, output)| Ok((i, output?.value)))
+            .collect::<Result<_>>()?;
+
+        let mut disbursal_batch = self.batches.get_mut(BatchType::Disbursal as u64)?.unwrap();
+        disbursal_batch.retain_unordered(|mut tx| {
+            let mut input = tx.input.get_mut(0)?.unwrap();
+            for (i, output) in intermediate_tx_outputs.iter() {
+                if output == &(input.amount - intermediate_tx_fee) {
+                    input.prevout = Adapter::new(bitcoin::OutPoint {
+                        txid: intermediate_tx_id,
+                        vout: *i as u32,
+                    });
+                    intermediate_tx_outputs.remove(*i);
+                    let tx_size = tx.size().map_err(|err| OrgaError::App(err.to_string()))?;
+                    let fee = intermediate_tx_fee / intermediate_tx_len + tx_size * fee_rate;
+                    tx.deduct_fee(fee)
+                        .map_err(|err| OrgaError::App(err.to_string()))?;
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        })?;
+
+        Ok(())
+    }
+
     //TODO: Generalize emergency disbursal to dynamic tree structure for intermediate tx overflow
     fn generate_emergency_disbursal_txs(
         &mut self,
         nbtc_accounts: &Accounts<Nbtc>,
         recovery_scripts: &Map<orga::prelude::Address, Adapter<bitcoin::Script>>,
         reserve_outpoint: bitcoin::OutPoint,
+        fee_rate: u64,
+        reserve_value: u64,
     ) -> Result<()> {
         let time = Context::resolve::<Time>()
             .ok_or_else(|| OrgaError::Coins("No Time context found".into()))?;
