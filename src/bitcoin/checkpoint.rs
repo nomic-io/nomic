@@ -596,7 +596,7 @@ impl<'a> BuildingCheckpointMut<'a> {
         let num_outputs = u32::try_from(intermediate_tx.output.len())?;
 
         let final_tx_input = Input::new(
-            bitcoin::OutPoint::new(intermediate_tx.txid()?, num_outputs + 1),
+            bitcoin::OutPoint::new(intermediate_tx.txid()?, num_outputs),
             &sigset,
             &[0u8],
             tx_value,
