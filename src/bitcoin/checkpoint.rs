@@ -823,7 +823,13 @@ impl<'a> BuildingCheckpointMut<'a> {
             vout: 0,
         };
 
-        self.generate_emergency_disbursal_txs(nbtc_accounts, recovery_scripts, reserve_outpoint)?;
+        self.generate_emergency_disbursal_txs(
+            nbtc_accounts,
+            recovery_scripts,
+            reserve_outpoint,
+            config.fee_rate,
+            reserve_value,
+        )?;
 
         Ok((
             reserve_outpoint,
