@@ -225,7 +225,7 @@ impl BitcoinTx {
         self.signed_inputs as u64 == self.input.len()
     }
 
-    pub fn size(&self) -> Result<u64> {
+    pub fn vsize(&self) -> Result<u64> {
         Ok(self.to_bitcoin_tx()?.vsize().try_into()?)
     }
 
@@ -623,7 +623,7 @@ impl<'a> BuildingCheckpointMut<'a> {
                 .get_mut(BatchType::IntermediateTx as u64)?
                 .unwrap();
             let mut intermediate_tx = intermediate_tx_batch.get_mut(0)?.unwrap();
-            let fee = intermediate_tx.size()? * fee_rate;
+            let fee = intermediate_tx.vsize()? * fee_rate;
             intermediate_tx.deduct_fee(fee)?;
             fee
         };
@@ -650,7 +650,7 @@ impl<'a> BuildingCheckpointMut<'a> {
                         vout: *i as u32,
                     });
                     intermediate_tx_outputs.remove(*i);
-                    let tx_size = tx.size().map_err(|err| OrgaError::App(err.to_string()))?;
+                    let tx_size = tx.vsize().map_err(|err| OrgaError::App(err.to_string()))?;
                     let fee = intermediate_tx_fee / intermediate_tx_len + tx_size * fee_rate;
                     tx.deduct_fee(fee)
                         .map_err(|err| OrgaError::App(err.to_string()))?;
@@ -692,7 +692,7 @@ impl<'a> BuildingCheckpointMut<'a> {
                 }
 
                 let mut curr_tx = final_txs.pop().unwrap();
-                if curr_tx.size()? >= EMERGENCY_DISBURSAL_MAX_TX_SIZE {
+                if curr_tx.vsize()? >= EMERGENCY_DISBURSAL_MAX_TX_SIZE {
                     self.link_intermediate_tx(&mut curr_tx)?;
                     final_txs.push(curr_tx);
                     curr_tx = BitcoinTx::with_lock_time(lock_time);
