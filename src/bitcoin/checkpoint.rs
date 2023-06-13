@@ -722,13 +722,25 @@ impl<'a> BuildingCheckpointMut<'a> {
             }
 
             let tx_in = Input::new(reserve_outpoint, &sigset, &[0u8], reserve_value)?;
+            let output_script = self.sigset.output_script(&[0u8])?;
             let mut intermediate_tx_batch = self
                 .batches
                 .get_mut(BatchType::IntermediateTx as u64)?
                 .unwrap();
             let mut intermediate_tx = intermediate_tx_batch.get_mut(0)?.unwrap();
-
+            intermediate_tx.lock_time = lock_time;
             intermediate_tx.input.push_back(tx_in)?;
+
+            let intermediate_tx_out_value = intermediate_tx.value()?;
+            let reward_pool_value = reserve_value - intermediate_tx_out_value;
+            let reward_pool_tx_out = bitcoin::TxOut {
+                value: reward_pool_value,
+                script_pubkey: output_script,
+            };
+            intermediate_tx
+                .output
+                .push_back(Adapter::new(reward_pool_tx_out))?;
+
             let mut disbursal_batch = self.batches.get_mut(BatchType::Disbursal as u64)?.unwrap();
             for tx in final_txs {
                 disbursal_batch.push_back(tx)?;
