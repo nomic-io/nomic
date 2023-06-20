@@ -274,7 +274,6 @@ async fn bitcoin_test() {
 
     let node_path = path.clone();
     let signer_path = path.clone();
-    let drop_path = path.clone();
     let header_relayer_path = path.clone();
 
     std::env::set_var("NOMIC_HOME_DIR", &path);
@@ -319,50 +318,73 @@ async fn bitcoin_test() {
         poll_for_blocks().await;
         declare_validator(&path).await.unwrap();
 
+        funded_accounts.iter().for_each(|account| {
+            println!("account: {}", account.address);
+        });
+
         let wallet = retry(|| bitcoind.create_wallet("nomic-integration-test"), 10).unwrap();
         let wallet_address = wallet.get_new_address(None, None).unwrap();
 
+        let withdraw_address = wallet.get_new_address(None, None).unwrap();
+
+        let mut labels = vec![];
+        for i in 0..funded_accounts.len() {
+            labels.push(format!("funded-account-{}", i));
+        }
+
+        let mut import_multi_reqest = vec![];
+        for (i, account) in funded_accounts.iter().enumerate() {
+            import_multi_reqest.push(ImportMultiRequest {
+                timestamp: ImportMultiRescanSince::Now,
+                descriptor: None,
+                script_pubkey: Some(ImportMultiRequestScriptPubkey::Script(&account.script)),
+                redeem_script: None,
+                witness_script: None,
+                pubkeys: &[],
+                keys: &[],
+                range: None,
+                internal: None,
+                watchonly: Some(true),
+                label: Some(&labels[i]),
+                keypool: None,
+            });
+        }
+
+        wallet.import_multi(&import_multi_reqest, None).unwrap();
+
         retry(
-            || bitcoind.client.generate_to_address(101, &wallet_address),
+            || bitcoind.client.generate_to_address(120, &wallet_address),
             10,
         )
         .unwrap();
 
-        let mut retry_count = 0;
-        let mut deposit_address = None;
-        while deposit_address.is_none() && retry_count < 10 {
-            deposit_address = generate_deposit_address(&funded_accounts[0].address)
-                .await
-                .ok();
-            retry_count += 1;
-            tokio::time::sleep(Duration::from_secs(5)).await;
-        }
+        poll_for_bitcoin_header(1120).await.unwrap();
 
-        broadcast_deposit_addr(
-            funded_accounts[0].address.to_string(),
-            deposit_address.as_ref().unwrap().sigset_index,
-            "http://localhost:8999".to_string(),
-            deposit_address.as_ref().unwrap().deposit_addr.clone(),
+        let balance = app_client()
+            .bitcoin
+            .accounts
+            .balance(funded_accounts[0].address)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(balance, Amount::from(0));
+
+        poll_for_signatory_key().await;
+
+        deposit_bitcoin(
+            &funded_accounts[0].address,
+            bitcoin::Amount::from_btc(10.0).unwrap(),
+            &wallet,
         )
         .await
         .unwrap();
 
-        retry(
-            || {
-                bitcoind.client.send_to_address(
-                    &bitcoin::Address::from_str(&deposit_address.as_ref().unwrap().deposit_addr)
-                        .unwrap(),
-                    bitcoin::Amount::from_btc(10.0).unwrap(),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                )
-            },
-            10,
+        deposit_bitcoin(
+            &funded_accounts[1].address,
+            bitcoin::Amount::from_btc(0.4).unwrap(),
+            &wallet,
         )
+        .await
         .unwrap();
 
         retry(
@@ -371,6 +393,7 @@ async fn bitcoin_test() {
         )
         .unwrap();
 
+        poll_for_bitcoin_header(1121).await.unwrap();
         poll_for_completed_checkpoint(1).await;
 
         let balance = app_client()
@@ -380,49 +403,118 @@ async fn bitcoin_test() {
             .await
             .unwrap()
             .unwrap();
+        assert_eq!(balance, Amount::from(799999747200000));
+        let balance = app_client()
+            .bitcoin
+            .accounts
+            .balance(funded_accounts[1].address)
+            .await
+            .unwrap()
+            .unwrap();
 
-        assert_eq!(balance, Amount::from(799999873600000));
+        assert_eq!(balance, Amount::from(31999747200000));
 
-        let withdraw_sign_doc = withdraw(
-            funded_accounts[0].address.to_string(),
-            wallet_address.to_string(),
-            Amount::from(7000000000).into(),
-        )
-        .await
-        .unwrap();
+        withdraw_bitcoin(&funded_accounts[0], 7000000000, &withdraw_address)
+            .await
+            .unwrap();
 
-        sign_and_broadcast(withdraw_sign_doc, &funded_accounts[0]).await;
+        poll_for_completed_checkpoint(3).await;
+
+        let balance = app_client()
+            .bitcoin
+            .accounts
+            .balance(funded_accounts[0].address)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(balance, Amount::from(799992747200000));
+
+        tokio::time::sleep(Duration::from_secs(65)).await;
 
         retry(
-            || bitcoind.client.generate_to_address(1, &wallet_address),
+            || bitcoind.client.generate_to_address(100, &wallet_address),
             10,
         )
         .unwrap();
 
-        poll_for_completed_checkpoint(2).await;
+        let funded_account_balances: Vec<_> = funded_accounts
+            .iter()
+            .map(|account| {
+                let bitcoin_address =
+                    &bitcoin::Address::from_script(&account.script, bitcoin::Network::Regtest)
+                        .unwrap();
+                match wallet.get_received_by_address(bitcoin_address, None) {
+                    Ok(amount) => amount.to_sat(),
+                    _ => 0,
+                }
+            })
+            .collect();
 
-        let balance = app_client()
-            .bitcoin
-            .accounts
-            .balance(funded_accounts[0].address)
-            .await
-            .unwrap()
+        let expected_account_balances: Vec<u64> = vec![799992560, 31999560, 0, 0, 0, 0, 0, 0, 0, 0];
+
+        assert_eq!(funded_account_balances, expected_account_balances);
+
+        for (i, account) in funded_accounts[0..=1].iter().enumerate() {
+            let dump_address = wallet.get_new_address(None, None).unwrap();
+            let disbursal_txs = app_client()
+                .bitcoin
+                .checkpoints
+                .emergency_disbursal_txs()
+                .await
+                .unwrap()
+                .unwrap();
+
+            let spending_tx = disbursal_txs.get(1).unwrap();
+            let vout = spending_tx
+                .output
+                .iter()
+                .position(|output| output.script_pubkey == account.script)
+                .unwrap();
+
+            let tx_in = bitcoincore_rpc_async::json::CreateRawTransactionInput {
+                txid: spending_tx.txid(),
+                vout: vout.try_into().unwrap(),
+                sequence: None,
+            };
+            let mut outputs = HashMap::new();
+            outputs.insert(
+                dump_address.to_string(),
+                bitcoin::Amount::from_sat(expected_account_balances[i] - 10000),
+            );
+
+            let tx = bitcoind
+                .client
+                .create_raw_transaction(&[tx_in], &outputs, None, None)
+                .unwrap();
+
+            let privkey = bitcoin::PrivateKey::new(account.privkey, bitcoin::Network::Regtest);
+            let sign_res = bitcoind
+                .client
+                .sign_raw_transaction_with_key(
+                    &tx,
+                    &[privkey],
+                    None,
+                    Some(EcdsaSighashType::All.into()),
+                )
+                .unwrap();
+            let signed_tx: bitcoin::Transaction = sign_res.transaction().unwrap();
+
+            bitcoind.client.send_raw_transaction(&signed_tx).unwrap();
+
+            retry(
+                || bitcoind.client.generate_to_address(1, &wallet_address),
+                10,
+            )
             .unwrap();
-        dbg!(app_client().bitcoin.value_locked().await.unwrap().unwrap());
 
-        assert_eq!(balance, Amount::from(799992873600000));
+            let sent_amount = match wallet.get_received_by_address(&dump_address, None) {
+                Ok(amount) => amount.to_sat(),
+                _ => 0,
+            };
 
-        tokio::time::sleep(Duration::from_secs(60 * 2)).await;
-
-        let balance = app_client()
-            .bitcoin
-            .accounts
-            .balance(funded_accounts[0].address)
-            .await
-            .unwrap()
-            .unwrap();
-
-        println!("Balance after disbursal: {}", balance);
+            assert_eq!(sent_amount, expected_account_balances[i] - 10000);
+        }
 
         Err::<(), Error>(Error::Test("Test completed successfully".to_string()))
     };
