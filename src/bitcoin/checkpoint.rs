@@ -964,6 +964,13 @@ impl CheckpointQueue {
         let mut vec = vec![];
 
         if let Some(completed) = self.completed()?.last() {
+            let intermediate_tx_batch = completed
+                .batches
+                .get(BatchType::IntermediateTx as u64)?
+                .unwrap();
+            let intermediate_tx = intermediate_tx_batch.get(0)?.unwrap();
+            vec.push(Adapter::new(intermediate_tx.to_bitcoin_tx()?));
+
             let disbursal_batch = completed.batches.get(BatchType::Disbursal as u64)?.unwrap();
             for tx in disbursal_batch.iter()? {
                 vec.push(Adapter::new(tx?.to_bitcoin_tx()?));
