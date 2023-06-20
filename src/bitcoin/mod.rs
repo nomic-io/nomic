@@ -68,6 +68,9 @@ pub struct Config {
     transfer_fee: u64,
     min_confirmations: u32,
     units_per_sat: u64,
+    emergency_disbursal_min_tx_amt: u64,
+    emergency_disbursal_lock_time_interval: u32,
+    emergency_disbursal_max_tx_size: u64,
 }
 
 impl Terminated for Config {}
@@ -83,6 +86,9 @@ impl Config {
             transfer_fee: 1_000_000,
             min_confirmations: 0,
             units_per_sat: 1_000_000,
+            emergency_disbursal_min_tx_amt: 1000,
+            emergency_disbursal_lock_time_interval: 60,
+            emergency_disbursal_max_tx_size: 50_000,
         }
     }
 
@@ -96,6 +102,9 @@ impl Config {
             transfer_fee: 1_000_000,
             min_confirmations: 0,
             units_per_sat: 1_000_000,
+            emergency_disbursal_min_tx_amt: 1000,
+            emergency_disbursal_lock_time_interval: 60 * 60 * 24 * 7, //one week
+            emergency_disbursal_max_tx_size: 50_000,
         }
     }
 }
@@ -235,6 +244,10 @@ pub fn exempt_from_fee() -> Result<()> {
 }
 
 impl Bitcoin {
+    pub fn config() -> Config {
+        Config::default()
+    }
+
     #[call]
     pub fn set_signatory_key(&mut self, _signatory_key: Xpub) -> Result<()> {
         #[cfg(feature = "full")]
