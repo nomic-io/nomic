@@ -389,15 +389,6 @@ impl Checkpoint {
         self.sigset.create_time()
     }
 
-    #[query]
-    pub fn get_tvl(&self) -> Result<u64> {
-        let checkpoint_tx = self.checkpoint_tx()?;
-        Ok(checkpoint_tx.input.iter().fold(0, |mut acc, input| {
-            acc += input.previous_output.vout as u64 * 1_000_000;
-            acc
-        }))
-    }
-
     pub fn signed(&self) -> bool {
         self.signed_batches as u64 == self.batches.len()
     }
