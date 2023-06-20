@@ -370,6 +370,13 @@ pub fn setup_test_app(home: &Path, block_data: &BitcoinBlockData) -> Vec<KeyData
     keys
 }
 
+pub fn address_to_script(address: Address) -> Result<Script> {
+    let hash = bitcoin::hashes::hash160::Hash::from_str(address.bytes().to_hex().as_str())
+        .map_err(|err| Error::BitcoinPubkeyHash(err.to_string()))?;
+    let pubkey_hash = bitcoin::PubkeyHash::from(hash);
+    Ok(bitcoin::Script::new_p2pkh(&pubkey_hash))
+}
+
 pub fn start_rest() -> Result<Child> {
     Ok(Command::new("cargo")
         .current_dir("./rest")
