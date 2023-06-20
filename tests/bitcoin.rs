@@ -141,24 +141,6 @@ async fn poll_for_completed_checkpoint(num_checkpoints: u32) {
     info!("New signed checkpoint discovered")
 }
 
-async fn poll_for_relayed_checkpoint(bitcoind: &BitcoinD) -> Result<()> {
-    loop {
-        let last_completed = app_client()
-            .bitcoin
-            .checkpoints
-            .last_completed_tx()
-            .await??;
-        let checkpoint_tx_id = last_completed.txid();
-        if bitcoind
-            .client
-            .get_raw_transaction(&checkpoint_tx_id, None)
-            .is_ok()
-        {
-            break Ok(());
-        }
-    }
-}
-
 async fn poll_for_bitcoin_header(height: u32) -> Result<()> {
     info!("Scanning for bitcoin header {}...", height);
     let client = app_client();
@@ -202,7 +184,7 @@ async fn sign_and_broadcast(sign_doc: SignDoc, account: &KeyData) {
     );
 
     info!("Broadcasting transaction...");
-    let res = tm_client.broadcast_tx_commit(transaction).await.unwrap();
+    tm_client.broadcast_tx_commit(transaction).await.unwrap();
 }
 
 async fn deposit_bitcoin(

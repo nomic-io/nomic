@@ -1115,12 +1115,6 @@ impl CheckpointQueue {
         Ok(())
     }
 
-    #[cfg(test)]
-    fn push(&mut self, checkpoint: Checkpoint) -> Result<()> {
-        self.index += 1;
-        Ok(self.queue.push_back(checkpoint)?)
-    }
-
     #[cfg(feature = "full")]
     fn maybe_push(
         &mut self,
