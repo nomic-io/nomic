@@ -71,6 +71,7 @@ impl Signer {
     }
 
     pub async fn start(mut self) -> Result<()> {
+        info!("Starting signer...");
         let secp = Secp256k1::signing_only();
         let xpub = ExtendedPubKey::from_priv(&secp, &self.xpriv);
 
