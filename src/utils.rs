@@ -300,6 +300,7 @@ pub fn populate_bitcoin_block(client: &BitcoinD) -> BitcoinBlockData {
 pub struct KeyData {
     pub privkey: SecretKey,
     pub address: Address,
+    pub script: Script,
 }
 
 #[cfg(feature = "full")]
@@ -341,7 +342,12 @@ pub fn setup_test_app(home: &Path, block_data: &BitcoinBlockData) -> Vec<KeyData
         .map(|_| {
             let privkey = SecretKey::new(&mut rand::thread_rng());
             let address = address_from_privkey(&privkey);
-            KeyData { privkey, address }
+            let script = address_to_script(address).unwrap();
+            KeyData {
+                privkey,
+                address,
+                script,
+            }
         })
         .collect();
 
