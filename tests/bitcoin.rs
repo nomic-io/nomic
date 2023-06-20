@@ -1,6 +1,10 @@
 #![feature(async_closure)]
 
+use bitcoin::blockdata::transaction::EcdsaSighashType;
 use bitcoin::secp256k1;
+use bitcoincore_rpc_async::json::{
+    ImportMultiRequest, ImportMultiRequestScriptPubkey, ImportMultiRescanSince,
+};
 use bitcoind::bitcoincore_rpc::RpcApi;
 use bitcoind::{BitcoinD, Conf};
 use log::info;
@@ -22,7 +26,7 @@ use orga::prelude::sdk_compat::sdk::{self, SignDoc};
 use orga::prelude::{Address, Amount};
 use reqwest::StatusCode;
 use serial_test::serial;
-use std::fs;
+use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Once;
 use std::time::Duration;
