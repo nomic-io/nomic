@@ -809,8 +809,7 @@ impl<'a> BuildingCheckpointMut<'a> {
             out_amount += output.value;
         }
 
-        let est_vsize: u64 = checkpoint_tx.to_bitcoin_tx()?.vsize().try_into()?;
-        let fee = est_vsize * config.fee_rate;
+        let fee = checkpoint_tx.vsize()? * config.fee_rate;
         let reserve_value = in_amount - out_amount - fee;
         let mut reserve_out = checkpoint_tx.output.get_mut(0)?.unwrap();
         reserve_out.value = reserve_value;
