@@ -1,4 +1,3 @@
-use super::checkpoint::EMERGENCY_DISBURSAL_LOCK_TIME_INTERVAL;
 use super::signatory::Signatory;
 use super::SignatorySet;
 use crate::app::App;
@@ -719,7 +718,6 @@ impl From<Signatory> for RawSignatory {
 }
 
 fn time_now() -> u64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
