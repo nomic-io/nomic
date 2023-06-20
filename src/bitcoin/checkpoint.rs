@@ -335,7 +335,7 @@ impl Checkpoint {
 
     pub fn checkpoint_tx(&self) -> Result<bitcoin::Transaction> {
         self.batches
-            .back()?
+            .get(BatchType::Checkpoint as u64)?
             .unwrap()
             .back()?
             .unwrap()
