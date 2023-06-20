@@ -489,7 +489,12 @@ impl Bitcoin {
 
     #[query]
     pub fn value_locked(&self) -> Result<u64> {
-        self.checkpoints.building()?.get_tvl()
+        let completed = self.checkpoints.completed()?;
+        if completed.is_empty() {
+            return Ok(0);
+        }
+        let last_completed = completed.iter().last().unwrap();
+        Ok(last_completed.reserve_output()?.unwrap().value)
     }
 
     pub fn network(&self) -> bitcoin::Network {
