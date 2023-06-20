@@ -40,11 +40,6 @@ use orga::{
 use serde::{Deserialize, Serialize};
 use std::{convert::TryFrom, str::FromStr};
 
-pub const EMERGENCY_DISBURSAL_MIN_TX_AMT: u64 = 1000;
-pub const EMERGENCY_DISBURSAL_LOCK_TIME_INTERVAL: u32 = 30; //one week
-
-pub const EMERGENCY_DISBURSAL_MAX_TX_SIZE: u64 = 50_000; //50kB
-
 #[derive(Debug, Encode, Decode, Default, Serialize, Deserialize)]
 pub enum CheckpointStatus {
     #[default]
@@ -673,12 +668,14 @@ impl<'a> BuildingCheckpointMut<'a> {
         reserve_value: u64,
     ) -> Result<()> {
         {
+            let bitcoin_config = super::Bitcoin::config();
             let time = Context::resolve::<Time>()
                 .ok_or_else(|| OrgaError::Coins("No Time context found".into()))?;
 
             let sigset = self.sigset.clone();
 
-            let lock_time = time.seconds as u32 + EMERGENCY_DISBURSAL_LOCK_TIME_INTERVAL;
+            let lock_time =
+                time.seconds as u32 + bitcoin_config.emergency_disbursal_lock_time_interval;
 
             if nbtc_accounts.iter()?.last().is_none() {
                 return Err(Error::Account("No Bitcoin accounts present".to_string()));
@@ -687,12 +684,12 @@ impl<'a> BuildingCheckpointMut<'a> {
             let last_account = nbtc_accounts.iter()?.last().unwrap()?;
             for account in nbtc_accounts.iter()? {
                 let (address, coins) = account?;
-                if coins.amount < EMERGENCY_DISBURSAL_MIN_TX_AMT {
+                if coins.amount < bitcoin_config.emergency_disbursal_min_tx_amt {
                     continue;
                 }
 
                 let mut curr_tx = final_txs.pop().unwrap();
-                if curr_tx.vsize()? >= EMERGENCY_DISBURSAL_MAX_TX_SIZE {
+                if curr_tx.vsize()? >= bitcoin_config.emergency_disbursal_max_tx_size {
                     self.link_intermediate_tx(&mut curr_tx)?;
                     final_txs.push(curr_tx);
                     curr_tx = BitcoinTx::with_lock_time(lock_time);
