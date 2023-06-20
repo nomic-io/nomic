@@ -6,8 +6,10 @@
 #![feature(async_closure)]
 #![feature(is_some_and)]
 
-#[cfg(feature = "full")]
-use orga::abci::TendermintClient;
+// #[cfg(feature = "full")]
+use orga::client::wallet::DerivedKey;
+use orga::client::AppClient;
+use orga::tendermint::client::HttpClient;
 
 pub use orga;
 pub use thiserror;
@@ -19,6 +21,7 @@ pub mod error;
 pub mod network;
 
 #[cfg(feature = "full")]
-pub fn app_client() -> TendermintClient<app::App> {
-    TendermintClient::new("http://localhost:26657").unwrap()
+pub fn app_client() -> AppClient<app::App, app::App, HttpClient, app::Nom, DerivedKey> {
+    todo!()
+    // TendermintClient::new("http://localhost:26657").unwrap()
 }

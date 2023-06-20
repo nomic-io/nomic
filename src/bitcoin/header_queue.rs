@@ -6,7 +6,7 @@ use bitcoin::util::uint::Uint256;
 use bitcoin::BlockHash;
 use bitcoin::TxMerkleNode;
 use orga::collections::Deque;
-use orga::encoding as ed;
+use orga::encoding::{self as ed, LengthVec};
 use orga::migrate::MigrateFrom;
 use orga::orga;
 use orga::prelude::*;
@@ -390,6 +390,7 @@ impl Default for HeaderQueue {
 //     }
 // }
 
+#[orga]
 impl HeaderQueue {
     #[call]
     pub fn add(&mut self, headers: HeaderList) -> Result<()> {
@@ -956,13 +957,13 @@ mod test {
 
         let adapter = Adapter::new(header);
         let header_list = [WrappedHeader::new(adapter, 43)];
-        let store = Store::new(Shared::new(MapStore::new()).into());
+        let store = Store::with_map_store();
         let mut q = HeaderQueue::with_conf(store, test_config.clone()).unwrap();
         q.add_into_iter(header_list).unwrap();
 
         let adapter = Adapter::new(header);
         let header_list = vec![WrappedHeader::new(adapter, 43)];
-        let store = Store::new(Shared::new(MapStore::new()).into());
+        let store = Store::with_map_store();
         let mut q = HeaderQueue::with_conf(store, test_config).unwrap();
         q.add_into_iter(header_list).unwrap();
     }
@@ -1011,7 +1012,7 @@ mod test {
 
         let adapter = Adapter::new(header);
         let header_list = [WrappedHeader::new(adapter, 43)];
-        let store = Store::new(Shared::new(MapStore::new()).into());
+        let store = Store::with_map_store();
         let mut q = HeaderQueue::with_conf(store, test_config).unwrap();
         q.add_into_iter(header_list).unwrap();
     }

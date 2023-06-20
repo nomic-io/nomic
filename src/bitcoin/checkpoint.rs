@@ -10,7 +10,6 @@ use derive_more::{Deref, DerefMut};
 use orga::store::Store;
 use orga::{
     call::Call,
-    client::Client,
     collections::{map::ReadOnly, ChildMut, Deque, Map, Ref},
     context::GetContext,
     encoding::{Decode, Encode, LengthVec},
@@ -75,14 +74,6 @@ impl Call for CheckpointStatus {
 
     fn call(&mut self, _: ()) -> OrgaResult<()> {
         Ok(())
-    }
-}
-
-impl<U: Send + Clone> Client<U> for CheckpointStatus {
-    type Client = orga::client::PrimitiveClient<Self, U>;
-
-    fn create_client(parent: U) -> Self::Client {
-        orga::client::PrimitiveClient::new(parent)
     }
 }
 
@@ -162,6 +153,7 @@ pub struct Checkpoint {
     pub sigset: SignatorySet,
 }
 
+#[orga]
 impl Checkpoint {
     pub fn create_time(&self) -> u64 {
         self.sigset.create_time()
@@ -220,12 +212,6 @@ pub struct CompletedCheckpoint<'a>(Ref<'a, Checkpoint>);
 #[derive(Deref, Debug)]
 pub struct SigningCheckpoint<'a>(Ref<'a, Checkpoint>);
 
-impl<'a, U: Clone> Client<U> for SigningCheckpoint<'a> {
-    type Client = ();
-
-    fn create_client(_: U) {}
-}
-
 impl<'a> Query for SigningCheckpoint<'a> {
     type Query = ();
 
@@ -234,8 +220,9 @@ impl<'a> Query for SigningCheckpoint<'a> {
     }
 }
 
+// #[orga]
 impl<'a> SigningCheckpoint<'a> {
-    #[query]
+    // #[query]
     pub fn to_sign(&self, xpub: Xpub) -> Result<Vec<([u8; 32], u32)>> {
         let secp = bitcoin::secp256k1::Secp256k1::verification_only();
 
@@ -441,6 +428,7 @@ impl<'a> BuildingCheckpointMut<'a> {
     }
 }
 
+#[orga]
 impl CheckpointQueue {
     pub fn reset(&mut self) -> OrgaResult<()> {
         self.index = 0;

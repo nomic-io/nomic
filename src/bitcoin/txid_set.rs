@@ -8,6 +8,7 @@ pub struct OutpointSet {
     pub(super) outpoints: Map<Outpoint, ()>,
 }
 
+#[orga]
 impl OutpointSet {
     pub fn reset(&mut self) -> Result<()> {
         super::clear_map(&mut self.expiration_queue)?;

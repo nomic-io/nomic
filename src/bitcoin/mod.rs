@@ -16,6 +16,7 @@ use orga::call::Call;
 use orga::coins::{Accounts, Address, Amount, Coin, Give, Symbol, Take};
 use orga::collections::Map;
 use orga::context::{Context, GetContext};
+use orga::encoding::Adapter as EdAdapter;
 use orga::encoding::{Decode, Encode, Terminated};
 use orga::migrate::MigrateFrom;
 use orga::orga;
@@ -23,7 +24,8 @@ use orga::plugins::Paid;
 #[cfg(feature = "full")]
 use orga::plugins::{BeginBlockCtx, Validators};
 use orga::plugins::{Signer, Time};
-use orga::query::Query;
+use orga::prelude::FieldCall;
+use orga::query::{FieldQuery, Query};
 use orga::state::State;
 use orga::store::Store;
 use orga::{Error as OrgaError, Result as OrgaResult};
@@ -34,11 +36,11 @@ use txid_set::OutpointSet;
 pub mod adapter;
 pub mod checkpoint;
 pub mod header_queue;
-#[cfg(feature = "full")]
-pub mod relayer;
+// #[cfg(feature = "full")]
+// pub mod relayer;
 pub mod signatory;
-#[cfg(feature = "full")]
-pub mod signer;
+// #[cfg(feature = "full")]
+// pub mod signer;
 pub mod threshold_sig;
 pub mod txid_set;
 
@@ -79,11 +81,14 @@ pub struct Bitcoin {
 
 pub type ConsensusKey = [u8; 32];
 
-#[derive(Call, Query, Clone, Debug, Client, PartialEq, Serialize)]
-pub struct Xpub(ExtendedPubKey);
+// #[derive(Call, Query, Clone, Debug, Client, PartialEq, Serialize)]
+#[derive(Debug, PartialEq, Serialize, FieldCall, FieldQuery, Clone)]
+pub struct Xpub {
+    key: ExtendedPubKey,
+}
 
 impl MigrateFrom for Xpub {
-    fn migrate_from(other: Self) -> OrgaResult<Self> {
+    fn migrate_from(other: Self) -> orga::Result<Self> {
         Ok(other)
     }
 }
@@ -98,11 +103,11 @@ pub const XPUB_LENGTH: usize = 78;
 
 impl Xpub {
     pub fn new(key: ExtendedPubKey) -> Self {
-        Xpub(key)
+        Xpub { key }
     }
 
     pub fn inner(&self) -> &ExtendedPubKey {
-        &self.0
+        &self.key
     }
 }
 
@@ -126,13 +131,13 @@ impl Deref for Xpub {
     type Target = ExtendedPubKey;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.key
     }
 }
 
 impl Encode for Xpub {
     fn encode_into<W: std::io::Write>(&self, dest: &mut W) -> ed::Result<()> {
-        let bytes = self.0.encode();
+        let bytes = self.key.encode();
         dest.write_all(&bytes)?;
         Ok(())
     }
@@ -147,7 +152,7 @@ impl Decode for Xpub {
         let mut bytes = [0; XPUB_LENGTH];
         input.read_exact(&mut bytes)?;
         let key = ExtendedPubKey::decode(&bytes).map_err(|_| ed::Error::UnexpectedByte(32))?;
-        Ok(Xpub(key))
+        Ok(Xpub { key }.into())
     }
 }
 
@@ -155,13 +160,13 @@ impl Terminated for Xpub {}
 
 impl From<ExtendedPubKey> for Xpub {
     fn from(key: ExtendedPubKey) -> Self {
-        Xpub(key)
+        Xpub { key }
     }
 }
 
 impl From<&ExtendedPubKey> for Xpub {
     fn from(key: &ExtendedPubKey) -> Self {
-        Xpub(*key)
+        Xpub { key: *key }
     }
 }
 
@@ -174,6 +179,7 @@ pub fn exempt_from_fee() -> Result<()> {
     Ok(())
 }
 
+#[orga]
 impl Bitcoin {
     #[call]
     pub fn set_signatory_key(&mut self, signatory_key: Xpub) -> Result<()> {
@@ -486,6 +492,7 @@ pub struct SignatoryKeys {
     xpubs: Map<Xpub, ()>,
 }
 
+#[orga]
 impl SignatoryKeys {
     pub fn reset(&mut self) -> OrgaResult<()> {
         let mut xpubs = vec![];
@@ -508,9 +515,9 @@ impl SignatoryKeys {
 
     pub fn insert(&mut self, consensus_key: ConsensusKey, xpub: Xpub) -> Result<()> {
         let mut normalized_xpub = xpub.clone();
-        normalized_xpub.0.child_number = 0.into();
-        normalized_xpub.0.depth = 0;
-        normalized_xpub.0.parent_fingerprint = Default::default();
+        normalized_xpub.key.child_number = 0.into();
+        normalized_xpub.key.depth = 0;
+        normalized_xpub.key.parent_fingerprint = Default::default();
 
         if self.by_cons.contains_key(consensus_key)? {
             return Err(OrgaError::App("Validator already has a signatory key".to_string()).into());
@@ -535,7 +542,7 @@ impl SignatoryKeys {
 use orga::collections::{Deque, Next};
 fn clear_map<K, V>(map: &mut Map<K, V>) -> OrgaResult<()>
 where
-    K: Encode + Decode + Terminated + Next + Clone,
+    K: Encode + Decode + Terminated + Next + Clone + 'static,
     V: State,
 {
     let mut keys = vec![];

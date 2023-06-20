@@ -1,10 +1,11 @@
+use orga::coins::Decimal;
 use orga::coins::{Address, Amount};
 use orga::collections::{ChildMut, Map};
 use orga::context::GetContext;
 use orga::migrate::{MigrateFrom, MigrateInto};
 use orga::orga;
+use orga::plugins::MIN_FEE;
 use orga::plugins::{Paid, Signer};
-use orga::prelude::{Decimal, MIN_FEE};
 use orga::{Error, Result};
 use split_iter::Splittable;
 
@@ -20,7 +21,6 @@ pub struct Accs {
     accounts: Map<Address, Account>,
 }
 
-#[cfg(not(feature = "testnet"))]
 #[orga(version = 1)]
 pub struct Airdrop {
     #[orga(version(V0))]
@@ -30,14 +30,9 @@ pub struct Airdrop {
     accounts: Map<Address, Account>,
 }
 
-#[cfg(feature = "testnet")]
-#[orga(version = 1)]
-pub struct Airdrop {
-    accounts: Map<Address, Account>,
-}
-
 type Recipients = Vec<(Address, Vec<(u64, u64)>, u64)>;
 
+#[orga]
 impl Airdrop {
     #[query]
     pub fn get(&self, address: Address) -> Result<Option<Account>> {
@@ -335,20 +330,10 @@ impl Airdrop {
     }
 }
 
-#[cfg(not(feature = "testnet"))]
 impl MigrateFrom<AirdropV0> for AirdropV1 {
     fn migrate_from(other: AirdropV0) -> Result<Self> {
         Ok(Self {
             accounts: other.accounts.accounts.migrate_into()?,
-        })
-    }
-}
-
-#[cfg(feature = "testnet")]
-impl MigrateFrom<AirdropV0> for AirdropV1 {
-    fn migrate_from(other: AirdropV0) -> Result<Self> {
-        Ok(Self {
-            accounts: other.accounts.migrate_into()?,
         })
     }
 }
