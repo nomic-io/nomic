@@ -7,7 +7,6 @@ use super::{
 use crate::error::{Error, Result};
 use bitcoin::blockdata::transaction::EcdsaSighashType;
 use derive_more::{Deref, DerefMut};
-use orga::store::Store;
 use orga::{
     call::Call,
     collections::{map::ReadOnly, ChildMut, Deque, Map, Ref},
@@ -20,6 +19,7 @@ use orga::{
     state::State,
     Error as OrgaError, Result as OrgaResult,
 };
+use orga::{describe::Describe, store::Store};
 use serde::Serialize;
 use std::convert::TryFrom;
 
@@ -77,11 +77,11 @@ impl Call for CheckpointStatus {
     }
 }
 
-// impl Describe for CheckpointStatus {
-//     fn describe() -> orga::describe::Descriptor {
-//         orga::describe::Builder::new::<Self>().build()
-//     }
-// }
+impl Describe for CheckpointStatus {
+    fn describe() -> orga::describe::Descriptor {
+        orga::describe::Builder::new::<Self>().build()
+    }
+}
 
 #[orga(skip(Client), version = 1)]
 #[derive(Debug)]
