@@ -375,20 +375,25 @@ impl Bitcoin {
             txid: btc_tx.txid(),
             vout: btc_vout,
         };
-        let est_vsize =
-            self.checkpoints
-                .building_mut()?
-                .push_input(prevout, &sigset, dest, output.value)?;
 
         // TODO: don't credit account until we're done signing including tx;
+        let mut building_mut = self.checkpoints.building_mut()?;
+        let mut building_checkpoint_batch = building_mut
+            .batches
+            .get_mut(BatchType::Checkpoint as u64)?
+            .unwrap();
 
-        let value = output
-            .value
-            .checked_sub(est_vsize * self.checkpoints.config().fee_rate)
-            .ok_or_else(|| {
-                OrgaError::App("Deposit amount is too small to pay its spending fee".to_string())
-            })?
-            * self.config.units_per_sat;
+        let mut checkpoint_tx = building_checkpoint_batch.get_mut(0)?.unwrap();
+        checkpoint_tx
+            .input
+            .push_back(Input::new(prevout, &sigset, dest, output.value)?)?;
+
+        let input_size = 40 + sigset.est_witness_vsize();
+        let fee = input_size * self.checkpoints.config().fee_rate;
+
+        let value = output.value.checked_sub(fee).ok_or_else(|| {
+            OrgaError::App("Deposit amount is too small to pay its spending fee".to_string())
+        })? * self.config.units_per_sat;
 
         let mut minted_nbtc = Nbtc::mint(value);
         let deposit_fee = minted_nbtc.take(calc_deposit_fee(value))?;
