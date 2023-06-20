@@ -15,6 +15,7 @@ use orga::abci::BeginBlock;
 use orga::call::Call;
 use orga::coins::{Accounts, Address, Amount, Coin, Give, Symbol, Take};
 use orga::collections::Map;
+use orga::collections::{Deque, Next};
 use orga::context::{Context, GetContext};
 use orga::encoding::{Decode, Encode, Terminated};
 use orga::migrate::MigrateFrom;
@@ -619,7 +620,6 @@ impl SignatoryKeys {
     }
 }
 
-use orga::collections::{Deque, Next};
 fn clear_map<K, V>(map: &mut Map<K, V>) -> OrgaResult<()>
 where
     K: Encode + Decode + Terminated + Next + Clone,
