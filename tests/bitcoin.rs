@@ -202,7 +202,57 @@ async fn sign_and_broadcast(sign_doc: SignDoc, account: &KeyData) {
     );
 
     info!("Broadcasting transaction...");
-    tm_client.broadcast_tx_commit(transaction).await.unwrap();
+    let res = tm_client.broadcast_tx_commit(transaction).await.unwrap();
+    println!("withdraw res: {:?}", res);
+}
+
+async fn deposit_bitcoin(
+    address: &Address,
+    btc: bitcoin::Amount,
+    wallet: &bitcoind::bitcoincore_rpc::Client,
+) -> Result<()> {
+    let deposit_address = generate_deposit_address(address).await.unwrap();
+
+    broadcast_deposit_addr(
+        address.to_string(),
+        deposit_address.sigset_index,
+        "http://localhost:8999".to_string(),
+        deposit_address.deposit_addr.clone(),
+    )
+    .await
+    .unwrap();
+
+    wallet
+        .send_to_address(
+            &bitcoin::Address::from_str(&deposit_address.deposit_addr).unwrap(),
+            btc,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+    Ok(())
+}
+
+async fn withdraw_bitcoin(
+    nomic_account: &KeyData,
+    usats: u64,
+    dest_address: &bitcoin::Address,
+) -> Result<()> {
+    let withdraw_sign_doc = withdraw(
+        nomic_account.address.to_string(),
+        dest_address.to_string(),
+        Amount::from(usats).into(),
+    )
+    .await
+    .unwrap();
+
+    sign_and_broadcast(withdraw_sign_doc, nomic_account).await;
+    Ok(())
 }
 
 #[tokio::test]
