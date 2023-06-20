@@ -341,7 +341,7 @@ impl Relayer {
 
                 match self.btc_client.send_raw_transaction(&tx_bytes).await {
                     Ok(_) => {
-                        info!("Relayed emergency disbursal transactions: {}", tx.txid());
+                        info!("Relayed emergency disbursal transaction: {}", tx.txid());
                     }
                     Err(err) if err.to_string().contains("bad-txns-inputs-missingorspent") => {}
                     Err(err)
