@@ -203,7 +203,6 @@ async fn sign_and_broadcast(sign_doc: SignDoc, account: &KeyData) {
 
     info!("Broadcasting transaction...");
     let res = tm_client.broadcast_tx_commit(transaction).await.unwrap();
-    println!("withdraw res: {:?}", res);
 }
 
 async fn deposit_bitcoin(
