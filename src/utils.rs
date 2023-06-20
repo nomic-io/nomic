@@ -326,7 +326,7 @@ pub fn setup_test_app(home: &Path, block_data: &BitcoinBlockData) -> Vec<KeyData
     app.inner.bitcoin.headers.configure(headers_config).unwrap();
 
     let checkpoints_config = CheckpointQueueConfig {
-        min_checkpoint_interval: 1,
+        min_checkpoint_interval: 10,
         ..Default::default()
     };
 
