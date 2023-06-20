@@ -16,6 +16,8 @@ pub enum Error {
     BitcoinPubkeyHash(String),
     #[error(transparent)]
     BitcoinEncode(#[from] bitcoin::consensus::encode::Error),
+    #[error("Unable to deduct fee: {0}")]
+    BitcoinFee(u64),
     #[error("{0}")]
     BitcoinRecoveryScript(String),
     #[error(transparent)]
