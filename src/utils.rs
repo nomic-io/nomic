@@ -11,10 +11,12 @@ use crate::bitcoin::checkpoint::Config as CheckpointQueueConfig;
 use crate::bitcoin::header_queue::Config as HeaderQueueConfig;
 #[cfg(feature = "full")]
 use crate::bitcoin::signer::Signer;
-use crate::error::Result;
+use crate::error::{Error, Result};
+use bitcoin::hashes::hex::ToHex;
 use bitcoin::secp256k1::{self, rand, SecretKey};
 #[cfg(feature = "full")]
 use bitcoin::BlockHeader;
+use bitcoin::Script;
 #[cfg(feature = "full")]
 use bitcoincore_rpc_async::{Auth, Client as BitcoinRpcClient};
 #[cfg(feature = "full")]
