@@ -411,8 +411,7 @@ impl StartCmd {
             }
             #[cfg(feature = "compat")]
             if cmd.migrate || had_legacy {
-                todo!();
-                // node = node.migrate::<nomic::app::AppV0>(vec![InnerAppTestnet::CONSENSUS_VERSION]);
+                node = node.migrate::<nomic::app::AppV0>(vec![InnerAppTestnet::CONSENSUS_VERSION]);
             }
             if cmd.skip_init_chain {
                 node = node.skip_init_chain();
