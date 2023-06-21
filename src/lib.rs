@@ -20,11 +20,9 @@ pub mod error;
 pub mod network;
 
 #[cfg(feature = "full")]
-pub fn app_client_testnet() -> impl Client<app::InnerAppTestnet> {
+pub fn app_client_testnet(
+) -> AppClient<app::InnerAppTestnet, app::InnerAppTestnet, HttpClient, app::Nom, DerivedKey> {
     let client = HttpClient::new("http://localhost:26657").unwrap();
     // TODO: use file wallet
-    AppClient::<app::InnerAppTestnet, _, _, app::Nom, _>::new(
-        client,
-        DerivedKey::new(b"test").unwrap(),
-    )
+    AppClient::new(client, DerivedKey::new(b"test").unwrap())
 }
