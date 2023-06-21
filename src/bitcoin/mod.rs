@@ -16,6 +16,7 @@ use orga::call::Call;
 use orga::coins::{Accounts, Address, Amount, Coin, Give, Symbol, Take};
 use orga::collections::Map;
 use orga::context::{Context, GetContext};
+use orga::describe::Describe;
 use orga::encoding::Adapter as EdAdapter;
 use orga::encoding::{Decode, Encode, Terminated};
 use orga::migrate::MigrateFrom;
@@ -93,11 +94,11 @@ impl MigrateFrom for Xpub {
     }
 }
 
-// impl Describe for Xpub {
-//     fn describe() -> orga::describe::Descriptor {
-//         orga::describe::Builder::new::<Self>().build()
-//     }
-// }
+impl Describe for Xpub {
+    fn describe() -> orga::describe::Descriptor {
+        orga::describe::Builder::new::<Self>().build()
+    }
+}
 
 pub const XPUB_LENGTH: usize = 78;
 

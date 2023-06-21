@@ -82,7 +82,7 @@ pub struct InnerApp {
 #[orga(channels(Testnet))]
 impl InnerApp {
     #[orga(channel(Testnet))]
-    const CONSENSUS_VERSION: u8 = 0;
+    pub const CONSENSUS_VERSION: u8 = 0;
 
     #[call]
     pub fn deposit_rewards(&mut self) -> Result<()> {

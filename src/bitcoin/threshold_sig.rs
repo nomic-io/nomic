@@ -10,6 +10,7 @@ use orga::call::Call;
 use orga::client::Client;
 use orga::collections::{Map, Next};
 use orga::encoding::{Decode, Encode};
+use orga::macros::Describe;
 use orga::migrate::MigrateFrom;
 use orga::prelude::FieldCall;
 use orga::query::{FieldQuery, Query};
@@ -19,7 +20,9 @@ use serde::Serialize;
 
 pub type Message = [u8; MESSAGE_SIZE];
 
-#[derive(Encode, Decode, State, Debug, Clone, Deref, From, Copy, MigrateFrom, Serialize)]
+#[derive(
+    Encode, Decode, State, Debug, Clone, Deref, From, Copy, MigrateFrom, Serialize, Describe,
+)]
 pub struct Signature(#[serde(serialize_with = "<[_]>::serialize")] [u8; COMPACT_SIGNATURE_SIZE]);
 
 #[derive(
@@ -37,6 +40,7 @@ pub struct Signature(#[serde(serialize_with = "<[_]>::serialize")] [u8; COMPACT_
     Ord,
     MigrateFrom,
     Serialize,
+    Describe,
 )]
 pub struct Pubkey {
     #[serde(serialize_with = "<[_]>::serialize")]

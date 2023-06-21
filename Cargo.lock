@@ -4061,9 +4061,15 @@ version = "0.23.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a13e63f57ee05a1e927887191c76d1b139de9fa40c180b9f8727ee44377242a6"
 dependencies = [
+ "async-trait",
  "bytes",
  "flex-error",
+ "futures",
  "getrandom 0.2.8",
+ "http",
+ "hyper",
+ "hyper-proxy",
+ "hyper-rustls",
  "peg",
  "pin-project",
  "serde",
@@ -4075,6 +4081,8 @@ dependencies = [
  "tendermint-proto 0.23.7",
  "thiserror",
  "time 0.3.20",
+ "tokio",
+ "tracing",
  "url",
  "uuid",
  "walkdir",

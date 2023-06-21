@@ -6,6 +6,7 @@ use bitcoin::util::uint::Uint256;
 use bitcoin::BlockHash;
 use bitcoin::TxMerkleNode;
 use orga::collections::Deque;
+use orga::describe::Describe;
 use orga::encoding::{self as ed, LengthVec};
 use orga::migrate::MigrateFrom;
 use orga::orga;
@@ -176,7 +177,7 @@ impl WorkHeader {
 
 // TODO: implement trait that returns constants for bitcoin::Network variants
 
-#[derive(Clone, Encode, Decode, State, MigrateFrom, Serialize)]
+#[derive(Clone, Encode, Decode, State, MigrateFrom, Serialize, Describe)]
 pub struct Config {
     pub max_length: u64,
     pub max_time_increase: u32,
@@ -322,6 +323,12 @@ impl State for Network {
 
     fn load(_store: Store, bytes: &mut &[u8]) -> OrgaResult<Self> {
         Ok(Self::decode(bytes)?)
+    }
+}
+
+impl Describe for Network {
+    fn describe() -> orga::describe::Descriptor {
+        orga::describe::Builder::new::<Network>().build()
     }
 }
 
