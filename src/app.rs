@@ -17,6 +17,7 @@ use orga::ibc::{Ibc, IbcTx};
 
 use orga::ibc::ibc_rs::Signer as IbcSigner;
 
+use orga::encoding::Adapter as EdAdapter;
 use orga::macros::build_call;
 use orga::migrate::MigrateFrom;
 use orga::orga;
@@ -733,9 +734,9 @@ use orga::ibc::PortChannel;
 
 #[derive(Clone, Debug, Encode, Decode)]
 pub struct IbcDepositCommitment {
-    // pub source: PortChannel,
-    // pub receiver: IbcSigner,
-    // pub sender: IbcSigner,
+    pub source: PortChannel,
+    pub receiver: EdAdapter<IbcSigner>,
+    pub sender: EdAdapter<IbcSigner>,
     pub timeout_timestamp: u64,
 }
 
@@ -745,10 +746,7 @@ impl DepositCommitment {
         use DepositCommitment::*;
         let bytes = match self {
             Address(addr) => addr.bytes().into(),
-            Ibc(dest) => {
-                todo!()
-                //  Sha256::digest(dest.encode()?).to_vec()
-            }
+            Ibc(dest) => Sha256::digest(dest.encode()?).to_vec(),
         };
 
         Ok(bytes)
@@ -757,14 +755,12 @@ impl DepositCommitment {
     pub fn from_base64(s: &str) -> Result<Self> {
         let bytes =
             base64::decode(s).map_err(|_| Error::App("Failed to decode base64".to_string()))?;
-        // Ok(Self::decode(&mut &bytes[..])?)
-        todo!()
+        Ok(Self::decode(&mut &bytes[..])?)
     }
 
     pub fn to_base64(&self) -> Result<String> {
-        todo!()
-        // let bytes = self.encode()?;
-        // Ok(base64::encode(bytes))
+        let bytes = self.encode()?;
+        Ok(base64::encode(bytes))
     }
 }
 
