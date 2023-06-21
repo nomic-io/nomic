@@ -463,7 +463,12 @@ impl Bitcoin {
         };
 
         let mut checkpoint = self.checkpoints.building_mut()?;
-        checkpoint.outputs.push_back(Adapter::new(output))?;
+        let mut building_checkpoint_batch = checkpoint
+            .batches
+            .get_mut(BatchType::Checkpoint as u64)?
+            .unwrap();
+        let mut checkpoint_tx = building_checkpoint_batch.get_mut(0)?.unwrap();
+        checkpoint_tx.output.push_back(Adapter::new(output))?;
 
         Ok(())
     }
@@ -507,6 +512,7 @@ impl Bitcoin {
             .checkpoints
             .signing()?
             .ok_or_else(|| OrgaError::App("No checkpoint to be signed".to_string()))?;
+
         if now > interval && now - interval > signing.create_time() {
             return Ok(ChangeRates::default());
         }
@@ -516,14 +522,25 @@ impl Bitcoin {
         if completed.is_empty() {
             return Ok(ChangeRates::default());
         }
-        let prev = completed
-            .iter()
-            .rev()
-            .find(|c| (now - c.create_time()) > interval)
-            .unwrap_or_else(|| completed.first().unwrap());
 
-        let amount_now = signing.inputs.get(0)?.unwrap().amount;
-        let amount_prev = prev.inputs.get(0)?.unwrap().amount;
+        let last_completed = completed.iter().last().unwrap();
+
+        let prev_index = completed
+            .iter()
+            .rposition(|c| (now - c.create_time()) > interval)
+            .unwrap_or(0);
+
+        if prev_index == 0 {
+            return Err(
+                OrgaError::App("No previous checkpoint to reference value".to_string()).into(),
+            );
+        }
+
+        let prev = completed.get(prev_index).unwrap();
+        let prev_value_checkpoint = completed.get(prev_index - 1).unwrap();
+
+        let amount_now = last_completed.reserve_output()?.unwrap().value;
+        let amount_prev = prev_value_checkpoint.reserve_output()?.unwrap().value;
         let decrease = if amount_now > amount_prev {
             0
         } else {
