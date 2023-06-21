@@ -2301,7 +2301,7 @@ name = "nomic"
 version = "4.2.1"
 dependencies = [
  "base64 0.13.1",
- "bech32 0.8.1",
+ "bech32 0.9.1",
  "bitcoin 0.28.2",
  "bitcoin-script",
  "bitcoin_hashes 0.10.0",

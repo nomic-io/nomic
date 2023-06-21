@@ -20,7 +20,7 @@ js-sys = { version = "0.3.55" }
 serde = "1.0.133"
 serde_json = "1.0.74"
 csv = { version = "1.1.6", optional = true }
-bech32 = { version = "0.8.1" }
+bech32 = { version = "0.9.1" }
 futures = "0.3.21"
 toml_edit = "0.13.4"
 tendermint-rpc = "=0.23.7"
