@@ -399,7 +399,7 @@ async fn bitcoin_test() {
             .await
             .unwrap();
 
-        poll_for_completed_checkpoint(3).await;
+        poll_for_completed_checkpoint(2).await;
 
         let balance = app_client()
             .bitcoin
