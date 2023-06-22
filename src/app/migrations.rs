@@ -1,12 +1,13 @@
-use super::{InnerAppV0, InnerAppV1};
+use super::{InnerAppTestnetV0, InnerAppTestnetV1};
 use orga::{
     migrate::{MigrateFrom, MigrateInto},
+    orga,
     upgrade::Upgrade,
 };
 
-impl MigrateFrom<InnerAppV0> for InnerAppV1 {
+impl MigrateFrom<InnerAppTestnetV0> for InnerAppTestnetV1 {
     #[allow(unused_mut)]
-    fn migrate_from(mut other: InnerAppV0) -> orga::Result<Self> {
+    fn migrate_from(mut other: InnerAppTestnetV0) -> orga::Result<Self> {
         let mut app = Self {
             accounts: other.accounts.migrate_into()?,
             staking: other.staking.migrate_into()?,
@@ -19,12 +20,10 @@ impl MigrateFrom<InnerAppV0> for InnerAppV1 {
             incentive_pool_rewards: other.incentive_pool_rewards.migrate_into()?,
             bitcoin: other.bitcoin.migrate_into()?,
             reward_timer: other.reward_timer.migrate_into()?,
-            #[cfg(feature = "testnet")]
             ibc: orga::ibc::Ibc::default(),
             upgrade: Upgrade::default(),
         };
 
-        #[cfg(not(feature = "testnet"))]
         app.airdrop
             .init_from_airdrop2_csv(include_bytes!("../../airdrop2_snapshot.csv"))?;
 

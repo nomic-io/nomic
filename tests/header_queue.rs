@@ -8,8 +8,9 @@ use nomic::bitcoin::adapter::Adapter;
 use nomic::bitcoin::header_queue::Config;
 use nomic::bitcoin::header_queue::HeaderQueue;
 use nomic::bitcoin::header_queue::WrappedHeader;
+use orga::context::Context;
 use orga::encoding::Encode;
-use orga::prelude::{Context, Paid};
+use orga::plugins::Paid;
 use serial_test::serial;
 use std::fs;
 

@@ -6,7 +6,8 @@ use bitcoin::util::uint::Uint256;
 use bitcoin::BlockHash;
 use bitcoin::TxMerkleNode;
 use orga::collections::Deque;
-use orga::encoding as ed;
+use orga::describe::Describe;
+use orga::encoding::{self as ed, LengthVec};
 use orga::migrate::MigrateFrom;
 use orga::orga;
 use orga::prelude::*;
@@ -175,7 +176,7 @@ impl WorkHeader {
 
 // TODO: implement trait that returns constants for bitcoin::Network variants
 
-#[derive(Clone, Encode, Decode, State, MigrateFrom, Serialize)]
+#[derive(Clone, Encode, Decode, State, MigrateFrom, Serialize, Describe)]
 pub struct Config {
     pub max_length: u64,
     pub max_time_increase: u32,
@@ -339,6 +340,7 @@ impl Default for HeaderQueue {
 //     }
 // }
 
+#[orga]
 impl HeaderQueue {
     #[call]
     pub fn add(&mut self, headers: HeaderList) -> Result<()> {
@@ -670,6 +672,8 @@ mod test {
     use bitcoin::hashes::sha256d::Hash;
     use bitcoin::BlockHash;
     use chrono::{TimeZone, Utc};
+    use orga::context::Context;
+    use orga::plugins::Paid;
     use serial_test::serial;
 
     #[test]

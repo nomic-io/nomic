@@ -14,29 +14,26 @@ use bitcoin::{
     Transaction, TxIn, TxOut,
 };
 use derive_more::{Deref, DerefMut};
-
 use log::info;
-#[cfg(feature = "full")]
-use orga::collections::Map;
-#[cfg(feature = "full")]
-use orga::context::GetContext;
+use orga::coins::Accounts;
+use orga::context::Context;
 use orga::encoding::Terminated;
 #[cfg(feature = "full")]
 use orga::plugins::Time;
-use orga::prelude::Accounts;
-use orga::store::Store;
 use orga::{
     call::Call,
     client::Client,
-    collections::{map::ReadOnly, ChildMut, Deque, Ref},
+    collections::{map::ReadOnly, ChildMut, Deque, Map, Ref},
+    context::GetContext,
     encoding::{Decode, Encode, LengthVec},
     migrate::MigrateFrom,
     orga,
-    prelude::Context,
     query::Query,
     state::State,
     Error as OrgaError, Result as OrgaResult,
 };
+
+use orga::{describe::Describe, store::Store};
 use serde::{Deserialize, Serialize};
 use std::{convert::TryFrom, str::FromStr};
 
@@ -87,19 +84,11 @@ impl Call for CheckpointStatus {
     }
 }
 
-impl<U: Send + Clone> Client<U> for CheckpointStatus {
-    type Client = orga::client::PrimitiveClient<Self, U>;
-
-    fn create_client(parent: U) -> Self::Client {
-        orga::client::PrimitiveClient::new(parent)
+impl Describe for CheckpointStatus {
+    fn describe() -> orga::describe::Descriptor {
+        orga::describe::Builder::new::<Self>().build()
     }
 }
-
-// impl Describe for CheckpointStatus {
-//     fn describe() -> orga::describe::Descriptor {
-//         orga::describe::Builder::new::<Self>().build()
-//     }
-// }
 
 #[orga(skip(Client), version = 1)]
 #[derive(Debug)]
@@ -308,6 +297,7 @@ pub struct Checkpoint {
     pub sigset: SignatorySet,
 }
 
+#[orga]
 impl Checkpoint {
     pub fn new(sigset: SignatorySet) -> Result<Self> {
         let mut checkpoint = Checkpoint {
@@ -394,7 +384,8 @@ impl Checkpoint {
     }
 }
 
-#[derive(Clone, Serialize)]
+#[orga(skip(Default))]
+#[derive(Clone)]
 pub struct Config {
     pub min_checkpoint_interval: u64,
     pub max_checkpoint_interval: u64,
@@ -428,8 +419,6 @@ impl Config {
     }
 }
 
-impl Terminated for Config {}
-
 impl Default for Config {
     fn default() -> Self {
         match super::NETWORK {
@@ -437,12 +426,6 @@ impl Default for Config {
             bitcoin::Network::Testnet | bitcoin::Network::Bitcoin => Config::bitcoin(),
             _ => unimplemented!(),
         }
-    }
-}
-
-impl MigrateFrom for Config {
-    fn migrate_from(other: Self) -> orga::Result<Self> {
-        Ok(other)
     }
 }
 
@@ -459,12 +442,6 @@ pub struct CompletedCheckpoint<'a>(Ref<'a, Checkpoint>);
 
 #[derive(Deref, Debug)]
 pub struct SigningCheckpoint<'a>(Ref<'a, Checkpoint>);
-
-impl<'a, U: Clone> Client<U> for SigningCheckpoint<'a> {
-    type Client = ();
-
-    fn create_client(_: U) {}
-}
 
 impl<'a> Query for SigningCheckpoint<'a> {
     type Query = ();
@@ -653,7 +630,7 @@ impl<'a> BuildingCheckpointMut<'a> {
     fn generate_emergency_disbursal_txs(
         &mut self,
         nbtc_accounts: &Accounts<Nbtc>,
-        recovery_scripts: &Map<orga::prelude::Address, Adapter<bitcoin::Script>>,
+        recovery_scripts: &Map<orga::coins::Address, Adapter<bitcoin::Script>>,
         reserve_outpoint: bitcoin::OutPoint,
         fee_rate: u64,
         reserve_value: u64,
@@ -756,7 +733,7 @@ impl<'a> BuildingCheckpointMut<'a> {
     pub fn advance(
         mut self,
         nbtc_accounts: &Accounts<Nbtc>,
-        recovery_scripts: &Map<orga::prelude::Address, Adapter<bitcoin::Script>>,
+        recovery_scripts: &Map<orga::coins::Address, Adapter<bitcoin::Script>>,
         config: &Config,
     ) -> Result<BuildingAdvanceRes> {
         self.0.status = CheckpointStatus::Signing;
@@ -840,6 +817,7 @@ impl<'a> BuildingCheckpointMut<'a> {
     }
 }
 
+#[orga]
 impl CheckpointQueue {
     pub fn configure(&mut self, config: Config) {
         self.config = config;
@@ -1027,7 +1005,7 @@ impl CheckpointQueue {
         &mut self,
         sig_keys: &Map<ConsensusKey, Xpub>,
         nbtc_accounts: &Accounts<Nbtc>,
-        recovery_scripts: &Map<orga::prelude::Address, Adapter<bitcoin::Script>>,
+        recovery_scripts: &Map<orga::coins::Address, Adapter<bitcoin::Script>>,
     ) -> Result<()> {
         if self.signing()?.is_some() {
             return Ok(());

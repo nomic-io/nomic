@@ -1,16 +1,16 @@
 #[cfg(feature = "full")]
 use crate::app::App;
 use crate::app::CHAIN_ID;
-#[cfg(feature = "full")]
-use crate::app_client;
+// #[cfg(feature = "full")]
+// use crate::app_client;
 #[cfg(feature = "full")]
 use crate::bitcoin::adapter::Adapter;
 #[cfg(feature = "full")]
 use crate::bitcoin::checkpoint::Config as CheckpointQueueConfig;
 #[cfg(feature = "full")]
 use crate::bitcoin::header_queue::Config as HeaderQueueConfig;
-#[cfg(feature = "full")]
-use crate::bitcoin::signer::Signer;
+// #[cfg(feature = "full")]
+// use crate::bitcoin::signer::Signer;
 use crate::error::{Error, Result};
 use bitcoin::hashes::hex::ToHex;
 use bitcoin::secp256k1::{self, rand, SecretKey};
@@ -28,16 +28,16 @@ use chrono::{TimeZone, Utc};
 use ed::Encode;
 #[cfg(feature = "full")]
 use log::info;
-#[cfg(feature = "full")]
-use orga::merk::BackingStore;
+use orga::coins::staking::{Commission, Declaration};
+use orga::coins::{Address, Coin, Decimal};
+use orga::context::Context;
 #[cfg(feature = "full")]
 use orga::merk::MerkStore;
-use orga::prelude::sdk_compat::sdk;
-use orga::prelude::Context;
-use orga::prelude::Time;
+use orga::plugins::sdk_compat::sdk;
+use orga::plugins::{ABCIPlugin, Time, MIN_FEE};
+use orga::state::State;
 #[cfg(feature = "full")]
-use orga::prelude::{ABCIPlugin, Coin, Commission, Decimal, Declaration, State};
-use orga::prelude::{Address, MIN_FEE};
+use orga::store::BackingStore;
 #[cfg(feature = "full")]
 use orga::store::Write;
 #[cfg(feature = "full")]
@@ -161,25 +161,25 @@ pub fn address_from_privkey(privkey: &SecretKey) -> Address {
     Address::from_pubkey(pubkey.serialize())
 }
 
-#[cfg(feature = "full")]
-pub fn setup_test_signer<T: AsRef<Path>>(home: T) -> Signer {
-    let signer_dir_path = home.as_ref().join("signer");
+// #[cfg(feature = "full")]
+// pub fn setup_test_signer<T: AsRef<Path>>(home: T) -> Signer {
+//     let signer_dir_path = home.as_ref().join("signer");
 
-    if !signer_dir_path.exists() {
-        std::fs::create_dir(&signer_dir_path).unwrap();
-    }
+//     if !signer_dir_path.exists() {
+//         std::fs::create_dir(&signer_dir_path).unwrap();
+//     }
 
-    let key_path = signer_dir_path.join("xpriv");
+//     let key_path = signer_dir_path.join("xpriv");
 
-    Signer::load_or_generate(
-        address_from_privkey(&load_privkey(home.as_ref()).unwrap()),
-        app_client(),
-        key_path,
-        0.1,
-        1.0,
-    )
-    .unwrap()
-}
+//     Signer::load_or_generate(
+//         address_from_privkey(&load_privkey(home.as_ref()).unwrap()),
+//         app_client(),
+//         key_path,
+//         0.1,
+//         1.0,
+//     )
+//     .unwrap()
+// }
 
 #[cfg(feature = "full")]
 fn get_tendermint_height() -> Result<Option<String>> {
@@ -212,49 +212,49 @@ pub struct DeclareInfo {
     pub details: String,
 }
 
-#[cfg(feature = "full")]
-pub async fn declare_validator(home: &Path) -> Result<()> {
-    info!("Declaring validator...");
+// #[cfg(feature = "full")]
+// pub async fn declare_validator(home: &Path) -> Result<()> {
+//     info!("Declaring validator...");
 
-    let consensus_key = load_consensus_key(home)?;
+//     let consensus_key = load_consensus_key(home)?;
 
-    let info = DeclareInfo {
-        moniker: "nomic-integration-test".to_string(),
-        website: "https://nomic.io".to_string(),
-        identity: "0".to_string(),
-        details: "The FitnessGram™ Pacer Test is a multistage aerobic capacity test that progressively gets more difficult as it continues.".to_string(),
-    };
+//     let info = DeclareInfo {
+//         moniker: "nomic-integration-test".to_string(),
+//         website: "https://nomic.io".to_string(),
+//         identity: "0".to_string(),
+//         details: "The FitnessGram™ Pacer Test is a multistage aerobic capacity test that progressively gets more difficult as it continues.".to_string(),
+//     };
 
-    let info_json =
-        serde_json::to_string(&info).map_err(|_| orga::Error::App("invalid json".to_string()))?;
-    let info_bytes = info_json.as_bytes().to_vec();
+//     let info_json =
+//         serde_json::to_string(&info).map_err(|_| orga::Error::App("invalid json".to_string()))?;
+//     let info_bytes = info_json.as_bytes().to_vec();
 
-    let declaration = Declaration {
-        consensus_key,
-        amount: 100000.into(),
-        validator_info: info_bytes.try_into().unwrap(),
-        commission: Commission {
-            rate: Decimal::from_str("0.1").unwrap(),
-            max: Decimal::from_str("0.2").unwrap(),
-            max_change: Decimal::from_str("0.1").unwrap(),
-        },
-        min_self_delegation: 0.into(),
-    };
+//     let declaration = Declaration {
+//         consensus_key,
+//         amount: 100000.into(),
+//         validator_info: info_bytes.try_into().unwrap(),
+//         commission: Commission {
+//             rate: Decimal::from_str("0.1").unwrap(),
+//             max: Decimal::from_str("0.2").unwrap(),
+//             max_change: Decimal::from_str("0.1").unwrap(),
+//         },
+//         min_self_delegation: 0.into(),
+//     };
 
-    app_client()
-        .pay_from(async move |client| {
-            client
-                .accounts
-                .take_as_funding((100000 + MIN_FEE).into())
-                .await
-        })
-        .staking
-        .declare_self(declaration)
-        .await
-        .unwrap();
-    info!("Validator declared");
-    Ok(())
-}
+//     app_client()
+//         .pay_from(async move |client| {
+//             client
+//                 .accounts
+//                 .take_as_funding((100000 + MIN_FEE).into())
+//                 .await
+//         })
+//         .staking
+//         .declare_self(declaration)
+//         .await
+//         .unwrap();
+//     info!("Validator declared");
+//     Ok(())
+// }
 
 #[cfg(feature = "full")]
 pub async fn poll_for_blocks() {
@@ -305,72 +305,72 @@ pub struct KeyData {
     pub script: Script,
 }
 
-#[cfg(feature = "full")]
-pub fn setup_test_app(home: &Path, block_data: &BitcoinBlockData) -> Vec<KeyData> {
-    let mut app = ABCIPlugin::<App>::default();
-    let mut store = Store::new(BackingStore::Merk(Shared::new(MerkStore::new(
-        home.join("merk"),
-    ))));
+// #[cfg(feature = "full")]
+// pub fn setup_test_app(home: &Path, block_data: &BitcoinBlockData) -> Vec<KeyData> {
+//     let mut app = ABCIPlugin::<App>::default();
+//     let mut store = Store::new(BackingStore::Merk(Shared::new(MerkStore::new(
+//         home.join("merk"),
+//     ))));
 
-    app.attach(store.clone()).unwrap();
+//     app.attach(store.clone()).unwrap();
 
-    let headers_config = HeaderQueueConfig {
-        encoded_trusted_header: Adapter::new(block_data.block_header)
-            .encode()
-            .unwrap()
-            .try_into()
-            .unwrap(),
-        trusted_height: block_data.height,
-        retargeting: false,
-        min_difficulty_blocks: true,
-        ..Default::default()
-    };
-    app.inner.bitcoin.headers.configure(headers_config).unwrap();
+//     let headers_config = HeaderQueueConfig {
+//         encoded_trusted_header: Adapter::new(block_data.block_header)
+//             .encode()
+//             .unwrap()
+//             .try_into()
+//             .unwrap(),
+//         trusted_height: block_data.height,
+//         retargeting: false,
+//         min_difficulty_blocks: true,
+//         ..Default::default()
+//     };
+//     app.inner.bitcoin.headers.configure(headers_config).unwrap();
 
-    let checkpoints_config = CheckpointQueueConfig {
-        min_checkpoint_interval: 10,
-        ..Default::default()
-    };
+//     let checkpoints_config = CheckpointQueueConfig {
+//         min_checkpoint_interval: 10,
+//         ..Default::default()
+//     };
 
-    app.inner.bitcoin.checkpoints.configure(checkpoints_config);
+//     app.inner.bitcoin.checkpoints.configure(checkpoints_config);
 
-    let address = address_from_privkey(&load_privkey(home).unwrap());
-    app.inner
-        .accounts
-        .deposit(address, Coin::mint(1000000000))
-        .unwrap();
+//     let address = address_from_privkey(&load_privkey(home).unwrap());
+//     app.inner
+//         .accounts
+//         .deposit(address, Coin::mint(1000000000))
+//         .unwrap();
 
-    let keys: Vec<KeyData> = (0..10)
-        .map(|_| {
-            let privkey = SecretKey::new(&mut rand::thread_rng());
-            let address = address_from_privkey(&privkey);
-            let script = address_to_script(address).unwrap();
-            KeyData {
-                privkey,
-                address,
-                script,
-            }
-        })
-        .collect();
+//     let keys: Vec<KeyData> = (0..10)
+//         .map(|_| {
+//             let privkey = SecretKey::new(&mut rand::thread_rng());
+//             let address = address_from_privkey(&privkey);
+//             let script = address_to_script(address).unwrap();
+//             KeyData {
+//                 privkey,
+//                 address,
+//                 script,
+//             }
+//         })
+//         .collect();
 
-    keys.iter().for_each(|key| {
-        app.inner
-            .accounts
-            .deposit(key.address, Coin::mint(1000000000))
-            .unwrap();
-    });
+//     keys.iter().for_each(|key| {
+//         app.inner
+//             .accounts
+//             .deposit(key.address, Coin::mint(1000000000))
+//             .unwrap();
+//     });
 
-    let mut bytes = Vec::new();
-    app.flush(&mut bytes).unwrap();
+//     let mut bytes = Vec::new();
+//     app.flush(&mut bytes).unwrap();
 
-    store.put(vec![], bytes).unwrap();
+//     store.put(vec![], bytes).unwrap();
 
-    if let BackingStore::Merk(inner_store) = store.into_backing_store().into_inner() {
-        inner_store.into_inner().write(vec![]).unwrap();
-    }
+//     if let BackingStore::Merk(inner_store) = store.into_backing_store().into_inner() {
+//         inner_store.into_inner().write(vec![]).unwrap();
+//     }
 
-    keys
-}
+//     keys
+// }
 
 pub fn address_to_script(address: Address) -> Result<Script> {
     let hash = bitcoin::hashes::hash160::Hash::from_str(address.bytes().to_hex().as_str())

@@ -55,4 +55,10 @@ pub enum Error {
     Unknown,
 }
 
+impl From<Error> for orga::Error {
+    fn from(err: Error) -> Self {
+        orga::Error::App(err.to_string())
+    }
+}
+
 pub type Result<T> = std::result::Result<T, Error>;

@@ -1,5 +1,5 @@
 use bitcoin::consensus::{Decodable, Encodable};
-use orga::client::{Client, PrimitiveClient};
+use orga::describe::Describe;
 use orga::encoding::Result as EncodingResult;
 use orga::migrate::MigrateFrom;
 use orga::prelude::*;
@@ -46,7 +46,7 @@ impl<T: Default> Default for Adapter<T> {
 
 impl<T> Terminated for Adapter<T> {}
 
-impl<T: Encodable + Decodable> State for Adapter<T> {
+impl<T: Encodable + Decodable + 'static> State for Adapter<T> {
     #[inline]
     fn attach(&mut self, _: Store) -> OrgaResult<()> {
         Ok(())
@@ -62,11 +62,11 @@ impl<T: Encodable + Decodable> State for Adapter<T> {
     }
 }
 
-// impl<T: Encodable + Decodable + 'static> Describe for Adapter<T> {
-//     fn describe() -> orga::describe::Descriptor {
-//         orga::describe::Builder::new::<Self>().build()
-//     }
-// }
+impl<T: Encodable + Decodable + 'static> Describe for Adapter<T> {
+    fn describe() -> orga::describe::Descriptor {
+        orga::describe::Builder::new::<Self>().build()
+    }
+}
 
 impl<T> Deref for Adapter<T> {
     type Target = T;
@@ -118,14 +118,6 @@ impl<T: Decodable> Decode for Adapter<T> {
                 Err(std_e.into())
             }
         }
-    }
-}
-
-impl<T, U: Clone> Client<U> for Adapter<T> {
-    type Client = PrimitiveClient<T, U>;
-
-    fn create_client(inner: U) -> Self::Client {
-        PrimitiveClient::new(inner)
     }
 }
 

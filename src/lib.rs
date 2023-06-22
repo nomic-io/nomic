@@ -4,10 +4,11 @@
 #![feature(specialization)]
 #![feature(type_alias_impl_trait)]
 #![feature(async_closure)]
-#![feature(is_some_and)]
 
-#[cfg(feature = "full")]
-use orga::abci::TendermintClient;
+// #[cfg(feature = "full")]
+use orga::client::wallet::DerivedKey;
+use orga::client::{AppClient, Client};
+use orga::tendermint::client::HttpClient;
 
 pub use orga;
 pub use thiserror;
@@ -20,6 +21,9 @@ pub mod network;
 pub mod utils;
 
 #[cfg(feature = "full")]
-pub fn app_client() -> TendermintClient<app::App> {
-    TendermintClient::new("http://localhost:26657").unwrap()
+pub fn app_client_testnet(
+) -> AppClient<app::InnerAppTestnet, app::InnerAppTestnet, HttpClient, app::Nom, DerivedKey> {
+    let client = HttpClient::new("http://localhost:26657").unwrap();
+    // TODO: use file wallet
+    AppClient::new(client, DerivedKey::new(b"test").unwrap())
 }

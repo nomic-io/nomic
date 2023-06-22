@@ -19,6 +19,8 @@ use orga::coins::{Accounts, Address, Amount, Coin, Give, Symbol, Take};
 use orga::collections::Map;
 use orga::collections::{Deque, Next};
 use orga::context::{Context, GetContext};
+use orga::describe::Describe;
+use orga::encoding::Adapter as EdAdapter;
 use orga::encoding::{Decode, Encode, Terminated};
 use orga::migrate::MigrateFrom;
 use orga::orga;
@@ -26,7 +28,8 @@ use orga::plugins::Paid;
 #[cfg(feature = "full")]
 use orga::plugins::{BeginBlockCtx, Validators};
 use orga::plugins::{Signer, Time};
-use orga::query::Query;
+use orga::prelude::FieldCall;
+use orga::query::{FieldQuery, Query};
 use orga::state::State;
 use orga::store::Store;
 use orga::{Error as OrgaError, Result as OrgaResult};
@@ -37,11 +40,11 @@ use txid_set::OutpointSet;
 pub mod adapter;
 pub mod checkpoint;
 pub mod header_queue;
-#[cfg(feature = "full")]
-pub mod relayer;
+// #[cfg(feature = "full")]
+// pub mod relayer;
 pub mod signatory;
-#[cfg(feature = "full")]
-pub mod signer;
+// #[cfg(feature = "full")]
+// pub mod signer;
 pub mod threshold_sig;
 pub mod txid_set;
 
@@ -58,7 +61,8 @@ pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Testnet;
 #[cfg(all(feature = "testnet", feature = "devnet"))]
 pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Regtest;
 
-#[derive(Serialize)]
+#[orga(skip(Default))]
+// #[derive(Serialize)]
 pub struct Config {
     min_withdrawal_checkpoints: u32,
     min_deposit_amount: u64,
@@ -72,8 +76,6 @@ pub struct Config {
     emergency_disbursal_lock_time_interval: u32,
     emergency_disbursal_max_tx_size: u64,
 }
-
-impl Terminated for Config {}
 
 impl Config {
     fn regtest() -> Self {
@@ -119,12 +121,6 @@ impl Default for Config {
     }
 }
 
-impl MigrateFrom for Config {
-    fn migrate_from(other: Self) -> orga::Result<Self> {
-        Ok(other)
-    }
-}
-
 pub fn calc_deposit_fee(amount: u64) -> u64 {
     amount / 5
 }
@@ -148,30 +144,33 @@ pub struct Bitcoin {
 
 pub type ConsensusKey = [u8; 32];
 
-#[derive(Call, Query, Clone, Debug, Client, PartialEq, Serialize)]
-pub struct Xpub(ExtendedPubKey);
+// #[derive(Call, Query, Clone, Debug, Client, PartialEq, Serialize)]
+#[derive(Debug, PartialEq, Serialize, FieldCall, FieldQuery, Clone)]
+pub struct Xpub {
+    key: ExtendedPubKey,
+}
 
 impl MigrateFrom for Xpub {
-    fn migrate_from(other: Self) -> OrgaResult<Self> {
+    fn migrate_from(other: Self) -> orga::Result<Self> {
         Ok(other)
     }
 }
 
-// impl Describe for Xpub {
-//     fn describe() -> orga::describe::Descriptor {
-//         orga::describe::Builder::new::<Self>().build()
-//     }
-// }
+impl Describe for Xpub {
+    fn describe() -> orga::describe::Descriptor {
+        orga::describe::Builder::new::<Self>().build()
+    }
+}
 
 pub const XPUB_LENGTH: usize = 78;
 
 impl Xpub {
     pub fn new(key: ExtendedPubKey) -> Self {
-        Xpub(key)
+        Xpub { key }
     }
 
     pub fn inner(&self) -> &ExtendedPubKey {
-        &self.0
+        &self.key
     }
 }
 
@@ -195,13 +194,13 @@ impl Deref for Xpub {
     type Target = ExtendedPubKey;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.key
     }
 }
 
 impl Encode for Xpub {
     fn encode_into<W: std::io::Write>(&self, dest: &mut W) -> ed::Result<()> {
-        let bytes = self.0.encode();
+        let bytes = self.key.encode();
         dest.write_all(&bytes)?;
         Ok(())
     }
@@ -216,7 +215,7 @@ impl Decode for Xpub {
         let mut bytes = [0; XPUB_LENGTH];
         input.read_exact(&mut bytes)?;
         let key = ExtendedPubKey::decode(&bytes).map_err(|_| ed::Error::UnexpectedByte(32))?;
-        Ok(Xpub(key))
+        Ok(Xpub { key }.into())
     }
 }
 
@@ -224,13 +223,13 @@ impl Terminated for Xpub {}
 
 impl From<ExtendedPubKey> for Xpub {
     fn from(key: ExtendedPubKey) -> Self {
-        Xpub(key)
+        Xpub { key }
     }
 }
 
 impl From<&ExtendedPubKey> for Xpub {
     fn from(key: &ExtendedPubKey) -> Self {
-        Xpub(*key)
+        Xpub { key: *key }
     }
 }
 
@@ -243,6 +242,7 @@ pub fn exempt_from_fee() -> Result<()> {
     Ok(())
 }
 
+#[orga]
 impl Bitcoin {
     pub fn config() -> Config {
         Config::default()
@@ -616,6 +616,7 @@ pub struct SignatoryKeys {
     xpubs: Map<Xpub, ()>,
 }
 
+#[orga]
 impl SignatoryKeys {
     pub fn reset(&mut self) -> OrgaResult<()> {
         let mut xpubs = vec![];
@@ -638,9 +639,9 @@ impl SignatoryKeys {
 
     pub fn insert(&mut self, consensus_key: ConsensusKey, xpub: Xpub) -> Result<()> {
         let mut normalized_xpub = xpub.clone();
-        normalized_xpub.0.child_number = 0.into();
-        normalized_xpub.0.depth = 0;
-        normalized_xpub.0.parent_fingerprint = Default::default();
+        normalized_xpub.key.child_number = 0.into();
+        normalized_xpub.key.depth = 0;
+        normalized_xpub.key.parent_fingerprint = Default::default();
 
         if self.by_cons.contains_key(consensus_key)? {
             return Err(OrgaError::App("Validator already has a signatory key".to_string()).into());
@@ -664,7 +665,7 @@ impl SignatoryKeys {
 
 fn clear_map<K, V>(map: &mut Map<K, V>) -> OrgaResult<()>
 where
-    K: Encode + Decode + Terminated + Next + Clone,
+    K: Encode + Decode + Terminated + Next + Clone + 'static,
     V: State,
 {
     let mut keys = vec![];
