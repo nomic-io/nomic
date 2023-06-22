@@ -12,12 +12,10 @@ use checkpoint::{CheckpointQueue, FEE_RATE};
 use header_queue::HeaderQueue;
 #[cfg(feature = "full")]
 use orga::abci::BeginBlock;
-use orga::call::Call;
 use orga::coins::{Accounts, Address, Amount, Coin, Give, Symbol, Take};
 use orga::collections::Map;
 use orga::context::{Context, GetContext};
 use orga::describe::Describe;
-use orga::encoding::Adapter as EdAdapter;
 use orga::encoding::{Decode, Encode, Terminated};
 use orga::migrate::MigrateFrom;
 use orga::orga;
@@ -26,7 +24,7 @@ use orga::plugins::Paid;
 use orga::plugins::{BeginBlockCtx, Validators};
 use orga::plugins::{Signer, Time};
 use orga::prelude::FieldCall;
-use orga::query::{FieldQuery, Query};
+use orga::query::FieldQuery;
 use orga::state::State;
 use orga::store::Store;
 use orga::{Error as OrgaError, Result as OrgaResult};
@@ -153,7 +151,7 @@ impl Decode for Xpub {
         let mut bytes = [0; XPUB_LENGTH];
         input.read_exact(&mut bytes)?;
         let key = ExtendedPubKey::decode(&bytes).map_err(|_| ed::Error::UnexpectedByte(32))?;
-        Ok(Xpub { key }.into())
+        Ok(Xpub { key })
     }
 }
 

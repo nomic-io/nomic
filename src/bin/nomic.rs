@@ -12,7 +12,6 @@ use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
 use futures::executor::block_on;
 use nomic::app::DepositCommitment;
@@ -23,12 +22,11 @@ use nomic::error::Result;
 use nomic::network::Network;
 use orga::abci::Node;
 use orga::client::wallet::{SimpleWallet, Wallet};
-use orga::client::{AppClient, Client};
+use orga::client::AppClient;
 use orga::coins::{Address, Commission, Decimal, Declaration, Symbol};
-use orga::ibc::GrpcOpts;
 use orga::macros::build_call;
 use orga::merk::MerkStore;
-use orga::plugins::{load_privkey, MIN_FEE};
+use orga::plugins::MIN_FEE;
 use orga::prelude::*;
 use orga::tendermint::client::HttpClient;
 use serde::{Deserialize, Serialize};
@@ -43,15 +41,15 @@ const BANNER: &str = r#"
 ╚═╝  ╚═══╝  ╚═════╝  ╚═╝     ╚═╝ ╚═╝  ╚═════╝
 "#;
 
-#[cfg(feature = "testnet")]
-fn now_seconds() -> i64 {
-    use std::time::SystemTime;
+// #[cfg(feature = "testnet")]
+// fn now_seconds() -> i64 {
+//     use std::time::SystemTime;
 
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64
-}
+//     SystemTime::now()
+//         .duration_since(SystemTime::UNIX_EPOCH)
+//         .unwrap()
+//         .as_secs() as i64
+// }
 
 fn wallet() -> SimpleWallet {
     let path = home::home_dir().unwrap().join(".orga-wallet");
@@ -242,6 +240,7 @@ impl StartCmd {
                     }
                     lh
                 } else {
+                    #[allow(clippy::redundant_clone)]
                     home.clone()
                 };
 
@@ -644,7 +643,6 @@ impl DelegationsCmd {
                 continue;
             }
 
-            use nomic::app::Nom;
             use nomic::bitcoin::Nbtc;
             let liquid_nom = delegation
                 .liquid
@@ -980,19 +978,19 @@ pub struct RelayerCmd {
 }
 
 impl RelayerCmd {
-    async fn btc_client(&self) -> Result<BtcClient> {
-        let rpc_url = format!("http://localhost:{}", self.rpc_port);
-        let auth = match (self.rpc_user.clone(), self.rpc_pass.clone()) {
-            (Some(user), Some(pass)) => Auth::UserPass(user, pass),
-            _ => Auth::None,
-        };
+    // async fn btc_client(&self) -> Result<BtcClient> {
+    //     let rpc_url = format!("http://localhost:{}", self.rpc_port);
+    //     let auth = match (self.rpc_user.clone(), self.rpc_pass.clone()) {
+    //         (Some(user), Some(pass)) => Auth::UserPass(user, pass),
+    //         _ => Auth::None,
+    //     };
 
-        let btc_client = BtcClient::new(rpc_url, auth)
-            .await
-            .map_err(|e| orga::Error::App(e.to_string()))?;
+    //     let btc_client = BtcClient::new(rpc_url, auth)
+    //         .await
+    //         .map_err(|e| orga::Error::App(e.to_string()))?;
 
-        Ok(btc_client)
-    }
+    //     Ok(btc_client)
+    // }
 
     async fn run(&self) -> Result<()> {
         todo!()
@@ -1134,8 +1132,8 @@ pub struct InterchainDepositCmd {
     channel: String,
 }
 
-#[cfg(feature = "testnet")]
-const ONE_DAY_NS: u64 = 86400 * 1_000_000_000;
+// #[cfg(feature = "testnet")]
+// const ONE_DAY_NS: u64 = 86400 * 1_000_000_000;
 #[cfg(feature = "testnet")]
 impl InterchainDepositCmd {
     async fn run(&self) -> Result<()> {

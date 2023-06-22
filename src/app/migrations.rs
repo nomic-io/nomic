@@ -1,7 +1,6 @@
 use super::{InnerAppTestnetV0, InnerAppTestnetV1};
 use orga::{
     migrate::{MigrateFrom, MigrateInto},
-    orga,
     upgrade::Upgrade,
 };
 
