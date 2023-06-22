@@ -717,13 +717,6 @@ impl From<Signatory> for RawSignatory {
     }
 }
 
-fn time_now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
-}
-
 /// A collection which stores all watched addresses and signatory sets, for
 /// efficiently detecting deposit output scripts.
 #[derive(Default)]

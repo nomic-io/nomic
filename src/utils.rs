@@ -52,6 +52,7 @@ use std::process::{Child, Command, Stdio};
 use std::str::FromStr;
 #[cfg(feature = "full")]
 use std::time::Duration;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub fn retry<F, T, E>(f: F, max_retries: u32) -> std::result::Result<T, E>
 where
@@ -70,6 +71,13 @@ where
             }
         }
     }
+}
+
+pub fn time_now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
 }
 
 async fn sleep(seconds: u64) {
