@@ -72,6 +72,11 @@ where
     }
 }
 
+async fn sleep(seconds: u64) {
+    let duration = std::time::Duration::from_secs(seconds);
+    tokio::time::sleep(duration).await;
+}
+
 pub fn generate_sign_doc(msg: sdk::Msg, nonce: u64) -> sdk::SignDoc {
     sdk::SignDoc {
         account_number: "0".to_string(),

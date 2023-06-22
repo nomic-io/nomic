@@ -724,11 +724,6 @@ fn time_now() -> u64 {
         .as_secs()
 }
 
-async fn sleep(seconds: u64) {
-    let duration = std::time::Duration::from_secs(seconds);
-    tokio::time::sleep(duration).await;
-}
-
 /// A collection which stores all watched addresses and signatory sets, for
 /// efficiently detecting deposit output scripts.
 #[derive(Default)]
