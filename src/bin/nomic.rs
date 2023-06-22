@@ -15,19 +15,22 @@ use std::str::FromStr;
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
 use futures::executor::block_on;
+use nomic::app::DepositCommitment;
 use nomic::app::InnerAppTestnet;
-use nomic::{app::DepositCommitment, app_client_testnet as app_client};
+use nomic::app::Nom;
 // use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
 use nomic::network::Network;
 use orga::abci::Node;
-use orga::client::Client;
+use orga::client::wallet::{SimpleWallet, Wallet};
+use orga::client::{AppClient, Client};
 use orga::coins::{Address, Commission, Decimal, Declaration, Symbol};
 use orga::ibc::GrpcOpts;
 use orga::macros::build_call;
 use orga::merk::MerkStore;
 use orga::plugins::{load_privkey, MIN_FEE};
 use orga::prelude::*;
+use orga::tendermint::client::HttpClient;
 use serde::{Deserialize, Serialize};
 use tendermint_rpc::Client as _;
 
@@ -50,11 +53,17 @@ fn now_seconds() -> i64 {
         .as_secs() as i64
 }
 
+fn wallet() -> SimpleWallet {
+    let path = home::home_dir().unwrap().join(".orga-wallet");
+    SimpleWallet::open(path).unwrap()
+}
+
 fn my_address() -> Address {
-    use orga::secp256k1;
-    let privkey = load_privkey().unwrap();
-    let pubkey = secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &privkey);
-    Address::from_pubkey(pubkey.serialize())
+    wallet().address().unwrap().unwrap()
+}
+
+fn app_client() -> AppClient<InnerAppTestnet, InnerAppTestnet, HttpClient, Nom, SimpleWallet> {
+    nomic::app_client_testnet().with_wallet(wallet())
 }
 
 #[derive(Parser, Debug)]
