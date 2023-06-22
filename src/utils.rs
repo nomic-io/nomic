@@ -80,9 +80,9 @@ pub fn time_now() -> u64 {
         .as_secs()
 }
 
-async fn sleep(seconds: u64) {
+pub fn sleep(seconds: u64) {
     let duration = std::time::Duration::from_secs(seconds);
-    tokio::time::sleep(duration).await;
+    std::thread::sleep(duration);
 }
 
 pub fn generate_sign_doc(msg: sdk::Msg, nonce: u64) -> sdk::SignDoc {
