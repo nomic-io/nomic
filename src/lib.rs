@@ -20,7 +20,7 @@ pub mod network;
 
 #[cfg(feature = "full")]
 pub fn app_client_testnet(
-) -> AppClient<app::InnerAppTestnet, app::InnerAppTestnet, HttpClient, app::Nom, Unsigned> {
+) -> AppClient<app::InnerApp, app::InnerApp, HttpClient, app::Nom, Unsigned> {
     let client = HttpClient::new("http://localhost:26657").unwrap();
     AppClient::new(client, Unsigned)
 }

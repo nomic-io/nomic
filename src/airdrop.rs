@@ -433,7 +433,7 @@ impl Part {
 mod test {
     use super::*;
     #[cfg(not(feature = "testnet"))]
-    use orga::prelude::Amount;
+    use orga::coins::Amount;
     use std::str::FromStr;
 
     fn assert_approx_eq(a: u64, b: u64) {

@@ -15,7 +15,7 @@ use std::str::FromStr;
 use clap::Parser;
 use futures::executor::block_on;
 use nomic::app::DepositCommitment;
-use nomic::app::InnerAppTestnet;
+use nomic::app::InnerApp;
 use nomic::app::Nom;
 // use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
@@ -60,7 +60,7 @@ fn my_address() -> Address {
     wallet().address().unwrap().unwrap()
 }
 
-fn app_client() -> AppClient<InnerAppTestnet, InnerAppTestnet, HttpClient, Nom, SimpleWallet> {
+fn app_client() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, SimpleWallet> {
     nomic::app_client_testnet().with_wallet(wallet())
 }
 
@@ -288,7 +288,7 @@ impl StartCmd {
 
             #[cfg(not(feature = "compat"))]
             if let Some(legacy_version) = &cmd.config.legacy_version {
-                let version_hex = hex::encode([CONSENSUS_VERSION]);
+                let version_hex = hex::encode([InnerApp::CONSENSUS_VERSION]);
 
                 let net_ver_path = home.join("network_version");
                 let up_to_date = if net_ver_path.exists() {
@@ -419,7 +419,7 @@ impl StartCmd {
             }
             #[cfg(feature = "compat")]
             if cmd.migrate || had_legacy {
-                node = node.migrate::<nomic::app::AppV0>(vec![InnerAppTestnet::CONSENSUS_VERSION]);
+                node = node.migrate::<nomic::app::AppV0>(vec![InnerApp::CONSENSUS_VERSION]);
             }
             if cmd.skip_init_chain {
                 node = node.skip_init_chain();
