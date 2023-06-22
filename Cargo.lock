@@ -2468,6 +2468,7 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.3.1"
+source = "git+https://github.com/nomic-io/orga.git?rev=9d69bc2553a02e0ebc15cb5b1d1616bcb69845da#9d69bc2553a02e0ebc15cb5b1d1616bcb69845da"
 dependencies = [
  "abci2",
  "async-trait",
@@ -2500,6 +2501,7 @@ dependencies = [
  "paste",
  "prost 0.11.9",
  "prost-types 0.11.9",
+ "rand 0.8.5",
  "reqwest",
  "ripemd",
  "rust_decimal",
@@ -2527,6 +2529,7 @@ dependencies = [
 [[package]]
 name = "orga-macros"
 version = "0.3.1"
+source = "git+https://github.com/nomic-io/orga.git?rev=9d69bc2553a02e0ebc15cb5b1d1616bcb69845da#9d69bc2553a02e0ebc15cb5b1d1616bcb69845da"
 dependencies = [
  "darling",
  "heck 0.3.3",
