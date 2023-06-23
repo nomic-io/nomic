@@ -218,7 +218,7 @@ impl StartCmd {
             let home = cmd.home.map_or_else(
                 || {
                     Node::home(
-                        &cmd.config.chain_id
+                        cmd.config.chain_id.as_ref()
                             .expect("Expected a chain-id or home directory to be set"),
                     )
                 },
@@ -347,10 +347,11 @@ impl StartCmd {
 
             let has_node = home.exists();
             let config_path = home.join("tendermint/config/config.toml");
+            let chain_id = cmd.config.chain_id.as_deref();
             if !has_node {
                 log::info!("Initializing node at {}...", home.display());
 
-                let node = Node::<nomic::app::App>::new(&home, nomic::app::CHAIN_ID, Default::default());
+                let node = Node::<nomic::app::App>::new(&home, chain_id, Default::default());
 
                 if let Some(source) = cmd.clone_store {
                     let mut source = PathBuf::from_str(&source).unwrap();
@@ -399,7 +400,7 @@ impl StartCmd {
             }
 
             log::info!("Starting node at {}...", home.display());
-            let mut node = Node::<nomic::app::App>::new(&home, nomic::app::CHAIN_ID, Default::default());
+            let mut node = Node::<nomic::app::App>::new(&home, chain_id, Default::default());
 
             if cmd.unsafe_reset {
                 node = node.reset();
@@ -1275,21 +1276,20 @@ pub struct ExportCmd {
 
 impl ExportCmd {
     async fn run(&self) -> Result<()> {
-        todo!()
-        // let home = PathBuf::from_str(&self.home).unwrap();
+        let home = PathBuf::from_str(&self.home).unwrap();
 
-        // let store_path = home.join("merk");
-        // let store = Store::new(orga::store::BackingStore::Merk(orga::store::Shared::new(
-        //     MerkStore::new(store_path),
-        // )));
-        // let root_bytes = store.get(&[])?.unwrap();
+        let store_path = home.join("merk");
+        let store = Store::new(orga::store::BackingStore::Merk(orga::store::Shared::new(
+            MerkStore::new(store_path),
+        )));
+        let root_bytes = store.get(&[])?.unwrap();
 
-        // let app =
-        //     orga::plugins::ABCIPlugin::<nomic::app::App>::load(store, &mut root_bytes.as_slice())?;
+        let app =
+            orga::plugins::ABCIPlugin::<nomic::app::App>::load(store, &mut root_bytes.as_slice())?;
 
-        // serde_json::to_writer_pretty(std::io::stdout(), &app).unwrap();
+        serde_json::to_writer_pretty(std::io::stdout(), &app).unwrap();
 
-        // Ok(())
+        Ok(())
     }
 }
 
