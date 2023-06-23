@@ -15,18 +15,7 @@ const MAX_STAKED: u64 = 1_000_000_000;
 const AIRDROP_II_TOTAL: u64 = 3_500_000_000_000;
 
 #[orga]
-pub struct Accs {
-    transfers_allowed: bool,
-    transfer_exceptions: Map<Address, ()>,
-    accounts: Map<Address, Account>,
-}
-
-#[orga(version = 1)]
 pub struct Airdrop {
-    #[orga(version(V0))]
-    accounts: Accs,
-
-    #[orga(version(V1))]
     accounts: Map<Address, Account>,
 }
 
@@ -330,13 +319,13 @@ impl Airdrop {
     }
 }
 
-impl MigrateFrom<AirdropV0> for AirdropV1 {
-    fn migrate_from(other: AirdropV0) -> Result<Self> {
-        Ok(Self {
-            accounts: other.accounts.accounts.migrate_into()?,
-        })
-    }
-}
+// impl MigrateFrom<AirdropV0> for AirdropV1 {
+//     fn migrate_from(other: AirdropV0) -> Result<Self> {
+//         Ok(Self {
+//             accounts: other.accounts.accounts.migrate_into()?,
+//         })
+//     }
+// }
 
 #[cfg(not(feature = "testnet"))]
 #[orga(version = 1)]
