@@ -92,7 +92,7 @@ impl<
     }
 
     fn sidechain_block_hash(&self) -> Result<BlockHash> {
-        let hash = (self.query_provider)().query(|app| Ok(app.bitcoin.headers.hash()))??;
+        let hash = app_client_testnet().query(|app| Ok(app.bitcoin.headers.hash()))??;
         let hash = BlockHash::from_slice(hash.as_slice())?;
         Ok(hash)
     }
@@ -348,7 +348,7 @@ impl<
     fn relay_emergency_disbursal_transactions(&mut self) -> Result<()> {
         let mut relayed = HashSet::new();
         loop {
-            let disbursal_txs = (self.query_provider)()
+            let disbursal_txs = app_client_testnet()
                 .query(|app| Ok(app.bitcoin.checkpoints.emergency_disbursal_txs()?))?;
 
             for tx in disbursal_txs.iter() {
@@ -401,14 +401,14 @@ impl<
     }
 
     fn relay_checkpoints(&mut self) -> Result<()> {
-        let last_checkpoint = (self.query_provider)()
+        let last_checkpoint = app_client_testnet()
             .query(|app| Ok(app.bitcoin.checkpoints.last_completed_tx()?))?;
         info!("Last checkpoint tx: {}", last_checkpoint.txid());
 
         let mut relayed = HashSet::new();
 
         loop {
-            let txs = (self.query_provider)()
+            let txs = app_client_testnet()
                 .query(|app| Ok(app.bitcoin.checkpoints.completed_txs()?))?;
             for tx in txs {
                 if relayed.contains(&tx.txid()) {
@@ -442,7 +442,7 @@ impl<
         recv: &mut Receiver<(DepositCommitment, u32)>,
     ) -> Result<()> {
         while let Ok((addr, sigset_index)) = recv.try_recv() {
-            let sigset_res = (self.query_provider)()
+            let sigset_res = app_client_testnet()
                 .query(|app| Ok(app.bitcoin.checkpoints.get(sigset_index)?.sigset.clone()));
             let sigset = match sigset_res {
                 Ok(sigset) => sigset,
@@ -531,7 +531,7 @@ impl<
         let outpoint = (txid.into_inner(), output.vout);
         let dest = output.dest.clone();
         let vout = output.vout;
-        let contains_outpoint = (self.query_provider)().query(|app| {
+        let contains_outpoint = app_client_testnet().query(|app| {
             app.bitcoin
                 .processed_outpoints
                 .contains(outpoint)
@@ -611,7 +611,7 @@ impl<
             batch[0].height(),
             batch.len(),
         );
-        (self.call_provider)().call(
+        app_client_testnet().call(
             |app| {
                 build_call!(app.bitcoin.headers.add(
                     batch
@@ -622,7 +622,7 @@ impl<
             },
             |app| build_call!(app.app_noop()),
         )?;
-        let res = (self.call_provider)().call(
+        let res = app_client_testnet().call(
             move |app| build_call!(app.bitcoin.headers.add(batch.clone().into())),
             |app| build_call!(app.app_noop()),
         );
