@@ -156,21 +156,6 @@ impl<
         Ok(())
     }
 
-    fn sigset_path(&self) -> warp::reply::WithStatus<warp::reply::Json> {
-        let sigset: std::result::Result<RawSignatorySet, _> = (self.query_provider.clone())()
-            .query(|app| {
-                let sigset: RawSignatorySet = app.bitcoin.checkpoints.active_sigset()?.into();
-                Ok(sigset.clone())
-            })
-            .map_err(|_| warp::http::StatusCode::NOT_FOUND);
-        match sigset {
-            Ok(sigset) => {
-                warp::reply::with_status(warp::reply::json(&sigset), warp::http::StatusCode::OK)
-            }
-            Err(e) => warp::reply::with_status(warp::reply::json(&e.to_string()), e),
-        }
-    }
-
     fn create_address_server(
         &self,
     ) -> (impl Future<Output = ()>, Receiver<(DepositCommitment, u32)>) {
