@@ -9,6 +9,8 @@ pub enum Error {
     #[error(transparent)]
     BitcoinAddress(#[from] bitcoin::util::address::Error),
     #[error(transparent)]
+    BitcoinCoreRpc(#[from] bitcoind::bitcoincore_rpc::Error),
+    #[error(transparent)]
     BitcoinHash(#[from] bitcoin::hashes::Error),
     #[error(transparent)]
     BitcoinLockTime(#[from] bitcoin::locktime::Error),
