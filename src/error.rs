@@ -43,17 +43,29 @@ pub enum Error {
     Ibc(String),
     #[error("Input index: {0} out of bounds")]
     InputIndexOutOfBounds(usize),
+    #[error("Invalid Deposit Address")]
+    InvalidDepositAddress,
     #[error(transparent)]
     Orga(#[from] orga::Error),
     #[error(transparent)]
     Ed(#[from] ed::Error),
     #[error("{0}")]
     Relayer(String),
+    #[error("Warp Rejection")]
+    WarpRejection(),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error("Unknown Error")]
     Unknown,
 }
+
+impl From<warp::Rejection> for Error {
+    fn from(_: warp::Rejection) -> Self {
+        Error::WarpRejection()
+    }
+}
+
+impl warp::reject::Reject for Error {}
 
 impl From<Error> for orga::Error {
     fn from(err: Error) -> Self {
