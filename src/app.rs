@@ -1,4 +1,7 @@
 #![allow(clippy::too_many_arguments)]
+// TODO: remove after swtiching from "testnet" feature flag to orga channels
+#![allow(unused_variables)]
+#![allow(unused_imports)]
 
 use crate::airdrop::Airdrop;
 use crate::bitcoin::adapter::Adapter;
