@@ -51,31 +51,17 @@ impl Default for Config {
     }
 }
 
-pub struct Relayer<T, U, V>
-where
-    T: Client<InnerAppTestnet>,
-    U: FnMut() -> T + Send + Sync,
-    V: Fn() -> T + Send + Sync + Clone,
-{
+pub struct Relayer {
     btc_client: BitcoinRpcClient,
-    call_provider: U,
-    query_provider: V,
     config: Config,
 
     scripts: Option<WatchedScriptStore>,
 }
 
-impl<
-        T: Client<InnerAppTestnet>,
-        U: FnMut() -> T + Send + Sync,
-        V: Fn() -> T + Send + Sync + Clone,
-    > Relayer<T, U, V>
-{
-    pub fn new(btc_client: BitcoinRpcClient, call_provider: U, query_provider: V) -> Self {
+impl Relayer {
+    pub fn new(btc_client: BitcoinRpcClient) -> Self {
         Relayer {
             btc_client,
-            call_provider,
-            query_provider,
             scripts: None,
             config: Config::default(),
         }
@@ -84,8 +70,6 @@ impl<
     pub fn configure(self, config: Config) -> Self {
         Relayer {
             btc_client: self.btc_client,
-            call_provider: self.call_provider,
-            query_provider: self.query_provider,
             scripts: self.scripts,
             config,
         }
@@ -137,7 +121,7 @@ impl<
     pub async fn start_deposit_relay<P: AsRef<Path>>(mut self, store_path: P) -> Result<()> {
         info!("Starting deposit relay...");
 
-        let scripts = WatchedScriptStore::open(store_path, &mut self.call_provider)?;
+        let scripts = WatchedScriptStore::open(store_path)?;
         self.scripts = Some(scripts);
 
         let (server, mut recv) = self.create_address_server();
@@ -386,15 +370,15 @@ impl<
     }
 
     fn relay_checkpoints(&mut self) -> Result<()> {
-        let last_checkpoint = app_client_testnet()
-            .query(|app| Ok(app.bitcoin.checkpoints.last_completed_tx()?))?;
+        let last_checkpoint =
+            app_client_testnet().query(|app| Ok(app.bitcoin.checkpoints.last_completed_tx()?))?;
         info!("Last checkpoint tx: {}", last_checkpoint.txid());
 
         let mut relayed = HashSet::new();
 
         loop {
-            let txs = app_client_testnet()
-                .query(|app| Ok(app.bitcoin.checkpoints.completed_txs()?))?;
+            let txs =
+                app_client_testnet().query(|app| Ok(app.bitcoin.checkpoints.completed_txs()?))?;
             for tx in txs {
                 if relayed.contains(&tx.txid()) {
                     continue;
@@ -597,14 +581,7 @@ impl<
             batch.len(),
         );
         app_client_testnet().call(
-            |app| {
-                build_call!(app.bitcoin.headers.add(
-                    batch
-                        .clone()
-                        .into_iter()
-                        .collect()
-                ))
-            },
+            |app| build_call!(app.bitcoin.headers.add(batch.clone().into_iter().collect())),
             |app| build_call!(app.app_noop()),
         )?;
         let res = app_client_testnet().call(
@@ -798,14 +775,11 @@ pub struct WatchedScriptStore {
 }
 
 impl WatchedScriptStore {
-    pub fn open<P: AsRef<Path>, T: Client<InnerAppTestnet>, U: FnMut() -> T>(
-        path: P,
-        client_provider: &mut U,
-    ) -> Result<Self> {
+    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref().join("watched-addrs.csv");
 
         let mut scripts = WatchedScripts::new();
-        Self::maybe_load(&path, &mut scripts, client_provider)?;
+        Self::maybe_load(&path, &mut scripts)?;
 
         let tmp_path = path.with_file_name("watched-addrs-tmp.csv");
         let mut tmp_file = File::create(&tmp_path)?;
@@ -823,11 +797,7 @@ impl WatchedScriptStore {
         Ok(WatchedScriptStore { scripts, file })
     }
 
-    fn maybe_load<P: AsRef<Path>, T: Client<InnerAppTestnet>, U: FnMut() -> T>(
-        path: P,
-        scripts: &mut WatchedScripts,
-        client_provider: &mut U,
-    ) -> Result<()> {
+    fn maybe_load<P: AsRef<Path>>(path: P, scripts: &mut WatchedScripts) -> Result<()> {
         let file = match File::open(&path) {
             Err(ref e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
             Err(e) => return Err(e.into()),
@@ -835,7 +805,7 @@ impl WatchedScriptStore {
         };
 
         let mut sigsets = BTreeMap::new();
-        client_provider().query(|app| {
+        app_client_testnet().query(|app| {
             for (index, checkpoint) in app.bitcoin.checkpoints.all()? {
                 sigsets.insert(index, checkpoint.sigset.clone());
             }
@@ -884,8 +854,6 @@ impl WatchedScriptStore {
 
 #[cfg(test)]
 mod tests {
-    use crate::app_client_testnet;
-
     use super::*;
     use bitcoind::bitcoincore_rpc::{Auth, RpcApi};
     use bitcoind::BitcoinD;
@@ -903,7 +871,7 @@ mod tests {
             BitcoinRpcClient::new(&bitcoind_url, Auth::CookieFile(bitcoin_cookie_file)).unwrap();
 
         bitcoind.client.generate_to_address(25, &address).unwrap();
-        let relayer = Relayer::new(rpc_client, || app_client_testnet(), || app_client_testnet());
+        let relayer = Relayer::new(rpc_client);
 
         let block_hash = bitcoind.client.get_block_hash(30).unwrap();
         let headers = relayer.get_header_batch(block_hash).unwrap();
@@ -935,8 +903,7 @@ mod tests {
             BitcoinRpcClient::new(&bitcoind_url, Auth::CookieFile(bitcoin_cookie_file)).unwrap();
 
         bitcoind.client.generate_to_address(7, &address).unwrap();
-
-        let relayer = Relayer::new(rpc_client, || app_client_testnet(), || app_client_testnet());
+        let relayer = Relayer::new(rpc_client);
         let block_hash = bitcoind.client.get_block_hash(30).unwrap();
         let headers = relayer.get_header_batch(block_hash).unwrap();
 
