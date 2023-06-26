@@ -353,7 +353,7 @@ impl Relayer {
         }
     }
 
-    pub async fn start_checkpoint_relay(&mut self) -> Result<()> {
+    pub fn start_checkpoint_relay(&mut self) -> Result<()> {
         info!("Starting checkpoint relay...");
 
         loop {
