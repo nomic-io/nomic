@@ -1,7 +1,6 @@
 use super::signatory::Signatory;
 use super::SignatorySet;
 use crate::app::DepositCommitment;
-use crate::app::InnerAppTestnet;
 use crate::app_client_testnet;
 use crate::bitcoin::{adapter::Adapter, header_queue::WrappedHeader};
 use crate::error::Error;
@@ -14,7 +13,6 @@ use bitcoin::{hashes::Hash, Block, BlockHash, Transaction};
 use bitcoind::bitcoincore_rpc::json::GetBlockHeaderResult;
 use bitcoind::bitcoincore_rpc::{Client as BitcoinRpcClient, RpcApi};
 use log::{debug, error, info, warn};
-use orga::client::Client;
 use orga::encoding::Decode;
 use orga::macros::build_call;
 use serde::{Deserialize, Serialize};
