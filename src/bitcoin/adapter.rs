@@ -92,7 +92,7 @@ impl<T: Encodable> Encode for Adapter<T> {
 
     fn encoding_length(&self) -> EncodingResult<usize> {
         let mut _dest: Vec<u8> = Vec::new();
-        match self.inner.consensus_encode(_dest) {
+        match self.inner.consensus_encode(&mut _dest) {
             Ok(inner) => Ok(inner),
             Err(e) => Err(e.into()),
         }
@@ -100,8 +100,8 @@ impl<T: Encodable> Encode for Adapter<T> {
 }
 
 impl<T: Decodable> Decode for Adapter<T> {
-    fn decode<R: Read>(input: R) -> EncodingResult<Self> {
-        let decoded_bytes = Decodable::consensus_decode(input);
+    fn decode<R: Read>(mut input: R) -> EncodingResult<Self> {
+        let decoded_bytes = Decodable::consensus_decode(&mut input);
         match decoded_bytes {
             Ok(inner) => Ok(Self { inner }),
             Err(_) => {
