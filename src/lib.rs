@@ -17,6 +17,7 @@ pub mod app;
 pub mod bitcoin;
 pub mod error;
 pub mod network;
+pub mod utils;
 
 #[cfg(feature = "full")]
 pub fn app_client_testnet(
