@@ -113,7 +113,7 @@ impl Input {
         Ok(bitcoin::TxIn {
             previous_output: *self.prevout,
             script_sig: bitcoin::Script::new(),
-            sequence: u32::MAX,
+            sequence: bitcoin::Sequence(u32::MAX),
             witness: bitcoin::Witness::from_vec(witness),
         })
     }
@@ -162,7 +162,7 @@ impl Checkpoint {
     pub fn tx(&self) -> Result<(bitcoin::Transaction, u64)> {
         let mut tx = bitcoin::Transaction {
             version: 1,
-            lock_time: 0,
+            lock_time: bitcoin::PackedLockTime::ZERO,
             input: vec![],
             output: vec![],
         };
