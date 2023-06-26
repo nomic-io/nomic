@@ -16,9 +16,9 @@ use bitcoin::secp256k1::{self, rand, SecretKey};
 use bitcoin::BlockHeader;
 use bitcoin::Script;
 #[cfg(feature = "full")]
-use bitcoincore_rpc_async::{Auth, Client as BitcoinRpcClient};
-#[cfg(feature = "full")]
 use bitcoind::bitcoincore_rpc::RpcApi;
+#[cfg(feature = "full")]
+use bitcoind::bitcoincore_rpc::{Auth, Client as BitcoinRpcClient};
 #[cfg(feature = "full")]
 use bitcoind::BitcoinD;
 use chrono::{TimeZone, Utc};
@@ -32,7 +32,7 @@ use orga::context::Context;
 #[cfg(feature = "full")]
 use orga::merk::MerkStore;
 use orga::plugins::sdk_compat::sdk;
-use orga::plugins::{ABCIPlugin, Time, MIN_FEE};
+use orga::plugins::{ABCIPlugin, ChainId, Time, MIN_FEE};
 use orga::state::State;
 #[cfg(feature = "full")]
 use orga::store::BackingStore;
@@ -48,8 +48,6 @@ use std::path::Path;
 use std::process::{Child, Command, Stdio};
 #[cfg(feature = "full")]
 use std::str::FromStr;
-#[cfg(feature = "full")]
-use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub fn retry<F, T, E>(f: F, max_retries: u32) -> std::result::Result<T, E>
@@ -158,13 +156,16 @@ pub fn setup_time_context() {
     Context::add(ctx);
 }
 
+pub fn setup_chain_id_context(chain_id: String) {
+    let ctx = ChainId(chain_id);
+    Context::add(ctx);
+}
+
 #[cfg(feature = "full")]
-pub async fn test_bitcoin_client(bitcoind: &BitcoinD) -> BitcoinRpcClient {
+pub fn test_bitcoin_client(bitcoind: &BitcoinD) -> BitcoinRpcClient {
     let bitcoind_url = bitcoind.rpc_url();
     let bitcoin_cookie_file = bitcoind.params.cookie_file.clone();
-    BitcoinRpcClient::new(bitcoind_url, Auth::CookieFile(bitcoin_cookie_file))
-        .await
-        .unwrap()
+    BitcoinRpcClient::new(&bitcoind_url, Auth::CookieFile(bitcoin_cookie_file)).unwrap()
 }
 
 pub fn address_from_privkey(privkey: &SecretKey) -> Address {
@@ -223,7 +224,7 @@ pub struct DeclareInfo {
 }
 
 #[cfg(feature = "full")]
-pub async fn declare_validator(home: &Path) -> Result<()> {
+pub fn declare_validator(home: &Path) -> Result<()> {
     use orga::macros::build_call;
 
     use crate::app_client_testnet;
@@ -264,7 +265,7 @@ pub async fn declare_validator(home: &Path) -> Result<()> {
 }
 
 #[cfg(feature = "full")]
-pub async fn poll_for_blocks() {
+pub fn poll_for_blocks() {
     info!("Scanning for blocks...");
     let mut height = get_tendermint_height().ok().flatten();
 
@@ -273,7 +274,8 @@ pub async fn poll_for_blocks() {
             .ok()
             .flatten()
             .filter(|height| height != "0");
-        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        sleep(1);
     }
 }
 
