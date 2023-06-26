@@ -5,6 +5,8 @@ pub enum Error {
     #[error(transparent)]
     BitcoinHash(#[from] bitcoin::hashes::Error),
     #[error(transparent)]
+    BitcoinCoreRpc(#[from] bitcoind::bitcoincore_rpc::Error),
+    #[error(transparent)]
     BitcoinEncode(#[from] bitcoin::consensus::encode::Error),
     #[error(transparent)]
     Bip32(#[from] bitcoin::util::bip32::Error),
