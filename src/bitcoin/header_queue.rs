@@ -137,6 +137,12 @@ impl Decode for HeaderList {
     }
 }
 
+impl FromIterator<WrappedHeader> for HeaderList {
+    fn from_iter<T: IntoIterator<Item = WrappedHeader>>(iter: T) -> Self {
+        HeaderList(iter.into_iter().collect())
+    }
+}
+
 impl Terminated for HeaderList {}
 
 #[orga(skip(Default))]
@@ -719,9 +725,10 @@ impl HeaderQueue {
 mod test {
     use super::*;
     use bitcoin::hash_types::TxMerkleNode;
+    use bitcoin::hashes::hex::FromHex;
+    use bitcoin::hashes::sha256d::Hash;
     use bitcoin::BlockHash;
-    use bitcoin_hashes::hex::FromHex;
-    use bitcoin_hashes::sha256d::Hash;
+
     use chrono::{TimeZone, Utc};
 
     impl HeaderQueue {

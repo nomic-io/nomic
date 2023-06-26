@@ -5,6 +5,8 @@ pub enum Error {
     #[error(transparent)]
     BitcoinHash(#[from] bitcoin::hashes::Error),
     #[error(transparent)]
+    BitcoinCoreRpc(#[from] bitcoind::bitcoincore_rpc::Error),
+    #[error(transparent)]
     BitcoinEncode(#[from] bitcoin::consensus::encode::Error),
     #[error(transparent)]
     Bip32(#[from] bitcoin::util::bip32::Error),
@@ -14,6 +16,8 @@ pub enum Error {
     TryFrom(#[from] std::num::TryFromIntError),
     #[error(transparent)]
     Secp(#[from] bitcoin::secp256k1::Error),
+    #[error("Invalid Deposit Address")]
+    InvalidDepositAddress,
     #[error("Could not verify merkle proof")]
     BitcoinMerkleBlockError,
     #[cfg(feature = "full")]
@@ -31,9 +35,19 @@ pub enum Error {
     Relayer(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error("Warp Rejection")]
+    WarpRejection(),
     #[error("Unknown Error")]
     Unknown,
 }
+
+impl From<warp::Rejection> for Error {
+    fn from(_: warp::Rejection) -> Self {
+        Error::WarpRejection()
+    }
+}
+
+impl warp::reject::Reject for Error {}
 
 impl From<Error> for orga::Error {
     fn from(err: Error) -> Self {

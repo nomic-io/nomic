@@ -17,6 +17,7 @@ pub mod app;
 pub mod bitcoin;
 pub mod error;
 pub mod network;
+pub mod utils;
 
 pub fn app_client_testnet(
 ) -> AppClient<app::InnerApp, app::InnerApp, HttpClient, app::Nom, Unsigned> {
