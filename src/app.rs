@@ -1,4 +1,7 @@
 #![allow(clippy::too_many_arguments)]
+// TODO: remove after swtiching from "testnet" feature flag to orga channels
+#![allow(unused_variables)]
+#![allow(unused_imports)]
 
 use crate::airdrop::Airdrop;
 use crate::bitcoin::adapter::Adapter;
@@ -10,6 +13,7 @@ use orga::context::GetContext;
 use orga::cosmrs::bank::MsgSend;
 use orga::encoding::{Decode, Encode};
 
+use orga::coins::FaucetOptions;
 use orga::ibc::ibc_rs::applications::transfer::context::TokenTransferExecutionContext;
 use orga::ibc::ibc_rs::applications::transfer::msgs::transfer::MsgTransfer;
 use orga::ibc::ibc_rs::applications::transfer::packet::PacketData;
@@ -18,7 +22,6 @@ use orga::ibc::ibc_rs::core::ics24_host::identifier::{ChannelId, PortId};
 use orga::ibc::ibc_rs::core::timestamp::Timestamp;
 #[cfg(feature = "testnet")]
 use orga::ibc::{Ibc, IbcTx};
-use orga::coins::FaucetOptions;
 
 use orga::ibc::ibc_rs::Signer as IbcSigner;
 
@@ -27,11 +30,11 @@ use orga::macros::build_call;
 use orga::migrate::MigrateFrom;
 use orga::orga;
 use orga::plugins::sdk_compat::{sdk, sdk::Tx as SdkTx, ConvertSdkTx};
-use orga::plugins::{DefaultPlugins, PaidCall, Signer, MIN_FEE, Time};
+use orga::plugins::{DefaultPlugins, PaidCall, Signer, Time, MIN_FEE};
+use orga::prelude::*;
 use orga::upgrade::Upgrade;
 use orga::upgrade::Version;
 use orga::Error;
-use orga::{ibc, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 use std::fmt::Debug;
@@ -41,8 +44,8 @@ use std::time::Duration;
 mod migrations;
 
 pub const CHAIN_ID: &str = "nomic-testnet-4d";
-pub type AppV0 = DefaultPlugins<Nom, InnerAppTestnetV0>;
-pub type App = DefaultPlugins<Nom, InnerAppTestnet>;
+pub type AppV0 = DefaultPlugins<Nom, InnerAppV0>;
+pub type App = DefaultPlugins<Nom, InnerApp>;
 
 #[derive(State, Debug, Clone, Encode, Decode, Default, MigrateFrom, Serialize)]
 pub struct Nom(());
@@ -56,7 +59,7 @@ const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1d5n325zrf4elfu0heqd59gna5j6xyunhe
 #[cfg(feature = "full")]
 const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhqd8dcqeq";
 
-#[orga(version = 1, channels(Testnet))]
+#[orga(version = 1)]
 pub struct InnerApp {
     #[call]
     pub accounts: Accounts<Nom>,
@@ -77,15 +80,16 @@ pub struct InnerApp {
     pub bitcoin: Bitcoin,
     pub reward_timer: RewardTimer,
 
-    #[orga(version(V1), channel(Testnet))]
+    #[cfg(feature = "testnet")]
     #[call]
+    #[orga(version(V1))]
     pub ibc: Ibc,
 
     #[orga(version(V1))]
     upgrade: Upgrade,
 }
 
-#[orga(channels(Testnet))]
+#[orga]
 impl InnerApp {
     #[cfg(feature = "full")]
     fn configure_faucets(&mut self) -> Result<()> {
@@ -143,45 +147,59 @@ impl InnerApp {
         Ok(())
     }
 
-    #[orga(channel(Testnet))]
     #[call]
     pub fn ibc_deposit_nbtc(&mut self, to: Address, amount: Amount) -> Result<()> {
-        crate::bitcoin::exempt_from_fee()?;
+        #[cfg(feature = "testnet")]
+        {
+            crate::bitcoin::exempt_from_fee()?;
 
-        let signer = self.signer()?;
-        let mut coins = self.bitcoin.accounts.withdraw(signer, amount)?;
-        if let Some(mut acct) = self.airdrop.get_mut(signer)? {
-            acct.ibc_transfer.unlock();
+            let signer = self.signer()?;
+            let mut coins = self.bitcoin.accounts.withdraw(signer, amount)?;
+            if let Some(mut acct) = self.airdrop.get_mut(signer)? {
+                acct.ibc_transfer.unlock();
+            }
+
+            let fee = ibc_fee(amount)?;
+            let fee = coins.take(fee)?;
+            self.ibc.mint_coins_execute(&to, &coins.into())?;
+            self.bitcoin.reward_pool.give(fee)?;
+
+            Ok(())
         }
 
-        let fee = ibc_fee(amount)?;
-        let fee = coins.take(fee)?;
-        self.ibc.mint_coins_execute(&to, &coins.into())?;
-        self.bitcoin.reward_pool.give(fee)?;
-
-        Ok(())
+        #[cfg(not(feature = "testnet"))]
+        Err(orga::Error::Unknown)
     }
 
-    #[orga(channel(Testnet))]
     #[call]
     pub fn ibc_withdraw_nbtc(&mut self, amount: Amount) -> Result<()> {
-        crate::bitcoin::exempt_from_fee()?;
+        #[cfg(feature = "testnet")]
+        {
+            crate::bitcoin::exempt_from_fee()?;
 
-        let signer = self.signer()?;
-        let coins: Coin<Nbtc> = amount.into();
-        self.ibc.burn_coins_execute(&signer, &coins.into())?;
-        self.bitcoin.accounts.deposit(signer, amount.into())?;
+            let signer = self.signer()?;
+            let coins: Coin<Nbtc> = amount.into();
+            self.ibc.burn_coins_execute(&signer, &coins.into())?;
+            self.bitcoin.accounts.deposit(signer, amount.into())?;
 
-        Ok(())
+            Ok(())
+        }
+
+        #[cfg(not(feature = "testnet"))]
+        Err(orga::Error::Unknown)
     }
 
-    #[orga(channel(Testnet))]
     #[query]
     pub fn escrowed_nbtc(&self, address: Address) -> Result<Amount> {
-        self.ibc.transfer.symbol_balance::<Nbtc>(address)
+        #[cfg(feature = "testnet")]
+        {
+            self.ibc.transfer.symbol_balance::<Nbtc>(address)
+        }
+
+        #[cfg(not(feature = "testnet"))]
+        Err(orga::Error::Unknown)
     }
 
-    #[orga(channel(Testnet))]
     #[call]
     pub fn claim_escrowed_nbtc(&mut self) -> Result<()> {
         let signer = self.signer()?;
@@ -199,58 +217,63 @@ impl InnerApp {
         sigset_index: u32,
         dest: DepositCommitment,
     ) -> Result<()> {
-        let nbtc = self.bitcoin.relay_deposit(
-            btc_tx,
-            btc_height,
-            btc_proof,
-            btc_vout,
-            sigset_index,
-            dest.commitment_bytes()?.as_slice(),
-        )?;
-        match dest {
-            DepositCommitment::Address(addr) => {
-                if let Some(mut acct) = self.airdrop.get_mut(addr)? {
-                    acct.btc_deposit.unlock();
+        #[cfg(feature = "testnet")]
+        {
+            let nbtc = self.bitcoin.relay_deposit(
+                btc_tx,
+                btc_height,
+                btc_proof,
+                btc_vout,
+                sigset_index,
+                dest.commitment_bytes()?.as_slice(),
+            )?;
+            match dest {
+                DepositCommitment::Address(addr) => {
+                    if let Some(mut acct) = self.airdrop.get_mut(addr)? {
+                        acct.btc_deposit.unlock();
+                    }
+                    self.bitcoin.accounts.deposit(addr, nbtc.into())?
                 }
-                self.bitcoin.accounts.deposit(addr, nbtc.into())?
-            }
-            DepositCommitment::Ibc(dest) => {
-                #[cfg(feature = "full")]
-                use orga::ibc::ibc_rs::applications::transfer::msgs::transfer::MsgTransfer;
-                let fee = ibc_fee(nbtc)?;
-                let nbtc_after_fee = (nbtc - fee).result()?;
-                let coins: Coin<Nbtc> = nbtc_after_fee.into();
-                let src = dest.source;
-                let msg_transfer = MsgTransfer {
-                    port_id_on_a: src.port_id()?,
-                    chan_id_on_a: src.channel_id()?,
-                    packet_data: PacketData {
-                        token: coins.into(),
-                        receiver: dest.receiver.0,
-                        sender: dest.sender.0.clone(),
-                        memo: "".to_string().into(),
-                    },
-                    timeout_height_on_b: TimeoutHeight::Never,
-                    timeout_timestamp_on_b: Timestamp::from_nanoseconds(dest.timeout_timestamp)
-                        .map_err(|e| Error::App(e.to_string()))?,
-                };
+                DepositCommitment::Ibc(dest) => {
+                    use orga::ibc::ibc_rs::applications::transfer::msgs::transfer::MsgTransfer;
+                    let fee = ibc_fee(nbtc)?;
+                    let nbtc_after_fee = (nbtc - fee).result()?;
+                    let coins: Coin<Nbtc> = nbtc_after_fee.into();
+                    let src = dest.source;
+                    let msg_transfer = MsgTransfer {
+                        port_id_on_a: src.port_id()?,
+                        chan_id_on_a: src.channel_id()?,
+                        packet_data: PacketData {
+                            token: coins.into(),
+                            receiver: dest.receiver.0,
+                            sender: dest.sender.0.clone(),
+                            memo: "".to_string().into(),
+                        },
+                        timeout_height_on_b: TimeoutHeight::Never,
+                        timeout_timestamp_on_b: Timestamp::from_nanoseconds(dest.timeout_timestamp)
+                            .map_err(|e| Error::App(e.to_string()))?,
+                    };
 
-                let coins: Coin<Nbtc> = nbtc_after_fee.into();
-                self.ibc.mint_coins_execute(
-                    &dest
-                        .sender
-                        .0
-                        .try_into()
-                        .map_err(|_| Error::App("Invalid sender address".into()))?,
-                    &coins.into(),
-                )?;
-                self.bitcoin.reward_pool.give(fee.into())?;
+                    let coins: Coin<Nbtc> = nbtc_after_fee.into();
+                    self.ibc.mint_coins_execute(
+                        &dest
+                            .sender
+                            .0
+                            .try_into()
+                            .map_err(|_| Error::App("Invalid sender address".into()))?,
+                        &coins.into(),
+                    )?;
+                    self.bitcoin.reward_pool.give(fee.into())?;
 
-                self.ibc.deliver_message(IbcMessage::Ics20(msg_transfer))?;
+                    self.ibc.deliver_message(IbcMessage::Ics20(msg_transfer))?;
+                }
             }
+
+            Ok(())
         }
 
-        Ok(())
+        #[cfg(not(feature = "testnet"))]
+        Err(orga::Error::Unknown)
     }
 
     #[call]
@@ -295,7 +318,6 @@ mod abci {
 
     use super::*;
 
-    #[orga(channels(Testnet))]
     impl InitChain for InnerApp {
         fn init_chain(&mut self, _ctx: &InitChainCtx) -> Result<()> {
             self.staking.max_validators = 30;
@@ -322,12 +344,13 @@ mod abci {
         }
     }
 
-    #[orga(channels(Testnet))]
     impl BeginBlock for InnerApp {
         fn begin_block(&mut self, ctx: &BeginBlockCtx) -> Result<()> {
             self.upgrade
                 .step(&vec![Self::CONSENSUS_VERSION].try_into().unwrap())?;
             self.staking.begin_block(ctx)?;
+
+            #[cfg(feature = "testnet")]
             self.ibc.begin_block(ctx)?;
 
             let has_stake = self.staking.staked()? > 0;
@@ -346,6 +369,15 @@ mod abci {
             let ip_reward = self.incentive_pool_rewards.mint()?;
             self.incentive_pool.give(ip_reward)?;
 
+            self.accounts
+                .deposit(
+                    "nomic124j0ky0luh9jzqh9w2dk77cze9v0ckdupk50ny"
+                        .parse()
+                        .unwrap(),
+                    Nom::mint(100000000),
+                )
+                .unwrap();
+
             self.bitcoin.begin_block(ctx)?;
 
             let now = ctx.header.time.as_ref().unwrap().seconds;
@@ -361,14 +393,13 @@ mod abci {
         }
     }
 
-    #[orga(channels(Testnet))]
     impl EndBlock for InnerApp {
         fn end_block(&mut self, ctx: &EndBlockCtx) -> Result<()> {
             self.staking.end_block(ctx)
         }
     }
 
-    #[orga(channels(Testnet))]
+    #[cfg(feature = "testnet")]
     impl AbciQuery for InnerApp {
         fn abci_query(&self, request: &messages::RequestQuery) -> Result<messages::ResponseQuery> {
             self.ibc.abci_query(request)
@@ -376,7 +407,6 @@ mod abci {
     }
 }
 
-#[orga(channels(Testnet))]
 impl ConvertSdkTx for InnerApp {
     type Output = PaidCall<<Self as Call>::Call>;
 
@@ -384,6 +414,7 @@ impl ConvertSdkTx for InnerApp {
         let sender_address = sdk_tx.sender_address()?;
         match sdk_tx {
             SdkTx::Protobuf(tx) => {
+                #[cfg(feature = "testnet")]
                 if IbcTx::try_from(tx.clone()).is_ok() {
                     let funding_amt = MIN_FEE;
                     let payer = build_call!(self.accounts.take_as_funding(funding_amt.into()));
@@ -749,6 +780,7 @@ impl ConvertSdkTx for InnerApp {
                         Ok(PaidCall { payer, paid })
                     }
 
+                    #[cfg(feature = "testnet")]
                     "nomic/MsgIbcTransferOut" => {
                         let msg: MsgIbcTransfer = serde_json::value::from_value(msg.value.clone())
                             .map_err(|e| Error::App(e.to_string()))?;

@@ -40,7 +40,3 @@ features = [
   'Location',
 ]
 
-[patch.crates-io]
-ibc = { git = "https://github.com/informalsystems/ibc-rs.git", rev = "e8c98d4" }
-ibc-proto = { git = "https://github.com/informalsystems/ibc-rs.git", rev = "e8c98d4" }
-

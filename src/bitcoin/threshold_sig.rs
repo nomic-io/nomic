@@ -6,14 +6,12 @@ use bitcoin::secp256k1::{
     ecdsa, PublicKey, Secp256k1,
 };
 use derive_more::{Deref, From};
-use orga::call::Call;
-use orga::client::Client;
 use orga::collections::{Map, Next};
 use orga::encoding::{Decode, Encode};
 use orga::macros::Describe;
 use orga::migrate::MigrateFrom;
 use orga::prelude::FieldCall;
-use orga::query::{FieldQuery, Query};
+use orga::query::FieldQuery;
 use orga::state::State;
 use orga::{orga, Error, Result};
 use serde::Serialize;

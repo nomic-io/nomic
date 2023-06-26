@@ -5,9 +5,8 @@
 #![feature(type_alias_impl_trait)]
 #![feature(async_closure)]
 
-// #[cfg(feature = "full")]
-use orga::client::wallet::DerivedKey;
-use orga::client::{AppClient, Client};
+use orga::client::wallet::Unsigned;
+use orga::client::AppClient;
 use orga::tendermint::client::HttpClient;
 
 pub use orga;
@@ -20,10 +19,8 @@ pub mod error;
 pub mod network;
 pub mod utils;
 
-#[cfg(feature = "full")]
 pub fn app_client_testnet(
-) -> AppClient<app::InnerAppTestnet, app::InnerAppTestnet, HttpClient, app::Nom, DerivedKey> {
+) -> AppClient<app::InnerApp, app::InnerApp, HttpClient, app::Nom, Unsigned> {
     let client = HttpClient::new("http://localhost:26657").unwrap();
-    // TODO: use file wallet
-    AppClient::new(client, DerivedKey::new(b"test").unwrap())
+    AppClient::new(client, Unsigned)
 }

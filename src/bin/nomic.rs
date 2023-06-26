@@ -27,7 +27,8 @@ use clap::Parser;
 use futures::executor::block_on;
 use log::info;
 use nomic::app::DepositCommitment;
-use nomic::app::InnerAppTestnet;
+use nomic::app::InnerApp;
+use nomic::app::Nom;
 // use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::app_client_testnet as app_client;
 use nomic::error::Error as NomicError;
@@ -36,13 +37,14 @@ use nomic::network::Network;
 use nomic::utils::start_rest;
 // use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use orga::abci::Node;
-use orga::client::Client;
+use orga::client::wallet::{SimpleWallet, Wallet};
+use orga::client::AppClient;
 use orga::coins::{Address, Commission, Decimal, Declaration, Symbol};
-use orga::ibc::GrpcOpts;
 use orga::macros::build_call;
 use orga::merk::MerkStore;
 use orga::plugins::{load_privkey, Time, MIN_FEE};
 use orga::prelude::*;
+use orga::tendermint::client::HttpClient;
 use serde::{Deserialize, Serialize};
 use tempfile::tempdir;
 use tendermint_rpc::Client as _;
@@ -56,21 +58,23 @@ const BANNER: &str = r#"
 ╚═╝  ╚═══╝  ╚═════╝  ╚═╝     ╚═╝ ╚═╝  ╚═════╝
 "#;
 
-#[cfg(feature = "testnet")]
-fn now_seconds() -> i64 {
-    use std::time::SystemTime;
+// #[cfg(feature = "testnet")]
+// fn now_seconds() -> i64 {
+//     use std::time::SystemTime;
 
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64
+//     SystemTime::now()
+//         .duration_since(SystemTime::UNIX_EPOCH)
+//         .unwrap()
+//         .as_secs() as i64
+// }
+
+fn wallet() -> SimpleWallet {
+    let path = home::home_dir().unwrap().join(".orga-wallet");
+    SimpleWallet::open(path).unwrap()
 }
 
 fn my_address() -> Address {
-    use orga::secp256k1;
-    let privkey = load_privkey().unwrap();
-    let pubkey = secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &privkey);
-    Address::from_pubkey(pubkey.serialize())
+    wallet().address().unwrap().unwrap()
 }
 
 #[derive(Parser, Debug)]
@@ -231,7 +235,7 @@ impl StartCmd {
                     match std::env::var("NOMIC_HOME_DIR") {
                         Ok(home) => PathBuf::from(home),
                         Err(_) => Node::home(
-                            &cmd.config.chain_id
+                            &cmd.config.chain_id.clone()
                                 .expect("Expected a chain-id or home directory to be set"),
                         )
                     }
@@ -254,6 +258,7 @@ impl StartCmd {
                     }
                     lh
                 } else {
+                    #[allow(clippy::redundant_clone)]
                     home.clone()
                 };
 
@@ -301,7 +306,7 @@ impl StartCmd {
 
             #[cfg(not(feature = "compat"))]
             if let Some(legacy_version) = &cmd.config.legacy_version {
-                let version_hex = hex::encode([InnerAppTestnet::CONSENSUS_VERSION]);
+                let version_hex = hex::encode([InnerApp::CONSENSUS_VERSION]);
 
                 let net_ver_path = home.join("network_version");
                 let up_to_date = if net_ver_path.exists() {
@@ -360,10 +365,12 @@ impl StartCmd {
 
             let has_node = home.exists();
             let config_path = home.join("tendermint/config/config.toml");
+            let maybe_chain_id = cmd.config.chain_id.clone();
+            let chain_id = maybe_chain_id.as_deref();
             if !has_node {
                 log::info!("Initializing node at {}...", home.display());
 
-                let node = Node::<nomic::app::App>::new(&home, nomic::app::CHAIN_ID, Default::default());
+                let node = Node::<nomic::app::App>::new(&home, chain_id, Default::default());
 
                 if let Some(source) = cmd.clone_store {
                     let mut source = PathBuf::from_str(&source).unwrap();
@@ -412,7 +419,7 @@ impl StartCmd {
             }
 
             log::info!("Starting node at {}...", home.display());
-            let mut node = Node::<nomic::app::App>::new(&home, nomic::app::CHAIN_ID, Default::default());
+            let mut node = Node::<nomic::app::App>::new(&home, chain_id, Default::default());
 
             if cmd.unsafe_reset {
                 node = node.reset();
@@ -432,7 +439,7 @@ impl StartCmd {
             }
             #[cfg(feature = "compat")]
             if cmd.migrate || had_legacy {
-                node = node.migrate::<nomic::app::AppV0>(vec![InnerAppTestnet::CONSENSUS_VERSION]);
+                node = node.migrate::<nomic::app::AppV0>(vec![InnerApp::CONSENSUS_VERSION]);
             }
             if cmd.skip_init_chain {
                 node = node.skip_init_chain();
@@ -656,7 +663,6 @@ impl DelegationsCmd {
                 continue;
             }
 
-            use nomic::app::Nom;
             use nomic::bitcoin::Nbtc;
             let liquid_nom = delegation
                 .liquid
@@ -992,19 +998,19 @@ pub struct RelayerCmd {
 }
 
 impl RelayerCmd {
-    async fn btc_client(&self) -> Result<BtcClient> {
-        let rpc_url = format!("http://localhost:{}", self.rpc_port);
-        let auth = match (self.rpc_user.clone(), self.rpc_pass.clone()) {
-            (Some(user), Some(pass)) => Auth::UserPass(user, pass),
-            _ => Auth::None,
-        };
+    // async fn btc_client(&self) -> Result<BtcClient> {
+    //     let rpc_url = format!("http://localhost:{}", self.rpc_port);
+    //     let auth = match (self.rpc_user.clone(), self.rpc_pass.clone()) {
+    //         (Some(user), Some(pass)) => Auth::UserPass(user, pass),
+    //         _ => Auth::None,
+    //     };
 
-        let btc_client = BtcClient::new(rpc_url, auth)
-            .await
-            .map_err(|e| orga::Error::App(e.to_string()))?;
+    //     let btc_client = BtcClient::new(rpc_url, auth)
+    //         .await
+    //         .map_err(|e| orga::Error::App(e.to_string()))?;
 
-        Ok(btc_client)
-    }
+    //     Ok(btc_client)
+    // }
 
     async fn run(&self) -> Result<()> {
         todo!()
@@ -1146,8 +1152,8 @@ pub struct InterchainDepositCmd {
     channel: String,
 }
 
-#[cfg(feature = "testnet")]
-const ONE_DAY_NS: u64 = 86400 * 1_000_000_000;
+// #[cfg(feature = "testnet")]
+// const ONE_DAY_NS: u64 = 86400 * 1_000_000_000;
 #[cfg(feature = "testnet")]
 impl InterchainDepositCmd {
     async fn run(&self) -> Result<()> {
@@ -1289,21 +1295,20 @@ pub struct ExportCmd {
 
 impl ExportCmd {
     async fn run(&self) -> Result<()> {
-        todo!()
-        // let home = PathBuf::from_str(&self.home).unwrap();
+        let home = PathBuf::from_str(&self.home).unwrap();
 
-        // let store_path = home.join("merk");
-        // let store = Store::new(orga::store::BackingStore::Merk(orga::store::Shared::new(
-        //     MerkStore::new(store_path),
-        // )));
-        // let root_bytes = store.get(&[])?.unwrap();
+        let store_path = home.join("merk");
+        let store = Store::new(orga::store::BackingStore::Merk(orga::store::Shared::new(
+            MerkStore::new(store_path),
+        )));
+        let root_bytes = store.get(&[])?.unwrap();
 
-        // let app =
-        //     orga::plugins::ABCIPlugin::<nomic::app::App>::load(store, &mut root_bytes.as_slice())?;
+        let app =
+            orga::plugins::ABCIPlugin::<nomic::app::App>::load(store, &mut root_bytes.as_slice())?;
 
-        // serde_json::to_writer_pretty(std::io::stdout(), &app).unwrap();
+        serde_json::to_writer_pretty(std::io::stdout(), &app).unwrap();
 
-        // Ok(())
+        Ok(())
     }
 }
 

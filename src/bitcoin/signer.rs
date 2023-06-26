@@ -1,4 +1,3 @@
-use crate::app::InnerAppTestnet;
 use crate::app_client_testnet;
 use crate::bitcoin::threshold_sig::Signature;
 use crate::error::Result;
