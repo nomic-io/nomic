@@ -38,8 +38,8 @@ pub mod header_queue;
 #[cfg(feature = "full")]
 pub mod relayer;
 pub mod signatory;
-// #[cfg(feature = "full")]
-// pub mod signer;
+#[cfg(feature = "full")]
+pub mod signer;
 pub mod threshold_sig;
 pub mod txid_set;
 
