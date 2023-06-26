@@ -18,7 +18,6 @@ pub mod bitcoin;
 pub mod error;
 pub mod network;
 
-#[cfg(feature = "full")]
 pub fn app_client_testnet(
 ) -> AppClient<app::InnerApp, app::InnerApp, HttpClient, app::Nom, Unsigned> {
     let client = HttpClient::new("http://localhost:26657").unwrap();
