@@ -137,6 +137,12 @@ impl Decode for HeaderList {
     }
 }
 
+impl FromIterator<WrappedHeader> for HeaderList {
+    fn from_iter<T: IntoIterator<Item = WrappedHeader>>(iter: T) -> Self {
+        HeaderList(iter.into_iter().collect())
+    }
+}
+
 impl Terminated for HeaderList {}
 
 #[orga(skip(Default))]
