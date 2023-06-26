@@ -16,6 +16,8 @@ pub enum Error {
     TryFrom(#[from] std::num::TryFromIntError),
     #[error(transparent)]
     Secp(#[from] bitcoin::secp256k1::Error),
+    #[error("Invalid Deposit Address")]
+    InvalidDepositAddress,
     #[error("Could not verify merkle proof")]
     BitcoinMerkleBlockError,
     #[cfg(feature = "full")]
