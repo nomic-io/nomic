@@ -2,8 +2,8 @@
 extern crate rocket;
 
 use nomic::{
-    app::{InnerApp, Nom, CHAIN_ID},
-    app_client,
+    app::{App, InnerApp, Nom, CHAIN_ID},
+    app_client_testnet,
     orga::{
         coins::{Accounts, Address, Amount, Decimal, Staking},
         plugins::*,
@@ -27,11 +27,8 @@ lazy_static::lazy_static! {
 async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
 
-    let balance: u64 = app_client()
-        .accounts
-        .balance(address)
-        .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+    let balance: u64 = app_client_testnet()
+        .query(|app| app.accounts.balance(address))
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
 
@@ -57,11 +54,8 @@ async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
 async fn bank_balances_2(address: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
 
-    let balance: u64 = app_client()
-        .accounts
-        .balance(address)
-        .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+    let balance: u64 = app_client_testnet()
+        .query(|app| app.accounts.balance(address))
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
 
@@ -80,18 +74,13 @@ async fn bank_balances_2(address: &str) -> Result<Value, BadRequest<String>> {
 async fn auth_accounts(addr_str: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = addr_str.parse().unwrap();
 
-    let balance: u64 = app_client()
-        .accounts
-        .balance(address)
-        .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+    let balance: u64 = app_client_testnet()
+        .query(|app| app.accounts.balance(address))
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
 
-    type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
-    let mut nonce: u64 = app_client()
-        .query(NonceQuery::Nonce(address), |state| state.nonce(address))
-        .await
+    let mut nonce: u64 = app_client_testnet()
+        .query_root(|app| app.inner.inner.borrow().inner.inner.inner.nonce(address))
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
     nonce += 1;
@@ -118,18 +107,13 @@ async fn auth_accounts(addr_str: &str) -> Result<Value, BadRequest<String>> {
 async fn auth_accounts2(addr_str: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = addr_str.parse().unwrap();
 
-    let balance: u64 = app_client()
-        .accounts
-        .balance(address)
-        .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+    let balance: u64 = app_client_testnet()
+        .query(|app| app.accounts.balance(address))
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
 
-    type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
-    let mut nonce: u64 = app_client()
-        .query(NonceQuery::Nonce(address), |state| state.nonce(address))
-        .await
+    let mut nonce: u64 = app_client_testnet()
+        .query_root(|app| app.inner.inner.borrow().inner.inner.inner.nonce(address))
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
     nonce += 1;
@@ -248,8 +232,8 @@ fn time_now() -> u64 {
         .as_secs() as u64
 }
 
-#[get("/query/<query>")]
-async fn query(query: &str) -> Result<String, BadRequest<String>> {
+#[get("/query/<query>?<height>")]
+async fn query(query: &str, height: Option<usize>) -> Result<String, BadRequest<String>> {
     let cache = QUERY_CACHE.clone();
     let lock = cache.read_owned().await;
     let cached_res = lock.get(query).map(|v| v.clone());
@@ -293,11 +277,8 @@ async fn query(query: &str) -> Result<String, BadRequest<String>> {
 async fn staking_delegators_delegations(address: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
 
-    let delegations = app_client()
-        .staking
-        .delegations(address)
-        .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+    let delegations = app_client_testnet()
+        .query(|app| app.staking.delegations(address))
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
     let total_staked: u64 = delegations
@@ -324,11 +305,8 @@ async fn staking_delegators_delegations(address: &str) -> Result<Value, BadReque
 async fn staking_delegators_delegations_2(address: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
 
-    let delegations = app_client()
-        .staking
-        .delegations(address)
-        .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+    let delegations = app_client_testnet()
+        .query(|app| app.staking.delegations(address))
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
     let total_staked: u64 = delegations
@@ -450,11 +428,8 @@ async fn distribution_delegatrs_rewards_2(address: &str) -> Value {
 
 #[get("/cosmos/mint/v1beta1/inflation")]
 async fn minting_inflation() -> Result<Value, BadRequest<String>> {
-    let validators = app_client()
-        .staking
-        .all_validators()
-        .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+    let validators = app_client_testnet()
+        .query(|app| app.staking.all_validators())
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
     let total_staked: u64 = validators
@@ -472,11 +447,8 @@ async fn minting_inflation() -> Result<Value, BadRequest<String>> {
 
 #[get("/minting/inflation")]
 async fn minting_inflation_2() -> Result<Value, BadRequest<String>> {
-    let validators = app_client()
-        .staking
-        .all_validators()
-        .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+    let validators = app_client_testnet()
+        .query(|app| app.staking.all_validators())
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
     let total_staked: u64 = validators
