@@ -233,7 +233,7 @@ fn time_now() -> u64 {
 }
 
 #[get("/query/<query>?<height>")]
-async fn query(query: &str, height: Option<usize>) -> Result<String, BadRequest<String>> {
+async fn query(query: &str, height: Option<u32>) -> Result<String, BadRequest<String>> {
     let cache = QUERY_CACHE.clone();
     let lock = cache.read_owned().await;
     let cached_res = lock.get(query).map(|v| v.clone());
@@ -254,16 +254,19 @@ async fn query(query: &str, height: Option<usize>) -> Result<String, BadRequest<
     let query_bytes = hex::decode(query).map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
     let res = client
-        .abci_query(None, query_bytes, None, true)
+        .abci_query(None, query_bytes, height.map(Into::into), true)
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+
+    let res_height: u64 = res.height.into();
+    let res_height: u32 = res_height.try_into().unwrap();
 
     if let tendermint::abci::Code::Err(code) = res.code {
         let msg = format!("code {}: {}", code, res.log);
         return Err(BadRequest(Some(msg)));
     }
 
-    let res_b64 = base64::encode(res.value);
+    let res_b64 = base64::encode([res_height.to_be_bytes().to_vec(), res.value].concat());
 
     let cache = QUERY_CACHE.clone();
     let mut lock = cache.write_owned().await;
