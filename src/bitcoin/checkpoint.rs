@@ -198,7 +198,7 @@ impl BitcoinTx {
         })
     }
 
-    fn with_lock_time(lock_time: u32) -> Self {
+    pub fn with_lock_time(lock_time: u32) -> Self {
         BitcoinTx {
             lock_time,
             ..Default::default()
@@ -546,6 +546,7 @@ type BuildingAdvanceRes = (
 );
 
 impl<'a> BuildingCheckpointMut<'a> {
+    #[cfg(feature = "emergency-disbursal")]
     fn link_intermediate_tx(&mut self, tx: &mut BitcoinTx) -> Result<()> {
         let sigset = self.sigset.clone();
         let output_script = sigset.output_script(&[0u8])?;
@@ -579,6 +580,7 @@ impl<'a> BuildingCheckpointMut<'a> {
         Ok(())
     }
 
+    #[cfg(feature = "emergency-disbursal")]
     fn deduct_emergency_disbursal_fees(&mut self, fee_rate: u64) -> Result<()> {
         let intermediate_tx_fee = {
             let mut intermediate_tx_batch = self
@@ -627,6 +629,7 @@ impl<'a> BuildingCheckpointMut<'a> {
     }
 
     //TODO: Generalize emergency disbursal to dynamic tree structure for intermediate tx overflow
+    #[cfg(feature = "emergency-disbursal")]
     fn generate_emergency_disbursal_txs(
         &mut self,
         nbtc_accounts: &Accounts<Nbtc>,
@@ -679,10 +682,11 @@ impl<'a> BuildingCheckpointMut<'a> {
                 };
 
                 curr_tx.output.push_back(Adapter::new(tx_out))?;
-                //what if the last account is the one that fills the tx?
+
                 if address == last_account.0 {
                     self.link_intermediate_tx(&mut curr_tx)?;
                 }
+
                 final_txs.push(curr_tx);
             }
 
@@ -800,6 +804,7 @@ impl<'a> BuildingCheckpointMut<'a> {
             vout: 0,
         };
 
+        #[cfg(feature = "emergency-disbursal")]
         self.generate_emergency_disbursal_txs(
             nbtc_accounts,
             recovery_scripts,
