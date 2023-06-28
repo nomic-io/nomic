@@ -24,6 +24,7 @@ impl MigrateFrom<InnerAppV0> for InnerAppV1 {
             upgrade: Upgrade::default(),
         };
 
+        #[cfg(feature = "full")]
         app.airdrop
             .init_from_airdrop2_csv(include_bytes!("../../airdrop2_snapshot.csv"))?;
 

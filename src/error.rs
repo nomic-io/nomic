@@ -9,9 +9,10 @@ pub enum Error {
     #[error(transparent)]
     BitcoinAddress(#[from] bitcoin::util::address::Error),
     #[error(transparent)]
-    BitcoinCoreRpc(#[from] bitcoind::bitcoincore_rpc::Error),
-    #[error(transparent)]
     BitcoinHash(#[from] bitcoin::hashes::Error),
+    #[cfg(feature = "full")]
+    #[error(transparent)]
+    BitcoinCoreRpc(#[from] bitcoind::bitcoincore_rpc::Error),
     #[error(transparent)]
     BitcoinLockTime(#[from] bitcoin::locktime::Error),
     #[error("{0}")]
@@ -53,20 +54,22 @@ pub enum Error {
     Ed(#[from] ed::Error),
     #[error("{0}")]
     Relayer(String),
-    #[error("Warp Rejection")]
-    WarpRejection(),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error("Warp Rejection")]
+    WarpRejection(),
     #[error("Unknown Error")]
     Unknown,
 }
 
+#[cfg(feature = "full")]
 impl From<warp::Rejection> for Error {
     fn from(_: warp::Rejection) -> Self {
         Error::WarpRejection()
     }
 }
 
+#[cfg(feature = "full")]
 impl warp::reject::Reject for Error {}
 
 impl From<Error> for orga::Error {

@@ -137,8 +137,7 @@ impl InnerApp {
         Ok(())
     }
 
-    #[orga(channel(Testnet))]
-    pub const CONSENSUS_VERSION: u8 = 0;
+    pub const CONSENSUS_VERSION: u8 = 1;
 
     #[call]
     pub fn deposit_rewards(&mut self) -> Result<()> {

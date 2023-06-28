@@ -498,11 +498,8 @@ impl Relayer {
         let outpoint = (txid.into_inner(), output.vout);
         let dest = output.dest.clone();
         let vout = output.vout;
-        let contains_outpoint = app_client_testnet().query(|app| {
-            app.bitcoin
-                .processed_outpoints
-                .contains(outpoint)
-        })?;
+        let contains_outpoint =
+            app_client_testnet().query(|app| app.bitcoin.processed_outpoints.contains(outpoint))?;
 
         if contains_outpoint {
             return Ok(());

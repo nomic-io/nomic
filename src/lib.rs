@@ -7,6 +7,7 @@
 
 use orga::client::wallet::Unsigned;
 use orga::client::AppClient;
+#[cfg(feature = "full")]
 use orga::tendermint::client::HttpClient;
 
 pub use orga;
@@ -19,6 +20,7 @@ pub mod error;
 pub mod network;
 pub mod utils;
 
+#[cfg(feature = "full")]
 pub fn app_client_testnet(
 ) -> AppClient<app::InnerApp, app::InnerApp, HttpClient, app::Nom, Unsigned> {
     let client = HttpClient::new("http://localhost:26657").unwrap();
