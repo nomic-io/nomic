@@ -73,17 +73,19 @@ impl Relayer {
         }
     }
 
-    fn sidechain_block_hash(&self) -> Result<BlockHash> {
-        let hash = app_client_testnet().query(|app| Ok(app.bitcoin.headers.hash()))??;
+    async fn sidechain_block_hash(&self) -> Result<BlockHash> {
+        let hash = app_client_testnet()
+            .query(|app| Ok(app.bitcoin.headers.hash()))
+            .await??;
         let hash = BlockHash::from_slice(hash.as_slice())?;
         Ok(hash)
     }
 
-    pub fn start_header_relay(&mut self) -> Result<()> {
+    pub async fn start_header_relay(&mut self) -> Result<()> {
         info!("Starting header relay...");
 
         loop {
-            if let Err(e) = self.relay_headers() {
+            if let Err(e) = self.relay_headers().await {
                 error!("Header relay error: {}", e);
             }
 
@@ -91,15 +93,16 @@ impl Relayer {
         }
     }
 
-    fn relay_headers(&mut self) -> Result<()> {
+    async fn relay_headers(&mut self) -> Result<()> {
         let mut last_hash = None;
 
         loop {
             let fullnode_hash = self.btc_client.get_best_block_hash()?;
-            let sidechain_hash = self.sidechain_block_hash()?;
+            let sidechain_hash = self.sidechain_block_hash().await?;
 
             if fullnode_hash != sidechain_hash {
-                self.relay_header_batch(fullnode_hash, sidechain_hash)?;
+                self.relay_header_batch(fullnode_hash, sidechain_hash)
+                    .await?;
                 continue;
             }
 
@@ -119,14 +122,14 @@ impl Relayer {
     pub async fn start_deposit_relay<P: AsRef<Path>>(mut self, store_path: P) -> Result<()> {
         info!("Starting deposit relay...");
 
-        let scripts = WatchedScriptStore::open(store_path)?;
+        let scripts = WatchedScriptStore::open(store_path).await?;
         self.scripts = Some(scripts);
 
         let (server, mut recv) = self.create_address_server();
 
         let deposit_relay = async {
             loop {
-                if let Err(e) = self.relay_deposits(&mut recv) {
+                if let Err(e) = self.relay_deposits(&mut recv).await {
                     error!("Deposit relay error: {}", e);
                 }
 
@@ -180,6 +183,7 @@ impl Relayer {
                                         .clone();
                                     Ok(sigsets.insert(query.sigset_index, sigset))
                                 })
+                                .await
                                 .map_err(|e| warp::reject::custom(Error::from(e)))?;
                             // TODO: prune sigsets
                             sigsets.get(&query.sigset_index).unwrap()
@@ -215,21 +219,18 @@ impl Relayer {
             );
 
         let sigset_route = warp::path("sigset")
-            .map(|| {
-                let sigset: std::result::Result<RawSignatorySet, _> = app_client_testnet()
+            .and_then(async move || {
+                let sigset: RawSignatorySet = app_client_testnet()
                     .query(|app| {
                         let sigset: RawSignatorySet =
                             app.bitcoin.checkpoints.active_sigset()?.into();
                         Ok(sigset)
                     })
-                    .map_err(|_| warp::http::StatusCode::NOT_FOUND);
-                match sigset {
-                    Ok(sigset) => warp::reply::with_status(
-                        warp::reply::json(&sigset),
-                        warp::http::StatusCode::OK,
-                    ),
-                    Err(e) => warp::reply::with_status(warp::reply::json(&e.to_string()), e),
-                }
+                    .await
+                    .map_err(|_| reject())
+                    .map_err(|_| reject())?;
+
+                Ok::<_, warp::Rejection>(warp::reply::json(&sigset))
             })
             .with(warp::cors().allow_any_origin());
 
@@ -253,14 +254,14 @@ impl Relayer {
         (server, recv)
     }
 
-    fn relay_deposits(&mut self, recv: &mut Receiver<(DepositCommitment, u32)>) -> Result<!> {
+    async fn relay_deposits(&mut self, recv: &mut Receiver<(DepositCommitment, u32)>) -> Result<!> {
         let mut prev_tip = None;
         loop {
             sleep(2);
 
-            self.insert_announced_addrs(recv)?;
+            self.insert_announced_addrs(recv).await?;
 
-            let tip = self.sidechain_block_hash()?;
+            let tip = self.sidechain_block_hash().await?;
             let prev = prev_tip.unwrap_or(tip);
             if prev_tip.is_some() && prev == tip {
                 continue;
@@ -270,14 +271,14 @@ impl Relayer {
             let end_height = self.btc_client.get_block_header_info(&tip)?.height;
             let num_blocks = (end_height - start_height).max(1100);
 
-            self.scan_for_deposits(num_blocks)?;
+            self.scan_for_deposits(num_blocks).await?;
 
             prev_tip = Some(tip);
         }
     }
 
-    fn scan_for_deposits(&mut self, num_blocks: usize) -> Result<BlockHash> {
-        let tip = self.sidechain_block_hash()?;
+    async fn scan_for_deposits(&mut self, num_blocks: usize) -> Result<BlockHash> {
+        let tip = self.sidechain_block_hash().await?;
         let base_height = self.btc_client.get_block_header_info(&tip)?.height;
         let blocks = self.last_n_blocks(num_blocks, tip)?;
 
@@ -285,8 +286,9 @@ impl Relayer {
             let height = (base_height - i) as u32;
             for (tx, matches) in self.relevant_txs(&block) {
                 for output in matches {
-                    if let Err(err) =
-                        self.maybe_relay_deposit(tx, height, &block.block_hash(), output)
+                    if let Err(err) = self
+                        .maybe_relay_deposit(tx, height, &block.block_hash(), output)
+                        .await
                     {
                         // TODO: filter out harmless errors (e.g. deposit too small)
                         warn!("Skipping deposit for error: {}", err);
@@ -298,11 +300,11 @@ impl Relayer {
         Ok(tip)
     }
 
-    pub fn start_emergency_disbursal_transaction_relay(&mut self) -> Result<()> {
+    pub async fn start_emergency_disbursal_transaction_relay(&mut self) -> Result<()> {
         info!("Starting emergency disbursal transaction relay...");
 
         loop {
-            if let Err(e) = self.relay_emergency_disbursal_transactions() {
+            if let Err(e) = self.relay_emergency_disbursal_transactions().await {
                 if !e.to_string().contains("No completed checkpoints yet") {
                     error!("Emergency disbursal relay error: {}", e);
                 }
@@ -312,11 +314,12 @@ impl Relayer {
         }
     }
 
-    fn relay_emergency_disbursal_transactions(&mut self) -> Result<()> {
+    async fn relay_emergency_disbursal_transactions(&mut self) -> Result<()> {
         let mut relayed = HashSet::new();
         loop {
             let disbursal_txs = app_client_testnet()
-                .query(|app| Ok(app.bitcoin.checkpoints.emergency_disbursal_txs()?))?;
+                .query(|app| Ok(app.bitcoin.checkpoints.emergency_disbursal_txs()?))
+                .await?;
 
             for tx in disbursal_txs.iter() {
                 if relayed.contains(&tx.txid()) {
@@ -353,11 +356,11 @@ impl Relayer {
         }
     }
 
-    pub fn start_checkpoint_relay(&mut self) -> Result<()> {
+    pub async fn start_checkpoint_relay(&mut self) -> Result<()> {
         info!("Starting checkpoint relay...");
 
         loop {
-            if let Err(e) = self.relay_checkpoints() {
+            if let Err(e) = self.relay_checkpoints().await {
                 if !e.to_string().contains("No completed checkpoints yet") {
                     error!("Checkpoint relay error: {}", e);
                 }
@@ -367,16 +370,18 @@ impl Relayer {
         }
     }
 
-    fn relay_checkpoints(&mut self) -> Result<()> {
-        let last_checkpoint =
-            app_client_testnet().query(|app| Ok(app.bitcoin.checkpoints.last_completed_tx()?))?;
+    async fn relay_checkpoints(&mut self) -> Result<()> {
+        let last_checkpoint = app_client_testnet()
+            .query(|app| Ok(app.bitcoin.checkpoints.last_completed_tx()?))
+            .await?;
         info!("Last checkpoint tx: {}", last_checkpoint.txid());
 
         let mut relayed = HashSet::new();
 
         loop {
-            let txs =
-                app_client_testnet().query(|app| Ok(app.bitcoin.checkpoints.completed_txs()?))?;
+            let txs = app_client_testnet()
+                .query(|app| Ok(app.bitcoin.checkpoints.completed_txs()?))
+                .await?;
             for tx in txs {
                 if relayed.contains(&tx.txid()) {
                     continue;
@@ -404,13 +409,14 @@ impl Relayer {
         }
     }
 
-    fn insert_announced_addrs(
+    async fn insert_announced_addrs(
         &mut self,
         recv: &mut Receiver<(DepositCommitment, u32)>,
     ) -> Result<()> {
         while let Ok((addr, sigset_index)) = recv.try_recv() {
             let sigset_res = app_client_testnet()
-                .query(|app| Ok(app.bitcoin.checkpoints.get(sigset_index)?.sigset.clone()));
+                .query(|app| Ok(app.bitcoin.checkpoints.get(sigset_index)?.sigset.clone()))
+                .await;
             let sigset = match sigset_res {
                 Ok(sigset) => sigset,
                 Err(err) => {
@@ -485,7 +491,7 @@ impl Relayer {
             })
     }
 
-    fn maybe_relay_deposit(
+    async fn maybe_relay_deposit(
         &self,
         tx: &Transaction,
         height: u32,
@@ -498,8 +504,9 @@ impl Relayer {
         let outpoint = (txid.into_inner(), output.vout);
         let dest = output.dest.clone();
         let vout = output.vout;
-        let contains_outpoint =
-            app_client_testnet().query(|app| app.bitcoin.processed_outpoints.contains(outpoint))?;
+        let contains_outpoint = app_client_testnet()
+            .query(|app| app.bitcoin.processed_outpoints.contains(outpoint))
+            .await?;
 
         if contains_outpoint {
             return Ok(());
@@ -517,19 +524,21 @@ impl Relayer {
             let tx = Adapter::new(tx);
             let proof = Adapter::new(proof);
 
-            let res = app_client_testnet().call(
-                move |app| {
-                    build_call!(app.relay_deposit(
-                        tx,
-                        height,
-                        proof,
-                        output.vout,
-                        output.sigset_index,
-                        output.dest
-                    ))
-                },
-                |app| build_call!(app.app_noop()),
-            );
+            let res = app_client_testnet()
+                .call(
+                    move |app| {
+                        build_call!(app.relay_deposit(
+                            tx,
+                            height,
+                            proof,
+                            output.vout,
+                            output.sigset_index,
+                            output.dest
+                        ))
+                    },
+                    |app| build_call!(app.app_noop()),
+                )
+                .await;
 
             match res {
                 Err(err)
@@ -552,7 +561,7 @@ impl Relayer {
         Ok(())
     }
 
-    fn relay_header_batch(
+    async fn relay_header_batch(
         &mut self,
         fullnode_hash: BlockHash,
         sidechain_hash: BlockHash,
@@ -574,16 +583,20 @@ impl Relayer {
             batch[0].height(),
             batch.len(),
         );
-        app_client_testnet().call(
-            |app| build_call!(app.bitcoin.headers.add(batch.clone().into_iter().collect())),
-            |app| build_call!(app.app_noop()),
-        )?;
-        let res = app_client_testnet().call(
-            move |app| build_call!(app.bitcoin.headers.add(batch.clone().into())),
-            |app| build_call!(app.app_noop()),
-        );
+        app_client_testnet()
+            .call(
+                |app| build_call!(app.bitcoin.headers.add(batch.clone().into_iter().collect())),
+                |app| build_call!(app.app_noop()),
+            )
+            .await?;
+        let res = app_client_testnet()
+            .call(
+                move |app| build_call!(app.bitcoin.headers.add(batch.clone().into())),
+                |app| build_call!(app.app_noop()),
+            )
+            .await;
 
-        let current_tip = self.sidechain_block_hash()?;
+        let current_tip = self.sidechain_block_hash().await?;
         if current_tip == fullnode_hash {
             info!("Relayed headers");
         } else {
@@ -769,11 +782,11 @@ pub struct WatchedScriptStore {
 }
 
 impl WatchedScriptStore {
-    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
+    pub async fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref().join("watched-addrs.csv");
 
         let mut scripts = WatchedScripts::new();
-        Self::maybe_load(&path, &mut scripts)?;
+        Self::maybe_load(&path, &mut scripts).await?;
 
         let tmp_path = path.with_file_name("watched-addrs-tmp.csv");
         let mut tmp_file = File::create(&tmp_path)?;
@@ -791,7 +804,7 @@ impl WatchedScriptStore {
         Ok(WatchedScriptStore { scripts, file })
     }
 
-    fn maybe_load<P: AsRef<Path>>(path: P, scripts: &mut WatchedScripts) -> Result<()> {
+    async fn maybe_load<P: AsRef<Path>>(path: P, scripts: &mut WatchedScripts) -> Result<()> {
         let file = match File::open(&path) {
             Err(ref e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
             Err(e) => return Err(e.into()),
@@ -799,12 +812,14 @@ impl WatchedScriptStore {
         };
 
         let mut sigsets = BTreeMap::new();
-        app_client_testnet().query(|app| {
-            for (index, checkpoint) in app.bitcoin.checkpoints.all()? {
-                sigsets.insert(index, checkpoint.sigset.clone());
-            }
-            Ok(())
-        })?;
+        app_client_testnet()
+            .query(|app| {
+                for (index, checkpoint) in app.bitcoin.checkpoints.all()? {
+                    sigsets.insert(index, checkpoint.sigset.clone());
+                }
+                Ok(())
+            })
+            .await?;
 
         let lines = BufReader::new(file).lines();
         for line in lines {
