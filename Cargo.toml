@@ -56,6 +56,7 @@ feat-ibc = ["orga/feat-ibc"]
 compat = []
 testnet = []
 devnet = ["testnet"]
+emergency-disbursal = []
 
 [[bin]]
 name = "nomic"
