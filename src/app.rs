@@ -312,6 +312,7 @@ mod abci {
     use orga::{
         abci::{messages, AbciQuery, BeginBlock, EndBlock, InitChain},
         coins::{Give, Take},
+        collections::Map,
         plugins::{BeginBlockCtx, EndBlockCtx, InitChainCtx},
     };
 
@@ -336,7 +337,9 @@ mod abci {
             let vb_address = VALIDATOR_BOOTSTRAP_ADDRESS.parse().unwrap();
             self.accounts.add_transfer_exception(vb_address)?;
 
-            self.upgrade.current_version = vec![Self::CONSENSUS_VERSION].try_into().unwrap();
+            let mut map = Map::default();
+            map.insert((), vec![Self::CONSENSUS_VERSION].try_into().unwrap())?;
+            self.upgrade.current_version = map;
 
             self.configure_faucets()?;
             Ok(())
