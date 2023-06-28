@@ -224,7 +224,7 @@ pub struct DeclareInfo {
 }
 
 #[cfg(feature = "full")]
-pub fn declare_validator(home: &Path) -> Result<()> {
+pub async fn declare_validator(home: &Path) -> Result<()> {
     use orga::macros::build_call;
 
     use crate::app_client_testnet;
@@ -256,10 +256,12 @@ pub fn declare_validator(home: &Path) -> Result<()> {
         min_self_delegation: 0.into(),
     };
 
-    app_client_testnet().call(
-        move |app| build_call!(app.staking.declare_self(declaration.clone())),
-        |app| build_call!(app.accounts.take_as_funding((100000 + MIN_FEE).into())),
-    )?;
+    app_client_testnet()
+        .call(
+            move |app| build_call!(app.staking.declare_self(declaration.clone())),
+            |app| build_call!(app.accounts.take_as_funding((100000 + MIN_FEE).into())),
+        )
+        .await?;
     info!("Validator declared");
     Ok(())
 }
