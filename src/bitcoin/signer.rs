@@ -4,7 +4,6 @@ use crate::error::Result;
 use bitcoin::secp256k1::{Message, Secp256k1};
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use log::info;
-use orga::client::Client;
 use orga::coins::Address;
 use orga::encoding::LengthVec;
 use orga::macros::build_call;
@@ -86,8 +85,7 @@ impl Signer {
     }
 
     async fn maybe_submit_xpub(&mut self, xpub: &ExtendedPubKey) -> Result<()> {
-        let cons_key =
-            app_client_testnet().query(|app| app.staking.consensus_key(self.op_addr))?;
+        let cons_key = app_client_testnet().query(|app| app.staking.consensus_key(self.op_addr))?;
         let onchain_xpub =
             app_client_testnet().query(|app| Ok(app.bitcoin.signatory_keys.get(cons_key)?))?;
 
@@ -164,8 +162,8 @@ impl Signer {
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        let rates = app_client_testnet()
-            .query(|app| Ok(app.bitcoin.change_rates(60 * 60 * 24, now)?))?;
+        let rates =
+            app_client_testnet().query(|app| Ok(app.bitcoin.change_rates(60 * 60 * 24, now)?))?;
 
         let withdrawal_rate = rates.withdrawal as f64 / 10_000.0;
         let sigset_change_rate = rates.sigset_change as f64 / 10_000.0;

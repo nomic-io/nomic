@@ -912,7 +912,7 @@ mod test {
         let adapter = Adapter::new(header);
         let header_list = [WrappedHeader::new(adapter, 43)];
         let mut q = HeaderQueue::default();
-        q.configure(test_config.clone()).unwrap();
+        q.configure(test_config).unwrap();
         q.add_into_iter(header_list).unwrap();
     }
 

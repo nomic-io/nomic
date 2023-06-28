@@ -168,7 +168,7 @@ impl ThresholdSig {
 
     #[query]
     pub fn sigs(&self) -> Result<Vec<(Pubkey, Signature)>> {
-        Ok(self
+        self
             .sigs
             .iter()?
             .filter_map(|entry| {
@@ -178,21 +178,21 @@ impl ThresholdSig {
                 };
                 share.sig.as_ref().map(|sig| Ok((*pubkey, *sig)))
             })
-            .collect::<Result<_>>()?)
+            .collect::<Result<_>>()
     }
 
     // TODO: should be iterator?
     pub fn shares(&self) -> Result<Vec<(Pubkey, Share)>> {
-        Ok(self
+        self
             .sigs
             .iter()?
             .map(|entry| entry.map(|(pubkey, share)| (*pubkey, share.clone())))
-            .collect::<Result<_>>()?)
+            .collect::<Result<_>>()
     }
 
     #[query]
     pub fn contains_key(&self, pubkey: Pubkey) -> Result<bool> {
-        Ok(self.sigs.contains_key(pubkey)?)
+        self.sigs.contains_key(pubkey)
     }
 
     #[query]

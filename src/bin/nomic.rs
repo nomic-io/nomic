@@ -9,8 +9,6 @@
 //     declare_validator, poll_for_blocks, populate_bitcoin_block, setup_test_app, setup_test_signer,
 //     test_bitcoin_client,
 // };
-use nomic::utils::{poll_for_blocks, populate_bitcoin_block, test_bitcoin_client};
-use orga::context::Context;
 use std::convert::TryInto;
 use std::fs::Permissions;
 use std::os::unix::fs::PermissionsExt;
@@ -18,35 +16,25 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::time::Duration;
 
-use bitcoincore_rpc_async::{Auth, Client as BtcClient};
-use bitcoind::{BitcoinD, Conf};
-use chrono::{TimeZone, Utc};
 use clap::Parser;
 use futures::executor::block_on;
-use log::info;
 use nomic::app::DepositCommitment;
 use nomic::app::InnerApp;
 use nomic::app::Nom;
 // use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::app_client_testnet as app_client;
-use nomic::error::Error as NomicError;
 use nomic::error::Result;
 use nomic::network::Network;
-use nomic::utils::start_rest;
 // use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use orga::abci::Node;
 use orga::client::wallet::{SimpleWallet, Wallet};
-use orga::client::AppClient;
 use orga::coins::{Address, Commission, Decimal, Declaration, Symbol};
 use orga::macros::build_call;
 use orga::merk::MerkStore;
-use orga::plugins::{load_privkey, Time, MIN_FEE};
+use orga::plugins::MIN_FEE;
 use orga::prelude::*;
-use orga::tendermint::client::HttpClient;
 use serde::{Deserialize, Serialize};
-use tempfile::tempdir;
 use tendermint_rpc::Client as _;
 
 const BANNER: &str = r#"

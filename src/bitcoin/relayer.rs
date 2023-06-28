@@ -190,7 +190,7 @@ impl Relayer {
                             .output_script(
                                 dest.commitment_bytes().map_err(|_| reject())?.as_slice(),
                             )
-                            .map_err(|e| warp::reject::custom(e))?,
+                            .map_err(warp::reject::custom)?,
                         config.network,
                     )
                     .unwrap()
@@ -220,7 +220,7 @@ impl Relayer {
                     .query(|app| {
                         let sigset: RawSignatorySet =
                             app.bitcoin.checkpoints.active_sigset()?.into();
-                        Ok(sigset.clone())
+                        Ok(sigset)
                     })
                     .map_err(|_| warp::http::StatusCode::NOT_FOUND);
                 match sigset {
@@ -502,7 +502,6 @@ impl Relayer {
             app.bitcoin
                 .processed_outpoints
                 .contains(outpoint)
-                .map_err(|err| err.into())
         })?;
 
         if contains_outpoint {
@@ -518,7 +517,7 @@ impl Relayer {
             let mut tx_bytes = vec![];
             tx.consensus_encode(&mut tx_bytes)?;
             let tx = ::bitcoin::Transaction::consensus_decode(&mut tx_bytes.as_slice())?;
-            let tx = Adapter::new(tx.clone());
+            let tx = Adapter::new(tx);
             let proof = Adapter::new(proof);
 
             let res = app_client_testnet().call(

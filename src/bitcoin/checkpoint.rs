@@ -17,12 +17,10 @@ use derive_more::{Deref, DerefMut};
 use log::info;
 use orga::coins::Accounts;
 use orga::context::Context;
-use orga::encoding::Terminated;
 #[cfg(feature = "full")]
 use orga::plugins::Time;
 use orga::{
     call::Call,
-    client::Client,
     collections::{map::ReadOnly, ChildMut, Deque, Map, Ref},
     context::GetContext,
     encoding::{Decode, Encode, LengthVec},
