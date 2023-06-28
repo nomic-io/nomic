@@ -38,8 +38,8 @@ use txid_set::OutpointSet;
 pub mod adapter;
 pub mod checkpoint;
 pub mod header_queue;
-#[cfg(feature = "full")]
-pub mod relayer;
+// #[cfg(feature = "full")]
+// pub mod relayer;
 pub mod signatory;
 #[cfg(feature = "full")]
 pub mod signer;
@@ -663,7 +663,7 @@ impl SignatoryKeys {
 
 fn clear_map<K, V>(map: &mut Map<K, V>) -> OrgaResult<()>
 where
-    K: Encode + Decode + Terminated + Next + Clone + 'static,
+    K: Encode + Decode + Terminated + Next + Clone + Send + Sync + 'static,
     V: State,
 {
     let mut keys = vec![];

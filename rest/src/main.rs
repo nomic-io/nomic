@@ -29,6 +29,7 @@ async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
 
     let balance: u64 = app_client_testnet()
         .query(|app| app.accounts.balance(address))
+        .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
 
@@ -56,6 +57,7 @@ async fn bank_balances_2(address: &str) -> Result<Value, BadRequest<String>> {
 
     let balance: u64 = app_client_testnet()
         .query(|app| app.accounts.balance(address))
+        .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
 
@@ -76,11 +78,13 @@ async fn auth_accounts(addr_str: &str) -> Result<Value, BadRequest<String>> {
 
     let balance: u64 = app_client_testnet()
         .query(|app| app.accounts.balance(address))
+        .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
 
     let mut nonce: u64 = app_client_testnet()
         .query_root(|app| app.inner.inner.borrow().inner.inner.inner.nonce(address))
+        .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
     nonce += 1;
@@ -109,11 +113,13 @@ async fn auth_accounts2(addr_str: &str) -> Result<Value, BadRequest<String>> {
 
     let balance: u64 = app_client_testnet()
         .query(|app| app.accounts.balance(address))
+        .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
 
     let mut nonce: u64 = app_client_testnet()
         .query_root(|app| app.inner.inner.borrow().inner.inner.inner.nonce(address))
+        .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
     nonce += 1;
@@ -282,6 +288,7 @@ async fn staking_delegators_delegations(address: &str) -> Result<Value, BadReque
 
     let delegations = app_client_testnet()
         .query(|app| app.staking.delegations(address))
+        .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
     let total_staked: u64 = delegations
@@ -310,6 +317,7 @@ async fn staking_delegators_delegations_2(address: &str) -> Result<Value, BadReq
 
     let delegations = app_client_testnet()
         .query(|app| app.staking.delegations(address))
+        .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
     let total_staked: u64 = delegations
