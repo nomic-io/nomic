@@ -441,6 +441,7 @@ async fn distribution_delegatrs_rewards_2(address: &str) -> Value {
 async fn minting_inflation() -> Result<Value, BadRequest<String>> {
     let validators = app_client_testnet()
         .query(|app| app.staking.all_validators())
+        .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
     let total_staked: u64 = validators
@@ -460,6 +461,7 @@ async fn minting_inflation() -> Result<Value, BadRequest<String>> {
 async fn minting_inflation_2() -> Result<Value, BadRequest<String>> {
     let validators = app_client_testnet()
         .query(|app| app.staking.all_validators())
+        .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
     let total_staked: u64 = validators

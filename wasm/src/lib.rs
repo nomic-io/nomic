@@ -1,4 +1,5 @@
 #![feature(async_closure)]
+#![feature(async_fn_in_trait)]
 
 mod error;
 mod types;
@@ -59,7 +60,8 @@ pub async fn balance(addr: String) -> Result<u64, JsError> {
     let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
     Ok(client
-        .query(|app: InnerApp| app.accounts.balance(address))?
+        .query(|app: InnerApp| app.accounts.balance(address))
+        .await?
         .into())
 }
 
@@ -67,7 +69,9 @@ pub async fn balance(addr: String) -> Result<u64, JsError> {
 pub async fn nom_reward_balance(addr: String) -> Result<u64, JsError> {
     let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
-    let delegations = app_client().query(|app| app.staking.delegations(address))?;
+    let delegations = app_client()
+        .query(|app| app.staking.delegations(address))
+        .await?;
 
     Ok(delegations
         .iter()
@@ -86,7 +90,9 @@ pub async fn nom_reward_balance(addr: String) -> Result<u64, JsError> {
 pub async fn nbtc_reward_balance(addr: String) -> Result<u64, JsError> {
     let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
-    let delegations = app_client().query(|app| app.staking.delegations(address))?;
+    let delegations = app_client()
+        .query(|app| app.staking.delegations(address))
+        .await?;
 
     Ok(delegations
         .iter()
@@ -105,7 +111,9 @@ pub async fn nbtc_reward_balance(addr: String) -> Result<u64, JsError> {
 pub async fn delegations(addr: String) -> Result<Array, JsError> {
     let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
-    let delegations = app_client().query(|app| app.staking.delegations(address))?;
+    let delegations = app_client()
+        .query(|app| app.staking.delegations(address))
+        .await?;
     Ok(delegations
         .iter()
         .map(|(address, delegation)| Delegation {
@@ -138,7 +146,9 @@ pub async fn delegations(addr: String) -> Result<Array, JsError> {
 
 #[wasm_bindgen(js_name = allValidators)]
 pub async fn all_validators() -> Result<Array, JsError> {
-    let validators = app_client().query(|app| app.staking.all_validators())?;
+    let validators = app_client()
+        .query(|app| app.staking.all_validators())
+        .await?;
     Ok(validators
         .iter()
         .map(|v| {
@@ -350,7 +360,7 @@ fn parse_part(part: nomic::airdrop::Part) -> AirdropDetails {
 pub async fn airdrop_balances(addr: String) -> Result<Airdrop, JsError> {
     let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
-    if let Some(account) = app_client().query(|app| app.airdrop.get(address))? {
+    if let Some(account) = app_client().query(|app| app.airdrop.get(address)).await? {
         Ok(Airdrop {
             airdrop1: parse_part(account.airdrop1),
             btc_deposit: parse_part(account.btc_deposit),
@@ -366,8 +376,9 @@ pub async fn airdrop_balances(addr: String) -> Result<Airdrop, JsError> {
 #[wasm_bindgen]
 pub async fn nonce(addr: String) -> Result<u64, JsError> {
     let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
-    let nonce =
-        app_client().query_root(|app| app.inner.inner.borrow().inner.inner.inner.nonce(address))?;
+    let nonce = app_client()
+        .query_root(|app| app.inner.inner.borrow().inner.inner.inner.nonce(address))
+        .await?;
     Ok(nonce)
 }
 
@@ -377,8 +388,9 @@ pub async fn gen_deposit_addr(dest_addr: String) -> Result<DepositAddress, JsErr
         .parse()
         .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
-    let sigset =
-        app_client().query(|app: InnerApp| Ok(app.bitcoin.checkpoints.active_sigset()?))?;
+    let sigset = app_client()
+        .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.active_sigset()?))
+        .await?;
     let script = sigset.output_script(
         DepositCommitment::Address(dest_addr)
             .commitment_bytes()?
@@ -399,7 +411,8 @@ pub async fn gen_deposit_addr(dest_addr: String) -> Result<DepositAddress, JsErr
 pub async fn nbtc_balance(addr: String) -> Result<u64, JsError> {
     let addr = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
     let balance = app_client()
-        .query(|app| app.bitcoin.accounts.balance(addr))?
+        .query(|app| app.bitcoin.accounts.balance(addr))
+        .await?
         .into();
 
     Ok(balance)
@@ -409,26 +422,31 @@ pub async fn nbtc_balance(addr: String) -> Result<u64, JsError> {
 pub async fn incoming_ibc_nbtc_balance(addr: String) -> Result<u64, JsError> {
     let address: Address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
-    let balance = app_client().query(|app| app.escrowed_nbtc(address))?;
+    let balance = app_client().query(|app| app.escrowed_nbtc(address)).await?;
     Ok(balance.into())
 }
 
 #[wasm_bindgen(js_name = valueLocked)]
 pub async fn value_locked() -> Result<u64, JsError> {
-    Ok(app_client().query(|app: InnerApp| Ok(app.bitcoin.value_locked()?))?)
+    Ok(app_client()
+        .query(|app: InnerApp| Ok(app.bitcoin.value_locked()?))
+        .await?)
 }
 
 #[wasm_bindgen(js_name = latestCheckpointHash)]
 pub async fn latest_checkpoint_hash() -> Result<String, JsError> {
     let last_checkpoint_id = app_client()
-        .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.last_completed_tx()?.txid()))?;
+        .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.last_completed_tx()?.txid()))
+        .await?;
 
     Ok(last_checkpoint_id.to_string())
 }
 
 #[wasm_bindgen(js_name = bitcoinHeight)]
 pub async fn bitcoin_height() -> Result<u32, JsError> {
-    Ok(app_client().query(|app: InnerApp| Ok(app.bitcoin.headers.height()?))?)
+    Ok(app_client()
+        .query(|app: InnerApp| Ok(app.bitcoin.headers.height()?))
+        .await?)
 }
 
 #[wasm_bindgen(js_name = getAddress)]
@@ -586,8 +604,9 @@ async fn gen_call_bytes(address: String, msg: sdk::Msg) -> Result<String, JsErro
         .parse()
         .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
-    let nonce =
-        app_client().query_root(|app| app.inner.inner.borrow().inner.inner.inner.nonce(address))?;
+    let nonce = app_client()
+        .query_root(|app| app.inner.inner.borrow().inner.inner.inner.nonce(address))
+        .await?;
     let sign_doc = sdk::SignDoc {
         account_number: "0".to_string(),
         chain_id: CHAIN_ID.to_string(),

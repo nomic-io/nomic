@@ -43,7 +43,7 @@ impl Clone for WebClient {
 }
 
 impl<T: App + Call + Query + State + Default> Transport<ABCIPlugin<T>> for WebClient {
-    fn call(&self, call: <ABCIPlugin<T> as Call>::Call) -> Result<()> {
+    async fn call(&self, call: <ABCIPlugin<T> as Call>::Call) -> Result<()> {
         todo!()
         // TODO: shouldn't need to deal with ABCIPlugin at this level
         // let call = match call {
@@ -113,8 +113,7 @@ impl<T: App + Call + Query + State + Default> Transport<ABCIPlugin<T>> for WebCl
         // Ok(())
     }
 
-    fn query(&self, query: T::Query) -> Result<Store> {
-        // spawn_local(async {
+    async fn query(&self, query: T::Query) -> Result<Store> {
         let query_bytes = query.encode()?;
         let query = hex::encode(query_bytes);
         let maybe_height: Option<u32> = self.height.borrow().map(Into::into);
@@ -144,17 +143,23 @@ impl<T: App + Call + Query + State + Default> Transport<ABCIPlugin<T>> for WebCl
         let request = Request::new_with_str_and_init(&url, &opts)
             .map_err(|e| Error::App(format!("{:?}", e)))?;
 
-        let req = XmlHttpRequest::new().unwrap();
-        req.open_with_async("GET", &url, false)
+        let resp_value = JsFuture::from(window.fetch_with_request(&request))
+            .await
             .map_err(|e| Error::App(format!("{:?}", e)))?;
 
-        req.send().map_err(|e| Error::App(format!("{:?}", e)))?;
+        let resp: Response = resp_value
+            .dyn_into()
+            .map_err(|e| Error::App(format!("{:?}", e)))?;
 
-        let res = req
-            .response_text()
-            .map_err(|e| Error::App(format!("{:?}", e)))?
-            .unwrap();
+        let resp_buf = resp
+            .array_buffer()
+            .map_err(|e| Error::App(format!("{:?}", e)))?;
 
+        let res = JsFuture::from(resp_buf)
+            .await
+            .map_err(|e| Error::App(format!("{:?}", e)))?;
+        let res = js_sys::Uint8Array::new(&res).to_vec();
+        let res = String::from_utf8(res).map_err(|e| Error::App(format!("{:?}", e)))?;
         let res = base64::decode(res).map_err(|e| Error::App(format!("{:?}", e)))?;
 
         // TODO: we shouldn't need to include the root hash in the result, it
