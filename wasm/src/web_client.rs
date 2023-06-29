@@ -1,25 +1,20 @@
-use futures_lite::future::block_on;
 use nomic::orga::abci::App;
 use nomic::orga::call::Call;
-use nomic::orga::client::{Client, Transport};
+use nomic::orga::client::Transport;
 use nomic::orga::encoding::Encode;
 use nomic::orga::merk::ProofStore;
-use nomic::orga::plugins::{ABCICall, ABCIPlugin};
+use nomic::orga::plugins::ABCIPlugin;
 use nomic::orga::query::Query;
 use nomic::orga::state::State;
 use nomic::orga::store::Store;
 use nomic::orga::store::{BackingStore, Shared};
 use nomic::orga::{Error, Result};
-use std::cell::RefCell;
 use std::convert::TryInto;
 use std::sync::Mutex;
 use wasm_bindgen::JsCast;
-use wasm_bindgen_futures::{spawn_local, JsFuture};
-use web_sys::XmlHttpRequest;
+use wasm_bindgen_futures::JsFuture;
 
 use web_sys::{Request, RequestInit, RequestMode, Response};
-
-const REST_PORT: u64 = 8443;
 
 #[derive(Default)]
 pub struct WebClient {
@@ -33,7 +28,7 @@ impl WebClient {
 }
 
 impl<T: App + Call + Query + State + Default> Transport<ABCIPlugin<T>> for WebClient {
-    async fn call(&self, call: <ABCIPlugin<T> as Call>::Call) -> Result<()> {
+    async fn call(&self, _call: <ABCIPlugin<T> as Call>::Call) -> Result<()> {
         todo!()
         // TODO: shouldn't need to deal with ABCIPlugin at this level
         // let call = match call {
