@@ -12,9 +12,7 @@ use nomic::orga::store::{BackingStore, Shared};
 use nomic::orga::{Error, Result};
 use std::cell::RefCell;
 use std::convert::TryInto;
-use std::ops::{Deref, DerefMut};
-use std::sync::Arc;
-use wasm_bindgen::prelude::*;
+use std::sync::Mutex;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::{spawn_local, JsFuture};
 use web_sys::XmlHttpRequest;
@@ -25,20 +23,12 @@ const REST_PORT: u64 = 8443;
 
 #[derive(Default)]
 pub struct WebClient {
-    height: RefCell<Option<u32>>,
+    height: Mutex<Option<u32>>,
 }
 
 impl WebClient {
     pub fn new() -> Self {
         Self::default()
-    }
-}
-
-impl Clone for WebClient {
-    fn clone(&self) -> Self {
-        WebClient {
-            height: self.height.clone(),
-        }
     }
 }
 
@@ -116,7 +106,7 @@ impl<T: App + Call + Query + State + Default> Transport<ABCIPlugin<T>> for WebCl
     async fn query(&self, query: T::Query) -> Result<Store> {
         let query_bytes = query.encode()?;
         let query = hex::encode(query_bytes);
-        let maybe_height: Option<u32> = self.height.borrow().map(Into::into);
+        let maybe_height: Option<u32> = self.height.lock().unwrap().map(Into::into);
 
         let window = match web_sys::window() {
             Some(window) => window,
@@ -168,7 +158,8 @@ impl<T: App + Call + Query + State + Default> Transport<ABCIPlugin<T>> for WebCl
             Ok(inner) => u32::from_be_bytes(inner),
             _ => panic!("Cannot convert result to fixed size array"),
         };
-        if let Some(height) = self.height.borrow().as_ref() {
+        let mut height = self.height.lock().unwrap();
+        if let Some(height) = height.as_ref() {
             if *height != res_height {
                 return Err(Error::App(format!(
                     "Height mismatch: expected {}, got {}",
@@ -176,7 +167,7 @@ impl<T: App + Call + Query + State + Default> Transport<ABCIPlugin<T>> for WebCl
                 )));
             }
         }
-        self.height.replace(Some(res_height));
+        height.replace(res_height);
         let root_hash = match res[4..36].try_into() {
             Ok(inner) => inner,
             _ => panic!("Cannot convert result to fixed size array"),
