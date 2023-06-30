@@ -21,7 +21,7 @@ csv = { version = "1.1.6", optional = true }
 bech32 = { version = "0.9.1" }
 futures = "0.3.21"
 toml_edit = "0.13.4"
-tendermint-rpc = { version = "0.23.7", features = ["http-client"], optional = true}
+tendermint-rpc = { version = "=0.30.0", features = ["http-client"], optional = true}
 bitcoincore-rpc-async = { package = "bitcoincore-rpc-async2", version = "4.0.1", optional = true }
 bitcoin-script = "0.1.1"
 warp = { version = "0.3.2", optional = true }
@@ -48,6 +48,7 @@ mutagen = "0.1.2"
 serial_test = "1.0.0"
 curl = "0.4.44"
 urlencoding = "2.1.2"
+crossbeam-channel = "0.5.8"
 
 [features]
 default = ["full", "feat-ibc"]
