@@ -89,7 +89,7 @@ impl Relayer {
                 error!("Header relay error: {}", e);
             }
 
-            sleep(2);
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
         }
     }
 
@@ -133,7 +133,7 @@ impl Relayer {
                     error!("Deposit relay error: {}", e);
                 }
 
-                sleep(2);
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
             }
         };
 
@@ -257,7 +257,7 @@ impl Relayer {
     async fn relay_deposits(&mut self, recv: &mut Receiver<(DepositCommitment, u32)>) -> Result<!> {
         let mut prev_tip = None;
         loop {
-            sleep(2);
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
             self.insert_announced_addrs(recv).await?;
 
@@ -310,7 +310,7 @@ impl Relayer {
                 }
             }
 
-            sleep(2);
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
         }
     }
 
@@ -352,7 +352,7 @@ impl Relayer {
                 relayed.insert(tx.txid());
             }
 
-            sleep(1);
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
         }
     }
 
@@ -366,7 +366,7 @@ impl Relayer {
                 }
             }
 
-            sleep(2);
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
         }
     }
 
@@ -405,7 +405,7 @@ impl Relayer {
                 relayed.insert(tx.txid());
             }
 
-            sleep(1);
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
         }
     }
 
