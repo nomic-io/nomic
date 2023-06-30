@@ -337,9 +337,9 @@ mod abci {
             let vb_address = VALIDATOR_BOOTSTRAP_ADDRESS.parse().unwrap();
             self.accounts.add_transfer_exception(vb_address)?;
 
-            let mut map = Map::default();
-            map.insert((), vec![Self::CONSENSUS_VERSION].try_into().unwrap())?;
-            self.upgrade.current_version = map;
+            self.upgrade
+                .current_version
+                .insert((), vec![Self::CONSENSUS_VERSION].try_into().unwrap())?;
 
             self.configure_faucets()?;
             Ok(())
