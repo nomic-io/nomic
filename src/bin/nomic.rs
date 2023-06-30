@@ -1261,17 +1261,17 @@ pub struct GrpcCmd {
 #[cfg(feature = "testnet")]
 impl GrpcCmd {
     async fn run(&self) -> Result<()> {
-        todo!()
-        // orga::ibc::start_grpc(
-        //     || app_client().sub(|app| app.ibc),
-        //     &GrpcOpts {
-        //         host: "127.0.0.1".to_string(),
-        //         port: self.port,
-        //     },
-        // )
-        // .await;
+        use orga::ibc::GrpcOpts;
+        orga::ibc::start_grpc(
+            || app_client().sub(|app| app.ibc),
+            &GrpcOpts {
+                host: "127.0.0.1".to_string(),
+                port: self.port,
+            },
+        )
+        .await;
 
-        // Ok(())
+        Ok(())
     }
 }
 
