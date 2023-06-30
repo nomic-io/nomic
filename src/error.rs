@@ -74,7 +74,11 @@ impl warp::reject::Reject for Error {}
 
 impl From<Error> for orga::Error {
     fn from(err: Error) -> Self {
-        orga::Error::App(err.to_string())
+        if let Error::Orga(err) = err {
+            err
+        } else {
+            orga::Error::App(err.to_string())
+        }
     }
 }
 
