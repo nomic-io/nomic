@@ -40,6 +40,7 @@ use orga::store::BackingStore;
 use orga::store::Write;
 #[cfg(feature = "full")]
 use orga::store::{Shared, Store};
+use orga::{client::wallet::DerivedKey, macros::build_call};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 #[cfg(feature = "full")]
@@ -224,9 +225,7 @@ pub struct DeclareInfo {
 }
 
 #[cfg(feature = "full")]
-pub async fn declare_validator(home: &Path) -> Result<()> {
-    use orga::macros::build_call;
-
+pub async fn declare_validator(home: &Path, wallet: DerivedKey) -> Result<()> {
     use crate::app_client_testnet;
 
     info!("Declaring validator...");
@@ -257,6 +256,7 @@ pub async fn declare_validator(home: &Path) -> Result<()> {
     };
 
     app_client_testnet()
+        .with_wallet(wallet)
         .call(
             move |app| build_call!(app.staking.declare_self(declaration.clone())),
             |app| build_call!(app.accounts.take_as_funding((100000 + MIN_FEE).into())),
@@ -267,7 +267,9 @@ pub async fn declare_validator(home: &Path) -> Result<()> {
 }
 
 #[cfg(feature = "full")]
-pub fn poll_for_blocks() {
+pub async fn poll_for_blocks() {
+    use std::time::Duration;
+
     info!("Scanning for blocks...");
     let mut height = get_tendermint_height().ok().flatten();
 
@@ -277,7 +279,7 @@ pub fn poll_for_blocks() {
             .flatten()
             .filter(|height| height != "0");
 
-        sleep(1);
+        tokio::time::sleep(Duration::from_secs(1)).await;
     }
 }
 
