@@ -31,8 +31,8 @@ use orga::orga;
 use orga::plugins::sdk_compat::{sdk, sdk::Tx as SdkTx, ConvertSdkTx};
 use orga::plugins::{DefaultPlugins, PaidCall, Signer, MIN_FEE};
 use orga::prelude::*;
-use orga::upgrade::Upgrade;
 use orga::upgrade::Version;
+use orga::upgrade::{Upgrade, UpgradeV0};
 use orga::Error;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
@@ -53,7 +53,7 @@ const DEV_ADDRESS: &str = "nomic14z79y3yrghqx493mwgcj0qd2udy6lm26lmduah";
 const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1d5n325zrf4elfu0heqd59gna5j6xyunhev23cj";
 const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhqd8dcqeq";
 
-#[orga(version = 1)]
+#[orga(version = 2)]
 pub struct InnerApp {
     #[call]
     pub accounts: Accounts<Nom>,
@@ -76,10 +76,10 @@ pub struct InnerApp {
 
     #[cfg(feature = "testnet")]
     #[call]
-    #[orga(version(V1))]
+    #[orga(version(V1, V2))]
     pub ibc: Ibc,
 
-    #[orga(version(V1))]
+    #[orga(version(V1, V2))]
     upgrade: Upgrade,
 }
 
