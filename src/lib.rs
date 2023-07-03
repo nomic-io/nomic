@@ -7,6 +7,7 @@
 
 use orga::client::wallet::Unsigned;
 use orga::client::AppClient;
+#[cfg(feature = "full")]
 use orga::tendermint::client::HttpClient;
 
 pub use orga;

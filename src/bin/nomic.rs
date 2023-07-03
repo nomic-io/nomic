@@ -441,7 +441,7 @@ impl StartCmd {
                         if let Err(err) = app_client()
                             .call(|app| {
                                 build_call!(app.signal(signal_version))
-                            }, |app| build_call!(app.app_noop()))
+                            }, |app| build_call!(app.app_noop())).await
                         {
                             let msg = err.to_string();
                             if msg.ends_with("has already been signaled") {
@@ -575,10 +575,12 @@ pub struct SendCmd {
 
 impl SendCmd {
     async fn run(&self) -> Result<()> {
-        Ok(app_client().call(
-            |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
-            |app| build_call!(app.accounts.transfer(self.to_addr, self.amount.into())),
-        )?)
+        Ok(app_client()
+            .call(
+                |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
+                |app| build_call!(app.accounts.transfer(self.to_addr, self.amount.into())),
+            )
+            .await?)
     }
 }
 
@@ -590,10 +592,12 @@ pub struct SendNbtcCmd {
 
 impl SendNbtcCmd {
     async fn run(&self) -> Result<()> {
-        Ok(app_client().call(
-            |app| build_call!(app.bitcoin.transfer(self.to_addr, self.amount.into())),
-            |app| build_call!(app.app_noop()),
-        )?)
+        Ok(app_client()
+            .call(
+                |app| build_call!(app.bitcoin.transfer(self.to_addr, self.amount.into())),
+                |app| build_call!(app.app_noop()),
+            )
+            .await?)
     }
 }
 
@@ -607,13 +611,17 @@ impl BalanceCmd {
         let address = self.address.unwrap_or_else(my_address);
         println!("address: {}", address);
 
-        let balance = app_client().query(|app| app.accounts.balance(address))?;
+        let balance = app_client()
+            .query(|app| app.accounts.balance(address))
+            .await?;
         println!("{} NOM", balance);
 
-        let balance = app_client().query(|app| app.bitcoin.accounts.balance(address))?;
+        let balance = app_client()
+            .query(|app| app.bitcoin.accounts.balance(address))
+            .await?;
         println!("{} NBTC", balance);
 
-        let balance = app_client().query(|app| app.escrowed_nbtc(address))?;
+        let balance = app_client().query(|app| app.escrowed_nbtc(address)).await?;
         println!("{} IBC-escrowed NBTC", balance);
 
         Ok(())
@@ -626,7 +634,9 @@ pub struct DelegationsCmd;
 impl DelegationsCmd {
     async fn run(&self) -> Result<()> {
         let address = my_address();
-        let delegations = app_client().query(|app| app.staking.delegations(address))?;
+        let delegations = app_client()
+            .query(|app| app.staking.delegations(address))
+            .await?;
 
         println!(
             "delegated to {} validator{}",
@@ -672,7 +682,9 @@ pub struct ValidatorsCmd;
 
 impl ValidatorsCmd {
     async fn run(&self) -> Result<()> {
-        let mut validators = app_client().query(|app| app.staking.all_validators())?;
+        let mut validators = app_client()
+            .query(|app| app.staking.all_validators())
+            .await?;
 
         validators.sort_by(|a, b| b.amount_staked.cmp(&a.amount_staked));
 
@@ -697,14 +709,16 @@ pub struct DelegateCmd {
 
 impl DelegateCmd {
     async fn run(&self) -> Result<()> {
-        Ok(app_client().call(
-            |app| build_call!(app.accounts.take_as_funding((self.amount + MIN_FEE).into())),
-            |app| {
-                build_call!(app
-                    .staking
-                    .delegate_from_self(self.validator_addr, self.amount.into()))
-            },
-        )?)
+        Ok(app_client()
+            .call(
+                |app| build_call!(app.accounts.take_as_funding((self.amount + MIN_FEE).into())),
+                |app| {
+                    build_call!(app
+                        .staking
+                        .delegate_from_self(self.validator_addr, self.amount.into()))
+                },
+            )
+            .await?)
     }
 }
 
@@ -759,10 +773,12 @@ impl DeclareCmd {
             min_self_delegation: self.min_self_delegation.into(),
         };
 
-        Ok(app_client().call(
-            |app| build_call!(app.accounts.take_as_funding((self.amount + MIN_FEE).into())),
-            |app| build_call!(app.staking.declare_self(declaration.clone())),
-        )?)
+        Ok(app_client()
+            .call(
+                |app| build_call!(app.accounts.take_as_funding((self.amount + MIN_FEE).into())),
+                |app| build_call!(app.staking.declare_self(declaration.clone())),
+            )
+            .await?)
     }
 }
 
@@ -788,16 +804,18 @@ impl EditCmd {
             .map_err(|_| orga::Error::App("invalid json".to_string()))?;
         let info_bytes = info_json.as_bytes().to_vec();
 
-        Ok(app_client().call(
-            |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
-            |app| {
-                build_call!(app.staking.edit_validator_self(
-                    self.commission_rate,
-                    self.min_self_delegation.into(),
-                    info_bytes.clone().try_into().unwrap()
-                ))
-            },
-        )?)
+        Ok(app_client()
+            .call(
+                |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
+                |app| {
+                    build_call!(app.staking.edit_validator_self(
+                        self.commission_rate,
+                        self.min_self_delegation.into(),
+                        info_bytes.clone().try_into().unwrap()
+                    ))
+                },
+            )
+            .await?)
     }
 }
 
@@ -809,14 +827,16 @@ pub struct UnbondCmd {
 
 impl UnbondCmd {
     async fn run(&self) -> Result<()> {
-        Ok(app_client().call(
-            |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
-            |app| {
-                build_call!(app
-                    .staking
-                    .unbond_self(self.validator_addr, self.amount.into()))
-            },
-        )?)
+        Ok(app_client()
+            .call(
+                |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
+                |app| {
+                    build_call!(app
+                        .staking
+                        .unbond_self(self.validator_addr, self.amount.into()))
+                },
+            )
+            .await?)
     }
 }
 
@@ -829,16 +849,18 @@ pub struct RedelegateCmd {
 
 impl RedelegateCmd {
     async fn run(&self) -> Result<()> {
-        Ok(app_client().call(
-            |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
-            |app| {
-                build_call!(app.staking.redelegate_self(
-                    self.src_validator_addr,
-                    self.dest_validator_addr,
-                    self.amount.into()
-                ))
-            },
-        )?)
+        Ok(app_client()
+            .call(
+                |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
+                |app| {
+                    build_call!(app.staking.redelegate_self(
+                        self.src_validator_addr,
+                        self.dest_validator_addr,
+                        self.amount.into()
+                    ))
+                },
+            )
+            .await?)
     }
 }
 
@@ -847,10 +869,12 @@ pub struct UnjailCmd {}
 
 impl UnjailCmd {
     async fn run(&self) -> Result<()> {
-        Ok(app_client().call(
-            |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
-            |app| build_call!(app.staking.unjail()),
-        )?)
+        Ok(app_client()
+            .call(
+                |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
+                |app| build_call!(app.staking.unjail()),
+            )
+            .await?)
     }
 }
 
@@ -859,10 +883,12 @@ pub struct ClaimCmd;
 
 impl ClaimCmd {
     async fn run(&self) -> Result<()> {
-        Ok(app_client().call(
-            |app| build_call!(app.staking.claim_all()),
-            |app| build_call!(app.deposit_rewards()),
-        )?)
+        Ok(app_client()
+            .call(
+                |app| build_call!(app.staking.claim_all()),
+                |app| build_call!(app.deposit_rewards()),
+            )
+            .await?)
     }
 }
 
@@ -876,7 +902,7 @@ impl AirdropCmd {
         let client = app_client();
 
         let addr = self.address.unwrap_or_else(my_address);
-        let acct = match client.query(|app| app.airdrop.get(addr))? {
+        let acct = match client.query(|app| app.airdrop.get(addr)).await? {
             None => {
                 println!("Address is not eligible for airdrop");
                 return Ok(());
@@ -900,7 +926,7 @@ impl ClaimAirdropCmd {
         let client = app_client();
 
         let addr = self.address.unwrap_or_else(my_address);
-        let acct = match client.query(|app| app.airdrop.get(addr))? {
+        let acct = match client.query(|app| app.airdrop.get(addr)).await? {
             None => {
                 println!("Address is not eligible for airdrop");
                 return Ok(());
@@ -911,19 +937,23 @@ impl ClaimAirdropCmd {
         let mut claimed = false;
 
         if acct.airdrop1.claimable > 0 {
-            app_client().call(
-                |app| build_call!(app.airdrop.claim_airdrop1()),
-                |app| build_call!(app.accounts.give_from_funding_all()),
-            )?;
+            app_client()
+                .call(
+                    |app| build_call!(app.airdrop.claim_airdrop1()),
+                    |app| build_call!(app.accounts.give_from_funding_all()),
+                )
+                .await?;
             println!("Claimed airdrop 1 ({} uNOM)", acct.airdrop1.claimable);
             claimed = true;
         }
 
         if acct.btc_deposit.claimable > 0 {
-            app_client().call(
-                |app| build_call!(app.airdrop.claim_btc_deposit()),
-                |app| build_call!(app.accounts.give_from_funding_all()),
-            )?;
+            app_client()
+                .call(
+                    |app| build_call!(app.airdrop.claim_btc_deposit()),
+                    |app| build_call!(app.accounts.give_from_funding_all()),
+                )
+                .await?;
             println!(
                 "Claimed BTC deposit airdrop ({} uNOM)",
                 acct.btc_deposit.claimable
@@ -932,10 +962,12 @@ impl ClaimAirdropCmd {
         }
 
         if acct.btc_withdraw.claimable > 0 {
-            app_client().call(
-                |app| build_call!(app.airdrop.claim_btc_withdraw()),
-                |app| build_call!(app.accounts.give_from_funding_all()),
-            )?;
+            app_client()
+                .call(
+                    |app| build_call!(app.airdrop.claim_btc_withdraw()),
+                    |app| build_call!(app.accounts.give_from_funding_all()),
+                )
+                .await?;
             println!(
                 "Claimed BTC withdraw airdrop ({} uNOM)",
                 acct.btc_withdraw.claimable
@@ -944,10 +976,12 @@ impl ClaimAirdropCmd {
         }
 
         if acct.ibc_transfer.claimable > 0 {
-            app_client().call(
-                |app| build_call!(app.airdrop.claim_ibc_transfer()),
-                |app| build_call!(app.accounts.give_from_funding_all()),
-            )?;
+            app_client()
+                .call(
+                    |app| build_call!(app.airdrop.claim_ibc_transfer()),
+                    |app| build_call!(app.accounts.give_from_funding_all()),
+                )
+                .await?;
             println!(
                 "Claimed IBC transfer airdrop ({} uNOM)",
                 acct.ibc_transfer.claimable
@@ -1074,17 +1108,21 @@ pub struct SetSignatoryKeyCmd {
 
 impl SetSignatoryKeyCmd {
     async fn run(&self) -> Result<()> {
-        app_client().call(
-            |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
-            |app| build_call!(app.bitcoin.set_signatory_key(self.xpub.into())),
-        )?;
+        app_client()
+            .call(
+                |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
+                |app| build_call!(app.bitcoin.set_signatory_key(self.xpub.into())),
+            )
+            .await?;
 
         Ok(())
     }
 }
 
 async fn deposit(dest: DepositCommitment) -> Result<()> {
-    let sigset = app_client().query(|app| Ok(app.bitcoin.checkpoints.active_sigset()))??;
+    let sigset = app_client()
+        .query(|app| Ok(app.bitcoin.checkpoints.active_sigset()))
+        .await??;
     let script = sigset.output_script(dest.commitment_bytes()?.as_slice())?;
     let btc_addr = bitcoin::Address::from_script(&script, nomic::bitcoin::NETWORK).unwrap();
 
@@ -1165,10 +1203,12 @@ impl WithdrawCmd {
 
         let script = self.dest.script_pubkey();
 
-        app_client().call(
-            |app| build_call!(app.withdraw_nbtc(Adapter::new(script), self.amount.into())),
-            |app| build_call!(app.app_noop()),
-        )?;
+        app_client()
+            .call(
+                |app| build_call!(app.withdraw_nbtc(Adapter::new(script), self.amount.into())),
+                |app| build_call!(app.app_noop()),
+            )
+            .await?;
 
         Ok(())
     }
@@ -1184,10 +1224,12 @@ pub struct IbcDepositNbtcCmd {
 #[cfg(feature = "testnet")]
 impl IbcDepositNbtcCmd {
     async fn run(&self) -> Result<()> {
-        Ok(app_client().call(
-            |app| build_call!(app.ibc_deposit_nbtc(self.to, self.amount.into())),
-            |app| build_call!(app.app_noop()),
-        )?)
+        Ok(app_client()
+            .call(
+                |app| build_call!(app.ibc_deposit_nbtc(self.to, self.amount.into())),
+                |app| build_call!(app.app_noop()),
+            )
+            .await?)
     }
 }
 
@@ -1200,10 +1242,12 @@ pub struct IbcWithdrawNbtcCmd {
 #[cfg(feature = "testnet")]
 impl IbcWithdrawNbtcCmd {
     async fn run(&self) -> Result<()> {
-        Ok(app_client().call(
-            |app| build_call!(app.ibc_withdraw_nbtc(self.amount.into())),
-            |app| build_call!(app.app_noop()),
-        )?)
+        Ok(app_client()
+            .call(
+                |app| build_call!(app.ibc_withdraw_nbtc(self.amount.into())),
+                |app| build_call!(app.app_noop()),
+            )
+            .await?)
     }
 }
 
@@ -1217,17 +1261,17 @@ pub struct GrpcCmd {
 #[cfg(feature = "testnet")]
 impl GrpcCmd {
     async fn run(&self) -> Result<()> {
-        todo!()
-        // orga::ibc::start_grpc(
-        //     || app_client().sub(|app| app.ibc),
-        //     &GrpcOpts {
-        //         host: "127.0.0.1".to_string(),
-        //         port: self.port,
-        //     },
-        // )
-        // .await;
+        use orga::ibc::GrpcOpts;
+        orga::ibc::start_grpc(
+            || app_client().sub(|app| app.ibc),
+            &GrpcOpts {
+                host: "127.0.0.1".to_string(),
+                port: self.port,
+            },
+        )
+        .await;
 
-        // Ok(())
+        Ok(())
     }
 }
 

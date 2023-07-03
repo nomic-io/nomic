@@ -12,7 +12,7 @@ lto = true
 
 [dependencies]
 wasm-bindgen = "0.2.78"
-nomic = { path = "..", default-features = false, features = ["feat-ibc", "clap"] }
+nomic = { path = "..", default-features = false, features = ["feat-ibc", "clap", "testnet"] }
 async-trait = "0.1.52"
 wasm-bindgen-futures = "0.4.28"
 console_error_panic_hook = "0.1.7"
@@ -20,8 +20,10 @@ base64 = "0.13.0"
 js-sys = "0.3.55"
 hex = "0.4.3"
 serde_json = "1.0.79"
-bitcoin = "0.28.1"
+bitcoin = { version = "0.29.2", features = ["serde"] }
 urlencoding = "2.1.2"
+reqwest-wasm = {version = "=0.11.16", features = ["blocking"] }
+futures-lite = "1.13.0"
 
 [dependencies.web-sys]
 version = "0.3.55"
@@ -38,9 +40,6 @@ features = [
   'RequestMode',
   'Response',
   'Location',
+  'XmlHttpRequest'
 ]
-
-[patch.crates-io]
-ibc = { git = "https://github.com/informalsystems/ibc-rs.git", rev = "e8c98d4" }
-ibc-proto = { git = "https://github.com/informalsystems/ibc-rs.git", rev = "e8c98d4" }
 
