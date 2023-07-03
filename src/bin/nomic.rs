@@ -17,6 +17,7 @@ use futures::executor::block_on;
 use nomic::app::DepositCommitment;
 use nomic::app::InnerApp;
 use nomic::app::Nom;
+use nomic::bitcoin::signer::Signer;
 // use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
 use nomic::network::Network;
@@ -1077,27 +1078,27 @@ pub struct SignerCmd {
 
 impl SignerCmd {
     async fn run(&self) -> Result<()> {
-        todo!()
-        // let signer_dir_path = self
-        //     .path
-        //     .as_ref()
-        //     .map(PathBuf::from)
-        //     .unwrap_or_else(|| Node::home(nomic::app::CHAIN_ID).join("signer"));
-        // if !signer_dir_path.exists() {
-        //     std::fs::create_dir(&signer_dir_path)?;
-        // }
-        // let key_path = signer_dir_path.join("xpriv");
+        let signer_dir_path = self
+            .path
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| Node::home(nomic::app::CHAIN_ID).join("signer"));
+        if !signer_dir_path.exists() {
+            std::fs::create_dir(&signer_dir_path)?;
+        }
+        let key_path = signer_dir_path.join("xpriv");
 
-        // let signer = Signer::load_or_generate(
-        //     my_address(),
-        //     app_client(),
-        //     key_path,
-        //     self.max_withdrawal_rate,
-        //     self.max_sigset_change_rate,
-        // )?;
-        // signer.start().await?;
+        let signer = Signer::load_or_generate(
+            my_address(),
+            key_path,
+            self.max_withdrawal_rate,
+            self.max_sigset_change_rate,
+            app_client,
+        )?;
 
-        // Ok(())
+        signer.start().await?;
+
+        Ok(())
     }
 }
 
