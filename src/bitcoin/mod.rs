@@ -35,8 +35,8 @@ use txid_set::OutpointSet;
 pub mod adapter;
 pub mod checkpoint;
 pub mod header_queue;
-// #[cfg(feature = "full")]
-// pub mod relayer;
+#[cfg(feature = "full")]
+pub mod relayer;
 pub mod signatory;
 // #[cfg(feature = "full")]
 // pub mod signer;
