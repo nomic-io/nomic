@@ -73,8 +73,8 @@ impl Relayer {
 
     async fn sidechain_block_hash(&self) -> Result<BlockHash> {
         let hash = app_client_testnet()
-            .query(|app| Ok(app.bitcoin.headers.hash()))
-            .await??;
+            .query(|app| Ok(app.bitcoin.headers.hash()?))
+            .await?;
         let hash = BlockHash::from_slice(hash.as_slice())?;
         Ok(hash)
     }
