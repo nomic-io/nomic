@@ -4,6 +4,7 @@
 #![feature(async_closure)]
 #![feature(never_type)]
 
+use bitcoind::bitcoincore_rpc::{Auth, Client as BtcClient};
 use std::convert::TryInto;
 use std::fs::Permissions;
 use std::os::unix::fs::PermissionsExt;
@@ -17,8 +18,7 @@ use futures::executor::block_on;
 use nomic::app::DepositCommitment;
 use nomic::app::InnerApp;
 use nomic::app::Nom;
-use nomic::bitcoin::signer::Signer;
-// use nomic::bitcoin::{relayer::Relayer, signer::Signer};
+use nomic::bitcoin::{signer::Signer, relayer::Relayer};
 use nomic::error::Result;
 use nomic::network::Network;
 use orga::abci::Node;
@@ -1014,48 +1014,46 @@ pub struct RelayerCmd {
 }
 
 impl RelayerCmd {
-    // async fn btc_client(&self) -> Result<BtcClient> {
-    //     let rpc_url = format!("http://localhost:{}", self.rpc_port);
-    //     let auth = match (self.rpc_user.clone(), self.rpc_pass.clone()) {
-    //         (Some(user), Some(pass)) => Auth::UserPass(user, pass),
-    //         _ => Auth::None,
-    //     };
+    async fn btc_client(&self) -> Result<BtcClient> {
+        let rpc_url = format!("http://localhost:{}", self.rpc_port);
+        let auth = match (self.rpc_user.clone(), self.rpc_pass.clone()) {
+            (Some(user), Some(pass)) => Auth::UserPass(user, pass),
+            _ => Auth::None,
+        };
 
-    //     let btc_client = BtcClient::new(rpc_url, auth)
-    //         .await
-    //         .map_err(|e| orga::Error::App(e.to_string()))?;
+        let btc_client =
+            BtcClient::new(&rpc_url, auth).map_err(|e| orga::Error::App(e.to_string()))?;
 
-    //     Ok(btc_client)
-    // }
+        Ok(btc_client)
+    }
 
     async fn run(&self) -> Result<()> {
-        todo!()
-        // let create_relayer = async || {
-        //     let btc_client = self.btc_client().await.unwrap();
+        let create_relayer = async || {
+            let btc_client = self.btc_client().await.unwrap();
 
-        //     Relayer::new(btc_client, app_client()).await
-        // };
+            Relayer::new(btc_client)
+        };
 
-        // let mut relayer = create_relayer().await;
-        // let headers = relayer.start_header_relay();
+        let mut relayer = create_relayer().await;
+        let headers = relayer.start_header_relay();
 
-        // let relayer_dir_path = self
-        //     .path
-        //     .as_ref()
-        //     .map(PathBuf::from)
-        //     .unwrap_or_else(|| Node::home(nomic::app::CHAIN_ID).join("relayer"));
-        // if !relayer_dir_path.exists() {
-        //     std::fs::create_dir(&relayer_dir_path)?;
-        // }
-        // let mut relayer = create_relayer().await;
-        // let deposits = relayer.start_deposit_relay(relayer_dir_path);
+        let relayer_dir_path = self
+            .path
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| Node::home(nomic::app::CHAIN_ID).join("relayer"));
+        if !relayer_dir_path.exists() {
+            std::fs::create_dir(&relayer_dir_path)?;
+        }
+        let relayer = create_relayer().await;
+        let deposits = relayer.start_deposit_relay(relayer_dir_path);
 
-        // let mut relayer = create_relayer().await;
-        // let checkpoints = relayer.start_checkpoint_relay();
+        let mut relayer = create_relayer().await;
+        let checkpoints = relayer.start_checkpoint_relay();
 
-        // futures::try_join!(headers, deposits, checkpoints).unwrap();
+        futures::try_join!(headers, deposits, checkpoints).unwrap();
 
-        // Ok(())
+        Ok(())
     }
 }
 
