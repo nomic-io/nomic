@@ -1,13 +1,15 @@
-use crate::app_client_testnet;
+use crate::app::{InnerApp, Nom};
 use crate::bitcoin::threshold_sig::Signature;
 use crate::error::Result;
 use bitcoin::secp256k1::{Message, Secp256k1};
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use log::info;
-use orga::client::Client;
+use orga::client::wallet::SimpleWallet;
+use orga::client::AppClient;
 use orga::coins::Address;
 use orga::encoding::LengthVec;
 use orga::macros::build_call;
+use orga::tendermint::client::HttpClient;
 use rand::Rng;
 use std::fs;
 use std::path::Path;
@@ -18,6 +20,7 @@ pub struct Signer {
     xpriv: ExtendedPrivKey,
     max_withdrawal_rate: f64,
     max_sigset_change_rate: f64,
+    app_client: fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, SimpleWallet>,
 }
 
 impl Signer {
@@ -26,6 +29,7 @@ impl Signer {
         key_path: P,
         max_withdrawal_rate: f64,
         max_sigset_change_rate: f64,
+        app_client: fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, SimpleWallet>,
     ) -> Result<Self> {
         let path = key_path.as_ref();
         let xpriv = if path.exists() {
@@ -52,6 +56,7 @@ impl Signer {
             xpriv,
             max_withdrawal_rate,
             max_sigset_change_rate,
+            app_client,
         ))
     }
 
@@ -60,12 +65,14 @@ impl Signer {
         xpriv: ExtendedPrivKey,
         max_withdrawal_rate: f64,
         max_sigset_change_rate: f64,
+        app_client: fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, SimpleWallet>,
     ) -> Self {
         Signer {
             op_addr,
             xpriv,
             max_withdrawal_rate,
             max_sigset_change_rate,
+            app_client,
         }
     }
 
@@ -86,9 +93,12 @@ impl Signer {
     }
 
     async fn maybe_submit_xpub(&mut self, xpub: &ExtendedPubKey) -> Result<()> {
-        let cons_key = app_client_testnet().query(|app| app.staking.consensus_key(self.op_addr))?;
-        let onchain_xpub =
-            app_client_testnet().query(|app| Ok(app.bitcoin.signatory_keys.get(cons_key)?))?;
+        let cons_key = (self.app_client)()
+            .query(|app| app.staking.consensus_key(self.op_addr))
+            .await?;
+        let onchain_xpub = (self.app_client)()
+            .query(|app| Ok(app.bitcoin.signatory_keys.get(cons_key)?))
+            .await?;
 
         match onchain_xpub {
             None => self.submit_xpub(xpub).await,
@@ -101,10 +111,12 @@ impl Signer {
     }
 
     async fn submit_xpub(&mut self, xpub: &ExtendedPubKey) -> Result<()> {
-        app_client_testnet().call(
-            move |app| build_call!(app.bitcoin.set_signatory_key(xpub.into())),
-            |app| build_call!(app.app_noop()),
-        )?;
+        (self.app_client)()
+            .call(
+                move |app| build_call!(app.bitcoin.set_signatory_key(xpub.into())),
+                |app| build_call!(app.app_noop()),
+            )
+            .await?;
         info!("Submitted signatory key.");
         Ok(())
     }
@@ -112,12 +124,16 @@ impl Signer {
     async fn try_sign(&mut self, xpub: &ExtendedPubKey) -> Result<()> {
         let secp = Secp256k1::signing_only();
 
-        if app_client_testnet().query(|app| Ok(app.bitcoin.checkpoints.signing()?.is_none()))? {
+        if (self.app_client)()
+            .query(|app| Ok(app.bitcoin.checkpoints.signing()?.is_none()))
+            .await?
+        {
             return Ok(());
         }
 
-        let to_sign = app_client_testnet()
-            .query(|app| Ok(app.bitcoin.checkpoints.to_sign(xpub.into())?))?;
+        let to_sign = (self.app_client)()
+            .query(|app| Ok(app.bitcoin.checkpoints.to_sign(xpub.into())?))
+            .await?;
         if to_sign.is_empty() {
             return Ok(());
         }
@@ -142,10 +158,12 @@ impl Signer {
             .collect::<Result<Vec<_>>>()?
             .try_into()?;
 
-        app_client_testnet().call(
-            move |app| build_call!(app.bitcoin.checkpoints.sign(xpub.into(), sigs.clone())),
-            |app| build_call!(app.app_noop()),
-        )?;
+        (self.app_client)()
+            .call(
+                move |app| build_call!(app.bitcoin.checkpoints.sign(xpub.into(), sigs.clone())),
+                |app| build_call!(app.app_noop()),
+            )
+            .await?;
 
         info!("Submitted signatures");
 
@@ -153,8 +171,9 @@ impl Signer {
     }
 
     async fn check_change_rates(&self) -> Result<()> {
-        let checkpoint_index =
-            app_client_testnet().query(|app| Ok(app.bitcoin.checkpoints.index()))?;
+        let checkpoint_index = (self.app_client)()
+            .query(|app| Ok(app.bitcoin.checkpoints.index()))
+            .await?;
         if checkpoint_index < 100 {
             return Ok(());
         }
@@ -163,8 +182,9 @@ impl Signer {
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        let rates =
-            app_client_testnet().query(|app| Ok(app.bitcoin.change_rates(60 * 60 * 24, now)?))?;
+        let rates = (self.app_client)()
+            .query(|app| Ok(app.bitcoin.change_rates(60 * 60 * 24, now)?))
+            .await?;
 
         let withdrawal_rate = rates.withdrawal as f64 / 10_000.0;
         let sigset_change_rate = rates.sigset_change as f64 / 10_000.0;
