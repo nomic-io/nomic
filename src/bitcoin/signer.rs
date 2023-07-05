@@ -4,8 +4,7 @@ use crate::error::Result;
 use bitcoin::secp256k1::{Message, Secp256k1};
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use log::info;
-use orga::client::wallet::SimpleWallet;
-use orga::client::AppClient;
+use orga::client::{AppClient, Wallet};
 use orga::coins::Address;
 use orga::encoding::LengthVec;
 use orga::macros::build_call;
@@ -15,21 +14,21 @@ use std::fs;
 use std::path::Path;
 use std::time::SystemTime;
 
-pub struct Signer {
+pub struct Signer<W> {
     op_addr: Address,
     xpriv: ExtendedPrivKey,
     max_withdrawal_rate: f64,
     max_sigset_change_rate: f64,
-    app_client: fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, SimpleWallet>,
+    app_client: fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, W>,
 }
 
-impl Signer {
+impl<W: Wallet> Signer<W> {
     pub fn load_or_generate<P: AsRef<Path>>(
         op_addr: Address,
         key_path: P,
         max_withdrawal_rate: f64,
         max_sigset_change_rate: f64,
-        app_client: fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, SimpleWallet>,
+        app_client: fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, W>,
     ) -> Result<Self> {
         let path = key_path.as_ref();
         let xpriv = if path.exists() {
@@ -65,7 +64,7 @@ impl Signer {
         xpriv: ExtendedPrivKey,
         max_withdrawal_rate: f64,
         max_sigset_change_rate: f64,
-        app_client: fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, SimpleWallet>,
+        app_client: fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, W>,
     ) -> Self {
         Signer {
             op_addr,
