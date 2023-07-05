@@ -1,5 +1,6 @@
 #[cfg(feature = "full")]
 use crate::app::App;
+use crate::app::Nom;
 use crate::app::CHAIN_ID;
 #[cfg(feature = "full")]
 use crate::bitcoin::adapter::Adapter;
@@ -10,6 +11,7 @@ use crate::bitcoin::header_queue::Config as HeaderQueueConfig;
 #[cfg(feature = "full")]
 use crate::bitcoin::signer::Signer;
 use crate::error::{Error, Result};
+use crate::{app::InnerApp, app_client_testnet};
 use bitcoin::hashes::hex::ToHex;
 use bitcoin::secp256k1::{self, rand, SecretKey};
 #[cfg(feature = "full")]
@@ -26,6 +28,7 @@ use chrono::{TimeZone, Utc};
 use ed::Encode;
 #[cfg(feature = "full")]
 use log::info;
+use orga::client::wallet::SimpleWallet;
 use orga::coins::staking::{Commission, Declaration};
 use orga::coins::{Address, Coin, Decimal};
 use orga::context::Context;
@@ -40,6 +43,7 @@ use orga::store::BackingStore;
 use orga::store::Write;
 #[cfg(feature = "full")]
 use orga::store::{Shared, Store};
+use orga::tendermint::client::HttpClient;
 use orga::{client::wallet::DerivedKey, macros::build_call};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -175,7 +179,10 @@ pub fn address_from_privkey(privkey: &SecretKey) -> Address {
 }
 
 #[cfg(feature = "full")]
-pub fn setup_test_signer<T: AsRef<Path>>(home: T) -> Signer {
+pub fn setup_test_signer<T: AsRef<Path>>(
+    home: T,
+    client: fn() -> orga::client::AppClient<InnerApp, InnerApp, HttpClient, Nom, DerivedKey>,
+) -> Signer<DerivedKey> {
     let signer_dir_path = home.as_ref().join("signer");
 
     if !signer_dir_path.exists() {
@@ -183,12 +190,12 @@ pub fn setup_test_signer<T: AsRef<Path>>(home: T) -> Signer {
     }
 
     let key_path = signer_dir_path.join("xpriv");
-
     Signer::load_or_generate(
         address_from_privkey(&load_privkey(home.as_ref()).unwrap()),
         key_path,
         0.1,
         1.0,
+        client,
     )
     .unwrap()
 }
