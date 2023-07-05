@@ -8,12 +8,14 @@ use crate::bitcoin::adapter::Adapter;
 use crate::bitcoin::{Bitcoin, Nbtc};
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::Transaction;
-use orga::coins::{Accounts, Address, Amount, Coin, Faucet, Give, Staking, Symbol, Take};
+use orga::coins::{
+    Accounts, Address, Amount, Coin, Faucet, FaucetOptions, Give, Staking, Symbol, Take,
+};
 use orga::context::GetContext;
 use orga::cosmrs::bank::MsgSend;
 use orga::encoding::{Decode, Encode};
+use std::time::Duration;
 
-use orga::coins::FaucetOptions;
 use orga::ibc::ibc_rs::applications::transfer::context::TokenTransferExecutionContext;
 use orga::ibc::ibc_rs::applications::transfer::msgs::transfer::MsgTransfer;
 use orga::ibc::ibc_rs::applications::transfer::packet::PacketData;
@@ -32,14 +34,12 @@ use orga::orga;
 use orga::plugins::sdk_compat::{sdk, sdk::Tx as SdkTx, ConvertSdkTx};
 use orga::plugins::{DefaultPlugins, PaidCall, Signer, Time, MIN_FEE};
 use orga::prelude::*;
-use orga::upgrade::Upgrade;
 use orga::upgrade::Version;
+use orga::upgrade::{Upgrade, UpgradeV0};
 use orga::Error;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 use std::fmt::Debug;
-#[cfg(feature = "full")]
-use std::time::Duration;
 
 mod migrations;
 
@@ -59,7 +59,7 @@ const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1d5n325zrf4elfu0heqd59gna5j6xyunhe
 #[cfg(feature = "full")]
 const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhqd8dcqeq";
 
-#[orga(version = 1)]
+#[orga(version = 2)]
 pub struct InnerApp {
     #[call]
     pub accounts: Accounts<Nom>,
@@ -82,15 +82,17 @@ pub struct InnerApp {
 
     #[cfg(feature = "testnet")]
     #[call]
-    #[orga(version(V1))]
+    #[orga(version(V1, V2))]
     pub ibc: Ibc,
 
-    #[orga(version(V1))]
+    #[orga(version(V1, V2))]
     upgrade: Upgrade,
 }
 
 #[orga]
 impl InnerApp {
+    pub const CONSENSUS_VERSION: u8 = 1;
+
     #[cfg(feature = "full")]
     fn configure_faucets(&mut self) -> Result<()> {
         let day = 60 * 60 * 24;
@@ -136,8 +138,6 @@ impl InnerApp {
 
         Ok(())
     }
-
-    pub const CONSENSUS_VERSION: u8 = 1;
 
     #[call]
     pub fn deposit_rewards(&mut self) -> Result<()> {
@@ -337,11 +337,12 @@ mod abci {
             let vb_address = VALIDATOR_BOOTSTRAP_ADDRESS.parse().unwrap();
             self.accounts.add_transfer_exception(vb_address)?;
 
+            self.configure_faucets()?;
+
             self.upgrade
                 .current_version
                 .insert((), vec![Self::CONSENSUS_VERSION].try_into().unwrap())?;
 
-            self.configure_faucets()?;
             Ok(())
         }
     }

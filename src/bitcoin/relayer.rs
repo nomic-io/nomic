@@ -75,8 +75,8 @@ impl Relayer {
 
     async fn sidechain_block_hash(&self) -> Result<BlockHash> {
         let hash = app_client_testnet()
-            .query(|app| Ok(app.bitcoin.headers.hash()))
-            .await??;
+            .query(|app| Ok(app.bitcoin.headers.hash()?))
+            .await?;
         let hash = BlockHash::from_slice(hash.as_slice())?;
         Ok(hash)
     }
@@ -220,14 +220,13 @@ impl Relayer {
 
         let sigset_route = warp::path("sigset")
             .and_then(async move || {
-                let sigset: RawSignatorySet = app_client_testnet()
+                let sigset = app_client_testnet()
                     .query(|app| {
                         let sigset: RawSignatorySet =
                             app.bitcoin.checkpoints.active_sigset()?.into();
                         Ok(sigset)
                     })
                     .await
-                    .map_err(|_| reject())
                     .map_err(|_| reject())?;
 
                 Ok::<_, warp::Rejection>(warp::reply::json(&sigset))
