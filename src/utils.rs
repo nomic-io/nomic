@@ -258,8 +258,8 @@ pub async fn declare_validator(home: &Path, wallet: DerivedKey) -> Result<()> {
     app_client_testnet()
         .with_wallet(wallet)
         .call(
+            move |app| build_call!(app.accounts.take_as_funding((100000 + MIN_FEE).into())),
             move |app| build_call!(app.staking.declare_self(declaration.clone())),
-            |app| build_call!(app.accounts.take_as_funding((100000 + MIN_FEE).into())),
         )
         .await?;
     info!("Validator declared");
@@ -277,7 +277,7 @@ pub async fn poll_for_blocks() {
         height = get_tendermint_height()
             .ok()
             .flatten()
-            .filter(|height| height != "0");
+            .filter(|height| height != "1");
 
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
@@ -312,6 +312,7 @@ pub fn populate_bitcoin_block(client: &BitcoinD) -> BitcoinBlockData {
         block_header: tip_header,
     }
 }
+
 pub struct KeyData {
     pub privkey: SecretKey,
     pub address: Address,
@@ -326,6 +327,7 @@ pub fn setup_test_app(home: &Path, block_data: &BitcoinBlockData) -> Vec<KeyData
     ))));
 
     app.attach(store.clone()).unwrap();
+
     let keys = {
         let inner_app = &mut app
             .inner
@@ -389,11 +391,11 @@ pub fn setup_test_app(home: &Path, block_data: &BitcoinBlockData) -> Vec<KeyData
 
     let mut bytes = Vec::new();
     app.flush(&mut bytes).unwrap();
-
     store.put(vec![], bytes).unwrap();
 
     if let BackingStore::Merk(inner_store) = store.into_backing_store().into_inner() {
-        inner_store.into_inner().write(vec![]).unwrap();
+        let mut store = inner_store.into_inner();
+        store.write(vec![]).unwrap();
     }
 
     keys
