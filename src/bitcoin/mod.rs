@@ -8,7 +8,7 @@ use bitcoin::hashes::Hash;
 use bitcoin::util::bip32::ExtendedPubKey;
 use bitcoin::Script;
 use bitcoin::{util::merkleblock::PartialMerkleTree, Transaction};
-use checkpoint::{CheckpointQueue, FEE_RATE};
+use checkpoint::CheckpointQueue;
 use header_queue::HeaderQueue;
 #[cfg(feature = "full")]
 use orga::abci::BeginBlock;
@@ -65,6 +65,53 @@ pub fn calc_deposit_fee(amount: u64) -> u64 {
     amount / 5
 }
 
+#[orga(skip(Default))]
+struct Config {
+    pub min_withdrawal_checkpoints: u32,
+    pub min_deposit_amount: u64,
+    pub min_withdrawal_amount: u64,
+    pub max_withdrawal_script_length: u64,
+    pub transfer_fee: u64,
+    pub min_confirmations: u32,
+    pub units_per_sat: u64,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        match NETWORK {
+            bitcoin::Network::Bitcoin | bitcoin::Network::Testnet => Config::mainnet(),
+            bitcoin::Network::Regtest => Config::regtest(),
+            _ => unimplemented!(),
+        }
+    }
+}
+
+impl Config {
+    fn mainnet() -> Self {
+        Self {
+            min_withdrawal_checkpoints: MIN_WITHDRAWAL_CHECKPOINTS,
+            min_deposit_amount: MIN_DEPOSIT_AMOUNT,
+            min_withdrawal_amount: MIN_WITHDRAWAL_AMOUNT,
+            max_withdrawal_script_length: MAX_WITHDRAWAL_SCRIPT_LENGTH,
+            transfer_fee: TRANSFER_FEE,
+            min_confirmations: MIN_CONFIRMATIONS,
+            units_per_sat: UNITS_PER_SAT,
+        }
+    }
+
+    fn regtest() -> Self {
+        Self {
+            min_withdrawal_checkpoints: 1,
+            min_deposit_amount: MIN_DEPOSIT_AMOUNT,
+            min_withdrawal_amount: MIN_WITHDRAWAL_AMOUNT,
+            max_withdrawal_script_length: MAX_WITHDRAWAL_SCRIPT_LENGTH,
+            transfer_fee: TRANSFER_FEE,
+            min_confirmations: MIN_CONFIRMATIONS,
+            units_per_sat: UNITS_PER_SAT,
+        }
+    }
+}
+
 #[orga]
 pub struct Bitcoin {
     #[call]
@@ -76,6 +123,7 @@ pub struct Bitcoin {
     pub accounts: Accounts<Nbtc>,
     pub signatory_keys: SignatoryKeys,
     pub(crate) reward_pool: Coin<Nbtc>,
+    config: Config,
 }
 
 pub type ConsensusKey = [u8; 32];
@@ -202,7 +250,10 @@ impl Bitcoin {
                 ))
             })?;
 
-            if signatory_key.network != self.network() {
+            let regtest_mode = self.network() == bitcoin::Network::Regtest
+                && signatory_key.network == bitcoin::Network::Testnet;
+
+            if !regtest_mode && signatory_key.network != self.network() {
                 return Err(Error::Orga(orga::Error::App(
                     "Signatory key network does not match network".to_string(),
                 )));
@@ -230,7 +281,7 @@ impl Bitcoin {
             .get_by_height(btc_height)?
             .ok_or_else(|| OrgaError::App("Invalid bitcoin block height".to_string()))?;
 
-        // if self.headers.height()? - btc_height < MIN_CONFIRMATIONS {
+        // if self.headers.height()? - btc_height < self.config.min_confirmations {
         //     return Err(OrgaError::App("Block is not sufficiently confirmed".to_string()).into());
         // }
 
@@ -260,7 +311,7 @@ impl Bitcoin {
         }
         let output = &btc_tx.output[btc_vout as usize];
 
-        if output.value < MIN_DEPOSIT_AMOUNT {
+        if output.value < self.config.min_deposit_amount {
             return Err(OrgaError::App(
                 "Deposit amount is below minimum".to_string(),
             ))?;
@@ -305,11 +356,11 @@ impl Bitcoin {
 
         let value = output
             .value
-            .checked_sub(est_vsize * FEE_RATE)
+            .checked_sub(est_vsize * self.checkpoints.config().fee_rate)
             .ok_or_else(|| {
                 OrgaError::App("Deposit amount is too small to pay its spending fee".to_string())
             })?
-            * UNITS_PER_SAT;
+            * self.config.units_per_sat;
 
         let mut minted_nbtc = Nbtc::mint(value);
         let deposit_fee = minted_nbtc.take(calc_deposit_fee(value))?;
@@ -321,14 +372,14 @@ impl Bitcoin {
     pub fn withdraw(&mut self, script_pubkey: Adapter<Script>, amount: Amount) -> Result<()> {
         exempt_from_fee()?;
 
-        if script_pubkey.len() as u64 > MAX_WITHDRAWAL_SCRIPT_LENGTH {
+        if script_pubkey.len() as u64 > self.config.max_withdrawal_script_length {
             return Err(OrgaError::App("Script exceeds maximum length".to_string()).into());
         }
 
-        if self.checkpoints.len()? < MIN_WITHDRAWAL_CHECKPOINTS {
+        if self.checkpoints.len()? < self.config.min_withdrawal_checkpoints {
             return Err(OrgaError::App(format!(
                 "Withdrawals are disabled until the network has produced at least {} checkpoints",
-                MIN_WITHDRAWAL_CHECKPOINTS
+                self.config.min_withdrawal_checkpoints
             ))
             .into());
         }
@@ -341,8 +392,8 @@ impl Bitcoin {
 
         self.accounts.withdraw(signer, amount)?.burn();
 
-        let fee = (9 + script_pubkey.len() as u64) * FEE_RATE;
-        let value: u64 = Into::<u64>::into(amount) / UNITS_PER_SAT;
+        let fee = (9 + script_pubkey.len() as u64) * self.checkpoints.config().fee_rate;
+        let value: u64 = Into::<u64>::into(amount) / self.config.units_per_sat;
         let value = match value.checked_sub(fee) {
             None => {
                 return Err(OrgaError::App(
@@ -353,7 +404,7 @@ impl Bitcoin {
             Some(value) => value,
         };
 
-        if value < MIN_WITHDRAWAL_AMOUNT {
+        if value < self.config.min_withdrawal_amount {
             return Err(OrgaError::App(
                 "Withdrawal is smaller than than minimum amount".to_string(),
             )
@@ -381,7 +432,9 @@ impl Bitcoin {
             .signer
             .ok_or_else(|| Error::Orga(OrgaError::App("Call must be signed".into())))?;
 
-        let transfer_fee = self.accounts.withdraw(signer, TRANSFER_FEE.into())?;
+        let transfer_fee = self
+            .accounts
+            .withdraw(signer, self.config.transfer_fee.into())?;
         self.reward_pool.give(transfer_fee)?;
         self.accounts.transfer(to, amount)?;
 
