@@ -182,8 +182,8 @@ impl WorkHeader {
 }
 
 // TODO: implement trait that returns constants for bitcoin::Network variants
-
-#[derive(Clone, Encode, Decode, State, MigrateFrom, Serialize, Describe)]
+#[orga(skip(Default))]
+#[derive(Clone, Debug)]
 pub struct Config {
     pub max_length: u64,
     pub max_time_increase: u32,
@@ -194,7 +194,6 @@ pub struct Config {
     pub max_target: u32,
     pub retargeting: bool,
     pub min_difficulty_blocks: bool,
-    pub network: Network,
     pub encoded_trusted_header: LengthVec<u8, u8>,
 }
 
@@ -203,6 +202,7 @@ impl Default for Config {
         match super::NETWORK {
             bitcoin::Network::Bitcoin => Config::mainnet(),
             bitcoin::Network::Testnet => Config::testnet(),
+            bitcoin::Network::Regtest => Config::regtest(),
             _ => unimplemented!(),
         }
     }
@@ -234,7 +234,6 @@ impl Config {
             encoded_trusted_header: header_bytes.try_into().unwrap(),
             retargeting: true,
             min_difficulty_blocks: false,
-            network: bitcoin::Network::Bitcoin.into(),
         }
     }
 
@@ -257,84 +256,29 @@ impl Config {
             encoded_trusted_header: header_bytes.try_into().unwrap(),
             retargeting: true,
             min_difficulty_blocks: true,
-            network: bitcoin::Network::Testnet.into(),
         }
     }
-}
 
-#[derive(Clone, Serialize)]
-pub struct Network(bitcoin::Network);
+    pub fn regtest() -> Self {
+        let checkpoint_json = include_str!("./testnet_checkpoint.json");
+        let checkpoint: (u32, BlockHeader) = serde_json::from_str(checkpoint_json).unwrap();
+        let (height, header) = checkpoint;
 
-impl MigrateFrom for Network {
-    fn migrate_from(other: Self) -> OrgaResult<Self> {
-        Ok(other)
-    }
-}
+        let mut header_bytes = vec![];
+        header.consensus_encode(&mut header_bytes).unwrap();
 
-impl From<bitcoin::Network> for Network {
-    fn from(value: bitcoin::Network) -> Self {
-        Network(value)
-    }
-}
-
-impl From<Network> for bitcoin::Network {
-    fn from(value: Network) -> Self {
-        value.0
-    }
-}
-
-impl Encode for Network {
-    fn encode_into<W: std::io::Write>(&self, dest: &mut W) -> ::ed::Result<()> {
-        let value = match self.0 {
-            bitcoin::Network::Bitcoin => 0,
-            bitcoin::Network::Testnet => 1,
-            bitcoin::Network::Regtest => 2,
-            bitcoin::Network::Signet => 3,
-        };
-        dest.write_all(&[value])?;
-        Ok(())
-    }
-
-    fn encoding_length(&self) -> ::ed::Result<usize> {
-        Ok(1)
-    }
-}
-
-impl Decode for Network {
-    fn decode<R: std::io::Read>(mut input: R) -> ::ed::Result<Self> {
-        let mut byte = [0; 1];
-        input.read_exact(&mut byte[..])?;
-        match byte[0] {
-            0 => Ok(bitcoin::Network::Bitcoin.into()),
-            1 => Ok(bitcoin::Network::Testnet.into()),
-            2 => Ok(bitcoin::Network::Regtest.into()),
-            3 => Ok(bitcoin::Network::Signet.into()),
-            b => Err(ed::Error::UnexpectedByte(b)),
+        Self {
+            max_length: MAX_LENGTH,
+            max_time_increase: MAX_TIME_INCREASE,
+            retarget_interval: RETARGET_INTERVAL,
+            target_spacing: TARGET_SPACING,
+            target_timespan: TARGET_TIMESPAN,
+            max_target: MAX_TARGET,
+            trusted_height: height,
+            encoded_trusted_header: header_bytes.try_into().unwrap(),
+            retargeting: false,
+            min_difficulty_blocks: true,
         }
-    }
-}
-
-impl Terminated for Network {}
-
-impl State for Network {
-    #[inline]
-    fn attach(&mut self, _: Store) -> OrgaResult<()> {
-        Ok(())
-    }
-
-    #[inline]
-    fn flush<W: std::io::Write>(self, out: &mut W) -> OrgaResult<()> {
-        Ok(self.encode_into(out)?)
-    }
-
-    fn load(_store: Store, bytes: &mut &[u8]) -> OrgaResult<Self> {
-        Ok(Self::decode(bytes)?)
-    }
-}
-
-impl Describe for Network {
-    fn describe() -> orga::describe::Descriptor {
-        orga::describe::Builder::new::<Network>().build()
     }
 }
 
@@ -342,7 +286,6 @@ impl Describe for Network {
 pub struct HeaderQueue {
     pub(super) deque: Deque<WorkHeader>,
     pub(super) current_work: Adapter<Uint256>,
-    #[state(skip)]
     config: Config,
 }
 
@@ -711,13 +654,17 @@ impl HeaderQueue {
         let work_header = WorkHeader::new(wrapped_header.clone(), wrapped_header.work());
 
         self.current_work = Adapter::new(wrapped_header.work());
+        self.deque.pop_back()?;
+
         self.deque.push_front(work_header)?;
+
+        self.config = config;
 
         Ok(())
     }
 
     pub fn network(&self) -> bitcoin::Network {
-        self.config.network.clone().into()
+        super::NETWORK
     }
 }
 
@@ -966,7 +913,6 @@ mod test {
             ]
             .try_into()
             .unwrap(),
-            network: bitcoin::Network::Bitcoin.into(),
         };
 
         let adapter = Adapter::new(header);
@@ -1021,7 +967,6 @@ mod test {
             ]
             .try_into()
             .unwrap(),
-            network: bitcoin::Network::Bitcoin.into(),
         };
 
         let adapter = Adapter::new(header);
