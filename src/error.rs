@@ -4,6 +4,8 @@ pub enum Error {
     Bitcoin(#[from] bitcoin::Error),
     #[error(transparent)]
     BitcoinHash(#[from] bitcoin::hashes::Error),
+    #[error("{0}")]
+    BitcoinPubkeyHash(String),
     #[cfg(feature = "full")]
     #[error(transparent)]
     BitcoinCoreRpc(#[from] bitcoind::bitcoincore_rpc::Error),
@@ -24,6 +26,10 @@ pub enum Error {
     #[cfg(feature = "full")]
     #[error(transparent)]
     BitcoinRpc(#[from] bitcoincore_rpc_async::Error),
+    #[error("{0}")]
+    Test(String),
+    #[error("{0}")]
+    Address(String),
     #[error("{0}")]
     Header(String),
     #[error("{0}")]
