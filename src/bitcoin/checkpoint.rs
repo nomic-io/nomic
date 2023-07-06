@@ -23,13 +23,6 @@ use orga::{describe::Describe, store::Store};
 use serde::Serialize;
 use std::convert::TryFrom;
 
-pub const MIN_CHECKPOINT_INTERVAL: u64 = 60 * 5;
-pub const MAX_CHECKPOINT_INTERVAL: u64 = 60 * 60 * 8;
-pub const MAX_INPUTS: u64 = 40;
-pub const MAX_OUTPUTS: u64 = 200;
-pub const FEE_RATE: u64 = 1;
-pub const MAX_AGE: u64 = 60 * 60 * 24 * 7 * 3;
-
 #[derive(Debug, Encode, Decode, Default, Serialize)]
 pub enum CheckpointStatus {
     #[default]
@@ -199,11 +192,56 @@ impl Checkpoint {
         Ok(tvl)
     }
 }
+#[orga(skip(Default))]
+#[derive(Clone)]
+pub struct Config {
+    pub min_checkpoint_interval: u64,
+    pub max_checkpoint_interval: u64,
+    pub max_inputs: u64,
+    pub max_outputs: u64,
+    pub fee_rate: u64,
+    pub max_age: u64,
+}
+
+impl Config {
+    fn regtest() -> Self {
+        Self {
+            min_checkpoint_interval: 60,
+            max_checkpoint_interval: 60 * 60 * 8,
+            max_inputs: 40,
+            max_outputs: 200,
+            fee_rate: 2,
+            max_age: 60 * 60 * 24 * 7 * 3,
+        }
+    }
+
+    fn bitcoin() -> Self {
+        Self {
+            min_checkpoint_interval: 60 * 5,
+            max_checkpoint_interval: 60 * 60 * 8,
+            max_inputs: 40,
+            max_outputs: 200,
+            fee_rate: 2,
+            max_age: 60 * 60 * 24 * 7 * 3,
+        }
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        match super::NETWORK {
+            bitcoin::Network::Regtest => Config::regtest(),
+            bitcoin::Network::Testnet | bitcoin::Network::Bitcoin => Config::bitcoin(),
+            _ => unimplemented!(),
+        }
+    }
+}
 
 #[orga]
 pub struct CheckpointQueue {
     pub(super) queue: Deque<Checkpoint>,
     pub(super) index: u32,
+    config: Config,
 }
 
 #[derive(Deref)]
@@ -354,7 +392,7 @@ impl<'a> BuildingCheckpointMut<'a> {
         Ok(input.est_vsize())
     }
 
-    pub fn advance(self) -> Result<BuildingAdvanceRes> {
+    pub fn advance(self, config: &Config) -> Result<BuildingAdvanceRes> {
         let mut checkpoint = self.0;
 
         checkpoint.status = CheckpointStatus::Signing;
@@ -366,13 +404,13 @@ impl<'a> BuildingCheckpointMut<'a> {
         checkpoint.outputs.push_front(Adapter::new(reserve_out))?;
 
         let mut excess_inputs = vec![];
-        while checkpoint.inputs.len() > MAX_INPUTS {
+        while checkpoint.inputs.len() > config.max_inputs {
             let removed_input = checkpoint.inputs.pop_back()?.unwrap();
             excess_inputs.push(removed_input);
         }
 
         let mut excess_outputs = vec![];
-        while checkpoint.outputs.len() > MAX_OUTPUTS {
+        while checkpoint.outputs.len() > config.max_outputs {
             let removed_output = checkpoint.outputs.pop_back()?.unwrap();
             excess_outputs.push(removed_output);
         }
@@ -394,8 +432,10 @@ impl<'a> BuildingCheckpointMut<'a> {
         let mut signing = SigningCheckpointMut(checkpoint);
 
         let (mut tx, est_vsize) = signing.tx()?;
-        let fee = est_vsize * FEE_RATE;
-        let reserve_value = in_amount - out_amount - fee;
+        let mut fee = est_vsize * config.fee_rate;
+        let reserve_value = in_amount
+            .checked_sub(out_amount + fee)
+            .ok_or_else(|| OrgaError::App("Insufficient funds to cover fees".to_string()))?;
         let mut reserve_out = signing.outputs.get_mut(0)?.unwrap();
         reserve_out.value = reserve_value;
         tx.output[0].value = reserve_value;
@@ -430,6 +470,14 @@ impl<'a> BuildingCheckpointMut<'a> {
 
 #[orga]
 impl CheckpointQueue {
+    pub fn configure(&mut self, config: Config) {
+        self.config = config;
+    }
+
+    pub fn config(&self) -> Config {
+        self.config.clone()
+    }
+
     pub fn reset(&mut self) -> OrgaResult<()> {
         self.index = 0;
         super::clear_deque(&mut self.queue)?;
@@ -571,7 +619,7 @@ impl CheckpointQueue {
         let latest = self.building()?.create_time();
 
         while let Some(oldest) = self.queue.front()? {
-            if latest - oldest.create_time() <= MAX_AGE {
+            if latest - oldest.create_time() <= self.config.max_age {
                 break;
             }
 
@@ -597,19 +645,19 @@ impl CheckpointQueue {
                     .ok_or_else(|| OrgaError::App("No time context".to_string()))?
                     .seconds as u64;
                 let elapsed = now - self.building()?.create_time();
-                if elapsed < MIN_CHECKPOINT_INTERVAL {
+                if elapsed < self.config.min_checkpoint_interval {
                     return Ok(());
                 }
 
-                if elapsed < MAX_CHECKPOINT_INTERVAL || self.index == 0 {
+                if elapsed < self.config.max_checkpoint_interval || self.index == 0 {
                     let building = self.building()?;
                     let has_pending_deposit = if self.index == 0 {
-                        building.inputs.is_empty()
+                        !building.inputs.is_empty()
                     } else {
                         building.inputs.len() > 1
                     };
 
-                    let has_pending_withdrawal = building.outputs.is_empty();
+                    let has_pending_withdrawal = !building.outputs.is_empty();
 
                     if !has_pending_deposit && !has_pending_withdrawal {
                         return Ok(());
@@ -622,12 +670,12 @@ impl CheckpointQueue {
             }
 
             self.prune()?;
-
+            let config = self.config();
             if self.index > 0 {
                 let second = self.get_mut(self.index - 1)?;
                 let sigset = second.sigset.clone();
                 let (reserve_outpoint, reserve_value, excess_inputs, excess_outputs) =
-                    BuildingCheckpointMut(second).advance()?;
+                    BuildingCheckpointMut(second).advance(&config)?;
 
                 let mut building = self.building_mut()?;
 
