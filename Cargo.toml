@@ -52,6 +52,9 @@ feat-ibc = ["orga/feat-ibc"]
 compat = []
 testnet = []
 
+[profile.release]
+overflow-checks = true
+
 [[bin]]
 name = "nomic"
 
