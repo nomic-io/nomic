@@ -24,6 +24,9 @@ pub enum Error {
     #[cfg(feature = "full")]
     #[error(transparent)]
     BitcoinRpc(#[from] bitcoincore_rpc_async::Error),
+    #[cfg(feature = "csv")]
+    #[error(transparent)]
+    Csv(#[from] csv::Error),
     #[error("{0}")]
     Header(String),
     #[error("{0}")]
