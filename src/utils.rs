@@ -52,6 +52,7 @@ use std::path::Path;
 use std::process::{Child, Command, Stdio};
 #[cfg(feature = "full")]
 use std::str::FromStr;
+use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub fn retry<F, T, E>(f: F, max_retries: u32) -> std::result::Result<T, E>
@@ -199,29 +200,6 @@ pub fn setup_test_signer<T: AsRef<Path>>(
     .unwrap()
 }
 
-#[cfg(feature = "full")]
-fn get_tendermint_height() -> Result<Option<String>> {
-    let curl_child = Command::new("curl")
-        .arg("localhost:26657/status")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-
-    Ok(Command::new("jq")
-        .args(vec!["-r", ".result.sync_info.latest_block_height"])
-        .stdin(Stdio::from(curl_child.stdout.unwrap()))
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?
-        .stdout
-        .map(|opt| {
-            let mut reader = BufReader::new(opt);
-            let mut line = String::new();
-            reader.read_line(&mut line).unwrap();
-            line
-        }))
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DeclareInfo {
     pub moniker: String,
@@ -272,18 +250,16 @@ pub async fn declare_validator(home: &Path, wallet: DerivedKey) -> Result<()> {
 
 #[cfg(feature = "full")]
 pub async fn poll_for_blocks() {
-    use std::time::Duration;
-
     info!("Scanning for blocks...");
-    let mut height = get_tendermint_height().ok().flatten();
-
-    while height.is_none() || height == Some("".to_string()) {
-        height = get_tendermint_height()
-            .ok()
-            .flatten()
-            .filter(|height| height != "4");
-
-        tokio::time::sleep(Duration::from_secs(1)).await;
+    loop {
+        match app_client_testnet().query(|app| app.app_noop_query()).await {
+            Ok(_) => {
+                break;
+            }
+            Err(_) => {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+        }
     }
 }
 
