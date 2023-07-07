@@ -49,10 +49,13 @@ impl Symbol for Nbtc {
     const INDEX: u8 = 21;
 }
 
-#[cfg(not(feature = "testnet"))]
+#[cfg(all(not(feature = "testnet"), not(feature = "devnet")))]
 pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Bitcoin;
-#[cfg(feature = "testnet")]
+#[cfg(all(feature = "testnet", not(feature = "devnet")))]
 pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Testnet;
+#[cfg(all(feature = "devnet", feature = "testnet"))]
+pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Regtest;
+
 pub const MIN_WITHDRAWAL_CHECKPOINTS: u32 = 4;
 pub const MIN_DEPOSIT_AMOUNT: u64 = 600;
 pub const MIN_WITHDRAWAL_AMOUNT: u64 = 600;

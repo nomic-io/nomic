@@ -51,6 +51,7 @@ full = ["bitcoind", "bitcoincore-rpc-async", "clap", "tokio", "orga/merk-full", 
 feat-ibc = ["orga/feat-ibc"]
 compat = []
 testnet = []
+devnet = ["testnet"]
 
 [[bin]]
 name = "nomic"
