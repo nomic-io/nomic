@@ -263,6 +263,48 @@ pub async fn poll_for_blocks() {
     }
 }
 
+pub async fn poll_for_signatory_key() {
+    info!("Scanning for signatory key...");
+    loop {
+        match app_client_testnet()
+            .query(|app| Ok(app.bitcoin.checkpoints.active_sigset()?))
+            .await
+        {
+            Ok(_) => break,
+            Err(_) => tokio::time::sleep(Duration::from_secs(2)).await,
+        }
+    }
+}
+
+pub async fn poll_for_completed_checkpoint(num_checkpoints: u32) {
+    info!("Scanning for signed checkpoints...");
+    let mut checkpoint_len = app_client_testnet()
+        .query(|app| Ok(app.bitcoin.checkpoints.completed()?.len()))
+        .await
+        .unwrap();
+
+    while checkpoint_len < num_checkpoints as usize {
+        checkpoint_len = app_client_testnet()
+            .query(|app| Ok(app.bitcoin.checkpoints.completed()?.len()))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+}
+
+pub async fn poll_for_bitcoin_header(height: u32) -> Result<()> {
+    info!("Scanning for bitcoin header {}...", height);
+    loop {
+        let current_height = app_client_testnet()
+            .query(|app| Ok(app.bitcoin.headers.height()?))
+            .await?;
+        if current_height >= height {
+            info!("Found bitcoin header {}", height);
+            break Ok(());
+        }
+    }
+}
+
 #[cfg(feature = "full")]
 pub struct BitcoinBlockData {
     height: u32,

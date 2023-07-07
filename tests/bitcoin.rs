@@ -12,10 +12,7 @@ use nomic::bitcoin::relayer::Config as RelayerConfig;
 use nomic::bitcoin::relayer::DepositAddress;
 use nomic::bitcoin::relayer::Relayer;
 use nomic::error::{Error, Result};
-use nomic::utils::{
-    declare_validator, poll_for_blocks, populate_bitcoin_block, retry,
-    setup_test_app, setup_test_signer, setup_time_context, test_bitcoin_client, KeyData,
-};
+use nomic::utils::*;
 use orga::abci::Node;
 use orga::client::wallet::DerivedKey;
 use orga::client::AppClient;
@@ -81,48 +78,6 @@ pub async fn broadcast_deposit_addr(
             "Relayer response returned with error code: {}",
             res.status()
         ))),
-    }
-}
-
-async fn poll_for_signatory_key() {
-    info!("Scanning for signatory key...");
-    loop {
-        match app_client_testnet()
-            .query(|app| Ok(app.bitcoin.checkpoints.active_sigset()?))
-            .await
-        {
-            Ok(_) => break,
-            Err(_) => tokio::time::sleep(Duration::from_secs(2)).await,
-        }
-    }
-}
-
-async fn poll_for_completed_checkpoint(num_checkpoints: u32) {
-    info!("Scanning for signed checkpoints...");
-    let mut checkpoint_len = app_client_testnet()
-        .query(|app| Ok(app.bitcoin.checkpoints.completed()?.len()))
-        .await
-        .unwrap();
-
-    while checkpoint_len < num_checkpoints as usize {
-        checkpoint_len = app_client_testnet()
-            .query(|app| Ok(app.bitcoin.checkpoints.completed()?.len()))
-            .await
-            .unwrap();
-        tokio::time::sleep(Duration::from_secs(1)).await;
-    }
-}
-
-async fn poll_for_bitcoin_header(height: u32) -> Result<()> {
-    info!("Scanning for bitcoin header {}...", height);
-    loop {
-        let current_height = app_client_testnet()
-            .query(|app| Ok(app.bitcoin.headers.height()?))
-            .await?;
-        if current_height >= height {
-            info!("Found bitcoin header {}", height);
-            break Ok(());
-        }
     }
 }
 
