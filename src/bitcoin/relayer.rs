@@ -8,7 +8,6 @@ use crate::error::Result;
 use crate::utils::sleep;
 use crate::utils::time_now;
 use bitcoin::consensus::{Decodable, Encodable};
-use bitcoin::Network;
 use bitcoin::{hashes::Hash, Block, BlockHash, Transaction};
 use bitcoind::bitcoincore_rpc::json::GetBlockHeaderResult;
 use bitcoind::bitcoincore_rpc::{Client as BitcoinRpcClient, RpcApi};
@@ -34,22 +33,8 @@ where
 
 const HEADER_BATCH_SIZE: usize = 25;
 
-#[derive(Clone)]
-pub struct Config {
-    pub network: Network,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Config {
-            network: Network::Testnet,
-        }
-    }
-}
-
 pub struct Relayer {
     btc_client: BitcoinRpcClient,
-    config: Config,
 
     scripts: Option<WatchedScriptStore>,
 }
@@ -59,15 +44,6 @@ impl Relayer {
         Relayer {
             btc_client,
             scripts: None,
-            config: Config::default(),
-        }
-    }
-
-    pub fn configure(self, config: Config) -> Self {
-        Relayer {
-            btc_client: self.btc_client,
-            scripts: self.scripts,
-            config,
         }
     }
 
@@ -149,7 +125,6 @@ impl Relayer {
         // TODO: configurable listen address
         use bytes::Bytes;
         use warp::Filter;
-        let config = self.config.clone();
         let bcast_route = warp::post()
             .and(warp::path("address"))
             .and(warp::query::<DepositAddress>())
@@ -193,7 +168,7 @@ impl Relayer {
                                 dest.commitment_bytes().map_err(|_| reject())?.as_slice(),
                             )
                             .map_err(warp::reject::custom)?,
-                        config.network,
+                        super::NETWORK,
                     )
                     .unwrap()
                     .to_string();

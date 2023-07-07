@@ -8,7 +8,6 @@ use bitcoind::{BitcoinD, Conf};
 use log::info;
 use nomic::app::{DepositCommitment, InnerApp, Nom};
 use nomic::app_client_testnet;
-use nomic::bitcoin::relayer::Config as RelayerConfig;
 use nomic::bitcoin::relayer::DepositAddress;
 use nomic::bitcoin::relayer::Relayer;
 use nomic::error::{Error, Result};
@@ -171,19 +170,13 @@ async fn bitcoin_test() {
             .unwrap();
     });
 
-    let relayer_config = RelayerConfig {
-        network: bitcoin::Network::Regtest,
-    };
-
-    let mut relayer =
-        Relayer::new(test_bitcoin_client(&bitcoind)).configure(relayer_config.clone());
+    let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind));
     let headers = relayer.start_header_relay();
 
-    let relayer = Relayer::new(test_bitcoin_client(&bitcoind)).configure(relayer_config.clone());
+    let relayer = Relayer::new(test_bitcoin_client(&bitcoind));
     let deposits = relayer.start_deposit_relay(&header_relayer_path);
 
-    let mut relayer =
-        Relayer::new(test_bitcoin_client(&bitcoind)).configure(relayer_config.clone());
+    let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind));
     let checkpoints = relayer.start_checkpoint_relay();
 
     let signer = async {
