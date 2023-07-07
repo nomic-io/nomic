@@ -1,6 +1,5 @@
 #![feature(async_closure)]
 
-use bitcoin::blockdata::transaction::EcdsaSighashType;
 use bitcoin::secp256k1;
 use bitcoind::bitcoincore_rpc::json::{
     ImportMultiRequest, ImportMultiRequestScriptPubkey, ImportMultiRescanSince,
@@ -31,7 +30,6 @@ use orga::plugins::sdk_compat::sdk::{PubKey as OrgaPubKey, Signature as OrgaSign
 use orga::tendermint::client::HttpClient;
 use reqwest::StatusCode;
 use serial_test::serial;
-use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Once;
 use std::time::Duration;
@@ -153,41 +151,6 @@ async fn poll_for_bitcoin_header(height: u32) -> Result<()> {
             break Ok(());
         }
     }
-}
-
-async fn sign_and_broadcast(sign_doc: SignDoc, account: &KeyData) {
-    info!("Signing transaction...");
-    println!("{:?}", sign_doc);
-    let sign_json = serde_json::to_vec(&sign_doc).unwrap();
-
-    let signing_key = SigningKey::from_bytes(&account.privkey.secret_bytes()).unwrap();
-
-    let pubkey = secp256k1::PublicKey::from_secret_key(
-        &bitcoin::secp256k1::Secp256k1::new(),
-        &account.privkey,
-    );
-
-    let orga_pubkey = OrgaPubKey {
-        type_: "tendermint/PubKeySecp256k1".to_string(),
-        value: base64::encode(pubkey.serialize()),
-    };
-
-    let signature = signing_key.sign(&sign_json).unwrap();
-    let orga_signature = OrgaSignature {
-        pub_key: orga_pubkey,
-        signature: base64::encode(signature),
-        r#type: Some("sdk".to_string()),
-    };
-
-    let tx = make_std_tx(sign_doc, orga_signature);
-    let tx_bytes = serde_json::to_string(&tx).unwrap();
-    let tm_client = TmHttpClient::new("http://127.0.0.1:26657").unwrap();
-
-    info!("Broadcasting transaction...");
-    dbg!(tm_client
-        .broadcast_tx_commit(tx_bytes.as_bytes())
-        .await
-        .unwrap());
 }
 
 async fn deposit_bitcoin(

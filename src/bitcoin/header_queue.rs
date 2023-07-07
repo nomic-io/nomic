@@ -6,16 +6,11 @@ use bitcoin::util::uint::Uint256;
 use bitcoin::BlockHash;
 use bitcoin::TxMerkleNode;
 use orga::collections::Deque;
-use orga::describe::Describe;
-use orga::encoding::{self as ed, LengthVec};
-use orga::migrate::MigrateFrom;
+use orga::encoding::LengthVec;
 use orga::orga;
 use orga::prelude::*;
-use orga::state::State;
-use orga::store::Store;
 use orga::Error as OrgaError;
 use orga::Result as OrgaResult;
-use serde::Serialize;
 
 const MAX_LENGTH: u64 = 4032;
 const MAX_RELAY: u64 = 25;

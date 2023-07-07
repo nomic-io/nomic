@@ -4,7 +4,6 @@ use crate::error::Result;
 use bitcoin::secp256k1::{Message, Secp256k1};
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use log::info;
-use orga::client::wallet::SimpleWallet;
 use orga::client::{AppClient, Wallet};
 use orga::coins::Address;
 use orga::encoding::LengthVec;

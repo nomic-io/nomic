@@ -432,7 +432,7 @@ impl<'a> BuildingCheckpointMut<'a> {
         let mut signing = SigningCheckpointMut(checkpoint);
 
         let (mut tx, est_vsize) = signing.tx()?;
-        let mut fee = est_vsize * config.fee_rate;
+        let fee = est_vsize * config.fee_rate;
         let reserve_value = in_amount
             .checked_sub(out_amount + fee)
             .ok_or_else(|| OrgaError::App("Insufficient funds to cover fees".to_string()))?;

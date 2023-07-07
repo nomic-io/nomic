@@ -28,7 +28,6 @@ use chrono::{TimeZone, Utc};
 use ed::Encode;
 #[cfg(feature = "full")]
 use log::info;
-use orga::client::wallet::SimpleWallet;
 use orga::coins::staking::{Commission, Declaration};
 use orga::coins::{Address, Coin, Decimal};
 use orga::context::Context;
