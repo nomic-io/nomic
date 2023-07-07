@@ -356,7 +356,6 @@ pub fn setup_test_app(home: &Path, block_data: &BitcoinBlockData) -> Vec<KeyData
             max_length: 59,
             ..Default::default()
         };
-        println!("{:?}", headers_config);
         inner_app.bitcoin.headers.configure(headers_config).unwrap();
 
         let checkpoints_config = CheckpointQueueConfig {
