@@ -47,6 +47,8 @@ pub mod txid_set;
 pub struct Nbtc(());
 impl Symbol for Nbtc {
     const INDEX: u8 = 21;
+
+    const NAME: &'static str = "Nbtc";
 }
 
 #[cfg(not(feature = "testnet"))]

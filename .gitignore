@@ -7,3 +7,4 @@ merk.db/
 
 /target
 wasm/Cargo.lock
+.nomic
