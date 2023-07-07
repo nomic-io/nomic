@@ -46,8 +46,6 @@ use orga::tendermint::client::HttpClient;
 use orga::{client::wallet::DerivedKey, macros::build_call};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-#[cfg(feature = "full")]
-use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 #[cfg(feature = "full")]
