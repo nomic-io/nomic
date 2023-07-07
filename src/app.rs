@@ -303,6 +303,11 @@ impl InnerApp {
     pub fn app_noop(&mut self) -> Result<()> {
         Ok(())
     }
+
+    #[query]
+    pub fn app_noop_query(&self) -> Result<()> {
+        Ok(())
+    }
 }
 
 #[cfg(feature = "full")]
