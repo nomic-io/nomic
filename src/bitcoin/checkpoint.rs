@@ -416,10 +416,8 @@ impl<'a> BuildingCheckpointMut<'a> {
         }
 
         let mut in_amount = 0;
-        dbg!(checkpoint.inputs.len());
         for i in 0..checkpoint.inputs.len() {
             let input = checkpoint.inputs.get(i)?.unwrap();
-            dbg!(input.amount);
             in_amount += input.amount;
         }
 
