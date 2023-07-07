@@ -56,6 +56,9 @@ compat = []
 testnet = []
 devnet = ["testnet"]
 
+[profile.release]
+overflow-checks = true
+
 [[bin]]
 name = "nomic"
 

@@ -1,5 +1,8 @@
+use crate::incentives::Incentives;
+
 use super::{InnerAppV0, InnerAppV1, InnerAppV2};
 use orga::{
+    coins::Take,
     migrate::{MigrateFrom, MigrateInto},
     upgrade::Upgrade,
 };
@@ -32,7 +35,9 @@ impl MigrateFrom<InnerAppV0> for InnerAppV1 {
     }
 }
 impl MigrateFrom<InnerAppV1> for InnerAppV2 {
-    fn migrate_from(other: InnerAppV1) -> orga::Result<Self> {
+    fn migrate_from(mut other: InnerAppV1) -> orga::Result<Self> {
+        let testnet_incentive_funds = other.incentive_pool.take(1_000_000)?;
+
         let app = Self {
             accounts: other.accounts,
             staking: other.staking,
@@ -48,6 +53,10 @@ impl MigrateFrom<InnerAppV1> for InnerAppV2 {
             #[cfg(feature = "testnet")]
             ibc: other.ibc.migrate_into()?,
             upgrade: other.upgrade.migrate_into()?,
+            incentives: Incentives::from_csv(
+                include_bytes!("../../testnet_incentive_snapshot.csv"),
+                testnet_incentive_funds,
+            )?,
         };
 
         Ok(app)

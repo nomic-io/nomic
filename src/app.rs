@@ -6,6 +6,7 @@
 use crate::airdrop::Airdrop;
 use crate::bitcoin::adapter::Adapter;
 use crate::bitcoin::{Bitcoin, Nbtc};
+use crate::incentives::Incentives;
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::Transaction;
 use orga::coins::{
@@ -85,6 +86,9 @@ pub struct InnerApp {
 
     #[orga(version(V1, V2))]
     upgrade: Upgrade,
+
+    #[orga(version(V2))]
+    pub incentives: Incentives,
 }
 
 #[orga]

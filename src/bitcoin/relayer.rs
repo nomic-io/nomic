@@ -31,7 +31,7 @@ where
     warp::reply::json(&val)
 }
 
-const HEADER_BATCH_SIZE: usize = 25;
+const HEADER_BATCH_SIZE: usize = 250;
 
 pub struct Relayer {
     btc_client: BitcoinRpcClient,
