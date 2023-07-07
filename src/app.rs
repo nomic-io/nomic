@@ -53,6 +53,7 @@ pub type App = DefaultPlugins<Nom, InnerApp>;
 pub struct Nom(());
 impl Symbol for Nom {
     const INDEX: u8 = 69;
+    const NAME: &'static str = "unom";
 }
 const DEV_ADDRESS: &str = "nomic14z79y3yrghqx493mwgcj0qd2udy6lm26lmduah";
 const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1d5n325zrf4elfu0heqd59gna5j6xyunhev23cj";
