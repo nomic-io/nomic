@@ -301,7 +301,6 @@ async fn bitcoin_test() {
         wallet
             .import_multi(import_multi_reqest.as_slice(), None)
             .unwrap();
-        dbg!("imported multi");
 
         retry(
             || bitcoind.client.generate_to_address(120, &wallet_address),

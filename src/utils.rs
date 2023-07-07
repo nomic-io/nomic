@@ -303,7 +303,6 @@ pub fn populate_bitcoin_block(client: &BitcoinD) -> BitcoinBlockData {
         .unwrap();
 
     let tip_hash = client.client.get_best_block_hash().unwrap();
-    dbg!("poulate_bitcoin_block tip hash: {}", &tip_hash);
     let tip_header = client.client.get_block_header(&tip_hash).unwrap();
 
     let tip_height = client
