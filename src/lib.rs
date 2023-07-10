@@ -17,6 +17,7 @@ pub mod airdrop;
 pub mod app;
 pub mod bitcoin;
 pub mod error;
+pub mod incentives;
 pub mod network;
 pub mod utils;
 

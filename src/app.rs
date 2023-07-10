@@ -6,6 +6,7 @@
 use crate::airdrop::Airdrop;
 use crate::bitcoin::adapter::Adapter;
 use crate::bitcoin::{Bitcoin, Nbtc};
+use crate::incentives::Incentives;
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::Transaction;
 use orga::coins::{
@@ -52,12 +53,7 @@ pub type App = DefaultPlugins<Nom, InnerApp>;
 pub struct Nom(());
 impl Symbol for Nom {
     const INDEX: u8 = 69;
-
-    fn mint<I: Into<Amount>>(amount: I) -> Coin<Self> {
-        Coin::mint(amount)
-    }
-
-    const NAME: &'static str = "Nom";
+    const NAME: &'static str = "unom";
 }
 const DEV_ADDRESS: &str = "nomic14z79y3yrghqx493mwgcj0qd2udy6lm26lmduah";
 const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1d5n325zrf4elfu0heqd59gna5j6xyunhev23cj";
@@ -91,11 +87,14 @@ pub struct InnerApp {
 
     #[orga(version(V1, V2))]
     upgrade: Upgrade,
+
+    #[orga(version(V2))]
+    pub incentives: Incentives,
 }
 
 #[orga]
 impl InnerApp {
-    pub const CONSENSUS_VERSION: u8 = 1;
+    pub const CONSENSUS_VERSION: u8 = 2;
 
     #[cfg(feature = "full")]
     fn configure_faucets(&mut self) -> Result<()> {
