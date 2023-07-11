@@ -10,10 +10,7 @@ tendermint_flags = [
     """,
 ]
 
-# TODO: remove once we don't need compat-mode migration
-upgrade_time = 1677175200
-
-legacy_version = "4.2.0"
+legacy_version = "4.2.1"
 
 genesis = """
 {
