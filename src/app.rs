@@ -379,15 +379,6 @@ mod abci {
             let ip_reward = self.incentive_pool_rewards.mint()?;
             self.incentive_pool.give(ip_reward)?;
 
-            self.accounts
-                .deposit(
-                    "nomic124j0ky0luh9jzqh9w2dk77cze9v0ckdupk50ny"
-                        .parse()
-                        .unwrap(),
-                    Nom::mint(100000000),
-                )
-                .unwrap();
-
             self.bitcoin.begin_block(ctx)?;
 
             let now = ctx.header.time.as_ref().unwrap().seconds;
