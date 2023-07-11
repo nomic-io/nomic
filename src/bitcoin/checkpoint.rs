@@ -7,10 +7,8 @@ use super::{
 use crate::error::{Error, Result};
 use bitcoin::blockdata::transaction::EcdsaSighashType;
 use derive_more::{Deref, DerefMut};
-use orga::store::Store;
 use orga::{
     call::Call,
-    client::Client,
     collections::{map::ReadOnly, ChildMut, Deque, Map, Ref},
     context::GetContext,
     encoding::{Decode, Encode, LengthVec},
@@ -21,6 +19,7 @@ use orga::{
     state::State,
     Error as OrgaError, Result as OrgaResult,
 };
+use orga::{describe::Describe, store::Store};
 use serde::Serialize;
 use std::convert::TryFrom;
 
@@ -78,19 +77,11 @@ impl Call for CheckpointStatus {
     }
 }
 
-impl<U: Send + Clone> Client<U> for CheckpointStatus {
-    type Client = orga::client::PrimitiveClient<Self, U>;
-
-    fn create_client(parent: U) -> Self::Client {
-        orga::client::PrimitiveClient::new(parent)
+impl Describe for CheckpointStatus {
+    fn describe() -> orga::describe::Descriptor {
+        orga::describe::Builder::new::<Self>().build()
     }
 }
-
-// impl Describe for CheckpointStatus {
-//     fn describe() -> orga::describe::Descriptor {
-//         orga::describe::Builder::new::<Self>().build()
-//     }
-// }
 
 #[orga(skip(Client), version = 1)]
 #[derive(Debug)]
@@ -122,7 +113,7 @@ impl Input {
         Ok(bitcoin::TxIn {
             previous_output: *self.prevout,
             script_sig: bitcoin::Script::new(),
-            sequence: u32::MAX,
+            sequence: bitcoin::Sequence(u32::MAX),
             witness: bitcoin::Witness::from_vec(witness),
         })
     }
@@ -162,6 +153,7 @@ pub struct Checkpoint {
     pub sigset: SignatorySet,
 }
 
+#[orga]
 impl Checkpoint {
     pub fn create_time(&self) -> u64 {
         self.sigset.create_time()
@@ -170,7 +162,7 @@ impl Checkpoint {
     pub fn tx(&self) -> Result<(bitcoin::Transaction, u64)> {
         let mut tx = bitcoin::Transaction {
             version: 1,
-            lock_time: 0,
+            lock_time: bitcoin::PackedLockTime::ZERO,
             input: vec![],
             output: vec![],
         };
@@ -220,12 +212,6 @@ pub struct CompletedCheckpoint<'a>(Ref<'a, Checkpoint>);
 #[derive(Deref, Debug)]
 pub struct SigningCheckpoint<'a>(Ref<'a, Checkpoint>);
 
-impl<'a, U: Clone> Client<U> for SigningCheckpoint<'a> {
-    type Client = ();
-
-    fn create_client(_: U) {}
-}
-
 impl<'a> Query for SigningCheckpoint<'a> {
     type Query = ();
 
@@ -234,8 +220,9 @@ impl<'a> Query for SigningCheckpoint<'a> {
     }
 }
 
+// #[orga]
 impl<'a> SigningCheckpoint<'a> {
-    #[query]
+    // #[query]
     pub fn to_sign(&self, xpub: Xpub) -> Result<Vec<([u8; 32], u32)>> {
         let secp = bitcoin::secp256k1::Secp256k1::verification_only();
 
@@ -441,6 +428,7 @@ impl<'a> BuildingCheckpointMut<'a> {
     }
 }
 
+#[orga]
 impl CheckpointQueue {
     pub fn reset(&mut self) -> OrgaResult<()> {
         self.index = 0;
@@ -616,12 +604,12 @@ impl CheckpointQueue {
                 if elapsed < MAX_CHECKPOINT_INTERVAL || self.index == 0 {
                     let building = self.building()?;
                     let has_pending_deposit = if self.index == 0 {
-                        building.inputs.is_empty()
+                        !building.inputs.is_empty()
                     } else {
                         building.inputs.len() > 1
                     };
 
-                    let has_pending_withdrawal = building.outputs.is_empty();
+                    let has_pending_withdrawal = !building.outputs.is_empty();
 
                     if !has_pending_deposit && !has_pending_withdrawal {
                         return Ok(());

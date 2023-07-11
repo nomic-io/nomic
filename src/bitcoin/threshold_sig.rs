@@ -6,27 +6,29 @@ use bitcoin::secp256k1::{
     ecdsa, PublicKey, Secp256k1,
 };
 use derive_more::{Deref, From};
-use orga::call::Call;
-use orga::client::Client;
 use orga::collections::{Map, Next};
 use orga::encoding::{Decode, Encode};
+use orga::macros::Describe;
 use orga::migrate::MigrateFrom;
-use orga::query::Query;
+use orga::prelude::FieldCall;
+use orga::query::FieldQuery;
 use orga::state::State;
-use orga::{Error, Result};
+use orga::{orga, Error, Result};
 use serde::Serialize;
 
 pub type Message = [u8; MESSAGE_SIZE];
 
-#[derive(Encode, Decode, State, Debug, Clone, Deref, From, Copy, MigrateFrom, Serialize)]
+#[derive(
+    Encode, Decode, State, Debug, Clone, Deref, From, Copy, MigrateFrom, Serialize, Describe,
+)]
 pub struct Signature(#[serde(serialize_with = "<[_]>::serialize")] [u8; COMPACT_SIGNATURE_SIZE]);
 
 #[derive(
     Encode,
     Decode,
     State,
-    Query,
-    Call,
+    FieldQuery,
+    FieldCall,
     Clone,
     Debug,
     Copy,
@@ -35,22 +37,25 @@ pub struct Signature(#[serde(serialize_with = "<[_]>::serialize")] [u8; COMPACT_
     PartialOrd,
     Ord,
     MigrateFrom,
-    Client,
     Serialize,
+    Describe,
 )]
-pub struct Pubkey(#[serde(serialize_with = "<[_]>::serialize")] [u8; PUBLIC_KEY_SIZE]);
+pub struct Pubkey {
+    #[serde(serialize_with = "<[_]>::serialize")]
+    bytes: [u8; PUBLIC_KEY_SIZE],
+}
 
 impl Next for Pubkey {
     fn next(&self) -> Option<Self> {
         let mut output = *self;
-        for (i, value) in self.0.iter().enumerate().rev() {
+        for (i, value) in self.bytes.iter().enumerate().rev() {
             match value.next() {
                 Some(new_value) => {
-                    output.0[i] = new_value;
+                    output.bytes[i] = new_value;
                     return Some(output);
                 }
                 None => {
-                    output.0[i] = 0;
+                    output.bytes[i] = 0;
                 }
             }
         }
@@ -60,23 +65,27 @@ impl Next for Pubkey {
 
 impl Default for Pubkey {
     fn default() -> Self {
-        Pubkey([0; PUBLIC_KEY_SIZE])
+        Pubkey {
+            bytes: [0; PUBLIC_KEY_SIZE],
+        }
     }
 }
 
 impl Pubkey {
     pub fn new(pubkey: [u8; PUBLIC_KEY_SIZE]) -> Self {
-        Pubkey(pubkey)
+        Pubkey { bytes: pubkey }
     }
 
     pub fn as_slice(&self) -> &[u8] {
-        &self.0
+        &self.bytes
     }
 }
 
 impl From<PublicKey> for Pubkey {
     fn from(pubkey: PublicKey) -> Self {
-        Pubkey(pubkey.serialize())
+        Pubkey {
+            bytes: pubkey.serialize(),
+        }
     }
 }
 
@@ -91,6 +100,7 @@ pub struct ThresholdSig {
     sigs: Map<Pubkey, Share>,
 }
 
+#[orga]
 impl ThresholdSig {
     pub fn new() -> Self {
         Self::default()
@@ -151,7 +161,7 @@ impl ThresholdSig {
 
     #[query]
     pub fn done(&self) -> bool {
-        self.signed >= self.threshold
+        self.signed > self.threshold
     }
 
     #[query]
@@ -218,10 +228,10 @@ impl ThresholdSig {
         Ok(())
     }
 
-    pub fn verify(&self, pubkey: Pubkey, sig: Signature) -> Result<()> {
+    pub fn verify(&self, pubkey: Pubkey, sig: Signature) -> crate::error::Result<()> {
         // TODO: re-use secp context
         let secp = Secp256k1::verification_only();
-        let pubkey = PublicKey::from_slice(&pubkey.0)?;
+        let pubkey = PublicKey::from_slice(&pubkey.bytes)?;
         let msg = secp256k1::Message::from_slice(self.message.as_slice())?;
         let sig = ecdsa::Signature::from_compact(sig.as_slice())?;
 
@@ -233,7 +243,7 @@ impl ThresholdSig {
 
     // TODO: this shouldn't know so much about bitcoin-specific structure,
     // decouple by exposing a power-ordered iterator of Option<Signature>
-    pub fn to_witness(&self) -> Result<Vec<Vec<u8>>> {
+    pub fn to_witness(&self) -> crate::error::Result<Vec<Vec<u8>>> {
         if !self.done() {
             return Ok(vec![]);
         }

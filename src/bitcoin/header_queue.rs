@@ -6,7 +6,8 @@ use bitcoin::util::uint::Uint256;
 use bitcoin::BlockHash;
 use bitcoin::TxMerkleNode;
 use orga::collections::Deque;
-use orga::encoding as ed;
+use orga::describe::Describe;
+use orga::encoding::{self as ed, LengthVec};
 use orga::migrate::MigrateFrom;
 use orga::orga;
 use orga::prelude::*;
@@ -17,7 +18,7 @@ use orga::Result as OrgaResult;
 use serde::Serialize;
 
 const MAX_LENGTH: u64 = 4032;
-const MAX_RELAY: u64 = 25;
+const MAX_RELAY: u64 = 250;
 const MAX_TIME_INCREASE: u32 = 2 * 60 * 60;
 const RETARGET_INTERVAL: u32 = 2016;
 const TARGET_SPACING: u32 = 10 * 60;
@@ -136,6 +137,12 @@ impl Decode for HeaderList {
     }
 }
 
+impl FromIterator<WrappedHeader> for HeaderList {
+    fn from_iter<T: IntoIterator<Item = WrappedHeader>>(iter: T) -> Self {
+        HeaderList(iter.into_iter().collect())
+    }
+}
+
 impl Terminated for HeaderList {}
 
 #[orga(skip(Default))]
@@ -176,7 +183,7 @@ impl WorkHeader {
 
 // TODO: implement trait that returns constants for bitcoin::Network variants
 
-#[derive(Clone, Encode, Decode, State, MigrateFrom, Serialize)]
+#[derive(Clone, Encode, Decode, State, MigrateFrom, Serialize, Describe)]
 pub struct Config {
     pub max_length: u64,
     pub max_time_increase: u32,
@@ -325,6 +332,12 @@ impl State for Network {
     }
 }
 
+impl Describe for Network {
+    fn describe() -> orga::describe::Descriptor {
+        orga::describe::Builder::new::<Network>().build()
+    }
+}
+
 #[orga(skip(Default))]
 pub struct HeaderQueue {
     pub(super) deque: Deque<WorkHeader>,
@@ -390,6 +403,7 @@ impl Default for HeaderQueue {
 //     }
 // }
 
+#[orga]
 impl HeaderQueue {
     #[call]
     pub fn add(&mut self, headers: HeaderList) -> Result<()> {
@@ -711,9 +725,10 @@ impl HeaderQueue {
 mod test {
     use super::*;
     use bitcoin::hash_types::TxMerkleNode;
+    use bitcoin::hashes::hex::FromHex;
+    use bitcoin::hashes::sha256d::Hash;
     use bitcoin::BlockHash;
-    use bitcoin_hashes::hex::FromHex;
-    use bitcoin_hashes::sha256d::Hash;
+
     use chrono::{TimeZone, Utc};
 
     impl HeaderQueue {
@@ -956,13 +971,13 @@ mod test {
 
         let adapter = Adapter::new(header);
         let header_list = [WrappedHeader::new(adapter, 43)];
-        let store = Store::new(Shared::new(MapStore::new()).into());
+        let store = Store::with_map_store();
         let mut q = HeaderQueue::with_conf(store, test_config.clone()).unwrap();
         q.add_into_iter(header_list).unwrap();
 
         let adapter = Adapter::new(header);
         let header_list = vec![WrappedHeader::new(adapter, 43)];
-        let store = Store::new(Shared::new(MapStore::new()).into());
+        let store = Store::with_map_store();
         let mut q = HeaderQueue::with_conf(store, test_config).unwrap();
         q.add_into_iter(header_list).unwrap();
     }
@@ -1011,7 +1026,7 @@ mod test {
 
         let adapter = Adapter::new(header);
         let header_list = [WrappedHeader::new(adapter, 43)];
-        let store = Store::new(Shared::new(MapStore::new()).into());
+        let store = Store::with_map_store();
         let mut q = HeaderQueue::with_conf(store, test_config).unwrap();
         q.add_into_iter(header_list).unwrap();
     }

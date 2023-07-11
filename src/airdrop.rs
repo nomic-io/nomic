@@ -1,10 +1,11 @@
+use orga::coins::Decimal;
 use orga::coins::{Address, Amount};
 use orga::collections::{ChildMut, Map};
 use orga::context::GetContext;
-use orga::migrate::{MigrateFrom, MigrateInto};
+use orga::migrate::MigrateFrom;
 use orga::orga;
+use orga::plugins::MIN_FEE;
 use orga::plugins::{Paid, Signer};
-use orga::prelude::{Decimal, MIN_FEE};
 use orga::{Error, Result};
 use split_iter::Splittable;
 
@@ -14,30 +15,13 @@ const MAX_STAKED: u64 = 1_000_000_000;
 const AIRDROP_II_TOTAL: u64 = 3_500_000_000_000;
 
 #[orga]
-pub struct Accs {
-    transfers_allowed: bool,
-    transfer_exceptions: Map<Address, ()>,
-    accounts: Map<Address, Account>,
-}
-
-#[cfg(not(feature = "testnet"))]
-#[orga(version = 1)]
-pub struct Airdrop {
-    #[orga(version(V0))]
-    accounts: Accs,
-
-    #[orga(version(V1))]
-    accounts: Map<Address, Account>,
-}
-
-#[cfg(feature = "testnet")]
-#[orga(version = 1)]
 pub struct Airdrop {
     accounts: Map<Address, Account>,
 }
 
 type Recipients = Vec<(Address, Vec<(u64, u64)>, u64)>;
 
+#[orga]
 impl Airdrop {
     #[query]
     pub fn get(&self, address: Address) -> Result<Option<Account>> {
@@ -335,23 +319,13 @@ impl Airdrop {
     }
 }
 
-#[cfg(not(feature = "testnet"))]
-impl MigrateFrom<AirdropV0> for AirdropV1 {
-    fn migrate_from(other: AirdropV0) -> Result<Self> {
-        Ok(Self {
-            accounts: other.accounts.accounts.migrate_into()?,
-        })
-    }
-}
-
-#[cfg(feature = "testnet")]
-impl MigrateFrom<AirdropV0> for AirdropV1 {
-    fn migrate_from(other: AirdropV0) -> Result<Self> {
-        Ok(Self {
-            accounts: other.accounts.migrate_into()?,
-        })
-    }
-}
+// impl MigrateFrom<AirdropV0> for AirdropV1 {
+//     fn migrate_from(other: AirdropV0) -> Result<Self> {
+//         Ok(Self {
+//             accounts: other.accounts.accounts.migrate_into()?,
+//         })
+//     }
+// }
 
 #[cfg(not(feature = "testnet"))]
 #[orga(version = 1)]
@@ -448,7 +422,7 @@ impl Part {
 mod test {
     use super::*;
     #[cfg(not(feature = "testnet"))]
-    use orga::prelude::Amount;
+    use orga::coins::Amount;
     use std::str::FromStr;
 
     fn assert_approx_eq(a: u64, b: u64) {
