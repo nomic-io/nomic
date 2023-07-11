@@ -231,8 +231,6 @@ impl StartCmd {
             }
 
             #[cfg(feature = "compat")]
-            let mut had_legacy = false;
-            #[cfg(feature = "compat")]
             if let Some(upgrade_time) = cmd.config.upgrade_time {
                 let legacy_home = if let Some(ref legacy_home) = cmd.legacy_home {
                     let lh = PathBuf::from_str(legacy_home).unwrap();
@@ -258,7 +256,6 @@ impl StartCmd {
                     log::debug!("Legacy timestamp: {}", timestamp);
 
                     let bin_path = legacy_home.join("nomic-v4");
-                    had_legacy = bin_path.exists();
 
                     if timestamp < upgrade_time && bin_path.exists() || cmd.config.legacy_version.is_some() {
                         if let Some(legacy_version) = cmd.config.legacy_version {
@@ -418,10 +415,6 @@ impl StartCmd {
             if !cmd.config.state_sync_rpc.is_empty() {
                 let servers: Vec<_> = cmd.config.state_sync_rpc.iter().map(|s| s.as_str()).collect();
                 configure_for_statesync(&home.join("tendermint/config/config.toml"), &servers);
-            }
-            #[cfg(feature = "compat")]
-            if cmd.migrate || had_legacy {
-                node = node.migrate::<nomic::app::AppV0>(vec![InnerApp::CONSENSUS_VERSION]);
             }
             if cmd.skip_init_chain {
                 node = node.skip_init_chain();
