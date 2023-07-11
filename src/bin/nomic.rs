@@ -18,7 +18,7 @@ use futures::executor::block_on;
 use nomic::app::DepositCommitment;
 use nomic::app::InnerApp;
 use nomic::app::Nom;
-use nomic::bitcoin::{signer::Signer, relayer::Relayer};
+use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
 use nomic::network::Network;
 use orga::abci::Node;
@@ -1120,19 +1120,19 @@ impl SetSignatoryKeyCmd {
 
 async fn deposit(dest: DepositCommitment) -> Result<()> {
     let sigset = app_client()
-        .query(|app| Ok(app.bitcoin.checkpoints.active_sigset()))
-        .await??;
+        .query(|app| Ok(app.bitcoin.checkpoints.active_sigset()?))
+        .await?;
     let script = sigset.output_script(dest.commitment_bytes()?.as_slice())?;
     let btc_addr = bitcoin::Address::from_script(&script, nomic::bitcoin::NETWORK).unwrap();
 
     let client = reqwest::Client::new();
     let res = client
-        .post("https://testnet-relayer.nomic.io:8443")
+        .post("https://testnet-relayer.nomic.io:8443/address")
         .query(&[
-            ("dest_bytes", dest.to_base64()?),
             ("sigset_index", sigset.index().to_string()),
             ("deposit_addr", btc_addr.to_string()),
         ])
+        .body(dest.encode()?)
         .send()
         .await
         .map_err(|err| nomic::error::Error::Orga(orga::Error::App(err.to_string())))?;
