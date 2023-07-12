@@ -2,6 +2,7 @@ chain_id = "nomic-testnet-4d"
 state_sync_rpc = [
     "http://167.99.228.240:26667",
     "http://167.99.228.240:26677",
+    "https://rpc.nomic-testnet.basementnodes.ca"
 ]
 tendermint_flags = [
     "--p2p.seeds",
