@@ -161,7 +161,7 @@ impl ThresholdSig {
 
     #[query]
     pub fn done(&self) -> bool {
-        self.signed >= self.threshold
+        self.signed > self.threshold
     }
 
     #[query]

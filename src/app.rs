@@ -53,6 +53,7 @@ pub type App = DefaultPlugins<Nom, InnerApp>;
 pub struct Nom(());
 impl Symbol for Nom {
     const INDEX: u8 = 69;
+    const NAME: &'static str = "unom";
 }
 const DEV_ADDRESS: &str = "nomic14z79y3yrghqx493mwgcj0qd2udy6lm26lmduah";
 const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1d5n325zrf4elfu0heqd59gna5j6xyunhev23cj";
@@ -93,7 +94,7 @@ pub struct InnerApp {
 
 #[orga]
 impl InnerApp {
-    pub const CONSENSUS_VERSION: u8 = 1;
+    pub const CONSENSUS_VERSION: u8 = 2;
 
     #[cfg(feature = "full")]
     fn configure_faucets(&mut self) -> Result<()> {
@@ -382,15 +383,6 @@ mod abci {
 
             let ip_reward = self.incentive_pool_rewards.mint()?;
             self.incentive_pool.give(ip_reward)?;
-
-            self.accounts
-                .deposit(
-                    "nomic124j0ky0luh9jzqh9w2dk77cze9v0ckdupk50ny"
-                        .parse()
-                        .unwrap(),
-                    Nom::mint(100000000),
-                )
-                .unwrap();
 
             self.bitcoin.begin_block(ctx)?;
 

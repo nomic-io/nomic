@@ -34,9 +34,10 @@ impl MigrateFrom<InnerAppV0> for InnerAppV1 {
         Ok(app)
     }
 }
+
 impl MigrateFrom<InnerAppV1> for InnerAppV2 {
     fn migrate_from(mut other: InnerAppV1) -> orga::Result<Self> {
-        let testnet_incentive_funds = other.incentive_pool.take(1_000_000)?;
+        let testnet_incentive_funds = other.incentive_pool.take(1_000_000_000_000)?;
 
         let app = Self {
             accounts: other.accounts,
