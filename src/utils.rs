@@ -375,13 +375,6 @@ pub fn setup_test_app(home: &Path, block_data: &BitcoinBlockData) -> Vec<KeyData
         };
         inner_app.bitcoin.headers.configure(headers_config).unwrap();
 
-        let checkpoints_config = CheckpointQueueConfig {
-            min_checkpoint_interval: 15,
-            ..Default::default()
-        };
-
-        inner_app.bitcoin.checkpoints.configure(checkpoints_config);
-
         let address = address_from_privkey(&load_privkey(home).unwrap());
         inner_app
             .accounts
