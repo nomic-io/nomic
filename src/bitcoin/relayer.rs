@@ -298,7 +298,6 @@ impl Relayer {
             //these emergency disbursal txs are being relayed in the wrong order
             //
             for tx in disbursal_txs.iter() {
-                dbg!("Attempting relay emergency disbursal transaction: {}", tx.txid());
                 if relayed.contains(&tx.txid()) {
                     continue;
                 }
@@ -317,7 +316,6 @@ impl Relayer {
                 match self.btc_client.send_raw_transaction(&tx_bytes) {
                     Ok(_) => {
                         info!("Relayed emergency disbursal transaction: {}", tx.txid());
-                        info!("RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR");
                     }
                     Err(err) if err.to_string().contains("bad-txns-inputs-missingorspent") => {}
                     Err(err)
