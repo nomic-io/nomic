@@ -83,11 +83,17 @@ impl<W: Wallet> Signer<W> {
         loop {
             self.maybe_submit_xpub(&xpub).await?;
 
-            if let Err(e) = self.try_sign(&xpub).await {
-                eprintln!("Signer error: {}", e);
-            }
+            let signed = match self.try_sign(&xpub).await {
+                Ok(signed) => signed,
+                Err(e) => {
+                    eprintln!("Signer error: {}", e);
+                    false
+                }
+            };
 
-            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            if !signed {
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            }
         }
     }
 
@@ -120,21 +126,21 @@ impl<W: Wallet> Signer<W> {
         Ok(())
     }
 
-    async fn try_sign(&mut self, xpub: &ExtendedPubKey) -> Result<()> {
+    async fn try_sign(&mut self, xpub: &ExtendedPubKey) -> Result<bool> {
         let secp = Secp256k1::signing_only();
 
         if (self.app_client)()
             .query(|app| Ok(app.bitcoin.checkpoints.signing()?.is_none()))
             .await?
         {
-            return Ok(());
+            return Ok(false);
         }
 
         let to_sign = (self.app_client)()
             .query(|app| Ok(app.bitcoin.checkpoints.to_sign(xpub.into())?))
             .await?;
         if to_sign.is_empty() {
-            return Ok(());
+            return Ok(false);
         }
 
         self.check_change_rates().await?;
@@ -166,7 +172,7 @@ impl<W: Wallet> Signer<W> {
 
         info!("Submitted signatures");
 
-        Ok(())
+        Ok(true)
     }
 
     async fn check_change_rates(&self) -> Result<()> {
