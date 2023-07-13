@@ -9,31 +9,32 @@ use bitcoind::bitcoincore_rpc::RpcApi;
 use bitcoind::{BitcoinD, Conf};
 use log::info;
 use nomic::app::DepositCommitment;
+use nomic::app::{InnerApp, Nom};
 use nomic::app_client_testnet;
 use nomic::bitcoin::relayer::DepositAddress;
 use nomic::bitcoin::relayer::Relayer;
 use nomic::error::{Error, Result};
+use nomic::utils::*;
 use nomic::utils::{
     declare_validator, generate_sign_doc, make_std_tx, poll_for_blocks, populate_bitcoin_block,
     retry, setup_test_app, setup_test_signer, setup_time_context, test_bitcoin_client, KeyData,
 };
 use orga::abci::Node;
 use orga::client::wallet::DerivedKey;
+use orga::client::AppClient;
 use orga::coins::{Address, Amount};
 use orga::encoding::Encode;
+use orga::macros::build_call;
 use orga::plugins::load_privkey;
+use orga::tendermint::client::HttpClient;
 use reqwest::StatusCode;
 use serial_test::serial;
 use std::collections::HashMap;
-use nomic::app::{InnerApp, Nom};
-use nomic::utils::*;
-use orga::client::AppClient;
-use orga::macros::build_call;
-use orga::tendermint::client::HttpClient;
 use std::str::FromStr;
 use std::sync::Once;
 use std::time::Duration;
 use tempfile::tempdir;
+use tokio::time::Instant;
 
 static INIT: Once = Once::new();
 
