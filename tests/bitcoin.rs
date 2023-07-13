@@ -319,7 +319,13 @@ async fn bitcoin_test() {
 
         assert_eq!(balance, Amount::from(799992747200000));
 
-        tokio::time::sleep(Duration::from_secs(65)).await;
+        tokio::time::sleep(Duration::from_secs(120)).await;
+
+        retry(
+            || bitcoind.client.generate_to_address(100, &wallet_address),
+            10,
+        )
+        .unwrap();
 
         let funded_account_balances: Vec<_> = funded_accounts
             .iter()
