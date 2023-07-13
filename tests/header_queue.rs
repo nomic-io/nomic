@@ -351,6 +351,7 @@ fn mainnet_from_file() {
             .unwrap(),
         trusted_height: 2016,
         min_difficulty_blocks: false,
+        retargeting: true,
         ..Config::default()
     };
 
