@@ -10,13 +10,13 @@ pub enum Error {
     BitcoinAddress(#[from] bitcoin::util::address::Error),
     #[error(transparent)]
     BitcoinHash(#[from] bitcoin::hashes::Error),
+    #[error("{0}")]
+    BitcoinPubkeyHash(String),
     #[cfg(feature = "full")]
     #[error(transparent)]
     BitcoinCoreRpc(#[from] bitcoind::bitcoincore_rpc::Error),
     #[error(transparent)]
     BitcoinLockTime(#[from] bitcoin::locktime::Error),
-    #[error("{0}")]
-    BitcoinPubkeyHash(String),
     #[error(transparent)]
     BitcoinEncode(#[from] bitcoin::consensus::encode::Error),
     #[error("Unable to deduct fee: {0}")]
@@ -40,6 +40,9 @@ pub enum Error {
     #[cfg(feature = "full")]
     #[error(transparent)]
     BitcoinRpc(#[from] bitcoincore_rpc_async::Error),
+    #[cfg(feature = "csv")]
+    #[error(transparent)]
+    Csv(#[from] csv::Error),
     #[error("{0}")]
     Header(String),
     #[error("{0}")]

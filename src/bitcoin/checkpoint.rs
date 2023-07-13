@@ -431,7 +431,6 @@ impl Default for Config {
 pub struct CheckpointQueue {
     pub(super) queue: Deque<Checkpoint>,
     pub(super) index: u32,
-    #[state(skip)]
     config: Config,
 }
 
@@ -780,7 +779,9 @@ impl<'a> BuildingCheckpointMut<'a> {
         }
 
         let fee = checkpoint_tx.vsize()? * config.fee_rate;
-        let reserve_value = in_amount - out_amount - fee;
+        let reserve_value = in_amount
+            .checked_sub(out_amount + fee)
+            .ok_or_else(|| OrgaError::App("Insufficient funds to cover fees".to_string()))?;
         let mut reserve_out = checkpoint_tx.output.get_mut(0)?.unwrap();
         reserve_out.value = reserve_value;
 

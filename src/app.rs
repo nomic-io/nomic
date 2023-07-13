@@ -6,6 +6,7 @@
 use crate::airdrop::Airdrop;
 use crate::bitcoin::adapter::Adapter;
 use crate::bitcoin::{Bitcoin, Nbtc};
+use crate::incentives::Incentives;
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::Transaction;
 use orga::coins::{
@@ -51,6 +52,7 @@ pub type App = DefaultPlugins<Nom, InnerApp>;
 pub struct Nom(());
 impl Symbol for Nom {
     const INDEX: u8 = 69;
+    const NAME: &'static str = "unom";
 }
 #[cfg(feature = "full")]
 const DEV_ADDRESS: &str = "nomic14z79y3yrghqx493mwgcj0qd2udy6lm26lmduah";
@@ -87,11 +89,14 @@ pub struct InnerApp {
 
     #[orga(version(V1, V2))]
     upgrade: Upgrade,
+
+    #[orga(version(V2))]
+    pub incentives: Incentives,
 }
 
 #[orga]
 impl InnerApp {
-    pub const CONSENSUS_VERSION: u8 = 1;
+    pub const CONSENSUS_VERSION: u8 = 2;
 
     #[cfg(feature = "full")]
     fn configure_faucets(&mut self) -> Result<()> {
@@ -305,6 +310,11 @@ impl InnerApp {
     pub fn app_noop(&mut self) -> Result<()> {
         Ok(())
     }
+
+    #[query]
+    pub fn app_noop_query(&self) -> Result<()> {
+        Ok(())
+    }
 }
 
 #[cfg(feature = "full")]
@@ -328,6 +338,11 @@ mod abci {
             self.staking.min_self_delegation_min = 0;
 
             let sr_address = STRATEGIC_RESERVE_ADDRESS.parse().unwrap();
+
+            self.airdrop
+                .init_from_airdrop1_csv(include_bytes!("../airdrop1_snapshot.csv"))?;
+            self.airdrop
+                .init_from_airdrop2_csv(include_bytes!("../airdrop2_snapshot.csv"))?;
 
             self.accounts.allow_transfers(true);
             self.bitcoin.accounts.allow_transfers(true);
@@ -371,15 +386,6 @@ mod abci {
 
             let ip_reward = self.incentive_pool_rewards.mint()?;
             self.incentive_pool.give(ip_reward)?;
-
-            self.accounts
-                .deposit(
-                    "nomic124j0ky0luh9jzqh9w2dk77cze9v0ckdupk50ny"
-                        .parse()
-                        .unwrap(),
-                    Nom::mint(100000000),
-                )
-                .unwrap();
 
             self.bitcoin.begin_block(ctx)?;
 

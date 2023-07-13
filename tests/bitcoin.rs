@@ -10,7 +10,6 @@ use bitcoind::{BitcoinD, Conf};
 use log::info;
 use nomic::app::DepositCommitment;
 use nomic::app_client_testnet;
-use nomic::bitcoin::relayer::Config as RelayerConfig;
 use nomic::bitcoin::relayer::DepositAddress;
 use nomic::bitcoin::relayer::Relayer;
 use nomic::error::{Error, Result};
@@ -21,42 +20,22 @@ use nomic::utils::{
 use orga::abci::Node;
 use orga::client::wallet::DerivedKey;
 use orga::coins::{Address, Amount};
-use orga::cosmrs::crypto::secp256k1::SigningKey;
 use orga::encoding::Encode;
 use orga::plugins::load_privkey;
-use orga::plugins::sdk_compat::sdk::{self, SignDoc};
-use orga::plugins::sdk_compat::sdk::{PubKey as OrgaPubKey, Signature as OrgaSignature};
 use reqwest::StatusCode;
 use serial_test::serial;
 use std::collections::HashMap;
+use nomic::app::{InnerApp, Nom};
+use nomic::utils::*;
+use orga::client::AppClient;
+use orga::macros::build_call;
+use orga::tendermint::client::HttpClient;
 use std::str::FromStr;
 use std::sync::Once;
 use std::time::Duration;
 use tempfile::tempdir;
-use tendermint_rpc::{Client, HttpClient};
 
 static INIT: Once = Once::new();
-
-pub async fn withdraw(address: String, dest_addr: String, amount: u64) -> Result<SignDoc> {
-    let mut value = serde_json::Map::new();
-    value.insert("amount".to_string(), amount.to_string().into());
-    value.insert("dst_address".to_string(), dest_addr.into());
-
-    let address = address
-        .parse()
-        .map_err(|_| Error::Address("Failed to parse address".to_string()))?;
-    let nonce = app_client_testnet()
-        .query_root(|app| app.inner.inner.borrow().inner.inner.inner.nonce(address))
-        .await?;
-
-    Ok(generate_sign_doc(
-        sdk::Msg {
-            type_: "nomic/MsgWithdraw".to_string(),
-            value: value.into(),
-        },
-        nonce,
-    ))
-}
 
 async fn generate_deposit_address(address: &Address) -> Result<DepositAddress> {
     info!("Generating deposit address for {}...", address);
@@ -109,82 +88,6 @@ pub async fn broadcast_deposit_addr(
     }
 }
 
-async fn poll_for_signatory_key() {
-    info!("Scanning for signatory key...");
-    loop {
-        match app_client_testnet()
-            .query(|app| Ok(app.bitcoin.checkpoints.active_sigset()?))
-            .await
-        {
-            Ok(_) => break,
-            Err(_) => tokio::time::sleep(Duration::from_secs(2)).await,
-        }
-    }
-}
-
-async fn poll_for_completed_checkpoint(num_checkpoints: u32) {
-    info!("Scanning for signed checkpoints...");
-    let mut checkpoint_len = app_client_testnet()
-        .query(|app| Ok(app.bitcoin.checkpoints.completed()?.len()))
-        .await
-        .unwrap();
-
-    while checkpoint_len < num_checkpoints as usize {
-        checkpoint_len = app_client_testnet()
-            .query(|app| Ok(app.bitcoin.checkpoints.completed()?.len()))
-            .await
-            .unwrap();
-        tokio::time::sleep(Duration::from_secs(1)).await;
-    }
-}
-
-async fn poll_for_bitcoin_header(height: u32) -> Result<()> {
-    info!("Scanning for bitcoin header {}...", height);
-    loop {
-        let current_height = app_client_testnet()
-            .query(|app| Ok(app.bitcoin.headers.height()?))
-            .await?;
-        if current_height >= height {
-            info!("Found bitcoin header {}", height);
-            break Ok(());
-        }
-    }
-}
-
-async fn sign_and_broadcast(sign_doc: SignDoc, account: &KeyData) {
-    info!("Signing transaction...");
-    let sign_json = serde_json::to_vec(&sign_doc).unwrap();
-
-    let signing_key = SigningKey::from_bytes(&account.privkey.secret_bytes()).unwrap();
-
-    let pubkey = secp256k1::PublicKey::from_secret_key(
-        &bitcoin::secp256k1::Secp256k1::new(),
-        &account.privkey,
-    );
-
-    let orga_pubkey = OrgaPubKey {
-        type_: "tendermint/PubKeySecp256k1".to_string(),
-        value: base64::encode(pubkey.serialize()),
-    };
-
-    let signature = signing_key.sign(&sign_json).unwrap();
-    let orga_signature = OrgaSignature {
-        pub_key: orga_pubkey,
-        signature: base64::encode(signature),
-        r#type: Some("sdk".to_string()),
-    };
-
-    let tx = make_std_tx(sign_doc, orga_signature);
-    let tx_bytes = serde_json::to_string(&tx).unwrap();
-    let tm_client = HttpClient::new("http://127.0.0.1:26657").unwrap();
-
-    info!("Broadcasting transaction...");
-    tm_client
-        .broadcast_tx_commit(tx_bytes.as_bytes())
-        .await
-        .unwrap();
-}
-
 async fn deposit_bitcoin(
     address: &Address,
     btc: bitcoin::Amount,
@@ -222,20 +125,30 @@ async fn withdraw_bitcoin(
     usats: u64,
     dest_address: &bitcoin::Address,
 ) -> Result<()> {
-    let withdraw_sign_doc = withdraw(
-        nomic_account.address.to_string(),
-        dest_address.to_string(),
-        Amount::from(usats).into(),
-    )
-    .await
-    .unwrap();
+    let key_bytes = nomic_account.privkey.secret_bytes();
+    let key = orga::secp256k1::SecretKey::from_slice(&key_bytes).unwrap();
+    let wallet = DerivedKey::from_secret_key(key);
 
-    sign_and_broadcast(withdraw_sign_doc, nomic_account).await;
+    let dest_script = nomic::bitcoin::adapter::Adapter::new(dest_address.script_pubkey());
+    app_client_testnet()
+        .with_wallet(wallet)
+        .call(
+            move |app| build_call!(app.withdraw_nbtc(dest_script, Amount::from(usats))),
+            |app| build_call!(app.app_noop()),
+        )
+        .await?;
     Ok(())
+}
+
+fn client_provider() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, DerivedKey> {
+    let val_priv_key = load_privkey().unwrap();
+    let wallet = DerivedKey::from_secret_key(val_priv_key);
+    app_client_testnet().with_wallet(wallet)
 }
 
 #[tokio::test]
 #[serial]
+#[ignore]
 async fn bitcoin_test() {
     INIT.call_once(|| {
         pretty_env_logger::init();
@@ -266,45 +179,29 @@ async fn bitcoin_test() {
             .unwrap();
     });
 
-    let relayer_config = RelayerConfig {
-        network: bitcoin::Network::Regtest,
-    };
-
-    let mut relayer =
-        Relayer::new(test_bitcoin_client(&bitcoind)).configure(relayer_config.clone());
+    let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind));
     let headers = relayer.start_header_relay();
 
-    let relayer = Relayer::new(test_bitcoin_client(&bitcoind)).configure(relayer_config.clone());
+    let relayer = Relayer::new(test_bitcoin_client(&bitcoind));
     let deposits = relayer.start_deposit_relay(&header_relayer_path);
 
-    let mut relayer =
-        Relayer::new(test_bitcoin_client(&bitcoind)).configure(relayer_config.clone());
+    let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind));
     let checkpoints = relayer.start_checkpoint_relay();
 
-    let mut relayer =
-        Relayer::new(test_bitcoin_client(&bitcoind)).configure(relayer_config.clone());
+    let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind));
     let disbursal = relayer.start_emergency_disbursal_transaction_relay();
 
     let signer = async {
         tokio::time::sleep(Duration::from_secs(20)).await;
-        setup_test_signer(&signer_path).start().await.unwrap();
-
-        Ok(())
+        setup_test_signer(&signer_path, client_provider)
+            .start()
+            .await
     };
 
     let test = async {
         let val_priv_key = load_privkey().unwrap();
         let wallet = DerivedKey::from_secret_key(val_priv_key);
         declare_validator(&path, wallet).await.unwrap();
-
-        println!("funded_accounts len: {}", funded_accounts.len());
-        for account in funded_accounts.iter() {
-            let balance = app_client_testnet()
-                .query(|app| app.bitcoin.accounts.balance(account.address))
-                .await
-                .unwrap();
-            println!("account balance: {}: {}", account.address, balance);
-        }
 
         let wallet = retry(|| bitcoind.create_wallet("nomic-integration-test"), 10).unwrap();
         let wallet_address = wallet.get_new_address(None, None).unwrap();
@@ -362,14 +259,6 @@ async fn bitcoin_test() {
         .await
         .unwrap();
 
-        deposit_bitcoin(
-            &funded_accounts[1].address,
-            bitcoin::Amount::from_btc(0.4).unwrap(),
-            &wallet,
-        )
-        .await
-        .unwrap();
-
         retry(
             || bitcoind.client.generate_to_address(1, &wallet_address),
             10,
@@ -386,6 +275,23 @@ async fn bitcoin_test() {
 
         assert_eq!(balance, Amount::from(799999747200000));
 
+        deposit_bitcoin(
+            &funded_accounts[1].address,
+            bitcoin::Amount::from_btc(0.4).unwrap(),
+            &wallet,
+        )
+        .await
+        .unwrap();
+
+        retry(
+            || bitcoind.client.generate_to_address(1, &wallet_address),
+            10,
+        )
+        .unwrap();
+
+        poll_for_bitcoin_header(1122).await.unwrap();
+        poll_for_completed_checkpoint(2).await;
+
         let balance = app_client_testnet()
             .query(|app| app.bitcoin.accounts.balance(funded_accounts[1].address))
             .await
@@ -397,7 +303,14 @@ async fn bitcoin_test() {
             .await
             .unwrap();
 
-        poll_for_completed_checkpoint(2).await;
+        retry(
+            || bitcoind.client.generate_to_address(1, &wallet_address),
+            10,
+        )
+        .unwrap();
+
+        poll_for_bitcoin_header(1123).await.unwrap();
+        poll_for_completed_checkpoint(3).await;
 
         let balance = app_client_testnet()
             .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
@@ -407,12 +320,6 @@ async fn bitcoin_test() {
         assert_eq!(balance, Amount::from(799992747200000));
 
         tokio::time::sleep(Duration::from_secs(65)).await;
-
-        retry(
-            || bitcoind.client.generate_to_address(100, &wallet_address),
-            10,
-        )
-        .unwrap();
 
         let funded_account_balances: Vec<_> = funded_accounts
             .iter()

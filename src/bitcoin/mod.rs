@@ -50,17 +50,17 @@ pub mod txid_set;
 pub struct Nbtc(());
 impl Symbol for Nbtc {
     const INDEX: u8 = 21;
+    const NAME: &'static str = "usat";
 }
 
-#[cfg(not(feature = "testnet"))]
+#[cfg(all(not(feature = "testnet"), not(feature = "devnet")))]
 pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Bitcoin;
 #[cfg(all(feature = "testnet", not(feature = "devnet")))]
 pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Testnet;
-#[cfg(all(feature = "testnet", feature = "devnet"))]
+#[cfg(all(feature = "devnet", feature = "testnet"))]
 pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Regtest;
 
 #[orga(skip(Default))]
-// #[derive(Serialize)]
 pub struct Config {
     min_withdrawal_checkpoints: u32,
     min_deposit_amount: u64,
@@ -76,22 +76,6 @@ pub struct Config {
 }
 
 impl Config {
-    fn regtest() -> Self {
-        Self {
-            min_withdrawal_checkpoints: 1,
-            min_deposit_amount: 600,
-            min_withdrawal_amount: 600,
-            max_withdrawal_amount: 64,
-            max_withdrawal_script_length: 64,
-            transfer_fee: 1_000_000,
-            min_confirmations: 0,
-            units_per_sat: 1_000_000,
-            emergency_disbursal_min_tx_amt: 1000,
-            emergency_disbursal_lock_time_interval: 60,
-            emergency_disbursal_max_tx_size: 50_000,
-        }
-    }
-
     fn bitcoin() -> Self {
         Self {
             min_withdrawal_checkpoints: 4,
@@ -105,6 +89,14 @@ impl Config {
             emergency_disbursal_min_tx_amt: 1000,
             emergency_disbursal_lock_time_interval: 60 * 60 * 24 * 7, //one week
             emergency_disbursal_max_tx_size: 50_000,
+        }
+    }
+
+    fn regtest() -> Self {
+        Self {
+            min_withdrawal_checkpoints: 1,
+            emergency_disbursal_lock_time_interval: 60,
+            ..Self::bitcoin()
         }
     }
 }
@@ -136,7 +128,6 @@ pub struct Bitcoin {
     recovery_scripts: Map<Address, Adapter<Script>>,
     pub signatory_keys: SignatoryKeys,
     pub(crate) reward_pool: Coin<Nbtc>,
-    #[state(skip)]
     config: Config,
 }
 
@@ -320,7 +311,7 @@ impl Bitcoin {
             .get_by_height(btc_height)?
             .ok_or_else(|| OrgaError::App("Invalid bitcoin block height".to_string()))?;
 
-        // if self.headers.height()? - btc_height < MIN_CONFIRMATIONS {
+        // if self.headers.height()? - btc_height < self.config.min_confirmations {
         //     return Err(OrgaError::App("Block is not sufficiently confirmed".to_string()).into());
         // }
 

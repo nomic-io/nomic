@@ -8,7 +8,6 @@ use crate::error::Result;
 use crate::utils::sleep;
 use crate::utils::time_now;
 use bitcoin::consensus::{Decodable, Encodable};
-use bitcoin::Network;
 use bitcoin::{hashes::Hash, Block, BlockHash, Transaction};
 use bitcoind::bitcoincore_rpc::json::GetBlockHeaderResult;
 use bitcoind::bitcoincore_rpc::{Client as BitcoinRpcClient, RpcApi};
@@ -34,24 +33,10 @@ where
     warp::reply::json(&val)
 }
 
-const HEADER_BATCH_SIZE: usize = 25;
-
-#[derive(Clone)]
-pub struct Config {
-    pub network: Network,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Config {
-            network: Network::Testnet,
-        }
-    }
-}
+const HEADER_BATCH_SIZE: usize = 250;
 
 pub struct Relayer {
     btc_client: BitcoinRpcClient,
-    config: Config,
 
     scripts: Option<WatchedScriptStore>,
 }
@@ -61,15 +46,6 @@ impl Relayer {
         Relayer {
             btc_client,
             scripts: None,
-            config: Config::default(),
-        }
-    }
-
-    pub fn configure(self, config: Config) -> Self {
-        Relayer {
-            btc_client: self.btc_client,
-            scripts: self.scripts,
-            config,
         }
     }
 
@@ -151,7 +127,6 @@ impl Relayer {
         // TODO: configurable listen address
         use bytes::Bytes;
         use warp::Filter;
-        let config = self.config.clone();
         let bcast_route = warp::post()
             .and(warp::path("address"))
             .and(warp::query::<DepositAddress>())
@@ -195,7 +170,7 @@ impl Relayer {
                                 dest.commitment_bytes().map_err(|_| reject())?.as_slice(),
                             )
                             .map_err(warp::reject::custom)?,
-                        config.network,
+                        super::NETWORK,
                     )
                     .unwrap()
                     .to_string();
@@ -320,7 +295,10 @@ impl Relayer {
                 .query(|app| Ok(app.bitcoin.checkpoints.emergency_disbursal_txs()?))
                 .await?;
 
+            //these emergency disbursal txs are being relayed in the wrong order
+            //
             for tx in disbursal_txs.iter() {
+                dbg!("Attempting relay emergency disbursal transaction: {}", tx.txid());
                 if relayed.contains(&tx.txid()) {
                     continue;
                 }
@@ -339,6 +317,7 @@ impl Relayer {
                 match self.btc_client.send_raw_transaction(&tx_bytes) {
                     Ok(_) => {
                         info!("Relayed emergency disbursal transaction: {}", tx.txid());
+                        info!("RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR");
                     }
                     Err(err) if err.to_string().contains("bad-txns-inputs-missingorspent") => {}
                     Err(err)

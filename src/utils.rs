@@ -28,7 +28,6 @@ use chrono::{TimeZone, Utc};
 use ed::Encode;
 #[cfg(feature = "full")]
 use log::info;
-use orga::client::wallet::SimpleWallet;
 use orga::coins::staking::{Commission, Declaration};
 use orga::coins::{Address, Coin, Decimal};
 use orga::context::Context;
@@ -48,11 +47,11 @@ use orga::{client::wallet::DerivedKey, macros::build_call};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 #[cfg(feature = "full")]
-use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 #[cfg(feature = "full")]
 use std::str::FromStr;
+use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub fn retry<F, T, E>(f: F, max_retries: u32) -> std::result::Result<T, E>
@@ -200,29 +199,6 @@ pub fn setup_test_signer<T: AsRef<Path>>(
     .unwrap()
 }
 
-#[cfg(feature = "full")]
-fn get_tendermint_height() -> Result<Option<String>> {
-    let curl_child = Command::new("curl")
-        .arg("localhost:26657/status")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-
-    Ok(Command::new("jq")
-        .args(vec!["-r", ".result.sync_info.latest_block_height"])
-        .stdin(Stdio::from(curl_child.stdout.unwrap()))
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?
-        .stdout
-        .map(|opt| {
-            let mut reader = BufReader::new(opt);
-            let mut line = String::new();
-            reader.read_line(&mut line).unwrap();
-            line
-        }))
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DeclareInfo {
     pub moniker: String,
@@ -233,8 +209,6 @@ pub struct DeclareInfo {
 
 #[cfg(feature = "full")]
 pub async fn declare_validator(home: &Path, wallet: DerivedKey) -> Result<()> {
-    use crate::app_client_testnet;
-
     info!("Declaring validator...");
 
     let consensus_key = load_consensus_key(home)?;
@@ -275,18 +249,58 @@ pub async fn declare_validator(home: &Path, wallet: DerivedKey) -> Result<()> {
 
 #[cfg(feature = "full")]
 pub async fn poll_for_blocks() {
-    use std::time::Duration;
-
     info!("Scanning for blocks...");
-    let mut height = get_tendermint_height().ok().flatten();
+    loop {
+        match app_client_testnet().query(|app| app.app_noop_query()).await {
+            Ok(_) => {
+                break;
+            }
+            Err(_) => {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+        }
+    }
+}
 
-    while height.is_none() || height == Some("".to_string()) {
-        height = get_tendermint_height()
-            .ok()
-            .flatten()
-            .filter(|height| height != "1");
+pub async fn poll_for_signatory_key() {
+    info!("Scanning for signatory key...");
+    loop {
+        match app_client_testnet()
+            .query(|app| Ok(app.bitcoin.checkpoints.active_sigset()?))
+            .await
+        {
+            Ok(_) => break,
+            Err(_) => tokio::time::sleep(Duration::from_secs(2)).await,
+        }
+    }
+}
 
+pub async fn poll_for_completed_checkpoint(num_checkpoints: u32) {
+    info!("Scanning for signed checkpoints...");
+    let mut checkpoint_len = app_client_testnet()
+        .query(|app| Ok(app.bitcoin.checkpoints.completed()?.len()))
+        .await
+        .unwrap();
+
+    while checkpoint_len < num_checkpoints as usize {
+        checkpoint_len = app_client_testnet()
+            .query(|app| Ok(app.bitcoin.checkpoints.completed()?.len()))
+            .await
+            .unwrap();
         tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+}
+
+pub async fn poll_for_bitcoin_header(height: u32) -> Result<()> {
+    info!("Scanning for bitcoin header {}...", height);
+    loop {
+        let current_height = app_client_testnet()
+            .query(|app| Ok(app.bitcoin.headers.height()?))
+            .await?;
+        if current_height >= height {
+            info!("Found bitcoin header {}", height);
+            break Ok(());
+        }
     }
 }
 
@@ -356,12 +370,13 @@ pub fn setup_test_app(home: &Path, block_data: &BitcoinBlockData) -> Vec<KeyData
             trusted_height: block_data.height,
             retargeting: false,
             min_difficulty_blocks: true,
+            max_length: 59,
             ..Default::default()
         };
         inner_app.bitcoin.headers.configure(headers_config).unwrap();
 
         let checkpoints_config = CheckpointQueueConfig {
-            min_checkpoint_interval: 10,
+            min_checkpoint_interval: 15,
             ..Default::default()
         };
 

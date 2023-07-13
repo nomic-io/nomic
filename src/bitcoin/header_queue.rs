@@ -6,18 +6,14 @@ use bitcoin::util::uint::Uint256;
 use bitcoin::BlockHash;
 use bitcoin::TxMerkleNode;
 use orga::collections::Deque;
-use orga::describe::Describe;
-use orga::encoding::{self as ed, LengthVec};
-use orga::migrate::MigrateFrom;
+use orga::encoding::LengthVec;
 use orga::orga;
 use orga::prelude::*;
-use orga::state::State;
 use orga::Error as OrgaError;
 use orga::Result as OrgaResult;
-use serde::Serialize;
 
 const MAX_LENGTH: u64 = 4032;
-const MAX_RELAY: u64 = 25;
+const MAX_RELAY: u64 = 250;
 const MAX_TIME_INCREASE: u32 = 2 * 60 * 60;
 const RETARGET_INTERVAL: u32 = 2016;
 const TARGET_SPACING: u32 = 10 * 60;
@@ -181,8 +177,8 @@ impl WorkHeader {
 }
 
 // TODO: implement trait that returns constants for bitcoin::Network variants
-
-#[derive(Clone, Encode, Decode, State, MigrateFrom, Serialize, Describe)]
+#[orga(skip(Default))]
+#[derive(Clone, Debug)]
 pub struct Config {
     pub max_length: u64,
     pub max_time_increase: u32,
@@ -285,7 +281,6 @@ impl Config {
 pub struct HeaderQueue {
     pub(super) deque: Deque<WorkHeader>,
     pub(super) current_work: Adapter<Uint256>,
-    #[state(skip)]
     config: Config,
 }
 
@@ -657,10 +652,12 @@ impl HeaderQueue {
         let wrapped_header = WrappedHeader::new(decoded_adapter, config.trusted_height);
         let work_header = WorkHeader::new(wrapped_header.clone(), wrapped_header.work());
 
-        self.config = config;
-
         self.current_work = Adapter::new(wrapped_header.work());
+        self.deque.pop_back()?;
+
         self.deque.push_front(work_header)?;
+
+        self.config = config;
 
         Ok(())
     }
