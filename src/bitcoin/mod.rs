@@ -95,7 +95,7 @@ impl Config {
     fn regtest() -> Self {
         Self {
             min_withdrawal_checkpoints: 1,
-            emergency_disbursal_lock_time_interval: 60,
+            emergency_disbursal_lock_time_interval: 3 * 60,
             ..Self::bitcoin()
         }
     }
