@@ -294,8 +294,6 @@ impl Relayer {
                 .query(|app| Ok(app.bitcoin.checkpoints.emergency_disbursal_txs()?))
                 .await?;
 
-            //these emergency disbursal txs are being relayed in the wrong order
-            //
             for tx in disbursal_txs.iter() {
                 if relayed.contains(&tx.txid()) {
                     continue;
