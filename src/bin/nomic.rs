@@ -5,19 +5,12 @@
 #![feature(never_type)]
 
 use bitcoind::bitcoincore_rpc::{Auth, Client as BtcClient};
-use std::convert::TryInto;
-use std::fs::Permissions;
-use std::os::unix::fs::PermissionsExt;
-#[cfg(not(feature = "compat"))]
-use std::os::unix::process::ExitStatusExt;
-use std::path::PathBuf;
-use std::str::FromStr;
 use clap::Parser;
 use futures::executor::block_on;
 use nomic::app::DepositCommitment;
-use nomic::app::Nom;
 #[cfg(not(feature = "compat"))]
 use nomic::app::InnerApp;
+use nomic::app::Nom;
 use nomic::app_client_testnet as app_client;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
@@ -30,6 +23,13 @@ use orga::merk::MerkStore;
 use orga::plugins::MIN_FEE;
 use orga::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::convert::TryInto;
+use std::fs::Permissions;
+use std::os::unix::fs::PermissionsExt;
+#[cfg(not(feature = "compat"))]
+use std::os::unix::process::ExitStatusExt;
+use std::path::PathBuf;
+use std::str::FromStr;
 use tendermint_rpc::Client as _;
 
 const BANNER: &str = r#"

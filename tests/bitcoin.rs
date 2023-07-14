@@ -15,8 +15,8 @@ use nomic::bitcoin::relayer::Relayer;
 use nomic::error::{Error, Result};
 use nomic::utils::*;
 use nomic::utils::{
-    declare_validator, poll_for_blocks, populate_bitcoin_block,
-    retry, setup_test_app, setup_test_signer, setup_time_context, test_bitcoin_client, KeyData,
+    declare_validator, poll_for_blocks, populate_bitcoin_block, retry, setup_test_app,
+    setup_test_signer, setup_time_context, test_bitcoin_client, KeyData,
 };
 use orga::abci::Node;
 use orga::client::wallet::DerivedKey;
