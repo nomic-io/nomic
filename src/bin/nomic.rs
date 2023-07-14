@@ -12,11 +12,12 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
 use std::str::FromStr;
-
 use clap::Parser;
 use futures::executor::block_on;
 use nomic::app::DepositCommitment;
 use nomic::app::Nom;
+#[cfg(not(feature = "compat"))]
+use nomic::app::InnerApp;
 use nomic::app_client_testnet as app_client;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
