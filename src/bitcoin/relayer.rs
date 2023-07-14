@@ -5,7 +5,6 @@ use crate::app_client_testnet;
 use crate::bitcoin::{adapter::Adapter, header_queue::WrappedHeader};
 use crate::error::Error;
 use crate::error::Result;
-use crate::utils::sleep;
 use crate::utils::time_now;
 use bitcoin::consensus::{Decodable, Encodable};
 use bitcoin::{hashes::Hash, Block, BlockHash, Transaction};

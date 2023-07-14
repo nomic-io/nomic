@@ -16,7 +16,6 @@ use std::str::FromStr;
 use clap::Parser;
 use futures::executor::block_on;
 use nomic::app::DepositCommitment;
-use nomic::app::InnerApp;
 use nomic::app::Nom;
 use nomic::app_client_testnet as app_client;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};

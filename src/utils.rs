@@ -5,8 +5,6 @@ use crate::app::CHAIN_ID;
 #[cfg(feature = "full")]
 use crate::bitcoin::adapter::Adapter;
 #[cfg(feature = "full")]
-use crate::bitcoin::checkpoint::Config as CheckpointQueueConfig;
-#[cfg(feature = "full")]
 use crate::bitcoin::header_queue::Config as HeaderQueueConfig;
 #[cfg(feature = "full")]
 use crate::bitcoin::signer::Signer;
