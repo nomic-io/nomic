@@ -1,7 +1,6 @@
 #![feature(async_closure)]
 
 use bitcoin::blockdata::transaction::EcdsaSighashType;
-use bitcoin::secp256k1;
 use bitcoind::bitcoincore_rpc::json::{
     ImportMultiRequest, ImportMultiRequestScriptPubkey, ImportMultiRescanSince,
 };
@@ -16,7 +15,7 @@ use nomic::bitcoin::relayer::Relayer;
 use nomic::error::{Error, Result};
 use nomic::utils::*;
 use nomic::utils::{
-    declare_validator, generate_sign_doc, make_std_tx, poll_for_blocks, populate_bitcoin_block,
+    declare_validator, poll_for_blocks, populate_bitcoin_block,
     retry, setup_test_app, setup_test_signer, setup_time_context, test_bitcoin_client, KeyData,
 };
 use orga::abci::Node;
@@ -34,7 +33,6 @@ use std::str::FromStr;
 use std::sync::Once;
 use std::time::Duration;
 use tempfile::tempdir;
-use tokio::time::Instant;
 
 static INIT: Once = Once::new();
 
