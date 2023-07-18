@@ -482,12 +482,11 @@ impl StartCmd {
             });
         }
 
-        Ok(node
-            .stdout(std::process::Stdio::inherit())
+        node.stdout(std::process::Stdio::inherit())
             .stderr(std::process::Stdio::inherit())
             .print_tendermint_logs(cmd.tendermint_logs)
             .tendermint_flags(cmd.config.tendermint_flags.clone())
-            .run()?)
+            .run()
     }
 }
 
