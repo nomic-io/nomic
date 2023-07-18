@@ -340,9 +340,8 @@ impl MigrateFrom<CheckpointV0> for CheckpointV1 {
         };
 
         let mut batches = Deque::default();
-        for _ in 0..=2 {
-            batches.push_back(Batch::default())?;
-        }
+        batches.push_back(Batch::default())?;
+        batches.push_back(Batch::default())?;
 
         let mut batch = Batch::default();
         if bitcoin_tx.signed() {
