@@ -5,10 +5,11 @@
 #![feature(type_alias_impl_trait)]
 #![feature(async_closure)]
 
-use orga::client::wallet::Unsigned;
-use orga::client::AppClient;
 #[cfg(feature = "full")]
-use orga::tendermint::client::HttpClient;
+use orga::{
+    client::{wallet::Unsigned, AppClient},
+    tendermint::client::HttpClient,
+};
 
 pub use orga;
 pub use thiserror;

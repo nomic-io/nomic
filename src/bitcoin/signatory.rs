@@ -1,4 +1,5 @@
 #![allow(clippy::redundant_closure_call)] // TODO: fix bitcoin-script then remove this
+#![allow(unused_imports)] // TODO
 
 use crate::error::{Error, Result};
 use bitcoin::util::bip32::ChildNumber;

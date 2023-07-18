@@ -2,13 +2,12 @@ use orga::coins::Decimal;
 use orga::coins::{Address, Amount};
 use orga::collections::{ChildMut, Map};
 use orga::context::GetContext;
-use orga::migrate::{Migrate, MigrateFrom};
+use orga::migrate::MigrateFrom;
 use orga::orga;
 use orga::plugins::MIN_FEE;
 use orga::plugins::{Paid, Signer};
-use orga::state::State;
-use orga::store::Store;
 use orga::{Error, Result};
+#[cfg(feature = "testnet")]
 use split_iter::Splittable;
 
 use super::app::Nom;

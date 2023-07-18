@@ -10,11 +10,9 @@ use derive_more::{Deref, DerefMut};
 use orga::{
     call::Call,
     collections::{map::ReadOnly, ChildMut, Deque, Map, Ref},
-    context::GetContext,
     encoding::{Decode, Encode, LengthVec},
     migrate::{Migrate, MigrateFrom},
     orga,
-    plugins::Time,
     query::Query,
     state::State,
     Error as OrgaError, Result as OrgaResult,
@@ -88,7 +86,7 @@ pub struct Input {
     pub sigset_index: u32,
     #[cfg(not(feature = "testnet"))]
     #[orga(version(V0))]
-    pub dest: orga::coins::VersionedAddress,
+    pub dest: orga::coins::Address,
     #[cfg(feature = "testnet")]
     #[orga(version(V0))]
     pub dest: LengthVec<u16, u8>,
@@ -583,6 +581,9 @@ impl CheckpointQueue {
 
         #[cfg(feature = "full")]
         {
+            use orga::context::GetContext;
+            use orga::plugins::Time;
+
             if self.signing()?.is_some() {
                 return Ok(());
             }
