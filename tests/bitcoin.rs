@@ -350,7 +350,15 @@ async fn bitcoin_test() {
                 .await
                 .unwrap();
 
-            let spending_tx = disbursal_txs.get(1).unwrap();
+            let spending_tx = disbursal_txs
+                .iter()
+                .find(|tx| {
+                    tx.output
+                        .iter()
+                        .any(|output| output.script_pubkey == account.script)
+                })
+                .unwrap();
+
             let vout = spending_tx
                 .output
                 .iter()
