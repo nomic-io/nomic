@@ -96,6 +96,7 @@ impl Config {
         Self {
             min_withdrawal_checkpoints: 1,
             emergency_disbursal_lock_time_interval: 3 * 60,
+            emergency_disbursal_max_tx_size: 11,
             ..Self::bitcoin()
         }
     }
