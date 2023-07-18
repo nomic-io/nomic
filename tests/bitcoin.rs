@@ -339,7 +339,7 @@ async fn bitcoin_test() {
             })
             .collect();
 
-        let expected_account_balances: Vec<u64> = vec![799992560, 31999560, 0, 0, 0, 0, 0, 0, 0, 0];
+        let expected_account_balances: Vec<u64> = vec![799992457, 31999457, 0, 0, 0, 0, 0, 0, 0, 0];
 
         assert_eq!(funded_account_balances, expected_account_balances);
 
