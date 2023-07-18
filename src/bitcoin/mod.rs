@@ -520,9 +520,8 @@ impl Bitcoin {
             .unwrap_or(0);
 
         if prev_index == 0 {
-            return Err(
-                OrgaError::App("No previous checkpoint to reference value".to_string()).into(),
-            );
+            // No previous checkpoint to compare to. Return no change
+            return Ok(ChangeRates::default());
         }
 
         let prev = completed.get(prev_index).unwrap();
