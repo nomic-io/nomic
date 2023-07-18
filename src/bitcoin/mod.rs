@@ -126,9 +126,11 @@ pub struct Bitcoin {
     #[call]
     pub accounts: Accounts<Nbtc>,
     // TODO: store recovery script data in account struct
-    recovery_scripts: Map<Address, Adapter<Script>>,
     pub signatory_keys: SignatoryKeys,
     pub(crate) reward_pool: Coin<Nbtc>,
+
+    #[orga(version(V1))]
+    recovery_scripts: Map<Address, Adapter<Script>>,
     #[orga(version(V1))]
     config: Config,
 }
@@ -140,7 +142,7 @@ impl MigrateFrom<BitcoinV0> for BitcoinV1 {
             processed_outpoints: value.processed_outpoints,
             checkpoints: value.checkpoints,
             accounts: value.accounts,
-            recovery_scripts: value.recovery_scripts,
+            recovery_scripts: Map::default(),
             signatory_keys: value.signatory_keys,
             reward_pool: value.reward_pool,
             config: Config::default(),
