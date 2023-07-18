@@ -30,7 +30,7 @@ use orga::ibc::ibc_rs::Signer as IbcSigner;
 
 use orga::encoding::Adapter as EdAdapter;
 use orga::macros::build_call;
-use orga::migrate::MigrateFrom;
+use orga::migrate::Migrate;
 use orga::orga;
 use orga::plugins::sdk_compat::{sdk, sdk::Tx as SdkTx, ConvertSdkTx};
 use orga::plugins::{DefaultPlugins, PaidCall, Signer, Time, MIN_FEE};
@@ -48,7 +48,7 @@ pub const CHAIN_ID: &str = "nomic-testnet-4d";
 pub type AppV0 = DefaultPlugins<Nom, InnerAppV0>;
 pub type App = DefaultPlugins<Nom, InnerApp>;
 
-#[derive(State, Debug, Clone, Encode, Decode, Default, MigrateFrom, Serialize)]
+#[derive(State, Debug, Clone, Encode, Decode, Default, Migrate, Serialize)]
 pub struct Nom(());
 impl Symbol for Nom {
     const INDEX: u8 = 69;

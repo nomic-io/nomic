@@ -1,7 +1,7 @@
 use bitcoin::consensus::{Decodable, Encodable};
 use orga::describe::Describe;
 use orga::encoding::Result as EncodingResult;
-use orga::migrate::MigrateFrom;
+use orga::migrate::Migrate;
 use orga::prelude::*;
 use orga::state::State;
 use orga::store::Store;
@@ -14,11 +14,8 @@ use std::ops::{Deref, DerefMut};
 pub struct Adapter<T> {
     inner: T,
 }
-impl<T> MigrateFrom for Adapter<T> {
-    fn migrate_from(other: Self) -> Result<Self> {
-        Ok(other)
-    }
-}
+
+impl<T: Encodable + Decodable + 'static> Migrate for Adapter<T> {}
 
 impl<T> Adapter<T> {
     pub fn new(inner: T) -> Self {

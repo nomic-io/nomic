@@ -18,13 +18,14 @@ use log::info;
 use orga::coins::Accounts;
 use orga::context::Context;
 #[cfg(feature = "full")]
+use orga::context::GetContext;
+#[cfg(feature = "full")]
 use orga::plugins::Time;
 use orga::{
     call::Call,
     collections::{map::ReadOnly, ChildMut, Deque, Map, Ref},
-    context::GetContext,
     encoding::{Decode, Encode, LengthVec},
-    migrate::MigrateFrom,
+    migrate::{Migrate, MigrateFrom},
     orga,
     query::Query,
     state::State,
@@ -44,11 +45,7 @@ pub enum CheckpointStatus {
     Complete,
 }
 
-impl MigrateFrom for CheckpointStatus {
-    fn migrate_from(other: Self) -> orga::Result<Self> {
-        Ok(other)
-    }
-}
+impl Migrate for CheckpointStatus {}
 
 // TODO: make it easy to derive State for simple types like this
 impl State for CheckpointStatus {
@@ -89,7 +86,7 @@ impl Describe for CheckpointStatus {
     }
 }
 
-#[orga(skip(Client), version = 1)]
+#[orga(version = 1)]
 #[derive(Debug)]
 pub struct Input {
     pub prevout: Adapter<bitcoin::OutPoint>,
@@ -151,19 +148,19 @@ impl Input {
 }
 
 impl MigrateFrom<InputV0> for InputV1 {
-    fn migrate_from(other: InputV0) -> OrgaResult<Self> {
+    fn migrate_from(value: InputV0) -> OrgaResult<Self> {
         Ok(Self {
-            prevout: other.prevout,
-            script_pubkey: other.script_pubkey,
-            redeem_script: other.redeem_script,
-            sigset_index: other.sigset_index,
+            prevout: value.prevout,
+            script_pubkey: value.script_pubkey,
+            redeem_script: value.redeem_script,
+            sigset_index: value.sigset_index,
             #[cfg(not(feature = "testnet"))]
-            dest: other.dest.encode()?.try_into()?,
+            dest: value.dest.encode()?.try_into()?,
             #[cfg(feature = "testnet")]
-            dest: other.dest,
-            amount: other.amount,
-            est_witness_vsize: other.est_witness_vsize,
-            signatures: other.signatures,
+            dest: value.dest,
+            amount: value.amount,
+            est_witness_vsize: value.est_witness_vsize,
+            signatures: value.signatures,
         })
     }
 }

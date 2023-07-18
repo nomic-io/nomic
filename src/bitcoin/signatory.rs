@@ -1,4 +1,5 @@
 #![allow(clippy::redundant_closure_call)] // TODO: fix bitcoin-script then remove this
+#![allow(unused_imports)] // TODO
 
 #[cfg(feature = "full")]
 use crate::error::Error;
@@ -23,8 +24,8 @@ use orga::plugins::Time;
 use orga::plugins::Validators;
 use orga::Error as OrgaError;
 
-use super::threshold_sig::Pubkey;
 #[cfg(feature = "full")]
+use super::threshold_sig::VersionedPubkey;
 use super::ConsensusKey;
 #[cfg(feature = "full")]
 use super::Xpub;
@@ -36,7 +37,7 @@ pub const MAX_SIGNATORIES: u64 = 20;
 #[derive(Clone, Debug, PartialOrd, PartialEq, Eq, Ord)]
 pub struct Signatory {
     pub voting_power: u64,
-    pub pubkey: Pubkey,
+    pub pubkey: VersionedPubkey,
 }
 
 pub fn derive_pubkey<T>(secp: &Secp256k1<T>, xpub: Xpub, sigset_index: u32) -> Result<PublicKey>

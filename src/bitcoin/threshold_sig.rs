@@ -9,18 +9,17 @@ use derive_more::{Deref, From};
 use orga::collections::{Map, Next};
 use orga::encoding::{Decode, Encode};
 use orga::macros::Describe;
-use orga::migrate::MigrateFrom;
+use orga::migrate::Migrate;
 use orga::prelude::FieldCall;
 use orga::query::FieldQuery;
 use orga::state::State;
+use orga::store::Store;
 use orga::{orga, Error, Result};
 use serde::Serialize;
 
 pub type Message = [u8; MESSAGE_SIZE];
 
-#[derive(
-    Encode, Decode, State, Debug, Clone, Deref, From, Copy, MigrateFrom, Serialize, Describe,
-)]
+#[derive(Encode, Decode, State, Debug, Clone, Deref, From, Copy, Migrate, Serialize, Describe)]
 pub struct Signature(#[serde(serialize_with = "<[_]>::serialize")] [u8; COMPACT_SIGNATURE_SIZE]);
 
 #[derive(
@@ -36,13 +35,18 @@ pub struct Signature(#[serde(serialize_with = "<[_]>::serialize")] [u8; COMPACT_
     Eq,
     PartialOrd,
     Ord,
-    MigrateFrom,
     Serialize,
     Describe,
 )]
 pub struct Pubkey {
     #[serde(serialize_with = "<[_]>::serialize")]
     bytes: [u8; PUBLIC_KEY_SIZE],
+}
+
+impl Migrate for Pubkey {
+    fn migrate(_src: Store, _dest: Store, bytes: &mut &[u8]) -> Result<Self> {
+        Ok(Self::decode(bytes)?)
+    }
 }
 
 impl Next for Pubkey {
@@ -89,6 +93,66 @@ impl From<PublicKey> for Pubkey {
     }
 }
 
+#[derive(
+    Encode,
+    Decode,
+    State,
+    FieldQuery,
+    FieldCall,
+    Clone,
+    Debug,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Describe,
+    Migrate,
+)]
+pub struct VersionedPubkey {
+    #[serde(serialize_with = "<[_]>::serialize")]
+    bytes: [u8; PUBLIC_KEY_SIZE],
+}
+
+impl Default for VersionedPubkey {
+    fn default() -> Self {
+        VersionedPubkey {
+            bytes: [0; PUBLIC_KEY_SIZE],
+        }
+    }
+}
+
+impl VersionedPubkey {
+    pub fn as_slice(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+impl From<Pubkey> for VersionedPubkey {
+    fn from(pubkey: Pubkey) -> Self {
+        VersionedPubkey {
+            bytes: pubkey.bytes,
+        }
+    }
+}
+
+impl From<VersionedPubkey> for Pubkey {
+    fn from(pubkey: VersionedPubkey) -> Self {
+        Pubkey {
+            bytes: pubkey.bytes,
+        }
+    }
+}
+
+impl From<PublicKey> for VersionedPubkey {
+    fn from(pubkey: PublicKey) -> Self {
+        VersionedPubkey {
+            bytes: pubkey.serialize(),
+        }
+    }
+}
+
 // TODO: update for taproot-based design (musig rounds, fallback path)
 
 #[orga]
@@ -125,7 +189,7 @@ impl ThresholdSig {
 
         for signatory in signatories.iter() {
             ts.sigs.insert(
-                signatory.pubkey,
+                signatory.pubkey.into(),
                 Share {
                     power: signatory.voting_power,
                     sig: None,
