@@ -606,6 +606,7 @@ impl<'a> BuildingCheckpointMut<'a> {
         Ok(())
     }
 
+    //TODO: Unit tests
     #[cfg(feature = "emergency-disbursal")]
     fn deduct_emergency_disbursal_fees(&mut self, fee_rate: u64) -> Result<()> {
         let intermediate_tx_fee = {
@@ -665,6 +666,7 @@ impl<'a> BuildingCheckpointMut<'a> {
         reserve_value: u64,
     ) -> Result<()> {
         {
+            //TODO: Pull bitcoin config from state
             let bitcoin_config = super::Bitcoin::config();
             let time = Context::resolve::<Time>()
                 .ok_or_else(|| OrgaError::Coins("No Time context found".into()))?;
