@@ -263,7 +263,7 @@ impl BitcoinTx {
                 Ok(output.value >= threshold)
             })?;
             if self.output.is_empty() {
-                break fee;
+                return Err(Error::OutputError("No outputs remaining.".to_string()));
             }
             let threshold = fee / self.output.len();
             if min_output >= threshold {

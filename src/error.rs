@@ -49,6 +49,8 @@ pub enum Error {
     Ibc(String),
     #[error("Input index: {0} out of bounds")]
     InputIndexOutOfBounds(usize),
+    #[error("{0}")]
+    OutputError(String),
     #[error("Invalid Deposit Address")]
     InvalidDepositAddress,
     #[error(transparent)]
