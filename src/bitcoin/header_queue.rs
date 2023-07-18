@@ -7,6 +7,7 @@ use bitcoin::BlockHash;
 use bitcoin::TxMerkleNode;
 use orga::collections::Deque;
 use orga::encoding::LengthVec;
+use orga::migrate::MigrateFrom;
 use orga::orga;
 use orga::prelude::*;
 use orga::Error as OrgaError;
@@ -277,11 +278,22 @@ impl Config {
     }
 }
 
-#[orga(skip(Default))]
+#[orga(skip(Default), version = 1)]
 pub struct HeaderQueue {
     pub(super) deque: Deque<WorkHeader>,
     pub(super) current_work: Adapter<Uint256>,
+    #[orga(version(V1))]
     config: Config,
+}
+
+impl MigrateFrom<HeaderQueueV0> for HeaderQueueV1 {
+    fn migrate_from(value: HeaderQueueV0) -> OrgaResult<Self> {
+        Ok(Self {
+            deque: value.deque,
+            current_work: value.current_work,
+            config: Config::default(),
+        })
+    }
 }
 
 impl Default for HeaderQueue {

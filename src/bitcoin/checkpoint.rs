@@ -310,13 +310,61 @@ impl Batch {
     }
 }
 
-#[orga(skip(Default))]
+#[orga(skip(Default), version = 1)]
 #[derive(Debug)]
 pub struct Checkpoint {
     pub status: CheckpointStatus,
+
+    #[orga(version(V0))]
+    pub inputs: Deque<Input>,
+    #[orga(version(V0))]
+    signed_inputs: u16,
+    #[orga(version(V0))]
+    pub outputs: Deque<Output>,
+
+    #[orga(version(V1))]
     pub batches: Deque<Batch>,
+    #[orga(version(V1))]
     signed_batches: u16,
+
     pub sigset: SignatorySet,
+}
+
+impl MigrateFrom<CheckpointV0> for CheckpointV1 {
+    fn migrate_from(value: CheckpointV0) -> OrgaResult<Self> {
+        let bitcoin_tx = BitcoinTx {
+            input: value.inputs,
+            output: value.outputs,
+            signed_inputs: value.signed_inputs,
+            lock_time: 0,
+        };
+
+        let mut batches = Deque::default();
+        for _ in 0..=2 {
+            batches.push_back(Batch::default())?;
+        }
+
+        let mut batch = Batch::default();
+        if bitcoin_tx.signed() {
+            batch.signed_txs = 1;
+        }
+        batch.push_back(bitcoin_tx)?;
+
+        batches.push_back(batch)?;
+
+        let signed_batches = match value.status {
+            CheckpointStatus::Complete => 3,
+            CheckpointStatus::Signing => 2,
+            CheckpointStatus::Building => 0,
+        };
+
+        Ok(Self {
+            status: value.status,
+            sigset: value.sigset,
+            batches,
+            signed_batches,
+        })
+    }
 }
 
 #[orga]
@@ -447,11 +495,22 @@ impl Default for Config {
     }
 }
 
-#[orga]
+#[orga(version = 1)]
 pub struct CheckpointQueue {
     pub(super) queue: Deque<Checkpoint>,
     pub(super) index: u32,
+    #[orga(version(V1))]
     config: Config,
+}
+
+impl MigrateFrom<CheckpointQueueV0> for CheckpointQueueV1 {
+    fn migrate_from(value: CheckpointQueueV0) -> OrgaResult<Self> {
+        Ok(Self {
+            queue: value.queue,
+            index: value.index,
+            config: Config::default(),
+        })
+    }
 }
 
 #[derive(Deref)]

@@ -20,7 +20,7 @@ use orga::collections::{Deque, Next};
 use orga::context::{Context, GetContext};
 use orga::describe::Describe;
 use orga::encoding::{Decode, Encode, Terminated};
-use orga::migrate::Migrate;
+use orga::migrate::{Migrate, MigrateFrom};
 use orga::orga;
 use orga::plugins::Paid;
 #[cfg(feature = "full")]
@@ -116,7 +116,7 @@ pub fn calc_deposit_fee(amount: u64) -> u64 {
     amount / 5
 }
 
-#[orga]
+#[orga(version = 1)]
 pub struct Bitcoin {
     #[call]
     pub headers: HeaderQueue,
@@ -129,7 +129,23 @@ pub struct Bitcoin {
     recovery_scripts: Map<Address, Adapter<Script>>,
     pub signatory_keys: SignatoryKeys,
     pub(crate) reward_pool: Coin<Nbtc>,
+    #[orga(version(V1))]
     config: Config,
+}
+
+impl MigrateFrom<BitcoinV0> for BitcoinV1 {
+    fn migrate_from(value: BitcoinV0) -> OrgaResult<Self> {
+        Ok(Self {
+            headers: value.headers,
+            processed_outpoints: value.processed_outpoints,
+            checkpoints: value.checkpoints,
+            accounts: value.accounts,
+            recovery_scripts: value.recovery_scripts,
+            signatory_keys: value.signatory_keys,
+            reward_pool: value.reward_pool,
+            config: Config::default(),
+        })
+    }
 }
 
 pub type ConsensusKey = [u8; 32];
