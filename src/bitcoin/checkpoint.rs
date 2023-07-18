@@ -522,13 +522,19 @@ impl<'a> SigningCheckpointMut<'a> {
                     tx.signed_inputs += 1;
                 }
             }
+
+            if tx.done() {
+                batch.signed_txs += 1;
+            }
         }
 
         if sig_index != sigs.len() {
             return Err(OrgaError::App("Excess signatures supplied".to_string()).into());
         }
 
-        self.signed_batches += 1;
+        if batch.signed() {
+            self.signed_batches += 1;
+        }
 
         Ok(())
     }
