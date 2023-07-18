@@ -1070,15 +1070,6 @@ impl CheckpointQueue {
                     return Ok(());
                 }
             }
-
-            let config = self.config();
-            while let Some(first) = self.queue.front()? {
-                if now - first.create_time() <= config.max_age {
-                    break;
-                }
-
-                self.queue.pop_front()?;
-            }
         }
 
         if self.maybe_push(sig_keys)?.is_none() {
