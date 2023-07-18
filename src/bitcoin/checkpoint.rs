@@ -95,7 +95,7 @@ pub struct Input {
     pub sigset_index: u32,
     #[cfg(not(feature = "testnet"))]
     #[orga(version(V0))]
-    pub dest: orga::coins::Address,
+    pub dest: orga::coins::VersionedAddress,
     #[cfg(feature = "testnet")]
     #[orga(version(V0))]
     pub dest: LengthVec<u16, u8>,
