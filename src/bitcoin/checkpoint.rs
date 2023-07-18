@@ -747,7 +747,9 @@ impl<'a> BuildingCheckpointMut<'a> {
         let mut disbursal_batch = self.batches.get_mut(BatchType::Disbursal as u64)?.unwrap();
         for i in 0..disbursal_batch.len() {
             let mut tx = disbursal_batch.get_mut(i)?.unwrap();
-            tx.populate_input_sig_message(i.try_into()?)?;
+            for j in 0..tx.input.len() {
+                tx.populate_input_sig_message(j.try_into()?)?;
+            }
         }
 
         let mut intermediate_tx_batch = self
