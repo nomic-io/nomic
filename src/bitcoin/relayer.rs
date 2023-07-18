@@ -304,7 +304,7 @@ impl Relayer {
                     .unwrap()
                     .as_secs();
                 if now < tx.lock_time.to_u32() as u64 {
-                    continue;
+                    return Ok(());
                 }
 
                 let mut tx_bytes = vec![];
