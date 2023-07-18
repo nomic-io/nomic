@@ -8,7 +8,7 @@ use bitcoin::TxMerkleNode;
 use orga::collections::Deque;
 use orga::describe::Describe;
 use orga::encoding::{self as ed, LengthVec};
-use orga::migrate::MigrateFrom;
+use orga::migrate::Migrate;
 use orga::orga;
 use orga::prelude::*;
 use orga::state::State;
@@ -183,7 +183,7 @@ impl WorkHeader {
 
 // TODO: implement trait that returns constants for bitcoin::Network variants
 
-#[derive(Clone, Encode, Decode, State, MigrateFrom, Serialize, Describe)]
+#[derive(Clone, Encode, Decode, State, Migrate, Serialize, Describe)]
 pub struct Config {
     pub max_length: u64,
     pub max_time_increase: u32,
@@ -265,11 +265,7 @@ impl Config {
 #[derive(Clone, Serialize)]
 pub struct Network(bitcoin::Network);
 
-impl MigrateFrom for Network {
-    fn migrate_from(other: Self) -> OrgaResult<Self> {
-        Ok(other)
-    }
-}
+impl Migrate for Network {}
 
 impl From<bitcoin::Network> for Network {
     fn from(value: bitcoin::Network) -> Self {

@@ -17,7 +17,7 @@ use orga::collections::Map;
 use orga::context::{Context, GetContext};
 use orga::describe::Describe;
 use orga::encoding::{Decode, Encode, Terminated};
-use orga::migrate::MigrateFrom;
+use orga::migrate::Migrate;
 use orga::orga;
 use orga::plugins::Paid;
 #[cfg(feature = "full")]
@@ -43,7 +43,7 @@ pub mod signer;
 pub mod threshold_sig;
 pub mod txid_set;
 
-#[derive(State, Debug, Clone, Encode, Decode, Default, MigrateFrom, Serialize)]
+#[derive(State, Debug, Clone, Encode, Decode, Default, Migrate, Serialize)]
 pub struct Nbtc(());
 impl Symbol for Nbtc {
     const INDEX: u8 = 21;
@@ -87,11 +87,7 @@ pub struct Xpub {
     key: ExtendedPubKey,
 }
 
-impl MigrateFrom for Xpub {
-    fn migrate_from(other: Self) -> orga::Result<Self> {
-        Ok(other)
-    }
-}
+impl Migrate for Xpub {}
 
 impl Describe for Xpub {
     fn describe() -> orga::describe::Descriptor {

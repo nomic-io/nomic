@@ -13,7 +13,7 @@ use orga::plugins::Time;
 use orga::plugins::Validators;
 use orga::Error as OrgaError;
 
-use super::threshold_sig::Pubkey;
+use super::threshold_sig::VersionedPubkey;
 use super::ConsensusKey;
 use super::Xpub;
 
@@ -24,7 +24,7 @@ pub const MAX_SIGNATORIES: u64 = 20;
 #[derive(Clone, Debug, PartialOrd, PartialEq, Eq, Ord)]
 pub struct Signatory {
     pub voting_power: u64,
-    pub pubkey: Pubkey,
+    pub pubkey: VersionedPubkey,
 }
 
 #[orga]

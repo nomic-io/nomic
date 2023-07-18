@@ -2,10 +2,12 @@ use orga::coins::Decimal;
 use orga::coins::{Address, Amount};
 use orga::collections::{ChildMut, Map};
 use orga::context::GetContext;
-use orga::migrate::MigrateFrom;
+use orga::migrate::{Migrate, MigrateFrom};
 use orga::orga;
 use orga::plugins::MIN_FEE;
 use orga::plugins::{Paid, Signer};
+use orga::state::State;
+use orga::store::Store;
 use orga::{Error, Result};
 use split_iter::Splittable;
 
@@ -363,21 +365,21 @@ impl Account {
 }
 
 impl MigrateFrom<AccountV0> for AccountV1 {
-    fn migrate_from(other: AccountV0) -> Result<Self> {
+    fn migrate_from(prev: AccountV0) -> Result<Self> {
         let mut account = AccountV1::default();
 
         #[cfg(not(feature = "testnet"))]
         {
             // TODO: populate airdrop1 claimed
-            account.airdrop1.claimable = other.claimable.into();
+            account.airdrop1.claimable = prev.claimable.into();
         }
 
         #[cfg(feature = "testnet")]
         {
-            account.airdrop1 = other.airdrop1;
-            account.btc_deposit = other.btc_deposit;
-            account.btc_withdraw = other.btc_withdraw;
-            account.ibc_transfer = other.ibc_transfer;
+            account.airdrop1 = prev.airdrop1;
+            account.btc_deposit = prev.btc_deposit;
+            account.btc_withdraw = prev.btc_withdraw;
+            account.ibc_transfer = prev.ibc_transfer;
         }
 
         Ok(account)
