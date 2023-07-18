@@ -34,6 +34,7 @@ use orga::{
 use orga::{describe::Describe, store::Store};
 use serde::{Deserialize, Serialize};
 use std::{convert::TryFrom, str::FromStr};
+use std::ops::{Deref, DerefMut};
 
 #[derive(Debug, Encode, Decode, Default, Serialize, Deserialize)]
 pub enum CheckpointStatus {
@@ -286,11 +287,37 @@ pub enum BatchType {
     Checkpoint,
 }
 
+#[orga]
+pub struct Batch {
+    batch: Deque<BitcoinTx>,
+    signed_txs: u16,
+}
+
+impl Deref for Batch {
+    type Target = Deque<BitcoinTx>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.batch
+    }
+}
+
+impl DerefMut for Batch {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.batch
+    }
+}
+
+impl Batch {
+    fn signed(&self) -> bool {
+        self.signed_txs as u64 == self.batch.len()
+    }
+}
+
 #[orga(skip(Default))]
 #[derive(Debug)]
 pub struct Checkpoint {
     pub status: CheckpointStatus,
-    pub batches: Deque<Deque<BitcoinTx>>,
+    pub batches: Deque<Batch>,
     signed_batches: u16,
     pub sigset: SignatorySet,
 }
@@ -305,16 +332,16 @@ impl Checkpoint {
             sigset,
         };
 
-        let disbursal_batch = Deque::default();
+        let disbursal_batch = Batch::default();
         checkpoint.batches.push_front(disbursal_batch)?;
 
         let intermediate_tx = BitcoinTx::default();
-        let mut intermediate_tx_batch = Deque::default();
+        let mut intermediate_tx_batch = Batch::default();
         intermediate_tx_batch.push_back(intermediate_tx)?;
         checkpoint.batches.push_back(intermediate_tx_batch)?;
 
         let checkpoint_tx = BitcoinTx::default();
-        let mut checkpoint_batch = Deque::default();
+        let mut checkpoint_batch = Batch::default();
         checkpoint_batch.push_back(checkpoint_tx)?;
         checkpoint.batches.push_back(checkpoint_batch)?;
 
@@ -365,7 +392,7 @@ impl Checkpoint {
         Ok(msgs)
     }
 
-    pub fn current_batch(&self) -> Result<Option<Ref<Deque<BitcoinTx>>>> {
+    pub fn current_batch(&self) -> Result<Option<Ref<Batch>>> {
         if self.signed() {
             return Ok(None);
         }
@@ -518,7 +545,7 @@ impl<'a> SigningCheckpointMut<'a> {
         Ok(())
     }
 
-    pub fn current_batch_mut(&mut self) -> Result<Option<ChildMut<u64, Deque<BitcoinTx>>>> {
+    pub fn current_batch_mut(&mut self) -> Result<Option<ChildMut<u64, Batch>>> {
         if self.done() {
             return Ok(None);
         }
