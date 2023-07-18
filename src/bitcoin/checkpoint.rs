@@ -33,8 +33,8 @@ use orga::{
 
 use orga::{describe::Describe, store::Store};
 use serde::{Deserialize, Serialize};
-use std::{convert::TryFrom, str::FromStr};
 use std::ops::{Deref, DerefMut};
+use std::{convert::TryFrom, str::FromStr};
 
 #[derive(Debug, Encode, Decode, Default, Serialize, Deserialize)]
 pub enum CheckpointStatus {
