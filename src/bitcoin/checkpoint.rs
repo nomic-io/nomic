@@ -204,7 +204,7 @@ impl BitcoinTx {
         }
     }
 
-    pub fn done(&self) -> bool {
+    pub fn signed(&self) -> bool {
         self.signed_inputs as u64 == self.input.len()
     }
 
@@ -492,7 +492,7 @@ impl<'a> SigningCheckpointMut<'a> {
 
         for i in 0..batch.len() {
             let mut tx = batch.get_mut(i)?.unwrap();
-            if tx.done() {
+            if tx.signed() {
                 continue;
             }
 
@@ -523,7 +523,7 @@ impl<'a> SigningCheckpointMut<'a> {
                 }
             }
 
-            if tx.done() {
+            if tx.signed() {
                 batch.signed_txs += 1;
             }
         }
@@ -539,7 +539,7 @@ impl<'a> SigningCheckpointMut<'a> {
         Ok(())
     }
 
-    pub fn done(&self) -> bool {
+    pub fn signed(&self) -> bool {
         self.batches.len() == self.signed_batches as u64
     }
 
@@ -552,7 +552,7 @@ impl<'a> SigningCheckpointMut<'a> {
     }
 
     pub fn current_batch_mut(&mut self) -> Result<Option<ChildMut<u64, Batch>>> {
-        if self.done() {
+        if self.signed() {
             return Ok(None);
         }
         let signed_batches = self.signed_batches as u64;
@@ -1174,7 +1174,7 @@ impl CheckpointQueue {
 
         signing.sign(xpub, sigs)?;
 
-        if signing.done() {
+        if signing.signed() {
             let checkpoint_tx = signing.checkpoint_tx()?;
             info!("Checkpoint signing complete {:?}", checkpoint_tx);
             signing.advance()?;
