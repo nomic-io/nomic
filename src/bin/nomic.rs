@@ -441,7 +441,13 @@ impl StartCmd {
         }
         #[cfg(feature = "compat")]
         if cmd.migrate || had_legacy {
-            node = node.migrate(vec![InnerApp::CONSENSUS_VERSION]);
+            node = node.migrate(
+                vec![InnerApp::CONSENSUS_VERSION],
+                #[cfg(feature = "testnet")]
+                false,
+                #[cfg(not(feature = "testnet"))]
+                true,
+            );
         }
         if cmd.skip_init_chain {
             node = node.skip_init_chain();
