@@ -7,11 +7,14 @@ use orga::orga;
 use orga::plugins::MIN_FEE;
 use orga::plugins::{Paid, Signer};
 use orga::{Error, Result};
+#[cfg(feature = "full")]
 use split_iter::Splittable;
 
 use super::app::Nom;
 
+#[cfg(feature = "full")]
 const MAX_STAKED: u64 = 1_000_000_000;
+#[cfg(feature = "full")]
 const AIRDROP_II_TOTAL: u64 = 3_500_000_000_000;
 
 #[orga]
@@ -199,6 +202,7 @@ impl Airdrop {
     }
 
     #[allow(unused_variables)]
+    #[cfg(feature = "full")]
     fn airdrop_to(
         &mut self,
         addr: Address,
@@ -232,6 +236,7 @@ impl Airdrop {
         }
     }
 
+    #[cfg(feature = "full")]
     fn score(staked: u64, _count: u64) -> u64 {
         staked.min(MAX_STAKED)
     }
@@ -265,6 +270,7 @@ impl Airdrop {
             .collect()
     }
 
+    #[cfg(feature = "full")]
     fn init_airdrop1_amount(
         &mut self,
         addr: Address,
@@ -363,21 +369,21 @@ impl Account {
 }
 
 impl MigrateFrom<AccountV0> for AccountV1 {
-    fn migrate_from(other: AccountV0) -> Result<Self> {
+    fn migrate_from(prev: AccountV0) -> Result<Self> {
         let mut account = AccountV1::default();
 
         #[cfg(not(feature = "testnet"))]
         {
             // TODO: populate airdrop1 claimed
-            account.airdrop1.claimable = other.claimable.into();
+            account.airdrop1.claimable = prev.claimable.into();
         }
 
         #[cfg(feature = "testnet")]
         {
-            account.airdrop1 = other.airdrop1;
-            account.btc_deposit = other.btc_deposit;
-            account.btc_withdraw = other.btc_withdraw;
-            account.ibc_transfer = other.ibc_transfer;
+            account.airdrop1 = prev.airdrop1;
+            account.btc_deposit = prev.btc_deposit;
+            account.btc_withdraw = prev.btc_withdraw;
+            account.ibc_transfer = prev.ibc_transfer;
         }
 
         Ok(account)
@@ -418,6 +424,7 @@ impl Part {
     }
 }
 
+#[cfg(feature = "full")]
 #[cfg(test)]
 mod test {
     use super::*;

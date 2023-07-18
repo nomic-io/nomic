@@ -1,20 +1,33 @@
 #![allow(clippy::redundant_closure_call)] // TODO: fix bitcoin-script then remove this
+#![allow(unused_imports)] // TODO
 
-use crate::error::{Error, Result};
+#[cfg(feature = "full")]
+use crate::error::Error;
+use crate::error::Result;
+use bitcoin::secp256k1::Context as SecpContext;
+use bitcoin::secp256k1::PublicKey;
+use bitcoin::secp256k1::Secp256k1;
+use bitcoin::secp256k1::Verification;
+#[cfg(feature = "full")]
 use bitcoin::util::bip32::ChildNumber;
 use bitcoin::Script;
 use bitcoin_script::bitcoin_script as script;
+#[cfg(feature = "full")]
 use orga::collections::Map;
+#[cfg(feature = "full")]
 use orga::context::Context;
 use orga::encoding::Encode;
 use orga::orga;
+#[cfg(feature = "full")]
 use orga::plugins::Time;
 #[cfg(feature = "full")]
 use orga::plugins::Validators;
 use orga::Error as OrgaError;
 
-use super::threshold_sig::Pubkey;
+#[cfg(feature = "full")]
+use super::threshold_sig::VersionedPubkey;
 use super::ConsensusKey;
+#[cfg(feature = "full")]
 use super::Xpub;
 
 pub const MAX_DEPOSIT_AGE: u64 = 60 * 60 * 24 * 5;
@@ -24,7 +37,21 @@ pub const MAX_SIGNATORIES: u64 = 20;
 #[derive(Clone, Debug, PartialOrd, PartialEq, Eq, Ord)]
 pub struct Signatory {
     pub voting_power: u64,
-    pub pubkey: Pubkey,
+    pub pubkey: VersionedPubkey,
+}
+
+pub fn derive_pubkey<T>(secp: &Secp256k1<T>, xpub: Xpub, sigset_index: u32) -> Result<PublicKey>
+where
+    T: SecpContext + Verification,
+{
+    Ok(xpub
+        .derive_pub(
+            secp,
+            &[bitcoin::util::bip32::ChildNumber::from_normal_idx(
+                sigset_index,
+            )?],
+        )?
+        .public_key)
 }
 
 #[orga]
@@ -90,11 +117,13 @@ impl SignatorySet {
         Ok(sigset)
     }
 
+    #[cfg(feature = "full")]
     fn insert(&mut self, signatory: Signatory) {
         self.present_vp += signatory.voting_power;
         self.signatories.push(signatory);
     }
 
+    #[cfg(feature = "full")]
     fn sort_and_truncate(&mut self) {
         self.signatories.sort_by(|a, b| b.cmp(a));
 
