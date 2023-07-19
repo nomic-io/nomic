@@ -5,7 +5,7 @@ use nomic::{
     app::{App, InnerApp, Nom, CHAIN_ID},
     app_client_testnet,
     orga::{
-        coins::{Accounts, Address, Amount, Decimal, Staking},
+        coins::{Address, Amount, Decimal},
         plugins::*,
         query::Query,
     },
@@ -235,14 +235,14 @@ fn time_now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::SystemTime::UNIX_EPOCH)
         .unwrap()
-        .as_secs() as u64
+        .as_secs()
 }
 
 #[get("/query/<query>?<height>")]
 async fn query(query: &str, height: Option<u32>) -> Result<String, BadRequest<String>> {
     let cache = QUERY_CACHE.clone();
     let lock = cache.read_owned().await;
-    let cached_res = lock.get(query).map(|v| v.clone());
+    let cached_res = lock.get(query).cloned();
     let cache_hit = cached_res.is_some();
     drop(lock);
 
@@ -343,18 +343,18 @@ fn staking_delegators_unbonding_delegations(address: &str) -> Value {
     json!({ "unbonding_responses": [], "pagination": { "next_key": null, "total": "0" } })
 }
 
-#[get("/staking/delegators/<address>/unbonding_delegations")]
-fn staking_delegators_unbonding_delegations_2(address: &str) -> Value {
+#[get("/staking/delegators/<_address>/unbonding_delegations")]
+fn staking_delegators_unbonding_delegations_2(_address: &str) -> Value {
     json!({ "height": "0", "result": [] })
 }
 
-#[get("/staking/delegators/<address>/delegations")]
-fn staking_delegations_2(address: &str) -> Value {
+#[get("/staking/delegators/<_address>/delegations")]
+fn staking_delegations_2(_address: &str) -> Value {
     json!({ "height": "0", "result": [] })
 }
 
-#[get("/cosmos/distribution/v1beta1/delegators/<address>/rewards")]
-async fn distribution_delegatrs_rewards(address: &str) -> Value {
+#[get("/cosmos/distribution/v1beta1/delegators/<_address>/rewards")]
+async fn distribution_delegatrs_rewards(_address: &str) -> Value {
     // let address = address.parse().unwrap();
 
     // type AppQuery = <InnerApp as Query>::Query;
@@ -395,8 +395,8 @@ async fn distribution_delegatrs_rewards(address: &str) -> Value {
       } })
 }
 
-#[get("/distribution/delegators/<address>/rewards")]
-async fn distribution_delegatrs_rewards_2(address: &str) -> Value {
+#[get("/distribution/delegators/<_address>/rewards")]
+async fn distribution_delegatrs_rewards_2(_address: &str) -> Value {
     // let address = address.parse().unwrap();
 
     // type AppQuery = <InnerApp as Query>::Query;
@@ -547,7 +547,7 @@ impl Fairing for CORS {
         }
     }
 
-    async fn on_response<'r>(&self, request: &'r Request<'_>, response: &mut Response<'r>) {
+    async fn on_response<'r>(&self, _request: &'r Request<'_>, response: &mut Response<'r>) {
         response.set_header(Header::new("Access-Control-Allow-Origin", "*"));
         response.set_header(Header::new(
             "Access-Control-Allow-Methods",

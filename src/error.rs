@@ -1,24 +1,40 @@
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
+    #[error("{0}")]
+    Account(String),
+    #[error("{0}")]
+    Address(String),
     #[error(transparent)]
     Bitcoin(#[from] bitcoin::Error),
     #[error(transparent)]
+    BitcoinAddress(#[from] bitcoin::util::address::Error),
+    #[error(transparent)]
     BitcoinHash(#[from] bitcoin::hashes::Error),
+    #[error("{0}")]
+    BitcoinPubkeyHash(String),
     #[cfg(feature = "full")]
     #[error(transparent)]
     BitcoinCoreRpc(#[from] bitcoind::bitcoincore_rpc::Error),
     #[error(transparent)]
+    BitcoinLockTime(#[from] bitcoin::locktime::Error),
+    #[error(transparent)]
     BitcoinEncode(#[from] bitcoin::consensus::encode::Error),
+    #[error("Unable to deduct fee: {0}")]
+    BitcoinFee(u64),
+    #[error("{0}")]
+    BitcoinRecoveryScript(String),
     #[error(transparent)]
     Bip32(#[from] bitcoin::util::bip32::Error),
+    #[error("{0}")]
+    Checkpoint(String),
     #[error(transparent)]
     Sighash(#[from] bitcoin::util::sighash::Error),
     #[error(transparent)]
     TryFrom(#[from] std::num::TryFromIntError),
+    #[error("{0}")]
+    Test(String),
     #[error(transparent)]
     Secp(#[from] bitcoin::secp256k1::Error),
-    #[error("Invalid Deposit Address")]
-    InvalidDepositAddress,
     #[error("Could not verify merkle proof")]
     BitcoinMerkleBlockError,
     #[cfg(feature = "full")]
@@ -31,6 +47,12 @@ pub enum Error {
     Header(String),
     #[error("{0}")]
     Ibc(String),
+    #[error("Input index: {0} out of bounds")]
+    InputIndexOutOfBounds(usize),
+    #[error("{0}")]
+    OutputError(String),
+    #[error("Invalid Deposit Address")]
+    InvalidDepositAddress,
     #[error(transparent)]
     Orga(#[from] orga::Error),
     #[error(transparent)]

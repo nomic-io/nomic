@@ -1,9 +1,10 @@
 #![feature(async_closure)]
 #![feature(async_fn_in_trait)]
-
 mod error;
 mod types;
 mod web_client;
+
+use std::str::FromStr;
 
 use crate::error::Error;
 use crate::types::*;
@@ -25,7 +26,12 @@ use wasm_bindgen_futures::JsFuture;
 use web_client::WebClient;
 use web_sys::{Request, RequestInit, RequestMode, Response};
 
-const REST_PORT: u64 = 8443;
+#[cfg(all(feature = "mainnet", not(feature = "testnet"), not(feature = "devnet")))]
+const BITCOIN_NETWORK: bitcoin::Network = ::bitcoin::Network::Bitcoin;
+#[cfg(all(feature = "testnet", not(feature = "mainnet"), not(feature = "devnet")))]
+const BITCOIN_NETWORK: bitcoin::Network = ::bitcoin::Network::Testnet;
+#[cfg(all(feature = "devnet", not(feature = "mainnet"), not(feature = "testnet")))]
+const BITCOIN_NETWORK: bitcoin::Network = ::bitcoin::Network::Regtest;
 
 #[wasm_bindgen(start)]
 pub fn main() -> std::result::Result<(), JsValue> {
@@ -159,7 +165,7 @@ pub async fn all_validators() -> Result<Array, JsError> {
                 address: v.address.to_string(),
                 commission: v.commission.rate.to_string(),
                 in_active_set: v.in_active_set,
-                info: String::from_utf8(info_bytes).unwrap_or(String::new()),
+                info: String::from_utf8(info_bytes).unwrap_or_default(),
                 amount_staked: v.amount_staked.into(),
             }
         })
@@ -356,6 +362,7 @@ fn parse_part(part: nomic::airdrop::Part) -> AirdropDetails {
     }
 }
 
+#[cfg(feature = "testnet")]
 #[wasm_bindgen(js_name = airdropBalances)]
 pub async fn airdrop_balances(addr: String) -> Result<Airdrop, JsError> {
     let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
@@ -367,6 +374,24 @@ pub async fn airdrop_balances(addr: String) -> Result<Airdrop, JsError> {
             btc_withdraw: parse_part(account.btc_withdraw),
             ibc_transfer: parse_part(account.ibc_transfer),
             // testnet_participation: parse_part(account.testnet_participation),
+        })
+    } else {
+        Ok(Airdrop::default())
+    }
+}
+
+#[cfg(not(feature = "testnet"))]
+#[wasm_bindgen(js_name = airdropBalances)]
+pub async fn airdrop_balances(addr: String) -> Result<Airdrop, JsError> {
+    let client: WebClient<App> = WebClient::new();
+    let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+
+    if let Some(account) = client.airdrop.get(address).await?? {
+        Ok(Airdrop {
+            airdrop1: parse_part(account.airdrop1),
+            btc_deposit: parse_part(account.btc_deposit),
+            btc_withdraw: parse_part(account.btc_withdraw),
+            ibc_transfer: parse_part(account.ibc_transfer),
         })
     } else {
         Ok(Airdrop::default())
@@ -449,6 +474,7 @@ pub async fn bitcoin_height() -> Result<u32, JsError> {
         .await?)
 }
 
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = getAddress)]
 pub async fn get_address() -> Result<String, JsError> {
     todo!()
@@ -516,7 +542,7 @@ pub async fn broadcast_deposit_addr(
             .await
             .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
         let res = js_sys::Uint8Array::new(&res).to_vec();
-        let res = String::from_utf8(res)?;
+        let _res = String::from_utf8(res)?;
 
         // web_sys::console::log_1(&format!("response: {}", &res).into());
     }
@@ -549,10 +575,10 @@ pub async fn join_airdrop_accounts(
 ) -> Result<String, JsError> {
     let address: Address = source_address
         .parse()
-        .map_err(|e| Error::Wasm("Invalid source address".to_string()))?;
+        .map_err(|_| Error::Wasm("Invalid source address".to_string()))?;
     let dest_addr: Address = destination_address
         .parse()
-        .map_err(|e| Error::Wasm("Invalid destination address".to_string()))?;
+        .map_err(|_| Error::Wasm("Invalid destination address".to_string()))?;
 
     let mut value = serde_json::Map::new();
     value.insert("dest_address".to_string(), dest_addr.to_string().into());

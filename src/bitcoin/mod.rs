@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::ops::Deref;
 
+use self::checkpoint::Input;
+use crate::bitcoin::checkpoint::BatchType;
 use crate::error::{Error, Result};
 use ::bitcoin::util::bip32::ChildNumber;
 use adapter::Adapter;
@@ -8,16 +10,17 @@ use bitcoin::hashes::Hash;
 use bitcoin::util::bip32::ExtendedPubKey;
 use bitcoin::Script;
 use bitcoin::{util::merkleblock::PartialMerkleTree, Transaction};
-use checkpoint::{CheckpointQueue, FEE_RATE};
+use checkpoint::CheckpointQueue;
 use header_queue::HeaderQueue;
 #[cfg(feature = "full")]
 use orga::abci::BeginBlock;
 use orga::coins::{Accounts, Address, Amount, Coin, Give, Symbol, Take};
 use orga::collections::Map;
+use orga::collections::{Deque, Next};
 use orga::context::{Context, GetContext};
 use orga::describe::Describe;
 use orga::encoding::{Decode, Encode, Terminated};
-use orga::migrate::MigrateFrom;
+use orga::migrate::{Migrate, MigrateFrom};
 use orga::orga;
 use orga::plugins::Paid;
 #[cfg(feature = "full")]
@@ -43,30 +46,77 @@ pub mod signer;
 pub mod threshold_sig;
 pub mod txid_set;
 
-#[derive(State, Debug, Clone, Encode, Decode, Default, MigrateFrom, Serialize)]
+#[derive(State, Debug, Clone, Encode, Decode, Default, Migrate, Serialize)]
 pub struct Nbtc(());
 impl Symbol for Nbtc {
     const INDEX: u8 = 21;
     const NAME: &'static str = "usat";
 }
 
-#[cfg(not(feature = "testnet"))]
+#[cfg(all(not(feature = "testnet"), not(feature = "devnet")))]
 pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Bitcoin;
-#[cfg(feature = "testnet")]
+#[cfg(all(feature = "testnet", not(feature = "devnet")))]
 pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Testnet;
-pub const MIN_WITHDRAWAL_CHECKPOINTS: u32 = 4;
-pub const MIN_DEPOSIT_AMOUNT: u64 = 600;
-pub const MIN_WITHDRAWAL_AMOUNT: u64 = 600;
-pub const MAX_WITHDRAWAL_SCRIPT_LENGTH: u64 = 64;
-pub const TRANSFER_FEE: u64 = UNITS_PER_SAT;
-pub const MIN_CONFIRMATIONS: u32 = 0;
-pub const UNITS_PER_SAT: u64 = 1_000_000;
+#[cfg(all(feature = "devnet", feature = "testnet"))]
+pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Regtest;
+
+#[orga(skip(Default))]
+pub struct Config {
+    min_withdrawal_checkpoints: u32,
+    min_deposit_amount: u64,
+    min_withdrawal_amount: u64,
+    max_withdrawal_amount: u64,
+    max_withdrawal_script_length: u64,
+    transfer_fee: u64,
+    min_confirmations: u32,
+    units_per_sat: u64,
+    emergency_disbursal_min_tx_amt: u64,
+    emergency_disbursal_lock_time_interval: u32,
+    emergency_disbursal_max_tx_size: u64,
+}
+
+impl Config {
+    fn bitcoin() -> Self {
+        Self {
+            min_withdrawal_checkpoints: 4,
+            min_deposit_amount: 600,
+            min_withdrawal_amount: 600,
+            max_withdrawal_amount: 64,
+            max_withdrawal_script_length: 64,
+            transfer_fee: 1_000_000,
+            min_confirmations: 0,
+            units_per_sat: 1_000_000,
+            emergency_disbursal_min_tx_amt: 1000,
+            emergency_disbursal_lock_time_interval: 60 * 60 * 24 * 7, //one week
+            emergency_disbursal_max_tx_size: 50_000,
+        }
+    }
+
+    fn regtest() -> Self {
+        Self {
+            min_withdrawal_checkpoints: 1,
+            emergency_disbursal_lock_time_interval: 3 * 60,
+            emergency_disbursal_max_tx_size: 11,
+            ..Self::bitcoin()
+        }
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        match NETWORK {
+            bitcoin::Network::Regtest => Config::regtest(),
+            bitcoin::Network::Testnet | bitcoin::Network::Bitcoin => Config::bitcoin(),
+            _ => unimplemented!(),
+        }
+    }
+}
 
 pub fn calc_deposit_fee(amount: u64) -> u64 {
     amount / 5
 }
 
-#[orga]
+#[orga(version = 1)]
 pub struct Bitcoin {
     #[call]
     pub headers: HeaderQueue,
@@ -75,8 +125,29 @@ pub struct Bitcoin {
     pub checkpoints: CheckpointQueue,
     #[call]
     pub accounts: Accounts<Nbtc>,
+    // TODO: store recovery script data in account struct
     pub signatory_keys: SignatoryKeys,
     pub(crate) reward_pool: Coin<Nbtc>,
+
+    #[orga(version(V1))]
+    recovery_scripts: Map<Address, Adapter<Script>>,
+    #[orga(version(V1))]
+    config: Config,
+}
+
+impl MigrateFrom<BitcoinV0> for BitcoinV1 {
+    fn migrate_from(value: BitcoinV0) -> OrgaResult<Self> {
+        Ok(Self {
+            headers: value.headers,
+            processed_outpoints: value.processed_outpoints,
+            checkpoints: value.checkpoints,
+            accounts: value.accounts,
+            recovery_scripts: Map::default(),
+            signatory_keys: value.signatory_keys,
+            reward_pool: value.reward_pool,
+            config: Config::default(),
+        })
+    }
 }
 
 pub type ConsensusKey = [u8; 32];
@@ -87,11 +158,7 @@ pub struct Xpub {
     key: ExtendedPubKey,
 }
 
-impl MigrateFrom for Xpub {
-    fn migrate_from(other: Self) -> orga::Result<Self> {
-        Ok(other)
-    }
-}
+impl Migrate for Xpub {}
 
 impl Describe for Xpub {
     fn describe() -> orga::describe::Descriptor {
@@ -181,8 +248,12 @@ pub fn exempt_from_fee() -> Result<()> {
 
 #[orga]
 impl Bitcoin {
+    pub fn config() -> Config {
+        Config::default()
+    }
+
     #[call]
-    pub fn set_signatory_key(&mut self, signatory_key: Xpub) -> Result<()> {
+    pub fn set_signatory_key(&mut self, _signatory_key: Xpub) -> Result<()> {
         #[cfg(feature = "full")]
         {
             exempt_from_fee()?;
@@ -202,14 +273,38 @@ impl Bitcoin {
                     "Signer does not have a consensus key".to_string(),
                 ))
             })?;
+            let regtest_mode = self.network() == bitcoin::Network::Regtest
+                && _signatory_key.network == bitcoin::Network::Testnet;
 
-            if signatory_key.network != self.network() {
+            if !regtest_mode && _signatory_key.network != self.network() {
                 return Err(Error::Orga(orga::Error::App(
                     "Signatory key network does not match network".to_string(),
                 )));
             }
 
-            self.signatory_keys.insert(consensus_key, signatory_key)?;
+            self.signatory_keys.insert(consensus_key, _signatory_key)?;
+        }
+
+        Ok(())
+    }
+
+    #[call]
+    pub fn set_recovery_script(&mut self, signatory_script: Adapter<Script>) -> Result<()> {
+        #[cfg(feature = "full")]
+        {
+            if signatory_script.len() as u64 > self.config.max_withdrawal_script_length {
+                return Err(Error::Orga(orga::Error::App(
+                    "Script exceeds maximum length".to_string(),
+                )));
+            }
+
+            let signer = self
+                .context::<Signer>()
+                .ok_or_else(|| Error::Orga(OrgaError::App("No Signer context available".into())))?
+                .signer
+                .ok_or_else(|| Error::Orga(OrgaError::App("Call must be signed".into())))?;
+
+            self.recovery_scripts.insert(signer, signatory_script)?;
         }
 
         Ok(())
@@ -231,7 +326,7 @@ impl Bitcoin {
             .get_by_height(btc_height)?
             .ok_or_else(|| OrgaError::App("Invalid bitcoin block height".to_string()))?;
 
-        // if self.headers.height()? - btc_height < MIN_CONFIRMATIONS {
+        // if self.headers.height()? - btc_height < self.config.min_confirmations {
         //     return Err(OrgaError::App("Block is not sufficiently confirmed".to_string()).into());
         // }
 
@@ -261,7 +356,7 @@ impl Bitcoin {
         }
         let output = &btc_tx.output[btc_vout as usize];
 
-        if output.value < MIN_DEPOSIT_AMOUNT {
+        if output.value < self.config.min_deposit_amount {
             return Err(OrgaError::App(
                 "Deposit amount is below minimum".to_string(),
             ))?;
@@ -297,20 +392,25 @@ impl Bitcoin {
             txid: btc_tx.txid(),
             vout: btc_vout,
         };
-        let est_vsize =
-            self.checkpoints
-                .building_mut()?
-                .push_input(prevout, &sigset, dest, output.value)?;
 
         // TODO: don't credit account until we're done signing including tx;
+        let mut building_mut = self.checkpoints.building_mut()?;
+        let mut building_checkpoint_batch = building_mut
+            .batches
+            .get_mut(BatchType::Checkpoint as u64)?
+            .unwrap();
 
-        let value = output
-            .value
-            .checked_sub(est_vsize * FEE_RATE)
-            .ok_or_else(|| {
-                OrgaError::App("Deposit amount is too small to pay its spending fee".to_string())
-            })?
-            * UNITS_PER_SAT;
+        let mut checkpoint_tx = building_checkpoint_batch.get_mut(0)?.unwrap();
+        checkpoint_tx
+            .input
+            .push_back(Input::new(prevout, &sigset, dest, output.value)?)?;
+
+        let input_size = 40 + sigset.est_witness_vsize();
+        let fee = input_size * self.checkpoints.config().fee_rate;
+
+        let value = output.value.checked_sub(fee).ok_or_else(|| {
+            OrgaError::App("Deposit amount is too small to pay its spending fee".to_string())
+        })? * self.config.units_per_sat;
 
         let mut minted_nbtc = Nbtc::mint(value);
         let deposit_fee = minted_nbtc.take(calc_deposit_fee(value))?;
@@ -322,14 +422,14 @@ impl Bitcoin {
     pub fn withdraw(&mut self, script_pubkey: Adapter<Script>, amount: Amount) -> Result<()> {
         exempt_from_fee()?;
 
-        if script_pubkey.len() as u64 > MAX_WITHDRAWAL_SCRIPT_LENGTH {
+        if script_pubkey.len() as u64 > self.config.max_withdrawal_script_length {
             return Err(OrgaError::App("Script exceeds maximum length".to_string()).into());
         }
 
-        if self.checkpoints.len()? < MIN_WITHDRAWAL_CHECKPOINTS {
+        if self.checkpoints.len()? < self.config.min_withdrawal_checkpoints {
             return Err(OrgaError::App(format!(
                 "Withdrawals are disabled until the network has produced at least {} checkpoints",
-                MIN_WITHDRAWAL_CHECKPOINTS
+                self.config.min_withdrawal_checkpoints
             ))
             .into());
         }
@@ -342,8 +442,8 @@ impl Bitcoin {
 
         self.accounts.withdraw(signer, amount)?.burn();
 
-        let fee = (9 + script_pubkey.len() as u64) * FEE_RATE;
-        let value: u64 = Into::<u64>::into(amount) / UNITS_PER_SAT;
+        let fee = (9 + script_pubkey.len() as u64) * self.checkpoints.config().fee_rate;
+        let value: u64 = Into::<u64>::into(amount) / self.config.units_per_sat;
         let value = match value.checked_sub(fee) {
             None => {
                 return Err(OrgaError::App(
@@ -354,7 +454,7 @@ impl Bitcoin {
             Some(value) => value,
         };
 
-        if value < MIN_WITHDRAWAL_AMOUNT {
+        if value < self.config.min_withdrawal_amount {
             return Err(OrgaError::App(
                 "Withdrawal is smaller than than minimum amount".to_string(),
             )
@@ -367,7 +467,12 @@ impl Bitcoin {
         };
 
         let mut checkpoint = self.checkpoints.building_mut()?;
-        checkpoint.outputs.push_back(Adapter::new(output))?;
+        let mut building_checkpoint_batch = checkpoint
+            .batches
+            .get_mut(BatchType::Checkpoint as u64)?
+            .unwrap();
+        let mut checkpoint_tx = building_checkpoint_batch.get_mut(0)?.unwrap();
+        checkpoint_tx.output.push_back(Adapter::new(output))?;
 
         Ok(())
     }
@@ -382,7 +487,9 @@ impl Bitcoin {
             .signer
             .ok_or_else(|| Error::Orga(OrgaError::App("Call must be signed".into())))?;
 
-        let transfer_fee = self.accounts.withdraw(signer, TRANSFER_FEE.into())?;
+        let transfer_fee = self
+            .accounts
+            .withdraw(signer, self.config.transfer_fee.into())?;
         self.reward_pool.give(transfer_fee)?;
         self.accounts.transfer(to, amount)?;
 
@@ -391,7 +498,12 @@ impl Bitcoin {
 
     #[query]
     pub fn value_locked(&self) -> Result<u64> {
-        self.checkpoints.building()?.get_tvl()
+        let completed = self.checkpoints.completed()?;
+        if completed.is_empty() {
+            return Ok(0);
+        }
+        let last_completed = completed.iter().last().unwrap();
+        Ok(last_completed.reserve_output()?.unwrap().value)
     }
 
     pub fn network(&self) -> bitcoin::Network {
@@ -404,6 +516,7 @@ impl Bitcoin {
             .checkpoints
             .signing()?
             .ok_or_else(|| OrgaError::App("No checkpoint to be signed".to_string()))?;
+
         if now > interval && now - interval > signing.create_time() {
             return Ok(ChangeRates::default());
         }
@@ -413,14 +526,24 @@ impl Bitcoin {
         if completed.is_empty() {
             return Ok(ChangeRates::default());
         }
-        let prev = completed
-            .iter()
-            .rev()
-            .find(|c| (now - c.create_time()) > interval)
-            .unwrap_or_else(|| completed.first().unwrap());
 
-        let amount_now = signing.inputs.get(0)?.unwrap().amount;
-        let amount_prev = prev.inputs.get(0)?.unwrap().amount;
+        let last_completed = completed.iter().last().unwrap();
+
+        let prev_index = completed
+            .iter()
+            .rposition(|c| (now - c.create_time()) > interval)
+            .unwrap_or(0);
+
+        if prev_index == 0 {
+            // No previous checkpoint to compare to. Return no change
+            return Ok(ChangeRates::default());
+        }
+
+        let prev = completed.get(prev_index).unwrap();
+        let prev_value_checkpoint = completed.get(prev_index - 1).unwrap();
+
+        let amount_now = last_completed.reserve_output()?.unwrap().value;
+        let amount_prev = prev_value_checkpoint.reserve_output()?.unwrap().value;
         let decrease = if amount_now > amount_prev {
             0
         } else {
@@ -479,7 +602,11 @@ pub struct ChangeRates {
 impl BeginBlock for Bitcoin {
     fn begin_block(&mut self, _ctx: &BeginBlockCtx) -> OrgaResult<()> {
         self.checkpoints
-            .maybe_step(self.signatory_keys.map())
+            .maybe_step(
+                self.signatory_keys.map(),
+                &self.accounts,
+                &self.recovery_scripts,
+            )
             .map_err(|err| OrgaError::App(err.to_string()))?;
 
         Ok(())
@@ -539,7 +666,6 @@ impl SignatoryKeys {
     }
 }
 
-use orga::collections::{Deque, Next};
 fn clear_map<K, V>(map: &mut Map<K, V>) -> OrgaResult<()>
 where
     K: Encode + Decode + Terminated + Next + Clone + Send + Sync + 'static,
