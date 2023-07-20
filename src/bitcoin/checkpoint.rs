@@ -367,6 +367,7 @@ impl Checkpoint {
         let disbursal_batch = Batch::default();
         checkpoint.batches.push_front(disbursal_batch)?;
 
+        #[allow(unused_mut)]
         let mut intermediate_tx_batch = Batch::default();
         #[cfg(feature = "emergency-disbursal")]
         intermediate_tx_batch.push_back(BitcoinTx::default())?;
@@ -1026,7 +1027,8 @@ impl CheckpointQueue {
         #[cfg(not(feature = "emergency-disbursal"))]
         unimplemented!();
 
-        #[cfg(feature = "emergency-disbursal")] {
+        #[cfg(feature = "emergency-disbursal")]
+        {
             let mut vec = vec![];
 
             if let Some(completed) = self.completed()?.last() {
