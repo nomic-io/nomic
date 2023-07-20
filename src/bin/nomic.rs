@@ -25,7 +25,6 @@ use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 use std::fs::Permissions;
 use std::os::unix::fs::PermissionsExt;
-use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
 use std::str::FromStr;
 use tendermint_rpc::Client as _;
@@ -238,7 +237,7 @@ impl StartCmd {
         let mut should_migrate = false;
 
         if let Some(legacy_version) = &cmd.config.legacy_version {
-            let store = MerkStore::new(&home.join("merk"));
+            let store = MerkStore::new(home.join("merk"));
             let store_ver = store.merk().get_aux(b"network_version").unwrap();
             let up_to_date = if let Some(store_ver) = store_ver {
                 store_ver == vec![InnerApp::CONSENSUS_VERSION]

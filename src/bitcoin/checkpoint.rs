@@ -10,13 +10,11 @@ use crate::bitcoin::{signatory::derive_pubkey, Nbtc};
 use crate::error::{Error, Result};
 use bitcoin::hashes::Hash;
 use bitcoin::{
-    blockdata::transaction::EcdsaSighashType, hashes::hex::ToHex, PackedLockTime, Sequence,
-    Transaction, TxIn, TxOut,
+    blockdata::transaction::EcdsaSighashType, PackedLockTime, Sequence, Transaction, TxIn, TxOut,
 };
 use derive_more::{Deref, DerefMut};
 use log::info;
 use orga::coins::Accounts;
-use orga::context::Context;
 #[cfg(feature = "full")]
 use orga::context::GetContext;
 #[cfg(feature = "full")]
@@ -34,8 +32,8 @@ use orga::{
 
 use orga::{describe::Describe, store::Store};
 use serde::{Deserialize, Serialize};
+use std::convert::TryFrom;
 use std::ops::{Deref, DerefMut};
-use std::{convert::TryFrom, str::FromStr};
 
 #[derive(Debug, Encode, Decode, Default, Serialize, Deserialize)]
 pub enum CheckpointStatus {
@@ -723,6 +721,7 @@ impl<'a> BuildingCheckpointMut<'a> {
         {
             //TODO: Pull bitcoin config from state
             let bitcoin_config = super::Bitcoin::config();
+            use orga::context::Context;
             let time = Context::resolve::<Time>()
                 .ok_or_else(|| OrgaError::Coins("No Time context found".into()))?;
 
@@ -750,6 +749,8 @@ impl<'a> BuildingCheckpointMut<'a> {
                 }
 
                 //TODO: Move address to script logic to a function
+                use bitcoin::hashes::hex::ToHex;
+                use std::str::FromStr;
                 let hash =
                     bitcoin::hashes::hash160::Hash::from_str(address.bytes().to_hex().as_str())
                         .map_err(|err| Error::BitcoinPubkeyHash(err.to_string()))?;
@@ -819,6 +820,7 @@ impl<'a> BuildingCheckpointMut<'a> {
         Ok(())
     }
 
+    #[allow(unused_variables)]
     pub fn advance(
         mut self,
         nbtc_accounts: &Accounts<Nbtc>,
