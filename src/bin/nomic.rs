@@ -237,12 +237,14 @@ impl StartCmd {
         let mut should_migrate = false;
 
         if let Some(legacy_version) = &cmd.config.legacy_version {
-            let store = MerkStore::new(home.join("merk"));
-            let store_ver = store.merk().get_aux(b"network_version").unwrap();
-            let up_to_date = if let Some(store_ver) = store_ver {
-                store_ver == vec![InnerApp::CONSENSUS_VERSION]
-            } else {
-                false
+            let up_to_date = {
+                let store = MerkStore::new(home.join("merk"));
+                let store_ver = store.merk().get_aux(b"network_version").unwrap();
+                if let Some(store_ver) = store_ver {
+                    store_ver == vec![InnerApp::CONSENSUS_VERSION]
+                } else {
+                    false
+                }
             };
 
             if up_to_date {
