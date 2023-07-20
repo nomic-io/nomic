@@ -1,4 +1,4 @@
-#![feature(hash_drain_filter)]
+#![feature(hash_extract_if)]
 
 use clap::Parser;
 use std::collections::HashMap;
@@ -159,7 +159,9 @@ fn to_rows(networks: Vec<Network>, min_balance: u64) -> Vec<Vec<String>> {
         }
     }
 
-    combined.drain_filter(|_, (balance, _)| *balance < min_balance);
+    combined = combined
+        .extract_if(|_, (balance, _)| *balance < min_balance)
+        .collect();
 
     let mut rows: Vec<_> = std::iter::once(headers)
         .chain(combined.into_iter().map(|(addr, (_, fields))| {
