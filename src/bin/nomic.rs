@@ -238,15 +238,10 @@ impl StartCmd {
         let mut should_migrate = false;
 
         if let Some(legacy_version) = &cmd.config.legacy_version {
-            let version_hex = hex::encode([InnerApp::CONSENSUS_VERSION]);
-
-            let net_ver_path = home.join("network_version");
-            let up_to_date = if net_ver_path.exists() {
-                let net_ver = String::from_utf8(std::fs::read(net_ver_path).unwrap())
-                    .unwrap()
-                    .trim()
-                    .to_string();
-                version_hex == net_ver
+            let store = MerkStore::new(&home.join("merk"));
+            let store_ver = store.merk().get_aux(b"network_version").unwrap();
+            let up_to_date = if let Some(store_ver) = store_ver {
+                store_ver == vec![InnerApp::CONSENSUS_VERSION]
             } else {
                 false
             };
@@ -263,6 +258,7 @@ impl StartCmd {
                 if !legacy_bin.exists() {
                     log::warn!("Legacy binary does not exist, attempting to skip ahead");
                 } else {
+                    let version_hex = hex::encode([InnerApp::CONSENSUS_VERSION]);
                     let mut legacy_cmd = std::process::Command::new(legacy_bin);
                     legacy_cmd.args([
                         "start",
