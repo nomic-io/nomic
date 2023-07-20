@@ -25,7 +25,6 @@ use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 use std::fs::Permissions;
 use std::os::unix::fs::PermissionsExt;
-#[cfg(not(feature = "compat"))]
 use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -169,13 +168,10 @@ pub struct StartCmd {
     pub unsafe_reset: bool,
     #[clap(long)]
     pub skip_init_chain: bool,
-    #[cfg(feature = "compat")]
     #[clap(long)]
     pub migrate: bool,
-    #[cfg(feature = "compat")]
     #[clap(long)]
     pub legacy_home: Option<String>,
-    #[cfg(not(feature = "compat"))]
     #[clap(long)]
     pub legacy_bin: Option<String>,
     #[clap(long)]
@@ -205,7 +201,6 @@ impl StartCmd {
                 log::error!("Passed in unexpected genesis");
                 std::process::exit(1);
             }
-            #[cfg(feature = "compat")]
             if cmd.config.upgrade_time.is_some() {
                 config.upgrade_time = cmd.config.upgrade_time;
             }
@@ -240,10 +235,8 @@ impl StartCmd {
             std::env::set_var("ORGA_STATIC_VALSET", "true");
         }
 
-        #[cfg(feature = "compat")]
         let mut should_migrate = false;
 
-        #[cfg(not(feature = "compat"))]
         if let Some(legacy_version) = &cmd.config.legacy_version {
             let version_hex = hex::encode([InnerApp::CONSENSUS_VERSION]);
 
@@ -384,7 +377,6 @@ impl StartCmd {
             };
             std::fs::write(home.join("tendermint/config/genesis.json"), genesis_bytes)?;
         }
-        #[cfg(feature = "compat")]
         if cmd.migrate || should_migrate {
             node = node.migrate(
                 vec![InnerApp::CONSENSUS_VERSION],
