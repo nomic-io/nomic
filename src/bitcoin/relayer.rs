@@ -273,6 +273,7 @@ impl Relayer {
         Ok(tip)
     }
 
+    #[cfg(feature = "emergency-disbursal")]
     pub async fn start_emergency_disbursal_transaction_relay(&mut self) -> Result<()> {
         info!("Starting emergency disbursal transaction relay...");
 
@@ -287,6 +288,7 @@ impl Relayer {
         }
     }
 
+    #[cfg(feature = "emergency-disbursal")]
     async fn relay_emergency_disbursal_transactions(&mut self) -> Result<()> {
         let mut relayed = HashSet::new();
         loop {
