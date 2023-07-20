@@ -171,10 +171,10 @@ pub struct StartCmd {
     pub skip_init_chain: bool,
     #[cfg(feature = "compat")]
     #[clap(long)]
-    pub legacy_home: Option<String>,
+    pub migrate: bool,
     #[cfg(feature = "compat")]
     #[clap(long)]
-    pub migrate: bool,
+    pub legacy_home: Option<String>,
     #[cfg(not(feature = "compat"))]
     #[clap(long)]
     pub legacy_bin: Option<String>,
@@ -241,63 +241,7 @@ impl StartCmd {
         }
 
         #[cfg(feature = "compat")]
-        let mut had_legacy = false;
-        #[cfg(feature = "compat")]
-        if let Some(upgrade_time) = cmd.config.upgrade_time {
-            let legacy_home = if let Some(ref legacy_home) = cmd.legacy_home {
-                let lh = PathBuf::from_str(legacy_home).unwrap();
-                if !lh.exists() {
-                    log::error!("Legacy home does not exist ({})", lh.display());
-                }
-                lh
-            } else {
-                #[allow(clippy::redundant_clone)]
-                home.clone()
-            };
-
-            if legacy_home.exists() {
-                let store_path = legacy_home.join("merk");
-                let store = MerkStore::new(store_path);
-                let timestamp = store
-                    .merk()
-                    .get_aux(b"timestamp")?
-                    .map(|ts| i64::decode(ts.as_slice()))
-                    .transpose()?
-                    .unwrap_or_default();
-                drop(store);
-                log::debug!("Legacy timestamp: {}", timestamp);
-
-                let bin_path = legacy_home.join("nomic-v4");
-                had_legacy = bin_path.exists();
-
-                if timestamp < upgrade_time && bin_path.exists()
-                    || cmd.config.legacy_version.is_some()
-                {
-                    if let Some(legacy_version) = cmd.config.legacy_version {
-                        let version = String::from_utf8(
-                            std::process::Command::new(&bin_path)
-                                .arg("--version")
-                                .output()?
-                                .stdout,
-                        )
-                        .unwrap();
-                        let expected = format!("nomic {}", legacy_version);
-                        if version.trim() != expected.as_str() {
-                            log::error!("Legacy binary does not match specified version. Expected '{}', got '{}'", expected, version.trim());
-                            std::process::exit(1);
-                        }
-                    }
-
-                    let mut cmd = std::process::Command::new(bin_path);
-                    cmd.arg("start").env("STOP_TIME", upgrade_time.to_string());
-                    log::info!("Starting legacy node... ({:#?})", cmd);
-                    // TODO: verify output (or return code) of legacy node shows it exited cleanly
-                    cmd.spawn()?.wait()?;
-                } else {
-                    log::info!("Upgrade time has passed");
-                }
-            }
-        }
+        let mut should_migrate = false;
 
         #[cfg(not(feature = "compat"))]
         if let Some(legacy_version) = &cmd.config.legacy_version {
@@ -338,10 +282,10 @@ impl StartCmd {
                     legacy_cmd.args(&cmd.config.tendermint_flags);
                     log::info!("Starting legacy node... ({:#?})", legacy_cmd);
                     let res = legacy_cmd.spawn()?.wait()?;
-                    dbg!(res.signal(), res.stopped_signal(), res.code());
                     match res.code() {
                         Some(138) => {
                             log::info!("Legacy node exited for upgrade");
+                            should_migrate = true;
                         }
                         Some(code) => {
                             log::error!("Legacy node exited unexpectedly");
@@ -441,7 +385,7 @@ impl StartCmd {
             std::fs::write(home.join("tendermint/config/genesis.json"), genesis_bytes)?;
         }
         #[cfg(feature = "compat")]
-        if cmd.migrate || had_legacy {
+        if cmd.migrate || should_migrate {
             node = node.migrate(
                 vec![InnerApp::CONSENSUS_VERSION],
                 #[cfg(feature = "testnet")]
