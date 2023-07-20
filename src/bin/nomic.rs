@@ -239,7 +239,7 @@ impl StartCmd {
         if let Some(legacy_version) = &cmd.config.legacy_version {
             let up_to_date = {
                 let store = MerkStore::new(home.join("merk"));
-                let store_ver = store.merk().get_aux(b"network_version").unwrap();
+                let store_ver = store.merk().get_aux(b"consensus_version").unwrap();
                 if let Some(store_ver) = store_ver {
                     store_ver == vec![InnerApp::CONSENSUS_VERSION]
                 } else {
