@@ -401,6 +401,16 @@ impl StartCmd {
             configure_node(&config_path, |cfg| {
                 cfg["rpc"]["laddr"] = toml_edit::value("tcp://0.0.0.0:26657");
             });
+
+            if !cmd.config.state_sync_rpc.is_empty() {
+                let servers: Vec<_> = cmd
+                    .config
+                    .state_sync_rpc
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect();
+                configure_for_statesync(&home.join("tendermint/config/config.toml"), &servers);
+            }
         } else if cmd.clone_store.is_some() {
             log::warn!(
                 "--clone-store only applies used when initializing a network home, ignoring"
@@ -429,15 +439,6 @@ impl StartCmd {
                 std::fs::read(genesis)?
             };
             std::fs::write(home.join("tendermint/config/genesis.json"), genesis_bytes)?;
-        }
-        if !cmd.config.state_sync_rpc.is_empty() {
-            let servers: Vec<_> = cmd
-                .config
-                .state_sync_rpc
-                .iter()
-                .map(|s| s.as_str())
-                .collect();
-            configure_for_statesync(&home.join("tendermint/config/config.toml"), &servers);
         }
         #[cfg(feature = "compat")]
         if cmd.migrate || had_legacy {
