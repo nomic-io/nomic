@@ -17,9 +17,29 @@ const MAX_STAKED: u64 = 1_000_000_000;
 #[cfg(feature = "full")]
 const AIRDROP_II_TOTAL: u64 = 3_500_000_000_000;
 
-#[orga]
+#[orga(version = 1)]
 pub struct Airdrop {
+    #[cfg(not(feature = "testnet"))]
+    #[orga(version(V0))]
+    x: u8,
+    #[cfg(not(feature = "testnet"))]
+    #[orga(version(V0))]
+    #[state(prefix(2))]
     accounts: Map<Address, Account>,
+    #[cfg(not(feature = "testnet"))]
+    #[orga(version(V1))]
+    accounts: Map<Address, Account>,
+
+    #[cfg(feature = "testnet")]
+    accounts: Map<Address, Account>,
+}
+
+impl MigrateFrom<AirdropV0> for AirdropV1 {
+    fn migrate_from(value: AirdropV0) -> Result<Self> {
+        Ok(Self {
+            accounts: value.accounts,
+        })
+    }
 }
 
 type Recipients = Vec<(Address, Vec<(u64, u64)>, u64)>;
