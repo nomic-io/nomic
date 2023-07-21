@@ -458,8 +458,11 @@ fn edit_block_time(cfg_path: &PathBuf, timeout_commit: &str) {
 
 fn configure_for_statesync(cfg_path: &PathBuf, rpc_servers: &[&str]) {
     log::info!("Getting bootstrap state for Tendermint light client...");
-    let (height, hash) =
-        block_on(get_bootstrap_state(rpc_servers)).expect("Failed to bootstrap state");
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let (height, hash) = rt
+        .block_on(get_bootstrap_state(rpc_servers))
+        .expect("Failed to bootstrap state");
     log::info!(
         "Configuring light client at height {} with hash {}",
         height,
