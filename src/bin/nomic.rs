@@ -10,7 +10,7 @@ use futures::executor::block_on;
 use nomic::app::DepositCommitment;
 use nomic::app::InnerApp;
 use nomic::app::Nom;
-use nomic::app_client_testnet as app_client;
+use nomic::app_client_testnet;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
 use nomic::network::Network;
@@ -47,6 +47,10 @@ const BANNER: &str = r#"
 //         .unwrap()
 //         .as_secs() as i64
 // }
+
+fn app_client() -> AppClient<app::InnerApp, app::InnerApp, HttpClient, app::Nom, SimpleWallet> {
+    app_client_testnet().with_wallet(wallet())
+}
 
 fn wallet() -> SimpleWallet {
     let path = home::home_dir().unwrap().join(".orga-wallet");
