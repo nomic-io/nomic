@@ -6,7 +6,6 @@
 
 use bitcoind::bitcoincore_rpc::{Auth, Client as BtcClient};
 use clap::Parser;
-use futures::executor::block_on;
 use nomic::app::DepositCommitment;
 use nomic::app::InnerApp;
 use nomic::app::{self, Nom};
