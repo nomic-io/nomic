@@ -24,10 +24,8 @@ use orga::plugins::Time;
 use orga::plugins::Validators;
 use orga::Error as OrgaError;
 
-#[cfg(feature = "full")]
 use super::threshold_sig::VersionedPubkey;
 use super::ConsensusKey;
-#[cfg(feature = "full")]
 use super::Xpub;
 
 pub const MAX_DEPOSIT_AGE: u64 = 60 * 60 * 24 * 5;
