@@ -1,3 +1,5 @@
+#![cfg(not(target_arch = "wasm32"))]
+
 #[cfg(feature = "full")]
 use crate::app::App;
 use crate::app::Nom;

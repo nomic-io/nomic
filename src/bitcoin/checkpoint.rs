@@ -10,13 +10,11 @@ use crate::bitcoin::{signatory::derive_pubkey, Nbtc};
 use crate::error::{Error, Result};
 use bitcoin::hashes::Hash;
 use bitcoin::{
-    blockdata::transaction::EcdsaSighashType, hashes::hex::ToHex, PackedLockTime, Sequence,
-    Transaction, TxIn, TxOut,
+    blockdata::transaction::EcdsaSighashType, PackedLockTime, Sequence, Transaction, TxIn, TxOut,
 };
 use derive_more::{Deref, DerefMut};
 use log::info;
 use orga::coins::Accounts;
-use orga::context::Context;
 #[cfg(feature = "full")]
 use orga::context::GetContext;
 #[cfg(feature = "full")]
@@ -34,8 +32,8 @@ use orga::{
 
 use orga::{describe::Describe, store::Store};
 use serde::{Deserialize, Serialize};
+use std::convert::TryFrom;
 use std::ops::{Deref, DerefMut};
-use std::{convert::TryFrom, str::FromStr};
 
 #[derive(Debug, Encode, Decode, Default, Serialize, Deserialize)]
 pub enum CheckpointStatus {
@@ -324,8 +322,6 @@ pub struct Checkpoint {
 
     #[orga(version(V1))]
     pub batches: Deque<Batch>,
-    #[orga(version(V1))]
-    signed_batches: u16,
 
     pub sigset: SignatorySet,
 }
@@ -340,9 +336,8 @@ impl MigrateFrom<CheckpointV0> for CheckpointV1 {
         };
 
         let mut batches = Deque::default();
-        for _ in 0..=2 {
-            batches.push_back(Batch::default())?;
-        }
+        batches.push_back(Batch::default())?;
+        batches.push_back(Batch::default())?;
 
         let mut batch = Batch::default();
         if bitcoin_tx.signed() {
@@ -352,17 +347,10 @@ impl MigrateFrom<CheckpointV0> for CheckpointV1 {
 
         batches.push_back(batch)?;
 
-        let signed_batches = match value.status {
-            CheckpointStatus::Complete => 3,
-            CheckpointStatus::Signing => 2,
-            CheckpointStatus::Building => 0,
-        };
-
         Ok(Self {
             status: value.status,
             sigset: value.sigset,
             batches,
-            signed_batches,
         })
     }
 }
@@ -373,16 +361,16 @@ impl Checkpoint {
         let mut checkpoint = Checkpoint {
             status: CheckpointStatus::default(),
             batches: Deque::default(),
-            signed_batches: 0,
             sigset,
         };
 
         let disbursal_batch = Batch::default();
         checkpoint.batches.push_front(disbursal_batch)?;
 
-        let intermediate_tx = BitcoinTx::default();
+        #[allow(unused_mut)]
         let mut intermediate_tx_batch = Batch::default();
-        intermediate_tx_batch.push_back(intermediate_tx)?;
+        #[cfg(feature = "emergency-disbursal")]
+        intermediate_tx_batch.push_back(BitcoinTx::default())?;
         checkpoint.batches.push_back(intermediate_tx_batch)?;
 
         let checkpoint_tx = BitcoinTx::default();
@@ -437,20 +425,33 @@ impl Checkpoint {
         Ok(msgs)
     }
 
+    fn signed_batches(&self) -> Result<u64> {
+        let mut signed_batches = 0;
+        for batch in self.batches.iter()? {
+            if batch?.signed() {
+                signed_batches += 1;
+            } else {
+                break;
+            }
+        }
+
+        Ok(signed_batches)
+    }
+
     pub fn current_batch(&self) -> Result<Option<Ref<Batch>>> {
-        if self.signed() {
+        if self.signed()? {
             return Ok(None);
         }
 
-        Ok(Some(self.batches.get(self.signed_batches as u64)?.unwrap()))
+        Ok(Some(self.batches.get(self.signed_batches()?)?.unwrap()))
     }
 
     pub fn create_time(&self) -> u64 {
         self.sigset.create_time()
     }
 
-    pub fn signed(&self) -> bool {
-        self.signed_batches as u64 == self.batches.len()
+    pub fn signed(&self) -> Result<bool> {
+        Ok(self.signed_batches()? == self.batches.len())
     }
 }
 
@@ -584,15 +585,11 @@ impl<'a> SigningCheckpointMut<'a> {
             return Err(OrgaError::App("Excess signatures supplied".to_string()).into());
         }
 
-        if batch.signed() {
-            self.signed_batches += 1;
-        }
-
         Ok(())
     }
 
-    pub fn signed(&self) -> bool {
-        self.batches.len() == self.signed_batches as u64
+    pub fn signed(&self) -> Result<bool> {
+        Ok(self.batches.len() == self.signed_batches()?)
     }
 
     pub fn advance(self) -> Result<()> {
@@ -604,10 +601,10 @@ impl<'a> SigningCheckpointMut<'a> {
     }
 
     pub fn current_batch_mut(&mut self) -> Result<Option<ChildMut<u64, Batch>>> {
-        if self.signed() {
+        if self.signed()? {
             return Ok(None);
         }
-        let signed_batches = self.signed_batches as u64;
+        let signed_batches = self.signed_batches()?;
         let batch = self.batches.get_mut(signed_batches)?.unwrap();
 
         Ok(Some(batch))
@@ -724,6 +721,7 @@ impl<'a> BuildingCheckpointMut<'a> {
         {
             //TODO: Pull bitcoin config from state
             let bitcoin_config = super::Bitcoin::config();
+            use orga::context::Context;
             let time = Context::resolve::<Time>()
                 .ok_or_else(|| OrgaError::Coins("No Time context found".into()))?;
 
@@ -751,6 +749,8 @@ impl<'a> BuildingCheckpointMut<'a> {
                 }
 
                 //TODO: Move address to script logic to a function
+                use bitcoin::hashes::hex::ToHex;
+                use std::str::FromStr;
                 let hash =
                     bitcoin::hashes::hash160::Hash::from_str(address.bytes().to_hex().as_str())
                         .map_err(|err| Error::BitcoinPubkeyHash(err.to_string()))?;
@@ -820,6 +820,7 @@ impl<'a> BuildingCheckpointMut<'a> {
         Ok(())
     }
 
+    #[allow(unused_variables)]
     pub fn advance(
         mut self,
         nbtc_accounts: &Accounts<Nbtc>,
@@ -867,7 +868,15 @@ impl<'a> BuildingCheckpointMut<'a> {
             out_amount += output.value;
         }
 
-        let fee = checkpoint_tx.vsize()? * config.fee_rate;
+        let est_vsize = checkpoint_tx.vsize()?
+            + checkpoint_tx
+                .input
+                .iter()?
+                .fold(Ok(0), |sum: Result<u64>, input| {
+                    Ok(sum? + input?.est_witness_vsize)
+                })?;
+
+        let fee = est_vsize * config.fee_rate;
         let reserve_value = in_amount
             .checked_sub(out_amount + fee)
             .ok_or_else(|| OrgaError::App("Insufficient funds to cover fees".to_string()))?;
@@ -1023,23 +1032,29 @@ impl CheckpointQueue {
 
     #[query]
     pub fn emergency_disbursal_txs(&self) -> Result<Vec<Adapter<bitcoin::Transaction>>> {
-        let mut vec = vec![];
+        #[cfg(not(feature = "emergency-disbursal"))]
+        unimplemented!();
 
-        if let Some(completed) = self.completed()?.last() {
-            let intermediate_tx_batch = completed
-                .batches
-                .get(BatchType::IntermediateTx as u64)?
-                .unwrap();
-            let intermediate_tx = intermediate_tx_batch.get(0)?.unwrap();
-            vec.push(Adapter::new(intermediate_tx.to_bitcoin_tx()?));
+        #[cfg(feature = "emergency-disbursal")]
+        {
+            let mut vec = vec![];
 
-            let disbursal_batch = completed.batches.get(BatchType::Disbursal as u64)?.unwrap();
-            for tx in disbursal_batch.iter()? {
-                vec.push(Adapter::new(tx?.to_bitcoin_tx()?));
+            if let Some(completed) = self.completed()?.last() {
+                let intermediate_tx_batch = completed
+                    .batches
+                    .get(BatchType::IntermediateTx as u64)?
+                    .unwrap();
+                let intermediate_tx = intermediate_tx_batch.get(0)?.unwrap();
+                vec.push(Adapter::new(intermediate_tx.to_bitcoin_tx()?));
+
+                let disbursal_batch = completed.batches.get(BatchType::Disbursal as u64)?.unwrap();
+                for tx in disbursal_batch.iter()? {
+                    vec.push(Adapter::new(tx?.to_bitcoin_tx()?));
+                }
             }
-        }
 
-        Ok(vec)
+            Ok(vec)
+        }
     }
 
     #[query]
@@ -1221,7 +1236,7 @@ impl CheckpointQueue {
 
         signing.sign(xpub, sigs)?;
 
-        if signing.signed() {
+        if signing.signed()? {
             let checkpoint_tx = signing.checkpoint_tx()?;
             info!("Checkpoint signing complete {:?}", checkpoint_tx);
             signing.advance()?;

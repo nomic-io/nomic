@@ -6,11 +6,10 @@
 
 use bitcoind::bitcoincore_rpc::{Auth, Client as BtcClient};
 use clap::Parser;
-use futures::executor::block_on;
 use nomic::app::DepositCommitment;
 use nomic::app::InnerApp;
-use nomic::app::Nom;
-use nomic::app_client_testnet as app_client;
+use nomic::app::{self, Nom};
+use nomic::app_client_testnet;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
 use nomic::network::Network;
@@ -21,12 +20,11 @@ use orga::macros::build_call;
 use orga::merk::MerkStore;
 use orga::plugins::MIN_FEE;
 use orga::prelude::*;
+use orga::{client::AppClient, tendermint::client::HttpClient};
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 use std::fs::Permissions;
 use std::os::unix::fs::PermissionsExt;
-#[cfg(not(feature = "compat"))]
-use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
 use std::str::FromStr;
 use tendermint_rpc::Client as _;
@@ -49,6 +47,10 @@ const BANNER: &str = r#"
 //         .unwrap()
 //         .as_secs() as i64
 // }
+
+fn app_client() -> AppClient<app::InnerApp, app::InnerApp, HttpClient, app::Nom, SimpleWallet> {
+    app_client_testnet().with_wallet(wallet())
+}
 
 fn wallet() -> SimpleWallet {
     let path = home::home_dir().unwrap().join(".orga-wallet");
@@ -169,13 +171,10 @@ pub struct StartCmd {
     pub unsafe_reset: bool,
     #[clap(long)]
     pub skip_init_chain: bool,
-    #[cfg(feature = "compat")]
-    #[clap(long)]
-    pub legacy_home: Option<String>,
-    #[cfg(feature = "compat")]
     #[clap(long)]
     pub migrate: bool,
-    #[cfg(not(feature = "compat"))]
+    #[clap(long)]
+    pub legacy_home: Option<String>,
     #[clap(long)]
     pub legacy_bin: Option<String>,
     #[clap(long)]
@@ -205,7 +204,6 @@ impl StartCmd {
                 log::error!("Passed in unexpected genesis");
                 std::process::exit(1);
             }
-            #[cfg(feature = "compat")]
             if cmd.config.upgrade_time.is_some() {
                 config.upgrade_time = cmd.config.upgrade_time;
             }
@@ -240,78 +238,17 @@ impl StartCmd {
             std::env::set_var("ORGA_STATIC_VALSET", "true");
         }
 
-        #[cfg(feature = "compat")]
-        let mut had_legacy = false;
-        #[cfg(feature = "compat")]
-        if let Some(upgrade_time) = cmd.config.upgrade_time {
-            let legacy_home = if let Some(ref legacy_home) = cmd.legacy_home {
-                let lh = PathBuf::from_str(legacy_home).unwrap();
-                if !lh.exists() {
-                    log::error!("Legacy home does not exist ({})", lh.display());
-                }
-                lh
-            } else {
-                #[allow(clippy::redundant_clone)]
-                home.clone()
-            };
+        let mut should_migrate = false;
 
-            if legacy_home.exists() {
-                let store_path = legacy_home.join("merk");
-                let store = MerkStore::new(store_path);
-                let timestamp = store
-                    .merk()
-                    .get_aux(b"timestamp")?
-                    .map(|ts| i64::decode(ts.as_slice()))
-                    .transpose()?
-                    .unwrap_or_default();
-                drop(store);
-                log::debug!("Legacy timestamp: {}", timestamp);
-
-                let bin_path = legacy_home.join("nomic-v4");
-                had_legacy = bin_path.exists();
-
-                if timestamp < upgrade_time && bin_path.exists()
-                    || cmd.config.legacy_version.is_some()
-                {
-                    if let Some(legacy_version) = cmd.config.legacy_version {
-                        let version = String::from_utf8(
-                            std::process::Command::new(&bin_path)
-                                .arg("--version")
-                                .output()?
-                                .stdout,
-                        )
-                        .unwrap();
-                        let expected = format!("nomic {}", legacy_version);
-                        if version.trim() != expected.as_str() {
-                            log::error!("Legacy binary does not match specified version. Expected '{}', got '{}'", expected, version.trim());
-                            std::process::exit(1);
-                        }
-                    }
-
-                    let mut cmd = std::process::Command::new(bin_path);
-                    cmd.arg("start").env("STOP_TIME", upgrade_time.to_string());
-                    log::info!("Starting legacy node... ({:#?})", cmd);
-                    // TODO: verify output (or return code) of legacy node shows it exited cleanly
-                    cmd.spawn()?.wait()?;
-                } else {
-                    log::info!("Upgrade time has passed");
-                }
-            }
-        }
-
-        #[cfg(not(feature = "compat"))]
         if let Some(legacy_version) = &cmd.config.legacy_version {
-            let version_hex = hex::encode([InnerApp::CONSENSUS_VERSION]);
-
-            let net_ver_path = home.join("network_version");
-            let up_to_date = if net_ver_path.exists() {
-                let net_ver = String::from_utf8(std::fs::read(net_ver_path).unwrap())
-                    .unwrap()
-                    .trim()
-                    .to_string();
-                version_hex == net_ver
-            } else {
-                false
+            let up_to_date = {
+                let store = MerkStore::new(home.join("merk"));
+                let store_ver = store.merk().get_aux(b"consensus_version").unwrap();
+                if let Some(store_ver) = store_ver {
+                    store_ver == vec![InnerApp::CONSENSUS_VERSION]
+                } else {
+                    false
+                }
             };
 
             if up_to_date {
@@ -326,6 +263,7 @@ impl StartCmd {
                 if !legacy_bin.exists() {
                     log::warn!("Legacy binary does not exist, attempting to skip ahead");
                 } else {
+                    let version_hex = hex::encode([InnerApp::CONSENSUS_VERSION]);
                     let mut legacy_cmd = std::process::Command::new(legacy_bin);
                     legacy_cmd.args([
                         "start",
@@ -338,10 +276,10 @@ impl StartCmd {
                     legacy_cmd.args(&cmd.config.tendermint_flags);
                     log::info!("Starting legacy node... ({:#?})", legacy_cmd);
                     let res = legacy_cmd.spawn()?.wait()?;
-                    dbg!(res.signal(), res.stopped_signal(), res.code());
                     match res.code() {
                         Some(138) => {
                             log::info!("Legacy node exited for upgrade");
+                            should_migrate = true;
                         }
                         Some(code) => {
                             log::error!("Legacy node exited unexpectedly");
@@ -401,6 +339,16 @@ impl StartCmd {
             configure_node(&config_path, |cfg| {
                 cfg["rpc"]["laddr"] = toml_edit::value("tcp://0.0.0.0:26657");
             });
+
+            if !cmd.config.state_sync_rpc.is_empty() {
+                let servers: Vec<_> = cmd
+                    .config
+                    .state_sync_rpc
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect();
+                configure_for_statesync(&home.join("tendermint/config/config.toml"), &servers);
+            }
         } else if cmd.clone_store.is_some() {
             log::warn!(
                 "--clone-store only applies used when initializing a network home, ignoring"
@@ -430,18 +378,14 @@ impl StartCmd {
             };
             std::fs::write(home.join("tendermint/config/genesis.json"), genesis_bytes)?;
         }
-        if !cmd.config.state_sync_rpc.is_empty() {
-            let servers: Vec<_> = cmd
-                .config
-                .state_sync_rpc
-                .iter()
-                .map(|s| s.as_str())
-                .collect();
-            configure_for_statesync(&home.join("tendermint/config/config.toml"), &servers);
-        }
-        #[cfg(feature = "compat")]
-        if cmd.migrate || had_legacy {
-            node = node.migrate(vec![InnerApp::CONSENSUS_VERSION]);
+        if cmd.migrate || should_migrate {
+            node = node.migrate(
+                vec![InnerApp::CONSENSUS_VERSION],
+                #[cfg(feature = "testnet")]
+                false,
+                #[cfg(not(feature = "testnet"))]
+                true,
+            );
         }
         if cmd.skip_init_chain {
             node = node.skip_init_chain();
@@ -513,8 +457,11 @@ fn edit_block_time(cfg_path: &PathBuf, timeout_commit: &str) {
 
 fn configure_for_statesync(cfg_path: &PathBuf, rpc_servers: &[&str]) {
     log::info!("Getting bootstrap state for Tendermint light client...");
-    let (height, hash) =
-        block_on(get_bootstrap_state(rpc_servers)).expect("Failed to bootstrap state");
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let (height, hash) = rt
+        .block_on(get_bootstrap_state(rpc_servers))
+        .expect("Failed to bootstrap state");
     log::info!(
         "Configuring light client at height {} with hash {}",
         height,
