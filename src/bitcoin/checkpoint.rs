@@ -868,7 +868,12 @@ impl<'a> BuildingCheckpointMut<'a> {
             out_amount += output.value;
         }
 
-        let fee = checkpoint_tx.vsize()? * config.fee_rate;
+        let est_vsize = checkpoint_tx.vsize()? + checkpoint_tx.input.iter()?.fold(
+            Ok(0),
+            |sum: Result<u64>, input| Ok(sum? + input?.est_witness_vsize),
+        )?;
+
+        let fee = est_vsize * config.fee_rate;
         let reserve_value = in_amount
             .checked_sub(out_amount + fee)
             .ok_or_else(|| OrgaError::App("Insufficient funds to cover fees".to_string()))?;

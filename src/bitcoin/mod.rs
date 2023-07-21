@@ -401,11 +401,12 @@ impl Bitcoin {
             .unwrap();
 
         let mut checkpoint_tx = building_checkpoint_batch.get_mut(0)?.unwrap();
+        let input = Input::new(prevout, &sigset, dest, output.value)?;
+        let input_size = input.est_witness_vsize;
         checkpoint_tx
             .input
-            .push_back(Input::new(prevout, &sigset, dest, output.value)?)?;
+            .push_back(input)?;
 
-        let input_size = 40 + sigset.est_witness_vsize();
         let fee = input_size * self.checkpoints.config().fee_rate;
 
         let value = output.value.checked_sub(fee).ok_or_else(|| {
