@@ -2,7 +2,7 @@
 extern crate rocket;
 
 use nomic::{
-    app::{App, InnerApp, Nom, CHAIN_ID},
+    app::{App, InnerApp, Nom},
     app_client_testnet,
     orga::{
         coins::{Address, Amount, Decimal},
