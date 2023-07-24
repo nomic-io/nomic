@@ -272,6 +272,21 @@ pub async fn claim_incoming_ibc_btc(address: String) -> Result<String, JsError> 
     .await
 }
 
+#[wasm_bindgen]
+pub async fn set_recovery_address(address: String, recovery_address: String) -> Result<String, JsError> {
+    let mut value = serde_json::Map::new();
+    value.insert("recovery_address".to_string(), recovery_address.into());
+
+    gen_call_bytes(
+        address,
+        sdk::Msg {
+            type_: "nomic/MsgSetRecoveryAddress".to_string(),
+            value: value.into(),
+        },
+    )
+    .await
+}
+
 //bytes
 #[wasm_bindgen]
 pub async fn delegate(from_addr: String, to_addr: String, amount: u64) -> Result<String, JsError> {
