@@ -26,12 +26,7 @@ use wasm_bindgen_futures::JsFuture;
 use web_client::WebClient;
 use web_sys::{Request, RequestInit, RequestMode, Response};
 
-#[cfg(all(feature = "mainnet", not(feature = "testnet"), not(feature = "devnet")))]
-const BITCOIN_NETWORK: bitcoin::Network = ::bitcoin::Network::Bitcoin;
-#[cfg(all(feature = "testnet", not(feature = "mainnet"), not(feature = "devnet")))]
 const BITCOIN_NETWORK: bitcoin::Network = ::bitcoin::Network::Testnet;
-#[cfg(all(feature = "devnet", not(feature = "mainnet"), not(feature = "testnet")))]
-const BITCOIN_NETWORK: bitcoin::Network = ::bitcoin::Network::Regtest;
 
 #[wasm_bindgen(start)]
 pub fn main() -> std::result::Result<(), JsValue> {
@@ -362,31 +357,11 @@ fn parse_part(part: nomic::airdrop::Part) -> AirdropDetails {
     }
 }
 
-#[cfg(feature = "testnet")]
 #[wasm_bindgen(js_name = airdropBalances)]
 pub async fn airdrop_balances(addr: String) -> Result<Airdrop, JsError> {
     let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
     if let Some(account) = app_client().query(|app| app.airdrop.get(address)).await? {
-        Ok(Airdrop {
-            airdrop1: parse_part(account.airdrop1),
-            btc_deposit: parse_part(account.btc_deposit),
-            btc_withdraw: parse_part(account.btc_withdraw),
-            ibc_transfer: parse_part(account.ibc_transfer),
-            // testnet_participation: parse_part(account.testnet_participation),
-        })
-    } else {
-        Ok(Airdrop::default())
-    }
-}
-
-#[cfg(not(feature = "testnet"))]
-#[wasm_bindgen(js_name = airdropBalances)]
-pub async fn airdrop_balances(addr: String) -> Result<Airdrop, JsError> {
-    let client: WebClient<App> = WebClient::new();
-    let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
-
-    if let Some(account) = client.airdrop.get(address).await?? {
         Ok(Airdrop {
             airdrop1: parse_part(account.airdrop1),
             btc_deposit: parse_part(account.btc_deposit),

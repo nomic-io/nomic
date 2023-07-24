@@ -17,8 +17,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::future::Future;
 use std::sync::Arc;
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
 use tokio::join;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::Mutex;
@@ -273,6 +271,7 @@ impl Relayer {
         Ok(tip)
     }
 
+    #[cfg(feature = "emergency-disbursal")]
     pub async fn start_emergency_disbursal_transaction_relay(&mut self) -> Result<()> {
         info!("Starting emergency disbursal transaction relay...");
 
@@ -287,7 +286,10 @@ impl Relayer {
         }
     }
 
+    #[cfg(feature = "emergency-disbursal")]
     async fn relay_emergency_disbursal_transactions(&mut self) -> Result<()> {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
         let mut relayed = HashSet::new();
         loop {
             let disbursal_txs = app_client_testnet()
