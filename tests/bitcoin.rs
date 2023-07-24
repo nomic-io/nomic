@@ -16,7 +16,7 @@ use nomic::error::{Error, Result};
 use nomic::utils::*;
 use nomic::utils::{
     declare_validator, poll_for_blocks, populate_bitcoin_block, retry, setup_test_app,
-    setup_test_signer, setup_time_context, test_bitcoin_client, KeyData,
+    setup_test_signer, setup_time_context, test_bitcoin_client, KeyData, client_provider
 };
 use orga::abci::Node;
 use orga::client::wallet::DerivedKey;
@@ -137,12 +137,6 @@ async fn withdraw_bitcoin(
         )
         .await?;
     Ok(())
-}
-
-fn client_provider() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, DerivedKey> {
-    let val_priv_key = load_privkey().unwrap();
-    let wallet = DerivedKey::from_secret_key(val_priv_key);
-    app_client_testnet().with_wallet(wallet)
 }
 
 #[tokio::test]

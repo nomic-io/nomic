@@ -28,6 +28,7 @@ use chrono::{TimeZone, Utc};
 use ed::Encode;
 #[cfg(feature = "full")]
 use log::info;
+use orga::client::AppClient;
 use orga::coins::staking::{Commission, Declaration};
 use orga::coins::{Address, Coin, Decimal};
 use orga::context::Context;
@@ -140,6 +141,12 @@ pub fn load_privkey(dir: &Path) -> Result<SecretKey> {
         std::fs::write(&keypair_path, privkey.secret_bytes())?;
         Ok(privkey)
     }
+}
+
+pub fn client_provider() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, DerivedKey> {
+    let val_priv_key = orga::plugins::load_privkey().unwrap();
+    let wallet = DerivedKey::from_secret_key(val_priv_key);
+    app_client_testnet().with_wallet(wallet)
 }
 
 pub fn load_consensus_key(dir: &Path) -> Result<[u8; 32]> {
