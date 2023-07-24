@@ -876,6 +876,28 @@ impl ConvertSdkTx for InnerApp {
                         Ok(PaidCall { payer, paid })
                     }
 
+                    "nomic/MsgSetRecoveryAddress" => {
+                        let msg = msg
+                            .value
+                            .as_object()
+                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
+
+                        let recovery_addr: bitcoin::Address = msg["recovery_address"]
+                            .as_str()
+                            .ok_or_else(|| Error::App("Invalid recovery address".to_string()))?
+                            .parse()
+                            .map_err(|_| Error::App("Invalid recovery address".to_string()))?;
+
+                        let script = crate::bitcoin::adapter::Adapter::new(
+                            recovery_addr.script_pubkey(),
+                        );
+
+                        let payer = build_call!(self.bitcoin.set_recovery_script(script.clone()));
+                        let paid = build_call!(self.app_noop());
+
+                        Ok(PaidCall { payer, paid })
+                    }
+
                     _ => Err(Error::App("Unsupported message type".into())),
                 }
             }
