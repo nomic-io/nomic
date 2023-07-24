@@ -10,7 +10,7 @@ use crate::error::Error;
 use crate::types::*;
 // use crate::web_client::WebClient;
 use js_sys::{Array, Uint8Array};
-use nomic::app::{App, DepositCommitment, InnerApp, Nom, CHAIN_ID};
+use nomic::app::{App, DepositCommitment, InnerApp, Nom};
 use nomic::bitcoin::Nbtc;
 use nomic::orga::client::wallet::Unsigned;
 use nomic::orga::client::AppClient;
@@ -600,7 +600,11 @@ pub async fn ibc_transfer_out(
     .await
 }
 
-async fn gen_call_bytes(address: String, msg: sdk::Msg) -> Result<String, JsError> {
+async fn gen_call_bytes(
+    chain_id: String,
+    address: String,
+    msg: sdk::Msg,
+) -> Result<String, JsError> {
     let address = address
         .parse()
         .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
@@ -610,7 +614,7 @@ async fn gen_call_bytes(address: String, msg: sdk::Msg) -> Result<String, JsErro
         .await?;
     let sign_doc = sdk::SignDoc {
         account_number: "0".to_string(),
-        chain_id: CHAIN_ID.to_string(),
+        chain_id,
         //does this fee have to be a vec
         fee: sdk::Fee {
             amount: vec![sdk::Coin {

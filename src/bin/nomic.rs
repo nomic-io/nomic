@@ -978,6 +978,10 @@ pub struct RelayerCmd {
 
     #[clap(long)]
     path: Option<String>,
+
+    // TODO: use same config/network as StartCmd
+    #[clap(long)]
+    chain_id: Option<String>,
 }
 
 impl RelayerCmd {
@@ -1004,14 +1008,22 @@ impl RelayerCmd {
         let mut relayer = create_relayer().await;
         let headers = relayer.start_header_relay();
 
+        if self.path.is_none() && self.chain_id.is_none() {
+            return Err(orga::Error::App(
+                "Either --path or --chain-id must be specified".to_string(),
+            )
+            .into());
+        }
+
         let relayer_dir_path = self
             .path
             .as_ref()
             .map(PathBuf::from)
-            .unwrap_or_else(|| Node::home(nomic::app::CHAIN_ID).join("relayer"));
+            .unwrap_or_else(|| Node::home(self.chain_id.as_ref().unwrap()).join("relayer"));
         if !relayer_dir_path.exists() {
             std::fs::create_dir(&relayer_dir_path)?;
         }
+
         let relayer = create_relayer().await;
         let deposits = relayer.start_deposit_relay(relayer_dir_path);
 
@@ -1029,6 +1041,11 @@ pub struct SignerCmd {
     /// Path to the signatory private key
     #[clap(short, long)]
     path: Option<String>,
+
+    // TODO: use same config/network as StartCmd
+    #[clap(long)]
+    chain_id: Option<String>,
+
     /// Limits the fraction of the total reserve that may be withdrawn within
     /// the trailing 24-hour period
     #[clap(long, default_value_t = 0.04)]
@@ -1043,14 +1060,22 @@ pub struct SignerCmd {
 
 impl SignerCmd {
     async fn run(&self) -> Result<()> {
+        if self.path.is_none() && self.chain_id.is_none() {
+            return Err(orga::Error::App(
+                "Either --path or --chain-id must be specified".to_string(),
+            )
+            .into());
+        }
+
         let signer_dir_path = self
             .path
             .as_ref()
             .map(PathBuf::from)
-            .unwrap_or_else(|| Node::home(nomic::app::CHAIN_ID).join("signer"));
+            .unwrap_or_else(|| Node::home(self.chain_id.as_ref().unwrap()).join("signer"));
         if !signer_dir_path.exists() {
             std::fs::create_dir(&signer_dir_path)?;
         }
+
         let key_path = signer_dir_path.join("xpriv");
 
         let signer = Signer::load_or_generate(
