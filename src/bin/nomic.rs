@@ -4,9 +4,11 @@
 #![feature(async_closure)]
 #![feature(never_type)]
 
+use bitcoind::{Conf, BitcoinD};
 use bitcoind::bitcoincore_rpc::{Auth, Client as BtcClient};
 use clap::Parser;
 use futures::executor::block_on;
+use log::info;
 use nomic::app::DepositCommitment;
 use nomic::app::InnerApp;
 use nomic::app::{self, Nom};
@@ -14,8 +16,9 @@ use nomic::app_client_testnet;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
 use nomic::network::Network;
+use nomic::utils::{client_provider, declare_validator, populate_bitcoin_block, setup_time_context, setup_test_app, test_bitcoin_client, poll_for_signatory_key, setup_test_signer, poll_for_blocks};
 use orga::abci::Node;
-use orga::client::wallet::{SimpleWallet, Wallet};
+use orga::client::wallet::{SimpleWallet, Wallet, DerivedKey};
 use orga::coins::{Address, Commission, Decimal, Declaration, Symbol};
 use orga::macros::build_call;
 use orga::merk::MerkStore;
@@ -23,6 +26,7 @@ use orga::plugins::MIN_FEE;
 use orga::prelude::*;
 use orga::{client::AppClient, tendermint::client::HttpClient};
 use serde::{Deserialize, Serialize};
+use tempfile::tempdir;
 use std::convert::TryInto;
 use std::fs::Permissions;
 use std::os::unix::fs::PermissionsExt;
@@ -1306,74 +1310,65 @@ pub struct DevnetCmd {}
 
 impl DevnetCmd {
     async fn run(&self) -> Result<()> {
-        todo!();
-        // // pretty_env_logger::init();
-        // let genesis_time = Utc.with_ymd_and_hms(2022, 10, 5, 0, 0, 0).unwrap();
-        // let ctx = Time::from_seconds(genesis_time.timestamp());
-        // Context::add(ctx);
+        setup_time_context();
 
-        // let home = tempdir().unwrap();
-        // let path = home.into_path();
+        let mut conf = Conf::default();
+        conf.args.push("-txindex");
+        let bitcoind = BitcoinD::with_conf(bitcoind::downloaded_exe_path().unwrap(), &conf).unwrap();
 
-        // let mut conf = Conf::default();
-        // conf.args.push("-txindex");
-        // let bitcoind =
-        //     BitcoinD::with_conf(bitcoind::downloaded_exe_path().unwrap(), &conf).unwrap();
+        let block_data = populate_bitcoin_block(&bitcoind);
 
-        // let block_data = populate_bitcoin_block(&bitcoind);
+        let home = tempdir().unwrap();
+        let path = home.into_path();
 
-        // let node_path = path.clone();
-        // let signer_path = path.clone();
-        // let drop_path = path.clone();
-        // let header_relayer_path = path.clone();
+        let node_path = path.clone();
+        let signer_path = path.clone();
+        let header_relayer_path = path.clone();
 
-        // std::env::set_var("NOMIC_HOME_DIR", &path);
+        std::env::set_var("NOMIC_HOME_DIR", &path);
 
-        // let _ = setup_test_app(&path, &block_data);
+        setup_test_app(&path, &block_data);
 
-        // std::thread::spawn(move || {
-        //     info!("Starting Nomic node...");
-        //     Node::<nomic::app::App>::new(&node_path, nomic::app::CHAIN_ID, Default::default());
-        // });
+        std::thread::spawn(move || {
+            info!("Starting Nomic node...");
+            Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"), Default::default())
+                .run()
+                .unwrap();
+        });
 
-        // std::thread::spawn(move || {
-        //     info!("Starting rest server...");
-        //     start_rest().unwrap();
-        // });
+        let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind));
+        let headers = relayer.start_header_relay();
 
-        // let relayer_config = RelayerConfig {
-        //     network: bitcoin::Network::Regtest,
-        // };
+        let relayer = Relayer::new(test_bitcoin_client(&bitcoind));
+        let deposits = relayer.start_deposit_relay(&header_relayer_path);
 
-        // let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind).await, app_client())
-        //     .configure(relayer_config.clone());
-        // let headers = relayer.start_header_relay();
+        let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind));
+        let checkpoints = relayer.start_checkpoint_relay();
 
-        // let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind).await, app_client())
-        //     .configure(relayer_config.clone());
-        // let deposits = relayer.start_deposit_relay(&header_relayer_path);
+        #[cfg(feature = "emergency-disbursal")]
+        let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind));
+        #[cfg(feature = "emergency-disbursal")]
+        let disbursal = relayer.start_emergency_disbursal_transaction_relay();
+        #[cfg(not(feature = "emergency-disbursal"))]
+        let disbursal = async { Ok::<(), Error>(()) };
 
-        // let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind).await, app_client())
-        //     .configure(relayer_config.clone());
-        // let checkpoints = relayer.start_checkpoint_relay();
+        let signer = async {
+            poll_for_signatory_key().await;
+            setup_test_signer(&signer_path, client_provider)
+                .start()
+                .await
+        };
 
-        // let signer = async {
-        //     poll_for_blocks().await;
-        //     tokio::time::sleep(Duration::from_secs(20)).await;
-        //     setup_test_signer(&signer_path).start().await
-        // };
+        let declarer = async {
+            let val_priv_key = orga::plugins::load_privkey().unwrap();
+            let wallet = DerivedKey::from_secret_key(val_priv_key);
+            declare_validator(&path, wallet).await.unwrap();
+        };
 
-        // let declarer = async {
-        //     poll_for_blocks().await;
-        //     declare_validator(&path).await.unwrap();
+        poll_for_blocks().await;
+        let _ = futures::join!(headers, deposits, checkpoints, disbursal, signer, declarer);
 
-        //     Err::<(), NomicError>(NomicError::Test("Test completed successfully".to_string()))
-        // };
-
-        // let _ = futures::join!(headers, deposits, checkpoints, signer, declarer);
-        // std::fs::remove_dir_all(drop_path).unwrap();
-
-        // Ok(())
+        Ok(())
     }
 }
 
