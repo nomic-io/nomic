@@ -126,7 +126,7 @@ impl FromArgMatches for Config {
                 Ok("main") => Some(Network::Mainnet),
                 Ok("testnet") => Some(Network::Testnet),
                 _ => {
-                    log::warn!("Building on branch with no default network. Use --network to specify a network.");
+                    log::warn!("Built on branch with no default network. Use --network to specify a network.");
                     None
                 }
             };
