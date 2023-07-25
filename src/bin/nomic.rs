@@ -929,12 +929,8 @@ pub struct RelayerCmd {
     #[clap(short = 'P', long)]
     rpc_pass: Option<String>,
 
-    #[clap(long)]
-    path: Option<String>,
-
-    // TODO: use same config/network as StartCmd
-    #[clap(long)]
-    chain_id: Option<String>,
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 impl RelayerCmd {
@@ -961,18 +957,7 @@ impl RelayerCmd {
         let mut relayer = create_relayer().await;
         let headers = relayer.start_header_relay();
 
-        if self.path.is_none() && self.chain_id.is_none() {
-            return Err(orga::Error::App(
-                "Either --path or --chain-id must be specified".to_string(),
-            )
-            .into());
-        }
-
-        let relayer_dir_path = self
-            .path
-            .as_ref()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| Node::home(self.chain_id.as_ref().unwrap()).join("relayer"));
+        let relayer_dir_path = self.config.home().join("relayer");
         if !relayer_dir_path.exists() {
             std::fs::create_dir(&relayer_dir_path)?;
         }
@@ -991,13 +976,8 @@ impl RelayerCmd {
 
 #[derive(Parser, Debug)]
 pub struct SignerCmd {
-    /// Path to the signatory private key
-    #[clap(short, long)]
-    path: Option<String>,
-
-    // TODO: use same config/network as StartCmd
-    #[clap(long)]
-    chain_id: Option<String>,
+    #[clap(flatten)]
+    config: nomic::network::Config,
 
     /// Limits the fraction of the total reserve that may be withdrawn within
     /// the trailing 24-hour period
@@ -1013,18 +993,7 @@ pub struct SignerCmd {
 
 impl SignerCmd {
     async fn run(&self) -> Result<()> {
-        if self.path.is_none() && self.chain_id.is_none() {
-            return Err(orga::Error::App(
-                "Either --path or --chain-id must be specified".to_string(),
-            )
-            .into());
-        }
-
-        let signer_dir_path = self
-            .path
-            .as_ref()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| Node::home(self.chain_id.as_ref().unwrap()).join("signer"));
+        let signer_dir_path = self.config.home().join("signer");
         if !signer_dir_path.exists() {
             std::fs::create_dir(&signer_dir_path)?;
         }
@@ -1258,13 +1227,13 @@ impl IbcTransferCmd {
 
 #[derive(Parser, Debug)]
 pub struct ExportCmd {
-    #[clap(long)]
-    home: String,
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 impl ExportCmd {
     async fn run(&self) -> Result<()> {
-        let home = PathBuf::from_str(&self.home).unwrap();
+        let home = self.config.home();
 
         let store_path = home.join("merk");
         let store = Store::new(orga::store::BackingStore::Merk(orga::store::Shared::new(
