@@ -187,7 +187,7 @@ pub struct StartCmd {
 impl StartCmd {
     fn run(&self) -> orga::Result<()> {
         let cmd = self.clone();
-        let home = &cmd.config.home();
+        let home = cmd.config.home()?;
 
         if cmd.freeze_valset {
             std::env::set_var("ORGA_STATIC_VALSET", "true");
@@ -364,7 +364,7 @@ impl StartCmd {
 
 // TODO: move to config/nodehome?
 fn legacy_bin(config: &nomic::network::Config) -> Result<Option<PathBuf>> {
-    let home = config.home();
+    let home = config.home()?;
 
     // TODO: skip if specifying node in config
 
@@ -1011,7 +1011,7 @@ impl RelayerCmd {
         let mut relayer = create_relayer().await;
         let headers = relayer.start_header_relay();
 
-        let relayer_dir_path = self.config.home().join("relayer");
+        let relayer_dir_path = self.config.home()?.join("relayer");
         if !relayer_dir_path.exists() {
             std::fs::create_dir(&relayer_dir_path)?;
         }
@@ -1047,7 +1047,7 @@ pub struct SignerCmd {
 
 impl SignerCmd {
     async fn run(&self) -> Result<()> {
-        let signer_dir_path = self.config.home().join("signer");
+        let signer_dir_path = self.config.home()?.join("signer");
         if !signer_dir_path.exists() {
             std::fs::create_dir(&signer_dir_path)?;
         }
@@ -1287,7 +1287,7 @@ pub struct ExportCmd {
 
 impl ExportCmd {
     async fn run(&self) -> Result<()> {
-        let home = self.config.home();
+        let home = self.config.home()?;
 
         let store_path = home.join("merk");
         let store = Store::new(orga::store::BackingStore::Merk(orga::store::Shared::new(
