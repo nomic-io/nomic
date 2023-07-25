@@ -100,12 +100,20 @@ pub enum Command {
 }
 
 impl Command {
-    fn run(&self) -> Result<()> {
+    fn run(&self, config: &nomic::network::Config) -> Result<()> {
         use Command::*;
         let rt = tokio::runtime::Runtime::new().unwrap();
 
         if let Start(cmd) = self {
             return Ok(cmd.run()?);
+        }
+
+        if let Some(legacy_bin) = legacy_bin(config)? {
+            let mut legacy_cmd = std::process::Command::new(legacy_bin);
+            legacy_cmd.args(std::env::args().skip(1));
+            log::debug!("Running legacy binary... ({:#?})", legacy_cmd);
+            legacy_cmd.spawn()?.wait()?;
+            return Ok(());
         }
 
         rt.block_on(async move {
@@ -186,94 +194,31 @@ impl StartCmd {
         }
 
         let mut should_migrate = false;
-
-        if let Some(legacy_version) = &cmd.config.legacy_version {
-            let (up_to_date, initialized) = {
-                if !home.exists() {
-                    (false, false)
-                } else {
-                    let store = MerkStore::new(home.join("merk"));
-                    let store_ver = store.merk().get(b"/version").unwrap();
-                    let utd = if let Some(store_ver) = store_ver {
-                        store_ver == vec![1, InnerApp::CONSENSUS_VERSION]
-                    } else {
-                        false
-                    };
-                    let initialized = store.merk().get_aux(b"height").unwrap().is_some();
-                    (utd, initialized)
+        let legacy_bin = legacy_bin(&cmd.config)?;
+        if let Some(legacy_bin) = legacy_bin {
+            let version_hex = hex::encode([InnerApp::CONSENSUS_VERSION]);
+            let mut legacy_cmd = std::process::Command::new(legacy_bin);
+            legacy_cmd.args([
+                "start",
+                "--signal-version",
+                &version_hex,
+                "--home",
+                home.to_str().unwrap(),
+                "--",
+            ]);
+            legacy_cmd.args(&cmd.config.tendermint_flags);
+            log::info!("Starting legacy node... ({:#?})", legacy_cmd);
+            let res = legacy_cmd.spawn()?.wait()?;
+            match res.code() {
+                Some(138) => {
+                    log::info!("Legacy node exited for upgrade");
+                    should_migrate = true;
                 }
-            };
-
-            if up_to_date {
-                log::info!("Node version matches network version, no need to run legacy binary");
-            } else {
-                let bin_dir = home.join("bin");
-                if !bin_dir.exists() {
-                    log::warn!("Legacy binary does not exist, attempting to skip ahead");
-                } else {
-                    let req = semver::VersionReq::parse(legacy_version).unwrap();
-                    let mut legacy_bin = None;
-                    let mut legacy_ver = None;
-                    for bin in bin_dir.read_dir().unwrap() {
-                        let bin = bin?;
-                        let bin_name = bin.file_name();
-                        if !bin_name
-                            .clone()
-                            .into_string()
-                            .unwrap()
-                            .starts_with("nomic-")
-                        {
-                            continue;
-                        }
-                        let bin_ver = bin_name.to_str().unwrap().trim_start_matches("nomic-");
-                        let bin_ver = semver::Version::parse(bin_ver).unwrap();
-                        if req.matches(&bin_ver) {
-                            if let Some(lv) = &legacy_ver {
-                                if &bin_ver > lv {
-                                    legacy_bin = Some(bin.path());
-                                    legacy_ver = Some(bin_ver);
-                                }
-                            } else {
-                                legacy_bin = Some(bin.path());
-                                legacy_ver = Some(bin_ver);
-                            }
-                        }
-                    }
-
-                    if legacy_bin.is_none() {
-                        if initialized {
-                            return Err(orga::Error::App(format!("Could not find a legacy binary matching version {}, please build and run a compatible version first.", legacy_version)));
-                        } else {
-                            log::warn!("Could not find a legacy binary match, but node is uninitialized, continuing...");
-                        }
-                    } else {
-                        let legacy_bin = legacy_bin.unwrap().display().to_string();
-                        let version_hex = hex::encode([InnerApp::CONSENSUS_VERSION]);
-                        let mut legacy_cmd = std::process::Command::new(legacy_bin);
-                        legacy_cmd.args([
-                            "start",
-                            "--signal-version",
-                            &version_hex,
-                            "--home",
-                            home.to_str().unwrap(),
-                            "--",
-                        ]);
-                        legacy_cmd.args(&cmd.config.tendermint_flags);
-                        log::info!("Starting legacy node... ({:#?})", legacy_cmd);
-                        let res = legacy_cmd.spawn()?.wait()?;
-                        match res.code() {
-                            Some(138) => {
-                                log::info!("Legacy node exited for upgrade");
-                                should_migrate = true;
-                            }
-                            Some(code) => {
-                                log::error!("Legacy node exited unexpectedly");
-                                std::process::exit(code);
-                            }
-                            None => panic!("Legacy node exited unexpectedly"),
-                        }
-                    }
+                Some(code) => {
+                    log::error!("Legacy node exited unexpectedly");
+                    std::process::exit(code);
                 }
+                None => panic!("Legacy node exited unexpectedly"),
             }
         }
 
@@ -415,6 +360,87 @@ impl StartCmd {
             .tendermint_flags(cmd.config.tendermint_flags.clone())
             .run()
     }
+}
+
+// TODO: move to config/nodehome?
+fn legacy_bin(config: &nomic::network::Config) -> Result<Option<PathBuf>> {
+    let home = config.home();
+
+    // TODO: skip if specifying node in config
+
+    if let Some(legacy_version) = &config.legacy_version {
+        let (up_to_date, initialized) = {
+            if !home.exists() {
+                (false, false)
+            } else {
+                let store = MerkStore::new(home.join("merk"));
+                let store_ver = store.merk().get(b"/version").unwrap();
+                let utd = if let Some(store_ver) = store_ver {
+                    store_ver == vec![1, InnerApp::CONSENSUS_VERSION]
+                } else {
+                    false
+                };
+                let initialized = store.merk().get_aux(b"height").unwrap().is_some();
+                (utd, initialized)
+            }
+        };
+
+        if up_to_date {
+            log::debug!("Node version matches network version, no need to run legacy binary");
+        } else {
+            let bin_dir = home.join("bin");
+            if !bin_dir.exists() {
+                log::warn!("Legacy binary does not exist, attempting to skip ahead");
+            } else {
+                let req = semver::VersionReq::parse(legacy_version).unwrap();
+                let mut legacy_bin = None;
+                let mut legacy_ver = None;
+                for bin in bin_dir.read_dir().unwrap() {
+                    let bin = bin?;
+                    let bin_name = bin.file_name();
+                    if !bin_name
+                        .clone()
+                        .into_string()
+                        .unwrap()
+                        .starts_with("nomic-")
+                    {
+                        continue;
+                    }
+                    let bin_ver = bin_name.to_str().unwrap().trim_start_matches("nomic-");
+                    let bin_ver = semver::Version::parse(bin_ver).unwrap();
+                    if req.matches(&bin_ver) {
+                        if let Some(lv) = &legacy_ver {
+                            if &bin_ver > lv {
+                                legacy_bin = Some(bin.path());
+                                legacy_ver = Some(bin_ver);
+                            }
+                        } else {
+                            legacy_bin = Some(bin.path());
+                            legacy_ver = Some(bin_ver);
+                        }
+                    }
+                }
+
+                return if legacy_bin.is_none() {
+                    if initialized {
+                        return Err(orga::Error::App(format!("Could not find a legacy binary matching version {}, please build and run a compatible version first.", legacy_version)).into());
+                    } else {
+                        log::warn!("Could not find a legacy binary match, but node is uninitialized, continuing...");
+                        Ok(None)
+                    }
+                } else {
+                    log::debug!(
+                        "Found legacy binary {:?} matching version {}",
+                        legacy_bin,
+                        legacy_version
+                    );
+                    Ok(legacy_bin)
+                };
+            }
+        }
+    }
+
+    Ok(None)
 }
 
 fn configure_node<P, F>(cfg_path: &P, configure: F)
@@ -1376,7 +1402,7 @@ pub fn main() {
     }));
 
     let opts = Opts::parse();
-    if let Err(err) = opts.cmd.run() {
+    if let Err(err) = opts.cmd.run(&opts.config) {
         log::error!("{}", err);
         std::process::exit(1);
     };

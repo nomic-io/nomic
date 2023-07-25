@@ -73,10 +73,17 @@ pub struct Config(InnerConfig);
 
 impl Config {
     pub fn home(&self) -> PathBuf {
-        self.home
-            .as_ref()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| orga::abci::Node::home(self.chain_id.as_ref().unwrap()))
+        if let Some(home) = self.home.as_ref() {
+            PathBuf::from(home)
+        } else if let Some(chain_id) = self.chain_id.as_ref() {
+            orga::abci::Node::home(chain_id)
+        } else {
+            panic!("Must specify --network, --home, or --chain-id");
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.chain_id.is_none() && self.0.genesis.is_none() && self.0.home.is_none()
     }
 }
 
@@ -107,6 +114,11 @@ impl FromArgMatches for Config {
         matches: &ArgMatches,
     ) -> std::result::Result<(), clap::Error> {
         self.0.update_from_arg_matches(matches)?;
+
+        if self.is_empty() {
+            // TODO: base on build git branch
+            self.0.network = Some(Network::Testnet);
+        }
 
         if let Some(network) = self.0.network {
             let mut net_config = network.config();
@@ -148,6 +160,8 @@ impl FromArgMatches for Config {
 
             self.0 = net_config;
         }
+
+        // TODO: get chain id from genesis
 
         Ok(())
     }
