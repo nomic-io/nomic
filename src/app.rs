@@ -890,9 +890,8 @@ impl ConvertSdkTx for InnerApp {
                             .parse()
                             .map_err(|_| Error::App("Invalid recovery address".to_string()))?;
 
-                        let script = crate::bitcoin::adapter::Adapter::new(
-                            recovery_addr.script_pubkey(),
-                        );
+                        let script =
+                            crate::bitcoin::adapter::Adapter::new(recovery_addr.script_pubkey());
 
                         let funding_amt = MIN_FEE;
                         let payer = build_call!(self.accounts.take_as_funding(funding_amt.into()));
