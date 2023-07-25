@@ -272,8 +272,11 @@ pub async fn claim_incoming_ibc_btc(address: String) -> Result<String, JsError> 
     .await
 }
 
-#[wasm_bindgen]
-pub async fn set_recovery_address(address: String, recovery_address: String) -> Result<String, JsError> {
+#[wasm_bindgen(js_name = setRecoveryAddress)]
+pub async fn set_recovery_address(
+    address: String,
+    recovery_address: String,
+) -> Result<String, JsError> {
     let mut value = serde_json::Map::new();
     value.insert("recovery_address".to_string(), recovery_address.into());
 
