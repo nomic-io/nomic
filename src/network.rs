@@ -3,6 +3,7 @@ use clap::{self, ArgMatches, Args, Command, CommandFactory, ErrorKind, FromArgMa
 use serde::{Deserialize, Serialize};
 use std::{
     ops::{Deref, DerefMut},
+    path::PathBuf,
     str::FromStr,
 };
 
@@ -59,6 +60,8 @@ pub struct InnerConfig {
     pub upgrade_time: Option<i64>,
     #[clap(long, global = true)]
     pub network: Option<Network>,
+    #[clap(long, global = true)]
+    home: Option<String>,
 
     #[clap(global = true)]
     pub tendermint_flags: Vec<String>,
@@ -67,6 +70,15 @@ pub struct InnerConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Config(InnerConfig);
+
+impl Config {
+    pub fn home(&self) -> PathBuf {
+        self.home
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| orga::abci::Node::home(self.chain_id.as_ref().unwrap()))
+    }
+}
 
 impl Deref for Config {
     type Target = InnerConfig;
@@ -117,6 +129,11 @@ impl FromArgMatches for Config {
                     ErrorKind::ArgumentConflict,
                     "Cannot use --upgrade-time with --network",
                 ));
+            } else if arg_config.upgrade_time.is_some() {
+                net_config.upgrade_time = arg_config.upgrade_time;
+            }
+            if arg_config.home.is_some() {
+                net_config.home = arg_config.home.clone();
             }
 
             // TODO: deduplicate
