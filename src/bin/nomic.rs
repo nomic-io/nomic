@@ -373,7 +373,7 @@ fn legacy_bin(config: &nomic::network::Config) -> Result<Option<PathBuf>> {
             if !home.exists() {
                 (false, false)
             } else {
-                let store = MerkStore::new(home.join("merk"));
+                let store = MerkStore::open_readonly(home.join("merk"));
                 let store_ver = store.merk().get(b"/version").unwrap();
                 let utd = if let Some(store_ver) = store_ver {
                     store_ver == vec![1, InnerApp::CONSENSUS_VERSION]
@@ -441,6 +441,31 @@ fn legacy_bin(config: &nomic::network::Config) -> Result<Option<PathBuf>> {
     }
 
     Ok(None)
+}
+
+async fn relaunch_on_migrate(config: &nomic::network::Config) -> Result<()> {
+    let mut initial_ver = None;
+    loop {
+        let home = config.home().unwrap();
+        if !home.exists() {
+            continue;
+        }
+        let store = MerkStore::open_readonly(home.join("merk"));
+        let store_ver = store.merk().get_aux(b"consensus_version").unwrap();
+        if let Some(_) = &initial_ver {
+            if store_ver != initial_ver {
+                log::info!(
+                    "Node has migrated from version {:?} to version {:?}, exiting",
+                    initial_ver,
+                    store_ver
+                );
+                std::process::exit(138);
+            }
+        } else {
+            initial_ver = store_ver;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    }
 }
 
 fn configure_node<P, F>(cfg_path: &P, configure: F)
@@ -1022,7 +1047,9 @@ impl RelayerCmd {
         let mut relayer = create_relayer().await;
         let checkpoints = relayer.start_checkpoint_relay();
 
-        futures::try_join!(headers, deposits, checkpoints).unwrap();
+        let relaunch = relaunch_on_migrate(&self.config);
+
+        futures::try_join!(headers, deposits, checkpoints, relaunch).unwrap();
 
         Ok(())
     }
@@ -1060,9 +1087,12 @@ impl SignerCmd {
             self.max_withdrawal_rate,
             self.max_sigset_change_rate,
             app_client,
-        )?;
+        )?
+        .start();
 
-        signer.start().await?;
+        let relaunch = relaunch_on_migrate(&self.config);
+
+        futures::try_join!(signer, relaunch).unwrap();
 
         Ok(())
     }
