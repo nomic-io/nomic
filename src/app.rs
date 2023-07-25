@@ -892,8 +892,9 @@ impl ConvertSdkTx for InnerApp {
                             recovery_addr.script_pubkey(),
                         );
 
-                        let payer = build_call!(self.bitcoin.set_recovery_script(script.clone()));
-                        let paid = build_call!(self.app_noop());
+                        let funding_amt = MIN_FEE;
+                        let payer = build_call!(self.accounts.take_as_funding(funding_amt.into()));
+                        let paid = build_call!(self.bitcoin.set_recovery_script(script.clone()));
 
                         Ok(PaidCall { payer, paid })
                     }
