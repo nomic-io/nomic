@@ -345,7 +345,8 @@ impl StartCmd {
         }
         if let Some(signal_version) = cmd.signal_version {
             let signal_version = hex::decode(signal_version).unwrap();
-            tokio::spawn(async move {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.spawn(async move {
                 let signal_version = signal_version.clone();
                 let signal_version2 = signal_version.clone();
                 let signal_version3 = signal_version.clone();
