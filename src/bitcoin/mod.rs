@@ -403,9 +403,7 @@ impl Bitcoin {
         let mut checkpoint_tx = building_checkpoint_batch.get_mut(0)?.unwrap();
         let input = Input::new(prevout, &sigset, dest, output.value)?;
         let input_size = input.est_vsize();
-        checkpoint_tx
-            .input
-            .push_back(input)?;
+        checkpoint_tx.input.push_back(input)?;
 
         let fee = input_size * self.checkpoints.config().fee_rate;
 
