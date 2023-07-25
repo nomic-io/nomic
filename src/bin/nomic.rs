@@ -69,6 +69,9 @@ fn my_address() -> Address {
 pub struct Opts {
     #[clap(subcommand)]
     cmd: Command,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 #[derive(Parser, Debug)]
@@ -159,8 +162,7 @@ impl Command {
 pub struct StartCmd {
     #[clap(flatten)]
     config: nomic::network::Config,
-    #[clap(long)]
-    pub network: Option<Network>,
+
     #[clap(long)]
     pub tendermint_logs: bool,
     #[clap(long)]
@@ -191,35 +193,7 @@ pub struct StartCmd {
 
 impl StartCmd {
     fn run(&self) -> orga::Result<()> {
-        let mut cmd = self.clone();
-
-        if let Some(network) = cmd.network {
-            let mut config = network.config();
-
-            if cmd.config.chain_id.is_some() {
-                log::error!("Passed in unexpected chain-id");
-                std::process::exit(1);
-            }
-            if cmd.config.genesis.is_some() {
-                log::error!("Passed in unexpected genesis");
-                std::process::exit(1);
-            }
-            if cmd.config.upgrade_time.is_some() {
-                config.upgrade_time = cmd.config.upgrade_time;
-            }
-
-            // TODO: deduplicate
-            config
-                .state_sync_rpc
-                .extend(cmd.config.state_sync_rpc.into_iter());
-
-            // TODO: should all built-in tmflags get shadowed by user-specified tmflags?
-            config
-                .tendermint_flags
-                .extend(cmd.config.tendermint_flags.into_iter());
-
-            cmd.config = config;
-        }
+        let cmd = self.clone();
 
         let home = cmd.home.map_or_else(
             || match std::env::var("NOMIC_HOME_DIR") {
@@ -370,7 +344,7 @@ impl StartCmd {
         if cmd.unsafe_reset {
             node = node.reset();
         }
-        if let Some(genesis) = cmd.config.genesis {
+        if let Some(genesis) = &cmd.config.genesis {
             let genesis_bytes = if genesis.contains('\n') {
                 genesis.as_bytes().to_vec()
             } else {
