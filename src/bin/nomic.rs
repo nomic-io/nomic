@@ -188,17 +188,19 @@ impl StartCmd {
         let mut should_migrate = false;
 
         if let Some(legacy_version) = &cmd.config.legacy_version {
-            let up_to_date = {
+            let (up_to_date, initialized) = {
                 if !home.exists() {
-                    false
+                    (false, false)
                 } else {
                     let store = MerkStore::new(home.join("merk"));
-                    let store_ver = store.merk().get_aux(b"consensus_version").unwrap();
-                    if let Some(store_ver) = store_ver {
-                        store_ver == vec![InnerApp::CONSENSUS_VERSION]
+                    let store_ver = store.merk().get(b"/version").unwrap();
+                    let utd = if let Some(store_ver) = store_ver {
+                        store_ver == vec![1, InnerApp::CONSENSUS_VERSION]
                     } else {
                         false
-                    }
+                    };
+                    let initialized = store.merk().get_aux(b"height").unwrap().is_some();
+                    (utd, initialized)
                 }
             };
 
@@ -238,8 +240,12 @@ impl StartCmd {
                         }
                     }
 
-                    if legacy_bin.is_none() || !legacy_bin.as_ref().unwrap().exists() {
-                        log::warn!("Legacy binary does not exist, attempting to skip ahead");
+                    if legacy_bin.is_none() {
+                        if initialized {
+                            return Err(orga::Error::App(format!("Could not find a legacy binary matching version {}, please build and run a compatible version first.", legacy_version)));
+                        } else {
+                            log::warn!("Could not find a legacy binary match, but node is uninitialized, continuing...");
+                        }
                     } else {
                         let legacy_bin = legacy_bin.unwrap().display().to_string();
                         let version_hex = hex::encode([InnerApp::CONSENSUS_VERSION]);
