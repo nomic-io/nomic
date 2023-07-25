@@ -2409,6 +2409,7 @@ dependencies = [
  "pretty_env_logger",
  "rand 0.8.5",
  "reqwest",
+ "semver 1.0.18",
  "serde",
  "serde-big-array",
  "serde_json",

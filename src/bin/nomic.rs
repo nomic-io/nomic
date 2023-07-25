@@ -167,8 +167,6 @@ pub struct StartCmd {
     #[clap(long)]
     pub legacy_home: Option<String>,
     #[clap(long)]
-    pub legacy_bin: Option<String>,
-    #[clap(long)]
     pub freeze_valset: bool,
     #[clap(long)]
     pub signal_version: Option<String>,
@@ -207,44 +205,70 @@ impl StartCmd {
             if up_to_date {
                 log::info!("Node version matches network version, no need to run legacy binary");
             } else {
-                let legacy_bin = if let Some(legacy_bin) = cmd.legacy_bin {
-                    PathBuf::from_str(legacy_bin.as_str()).unwrap()
-                } else {
-                    home.join("bin").join(format!("nomic-{}", legacy_version))
-                };
-
-                if !legacy_bin.exists() {
+                let bin_dir = home.join("bin");
+                if !bin_dir.exists() {
                     log::warn!("Legacy binary does not exist, attempting to skip ahead");
                 } else {
-                    let version_hex = hex::encode([InnerApp::CONSENSUS_VERSION]);
-                    let mut legacy_cmd = std::process::Command::new(legacy_bin);
-                    legacy_cmd.args([
-                        "start",
-                        "--signal-version",
-                        &version_hex,
-                        "--home",
-                        home.to_str().unwrap(),
-                        "--",
-                    ]);
-                    legacy_cmd.args(&cmd.config.tendermint_flags);
-                    log::info!("Starting legacy node... ({:#?})", legacy_cmd);
-                    let res = legacy_cmd.spawn()?.wait()?;
-                    match res.code() {
-                        Some(138) => {
-                            log::info!("Legacy node exited for upgrade");
-                            should_migrate = true;
+                    let req = semver::VersionReq::parse(legacy_version).unwrap();
+                    let mut legacy_bin = None;
+                    let mut legacy_ver = None;
+                    for bin in bin_dir.read_dir().unwrap() {
+                        let bin = bin?;
+                        let bin_name = bin.file_name();
+                        if !bin_name
+                            .clone()
+                            .into_string()
+                            .unwrap()
+                            .starts_with("nomic-")
+                        {
+                            continue;
                         }
-                        Some(code) => {
-                            log::error!("Legacy node exited unexpectedly");
-                            std::process::exit(code);
+                        let bin_ver = bin_name.to_str().unwrap().trim_start_matches("nomic-");
+                        let bin_ver = semver::Version::parse(bin_ver).unwrap();
+                        if req.matches(&bin_ver) {
+                            if let Some(lv) = &legacy_ver {
+                                if &bin_ver > lv {
+                                    legacy_bin = Some(bin.path());
+                                    legacy_ver = Some(bin_ver);
+                                }
+                            } else {
+                                legacy_bin = Some(bin.path());
+                                legacy_ver = Some(bin_ver);
+                            }
                         }
-                        None => panic!("Legacy node exited unexpectedly"),
+                    }
+
+                    if legacy_bin.is_none() || !legacy_bin.as_ref().unwrap().exists() {
+                        log::warn!("Legacy binary does not exist, attempting to skip ahead");
+                    } else {
+                        let legacy_bin = legacy_bin.unwrap().display().to_string();
+                        let version_hex = hex::encode([InnerApp::CONSENSUS_VERSION]);
+                        let mut legacy_cmd = std::process::Command::new(legacy_bin);
+                        legacy_cmd.args([
+                            "start",
+                            "--signal-version",
+                            &version_hex,
+                            "--home",
+                            home.to_str().unwrap(),
+                            "--",
+                        ]);
+                        legacy_cmd.args(&cmd.config.tendermint_flags);
+                        log::info!("Starting legacy node... ({:#?})", legacy_cmd);
+                        let res = legacy_cmd.spawn()?.wait()?;
+                        match res.code() {
+                            Some(138) => {
+                                log::info!("Legacy node exited for upgrade");
+                                should_migrate = true;
+                            }
+                            Some(code) => {
+                                log::error!("Legacy node exited unexpectedly");
+                                std::process::exit(code);
+                            }
+                            None => panic!("Legacy node exited unexpectedly"),
+                        }
                     }
                 }
             }
-        } else if cmd.legacy_bin.is_some() {
-            log::error!("--legacy-version is required when specifying --legacy-bin");
-            std::process::exit(1);
         }
 
         println!("{}\nVersion {}\n\n", BANNER, env!("CARGO_PKG_VERSION"));
