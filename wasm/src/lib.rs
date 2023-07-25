@@ -4,10 +4,10 @@ mod error;
 mod types;
 mod web_client;
 
-use std::str::FromStr;
-
 use crate::error::Error;
 use crate::types::*;
+use nomic::orga::Error as OrgaError;
+use std::str::FromStr;
 // use crate::web_client::WebClient;
 use js_sys::{Array, Uint8Array};
 use nomic::app::{App, DepositCommitment, InnerApp, Nom, CHAIN_ID};
@@ -288,6 +288,23 @@ pub async fn set_recovery_address(
         },
     )
     .await
+}
+
+#[wasm_bindgen(js_name = getRecoveryAddress)]
+pub async fn get_recovery_address(address: String) -> Result<String, JsError> {
+    let address = address
+        .parse()
+        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+    Ok(app_client()
+        .query(|app| {
+            Ok(match app.bitcoin.recovery_scripts.get(address)? {
+                Some(script) => bitcoin::Address::from_script(&script, BITCOIN_NETWORK)
+                    .map_err(|e| OrgaError::App(format!("{:?}", e)))?
+                    .to_string(),
+                None => "".to_string(),
+            })
+        })
+        .await?)
 }
 
 //bytes
