@@ -12,7 +12,6 @@ use nomic::app::{self, Nom};
 use nomic::app_client_testnet;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
-use nomic::network::Network;
 use orga::abci::Node;
 use orga::client::wallet::{SimpleWallet, Wallet};
 use orga::coins::{Address, Commission, Decimal, Declaration, Symbol};
@@ -37,16 +36,6 @@ const BANNER: &str = r#"
 ██║ ╚████║ ╚██████╔╝ ██║ ╚═╝ ██║ ██║ ╚██████╗
 ╚═╝  ╚═══╝  ╚═════╝  ╚═╝     ╚═╝ ╚═╝  ╚═════╝
 "#;
-
-// #[cfg(feature = "testnet")]
-// fn now_seconds() -> i64 {
-//     use std::time::SystemTime;
-
-//     SystemTime::now()
-//         .duration_since(SystemTime::UNIX_EPOCH)
-//         .unwrap()
-//         .as_secs() as i64
-// }
 
 fn app_client() -> AppClient<app::InnerApp, app::InnerApp, HttpClient, app::Nom, SimpleWallet> {
     app_client_testnet().with_wallet(wallet())
@@ -180,8 +169,6 @@ pub struct StartCmd {
     #[clap(long)]
     pub legacy_bin: Option<String>,
     #[clap(long)]
-    pub home: Option<String>,
-    #[clap(long)]
     pub freeze_valset: bool,
     #[clap(long)]
     pub signal_version: Option<String>,
@@ -194,19 +181,7 @@ pub struct StartCmd {
 impl StartCmd {
     fn run(&self) -> orga::Result<()> {
         let cmd = self.clone();
-
-        let home = cmd.home.map_or_else(
-            || match std::env::var("NOMIC_HOME_DIR") {
-                Ok(home) => PathBuf::from(home),
-                Err(_) => Node::home(
-                    &cmd.config
-                        .chain_id
-                        .clone()
-                        .expect("Expected a chain-id or home directory to be set"),
-                ),
-            },
-            |home| PathBuf::from_str(&home).unwrap(),
-        );
+        let home = &cmd.config.home();
 
         if cmd.freeze_valset {
             std::env::set_var("ORGA_STATIC_VALSET", "true");
@@ -216,12 +191,16 @@ impl StartCmd {
 
         if let Some(legacy_version) = &cmd.config.legacy_version {
             let up_to_date = {
-                let store = MerkStore::new(home.join("merk"));
-                let store_ver = store.merk().get_aux(b"consensus_version").unwrap();
-                if let Some(store_ver) = store_ver {
-                    store_ver == vec![InnerApp::CONSENSUS_VERSION]
-                } else {
+                if !home.exists() {
                     false
+                } else {
+                    let store = MerkStore::new(home.join("merk"));
+                    let store_ver = store.merk().get_aux(b"consensus_version").unwrap();
+                    if let Some(store_ver) = store_ver {
+                        store_ver == vec![InnerApp::CONSENSUS_VERSION]
+                    } else {
+                        false
+                    }
                 }
             };
 
