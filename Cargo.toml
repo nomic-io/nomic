@@ -60,6 +60,7 @@ feat-ibc = ["orga/feat-ibc"]
 testnet = []
 devnet = ["testnet"]
 emergency-disbursal = []
+legacy-bin = []
 
 [profile.release]
 overflow-checks = true
