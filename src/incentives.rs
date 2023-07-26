@@ -19,6 +19,7 @@ pub struct Account {
     testnet_participation: Part,
 }
 
+#[orga]
 impl Incentives {
     pub fn from_csv(data: &[u8], mut funds: Coin<Nom>) -> Result<Self> {
         let mut accounts = Map::new();
@@ -62,5 +63,33 @@ impl Incentives {
         }
 
         Ok(Incentives { accounts })
+    }
+
+    pub fn signer_acct_mut(&mut self) -> OrgaResult<ChildMut<Address, Account>> {
+        let signer = self
+            .context::<Signer>()
+            .ok_or_else(|| OrgaError::Signer("No Signer context available".into()))?
+            .signer
+            .ok_or_else(|| OrgaError::Coins("Unauthorized account action".into()))?;
+
+        self.accounts
+            .get_mut(signer)?
+            .ok_or_else(|| OrgaError::Coins("No airdrop account for signer".into()))
+    }
+
+    fn pay_as_funding(&mut self, amount: u64) -> Result<()> {
+        let paid = self
+            .context::<Paid>()
+            .ok_or_else(|| OrgaError::Coins("No Paid context found".into()))?;
+
+        Ok(paid.give::<Nom, _>(amount)?)
+    }
+
+    #[call]
+    pub fn claim_testnet_participation_incentives(&mut self) -> OrgaResult<()> {
+        let mut acct = self.signer_acct_mut()?;
+        let amount = acct.testnet_participation.claim()?;
+        self.pay_as_funding(amount)?;
+        Ok(())
     }
 }
