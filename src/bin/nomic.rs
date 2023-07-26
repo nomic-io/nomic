@@ -198,15 +198,8 @@ impl StartCmd {
         if let Some(legacy_bin) = legacy_bin {
             let version_hex = hex::encode([InnerApp::CONSENSUS_VERSION]);
             let mut legacy_cmd = std::process::Command::new(legacy_bin);
-            legacy_cmd.args([
-                "start",
-                "--signal-version",
-                &version_hex,
-                "--home",
-                home.to_str().unwrap(),
-                "--",
-            ]);
-            legacy_cmd.args(&cmd.config.tendermint_flags);
+            legacy_cmd.args(["start", "--signal-version", &version_hex]);
+            legacy_cmd.args(std::env::args().skip(2).collect::<Vec<_>>());
             log::info!("Starting legacy node... ({:#?})", legacy_cmd);
             let res = legacy_cmd.spawn()?.wait()?;
             match res.code() {
