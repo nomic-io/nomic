@@ -5,10 +5,8 @@ use crate::app_client_testnet;
 use crate::bitcoin::{adapter::Adapter, header_queue::WrappedHeader};
 use crate::error::Error;
 use crate::error::Result;
-use crate::utils::sleep;
 use crate::utils::time_now;
 use bitcoin::consensus::{Decodable, Encodable};
-use bitcoin::Network;
 use bitcoin::{hashes::Hash, Block, BlockHash, Transaction};
 use bitcoind::bitcoincore_rpc::json::GetBlockHeaderResult;
 use bitcoind::bitcoincore_rpc::{Client as BitcoinRpcClient, RpcApi};
@@ -34,22 +32,8 @@ where
 
 const HEADER_BATCH_SIZE: usize = 250;
 
-#[derive(Clone)]
-pub struct Config {
-    pub network: Network,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Config {
-            network: Network::Testnet,
-        }
-    }
-}
-
 pub struct Relayer {
     btc_client: BitcoinRpcClient,
-    config: Config,
 
     scripts: Option<WatchedScriptStore>,
 }
@@ -59,15 +43,6 @@ impl Relayer {
         Relayer {
             btc_client,
             scripts: None,
-            config: Config::default(),
-        }
-    }
-
-    pub fn configure(self, config: Config) -> Self {
-        Relayer {
-            btc_client: self.btc_client,
-            scripts: self.scripts,
-            config,
         }
     }
 
@@ -131,7 +106,7 @@ impl Relayer {
                     error!("Deposit relay error: {}", e);
                 }
 
-                sleep(2);
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
             }
         };
 
@@ -149,7 +124,6 @@ impl Relayer {
         // TODO: configurable listen address
         use bytes::Bytes;
         use warp::Filter;
-        let config = self.config.clone();
         let bcast_route = warp::post()
             .and(warp::path("address"))
             .and(warp::query::<DepositAddress>())
@@ -193,7 +167,7 @@ impl Relayer {
                                 dest.commitment_bytes().map_err(|_| reject())?.as_slice(),
                             )
                             .map_err(warp::reject::custom)?,
-                        config.network,
+                        super::NETWORK,
                     )
                     .unwrap()
                     .to_string();
@@ -254,7 +228,7 @@ impl Relayer {
     async fn relay_deposits(&mut self, recv: &mut Receiver<(DepositCommitment, u32)>) -> Result<!> {
         let mut prev_tip = None;
         loop {
-            sleep(2);
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
             self.insert_announced_addrs(recv).await?;
 
@@ -297,6 +271,66 @@ impl Relayer {
         Ok(tip)
     }
 
+    #[cfg(feature = "emergency-disbursal")]
+    pub async fn start_emergency_disbursal_transaction_relay(&mut self) -> Result<()> {
+        info!("Starting emergency disbursal transaction relay...");
+
+        loop {
+            if let Err(e) = self.relay_emergency_disbursal_transactions().await {
+                if !e.to_string().contains("No completed checkpoints yet") {
+                    error!("Emergency disbursal relay error: {}", e);
+                }
+            }
+
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        }
+    }
+
+    #[cfg(feature = "emergency-disbursal")]
+    async fn relay_emergency_disbursal_transactions(&mut self) -> Result<()> {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let mut relayed = HashSet::new();
+        loop {
+            let disbursal_txs = app_client_testnet()
+                .query(|app| Ok(app.bitcoin.checkpoints.emergency_disbursal_txs()?))
+                .await?;
+
+            for tx in disbursal_txs.iter() {
+                if relayed.contains(&tx.txid()) {
+                    continue;
+                }
+
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+                if now < tx.lock_time.to_u32() as u64 {
+                    return Ok(());
+                }
+
+                let mut tx_bytes = vec![];
+                tx.consensus_encode(&mut tx_bytes)?;
+
+                match self.btc_client.send_raw_transaction(&tx_bytes) {
+                    Ok(_) => {
+                        info!("Relayed emergency disbursal transaction: {}", tx.txid());
+                    }
+                    Err(err) if err.to_string().contains("bad-txns-inputs-missingorspent") => {}
+                    Err(err)
+                        if err
+                            .to_string()
+                            .contains("Transaction already in block chain") => {}
+                    Err(err) => Err(err)?,
+                }
+
+                relayed.insert(tx.txid());
+            }
+
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        }
+    }
+
     pub async fn start_checkpoint_relay(&mut self) -> Result<()> {
         info!("Starting checkpoint relay...");
 
@@ -307,7 +341,7 @@ impl Relayer {
                 }
             }
 
-            sleep(2);
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
         }
     }
 
@@ -346,7 +380,7 @@ impl Relayer {
                 relayed.insert(tx.txid());
             }
 
-            sleep(1);
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
         }
     }
 
@@ -462,7 +496,7 @@ impl Relayer {
             let mut tx_bytes = vec![];
             tx.consensus_encode(&mut tx_bytes)?;
             let tx = ::bitcoin::Transaction::consensus_decode(&mut tx_bytes.as_slice())?;
-            let tx = Adapter::new(tx.clone());
+            let tx = Adapter::new(tx);
             let proof = Adapter::new(proof);
 
             let res = app_client_testnet()
