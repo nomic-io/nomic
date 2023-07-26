@@ -1,12 +1,15 @@
-use orga::{
-    coins::{Address, Amount, Coin, Give, Take},
-    collections::Map,
-    orga,
-};
-
+use crate::airdrop::Part;
 use crate::{
     app::Nom,
     error::{Error, Result},
+};
+use orga::{
+    coins::{Address, Amount, Coin, Give, Take},
+    collections::{ChildMut, Map},
+    context::GetContext,
+    orga,
+    plugins::{Paid, Signer},
+    Error as OrgaError, Result as OrgaResult,
 };
 
 #[orga]
