@@ -217,7 +217,12 @@ impl StartCmd {
 
         println!("{}\nVersion {}\n\n", BANNER, env!("CARGO_PKG_VERSION"));
 
-        let has_node = home.exists();
+        let has_node = if !home.join("merk/db/CURRENT").exists() {
+            false
+        } else {
+            let store = MerkStore::open_readonly(home.join("merk"));
+            store.merk().get_aux(b"height").unwrap().is_some()
+        };
         let config_path = home.join("tendermint/config/config.toml");
         let chain_id = cmd.config.chain_id.as_deref();
         if !has_node {
@@ -363,7 +368,7 @@ fn legacy_bin(config: &nomic::network::Config) -> Result<Option<PathBuf>> {
 
     if let Some(legacy_version) = &config.legacy_version {
         let (up_to_date, initialized) = {
-            if !home.exists() {
+            if !home.join("merk/db/CURRENT").exists() {
                 (false, false)
             } else {
                 let store = MerkStore::open_readonly(home.join("merk"));
@@ -439,12 +444,20 @@ fn legacy_bin(config: &nomic::network::Config) -> Result<Option<PathBuf>> {
                         Ok(None)
                     }
                 } else {
-                    log::debug!(
-                        "Found legacy binary {:?} matching version {}",
-                        legacy_bin,
-                        legacy_version
-                    );
-                    Ok(legacy_bin)
+                    let current_ver = semver::Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
+                    if &current_ver == legacy_ver.as_ref().unwrap() {
+                        log::debug!(
+                            "Legacy binary matches current binary, no need to run legacy binary"
+                        );
+                        Ok(None)
+                    } else {
+                        log::debug!(
+                            "Found legacy binary {:?} matching version {}",
+                            legacy_bin,
+                            legacy_version
+                        );
+                        Ok(legacy_bin)
+                    }
                 };
             }
         }
