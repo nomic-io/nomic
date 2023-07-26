@@ -16,7 +16,7 @@ pub struct Incentives {
 
 #[orga]
 pub struct Account {
-    testnet_participation: Coin<Nom>,
+    testnet_participation: Part,
 }
 
 impl Incentives {
@@ -47,7 +47,11 @@ impl Incentives {
             let mut account = Account::default();
             let mut maybe_increment = |v| {
                 if v == "true" {
-                    account.testnet_participation.give(funds.take(rate)?)?;
+                    account.testnet_participation = Part {
+                        locked: 0,
+                        claimable: funds.take(rate)?.amount.into(),
+                        claimed: 0,
+                    }
                 }
                 Ok::<_, Error>(())
             };
