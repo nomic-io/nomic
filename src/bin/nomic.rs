@@ -385,10 +385,27 @@ fn legacy_bin(config: &nomic::network::Config) -> Result<Option<PathBuf>> {
             }
         };
 
+        // TODO: handle case where node is not initialized, but network is upgraded (can skip legacy binary)
+
         if up_to_date {
             log::debug!("Node version matches network version, no need to run legacy binary");
         } else {
             let bin_dir = home.join("bin");
+
+            #[cfg(feature = "legacy-bin")]
+            {
+                if !bin_dir.exists() {
+                    std::fs::create_dir_all(&bin_dir)?;
+                }
+
+                let bin_name = env!("NOMIC_LEGACY_VERSION").trim().replace(" ", "-");
+                let bin_path = bin_dir.join(bin_name);
+                let bin_bytes = include_bytes!(env!("NOMIC_LEGACY_PATH"));
+                log::debug!("Writing legacy binary to {}...", bin_path.display());
+                std::fs::write(&bin_path, bin_bytes).unwrap();
+                std::fs::set_permissions(bin_path, Permissions::from_mode(0o777)).unwrap();
+            }
+
             if !bin_dir.exists() {
                 log::warn!("Legacy binary does not exist, attempting to skip ahead");
             } else {
