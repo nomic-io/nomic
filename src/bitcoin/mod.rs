@@ -130,7 +130,7 @@ pub struct Bitcoin {
     pub(crate) reward_pool: Coin<Nbtc>,
 
     #[orga(version(V1))]
-    recovery_scripts: Map<Address, Adapter<Script>>,
+    pub recovery_scripts: Map<Address, Adapter<Script>>,
     #[orga(version(V1))]
     config: Config,
 }
