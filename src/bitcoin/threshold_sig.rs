@@ -9,18 +9,17 @@ use derive_more::{Deref, From};
 use orga::collections::{Map, Next};
 use orga::encoding::{Decode, Encode};
 use orga::macros::Describe;
-use orga::migrate::MigrateFrom;
+use orga::migrate::Migrate;
 use orga::prelude::FieldCall;
 use orga::query::FieldQuery;
 use orga::state::State;
+use orga::store::Store;
 use orga::{orga, Error, Result};
 use serde::Serialize;
 
 pub type Message = [u8; MESSAGE_SIZE];
 
-#[derive(
-    Encode, Decode, State, Debug, Clone, Deref, From, Copy, MigrateFrom, Serialize, Describe,
-)]
+#[derive(Encode, Decode, State, Debug, Clone, Deref, From, Copy, Migrate, Serialize, Describe)]
 pub struct Signature(#[serde(serialize_with = "<[_]>::serialize")] [u8; COMPACT_SIGNATURE_SIZE]);
 
 #[derive(
@@ -36,13 +35,18 @@ pub struct Signature(#[serde(serialize_with = "<[_]>::serialize")] [u8; COMPACT_
     Eq,
     PartialOrd,
     Ord,
-    MigrateFrom,
     Serialize,
     Describe,
 )]
 pub struct Pubkey {
     #[serde(serialize_with = "<[_]>::serialize")]
     bytes: [u8; PUBLIC_KEY_SIZE],
+}
+
+impl Migrate for Pubkey {
+    fn migrate(_src: Store, _dest: Store, bytes: &mut &[u8]) -> Result<Self> {
+        Ok(Self::decode(bytes)?)
+    }
 }
 
 impl Next for Pubkey {
@@ -89,6 +93,66 @@ impl From<PublicKey> for Pubkey {
     }
 }
 
+#[derive(
+    Encode,
+    Decode,
+    State,
+    FieldQuery,
+    FieldCall,
+    Clone,
+    Debug,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Describe,
+    Migrate,
+)]
+pub struct VersionedPubkey {
+    #[serde(serialize_with = "<[_]>::serialize")]
+    bytes: [u8; PUBLIC_KEY_SIZE],
+}
+
+impl Default for VersionedPubkey {
+    fn default() -> Self {
+        VersionedPubkey {
+            bytes: [0; PUBLIC_KEY_SIZE],
+        }
+    }
+}
+
+impl VersionedPubkey {
+    pub fn as_slice(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+impl From<Pubkey> for VersionedPubkey {
+    fn from(pubkey: Pubkey) -> Self {
+        VersionedPubkey {
+            bytes: pubkey.bytes,
+        }
+    }
+}
+
+impl From<VersionedPubkey> for Pubkey {
+    fn from(pubkey: VersionedPubkey) -> Self {
+        Pubkey {
+            bytes: pubkey.bytes,
+        }
+    }
+}
+
+impl From<PublicKey> for VersionedPubkey {
+    fn from(pubkey: PublicKey) -> Self {
+        VersionedPubkey {
+            bytes: pubkey.serialize(),
+        }
+    }
+}
+
 // TODO: update for taproot-based design (musig rounds, fallback path)
 
 #[orga]
@@ -119,29 +183,31 @@ impl ThresholdSig {
         self.message
     }
 
-    pub fn from_sigset(&mut self, signatories: &SignatorySet) -> Result<()> {
+    pub fn from_sigset(signatories: &SignatorySet) -> Result<Self> {
+        let mut ts = ThresholdSig::default();
         let mut total_vp = 0;
 
         for signatory in signatories.iter() {
-            self.sigs.insert(
-                signatory.pubkey,
+            ts.sigs.insert(
+                signatory.pubkey.into(),
                 Share {
                     power: signatory.voting_power,
                     sig: None,
                 },
             )?;
 
-            self.len += 1;
+            ts.len += 1;
             total_vp += signatory.voting_power;
         }
 
         // TODO: get threshold ratio from somewhere else
-        self.threshold = ((total_vp as u128) * 2 / 3) as u64;
+        ts.threshold = ((total_vp as u128) * 2 / 3) as u64;
 
-        Ok(())
+        Ok(ts)
     }
 
-    pub fn from_shares(&mut self, shares: Vec<(Pubkey, Share)>) -> Result<()> {
+    pub fn from_shares(shares: Vec<(Pubkey, Share)>) -> Result<Self> {
+        let mut ts = ThresholdSig::default();
         let mut total_vp = 0;
         let mut len = 0;
 
@@ -149,14 +215,14 @@ impl ThresholdSig {
             assert!(share.sig.is_none());
             total_vp += share.power;
             len += 1;
-            self.sigs.insert(pubkey, share)?;
+            ts.sigs.insert(pubkey, share)?;
         }
 
         // TODO: get threshold ratio from somewhere else
-        self.threshold = ((total_vp as u128) * 2 / 3) as u64;
-        self.len = len;
+        ts.threshold = ((total_vp as u128) * 2 / 3) as u64;
+        ts.len = len;
 
-        Ok(())
+        Ok(ts)
     }
 
     #[query]
@@ -175,7 +241,7 @@ impl ThresholdSig {
                 };
                 share.sig.as_ref().map(|sig| Ok((*pubkey, *sig)))
             })
-            .collect()
+            .collect::<Result<_>>()
     }
 
     // TODO: should be iterator?
@@ -183,7 +249,7 @@ impl ThresholdSig {
         self.sigs
             .iter()?
             .map(|entry| entry.map(|(pubkey, share)| (*pubkey, share.clone())))
-            .collect()
+            .collect::<Result<_>>()
     }
 
     #[query]
@@ -203,7 +269,7 @@ impl ThresholdSig {
     // TODO: exempt from fee
     pub fn sign(&mut self, pubkey: Pubkey, sig: Signature) -> Result<()> {
         if self.done() {
-            return Err(Error::App("Threshold signature is done".into()));
+            return Err(Error::App("Threshold signature is done".into()))?;
         }
 
         let share = self
@@ -212,7 +278,7 @@ impl ThresholdSig {
             .ok_or_else(|| Error::App("Pubkey is not part of threshold signature".into()))?;
 
         if share.sig.is_some() {
-            return Err(Error::App("Pubkey already signed".into()));
+            return Err(Error::App("Pubkey already signed".into()))?;
         }
 
         self.verify(pubkey, sig)?;

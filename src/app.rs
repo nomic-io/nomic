@@ -15,7 +15,6 @@ use orga::coins::{
 use orga::context::GetContext;
 use orga::cosmrs::bank::MsgSend;
 use orga::encoding::{Decode, Encode};
-use orga::plugins::Time;
 use std::time::Duration;
 
 use orga::ibc::ibc_rs::applications::transfer::context::TokenTransferExecutionContext;
@@ -31,10 +30,10 @@ use orga::ibc::ibc_rs::Signer as IbcSigner;
 
 use orga::encoding::Adapter as EdAdapter;
 use orga::macros::build_call;
-use orga::migrate::MigrateFrom;
+use orga::migrate::Migrate;
 use orga::orga;
 use orga::plugins::sdk_compat::{sdk, sdk::Tx as SdkTx, ConvertSdkTx};
-use orga::plugins::{DefaultPlugins, PaidCall, Signer, MIN_FEE};
+use orga::plugins::{DefaultPlugins, PaidCall, Signer, Time, MIN_FEE};
 use orga::prelude::*;
 use orga::upgrade::Version;
 use orga::upgrade::{Upgrade, UpgradeV0};
@@ -49,14 +48,17 @@ pub const CHAIN_ID: &str = "nomic-testnet-4d";
 pub type AppV0 = DefaultPlugins<Nom, InnerAppV0>;
 pub type App = DefaultPlugins<Nom, InnerApp>;
 
-#[derive(State, Debug, Clone, Encode, Decode, Default, MigrateFrom, Serialize)]
+#[derive(State, Debug, Clone, Encode, Decode, Default, Migrate, Serialize)]
 pub struct Nom(());
 impl Symbol for Nom {
     const INDEX: u8 = 69;
     const NAME: &'static str = "unom";
 }
+#[cfg(feature = "full")]
 const DEV_ADDRESS: &str = "nomic14z79y3yrghqx493mwgcj0qd2udy6lm26lmduah";
+#[cfg(feature = "full")]
 const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1d5n325zrf4elfu0heqd59gna5j6xyunhev23cj";
+#[cfg(feature = "full")]
 const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhqd8dcqeq";
 
 #[orga(version = 2)]
@@ -94,7 +96,7 @@ pub struct InnerApp {
 
 #[orga]
 impl InnerApp {
-    pub const CONSENSUS_VERSION: u8 = 2;
+    pub const CONSENSUS_VERSION: u8 = 3;
 
     #[cfg(feature = "full")]
     fn configure_faucets(&mut self) -> Result<()> {
@@ -308,6 +310,11 @@ impl InnerApp {
     pub fn app_noop(&mut self) -> Result<()> {
         Ok(())
     }
+
+    #[query]
+    pub fn app_noop_query(&self) -> Result<()> {
+        Ok(())
+    }
 }
 
 #[cfg(feature = "full")]
@@ -315,6 +322,7 @@ mod abci {
     use orga::{
         abci::{messages, AbciQuery, BeginBlock, EndBlock, InitChain},
         coins::{Give, Take},
+        collections::Map,
         plugins::{BeginBlockCtx, EndBlockCtx, InitChainCtx},
     };
 
