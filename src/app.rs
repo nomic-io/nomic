@@ -90,6 +90,7 @@ pub struct InnerApp {
     upgrade: Upgrade,
 
     #[orga(version(V2))]
+    #[call]
     pub incentives: Incentives,
 }
 
@@ -875,6 +876,21 @@ impl ConvertSdkTx for InnerApp {
 
                         let payer = build_call!(self.airdrop.join_accounts(dest_addr));
                         let paid = build_call!(self.app_noop());
+
+                        Ok(PaidCall { payer, paid })
+                    }
+
+                    "nomic/MsgClaimTestnetIncentives" => {
+                        let msg = msg
+                            .value
+                            .as_object()
+                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
+                        if !msg.is_empty() {
+                            return Err(Error::App("Message should be empty".to_string()));
+                        }
+                        let payer =
+                            build_call!(self.incentives.claim_testnet_participation_incentives());
+                        let paid = build_call!(self.accounts.give_from_funding_all());
 
                         Ok(PaidCall { payer, paid })
                     }
