@@ -3,9 +3,9 @@
 echo "Building legacy nomic at $OUT_DIR/nomic..."
 git clone https://github.com/nomic-io/nomic.git $OUT_DIR/nomic
 cd $OUT_DIR/nomic
-git checkout .
-git checkout $NOMIC_LEGACY_REV
+git reset --hard main
 git pull
+git checkout $NOMIC_LEGACY_REV
 
 rustc --version
 cargo build --release
