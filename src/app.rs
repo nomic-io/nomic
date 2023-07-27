@@ -879,7 +879,7 @@ impl ConvertSdkTx for InnerApp {
                         Ok(PaidCall { payer, paid })
                     }
 
-                    "nomic/MsgClaimTestnetIncentives" => {
+                    "nomic/MsgClaimTestnetParticipationIncentives" => {
                         let msg = msg
                             .value
                             .as_object()
