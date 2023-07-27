@@ -1434,10 +1434,14 @@ impl DevnetCmd {
 }
 
 pub fn main() {
-    pretty_env_logger::formatted_timed_builder()
-        .filter_level(log::LevelFilter::Info)
-        .parse_env("NOMIC_LOG")
-        .init();
+    if std::env::var("NOMIC_LOG_SIMPLE").is_ok() {
+        pretty_env_logger::formatted_builder()
+    } else {
+        pretty_env_logger::formatted_timed_builder()
+    }
+    .filter_level(log::LevelFilter::Info)
+    .parse_env("NOMIC_LOG")
+    .init();
 
     let backtrace_enabled = std::env::var("RUST_BACKTRACE").is_ok();
 
