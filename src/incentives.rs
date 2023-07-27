@@ -18,8 +18,15 @@ pub struct Incentives {
 }
 
 #[orga]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Account {
     testnet_participation: Part,
+}
+
+impl Account {
+    pub fn is_empty(&self) -> bool {
+        self == &Self::default()
+    }
 }
 
 #[orga]
@@ -93,6 +100,32 @@ impl Incentives {
         let mut acct = self.signer_acct_mut()?;
         let amount = acct.testnet_participation.claim()?;
         self.pay_as_funding(amount)?;
+        Ok(())
+    }
+
+    pub fn join_accounts(&mut self, dest_addr: Address) -> OrgaResult<()> {
+        let mut acct = self.signer_acct_mut()?;
+        if acct.is_empty() {
+            return Err(OrgaError::App("Account has no airdrop balance".to_string()));
+        }
+
+        let src = acct.clone();
+        *acct = Account::default();
+
+        let mut dest = self.accounts.entry(dest_addr)?.or_default()?;
+
+        let add_part = |dest: &mut Part, src: Part| {
+            if dest.claimable > 0 || dest.claimed > 0 {
+                dest.claimable += src.locked;
+            } else {
+                dest.locked += src.locked;
+            }
+            dest.claimable += src.claimable;
+            dest.claimed += src.claimed;
+        };
+
+        add_part(&mut dest.testnet_participation, src.testnet_participation);
+
         Ok(())
     }
 }
