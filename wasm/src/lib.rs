@@ -1,4 +1,4 @@
-#![feature(async_closure)]
+#![e(async_closure)]
 #![feature(async_fn_in_trait)]
 mod error;
 mod types;
@@ -594,8 +594,8 @@ pub async fn withdraw(address: String, dest_addr: String, amount: u64) -> Result
     .await
 }
 
-#[wasm_bindgen(js_name = joinAirdropAccounts)]
-pub async fn join_airdrop_accounts(
+#[wasm_bindgen(js_name = joinRewardAccounts)]
+pub async fn join_reward_accounts(
     source_address: String,
     destination_address: String,
 ) -> Result<String, JsError> {
@@ -612,7 +612,7 @@ pub async fn join_airdrop_accounts(
     gen_call_bytes(
         address.to_string(),
         sdk::Msg {
-            type_: "nomic/MsgJoinAirdropAccounts".to_string(),
+            type_: "nomic/MsgJoinRewardAccounts".to_string(),
             value: value.into(),
         },
     )
@@ -659,7 +659,6 @@ async fn gen_call_bytes(address: String, msg: sdk::Msg) -> Result<String, JsErro
     let nonce = app_client()
         .query_root(|app| app.inner.inner.borrow().inner.inner.inner.nonce(address))
         .await?;
-
     let sign_doc = sdk::SignDoc {
         account_number: "0".to_string(),
         chain_id: CHAIN_ID.to_string(),
