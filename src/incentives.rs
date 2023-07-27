@@ -4,7 +4,7 @@ use crate::{
     error::{Error, Result},
 };
 use orga::{
-    coins::{Address, Amount, Coin, Give, Take},
+    coins::{Address, Amount, Coin, Take},
     collections::{ChildMut, Map},
     context::GetContext,
     orga,
