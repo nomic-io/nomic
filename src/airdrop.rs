@@ -118,10 +118,7 @@ impl Airdrop {
         Ok(())
     }
 
-    #[call]
     pub fn join_accounts(&mut self, dest_addr: Address) -> Result<()> {
-        self.pay_as_funding(MIN_FEE)?;
-
         let mut acct = self.signer_acct_mut()?;
         if acct.is_empty() {
             return Err(Error::App("Account has no airdrop balance".to_string()));
