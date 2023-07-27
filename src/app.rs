@@ -364,8 +364,11 @@ mod abci {
 
     impl BeginBlock for InnerApp {
         fn begin_block(&mut self, ctx: &BeginBlockCtx) -> Result<()> {
-            self.upgrade
-                .step(&vec![Self::CONSENSUS_VERSION].try_into().unwrap())?;
+            let now = ctx.header.time.as_ref().unwrap().seconds;
+            self.upgrade.step(
+                &vec![Self::CONSENSUS_VERSION].try_into().unwrap(),
+                in_upgrade_window(now),
+            )?;
             self.staking.begin_block(ctx)?;
 
             #[cfg(feature = "testnet")]
@@ -389,7 +392,6 @@ mod abci {
 
             self.bitcoin.begin_block(ctx)?;
 
-            let now = ctx.header.time.as_ref().unwrap().seconds;
             let has_nbtc_rewards = self.bitcoin.reward_pool.amount > 0;
             if self.reward_timer.tick(now) && has_stake && has_nbtc_rewards {
                 let reward_rate = (Amount::new(1) / Amount::new(2377))?; // ~0.00042069
@@ -876,6 +878,28 @@ impl ConvertSdkTx for InnerApp {
                         Ok(PaidCall { payer, paid })
                     }
 
+                    "nomic/MsgSetRecoveryAddress" => {
+                        let msg = msg
+                            .value
+                            .as_object()
+                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
+
+                        let recovery_addr: bitcoin::Address = msg["recovery_address"]
+                            .as_str()
+                            .ok_or_else(|| Error::App("Invalid recovery address".to_string()))?
+                            .parse()
+                            .map_err(|_| Error::App("Invalid recovery address".to_string()))?;
+
+                        let script =
+                            crate::bitcoin::adapter::Adapter::new(recovery_addr.script_pubkey());
+
+                        let funding_amt = MIN_FEE;
+                        let payer = build_call!(self.accounts.take_as_funding(funding_amt.into()));
+                        let paid = build_call!(self.bitcoin.set_recovery_script(script.clone()));
+
+                        Ok(PaidCall { payer, paid })
+                    }
+
                     _ => Err(Error::App("Unsupported message type".into())),
                 }
             }
@@ -960,5 +984,25 @@ impl RewardTimer {
 
         self.last_period = now;
         true
+    }
+}
+
+fn in_upgrade_window(now_seconds: i64) -> bool {
+    use chrono::prelude::*;
+    let now = Utc.timestamp_opt(now_seconds, 0).unwrap();
+
+    // Monday - Friday, 17:00 - 17:10 UTC
+    now.weekday().num_days_from_monday() < 5 && now.hour() == 17 && now.minute() < 10
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn upgrade_date() {
+        assert!(in_upgrade_window(1690218300)); // Monday 17:05 UTC
+        assert!(!in_upgrade_window(1690219200)); // Monday 17:20 UTC
+        assert!(!in_upgrade_window(1690736700)); // Sunday 17:05 UTC
     }
 }
