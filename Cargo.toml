@@ -53,6 +53,9 @@ chrono = "0.4.19"
 serial_test = "2.0.0"
 tempfile = "3.6.0"
 
+[build-dependencies]
+toml = { version = "0.7.2", features = ["parse"] }
+
 [features]
 default = ["full", "feat-ibc", "testnet"]
 full = ["bitcoind", "bitcoincore-rpc-async", "clap", "tokio", "orga/merk-full", "orga/abci", "orga/state-sync", "csv", "warp", "rand", "reqwest", "tendermint-rpc", "home"]
