@@ -177,7 +177,24 @@ impl FromArgMatches for Config {
             self.0 = net_config;
         }
 
-        // TODO: get chain id from genesis
+        if let Some(genesis) = self.0.genesis.as_ref() {
+            let genesis: serde_json::Value = genesis.parse().unwrap();
+            let gensis_cid = genesis["chain_id"].as_str().unwrap();
+
+            if let Some(cid) = self.0.chain_id.as_ref() {
+                if cid != gensis_cid {
+                    return Err(clap::Error::raw(
+                        ErrorKind::ArgumentConflict,
+                        format!(
+                            "Genesis chain ID ({}) does not match --chain-id ({})",
+                            gensis_cid, cid
+                        ),
+                    ));
+                }
+            } else {
+                self.0.chain_id = Some(gensis_cid.to_string());
+            }
+        }
 
         Ok(())
     }
