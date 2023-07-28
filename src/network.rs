@@ -122,14 +122,16 @@ impl FromArgMatches for Config {
         self.0.update_from_arg_matches(matches)?;
 
         if self.is_empty() {
-            self.0.network = match std::env::var("GIT_BRANCH").as_deref() {
-                Ok("main") => Some(Network::Mainnet),
-                Ok("testnet") => Some(Network::Testnet),
-                _ => {
-                    log::warn!("Built on branch with no default network. Use --network to specify a network.");
-                    None
-                }
+            self.0.network = match env!("GIT_BRANCH") {
+                "main" => Some(Network::Mainnet),
+                "testnet" => Some(Network::Testnet),
+                _ => None,
             };
+            if let Some(network) = self.0.network {
+                log::debug!("Using default network: {:?}", network);
+            } else {
+                log::debug!("Built on branch with no default network.");
+            }
         }
 
         if let Some(network) = self.0.network {
