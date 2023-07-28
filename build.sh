@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 BUILD_DIR=$OUT_DIR/nomic
 echo "Building legacy nomic at $BUILD_DIR..."
 if [ ! -d "$BUILD_DIR" ]; then
