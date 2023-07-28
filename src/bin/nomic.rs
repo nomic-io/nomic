@@ -187,7 +187,7 @@ pub struct StartCmd {
 impl StartCmd {
     fn run(&self) -> orga::Result<()> {
         let cmd = self.clone();
-        let home = cmd.config.home()?;
+        let home = cmd.config.home_expect()?;
 
         if cmd.freeze_valset {
             std::env::set_var("ORGA_STATIC_VALSET", "true");
@@ -367,7 +367,14 @@ impl StartCmd {
 
 // TODO: move to config/nodehome?
 fn legacy_bin(config: &nomic::network::Config) -> Result<Option<PathBuf>> {
-    let home = config.home()?;
+    let home = match config.home() {
+        Some(home) => home,
+        None => {
+            log::warn!("Unknown home directory, cannot automatically run legacy binary.");
+            log::warn!("If the command fails, try running with an older version.");
+            return Ok(None);
+        }
+    };
 
     // TODO: skip if specifying node in config
 
@@ -474,9 +481,16 @@ fn legacy_bin(config: &nomic::network::Config) -> Result<Option<PathBuf>> {
 }
 
 async fn relaunch_on_migrate(config: &nomic::network::Config) -> Result<()> {
+    let home = match config.home() {
+        Some(home) => home,
+        None => {
+            log::warn!("Unknown home directory, cannot automatically relaunch on migrate");
+            return Ok(());
+        }
+    };
+
     let mut initial_ver = None;
     loop {
-        let home = config.home().unwrap();
         if !home.exists() {
             continue;
         }
@@ -1066,7 +1080,7 @@ impl RelayerCmd {
         let mut relayer = create_relayer().await;
         let headers = relayer.start_header_relay();
 
-        let relayer_dir_path = self.config.home()?.join("relayer");
+        let relayer_dir_path = self.config.home_expect()?.join("relayer");
         if !relayer_dir_path.exists() {
             std::fs::create_dir(&relayer_dir_path)?;
         }
@@ -1104,7 +1118,7 @@ pub struct SignerCmd {
 
 impl SignerCmd {
     async fn run(&self) -> Result<()> {
-        let signer_dir_path = self.config.home()?.join("signer");
+        let signer_dir_path = self.config.home_expect()?.join("signer");
         if !signer_dir_path.exists() {
             std::fs::create_dir(&signer_dir_path)?;
         }
@@ -1347,7 +1361,7 @@ pub struct ExportCmd {
 
 impl ExportCmd {
     async fn run(&self) -> Result<()> {
-        let home = self.config.home()?;
+        let home = self.config.home_expect()?;
 
         let store_path = home.join("merk");
         let store = Store::new(orga::store::BackingStore::Merk(orga::store::Shared::new(
