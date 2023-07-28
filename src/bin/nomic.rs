@@ -1448,6 +1448,8 @@ pub fn main() {
     .parse_env("NOMIC_LOG")
     .init();
 
+    log::debug!("nomic v{}", env!("CARGO_PKG_VERSION"));
+
     let backtrace_enabled = std::env::var("RUST_BACKTRACE").is_ok();
 
     let panic_handler = if backtrace_enabled {
