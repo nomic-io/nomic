@@ -73,13 +73,10 @@ pub struct Config(InnerConfig);
 
 impl Config {
     pub fn home(&self) -> Option<PathBuf> {
-        if let Some(home) = self.home.as_ref() {
-            Some(PathBuf::from(home))
-        } else if let Some(chain_id) = self.chain_id.as_ref() {
-            Some(orga::abci::Node::home(chain_id))
-        } else {
-            None
-        }
+        self.home
+            .as_ref()
+            .map(PathBuf::from)
+            .or(self.chain_id.as_ref().map(|c| orga::abci::Node::home(c)))
     }
 
     pub fn home_expect(&self) -> Result<PathBuf> {
