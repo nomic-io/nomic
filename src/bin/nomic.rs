@@ -376,7 +376,11 @@ fn legacy_bin(config: &nomic::network::Config) -> Result<Option<PathBuf>> {
 
     // TODO: skip if specifying node in config
 
-    if let Some(legacy_version) = &config.legacy_version {
+    let legacy_version = std::env::var("NOMIC_LEGACY_VERSION")
+        .ok()
+        .or(config.legacy_version.clone());
+
+    if let Some(legacy_version) = legacy_version {
         let (up_to_date, initialized) = {
             if !home.join("merk/db/CURRENT").exists() {
                 (false, false)
@@ -398,6 +402,11 @@ fn legacy_bin(config: &nomic::network::Config) -> Result<Option<PathBuf>> {
         if up_to_date {
             log::debug!("Node version matches network version, no need to run legacy binary");
         } else {
+            if legacy_version.is_empty() {
+                log::warn!("Legacy version is empty, skipping run of legacy binary.");
+                return Ok(None);
+            }
+
             let bin_dir = home.join("bin");
 
             #[cfg(feature = "legacy-bin")]
@@ -406,9 +415,9 @@ fn legacy_bin(config: &nomic::network::Config) -> Result<Option<PathBuf>> {
                     std::fs::create_dir_all(&bin_dir)?;
                 }
 
-                let bin_name = env!("NOMIC_LEGACY_VERSION").trim().replace(" ", "-");
+                let bin_name = env!("NOMIC_LEGACY_BUILD_VERSION").trim().replace(" ", "-");
                 let bin_path = bin_dir.join(bin_name);
-                let bin_bytes = include_bytes!(env!("NOMIC_LEGACY_PATH"));
+                let bin_bytes = include_bytes!(env!("NOMIC_LEGACY_BUILD_PATH"));
                 if !bin_path.exists() {
                     log::debug!("Writing legacy binary to {}...", bin_path.display());
                     std::fs::write(&bin_path, bin_bytes).unwrap();
@@ -419,7 +428,7 @@ fn legacy_bin(config: &nomic::network::Config) -> Result<Option<PathBuf>> {
             if !bin_dir.exists() {
                 log::warn!("Legacy binary does not exist, attempting to skip ahead");
             } else {
-                let req = semver::VersionReq::parse(legacy_version).unwrap();
+                let req = semver::VersionReq::parse(&legacy_version).unwrap();
                 let mut legacy_bin = None;
                 let mut legacy_ver = None;
                 for bin in bin_dir.read_dir().unwrap() {

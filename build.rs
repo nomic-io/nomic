@@ -12,24 +12,32 @@ fn main() {
     #[cfg(feature = "legacy-bin")]
     {
         println!("cargo:rerun-if-changed=build.sh");
-        let shell = std::env::var("SHELL").unwrap_or("/bin/bash".to_string());
-        println!("using shell: {}", shell);
-        let toml = if branch_name == "main" {
-            todo!()
+        println!("cargo:rerun-if-env-changed=NOMIC_LEGACY_VERSION");
+
+        let mut version_req_str = if let Ok(version_req_str) = std::env::var("NOMIC_LEGACY_VERSION")
+        {
+            version_req_str
         } else {
-            println!("cargo:rerun-if-changed=networks/testnet.toml");
-            include_str!("networks/testnet.toml")
+            let toml = if branch_name == "main" {
+                todo!()
+            } else {
+                println!("cargo:rerun-if-changed=networks/testnet.toml");
+                include_str!("networks/testnet.toml")
+            };
+            let config: toml::Value = toml::from_str(toml).unwrap();
+            config
+                .as_table()
+                .unwrap()
+                .get("legacy_version")
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .to_string()
         };
-        let config: toml::Value = toml::from_str(toml).unwrap();
-        let version_req = config
-            .as_table()
-            .unwrap()
-            .get("legacy_version")
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .to_string();
-        let version_req = semver::VersionReq::parse(&version_req).unwrap();
+        if version_req_str.chars().next().unwrap().is_numeric() {
+            version_req_str = format!("={}", version_req_str);
+        }
+        let version_req = semver::VersionReq::parse(&version_req_str).unwrap();
 
         let version = std::process::Command::new("git")
             .args(["tag"])
@@ -43,11 +51,18 @@ fn main() {
             .filter(|v| version_req.matches(v))
             .max()
             .unwrap();
+        let rev = format!("v{}", version);
+        println!(
+            "Highest matching git tag for version requirement '{}': {}",
+            version_req_str, rev,
+        );
 
+        let shell = std::env::var("SHELL").unwrap_or("/bin/bash".to_string());
+        println!("Using shell: {}", shell);
         let res = std::process::Command::new(shell)
             .env_clear()
             .env("OUT_DIR", std::env::var("OUT_DIR").unwrap())
-            .env("NOMIC_LEGACY_REV", format!("v{}", version))
+            .env("NOMIC_LEGACY_REV", rev)
             .args(["build.sh"])
             .spawn()
             .unwrap()
