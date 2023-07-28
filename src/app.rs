@@ -44,7 +44,6 @@ use std::fmt::Debug;
 
 mod migrations;
 
-pub const CHAIN_ID: &str = "nomic-testnet-4d";
 pub type AppV0 = DefaultPlugins<Nom, InnerAppV0>;
 pub type App = DefaultPlugins<Nom, InnerApp>;
 

@@ -1,7 +1,7 @@
-chain_id = "nomic-testnet-4d"
 state_sync_rpc = [
     "http://147.182.171.216:26667",
     "http://147.182.171.216:26677",
+    "https://rpc.nomic-testnet.basementnodes.ca"
 ]
 tendermint_flags = [
     "--p2p.seeds",
@@ -10,7 +10,7 @@ tendermint_flags = [
     """,
 ]
 
-legacy_version = "5.0.0"
+legacy_version = "5.1"
 
 genesis = """
 {

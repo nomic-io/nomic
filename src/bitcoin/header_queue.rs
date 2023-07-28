@@ -389,7 +389,7 @@ impl HeaderQueue {
                 .ok_or_else(|| Error::Header("Header not found".into()))?;
 
             if first_replaced.block_hash() == first.block_hash() {
-                return Err(Error::Header("Provided redudant header.".into()));
+                return Err(Error::Header("Provided redundant header.".into()));
             }
 
             removed_work = self.pop_back_to(first.height)?;
