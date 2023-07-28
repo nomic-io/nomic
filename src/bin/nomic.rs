@@ -352,6 +352,9 @@ impl StartCmd {
             });
         }
 
+        if std::env::var("NOMIC_EXIT_ON_START").is_ok() {
+            std::process::exit(139);
+        }
         node.stdout(std::process::Stdio::inherit())
             .stderr(std::process::Stdio::inherit())
             .print_tendermint_logs(cmd.tendermint_logs)
