@@ -62,7 +62,6 @@ default = ["full", "feat-ibc", "testnet"]
 full = ["bitcoind", "bitcoincore-rpc-async", "clap", "tokio", "orga/merk-full", "orga/abci", "orga/state-sync", "csv", "warp", "rand", "reqwest", "tendermint-rpc", "home"]
 feat-ibc = ["orga/feat-ibc"]
 testnet = []
-devnet = ["testnet"]
 emergency-disbursal = []
 legacy-bin = []
 
