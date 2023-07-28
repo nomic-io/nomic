@@ -3,7 +3,7 @@
 set -e
 
 BUILD_DIR=$OUT_DIR/nomic
-NOMIC_LEGACY_PATH=$OUT_DIR/nomic-bin
+NOMIC_LEGACY_PATH=$OUT_DIR/nomic-$NOMIC_LEGACY_REV
 
 if [ ! -f "$NOMIC_LEGACY_PATH" ]; then
     echo "Building legacy nomic at $BUILD_DIR..."
