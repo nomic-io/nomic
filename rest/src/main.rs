@@ -2,10 +2,10 @@
 extern crate rocket;
 
 use nomic::{
-    app::{InnerApp, Nom, CHAIN_ID},
-    app_client,
+    app::{App, InnerApp, Nom, CHAIN_ID},
+    app_client_testnet,
     orga::{
-        coins::{Accounts, Address, Amount, Decimal, Staking},
+        coins::{Address, Amount, Decimal},
         plugins::*,
         query::Query,
     },
@@ -27,11 +27,9 @@ lazy_static::lazy_static! {
 async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
 
-    let balance: u64 = app_client()
-        .accounts
-        .balance(address)
+    let balance: u64 = app_client_testnet()
+        .query(|app| app.accounts.balance(address))
         .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
 
@@ -57,11 +55,9 @@ async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
 async fn bank_balances_2(address: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
 
-    let balance: u64 = app_client()
-        .accounts
-        .balance(address)
+    let balance: u64 = app_client_testnet()
+        .query(|app| app.accounts.balance(address))
         .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
 
@@ -80,17 +76,14 @@ async fn bank_balances_2(address: &str) -> Result<Value, BadRequest<String>> {
 async fn auth_accounts(addr_str: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = addr_str.parse().unwrap();
 
-    let balance: u64 = app_client()
-        .accounts
-        .balance(address)
+    let balance: u64 = app_client_testnet()
+        .query(|app| app.accounts.balance(address))
         .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
 
-    type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
-    let mut nonce: u64 = app_client()
-        .query(NonceQuery::Nonce(address), |state| state.nonce(address))
+    let mut nonce: u64 = app_client_testnet()
+        .query_root(|app| app.inner.inner.borrow().inner.inner.inner.nonce(address))
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
@@ -118,17 +111,14 @@ async fn auth_accounts(addr_str: &str) -> Result<Value, BadRequest<String>> {
 async fn auth_accounts2(addr_str: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = addr_str.parse().unwrap();
 
-    let balance: u64 = app_client()
-        .accounts
-        .balance(address)
+    let balance: u64 = app_client_testnet()
+        .query(|app| app.accounts.balance(address))
         .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
 
-    type NonceQuery = <NoncePlugin<PayablePlugin<FeePlugin<Nom, InnerApp>>> as Query>::Query;
-    let mut nonce: u64 = app_client()
-        .query(NonceQuery::Nonce(address), |state| state.nonce(address))
+    let mut nonce: u64 = app_client_testnet()
+        .query_root(|app| app.inner.inner.borrow().inner.inner.inner.nonce(address))
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
@@ -245,14 +235,14 @@ fn time_now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::SystemTime::UNIX_EPOCH)
         .unwrap()
-        .as_secs() as u64
+        .as_secs()
 }
 
-#[get("/query/<query>")]
-async fn query(query: &str) -> Result<String, BadRequest<String>> {
+#[get("/query/<query>?<height>")]
+async fn query(query: &str, height: Option<u32>) -> Result<String, BadRequest<String>> {
     let cache = QUERY_CACHE.clone();
     let lock = cache.read_owned().await;
-    let cached_res = lock.get(query).map(|v| v.clone());
+    let cached_res = lock.get(query).cloned();
     let cache_hit = cached_res.is_some();
     drop(lock);
 
@@ -270,16 +260,19 @@ async fn query(query: &str) -> Result<String, BadRequest<String>> {
     let query_bytes = hex::decode(query).map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
     let res = client
-        .abci_query(None, query_bytes, None, true)
+        .abci_query(None, query_bytes, height.map(Into::into), true)
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+
+    let res_height: u64 = res.height.into();
+    let res_height: u32 = res_height.try_into().unwrap();
 
     if let tendermint::abci::Code::Err(code) = res.code {
         let msg = format!("code {}: {}", code, res.log);
         return Err(BadRequest(Some(msg)));
     }
 
-    let res_b64 = base64::encode(res.value);
+    let res_b64 = base64::encode([res_height.to_be_bytes().to_vec(), res.value].concat());
 
     let cache = QUERY_CACHE.clone();
     let mut lock = cache.write_owned().await;
@@ -293,11 +286,9 @@ async fn query(query: &str) -> Result<String, BadRequest<String>> {
 async fn staking_delegators_delegations(address: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
 
-    let delegations = app_client()
-        .staking
-        .delegations(address)
+    let delegations = app_client_testnet()
+        .query(|app| app.staking.delegations(address))
         .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
     let total_staked: u64 = delegations
@@ -324,11 +315,9 @@ async fn staking_delegators_delegations(address: &str) -> Result<Value, BadReque
 async fn staking_delegators_delegations_2(address: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
 
-    let delegations = app_client()
-        .staking
-        .delegations(address)
+    let delegations = app_client_testnet()
+        .query(|app| app.staking.delegations(address))
         .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
     let total_staked: u64 = delegations
@@ -354,18 +343,18 @@ fn staking_delegators_unbonding_delegations(address: &str) -> Value {
     json!({ "unbonding_responses": [], "pagination": { "next_key": null, "total": "0" } })
 }
 
-#[get("/staking/delegators/<address>/unbonding_delegations")]
-fn staking_delegators_unbonding_delegations_2(address: &str) -> Value {
+#[get("/staking/delegators/<_address>/unbonding_delegations")]
+fn staking_delegators_unbonding_delegations_2(_address: &str) -> Value {
     json!({ "height": "0", "result": [] })
 }
 
-#[get("/staking/delegators/<address>/delegations")]
-fn staking_delegations_2(address: &str) -> Value {
+#[get("/staking/delegators/<_address>/delegations")]
+fn staking_delegations_2(_address: &str) -> Value {
     json!({ "height": "0", "result": [] })
 }
 
-#[get("/cosmos/distribution/v1beta1/delegators/<address>/rewards")]
-async fn distribution_delegatrs_rewards(address: &str) -> Value {
+#[get("/cosmos/distribution/v1beta1/delegators/<_address>/rewards")]
+async fn distribution_delegatrs_rewards(_address: &str) -> Value {
     // let address = address.parse().unwrap();
 
     // type AppQuery = <InnerApp as Query>::Query;
@@ -406,8 +395,8 @@ async fn distribution_delegatrs_rewards(address: &str) -> Value {
       } })
 }
 
-#[get("/distribution/delegators/<address>/rewards")]
-async fn distribution_delegatrs_rewards_2(address: &str) -> Value {
+#[get("/distribution/delegators/<_address>/rewards")]
+async fn distribution_delegatrs_rewards_2(_address: &str) -> Value {
     // let address = address.parse().unwrap();
 
     // type AppQuery = <InnerApp as Query>::Query;
@@ -450,11 +439,9 @@ async fn distribution_delegatrs_rewards_2(address: &str) -> Value {
 
 #[get("/cosmos/mint/v1beta1/inflation")]
 async fn minting_inflation() -> Result<Value, BadRequest<String>> {
-    let validators = app_client()
-        .staking
-        .all_validators()
+    let validators = app_client_testnet()
+        .query(|app| app.staking.all_validators())
         .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
     let total_staked: u64 = validators
@@ -472,11 +459,9 @@ async fn minting_inflation() -> Result<Value, BadRequest<String>> {
 
 #[get("/minting/inflation")]
 async fn minting_inflation_2() -> Result<Value, BadRequest<String>> {
-    let validators = app_client()
-        .staking
-        .all_validators()
+    let validators = app_client_testnet()
+        .query(|app| app.staking.all_validators())
         .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
     let total_staked: u64 = validators
@@ -562,7 +547,7 @@ impl Fairing for CORS {
         }
     }
 
-    async fn on_response<'r>(&self, request: &'r Request<'_>, response: &mut Response<'r>) {
+    async fn on_response<'r>(&self, _request: &'r Request<'_>, response: &mut Response<'r>) {
         response.set_header(Header::new("Access-Control-Allow-Origin", "*"));
         response.set_header(Header::new(
             "Access-Control-Allow-Methods",

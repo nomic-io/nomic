@@ -1,23 +1,21 @@
 use bitcoin::consensus::{Decodable, Encodable};
-use orga::client::{Client, PrimitiveClient};
+use orga::describe::Describe;
 use orga::encoding::Result as EncodingResult;
-use orga::migrate::MigrateFrom;
+use orga::migrate::Migrate;
 use orga::prelude::*;
 use orga::state::State;
 use orga::store::Store;
 use orga::Result as OrgaResult;
+use serde::Serialize;
 use std::io::{Read, Write};
 use std::ops::{Deref, DerefMut};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Adapter<T> {
     inner: T,
 }
-impl<T> MigrateFrom for Adapter<T> {
-    fn migrate_from(other: Self) -> Result<Self> {
-        Ok(other)
-    }
-}
+
+impl<T: Encodable + Decodable + 'static> Migrate for Adapter<T> {}
 
 impl<T> Adapter<T> {
     pub fn new(inner: T) -> Self {
@@ -26,6 +24,12 @@ impl<T> Adapter<T> {
 
     pub fn into_inner(self) -> T {
         self.inner
+    }
+}
+
+impl<T> From<T> for Adapter<T> {
+    fn from(value: T) -> Self {
+        Self::new(value)
     }
 }
 
@@ -39,7 +43,7 @@ impl<T: Default> Default for Adapter<T> {
 
 impl<T> Terminated for Adapter<T> {}
 
-impl<T: Encodable + Decodable> State for Adapter<T> {
+impl<T: Encodable + Decodable + 'static> State for Adapter<T> {
     #[inline]
     fn attach(&mut self, _: Store) -> OrgaResult<()> {
         Ok(())
@@ -55,11 +59,11 @@ impl<T: Encodable + Decodable> State for Adapter<T> {
     }
 }
 
-// impl<T: Encodable + Decodable + 'static> Describe for Adapter<T> {
-//     fn describe() -> orga::describe::Descriptor {
-//         orga::describe::Builder::new::<Self>().build()
-//     }
-// }
+impl<T: Encodable + Decodable + 'static> Describe for Adapter<T> {
+    fn describe() -> orga::describe::Descriptor {
+        orga::describe::Builder::new::<Self>().build()
+    }
+}
 
 impl<T> Deref for Adapter<T> {
     type Target = T;
@@ -91,7 +95,7 @@ impl<T: Encodable> Encode for Adapter<T> {
 
     fn encoding_length(&self) -> EncodingResult<usize> {
         let mut _dest: Vec<u8> = Vec::new();
-        match self.inner.consensus_encode(_dest) {
+        match self.inner.consensus_encode(&mut _dest) {
             Ok(inner) => Ok(inner),
             Err(e) => Err(e.into()),
         }
@@ -99,8 +103,8 @@ impl<T: Encodable> Encode for Adapter<T> {
 }
 
 impl<T: Decodable> Decode for Adapter<T> {
-    fn decode<R: Read>(input: R) -> EncodingResult<Self> {
-        let decoded_bytes = Decodable::consensus_decode(input);
+    fn decode<R: Read>(mut input: R) -> EncodingResult<Self> {
+        let decoded_bytes = Decodable::consensus_decode(&mut input);
         match decoded_bytes {
             Ok(inner) => Ok(Self { inner }),
             Err(_) => {
@@ -111,14 +115,6 @@ impl<T: Decodable> Decode for Adapter<T> {
                 Err(std_e.into())
             }
         }
-    }
-}
-
-impl<T, U: Clone> Client<U> for Adapter<T> {
-    type Client = PrimitiveClient<T, U>;
-
-    fn create_client(inner: U) -> Self::Client {
-        PrimitiveClient::new(inner)
     }
 }
 

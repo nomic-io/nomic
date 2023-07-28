@@ -6,17 +6,15 @@ use bitcoin::util::uint::Uint256;
 use bitcoin::BlockHash;
 use bitcoin::TxMerkleNode;
 use orga::collections::Deque;
-use orga::encoding as ed;
+use orga::encoding::LengthVec;
 use orga::migrate::MigrateFrom;
 use orga::orga;
 use orga::prelude::*;
-use orga::state::State;
-use orga::store::Store;
 use orga::Error as OrgaError;
 use orga::Result as OrgaResult;
 
 const MAX_LENGTH: u64 = 4032;
-const MAX_RELAY: u64 = 25;
+const MAX_RELAY: u64 = 250;
 const MAX_TIME_INCREASE: u32 = 2 * 60 * 60;
 const RETARGET_INTERVAL: u32 = 2016;
 const TARGET_SPACING: u32 = 10 * 60;
@@ -135,10 +133,16 @@ impl Decode for HeaderList {
     }
 }
 
+impl FromIterator<WrappedHeader> for HeaderList {
+    fn from_iter<T: IntoIterator<Item = WrappedHeader>>(iter: T) -> Self {
+        HeaderList(iter.into_iter().collect())
+    }
+}
+
 impl Terminated for HeaderList {}
 
 #[orga(skip(Default))]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct WorkHeader {
     chain_work: Adapter<Uint256>,
     header: WrappedHeader,
@@ -174,8 +178,8 @@ impl WorkHeader {
 }
 
 // TODO: implement trait that returns constants for bitcoin::Network variants
-
-#[derive(Clone, Encode, Decode, State, MigrateFrom)]
+#[orga(skip(Default))]
+#[derive(Clone, Debug)]
 pub struct Config {
     pub max_length: u64,
     pub max_time_increase: u32,
@@ -186,7 +190,6 @@ pub struct Config {
     pub max_target: u32,
     pub retargeting: bool,
     pub min_difficulty_blocks: bool,
-    pub network: Network,
     pub encoded_trusted_header: LengthVec<u8, u8>,
 }
 
@@ -195,6 +198,7 @@ impl Default for Config {
         match super::NETWORK {
             bitcoin::Network::Bitcoin => Config::mainnet(),
             bitcoin::Network::Testnet => Config::testnet(),
+            bitcoin::Network::Regtest => Config::regtest(),
             _ => unimplemented!(),
         }
     }
@@ -226,7 +230,6 @@ impl Config {
             encoded_trusted_header: header_bytes.try_into().unwrap(),
             retargeting: true,
             min_difficulty_blocks: false,
-            network: bitcoin::Network::Bitcoin.into(),
         }
     }
 
@@ -249,87 +252,48 @@ impl Config {
             encoded_trusted_header: header_bytes.try_into().unwrap(),
             retargeting: true,
             min_difficulty_blocks: true,
-            network: bitcoin::Network::Testnet.into(),
+        }
+    }
+
+    pub fn regtest() -> Self {
+        let checkpoint_json = include_str!("./testnet_checkpoint.json");
+        let checkpoint: (u32, BlockHeader) = serde_json::from_str(checkpoint_json).unwrap();
+        let (height, header) = checkpoint;
+
+        let mut header_bytes = vec![];
+        header.consensus_encode(&mut header_bytes).unwrap();
+
+        Self {
+            max_length: MAX_LENGTH,
+            max_time_increase: MAX_TIME_INCREASE,
+            retarget_interval: RETARGET_INTERVAL,
+            target_spacing: TARGET_SPACING,
+            target_timespan: TARGET_TIMESPAN,
+            max_target: MAX_TARGET,
+            trusted_height: height,
+            encoded_trusted_header: header_bytes.try_into().unwrap(),
+            retargeting: false,
+            min_difficulty_blocks: true,
         }
     }
 }
 
-#[derive(Clone)]
-pub struct Network(bitcoin::Network);
-
-impl MigrateFrom for Network {
-    fn migrate_from(other: Self) -> OrgaResult<Self> {
-        Ok(other)
-    }
-}
-
-impl From<bitcoin::Network> for Network {
-    fn from(value: bitcoin::Network) -> Self {
-        Network(value)
-    }
-}
-
-impl From<Network> for bitcoin::Network {
-    fn from(value: Network) -> Self {
-        value.0
-    }
-}
-
-impl Encode for Network {
-    fn encode_into<W: std::io::Write>(&self, dest: &mut W) -> ::ed::Result<()> {
-        let value = match self.0 {
-            bitcoin::Network::Bitcoin => 0,
-            bitcoin::Network::Testnet => 1,
-            bitcoin::Network::Regtest => 2,
-            bitcoin::Network::Signet => 3,
-        };
-        dest.write_all(&[value])?;
-        Ok(())
-    }
-
-    fn encoding_length(&self) -> ::ed::Result<usize> {
-        Ok(1)
-    }
-}
-
-impl Decode for Network {
-    fn decode<R: std::io::Read>(mut input: R) -> ::ed::Result<Self> {
-        let mut byte = [0; 1];
-        input.read_exact(&mut byte[..])?;
-        match byte[0] {
-            0 => Ok(bitcoin::Network::Bitcoin.into()),
-            1 => Ok(bitcoin::Network::Testnet.into()),
-            2 => Ok(bitcoin::Network::Regtest.into()),
-            3 => Ok(bitcoin::Network::Signet.into()),
-            b => Err(ed::Error::UnexpectedByte(b)),
-        }
-    }
-}
-
-impl Terminated for Network {}
-
-impl State for Network {
-    #[inline]
-    fn attach(&mut self, _: Store) -> OrgaResult<()> {
-        Ok(())
-    }
-
-    #[inline]
-    fn flush<W: std::io::Write>(self, out: &mut W) -> OrgaResult<()> {
-        Ok(self.encode_into(out)?)
-    }
-
-    fn load(_store: Store, bytes: &mut &[u8]) -> OrgaResult<Self> {
-        Ok(Self::decode(bytes)?)
-    }
-}
-
-#[orga(skip(Default))]
+#[orga(skip(Default), version = 1)]
 pub struct HeaderQueue {
     pub(super) deque: Deque<WorkHeader>,
     pub(super) current_work: Adapter<Uint256>,
-    #[state(skip)]
+    #[orga(version(V1))]
     config: Config,
+}
+
+impl MigrateFrom<HeaderQueueV0> for HeaderQueueV1 {
+    fn migrate_from(value: HeaderQueueV0) -> OrgaResult<Self> {
+        Ok(Self {
+            deque: value.deque,
+            current_work: value.current_work,
+            config: Config::default(),
+        })
+    }
 }
 
 impl Default for HeaderQueue {
@@ -389,6 +353,7 @@ impl Default for HeaderQueue {
 //     }
 // }
 
+#[orga]
 impl HeaderQueue {
     #[call]
     pub fn add(&mut self, headers: HeaderList) -> Result<()> {
@@ -506,38 +471,36 @@ impl HeaderQueue {
         header: &WrappedHeader,
         previous_header: &WrappedHeader,
     ) -> Result<Uint256> {
-        if header.height() % self.config.retarget_interval != 0 {
-            if self.config.min_difficulty_blocks {
-                if header.time() > previous_header.time() + self.config.target_spacing * 2 {
-                    return Ok(WrappedHeader::u256_from_compact(self.config.max_target));
-                } else {
-                    let mut current_header_index = previous_header.height();
-                    let mut current_header = previous_header.to_owned();
+        if header.height() % self.config.retarget_interval == 0 {
+            let first_reorg_height = header.height() - self.config.retarget_interval;
+            return self.calculate_next_target(previous_header, first_reorg_height);
+        }
 
-                    while current_header_index > 0
-                        && current_header_index % self.config.retarget_interval != 0
-                        && current_header.bits() == self.config.max_target
-                    {
-                        current_header_index -= 1;
-
-                        current_header = match self.get_by_height(current_header_index)? {
-                            Some(inner) => inner.header.clone(),
-                            None => {
-                                return Err(Error::Header("No previous header exists".into()));
-                            }
-                        };
-                    }
-
-                    return Ok(WrappedHeader::u256_from_compact(current_header.bits()));
-                }
-            }
-
+        if !self.config.min_difficulty_blocks {
             return Ok(previous_header.target());
         }
 
-        let first_reorg_height = header.height() - self.config.retarget_interval;
+        if header.time() > previous_header.time() + self.config.target_spacing * 2 {
+            return Ok(WrappedHeader::u256_from_compact(self.config.max_target));
+        }
 
-        self.calculate_next_target(previous_header, first_reorg_height)
+        let mut current_header_index = previous_header.height();
+        let mut current_header = previous_header.to_owned();
+
+        while current_header_index > 0
+            && current_header_index % self.config.retarget_interval != 0
+            && current_header.bits() == self.config.max_target
+        {
+            current_header_index -= 1;
+
+            current_header = match self.get_by_height(current_header_index)? {
+                Some(inner) => inner.header.clone(),
+                None => {
+                    return Err(Error::Header("No previous header exists".into()));
+                }
+            };
+        }
+        Ok(WrappedHeader::u256_from_compact(current_header.bits()))
     }
 
     fn calculate_next_target(
@@ -690,19 +653,29 @@ impl HeaderQueue {
     }
 
     pub fn configure(&mut self, config: Config) -> OrgaResult<()> {
+        if !self.deque.is_empty() {
+            while !self.deque.is_empty() {
+                self.deque.pop_back()?;
+            }
+        }
+
         let decoded_adapter: Adapter<BlockHeader> =
             Decode::decode(config.encoded_trusted_header.as_slice())?;
         let wrapped_header = WrappedHeader::new(decoded_adapter, config.trusted_height);
         let work_header = WorkHeader::new(wrapped_header.clone(), wrapped_header.work());
 
         self.current_work = Adapter::new(wrapped_header.work());
+        self.deque.pop_back()?;
+
         self.deque.push_front(work_header)?;
+
+        self.config = config;
 
         Ok(())
     }
 
     pub fn network(&self) -> bitcoin::Network {
-        self.config.network.clone().into()
+        super::NETWORK
     }
 }
 
@@ -710,23 +683,13 @@ impl HeaderQueue {
 mod test {
     use super::*;
     use bitcoin::hash_types::TxMerkleNode;
+    use bitcoin::hashes::hex::FromHex;
+    use bitcoin::hashes::sha256d::Hash;
     use bitcoin::BlockHash;
-    use bitcoin_hashes::hex::FromHex;
-    use bitcoin_hashes::sha256d::Hash;
     use chrono::{TimeZone, Utc};
-
-    impl HeaderQueue {
-        fn with_conf(store: Store, config: Config) -> Result<Self> {
-            let mut queue = HeaderQueue {
-                config: config.clone(),
-                deque: Deque::new(),
-                current_work: Default::default(),
-            };
-            queue.attach(store)?;
-            queue.configure(config)?;
-            Ok(queue)
-        }
-    }
+    use orga::context::Context;
+    use orga::plugins::Paid;
+    use serial_test::serial;
 
     #[test]
     fn primitive_adapter_encode_decode() {
@@ -755,162 +718,165 @@ mod test {
         assert_eq!(*decoded_adapter, header);
     }
 
-    // #[test]
-    // fn add_multiple() {
-    //     let stamp = Utc.ymd(2009, 1, 10).and_hms(17, 44, 37);
+    #[test]
+    #[serial]
+    fn add_multiple() {
+        let ctx = Paid::default();
+        Context::add(ctx);
 
-    //     let header_43 = BlockHeader {
-    //         version: 0x1,
-    //         prev_blockhash: BlockHash::from_hash(
-    //             Hash::from_hex("00000000314e90489514c787d615cea50003af2023796ccdd085b6bcc1fa28f5")
-    //                 .unwrap(),
-    //         ),
-    //         merkle_root: TxMerkleNode::from_hash(
-    //             Hash::from_hex("2f5c03ce19e9a855ac93087a1b68fe6592bcf4bd7cbb9c1ef264d886a785894e")
-    //                 .unwrap(),
-    //         ),
-    //         time: stamp.timestamp() as u32,
-    //         bits: 486_604_799,
-    //         nonce: 2_093_702_200,
-    //     };
+        let stamp = Utc.with_ymd_and_hms(2009, 1, 10, 17, 44, 37).unwrap();
 
-    //     let stamp = Utc.ymd(2009, 1, 10).and_hms(17, 59, 21);
+        let header_43 = BlockHeader {
+            version: 0x1,
+            prev_blockhash: BlockHash::from_hash(
+                Hash::from_hex("00000000314e90489514c787d615cea50003af2023796ccdd085b6bcc1fa28f5")
+                    .unwrap(),
+            ),
+            merkle_root: TxMerkleNode::from_hash(
+                Hash::from_hex("2f5c03ce19e9a855ac93087a1b68fe6592bcf4bd7cbb9c1ef264d886a785894e")
+                    .unwrap(),
+            ),
+            time: stamp.timestamp() as u32,
+            bits: 486_604_799,
+            nonce: 2_093_702_200,
+        };
 
-    //     let header_44 = BlockHeader {
-    //         version: 0x1,
-    //         prev_blockhash: BlockHash::from_hash(
-    //             Hash::from_hex("00000000ac21f2862aaab177fd3c5c8b395de842f84d88c9cf3420b2d393e550")
-    //                 .unwrap(),
-    //         ),
-    //         merkle_root: TxMerkleNode::from_hash(
-    //             Hash::from_hex("439aee1e1aa6923ad61c1990459f88de1faa3e18b4ee125f99b94b82e1e0af5f")
-    //                 .unwrap(),
-    //         ),
-    //         time: stamp.timestamp() as u32,
-    //         bits: 486_604_799,
-    //         nonce: 429_798_192,
-    //     };
+        let stamp = Utc.with_ymd_and_hms(2009, 1, 10, 17, 59, 21).unwrap();
 
-    //     let stamp = Utc.ymd(2009, 1, 10).and_hms(18, 11, 8);
+        let header_44 = BlockHeader {
+            version: 0x1,
+            prev_blockhash: BlockHash::from_hash(
+                Hash::from_hex("00000000ac21f2862aaab177fd3c5c8b395de842f84d88c9cf3420b2d393e550")
+                    .unwrap(),
+            ),
+            merkle_root: TxMerkleNode::from_hash(
+                Hash::from_hex("439aee1e1aa6923ad61c1990459f88de1faa3e18b4ee125f99b94b82e1e0af5f")
+                    .unwrap(),
+            ),
+            time: stamp.timestamp() as u32,
+            bits: 486_604_799,
+            nonce: 429_798_192,
+        };
 
-    //     let header_45 = BlockHeader {
-    //         version: 0x1,
-    //         prev_blockhash: BlockHash::from_hash(
-    //             Hash::from_hex("000000002978eecde8d020f7f057083bc990002fff495121d7dc1c26d00c00f8")
-    //                 .unwrap(),
-    //         ),
-    //         merkle_root: TxMerkleNode::from_hash(
-    //             Hash::from_hex("f69778085f1e78a1ea1cfcfe3b61ffb5c99870f5ae382e41ec43cf165d66a6d9")
-    //                 .unwrap(),
-    //         ),
-    //         time: stamp.timestamp() as u32,
-    //         bits: 486_604_799,
-    //         nonce: 2_771_238_433,
-    //     };
+        let stamp = Utc.with_ymd_and_hms(2009, 1, 10, 18, 11, 8).unwrap();
 
-    //     let stamp = Utc.ymd(2009, 1, 10).and_hms(18, 23, 13);
+        let header_45 = BlockHeader {
+            version: 0x1,
+            prev_blockhash: BlockHash::from_hash(
+                Hash::from_hex("000000002978eecde8d020f7f057083bc990002fff495121d7dc1c26d00c00f8")
+                    .unwrap(),
+            ),
+            merkle_root: TxMerkleNode::from_hash(
+                Hash::from_hex("f69778085f1e78a1ea1cfcfe3b61ffb5c99870f5ae382e41ec43cf165d66a6d9")
+                    .unwrap(),
+            ),
+            time: stamp.timestamp() as u32,
+            bits: 486_604_799,
+            nonce: 2_771_238_433,
+        };
 
-    //     let header_46 = BlockHeader {
-    //         version: 0x1,
-    //         prev_blockhash: BlockHash::from_hash(
-    //             Hash::from_hex("000000009189006e461d2f4037a819d00217412ac01900ddbf09461100b836bb")
-    //                 .unwrap(),
-    //         ),
-    //         merkle_root: TxMerkleNode::from_hash(
-    //             Hash::from_hex("ddd4d06365155ab4caaaee552fb3d8643207bd06efe14f920698a6dd4eb22ffa")
-    //                 .unwrap(),
-    //         ),
-    //         time: stamp.timestamp() as u32,
-    //         bits: 486_604_799,
-    //         nonce: 1_626_117_377,
-    //     };
+        let stamp = Utc.with_ymd_and_hms(2009, 1, 10, 18, 23, 13).unwrap();
 
-    //     let stamp = Utc.ymd(2009, 1, 10).and_hms(18, 41, 28);
+        let header_46 = BlockHeader {
+            version: 0x1,
+            prev_blockhash: BlockHash::from_hash(
+                Hash::from_hex("000000009189006e461d2f4037a819d00217412ac01900ddbf09461100b836bb")
+                    .unwrap(),
+            ),
+            merkle_root: TxMerkleNode::from_hash(
+                Hash::from_hex("ddd4d06365155ab4caaaee552fb3d8643207bd06efe14f920698a6dd4eb22ffa")
+                    .unwrap(),
+            ),
+            time: stamp.timestamp() as u32,
+            bits: 486_604_799,
+            nonce: 1_626_117_377,
+        };
 
-    //     let header_47 = BlockHeader {
-    //         version: 0x1,
-    //         prev_blockhash: BlockHash::from_hash(
-    //             Hash::from_hex("0000000002d5f429a2e3a9d9f82b777469696deb64038803c87833aa8ee9c08e")
-    //                 .unwrap(),
-    //         ),
-    //         merkle_root: TxMerkleNode::from_hash(
-    //             Hash::from_hex("d17b9c9c609309049dfb9005edd7011f02d7875ca7dab6effddf4648bb70eff6")
-    //                 .unwrap(),
-    //         ),
-    //         time: stamp.timestamp() as u32,
-    //         bits: 486_604_799,
-    //         nonce: 2_957_174_816,
-    //     };
+        let stamp = Utc.with_ymd_and_hms(2009, 1, 10, 18, 41, 28).unwrap();
 
-    //     let stamp = Utc.ymd(2009, 1, 10).and_hms(18, 45, 40);
+        let header_47 = BlockHeader {
+            version: 0x1,
+            prev_blockhash: BlockHash::from_hash(
+                Hash::from_hex("0000000002d5f429a2e3a9d9f82b777469696deb64038803c87833aa8ee9c08e")
+                    .unwrap(),
+            ),
+            merkle_root: TxMerkleNode::from_hash(
+                Hash::from_hex("d17b9c9c609309049dfb9005edd7011f02d7875ca7dab6effddf4648bb70eff6")
+                    .unwrap(),
+            ),
+            time: stamp.timestamp() as u32,
+            bits: 486_604_799,
+            nonce: 2_957_174_816,
+        };
 
-    //     let header_48 = BlockHeader {
-    //         version: 0x1,
-    //         prev_blockhash: BlockHash::from_hash(
-    //             Hash::from_hex("000000001a5c4531f86aa874e711e1882038336e2610f70ce750cdd690c57a81")
-    //                 .unwrap(),
-    //         ),
-    //         merkle_root: TxMerkleNode::from_hash(
-    //             Hash::from_hex("32edede0b7d0c37340a665de057f418df634452f6bb80dcb8a5ff0aeddf1158a")
-    //                 .unwrap(),
-    //         ),
-    //         time: stamp.timestamp() as u32,
-    //         bits: 486_604_799,
-    //         nonce: 3_759_171_867,
-    //     };
+        let stamp = Utc.with_ymd_and_hms(2009, 1, 10, 18, 45, 40).unwrap();
 
-    //     let stamp = Utc.ymd(2009, 1, 10).and_hms(18, 56, 42);
+        let header_48 = BlockHeader {
+            version: 0x1,
+            prev_blockhash: BlockHash::from_hash(
+                Hash::from_hex("000000001a5c4531f86aa874e711e1882038336e2610f70ce750cdd690c57a81")
+                    .unwrap(),
+            ),
+            merkle_root: TxMerkleNode::from_hash(
+                Hash::from_hex("32edede0b7d0c37340a665de057f418df634452f6bb80dcb8a5ff0aeddf1158a")
+                    .unwrap(),
+            ),
+            time: stamp.timestamp() as u32,
+            bits: 486_604_799,
+            nonce: 3_759_171_867,
+        };
 
-    //     let header_49 = BlockHeader {
-    //         version: 0x1,
-    //         prev_blockhash: BlockHash::from_hash(
-    //             Hash::from_hex("0000000088960278f4060b8747027b2aac0eb443aedbb1b75d1a72cf71826e89")
-    //                 .unwrap(),
-    //         ),
-    //         merkle_root: TxMerkleNode::from_hash(
-    //             Hash::from_hex("194c9715279d8626bc66f2b6552f2ae67b3df3a00b88553245b12bffffad5b59")
-    //                 .unwrap(),
-    //         ),
-    //         time: stamp.timestamp() as u32,
-    //         bits: 486_604_799,
-    //         nonce: 3_014_810_412,
-    //     };
+        let stamp = Utc.with_ymd_and_hms(2009, 1, 10, 18, 56, 42).unwrap();
 
-    //     let header_list = vec![
-    //         WrappedHeader::new(Adapter::new(header_43), 43),
-    //         WrappedHeader::new(Adapter::new(header_44), 44),
-    //         WrappedHeader::new(Adapter::new(header_45), 45),
-    //         WrappedHeader::new(Adapter::new(header_46), 46),
-    //         WrappedHeader::new(Adapter::new(header_47), 47),
-    //         WrappedHeader::new(Adapter::new(header_48), 48),
-    //         WrappedHeader::new(Adapter::new(header_49), 49),
-    //     ];
+        let header_49 = BlockHeader {
+            version: 0x1,
+            prev_blockhash: BlockHash::from_hash(
+                Hash::from_hex("0000000088960278f4060b8747027b2aac0eb443aedbb1b75d1a72cf71826e89")
+                    .unwrap(),
+            ),
+            merkle_root: TxMerkleNode::from_hash(
+                Hash::from_hex("194c9715279d8626bc66f2b6552f2ae67b3df3a00b88553245b12bffffad5b59")
+                    .unwrap(),
+            ),
+            time: stamp.timestamp() as u32,
+            bits: 486_604_799,
+            nonce: 3_014_810_412,
+        };
 
-    //     let test_config = Config {
-    //         max_length: 2000,
-    //         max_time_increase: 8 * 60 * 60,
-    //         trusted_height: 42,
-    //         retarget_interval: 2016,
-    //         target_spacing: 10 * 60,
-    //         target_timespan: 2016 * (10 * 60),
-    //         max_target: 0x1d00ffff,
-    //         retargeting: true,
-    //         min_difficulty_blocks: false,
-    //         encoded_trusted_header: vec![
-    //             1, 0, 0, 0, 139, 82, 187, 215, 44, 47, 73, 86, 144, 89, 245, 89, 193, 177, 121, 77,
-    //             229, 25, 46, 79, 125, 109, 43, 3, 199, 72, 43, 173, 0, 0, 0, 0, 131, 228, 248, 169,
-    //             213, 2, 237, 12, 65, 144, 117, 193, 171, 181, 213, 111, 135, 138, 46, 144, 121,
-    //             229, 97, 43, 251, 118, 162, 220, 55, 217, 196, 39, 65, 221, 104, 73, 255, 255, 0,
-    //             29, 43, 144, 157, 214,
-    //         ]
-    //         .try_into()
-    //         .unwrap(),
-    //         network: bitcoin::Network::Bitcoin.into(),
-    //     };
-    //     let store = Store::new(Shared::new(MapStore::new()).into());
-    //     let mut q = HeaderQueue::with_conf(store, test_config).unwrap();
-    //     q.add(header_list.into()).unwrap();
-    // }
+        let header_list = vec![
+            WrappedHeader::new(Adapter::new(header_43), 43),
+            WrappedHeader::new(Adapter::new(header_44), 44),
+            WrappedHeader::new(Adapter::new(header_45), 45),
+            WrappedHeader::new(Adapter::new(header_46), 46),
+            WrappedHeader::new(Adapter::new(header_47), 47),
+            WrappedHeader::new(Adapter::new(header_48), 48),
+            WrappedHeader::new(Adapter::new(header_49), 49),
+        ];
+
+        let test_config = Config {
+            max_length: 2000,
+            max_time_increase: 8 * 60 * 60,
+            trusted_height: 42,
+            retarget_interval: 2016,
+            target_spacing: 10 * 60,
+            target_timespan: 2016 * (10 * 60),
+            max_target: 0x1d00ffff,
+            retargeting: true,
+            min_difficulty_blocks: false,
+            encoded_trusted_header: vec![
+                1, 0, 0, 0, 139, 82, 187, 215, 44, 47, 73, 86, 144, 89, 245, 89, 193, 177, 121, 77,
+                229, 25, 46, 79, 125, 109, 43, 3, 199, 72, 43, 173, 0, 0, 0, 0, 131, 228, 248, 169,
+                213, 2, 237, 12, 65, 144, 117, 193, 171, 181, 213, 111, 135, 138, 46, 144, 121,
+                229, 97, 43, 251, 118, 162, 220, 55, 217, 196, 39, 65, 221, 104, 73, 255, 255, 0,
+                29, 43, 144, 157, 214,
+            ]
+            .try_into()
+            .unwrap(),
+        };
+        let mut q = HeaderQueue::default();
+        q.configure(test_config).unwrap();
+        q.add(header_list.into()).unwrap();
+    }
 
     #[test]
     fn add_into_iterator() {
@@ -950,19 +916,12 @@ mod test {
             ]
             .try_into()
             .unwrap(),
-            network: bitcoin::Network::Bitcoin.into(),
         };
 
         let adapter = Adapter::new(header);
         let header_list = [WrappedHeader::new(adapter, 43)];
-        let store = Store::new(Shared::new(MapStore::new()).into());
-        let mut q = HeaderQueue::with_conf(store, test_config.clone()).unwrap();
-        q.add_into_iter(header_list).unwrap();
-
-        let adapter = Adapter::new(header);
-        let header_list = vec![WrappedHeader::new(adapter, 43)];
-        let store = Store::new(Shared::new(MapStore::new()).into());
-        let mut q = HeaderQueue::with_conf(store, test_config).unwrap();
+        let mut q = HeaderQueue::default();
+        q.configure(test_config).unwrap();
         q.add_into_iter(header_list).unwrap();
     }
 
@@ -1005,13 +964,12 @@ mod test {
             ]
             .try_into()
             .unwrap(),
-            network: bitcoin::Network::Bitcoin.into(),
         };
 
         let adapter = Adapter::new(header);
         let header_list = [WrappedHeader::new(adapter, 43)];
-        let store = Store::new(Shared::new(MapStore::new()).into());
-        let mut q = HeaderQueue::with_conf(store, test_config).unwrap();
+        let mut q = HeaderQueue::default();
+        q.configure(test_config).unwrap();
         q.add_into_iter(header_list).unwrap();
     }
 }

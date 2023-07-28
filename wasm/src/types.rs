@@ -50,6 +50,22 @@ pub struct AirdropDetails {
     pub amount: u64,
 }
 
+#[cfg(feature = "testnet")]
+#[derive(Clone, Default)]
+#[wasm_bindgen(getter_with_clone)]
+pub struct Airdrop {
+    pub airdrop1: AirdropDetails,
+    #[wasm_bindgen(js_name = btcDeposit)]
+    pub btc_deposit: AirdropDetails,
+    #[wasm_bindgen(js_name = btcWithdraw)]
+    pub btc_withdraw: AirdropDetails,
+    #[wasm_bindgen(js_name = ibcTransfer)]
+    pub ibc_transfer: AirdropDetails,
+    // #[wasm_bindgen(js_name = testnetParticipation)]
+    // pub testnet_participation: AirdropDetails,
+}
+
+#[cfg(not(feature = "testnet"))]
 #[derive(Clone, Default)]
 #[wasm_bindgen(getter_with_clone)]
 pub struct Airdrop {
@@ -64,6 +80,17 @@ pub struct Airdrop {
 
 #[wasm_bindgen]
 impl Airdrop {
+    #[cfg(feature = "testnet")]
+    #[wasm_bindgen(js_name = airdropTotal)]
+    pub fn airdrop_total(&self) -> u64 {
+        self.airdrop1.amount
+            + self.btc_deposit.amount
+            + self.btc_withdraw.amount
+            + self.ibc_transfer.amount
+        // + self.testnet_participation.amount
+    }
+
+    #[cfg(not(feature = "testnet"))]
     #[wasm_bindgen(js_name = airdropTotal)]
     pub fn airdrop_total(&self) -> u64 {
         self.airdrop1.amount
@@ -72,6 +99,17 @@ impl Airdrop {
             + self.ibc_transfer.amount
     }
 
+    #[cfg(feature = "testnet")]
+    #[wasm_bindgen(js_name = claimedTotal)]
+    pub fn claimed_total(&self) -> u64 {
+        self.airdrop1.claimed
+            + self.btc_deposit.claimed
+            + self.btc_withdraw.claimed
+            + self.ibc_transfer.claimed
+        // + self.testnet_participation.claimed
+    }
+
+    #[cfg(not(feature = "testnet"))]
     #[wasm_bindgen(js_name = claimedTotal)]
     pub fn claimed_total(&self) -> u64 {
         self.airdrop1.claimed

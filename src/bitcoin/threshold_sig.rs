@@ -6,26 +6,28 @@ use bitcoin::secp256k1::{
     ecdsa, PublicKey, Secp256k1,
 };
 use derive_more::{Deref, From};
-use orga::call::Call;
-use orga::client::Client;
 use orga::collections::{Map, Next};
 use orga::encoding::{Decode, Encode};
-use orga::migrate::MigrateFrom;
-use orga::query::Query;
+use orga::macros::Describe;
+use orga::migrate::Migrate;
+use orga::prelude::FieldCall;
+use orga::query::FieldQuery;
 use orga::state::State;
-use orga::{Error, Result};
+use orga::store::Store;
+use orga::{orga, Error, Result};
+use serde::Serialize;
 
 pub type Message = [u8; MESSAGE_SIZE];
 
-#[derive(Encode, Decode, State, Debug, Clone, Deref, From, Copy, MigrateFrom)]
-pub struct Signature([u8; COMPACT_SIGNATURE_SIZE]);
+#[derive(Encode, Decode, State, Debug, Clone, Deref, From, Copy, Migrate, Serialize, Describe)]
+pub struct Signature(#[serde(serialize_with = "<[_]>::serialize")] [u8; COMPACT_SIGNATURE_SIZE]);
 
 #[derive(
     Encode,
     Decode,
     State,
-    Query,
-    Call,
+    FieldQuery,
+    FieldCall,
     Clone,
     Debug,
     Copy,
@@ -33,22 +35,31 @@ pub struct Signature([u8; COMPACT_SIGNATURE_SIZE]);
     Eq,
     PartialOrd,
     Ord,
-    MigrateFrom,
-    Client,
+    Serialize,
+    Describe,
 )]
-pub struct Pubkey([u8; PUBLIC_KEY_SIZE]);
+pub struct Pubkey {
+    #[serde(serialize_with = "<[_]>::serialize")]
+    bytes: [u8; PUBLIC_KEY_SIZE],
+}
+
+impl Migrate for Pubkey {
+    fn migrate(_src: Store, _dest: Store, bytes: &mut &[u8]) -> Result<Self> {
+        Ok(Self::decode(bytes)?)
+    }
+}
 
 impl Next for Pubkey {
     fn next(&self) -> Option<Self> {
         let mut output = *self;
-        for (i, value) in self.0.iter().enumerate().rev() {
+        for (i, value) in self.bytes.iter().enumerate().rev() {
             match value.next() {
                 Some(new_value) => {
-                    output.0[i] = new_value;
+                    output.bytes[i] = new_value;
                     return Some(output);
                 }
                 None => {
-                    output.0[i] = 0;
+                    output.bytes[i] = 0;
                 }
             }
         }
@@ -58,23 +69,87 @@ impl Next for Pubkey {
 
 impl Default for Pubkey {
     fn default() -> Self {
-        Pubkey([0; PUBLIC_KEY_SIZE])
+        Pubkey {
+            bytes: [0; PUBLIC_KEY_SIZE],
+        }
     }
 }
 
 impl Pubkey {
     pub fn new(pubkey: [u8; PUBLIC_KEY_SIZE]) -> Self {
-        Pubkey(pubkey)
+        Pubkey { bytes: pubkey }
     }
 
     pub fn as_slice(&self) -> &[u8] {
-        &self.0
+        &self.bytes
     }
 }
 
 impl From<PublicKey> for Pubkey {
     fn from(pubkey: PublicKey) -> Self {
-        Pubkey(pubkey.serialize())
+        Pubkey {
+            bytes: pubkey.serialize(),
+        }
+    }
+}
+
+#[derive(
+    Encode,
+    Decode,
+    State,
+    FieldQuery,
+    FieldCall,
+    Clone,
+    Debug,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Describe,
+    Migrate,
+)]
+pub struct VersionedPubkey {
+    #[serde(serialize_with = "<[_]>::serialize")]
+    bytes: [u8; PUBLIC_KEY_SIZE],
+}
+
+impl Default for VersionedPubkey {
+    fn default() -> Self {
+        VersionedPubkey {
+            bytes: [0; PUBLIC_KEY_SIZE],
+        }
+    }
+}
+
+impl VersionedPubkey {
+    pub fn as_slice(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+impl From<Pubkey> for VersionedPubkey {
+    fn from(pubkey: Pubkey) -> Self {
+        VersionedPubkey {
+            bytes: pubkey.bytes,
+        }
+    }
+}
+
+impl From<VersionedPubkey> for Pubkey {
+    fn from(pubkey: VersionedPubkey) -> Self {
+        Pubkey {
+            bytes: pubkey.bytes,
+        }
+    }
+}
+
+impl From<PublicKey> for VersionedPubkey {
+    fn from(pubkey: PublicKey) -> Self {
+        VersionedPubkey {
+            bytes: pubkey.serialize(),
+        }
     }
 }
 
@@ -89,6 +164,7 @@ pub struct ThresholdSig {
     sigs: Map<Pubkey, Share>,
 }
 
+#[orga]
 impl ThresholdSig {
     pub fn new() -> Self {
         Self::default()
@@ -107,29 +183,31 @@ impl ThresholdSig {
         self.message
     }
 
-    pub fn from_sigset(&mut self, signatories: &SignatorySet) -> Result<()> {
+    pub fn from_sigset(signatories: &SignatorySet) -> Result<Self> {
+        let mut ts = ThresholdSig::default();
         let mut total_vp = 0;
 
         for signatory in signatories.iter() {
-            self.sigs.insert(
-                signatory.pubkey,
+            ts.sigs.insert(
+                signatory.pubkey.into(),
                 Share {
                     power: signatory.voting_power,
                     sig: None,
                 },
             )?;
 
-            self.len += 1;
+            ts.len += 1;
             total_vp += signatory.voting_power;
         }
 
         // TODO: get threshold ratio from somewhere else
-        self.threshold = ((total_vp as u128) * 2 / 3) as u64;
+        ts.threshold = ((total_vp as u128) * 2 / 3) as u64;
 
-        Ok(())
+        Ok(ts)
     }
 
-    pub fn from_shares(&mut self, shares: Vec<(Pubkey, Share)>) -> Result<()> {
+    pub fn from_shares(shares: Vec<(Pubkey, Share)>) -> Result<Self> {
+        let mut ts = ThresholdSig::default();
         let mut total_vp = 0;
         let mut len = 0;
 
@@ -137,19 +215,19 @@ impl ThresholdSig {
             assert!(share.sig.is_none());
             total_vp += share.power;
             len += 1;
-            self.sigs.insert(pubkey, share)?;
+            ts.sigs.insert(pubkey, share)?;
         }
 
         // TODO: get threshold ratio from somewhere else
-        self.threshold = ((total_vp as u128) * 2 / 3) as u64;
-        self.len = len;
+        ts.threshold = ((total_vp as u128) * 2 / 3) as u64;
+        ts.len = len;
 
-        Ok(())
+        Ok(ts)
     }
 
     #[query]
     pub fn done(&self) -> bool {
-        self.signed >= self.threshold
+        self.signed > self.threshold
     }
 
     #[query]
@@ -163,7 +241,7 @@ impl ThresholdSig {
                 };
                 share.sig.as_ref().map(|sig| Ok((*pubkey, *sig)))
             })
-            .collect()
+            .collect::<Result<_>>()
     }
 
     // TODO: should be iterator?
@@ -171,7 +249,7 @@ impl ThresholdSig {
         self.sigs
             .iter()?
             .map(|entry| entry.map(|(pubkey, share)| (*pubkey, share.clone())))
-            .collect()
+            .collect::<Result<_>>()
     }
 
     #[query]
@@ -191,7 +269,7 @@ impl ThresholdSig {
     // TODO: exempt from fee
     pub fn sign(&mut self, pubkey: Pubkey, sig: Signature) -> Result<()> {
         if self.done() {
-            return Err(Error::App("Threshold signature is done".into()));
+            return Err(Error::App("Threshold signature is done".into()))?;
         }
 
         let share = self
@@ -200,7 +278,7 @@ impl ThresholdSig {
             .ok_or_else(|| Error::App("Pubkey is not part of threshold signature".into()))?;
 
         if share.sig.is_some() {
-            return Err(Error::App("Pubkey already signed".into()));
+            return Err(Error::App("Pubkey already signed".into()))?;
         }
 
         self.verify(pubkey, sig)?;
@@ -216,10 +294,10 @@ impl ThresholdSig {
         Ok(())
     }
 
-    pub fn verify(&self, pubkey: Pubkey, sig: Signature) -> Result<()> {
+    pub fn verify(&self, pubkey: Pubkey, sig: Signature) -> crate::error::Result<()> {
         // TODO: re-use secp context
         let secp = Secp256k1::verification_only();
-        let pubkey = PublicKey::from_slice(&pubkey.0)?;
+        let pubkey = PublicKey::from_slice(&pubkey.bytes)?;
         let msg = secp256k1::Message::from_slice(self.message.as_slice())?;
         let sig = ecdsa::Signature::from_compact(sig.as_slice())?;
 
@@ -231,7 +309,7 @@ impl ThresholdSig {
 
     // TODO: this shouldn't know so much about bitcoin-specific structure,
     // decouple by exposing a power-ordered iterator of Option<Signature>
-    pub fn to_witness(&self) -> Result<Vec<Vec<u8>>> {
+    pub fn to_witness(&self) -> crate::error::Result<Vec<Vec<u8>>> {
         if !self.done() {
             return Ok(vec![]);
         }

@@ -1,39 +1,45 @@
-use crate::app::App;
+use crate::app::{InnerApp, Nom};
+use crate::bitcoin::threshold_sig::Signature;
 use crate::error::Result;
 use bitcoin::secp256k1::{Message, Secp256k1};
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
-use orga::{abci::TendermintClient, coins::Address};
+use log::info;
+use orga::client::{AppClient, Wallet};
+use orga::coins::Address;
+use orga::encoding::LengthVec;
+use orga::macros::build_call;
+use orga::tendermint::client::HttpClient;
 use rand::Rng;
 use std::fs;
 use std::path::Path;
 use std::time::SystemTime;
 
-pub struct Signer {
+pub struct Signer<W> {
     op_addr: Address,
-    client: TendermintClient<App>,
     xpriv: ExtendedPrivKey,
     max_withdrawal_rate: f64,
     max_sigset_change_rate: f64,
+    app_client: fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, W>,
 }
 
-impl Signer {
+impl<W: Wallet> Signer<W> {
     pub fn load_or_generate<P: AsRef<Path>>(
         op_addr: Address,
-        client: TendermintClient<App>,
         key_path: P,
         max_withdrawal_rate: f64,
         max_sigset_change_rate: f64,
+        app_client: fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, W>,
     ) -> Result<Self> {
         let path = key_path.as_ref();
         let xpriv = if path.exists() {
-            println!("Loading signatory key from {}", path.display());
+            info!("Loading signatory key from {}", path.display());
             let bytes = fs::read(path)?;
             let text = String::from_utf8(bytes).unwrap();
             text.trim().parse()?
         } else {
-            println!("Generating signatory key at {}", path.display());
+            info!("Generating signatory key at {}", path.display());
             let seed: [u8; 32] = rand::thread_rng().gen();
-            let xpriv = ExtendedPrivKey::new_master(super::NETWORK, seed.as_slice())?;
+            let xpriv = ExtendedPrivKey::new_master(bitcoin::Network::Testnet, seed.as_slice())?;
 
             fs::write(path, xpriv.to_string().as_bytes())?;
 
@@ -42,51 +48,62 @@ impl Signer {
 
         let secp = bitcoin::secp256k1::Secp256k1::signing_only();
         let xpub = ExtendedPubKey::from_priv(&secp, &xpriv);
-        println!("Signatory xpub:\n{}", xpub);
+        dbg!("Signatory xpub:\n{}", xpub);
 
         Ok(Self::new(
             op_addr,
-            client,
             xpriv,
             max_withdrawal_rate,
             max_sigset_change_rate,
+            app_client,
         ))
     }
 
     pub fn new(
         op_addr: Address,
-        client: TendermintClient<App>,
         xpriv: ExtendedPrivKey,
         max_withdrawal_rate: f64,
         max_sigset_change_rate: f64,
+        app_client: fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, W>,
     ) -> Self {
         Signer {
             op_addr,
-            client,
             xpriv,
             max_withdrawal_rate,
             max_sigset_change_rate,
+            app_client,
         }
     }
 
     pub async fn start(mut self) -> Result<()> {
+        info!("Starting signer...");
         let secp = Secp256k1::signing_only();
         let xpub = ExtendedPubKey::from_priv(&secp, &self.xpriv);
 
         loop {
             self.maybe_submit_xpub(&xpub).await?;
 
-            if let Err(e) = self.try_sign(&xpub).await {
-                eprintln!("Signer error: {}", e);
-            }
+            let signed = match self.try_sign(&xpub).await {
+                Ok(signed) => signed,
+                Err(e) => {
+                    eprintln!("Signer error: {}", e);
+                    false
+                }
+            };
 
-            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            if !signed {
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            }
         }
     }
 
     async fn maybe_submit_xpub(&mut self, xpub: &ExtendedPubKey) -> Result<()> {
-        let cons_key = self.client.staking.consensus_key(self.op_addr).await??;
-        let onchain_xpub = self.client.bitcoin.signatory_keys.get(cons_key).await??;
+        let cons_key = (self.app_client)()
+            .query(|app| app.staking.consensus_key(self.op_addr))
+            .await?;
+        let onchain_xpub = (self.app_client)()
+            .query(|app| Ok(app.bitcoin.signatory_keys.get(cons_key)?))
+            .await?;
 
         match onchain_xpub {
             None => self.submit_xpub(xpub).await,
@@ -99,36 +116,38 @@ impl Signer {
     }
 
     async fn submit_xpub(&mut self, xpub: &ExtendedPubKey) -> Result<()> {
-        self.client
-            .pay_from(async move |client| client.bitcoin.set_signatory_key(xpub.into()).await)
-            .noop()
+        (self.app_client)()
+            .call(
+                move |app| build_call!(app.bitcoin.set_signatory_key(xpub.into())),
+                |app| build_call!(app.app_noop()),
+            )
             .await?;
-        println!("Submitted signatory key.");
+        info!("Submitted signatory key.");
         Ok(())
     }
 
-    async fn try_sign(&mut self, xpub: &ExtendedPubKey) -> Result<()> {
+    async fn try_sign(&mut self, xpub: &ExtendedPubKey) -> Result<bool> {
         let secp = Secp256k1::signing_only();
 
-        let _signing = match self.client.bitcoin.checkpoints.signing().await?? {
-            None => return Ok(()),
-            Some(signing) => signing,
-        };
+        if (self.app_client)()
+            .query(|app| Ok(app.bitcoin.checkpoints.signing()?.is_none()))
+            .await?
+        {
+            return Ok(false);
+        }
 
-        let to_sign = self
-            .client
-            .bitcoin
-            .checkpoints
-            .to_sign(xpub.into())
-            .await??;
+        let to_sign = (self.app_client)()
+            .query(|app| Ok(app.bitcoin.checkpoints.to_sign(xpub.into())?))
+            .await?;
         if to_sign.is_empty() {
-            return Ok(());
+            return Ok(false);
         }
 
         self.check_change_rates().await?;
-        println!("Signing checkpoint... ({} inputs)", to_sign.len());
+        info!("Signing checkpoint...");
+        dbg!("{} inputs", to_sign.len());
 
-        let sigs: Vec<_> = to_sign
+        let sigs: LengthVec<u16, Signature> = to_sign
             .into_iter()
             .map(|(msg, index)| {
                 let privkey = self
@@ -141,27 +160,26 @@ impl Signer {
                     .serialize_compact()
                     .into())
             })
-            .collect::<Result<_>>()?;
+            .collect::<Result<Vec<_>>>()?
+            .try_into()?;
 
-        self.client
-            .clone()
-            .pay_from(async move |client| {
-                client
-                    .bitcoin
-                    .checkpoints
-                    .sign(xpub.into(), sigs.try_into()?)
-                    .await
-            })
-            .noop()
+        (self.app_client)()
+            .call(
+                move |app| build_call!(app.bitcoin.checkpoints.sign(xpub.into(), sigs.clone())),
+                |app| build_call!(app.app_noop()),
+            )
             .await?;
 
-        println!("Submitted signatures");
+        info!("Submitted signatures");
 
-        Ok(())
+        Ok(true)
     }
 
     async fn check_change_rates(&self) -> Result<()> {
-        if self.client.bitcoin.checkpoints.index().await? < 100 {
+        let checkpoint_index = (self.app_client)()
+            .query(|app| Ok(app.bitcoin.checkpoints.index()))
+            .await?;
+        if checkpoint_index < 100 {
             return Ok(());
         }
 
@@ -169,11 +187,9 @@ impl Signer {
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        let rates = self
-            .client
-            .bitcoin
-            .change_rates(60 * 60 * 24, now)
-            .await??;
+        let rates = (self.app_client)()
+            .query(|app| Ok(app.bitcoin.change_rates(60 * 60 * 24, now)?))
+            .await?;
 
         let withdrawal_rate = rates.withdrawal as f64 / 10_000.0;
         let sigset_change_rate = rates.sigset_change as f64 / 10_000.0;
