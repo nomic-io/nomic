@@ -14,20 +14,35 @@ fn main() {
         println!("cargo:rerun-if-changed=build.sh");
         let shell = std::env::var("SHELL").unwrap_or("/bin/bash".to_string());
         println!("using shell: {}", shell);
-        let version = if branch_name == "main" {
+        let toml = if branch_name == "main" {
             todo!()
         } else {
-            let toml = include_str!("networks/testnet.toml");
-            let config: toml::Value = toml::from_str(toml).unwrap();
-            config
-                .as_table()
-                .unwrap()
-                .get("legacy_version")
-                .unwrap()
-                .as_str()
-                .unwrap()
-                .to_string()
+            println!("cargo:rerun-if-changed=networks/testnet.toml");
+            include_str!("networks/testnet.toml")
         };
+        let config: toml::Value = toml::from_str(toml).unwrap();
+        let version_req = config
+            .as_table()
+            .unwrap()
+            .get("legacy_version")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_string();
+        let version_req = semver::VersionReq::parse(&version_req).unwrap();
+
+        let version = std::process::Command::new("git")
+            .args(["tag"])
+            .output()
+            .unwrap()
+            .stdout
+            .split(|&b| b == b'\n')
+            .map(|b| String::from_utf8(b.to_vec()).unwrap())
+            .filter(|s| s.starts_with("v"))
+            .filter_map(|s| semver::Version::parse(&s[1..]).ok())
+            .filter(|v| version_req.matches(v))
+            .max()
+            .unwrap();
 
         std::process::Command::new(shell)
             .env_clear()
