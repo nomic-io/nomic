@@ -72,17 +72,19 @@ pub struct InnerConfig {
 pub struct Config(InnerConfig);
 
 impl Config {
-    pub fn home(&self) -> Result<PathBuf> {
+    pub fn home(&self) -> Option<PathBuf> {
         if let Some(home) = self.home.as_ref() {
-            Ok(PathBuf::from(home))
+            Some(PathBuf::from(home))
         } else if let Some(chain_id) = self.chain_id.as_ref() {
-            Ok(orga::abci::Node::home(chain_id))
+            Some(orga::abci::Node::home(chain_id))
         } else {
-            Err(
-                orga::Error::App("Must specify --network, --home, or --chain-id".to_string())
-                    .into(),
-            )
+            None
         }
+    }
+
+    pub fn home_expect(&self) -> Result<PathBuf> {
+        self.home()
+            .ok_or_else(|| orga::Error::App("Cannot get home directory. Please specify either --network, --home, or --chain-id.".to_string()).into())
     }
 
     pub fn is_empty(&self) -> bool {
