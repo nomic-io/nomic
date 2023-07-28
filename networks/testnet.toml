@@ -1,4 +1,3 @@
-chain_id = "nomic-testnet-4d"
 state_sync_rpc = [
     "http://147.182.171.216:26667",
     "http://147.182.171.216:26677",
