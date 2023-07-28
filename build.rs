@@ -44,14 +44,15 @@ fn main() {
             .max()
             .unwrap();
 
-        std::process::Command::new(shell)
+        let res = std::process::Command::new(shell)
             .env_clear()
             .env("OUT_DIR", std::env::var("OUT_DIR").unwrap())
             .env("NOMIC_LEGACY_REV", format!("v{}", version))
             .args(["build.sh"])
             .spawn()
             .unwrap()
-            .wait()
+            .wait_with_output()
             .unwrap();
+        assert!(res.status.success());
     }
 }
