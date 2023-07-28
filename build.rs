@@ -70,6 +70,7 @@ fn main() {
         let res = std::process::Command::new(shell)
             .env_clear()
             .env("OUT_DIR", std::env::var("OUT_DIR").unwrap())
+            .env("PATH", std::env::var("PATH").unwrap())
             .env("NOMIC_LEGACY_REV", rev)
             .args(["build.sh"])
             .spawn()
