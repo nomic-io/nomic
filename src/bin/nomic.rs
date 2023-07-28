@@ -369,7 +369,7 @@ fn legacy_bin(config: &nomic::network::Config) -> Result<Option<PathBuf>> {
         Some(home) => home,
         None => {
             log::warn!("Unknown home directory, cannot automatically run legacy binary.");
-            log::warn!("If the command fails, try running with an older version.");
+            log::warn!("If the command fails, try running with --network, --home, or --chain-id.");
             return Ok(None);
         }
     };
@@ -415,7 +415,7 @@ fn legacy_bin(config: &nomic::network::Config) -> Result<Option<PathBuf>> {
                     std::fs::create_dir_all(&bin_dir)?;
                 }
 
-                let bin_name = env!("NOMIC_LEGACY_BUILD_VERSION").trim().replace(" ", "-");
+                let bin_name = env!("NOMIC_LEGACY_BUILD_VERSION").trim().replace(' ', "-");
                 let bin_path = bin_dir.join(bin_name);
                 let bin_bytes = include_bytes!(env!("NOMIC_LEGACY_BUILD_PATH"));
                 if !bin_path.exists() {
@@ -503,7 +503,7 @@ async fn relaunch_on_migrate(config: &nomic::network::Config) -> Result<()> {
         }
         let store = MerkStore::open_readonly(home.join("merk"));
         let store_ver = store.merk().get_aux(b"consensus_version").unwrap();
-        if let Some(_) = &initial_ver {
+        if initial_ver.is_some() {
             if store_ver != initial_ver {
                 log::info!(
                     "Node has migrated from version {:?} to version {:?}, exiting",

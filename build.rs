@@ -46,7 +46,7 @@ fn main() {
             .stdout
             .split(|&b| b == b'\n')
             .map(|b| String::from_utf8(b.to_vec()).unwrap())
-            .filter(|s| s.starts_with("v"))
+            .filter(|s| s.starts_with('v'))
             .filter_map(|s| semver::Version::parse(&s[1..]).ok())
             .filter(|v| version_req.matches(v))
             .max()
