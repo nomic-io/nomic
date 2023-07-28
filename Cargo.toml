@@ -55,6 +55,7 @@ tempfile = "3.6.0"
 
 [build-dependencies]
 toml = { version = "0.7.2", features = ["parse"] }
+semver = "1.0.18"
 
 [features]
 default = ["full", "feat-ibc", "testnet"]

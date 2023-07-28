@@ -1,9 +1,13 @@
 #!/bin/bash
 
-echo "Building legacy nomic at $OUT_DIR/nomic..."
-git clone https://github.com/nomic-io/nomic.git $OUT_DIR/nomic
-cd $OUT_DIR/nomic
-git reset --hard main
+BUILD_DIR=$OUT_DIR/nomic
+echo "Building legacy nomic at $BUILD_DIR..."
+if [ ! -d "$BUILD_DIR" ]; then
+    git clone https://github.com/nomic-io/nomic.git $OUT_DIR/nomic
+fi
+cd $BUILD_DIR
+git checkout .
+git checkout main
 git pull
 git checkout $NOMIC_LEGACY_REV
 
