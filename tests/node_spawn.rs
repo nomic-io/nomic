@@ -90,3 +90,28 @@ fn migrate() {
         );
     }
 }
+
+#[ignore]
+#[serial_test::serial]
+#[test]
+fn testnet() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_nomic"));
+    cmd.env("NOMIC_EXIT_ON_START", "1");
+    cmd.args([
+        "start",
+        "--network",
+        "testnet",
+        "--home",
+        home.to_str().unwrap(),
+    ]);
+
+    let output = cmd.spawn().unwrap().wait_with_output().unwrap();
+    assert_eq!(output.status.code().unwrap(), 139);
+
+    let package_ver = env!("CARGO_PKG_VERSION");
+    assert!(home.join(format!("bin/nomic-{}", package_ver)).exists());
+    assert!(home.join("tendermint/config/genesis.json").exists());
+}
