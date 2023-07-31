@@ -1,10 +1,10 @@
-use orga::coins::Decimal;
-use orga::coins::{Address, Amount};
+use orga::coins::Address;
+#[cfg(feature = "full")]
+use orga::coins::{Amount, Decimal};
 use orga::collections::{ChildMut, Map};
 use orga::context::GetContext;
 use orga::migrate::MigrateFrom;
 use orga::orga;
-use orga::plugins::MIN_FEE;
 use orga::plugins::{Paid, Signer};
 use orga::{Error, Result};
 #[cfg(feature = "full")]
