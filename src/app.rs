@@ -33,7 +33,7 @@ use orga::macros::build_call;
 use orga::migrate::Migrate;
 use orga::orga;
 use orga::plugins::sdk_compat::{sdk, sdk::Tx as SdkTx, ConvertSdkTx};
-use orga::plugins::{DefaultPlugins, Paid, PaidCall, Signer, Time, MIN_FEE};
+use orga::plugins::{disable_fee, DefaultPlugins, Paid, PaidCall, Signer, Time, MIN_FEE};
 use orga::prelude::*;
 use orga::upgrade::Version;
 use orga::upgrade::{Upgrade, UpgradeV0};
@@ -296,11 +296,7 @@ impl InnerApp {
 
     #[call]
     fn join_accounts(&mut self, dest_addr: Address) -> Result<()> {
-        let paid = self
-            .context::<Paid>()
-            .ok_or_else(|| Error::Coins("No Paid context found".into()))?;
-
-        paid.give::<Nom, _>(MIN_FEE)?;
+        disable_fee();
 
         self.airdrop.join_accounts(dest_addr)?;
         self.incentives.join_accounts(dest_addr)?;
