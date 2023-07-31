@@ -89,7 +89,7 @@ impl Incentives {
 
         self.accounts
             .get_mut(signer)?
-            .ok_or_else(|| OrgaError::Coins("No airdrop account for signer".into()))
+            .ok_or_else(|| OrgaError::App("No airdrop account for signer".into()))
     }
 
     fn pay_as_funding(&mut self, amount: u64) -> Result<()> {
@@ -108,10 +108,15 @@ impl Incentives {
         Ok(())
     }
 
-    pub fn join_accounts(&mut self, dest_addr: Address) -> OrgaResult<()> {
-        let mut acct = self.signer_acct_mut()?;
+    pub fn join_accounts(&mut self, dest_addr: Address) -> OrgaResult<u64> {
+        let mut acct = match self.signer_acct_mut() {
+            Ok(acct) => acct,
+            Err(OrgaError::App(_)) => return Ok(0),
+            Err(e) => return Err(e),
+        };
+
         if acct.is_empty() {
-            return Err(OrgaError::App("Account has no airdrop balance".to_string()));
+            return Ok(0);
         }
 
         let src = acct.clone();
@@ -127,10 +132,13 @@ impl Incentives {
             }
             dest.claimable += src.claimable;
             dest.claimed += src.claimed;
+
+            src.total()
         };
 
-        add_part(&mut dest.testnet_participation, src.testnet_participation);
+        let testnet_participation =
+            add_part(&mut dest.testnet_participation, src.testnet_participation);
 
-        Ok(())
+        Ok(testnet_participation)
     }
 }
