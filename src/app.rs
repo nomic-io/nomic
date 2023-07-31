@@ -44,7 +44,6 @@ use std::fmt::Debug;
 
 mod migrations;
 
-pub const CHAIN_ID: &str = "nomic-testnet-4d";
 pub type AppV0 = DefaultPlugins<Nom, InnerAppV0>;
 pub type App = DefaultPlugins<Nom, InnerApp>;
 
@@ -405,7 +404,9 @@ mod abci {
             let ip_reward = self.incentive_pool_rewards.mint()?;
             self.incentive_pool.give(ip_reward)?;
 
-            self.bitcoin.begin_block(ctx)?;
+            let external_outputs: Vec<crate::error::Result<bitcoin::TxOut>> = vec![]; // TODO: remote chain disbursal
+            self.bitcoin
+                .begin_block_step(external_outputs.into_iter())?;
 
             let has_nbtc_rewards = self.bitcoin.reward_pool.amount > 0;
             if self.reward_timer.tick(now) && has_stake && has_nbtc_rewards {
