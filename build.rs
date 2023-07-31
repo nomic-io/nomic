@@ -67,11 +67,16 @@ fn main() {
 
         let shell = std::env::var("SHELL").unwrap_or("/bin/bash".to_string());
         println!("Using shell: {}", shell);
+
+        let cargo_features =
+            std::env::var("NOMIC_LEGACY_FEATURES").unwrap_or("full,feat-ibc,testnet".to_string());
+
         let res = std::process::Command::new(shell)
             .env_clear()
             .env("OUT_DIR", std::env::var("OUT_DIR").unwrap())
             .env("PATH", std::env::var("PATH").unwrap())
             .env("NOMIC_LEGACY_REV", rev)
+            .env("CARGO_FEATURES", cargo_features)
             .args(["build.sh"])
             .spawn()
             .unwrap()
