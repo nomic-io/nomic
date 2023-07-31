@@ -137,6 +137,8 @@ impl Airdrop {
         add_part(&mut dest.ibc_transfer, src.ibc_transfer);
         add_part(&mut dest.btc_withdraw, src.btc_withdraw);
 
+        dest.joined = true;
+
         Ok(())
     }
 
@@ -367,6 +369,7 @@ pub struct Account {
     pub btc_deposit: Part,
     pub btc_withdraw: Part,
     pub ibc_transfer: Part,
+    pub joined: bool,
 }
 
 impl Account {
