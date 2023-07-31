@@ -159,9 +159,6 @@ impl InnerApp {
 
             let signer = self.signer()?;
             let mut coins = self.bitcoin.accounts.withdraw(signer, amount)?;
-            if let Some(mut acct) = self.airdrop.get_mut(signer)? {
-                acct.ibc_transfer.unlock();
-            }
 
             let fee = ibc_fee(amount)?;
             let fee = coins.take(fee)?;
@@ -233,9 +230,6 @@ impl InnerApp {
             )?;
             match dest {
                 DepositCommitment::Address(addr) => {
-                    if let Some(mut acct) = self.airdrop.get_mut(addr)? {
-                        acct.btc_deposit.unlock();
-                    }
                     self.bitcoin.accounts.deposit(addr, nbtc.into())?
                 }
                 DepositCommitment::Ibc(dest) => {
@@ -286,11 +280,6 @@ impl InnerApp {
         script_pubkey: Adapter<bitcoin::Script>,
         amount: Amount,
     ) -> Result<()> {
-        let signer = self.signer()?;
-        if let Some(mut acct) = self.airdrop.get_mut(signer)? {
-            acct.btc_withdraw.unlock();
-        }
-
         Ok(self.bitcoin.withdraw(script_pubkey, amount)?)
     }
 
@@ -700,51 +689,6 @@ impl ConvertSdkTx for InnerApp {
                         }
 
                         let payer = build_call!(self.airdrop.claim_airdrop1());
-                        let paid = build_call!(self.accounts.give_from_funding_all());
-
-                        Ok(PaidCall { payer, paid })
-                    }
-
-                    "nomic/MsgClaimBtcDepositAirdrop" => {
-                        let msg = msg
-                            .value
-                            .as_object()
-                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
-                        if !msg.is_empty() {
-                            return Err(Error::App("Message should be empty".to_string()));
-                        }
-
-                        let payer = build_call!(self.airdrop.claim_btc_deposit());
-                        let paid = build_call!(self.accounts.give_from_funding_all());
-
-                        Ok(PaidCall { payer, paid })
-                    }
-
-                    "nomic/MsgClaimBtcWithdrawAirdrop" => {
-                        let msg = msg
-                            .value
-                            .as_object()
-                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
-                        if !msg.is_empty() {
-                            return Err(Error::App("Message should be empty".to_string()));
-                        }
-
-                        let payer = build_call!(self.airdrop.claim_btc_withdraw());
-                        let paid = build_call!(self.accounts.give_from_funding_all());
-
-                        Ok(PaidCall { payer, paid })
-                    }
-
-                    "nomic/MsgClaimIbcTransferAirdrop" => {
-                        let msg = msg
-                            .value
-                            .as_object()
-                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
-                        if !msg.is_empty() {
-                            return Err(Error::App("Message should be empty".to_string()));
-                        }
-
-                        let payer = build_call!(self.airdrop.claim_ibc_transfer());
                         let paid = build_call!(self.accounts.give_from_funding_all());
 
                         Ok(PaidCall { payer, paid })

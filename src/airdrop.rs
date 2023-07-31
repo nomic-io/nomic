@@ -84,25 +84,9 @@ impl Airdrop {
     }
 
     #[call]
-    pub fn claim_btc_deposit(&mut self) -> Result<()> {
+    pub fn claim_airdrop2(&mut self) -> Result<()> {
         let mut acct = self.signer_acct_mut()?;
-        let amount = acct.btc_deposit.claim()?;
-        self.pay_as_funding(amount)?;
-        Ok(())
-    }
-
-    #[call]
-    pub fn claim_btc_withdraw(&mut self) -> Result<()> {
-        let mut acct = self.signer_acct_mut()?;
-        let amount = acct.btc_withdraw.claim()?;
-        self.pay_as_funding(amount)?;
-        Ok(())
-    }
-
-    #[call]
-    pub fn claim_ibc_transfer(&mut self) -> Result<()> {
-        let mut acct = self.signer_acct_mut()?;
-        let amount = acct.ibc_transfer.claim()?;
+        let amount = acct.airdrop2.claim()?;
         self.pay_as_funding(amount)?;
         Ok(())
     }
@@ -133,9 +117,7 @@ impl Airdrop {
         };
 
         add_part(&mut dest.airdrop1, src.airdrop1);
-        add_part(&mut dest.btc_deposit, src.btc_deposit);
-        add_part(&mut dest.ibc_transfer, src.ibc_transfer);
-        add_part(&mut dest.btc_withdraw, src.btc_withdraw);
+        add_part(&mut dest.airdrop2, src.airdrop2);
 
         dest.joined = true;
 
@@ -222,18 +204,14 @@ impl Airdrop {
 
         #[cfg(feature = "testnet")]
         {
-            acct.btc_deposit.locked = unom / 3;
-            acct.btc_withdraw.locked = unom / 3;
-            acct.ibc_transfer.locked = unom / 3;
+            acct.airdrop2.claimable = unom;
 
             Ok((0, 0))
         }
 
         #[cfg(not(feature = "testnet"))]
         {
-            acct.btc_deposit.locked = unom / 4;
-            acct.btc_withdraw.locked = unom / 4;
-            acct.ibc_transfer.locked = unom / 4;
+            acct.airdrop2.claimable = unom;
             assert!(testnet_completions <= 3);
             acct.testnet_participation.locked = unom / 12 * (3 - testnet_completions);
             acct.testnet_participation.claimable = unom / 12 * testnet_completions;
@@ -343,7 +321,7 @@ impl Airdrop {
 // }
 
 #[cfg(not(feature = "testnet"))]
-#[orga(version = 1)]
+#[orga(version = 2)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Account {
     #[orga(version(V0))]
@@ -359,16 +337,29 @@ pub struct Account {
     pub ibc_transfer: Part,
     #[orga(version(V1))]
     pub testnet_participation: Part,
+
+    #[orga(version(V2))]
+    pub airdrop2: Part,
+    #[orga(version(V2))]
+    pub joined: bool,
 }
 
 #[cfg(feature = "testnet")]
-#[orga(version = 1)]
+#[orga(version = 2)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Account {
     pub airdrop1: Part,
+
+    #[orga(version(V0, V1))]
     pub btc_deposit: Part,
+    #[orga(version(V0, V1))]
     pub btc_withdraw: Part,
+    #[orga(version(V0, V1))]
     pub ibc_transfer: Part,
+
+    #[orga(version(V2))]
+    pub airdrop2: Part,
+    #[orga(version(V2))]
     pub joined: bool,
 }
 
@@ -397,6 +388,27 @@ impl MigrateFrom<AccountV0> for AccountV1 {
         }
 
         Ok(account)
+    }
+}
+
+impl MigrateFrom<AccountV1> for AccountV2 {
+    fn migrate_from(value: AccountV1) -> Result<Self> {
+        let add_part = |dest: &mut Part, src: Part| {
+            dest.claimable += src.claimable + src.locked;
+            dest.claimed += src.claimed;
+        };
+
+        let mut airdrop2 = Part::default();
+
+        add_part(&mut airdrop2, value.btc_deposit);
+        add_part(&mut airdrop2, value.btc_withdraw);
+        add_part(&mut airdrop2, value.ibc_transfer);
+
+        Ok(Self {
+            airdrop1: value.airdrop1,
+            airdrop2,
+            joined: false,
+        })
     }
 }
 
@@ -467,9 +479,7 @@ nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x,1,1,1,1,1,1,1,1,1,1,true,true,true"
             .get_mut(Address::from_str("nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x").unwrap())
             .unwrap()
             .unwrap();
-        let airdrop2_total = account.btc_deposit.total()
-            + account.btc_withdraw.total()
-            + account.ibc_transfer.total();
+        let airdrop2_total = account.airdrop2.total();
 
         assert_approx_eq(airdrop2_total, AIRDROP_II_TOTAL);
     }

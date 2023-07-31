@@ -996,45 +996,14 @@ impl ClaimAirdropCmd {
             claimed = true;
         }
 
-        if acct.btc_deposit.claimable > 0 {
+        if acct.airdrop2.claimable > 0 {
             app_client()
                 .call(
-                    |app| build_call!(app.airdrop.claim_btc_deposit()),
+                    |app| build_call!(app.airdrop.claim_airdrop2()),
                     |app| build_call!(app.accounts.give_from_funding_all()),
                 )
                 .await?;
-            println!(
-                "Claimed BTC deposit airdrop ({} uNOM)",
-                acct.btc_deposit.claimable
-            );
-            claimed = true;
-        }
-
-        if acct.btc_withdraw.claimable > 0 {
-            app_client()
-                .call(
-                    |app| build_call!(app.airdrop.claim_btc_withdraw()),
-                    |app| build_call!(app.accounts.give_from_funding_all()),
-                )
-                .await?;
-            println!(
-                "Claimed BTC withdraw airdrop ({} uNOM)",
-                acct.btc_withdraw.claimable
-            );
-            claimed = true;
-        }
-
-        if acct.ibc_transfer.claimable > 0 {
-            app_client()
-                .call(
-                    |app| build_call!(app.airdrop.claim_ibc_transfer()),
-                    |app| build_call!(app.accounts.give_from_funding_all()),
-                )
-                .await?;
-            println!(
-                "Claimed IBC transfer airdrop ({} uNOM)",
-                acct.ibc_transfer.claimable
-            );
+            println!("Claimed airdrop 2 ({} uNOM)", acct.airdrop2.claimable);
             claimed = true;
         }
 

@@ -183,8 +183,8 @@ pub async fn claim(address: String) -> Result<String, JsError> {
     .await
 }
 
-#[wasm_bindgen(js_name = claimAirdrop)]
-pub async fn claim_airdrop(address: String) -> Result<String, JsError> {
+#[wasm_bindgen(js_name = claimAirdrop1)]
+pub async fn claim_airdrop1(address: String) -> Result<String, JsError> {
     let address = address
         .parse()
         .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
@@ -198,45 +198,15 @@ pub async fn claim_airdrop(address: String) -> Result<String, JsError> {
     .await
 }
 
-#[wasm_bindgen(js_name = claimBtcDepositAirdrop)]
-pub async fn claim_btc_deposit_airdrop(address: String) -> Result<String, JsError> {
+#[wasm_bindgen(js_name = claimAirdrop2)]
+pub async fn claim_airdrop2(address: String) -> Result<String, JsError> {
     let address = address
         .parse()
         .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
     gen_call_bytes(
         address,
         sdk::Msg {
-            type_: "nomic/MsgClaimBtcDepositAirdrop".to_string(),
-            value: serde_json::Map::new().into(),
-        },
-    )
-    .await
-}
-
-#[wasm_bindgen(js_name = claimBtcWithdrawAirdrop)]
-pub async fn claim_btc_withdraw_airdrop(address: String) -> Result<String, JsError> {
-    let address = address
-        .parse()
-        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
-    gen_call_bytes(
-        address,
-        sdk::Msg {
-            type_: "nomic/MsgClaimBtcWithdrawAirdrop".to_string(),
-            value: serde_json::Map::new().into(),
-        },
-    )
-    .await
-}
-
-#[wasm_bindgen(js_name = claimIbcTransferAirdrop)]
-pub async fn claim_ibc_transfer_airdrop(address: String) -> Result<String, JsError> {
-    let address = address
-        .parse()
-        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
-    gen_call_bytes(
-        address,
-        sdk::Msg {
-            type_: "nomic/MsgClaimIbcTransferAirdrop".to_string(),
+            type_: "nomic/MsgClaimAirdrop2".to_string(),
             value: serde_json::Map::new().into(),
         },
     )
