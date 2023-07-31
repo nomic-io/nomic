@@ -75,6 +75,11 @@ impl Incentives {
         Ok(Incentives { accounts })
     }
 
+    #[query]
+    pub fn get(&self, address: Address) -> Result<Option<Account>> {
+        Ok(self.accounts.get(address)?.map(|a| a.clone()))
+    }
+
     pub fn signer_acct_mut(&mut self) -> OrgaResult<ChildMut<Address, Account>> {
         let signer = self
             .context::<Signer>()
