@@ -3,6 +3,7 @@ use crate::{
     app::Nom,
     error::{Error, Result},
 };
+use orga::migrate::MigrateFrom;
 use orga::{
     coins::{Address, Amount, Coin, Take},
     collections::{ChildMut, Map},
@@ -17,9 +18,25 @@ pub struct Incentives {
     accounts: Map<Address, Account>,
 }
 
-#[orga]
+#[orga(version = 1)]
 pub struct Account {
+    #[orga(version(V0))]
+    testnet_participation: Coin<Nom>,
+
+    #[orga(version(V1))]
     testnet_participation: Part,
+}
+
+impl MigrateFrom<AccountV0> for AccountV1 {
+    fn migrate_from(old: AccountV0) -> orga::Result<Self> {
+        Ok(AccountV1 {
+            testnet_participation: Part {
+                locked: 0,
+                claimable: old.testnet_participation.amount.into(),
+                claimed: 0,
+            },
+        })
+    }
 }
 
 #[orga]
