@@ -12,8 +12,6 @@ use bitcoin::Script;
 use bitcoin::{util::merkleblock::PartialMerkleTree, Transaction};
 use checkpoint::CheckpointQueue;
 use header_queue::HeaderQueue;
-#[cfg(feature = "full")]
-use orga::abci::BeginBlock;
 use orga::coins::{Accounts, Address, Amount, Coin, Give, Symbol, Take};
 use orga::collections::Map;
 use orga::collections::{Deque, Next};
@@ -24,7 +22,7 @@ use orga::migrate::{Migrate, MigrateFrom};
 use orga::orga;
 use orga::plugins::Paid;
 #[cfg(feature = "full")]
-use orga::plugins::{BeginBlockCtx, Validators};
+use orga::plugins::Validators;
 use orga::plugins::{Signer, Time};
 use orga::prelude::FieldCall;
 use orga::query::FieldQuery;
@@ -589,27 +587,29 @@ impl Bitcoin {
             sigset_change,
         })
     }
+
+    #[cfg(feature = "full")]
+    pub fn begin_block_step(
+        &mut self,
+        external_outputs: impl Iterator<Item = Result<bitcoin::TxOut>>,
+    ) -> Result<()> {
+        self.checkpoints
+            .maybe_step(
+                self.signatory_keys.map(),
+                &self.accounts,
+                &self.recovery_scripts,
+                external_outputs,
+            )
+            .map_err(|err| OrgaError::App(err.to_string()))?;
+
+        Ok(())
+    }
 }
 
 #[orga]
 pub struct ChangeRates {
     pub withdrawal: u16,
     pub sigset_change: u16,
-}
-
-#[cfg(feature = "full")]
-impl BeginBlock for Bitcoin {
-    fn begin_block(&mut self, _ctx: &BeginBlockCtx) -> OrgaResult<()> {
-        self.checkpoints
-            .maybe_step(
-                self.signatory_keys.map(),
-                &self.accounts,
-                &self.recovery_scripts,
-            )
-            .map_err(|err| OrgaError::App(err.to_string()))?;
-
-        Ok(())
-    }
 }
 
 #[orga]

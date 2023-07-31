@@ -8,7 +8,7 @@ default-run = "nomic"
 [dependencies]
 bitcoin = { version = "0.29.2", features = ["serde", "rand"] }
 bitcoind = { version = "0.27.0", features = ["22_0"], optional = true }
-orga = { git = "https://github.com/nomic-io/orga.git", rev = "c5e44ab1b1c008212c175c6c6c47aecaa5948307", features = ["merk-verify"] }
+orga = { git = "https://github.com/nomic-io/orga.git", rev = "028725159d614e28e5cc8f642a7d7e19e7a97afe", features = ["merk-verify"] }
 thiserror = "1.0.30"
 ed = { git = "https://github.com/nomic-io/ed", rev = "9c0e206ffdb59dacb90f083e004e8080713e6ad8" }
 clap = { version = "3.2.16", features = ["derive"], optional = true }
@@ -39,6 +39,7 @@ split-iter = "0.1.0"
 chrono = "0.4.19"
 tempfile = "3"
 home = {version = "0.5.5", optional = true }
+semver = "1.0.18"
 
 [dev-dependencies]
 bitcoin_hashes = "0.11.0"
@@ -52,13 +53,17 @@ chrono = "0.4.19"
 serial_test = "2.0.0"
 tempfile = "3.6.0"
 
+[build-dependencies]
+toml = { version = "0.7.2", features = ["parse"] }
+semver = "1.0.18"
+
 [features]
-default = ["full", "feat-ibc", "testnet"]
+default = ["full", "feat-ibc", "testnet", "legacy-bin"]
 full = ["bitcoind", "bitcoincore-rpc-async", "clap", "tokio", "orga/merk-full", "orga/abci", "orga/state-sync", "csv", "warp", "rand", "reqwest", "tendermint-rpc", "home"]
 feat-ibc = ["orga/feat-ibc"]
 testnet = []
-devnet = ["testnet"]
 emergency-disbursal = []
+legacy-bin = []
 
 [profile.release]
 overflow-checks = true
