@@ -1,4 +1,4 @@
-#![e(async_closure)]
+#![feature(async_closure)]
 #![feature(async_fn_in_trait)]
 mod error;
 mod types;
@@ -399,8 +399,8 @@ pub async fn redelegate(
     .await
 }
 
-fn parse_part(part: nomic::airdrop::Part) -> AirdropDetails {
-    AirdropDetails {
+fn parse_part(part: nomic::airdrop::Part) -> RewardDetails {
+    RewardDetails {
         locked: part.locked,
         claimed: part.claimed,
         claimable: part.claimable,
