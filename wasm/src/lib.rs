@@ -690,6 +690,7 @@ async fn gen_call_bytes(address: String, msg: sdk::Msg) -> Result<String, JsErro
     let nonce = app_client()
         .query_root(|app| app.inner.inner.borrow().inner.inner.inner.nonce(address))
         .await?;
+
     let sign_doc = sdk::SignDoc {
         account_number: "0".to_string(),
         chain_id,

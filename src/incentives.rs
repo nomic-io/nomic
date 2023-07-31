@@ -3,6 +3,7 @@ use crate::{
     app::Nom,
     error::{Error, Result},
 };
+use orga::migrate::MigrateFrom;
 use orga::{
     coins::{Address, Amount, Coin, Take},
     collections::{ChildMut, Map},
@@ -17,15 +18,39 @@ pub struct Incentives {
     accounts: Map<Address, Account>,
 }
 
-#[orga]
-#[derive(Clone, PartialEq, Eq)]
+#[orga(version = 1)]
 pub struct Account {
+    #[orga(version(V0))]
+    testnet_participation: Coin<Nom>,
+
+    #[orga(version(V1))]
     testnet_participation: Part,
 }
 
+impl Clone for AccountV1 {
+    fn clone(&self) -> Self {
+        Self {
+            testnet_participation: self.testnet_participation.clone(),
+        }
+    }
+}
+
+impl MigrateFrom<AccountV0> for AccountV1 {
+    fn migrate_from(old: AccountV0) -> orga::Result<Self> {
+        Ok(AccountV1 {
+            testnet_participation: Part {
+                locked: 0,
+                claimable: old.testnet_participation.amount.into(),
+                claimed: 0,
+            },
+        })
+    }
+}
+
 impl Account {
+    #[orga(version(V1))]
     pub fn is_empty(&self) -> bool {
-        self == &Self::default()
+        self.testnet_participation.is_empty()
     }
 }
 
@@ -108,6 +133,7 @@ impl Incentives {
         Ok(())
     }
 
+    #[orga(version(V1))]
     pub fn join_accounts(&mut self, dest_addr: Address) -> OrgaResult<u64> {
         let mut acct = match self.signer_acct_mut() {
             Ok(acct) => acct,
