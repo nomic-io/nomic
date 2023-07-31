@@ -257,6 +257,22 @@ pub async fn claim_testnet_participation_airdrop(address: String) -> Result<Stri
     )
     .await
 }
+
+#[wasm_bindgen(js_name = claimTestnetParticipationIncentives)]
+pub async fn claim_testnet_participation_incentives(address: String) -> Result<String, JsError> {
+    let address = address
+        .parse()
+        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+    gen_call_bytes(
+        address,
+        sdk::Msg {
+            type_: "nomic/MsgClaimTestnetParticipationIncentives".to_string(),
+            value: serde_json::Map::new().into(),
+        },
+    )
+    .await
+}
+
 #[wasm_bindgen(js_name = claimIncomingIbcBtc)]
 pub async fn claim_incoming_ibc_btc(address: String) -> Result<String, JsError> {
     let address = address
@@ -658,6 +674,7 @@ async fn gen_call_bytes(address: String, msg: sdk::Msg) -> Result<String, JsErro
     let nonce = app_client()
         .query_root(|app| app.inner.inner.borrow().inner.inner.inner.nonce(address))
         .await?;
+
     let sign_doc = sdk::SignDoc {
         account_number: "0".to_string(),
         chain_id,
