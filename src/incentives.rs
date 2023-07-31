@@ -114,7 +114,7 @@ impl Incentives {
 
         self.accounts
             .get_mut(signer)?
-            .ok_or_else(|| OrgaError::App("No airdrop account for signer".into()))
+            .ok_or_else(|| OrgaError::App("No incentive account for signer".into()))
     }
 
     fn pay_as_funding(&mut self, amount: u64) -> Result<()> {
