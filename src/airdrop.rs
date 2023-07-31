@@ -107,15 +107,14 @@ impl Airdrop {
         Ok(())
     }
 
-    pub fn join_accounts(&mut self, dest_addr: Address) -> Result<u64> {
-        let mut acct = match self.signer_acct_mut() {
-            Ok(acct) => acct,
-            Err(Error::App(_)) => return Ok(0),
-            Err(e) => return Err(e),
-        };
+    pub fn join_accounts(&mut self, dest_addr: Address) -> Result<()> {
+        let mut acct = self.signer_acct_mut()?;
 
+        if acct.joined {
+            return Err(Error::App("Account already joined".to_string()));
+        }
         if acct.is_empty() {
-            return Ok(0);
+            return Err(Error::App("Account has no airdrop balance".to_string()));
         }
 
         let src = acct.clone();
@@ -131,16 +130,14 @@ impl Airdrop {
             }
             dest.claimable += src.claimable;
             dest.claimed += src.claimed;
-
-            src.total()
         };
 
-        let airdrop_1 = add_part(&mut dest.airdrop1, src.airdrop1);
-        let btc_deposit = add_part(&mut dest.btc_deposit, src.btc_deposit);
-        let ibc_transfer = add_part(&mut dest.ibc_transfer, src.ibc_transfer);
-        let btc_withdraw = add_part(&mut dest.btc_withdraw, src.btc_withdraw);
+        add_part(&mut dest.airdrop1, src.airdrop1);
+        add_part(&mut dest.btc_deposit, src.btc_deposit);
+        add_part(&mut dest.ibc_transfer, src.ibc_transfer);
+        add_part(&mut dest.btc_withdraw, src.btc_withdraw);
 
-        Ok(airdrop_1 + btc_deposit + ibc_transfer + btc_withdraw)
+        Ok(())
     }
 
     #[cfg(feature = "full")]
