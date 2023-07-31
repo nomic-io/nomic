@@ -64,7 +64,7 @@ impl Airdrop {
 
         self.accounts
             .get_mut(signer)?
-            .ok_or_else(|| Error::Coins("No airdrop account for signer".into()))
+            .ok_or_else(|| Error::App("No airdrop account for signer".into()))
     }
 
     fn pay_as_funding(&mut self, amount: u64) -> Result<()> {
@@ -107,21 +107,15 @@ impl Airdrop {
         Ok(())
     }
 
-    #[call]
-    pub fn claim_testnet_participation(&mut self) -> Result<()> {
-        #[cfg(not(feature = "testnet"))]
-        {
-            let mut acct = self.signer_acct_mut()?;
-            let amount = acct.testnet_participation.claim()?;
-            self.pay_as_funding(amount)?;
-        }
-        Ok(())
-    }
+    pub fn join_accounts(&mut self, dest_addr: Address) -> Result<u64> {
+        let mut acct = match self.signer_acct_mut() {
+            Ok(acct) => acct,
+            Err(Error::App(_)) => return Ok(0),
+            Err(e) => return Err(e),
+        };
 
-    pub fn join_accounts(&mut self, dest_addr: Address) -> Result<()> {
-        let mut acct = self.signer_acct_mut()?;
         if acct.is_empty() {
-            return Err(Error::App("Account has no airdrop balance".to_string()));
+            return Ok(0);
         }
 
         let src = acct.clone();
@@ -137,17 +131,16 @@ impl Airdrop {
             }
             dest.claimable += src.claimable;
             dest.claimed += src.claimed;
+
+            src.total()
         };
 
-        add_part(&mut dest.airdrop1, src.airdrop1);
-        add_part(&mut dest.btc_deposit, src.btc_deposit);
-        add_part(&mut dest.ibc_transfer, src.ibc_transfer);
-        add_part(&mut dest.btc_withdraw, src.btc_withdraw);
+        let airdrop_1 = add_part(&mut dest.airdrop1, src.airdrop1);
+        let btc_deposit = add_part(&mut dest.btc_deposit, src.btc_deposit);
+        let ibc_transfer = add_part(&mut dest.ibc_transfer, src.ibc_transfer);
+        let btc_withdraw = add_part(&mut dest.btc_withdraw, src.btc_withdraw);
 
-        #[cfg(not(feature = "testnet"))]
-        add_part(&mut dest.testnet_participation, src.testnet_participation);
-
-        Ok(())
+        Ok(airdrop_1 + btc_deposit + ibc_transfer + btc_withdraw)
     }
 
     #[cfg(feature = "full")]
