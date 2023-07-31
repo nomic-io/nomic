@@ -424,6 +424,22 @@ pub async fn airdrop_balances(addr: String) -> Result<Airdrop, JsError> {
     }
 }
 
+#[wasm_bindgen(js_name = incentiveBalances)]
+pub async fn incentive_balances(addr: String) -> Result<Incentives, JsError> {
+    let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+
+    if let Some(account) = app_client()
+        .query(|app| Ok(app.incentives.get(address)?))
+        .await?
+    {
+        Ok(Incentives {
+            testnet_participation: parse_part(account.testnet_participation),
+        })
+    } else {
+        Ok(Incentives::default())
+    }
+}
+
 #[wasm_bindgen]
 pub async fn nonce(addr: String) -> Result<u64, JsError> {
     let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
