@@ -387,9 +387,9 @@ fn legacy_bin(config: &nomic::network::Config) -> Result<Option<PathBuf>> {
                 (false, false)
             } else {
                 let store = MerkStore::open_readonly(home.join("merk"));
-                let store_ver = store.merk().get(b"/version").unwrap();
+                let store_ver = store.merk().get_aux(b"consensus_version").unwrap();
                 let utd = if let Some(store_ver) = store_ver {
-                    store_ver == vec![1, InnerApp::CONSENSUS_VERSION]
+                    store_ver == vec![InnerApp::CONSENSUS_VERSION]
                 } else {
                     false
                 };
