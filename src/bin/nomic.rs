@@ -392,36 +392,39 @@ impl StartCmd {
         }
         if let Some(signal_version) = cmd.signal_version {
             let signal_version = hex::decode(signal_version).unwrap();
-            tokio::spawn(async move {
-                let signal_version = signal_version.clone();
-                let signal_version2 = signal_version.clone();
-                let signal_version3 = signal_version.clone();
-                let done = move || {
-                    log::info!("Node has signaled {:?}", signal_version2);
-                };
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            std::thread::spawn(move || {
+                rt.block_on(async move {
+                    let signal_version = signal_version.clone();
+                    let signal_version2 = signal_version.clone();
+                    let signal_version3 = signal_version.clone();
+                    let done = move || {
+                        log::info!("Node has signaled {:?}", signal_version2);
+                    };
 
-                loop {
-                    let signal_version = signal_version.clone().try_into().unwrap();
-                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                    if let Err(err) = app_client()
-                        .call(
-                            |app| build_call!(app.signal(signal_version)),
-                            |app| build_call!(app.app_noop()),
-                        )
-                        .await
-                    {
-                        let msg = err.to_string();
-                        if msg.ends_with("has already been signaled") {
-                            return done();
+                    loop {
+                        let signal_version = signal_version.clone().try_into().unwrap();
+                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                        if let Err(err) = app_client()
+                            .call(
+                                |app| build_call!(app.signal(signal_version)),
+                                |app| build_call!(app.app_noop()),
+                            )
+                            .await
+                        {
+                            let msg = err.to_string();
+                            if msg.ends_with("has already been signaled") {
+                                return done();
+                            } else {
+                                log::debug!("Error when signaling: {}", msg);
+                                continue;
+                            }
                         } else {
-                            log::debug!("Error when signaling: {}", msg);
-                            continue;
+                            log::info!("Signaled version {:?}", signal_version3);
+                            return done();
                         }
-                    } else {
-                        log::info!("Signaled version {:?}", signal_version3);
-                        return done();
                     }
-                }
+                });
             });
         }
 
