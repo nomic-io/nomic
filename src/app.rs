@@ -364,7 +364,7 @@ mod abci {
     impl BeginBlock for InnerApp {
         fn begin_block(&mut self, ctx: &BeginBlockCtx) -> Result<()> {
             self.upgrade
-                .step(&vec![Self::CONSENSUS_VERSION].try_into().unwrap())?;
+                .step(&vec![Self::CONSENSUS_VERSION].try_into().unwrap(), true)?;
             self.staking.begin_block(ctx)?;
 
             #[cfg(feature = "testnet")]
