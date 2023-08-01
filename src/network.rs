@@ -72,6 +72,7 @@ pub struct InnerConfig {
 pub struct Config(InnerConfig);
 
 impl Config {
+    #[cfg(feature = "full")]
     pub fn home(&self) -> Option<PathBuf> {
         self.home
             .as_ref()
@@ -79,6 +80,7 @@ impl Config {
             .or(self.chain_id.as_ref().map(|c| orga::abci::Node::home(c)))
     }
 
+    #[cfg(feature = "full")]
     pub fn home_expect(&self) -> Result<PathBuf> {
         self.home()
             .ok_or_else(|| orga::Error::App("Cannot get home directory. Please specify either --network, --home, or --chain-id.".to_string()).into())
