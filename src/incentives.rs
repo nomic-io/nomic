@@ -27,6 +27,14 @@ pub struct Account {
     testnet_participation: Part,
 }
 
+impl Clone for AccountV1 {
+    fn clone(&self) -> Self {
+        Self {
+            testnet_participation: self.testnet_participation.clone(),
+        }
+    }
+}
+
 impl MigrateFrom<AccountV0> for AccountV1 {
     fn migrate_from(old: AccountV0) -> orga::Result<Self> {
         Ok(AccountV1 {
@@ -36,6 +44,13 @@ impl MigrateFrom<AccountV0> for AccountV1 {
                 claimed: 0,
             },
         })
+    }
+}
+
+impl Account {
+    #[orga(version(V1))]
+    pub fn is_empty(&self) -> bool {
+        self.testnet_participation.is_empty()
     }
 }
 
@@ -85,6 +100,11 @@ impl Incentives {
         Ok(Incentives { accounts })
     }
 
+    #[query]
+    pub fn get(&self, address: Address) -> Result<Option<Account>> {
+        Ok(self.accounts.get(address)?.map(|a| a.clone()))
+    }
+
     pub fn signer_acct_mut(&mut self) -> OrgaResult<ChildMut<Address, Account>> {
         let signer = self
             .context::<Signer>()
@@ -94,7 +114,7 @@ impl Incentives {
 
         self.accounts
             .get_mut(signer)?
-            .ok_or_else(|| OrgaError::Coins("No airdrop account for signer".into()))
+            .ok_or_else(|| OrgaError::App("No incentive account for signer".into()))
     }
 
     fn pay_as_funding(&mut self, amount: u64) -> Result<()> {
@@ -111,5 +131,40 @@ impl Incentives {
         let amount = acct.testnet_participation.claim()?;
         self.pay_as_funding(amount)?;
         Ok(())
+    }
+
+    #[orga(version(V1))]
+    pub fn join_accounts(&mut self, dest_addr: Address) -> OrgaResult<u64> {
+        let mut acct = match self.signer_acct_mut() {
+            Ok(acct) => acct,
+            Err(OrgaError::App(_)) => return Ok(0),
+            Err(e) => return Err(e),
+        };
+
+        if acct.is_empty() {
+            return Ok(0);
+        }
+
+        let src = acct.clone();
+        *acct = Account::default();
+
+        let mut dest = self.accounts.entry(dest_addr)?.or_default()?;
+
+        let add_part = |dest: &mut Part, src: Part| {
+            if dest.claimable > 0 || dest.claimed > 0 {
+                dest.claimable += src.locked;
+            } else {
+                dest.locked += src.locked;
+            }
+            dest.claimable += src.claimable;
+            dest.claimed += src.claimed;
+
+            src.total()
+        };
+
+        let testnet_participation =
+            add_part(&mut dest.testnet_participation, src.testnet_participation);
+
+        Ok(testnet_participation)
     }
 }
