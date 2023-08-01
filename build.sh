@@ -6,7 +6,7 @@ BUILD_DIR=$OUT_DIR/nomic
 NOMIC_LEGACY_PATH=$OUT_DIR/nomic-$NOMIC_LEGACY_REV
 
 if [ ! -f "$NOMIC_LEGACY_PATH" ]; then
-    echo "Building legacy nomic at $BUILD_DIR..."
+    echo "Building legacy nomic at $NOMIC_LEGACY_PATH..."
     if [ ! -d "$BUILD_DIR" ]; then
         git clone https://github.com/nomic-io/nomic.git $BUILD_DIR
     fi
@@ -17,8 +17,9 @@ if [ ! -f "$NOMIC_LEGACY_PATH" ]; then
     git checkout $NOMIC_LEGACY_REV
 
     rustc --version
-    cargo build --release
-    mv $BUILD_DIR/target/release/nomic $NOMIC_LEGACY_PATH
+    echo "Building with features: $CARGO_FEATURES"
+    cargo build --release --no-default-features --features $CARGO_FEATURES
+    cp $BUILD_DIR/target/release/nomic $NOMIC_LEGACY_PATH
 else
     echo "Skipping legacy nomic binary build (already exists at $NOMIC_LEGACY_PATH)" 
 fi

@@ -1,12 +1,16 @@
-use orga::{
-    coins::{Address, Amount, Coin, Give, Take},
-    collections::Map,
-    orga,
-};
-
+use crate::airdrop::Part;
 use crate::{
     app::Nom,
     error::{Error, Result},
+};
+use orga::migrate::MigrateFrom;
+use orga::{
+    coins::{Address, Amount, Coin, Take},
+    collections::{ChildMut, Map},
+    context::GetContext,
+    orga,
+    plugins::{Paid, Signer},
+    Error as OrgaError, Result as OrgaResult,
 };
 
 #[orga]
@@ -14,11 +18,28 @@ pub struct Incentives {
     accounts: Map<Address, Account>,
 }
 
-#[orga]
+#[orga(version = 1)]
 pub struct Account {
+    #[orga(version(V0))]
     testnet_participation: Coin<Nom>,
+
+    #[orga(version(V1))]
+    testnet_participation: Part,
 }
 
+impl MigrateFrom<AccountV0> for AccountV1 {
+    fn migrate_from(old: AccountV0) -> orga::Result<Self> {
+        Ok(AccountV1 {
+            testnet_participation: Part {
+                locked: 0,
+                claimable: old.testnet_participation.amount.into(),
+                claimed: 0,
+            },
+        })
+    }
+}
+
+#[orga]
 impl Incentives {
     pub fn from_csv(data: &[u8], mut funds: Coin<Nom>) -> Result<Self> {
         let mut accounts = Map::new();
@@ -47,7 +68,11 @@ impl Incentives {
             let mut account = Account::default();
             let mut maybe_increment = |v| {
                 if v == "true" {
-                    account.testnet_participation.give(funds.take(rate)?)?;
+                    account.testnet_participation = Part {
+                        locked: 0,
+                        claimable: funds.take(rate)?.amount.into(),
+                        claimed: 0,
+                    }
                 }
                 Ok::<_, Error>(())
             };
@@ -58,5 +83,33 @@ impl Incentives {
         }
 
         Ok(Incentives { accounts })
+    }
+
+    pub fn signer_acct_mut(&mut self) -> OrgaResult<ChildMut<Address, Account>> {
+        let signer = self
+            .context::<Signer>()
+            .ok_or_else(|| OrgaError::Signer("No Signer context available".into()))?
+            .signer
+            .ok_or_else(|| OrgaError::Coins("Unauthorized account action".into()))?;
+
+        self.accounts
+            .get_mut(signer)?
+            .ok_or_else(|| OrgaError::Coins("No airdrop account for signer".into()))
+    }
+
+    fn pay_as_funding(&mut self, amount: u64) -> Result<()> {
+        let paid = self
+            .context::<Paid>()
+            .ok_or_else(|| OrgaError::Coins("No Paid context found".into()))?;
+
+        Ok(paid.give::<Nom, _>(amount)?)
+    }
+
+    #[call]
+    pub fn claim_testnet_participation_incentives(&mut self) -> OrgaResult<()> {
+        let mut acct = self.signer_acct_mut()?;
+        let amount = acct.testnet_participation.claim()?;
+        self.pay_as_funding(amount)?;
+        Ok(())
     }
 }
