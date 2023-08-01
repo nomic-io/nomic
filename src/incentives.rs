@@ -24,7 +24,7 @@ pub struct Account {
     testnet_participation: Coin<Nom>,
 
     #[orga(version(V1))]
-    testnet_participation: Part,
+    pub testnet_participation: Part,
 }
 
 impl Clone for AccountV1 {
