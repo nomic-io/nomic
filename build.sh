@@ -24,7 +24,9 @@ else
     echo "Skipping legacy nomic binary build (already exists at $NOMIC_LEGACY_PATH)" 
 fi
 
-rm -rf $BUILD_DIR
+if [[ ! -z "${NOMIC_CLEANUP_LEGACY_BUILD}" ]]; then
+    rm -rf $BUILD_DIR
+fi
 
 echo "cargo:rustc-env=NOMIC_LEGACY_BUILD_PATH=$NOMIC_LEGACY_PATH"
 echo "cargo:rustc-env=NOMIC_LEGACY_BUILD_VERSION=$($NOMIC_LEGACY_PATH --version)"

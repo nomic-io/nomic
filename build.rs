@@ -87,6 +87,7 @@ fn main() {
             .env_clear()
             .env("OUT_DIR", std::env::var("OUT_DIR").unwrap())
             .env("PATH", std::env::var("PATH").unwrap())
+            .env("NOMIC_CLEANUP_LEGACY_BUILD", std::env::var("NOMIC_CLEANUP_LEGACY_BUILD").unwrap_or_default())
             .env("NOMIC_LEGACY_REV", rev)
             .env("CARGO_FEATURES", cargo_features)
             .args(["build.sh"])
