@@ -4,13 +4,13 @@ mod error;
 mod types;
 mod web_client;
 
-use std::str::FromStr;
-
 use crate::error::Error;
 use crate::types::*;
+use nomic::orga::Error as OrgaError;
+use std::str::FromStr;
 // use crate::web_client::WebClient;
 use js_sys::{Array, Uint8Array};
-use nomic::app::{App, DepositCommitment, InnerApp, Nom, CHAIN_ID};
+use nomic::app::{App, DepositCommitment, InnerApp, Nom};
 use nomic::bitcoin::Nbtc;
 use nomic::orga::client::wallet::Unsigned;
 use nomic::orga::client::AppClient;
@@ -183,8 +183,8 @@ pub async fn claim(address: String) -> Result<String, JsError> {
     .await
 }
 
-#[wasm_bindgen(js_name = claimAirdrop)]
-pub async fn claim_airdrop(address: String) -> Result<String, JsError> {
+#[wasm_bindgen(js_name = claimAirdrop1)]
+pub async fn claim_airdrop1(address: String) -> Result<String, JsError> {
     let address = address
         .parse()
         .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
@@ -198,45 +198,15 @@ pub async fn claim_airdrop(address: String) -> Result<String, JsError> {
     .await
 }
 
-#[wasm_bindgen(js_name = claimBtcDepositAirdrop)]
-pub async fn claim_btc_deposit_airdrop(address: String) -> Result<String, JsError> {
+#[wasm_bindgen(js_name = claimAirdrop2)]
+pub async fn claim_airdrop2(address: String) -> Result<String, JsError> {
     let address = address
         .parse()
         .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
     gen_call_bytes(
         address,
         sdk::Msg {
-            type_: "nomic/MsgClaimBtcDepositAirdrop".to_string(),
-            value: serde_json::Map::new().into(),
-        },
-    )
-    .await
-}
-
-#[wasm_bindgen(js_name = claimBtcWithdrawAirdrop)]
-pub async fn claim_btc_withdraw_airdrop(address: String) -> Result<String, JsError> {
-    let address = address
-        .parse()
-        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
-    gen_call_bytes(
-        address,
-        sdk::Msg {
-            type_: "nomic/MsgClaimBtcWithdrawAirdrop".to_string(),
-            value: serde_json::Map::new().into(),
-        },
-    )
-    .await
-}
-
-#[wasm_bindgen(js_name = claimIbcTransferAirdrop)]
-pub async fn claim_ibc_transfer_airdrop(address: String) -> Result<String, JsError> {
-    let address = address
-        .parse()
-        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
-    gen_call_bytes(
-        address,
-        sdk::Msg {
-            type_: "nomic/MsgClaimIbcTransferAirdrop".to_string(),
+            type_: "nomic/MsgClaimAirdrop2".to_string(),
             value: serde_json::Map::new().into(),
         },
     )
@@ -257,6 +227,22 @@ pub async fn claim_testnet_participation_airdrop(address: String) -> Result<Stri
     )
     .await
 }
+
+#[wasm_bindgen(js_name = claimTestnetParticipationIncentives)]
+pub async fn claim_testnet_participation_incentives(address: String) -> Result<String, JsError> {
+    let address = address
+        .parse()
+        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+    gen_call_bytes(
+        address,
+        sdk::Msg {
+            type_: "nomic/MsgClaimTestnetParticipationIncentives".to_string(),
+            value: serde_json::Map::new().into(),
+        },
+    )
+    .await
+}
+
 #[wasm_bindgen(js_name = claimIncomingIbcBtc)]
 pub async fn claim_incoming_ibc_btc(address: String) -> Result<String, JsError> {
     let address = address
@@ -270,6 +256,41 @@ pub async fn claim_incoming_ibc_btc(address: String) -> Result<String, JsError> 
         },
     )
     .await
+}
+
+#[wasm_bindgen(js_name = setRecoveryAddress)]
+pub async fn set_recovery_address(
+    address: String,
+    recovery_address: String,
+) -> Result<String, JsError> {
+    let mut value = serde_json::Map::new();
+    value.insert("recovery_address".to_string(), recovery_address.into());
+
+    gen_call_bytes(
+        address,
+        sdk::Msg {
+            type_: "nomic/MsgSetRecoveryAddress".to_string(),
+            value: value.into(),
+        },
+    )
+    .await
+}
+
+#[wasm_bindgen(js_name = getRecoveryAddress)]
+pub async fn get_recovery_address(address: String) -> Result<String, JsError> {
+    let address = address
+        .parse()
+        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+    Ok(app_client()
+        .query(|app| {
+            Ok(match app.bitcoin.recovery_scripts.get(address)? {
+                Some(script) => bitcoin::Address::from_script(&script, BITCOIN_NETWORK)
+                    .map_err(|e| OrgaError::App(format!("{:?}", e)))?
+                    .to_string(),
+                None => "".to_string(),
+            })
+        })
+        .await?)
 }
 
 //bytes
@@ -348,8 +369,8 @@ pub async fn redelegate(
     .await
 }
 
-fn parse_part(part: nomic::airdrop::Part) -> AirdropDetails {
-    AirdropDetails {
+fn parse_part(part: nomic::airdrop::Part) -> RewardDetails {
+    RewardDetails {
         locked: part.locked,
         claimed: part.claimed,
         claimable: part.claimable,
@@ -364,12 +385,26 @@ pub async fn airdrop_balances(addr: String) -> Result<Airdrop, JsError> {
     if let Some(account) = app_client().query(|app| app.airdrop.get(address)).await? {
         Ok(Airdrop {
             airdrop1: parse_part(account.airdrop1),
-            btc_deposit: parse_part(account.btc_deposit),
-            btc_withdraw: parse_part(account.btc_withdraw),
-            ibc_transfer: parse_part(account.ibc_transfer),
+            airdrop2: parse_part(account.airdrop2),
         })
     } else {
         Ok(Airdrop::default())
+    }
+}
+
+#[wasm_bindgen(js_name = incentiveBalances)]
+pub async fn incentive_balances(addr: String) -> Result<Incentives, JsError> {
+    let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+
+    if let Some(account) = app_client()
+        .query(|app| Ok(app.incentives.get(address)?))
+        .await?
+    {
+        Ok(Incentives {
+            testnet_participation: parse_part(account.testnet_participation),
+        })
+    } else {
+        Ok(Incentives::default())
     }
 }
 
@@ -543,8 +578,8 @@ pub async fn withdraw(address: String, dest_addr: String, amount: u64) -> Result
     .await
 }
 
-#[wasm_bindgen(js_name = joinAirdropAccounts)]
-pub async fn join_airdrop_accounts(
+#[wasm_bindgen(js_name = joinRewardAccounts)]
+pub async fn join_reward_accounts(
     source_address: String,
     destination_address: String,
 ) -> Result<String, JsError> {
@@ -561,7 +596,7 @@ pub async fn join_airdrop_accounts(
     gen_call_bytes(
         address.to_string(),
         sdk::Msg {
-            type_: "nomic/MsgJoinAirdropAccounts".to_string(),
+            type_: "nomic/MsgJoinRewardAccounts".to_string(),
             value: value.into(),
         },
     )
@@ -600,7 +635,22 @@ pub async fn ibc_transfer_out(
     .await
 }
 
+fn local_storage_chain_id() -> String {
+    let window = web_sys::window().expect("no global `window` exists");
+    let keplr = window.get("keplr").expect("no `keplr` in global `window`");
+
+    window
+        .local_storage()
+        .expect("no `localStorage` in global `window`")
+        .expect("no `localStorage` in global `window`")
+        .get("orga/chainid")
+        .expect("Could not load from local storage")
+        .expect("localStorage['orga/chainid'] is not set")
+}
+
 async fn gen_call_bytes(address: String, msg: sdk::Msg) -> Result<String, JsError> {
+    let chain_id = local_storage_chain_id();
+
     let address = address
         .parse()
         .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
@@ -608,9 +658,10 @@ async fn gen_call_bytes(address: String, msg: sdk::Msg) -> Result<String, JsErro
     let nonce = app_client()
         .query_root(|app| app.inner.inner.borrow().inner.inner.inner.nonce(address))
         .await?;
+
     let sign_doc = sdk::SignDoc {
         account_number: "0".to_string(),
-        chain_id: CHAIN_ID.to_string(),
+        chain_id,
         //does this fee have to be a vec
         fee: sdk::Fee {
             amount: vec![sdk::Coin {

@@ -9,9 +9,7 @@ use super::{
 use crate::bitcoin::{signatory::derive_pubkey, Nbtc};
 use crate::error::{Error, Result};
 use bitcoin::hashes::Hash;
-use bitcoin::{
-    blockdata::transaction::EcdsaSighashType, PackedLockTime, Sequence, Transaction, TxIn, TxOut,
-};
+use bitcoin::{blockdata::transaction::EcdsaSighashType, Sequence, Transaction, TxIn, TxOut};
 use derive_more::{Deref, DerefMut};
 use log::info;
 use orga::coins::Accounts;
@@ -178,7 +176,7 @@ impl BitcoinTx {
     pub fn to_bitcoin_tx(&self) -> Result<Transaction> {
         Ok(bitcoin::Transaction {
             version: 1,
-            lock_time: PackedLockTime(self.lock_time),
+            lock_time: bitcoin::PackedLockTime(self.lock_time),
             input: self
                 .input
                 .iter()?
@@ -715,6 +713,7 @@ impl<'a> BuildingCheckpointMut<'a> {
         nbtc_accounts: &Accounts<Nbtc>,
         recovery_scripts: &Map<orga::coins::Address, Adapter<bitcoin::Script>>,
         reserve_outpoint: bitcoin::OutPoint,
+        external_outputs: impl Iterator<Item = Result<bitcoin::TxOut>>,
         fee_rate: u64,
         reserve_value: u64,
     ) -> Result<()> {
@@ -730,14 +729,38 @@ impl<'a> BuildingCheckpointMut<'a> {
             let lock_time =
                 time.seconds as u32 + bitcoin_config.emergency_disbursal_lock_time_interval;
 
-            if nbtc_accounts.iter()?.last().is_none() {
-                return Err(Error::Account("No Bitcoin accounts present".to_string()));
-            }
+            let outputs: Vec<_> = nbtc_accounts
+                .iter()?
+                .map(|entry| {
+                    let (address, coins) = entry?;
+                    use bitcoin::hashes::hex::ToHex;
+                    use std::str::FromStr;
+                    let hash =
+                        bitcoin::hashes::hash160::Hash::from_str(address.bytes().to_hex().as_str())
+                            .map_err(|err| Error::BitcoinPubkeyHash(err.to_string()))?;
+                    let pubkey_hash = bitcoin::PubkeyHash::from(hash);
+                    let dest_script = match recovery_scripts.get(*address)? {
+                        Some(script) => script.clone(),
+                        None => Adapter::new(bitcoin::Script::new_p2pkh(&pubkey_hash)),
+                    };
+
+                    let tx_out = bitcoin::TxOut {
+                        value: u64::from(coins.amount) / 1_000_000,
+                        script_pubkey: dest_script.into_inner(),
+                    };
+
+                    Ok::<_, crate::error::Error>(tx_out)
+                })
+                .chain(external_outputs)
+                .collect();
+
             let mut final_txs = vec![BitcoinTx::with_lock_time(lock_time)];
-            let last_account = nbtc_accounts.iter()?.last().unwrap()?;
-            for account in nbtc_accounts.iter()? {
-                let (address, coins) = account?;
-                if coins.amount < bitcoin_config.emergency_disbursal_min_tx_amt {
+
+            let num_outputs = outputs.len();
+            for (i, output) in outputs.into_iter().enumerate() {
+                let output = output?;
+
+                if output.value < bitcoin_config.emergency_disbursal_min_tx_amt {
                     continue;
                 }
 
@@ -748,26 +771,9 @@ impl<'a> BuildingCheckpointMut<'a> {
                     curr_tx = BitcoinTx::with_lock_time(lock_time);
                 }
 
-                //TODO: Move address to script logic to a function
-                use bitcoin::hashes::hex::ToHex;
-                use std::str::FromStr;
-                let hash =
-                    bitcoin::hashes::hash160::Hash::from_str(address.bytes().to_hex().as_str())
-                        .map_err(|err| Error::BitcoinPubkeyHash(err.to_string()))?;
-                let pubkey_hash = bitcoin::PubkeyHash::from(hash);
-                let dest_script = match recovery_scripts.get(*address)? {
-                    Some(script) => script.clone(),
-                    None => Adapter::new(bitcoin::Script::new_p2pkh(&pubkey_hash)),
-                };
+                curr_tx.output.push_back(Adapter::new(output))?;
 
-                let tx_out = bitcoin::TxOut {
-                    value: u64::from(coins.amount) / 1_000_000,
-                    script_pubkey: dest_script.into_inner(),
-                };
-
-                curr_tx.output.push_back(Adapter::new(tx_out))?;
-
-                if address == last_account.0 {
+                if i == num_outputs - 1 {
                     self.link_intermediate_tx(&mut curr_tx)?;
                 }
 
@@ -785,14 +791,14 @@ impl<'a> BuildingCheckpointMut<'a> {
             intermediate_tx.input.push_back(tx_in)?;
 
             let intermediate_tx_out_value = intermediate_tx.value()?;
-            let reward_pool_value = reserve_value - intermediate_tx_out_value;
-            let reward_pool_tx_out = bitcoin::TxOut {
-                value: reward_pool_value,
+            let excess_value = reserve_value - intermediate_tx_out_value;
+            let excess_tx_out = bitcoin::TxOut {
+                value: excess_value,
                 script_pubkey: output_script,
             };
             intermediate_tx
                 .output
-                .push_back(Adapter::new(reward_pool_tx_out))?;
+                .push_back(Adapter::new(excess_tx_out))?;
 
             let mut disbursal_batch = self.batches.get_mut(BatchType::Disbursal as u64)?.unwrap();
             for tx in final_txs {
@@ -825,6 +831,7 @@ impl<'a> BuildingCheckpointMut<'a> {
         mut self,
         nbtc_accounts: &Accounts<Nbtc>,
         recovery_scripts: &Map<orga::coins::Address, Adapter<bitcoin::Script>>,
+        external_outputs: impl Iterator<Item = Result<bitcoin::TxOut>>,
         config: &Config,
     ) -> Result<BuildingAdvanceRes> {
         self.0.status = CheckpointStatus::Signing;
@@ -906,6 +913,7 @@ impl<'a> BuildingCheckpointMut<'a> {
             nbtc_accounts,
             recovery_scripts,
             reserve_outpoint,
+            external_outputs,
             config.fee_rate,
             reserve_value,
         )?;
@@ -1114,6 +1122,7 @@ impl CheckpointQueue {
         sig_keys: &Map<ConsensusKey, Xpub>,
         nbtc_accounts: &Accounts<Nbtc>,
         recovery_scripts: &Map<orga::coins::Address, Adapter<bitcoin::Script>>,
+        external_outputs: impl Iterator<Item = Result<bitcoin::TxOut>>,
     ) -> Result<()> {
         if self.signing()?.is_some() {
             return Ok(());
@@ -1158,7 +1167,12 @@ impl CheckpointQueue {
             let second = self.get_mut(self.index - 1)?;
             let sigset = second.sigset.clone();
             let (reserve_outpoint, reserve_value, excess_inputs, excess_outputs) =
-                BuildingCheckpointMut(second).advance(nbtc_accounts, recovery_scripts, &config)?;
+                BuildingCheckpointMut(second).advance(
+                    nbtc_accounts,
+                    recovery_scripts,
+                    external_outputs,
+                    &config,
+                )?;
 
             let mut building = self.building_mut()?;
             let mut building_checkpoint_batch = building

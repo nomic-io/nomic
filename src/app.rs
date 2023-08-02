@@ -33,7 +33,7 @@ use orga::macros::build_call;
 use orga::migrate::Migrate;
 use orga::orga;
 use orga::plugins::sdk_compat::{sdk, sdk::Tx as SdkTx, ConvertSdkTx};
-use orga::plugins::{DefaultPlugins, PaidCall, Signer, Time, MIN_FEE};
+use orga::plugins::{disable_fee, DefaultPlugins, Paid, PaidCall, Signer, Time, MIN_FEE};
 use orga::prelude::*;
 use orga::upgrade::Version;
 use orga::upgrade::{Upgrade, UpgradeV0};
@@ -44,7 +44,6 @@ use std::fmt::Debug;
 
 mod migrations;
 
-pub const CHAIN_ID: &str = "nomic-testnet-4d";
 pub type AppV0 = DefaultPlugins<Nom, InnerAppV0>;
 pub type App = DefaultPlugins<Nom, InnerApp>;
 
@@ -91,12 +90,13 @@ pub struct InnerApp {
     upgrade: Upgrade,
 
     #[orga(version(V2))]
+    #[call]
     pub incentives: Incentives,
 }
 
 #[orga]
 impl InnerApp {
-    pub const CONSENSUS_VERSION: u8 = 3;
+    pub const CONSENSUS_VERSION: u8 = 4;
 
     #[cfg(feature = "full")]
     fn configure_faucets(&mut self) -> Result<()> {
@@ -159,9 +159,6 @@ impl InnerApp {
 
             let signer = self.signer()?;
             let mut coins = self.bitcoin.accounts.withdraw(signer, amount)?;
-            if let Some(mut acct) = self.airdrop.get_mut(signer)? {
-                acct.ibc_transfer.unlock();
-            }
 
             let fee = ibc_fee(amount)?;
             let fee = coins.take(fee)?;
@@ -233,9 +230,6 @@ impl InnerApp {
             )?;
             match dest {
                 DepositCommitment::Address(addr) => {
-                    if let Some(mut acct) = self.airdrop.get_mut(addr)? {
-                        acct.btc_deposit.unlock();
-                    }
                     self.bitcoin.accounts.deposit(addr, nbtc.into())?
                 }
                 DepositCommitment::Ibc(dest) => {
@@ -286,12 +280,17 @@ impl InnerApp {
         script_pubkey: Adapter<bitcoin::Script>,
         amount: Amount,
     ) -> Result<()> {
-        let signer = self.signer()?;
-        if let Some(mut acct) = self.airdrop.get_mut(signer)? {
-            acct.btc_withdraw.unlock();
-        }
-
         Ok(self.bitcoin.withdraw(script_pubkey, amount)?)
+    }
+
+    #[call]
+    fn join_accounts(&mut self, dest_addr: Address) -> Result<()> {
+        disable_fee();
+
+        self.airdrop.join_accounts(dest_addr)?;
+        self.incentives.join_accounts(dest_addr)?;
+
+        Ok(())
     }
 
     fn signer(&mut self) -> Result<Address> {
@@ -364,8 +363,11 @@ mod abci {
 
     impl BeginBlock for InnerApp {
         fn begin_block(&mut self, ctx: &BeginBlockCtx) -> Result<()> {
-            self.upgrade
-                .step(&vec![Self::CONSENSUS_VERSION].try_into().unwrap())?;
+            let now = ctx.header.time.as_ref().unwrap().seconds;
+            self.upgrade.step(
+                &vec![Self::CONSENSUS_VERSION].try_into().unwrap(),
+                in_upgrade_window(now),
+            )?;
             self.staking.begin_block(ctx)?;
 
             #[cfg(feature = "testnet")]
@@ -387,9 +389,10 @@ mod abci {
             let ip_reward = self.incentive_pool_rewards.mint()?;
             self.incentive_pool.give(ip_reward)?;
 
-            self.bitcoin.begin_block(ctx)?;
+            let external_outputs: Vec<crate::error::Result<bitcoin::TxOut>> = vec![]; // TODO: remote chain disbursal
+            self.bitcoin
+                .begin_block_step(external_outputs.into_iter())?;
 
-            let now = ctx.header.time.as_ref().unwrap().seconds;
             let has_nbtc_rewards = self.bitcoin.reward_pool.amount > 0;
             if self.reward_timer.tick(now) && has_stake && has_nbtc_rewards {
                 let reward_rate = (Amount::new(1) / Amount::new(2377))?; // ~0.00042069
@@ -691,51 +694,6 @@ impl ConvertSdkTx for InnerApp {
                         Ok(PaidCall { payer, paid })
                     }
 
-                    "nomic/MsgClaimBtcDepositAirdrop" => {
-                        let msg = msg
-                            .value
-                            .as_object()
-                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
-                        if !msg.is_empty() {
-                            return Err(Error::App("Message should be empty".to_string()));
-                        }
-
-                        let payer = build_call!(self.airdrop.claim_btc_deposit());
-                        let paid = build_call!(self.accounts.give_from_funding_all());
-
-                        Ok(PaidCall { payer, paid })
-                    }
-
-                    "nomic/MsgClaimBtcWithdrawAirdrop" => {
-                        let msg = msg
-                            .value
-                            .as_object()
-                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
-                        if !msg.is_empty() {
-                            return Err(Error::App("Message should be empty".to_string()));
-                        }
-
-                        let payer = build_call!(self.airdrop.claim_btc_withdraw());
-                        let paid = build_call!(self.accounts.give_from_funding_all());
-
-                        Ok(PaidCall { payer, paid })
-                    }
-
-                    "nomic/MsgClaimIbcTransferAirdrop" => {
-                        let msg = msg
-                            .value
-                            .as_object()
-                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
-                        if !msg.is_empty() {
-                            return Err(Error::App("Message should be empty".to_string()));
-                        }
-
-                        let payer = build_call!(self.airdrop.claim_ibc_transfer());
-                        let paid = build_call!(self.accounts.give_from_funding_all());
-
-                        Ok(PaidCall { payer, paid })
-                    }
-
                     #[cfg(feature = "stakenet")]
                     "nomic/MsgClaimTestnetParticipationAirdrop" => {
                         let msg = msg
@@ -767,9 +725,8 @@ impl ConvertSdkTx for InnerApp {
                             .parse()
                             .map_err(|e: std::num::ParseIntError| Error::App(e.to_string()))?;
 
-                        let funding_amt = MIN_FEE;
-                        let payer = build_call!(self.accounts.take_as_funding(funding_amt.into()));
-                        let paid = build_call!(self.withdraw_nbtc(dest_script, amount.into()));
+                        let payer = build_call!(self.withdraw_nbtc(dest_script, amount.into()));
+                        let paid = build_call!(self.app_noop());
 
                         Ok(PaidCall { payer, paid })
                     }
@@ -858,7 +815,7 @@ impl ConvertSdkTx for InnerApp {
                         Ok(PaidCall { payer, paid })
                     }
 
-                    "nomic/MsgJoinAirdropAccounts" => {
+                    "nomic/MsgJoinRewardAccounts" => {
                         let msg = msg
                             .value
                             .as_object()
@@ -870,8 +827,45 @@ impl ConvertSdkTx for InnerApp {
                             .parse()
                             .map_err(|_| Error::App("Invalid destination address".to_string()))?;
 
-                        let payer = build_call!(self.airdrop.join_accounts(dest_addr));
+                        let payer = build_call!(self.join_accounts(dest_addr));
                         let paid = build_call!(self.app_noop());
+
+                        Ok(PaidCall { payer, paid })
+                    }
+
+                    "nomic/MsgClaimTestnetParticipationIncentives" => {
+                        let msg = msg
+                            .value
+                            .as_object()
+                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
+                        if !msg.is_empty() {
+                            return Err(Error::App("Message should be empty".to_string()));
+                        }
+                        let payer =
+                            build_call!(self.incentives.claim_testnet_participation_incentives());
+                        let paid = build_call!(self.accounts.give_from_funding_all());
+
+                        Ok(PaidCall { payer, paid })
+                    }
+
+                    "nomic/MsgSetRecoveryAddress" => {
+                        let msg = msg
+                            .value
+                            .as_object()
+                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
+
+                        let recovery_addr: bitcoin::Address = msg["recovery_address"]
+                            .as_str()
+                            .ok_or_else(|| Error::App("Invalid recovery address".to_string()))?
+                            .parse()
+                            .map_err(|_| Error::App("Invalid recovery address".to_string()))?;
+
+                        let script =
+                            crate::bitcoin::adapter::Adapter::new(recovery_addr.script_pubkey());
+
+                        let funding_amt = MIN_FEE;
+                        let payer = build_call!(self.accounts.take_as_funding(funding_amt.into()));
+                        let paid = build_call!(self.bitcoin.set_recovery_script(script.clone()));
 
                         Ok(PaidCall { payer, paid })
                     }
@@ -960,5 +954,25 @@ impl RewardTimer {
 
         self.last_period = now;
         true
+    }
+}
+
+fn in_upgrade_window(now_seconds: i64) -> bool {
+    use chrono::prelude::*;
+    let now = Utc.timestamp_opt(now_seconds, 0).unwrap();
+
+    // Monday - Friday, 17:00 - 17:10 UTC
+    now.weekday().num_days_from_monday() < 5 && now.hour() == 17 && now.minute() < 10
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn upgrade_date() {
+        assert!(in_upgrade_window(1690218300)); // Monday 17:05 UTC
+        assert!(!in_upgrade_window(1690219200)); // Monday 17:20 UTC
+        assert!(!in_upgrade_window(1690736700)); // Sunday 17:05 UTC
     }
 }

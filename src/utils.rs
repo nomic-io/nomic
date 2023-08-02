@@ -3,7 +3,6 @@
 #[cfg(feature = "full")]
 use crate::app::App;
 use crate::app::Nom;
-use crate::app::CHAIN_ID;
 #[cfg(feature = "full")]
 use crate::bitcoin::adapter::Adapter;
 #[cfg(feature = "full")]
@@ -85,10 +84,10 @@ pub fn sleep(seconds: u64) {
     std::thread::sleep(duration);
 }
 
-pub fn generate_sign_doc(msg: sdk::Msg, nonce: u64) -> sdk::SignDoc {
+pub fn generate_sign_doc(chain_id: String, msg: sdk::Msg, nonce: u64) -> sdk::SignDoc {
     sdk::SignDoc {
         account_number: "0".to_string(),
-        chain_id: CHAIN_ID.to_string(),
+        chain_id,
         fee: sdk::Fee {
             amount: vec![sdk::Coin {
                 amount: "0".to_string(),
