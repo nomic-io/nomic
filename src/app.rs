@@ -725,9 +725,8 @@ impl ConvertSdkTx for InnerApp {
                             .parse()
                             .map_err(|e: std::num::ParseIntError| Error::App(e.to_string()))?;
 
-                        let funding_amt = MIN_FEE;
-                        let payer = build_call!(self.accounts.take_as_funding(funding_amt.into()));
-                        let paid = build_call!(self.withdraw_nbtc(dest_script, amount.into()));
+                        let payer = build_call!(self.withdraw_nbtc(dest_script, amount.into()));
+                        let paid = build_call!(self.app_noop());
 
                         Ok(PaidCall { payer, paid })
                     }
