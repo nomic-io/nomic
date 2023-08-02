@@ -50,7 +50,7 @@ fn main() {
             let version_req = semver::VersionReq::parse(&version_req_str).unwrap();
 
             assert!(std::process::Command::new("git")
-                .args(["fetch", "--tags"])
+                .args(["fetch", "--tags", "--force"])
                 .spawn()
                 .unwrap()
                 .wait_with_output()
