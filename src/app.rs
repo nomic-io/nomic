@@ -87,7 +87,7 @@ pub struct InnerApp {
     pub ibc: Ibc,
 
     #[orga(version(V1, V2))]
-    upgrade: Upgrade,
+    pub upgrade: Upgrade,
 
     #[orga(version(V2))]
     pub incentives: Incentives,
