@@ -385,9 +385,7 @@ pub async fn airdrop_balances(addr: String) -> Result<Airdrop, JsError> {
     if let Some(account) = app_client().query(|app| app.airdrop.get(address)).await? {
         Ok(Airdrop {
             airdrop1: parse_part(account.airdrop1),
-            btc_deposit: parse_part(account.btc_deposit),
-            btc_withdraw: parse_part(account.btc_withdraw),
-            ibc_transfer: parse_part(account.ibc_transfer),
+            airdrop2: parse_part(account.airdrop2),
         })
     } else {
         Ok(Airdrop::default())
