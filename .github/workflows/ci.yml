@@ -65,7 +65,7 @@ jobs:
           command: test
           args: --verbose --all-features
 
-  build-rest:
+  check-rest:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -75,7 +75,7 @@ jobs:
         with:
           toolchain: nightly-2023-05-08
           override: true
-      - name: Build Rest
+      - name: Check Rest
         uses: actions-rs/cargo@v1
         with:
           command: check
@@ -162,3 +162,4 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           args: --no-default-features --features=full,feat-ibc,testnet,emergency-disbursal -- -D warnings
+j
