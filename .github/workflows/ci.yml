@@ -65,6 +65,22 @@ jobs:
           command: test
           args: --verbose --all-features
 
+  build-rest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Use Nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2023-05-08
+          override: true
+      - name: Build Rest
+        uses: actions-rs/cargo@v1
+        with:
+          command: check
+          args: --manifest-path rest/Cargo.toml --verbose
+
   coverage:
     runs-on: ubuntu-latest
     steps:
