@@ -1,7 +1,6 @@
 use crate::bitcoin::Bitcoin;
 
 #[cfg(feature = "full")]
-use orga::migrate::{exec_migration, Migrate};
 use orga::plugins::sdk_compat::{sdk, sdk::Tx as SdkTx, ConvertSdkTx};
 use orga::prelude::*;
 use orga::Error;
@@ -51,27 +50,6 @@ impl InnerApp {
 }
 
 #[cfg(feature = "full")]
-impl Migrate<nomicv2::app::InnerApp> for InnerApp {
-    fn migrate(&mut self, legacy: nomicv2::app::InnerApp) -> Result<()> {
-        self.community_pool.migrate(legacy.community_pool())?;
-        self.incentive_pool.migrate(legacy.incentive_pool())?;
-
-        self.staking_rewards.migrate(legacy.staking_rewards())?;
-        self.dev_rewards.migrate(legacy.dev_rewards())?;
-        self.community_pool_rewards
-            .migrate(legacy.community_pool_rewards())?;
-        self.incentive_pool_rewards
-            .migrate(legacy.incentive_pool_rewards())?;
-
-        self.accounts.migrate(legacy.accounts)?;
-        self.staking.migrate(legacy.staking)?;
-        self.atom_airdrop.migrate(legacy.atom_airdrop)?;
-
-        Ok(())
-    }
-}
-
-#[cfg(feature = "full")]
 mod abci {
     use super::*;
 
@@ -83,9 +61,6 @@ mod abci {
             self.staking.slash_fraction_downtime = (Amount::new(1) / Amount::new(1000))?;
             self.staking.slash_fraction_double_sign = (Amount::new(1) / Amount::new(20))?;
             self.staking.min_self_delegation_min = 0;
-
-            let old_home_path = nomicv2::orga::abci::Node::<()>::home(nomicv2::app::CHAIN_ID);
-            exec_migration(self, old_home_path.join("merk"), &[0, 1, 0])?;
 
             self.accounts.allow_transfers(false);
             self.bitcoin.accounts.allow_transfers(true);
@@ -169,13 +144,6 @@ impl<S: Symbol> Airdrop<S> {
 
         let amount = self.claimable.balance(signer)?;
         self.claimable.take_as_funding(amount)
-    }
-}
-
-#[cfg(feature = "full")]
-impl Migrate<nomicv2::app::Airdrop<nomicv2::app::Nom>> for Airdrop<Nom> {
-    fn migrate(&mut self, legacy: nomicv2::app::Airdrop<nomicv2::app::Nom>) -> Result<()> {
-        self.claimable.migrate(legacy.accounts())
     }
 }
 
