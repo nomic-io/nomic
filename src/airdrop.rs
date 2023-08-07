@@ -202,25 +202,9 @@ impl Airdrop {
     ) -> Result<(u64, u64)> {
         let mut acct = self.accounts.entry(addr)?.or_insert_default()?;
 
-        #[cfg(feature = "testnet")]
-        {
-            acct.airdrop2.claimable = unom;
+        acct.airdrop2.claimable = unom;
 
-            Ok((0, 0))
-        }
-
-        #[cfg(not(feature = "testnet"))]
-        {
-            acct.airdrop2.claimable = unom;
-            assert!(testnet_completions <= 3);
-            acct.testnet_participation.locked = unom / 12 * (3 - testnet_completions);
-            acct.testnet_participation.claimable = unom / 12 * testnet_completions;
-
-            Ok((
-                acct.testnet_participation.locked,
-                acct.testnet_participation.claimable,
-            ))
-        }
+        Ok((0, 0))
     }
 
     #[cfg(feature = "full")]
@@ -327,7 +311,7 @@ pub struct Account {
     #[orga(version(V0))]
     pub claimable: Amount,
 
-    #[orga(version(V1))]
+    #[orga(version(V1, V2))]
     pub airdrop1: Part,
     #[orga(version(V1))]
     pub btc_deposit: Part,
