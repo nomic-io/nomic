@@ -134,7 +134,10 @@ pub struct Bitcoin {
 }
 
 impl MigrateFrom<BitcoinV0> for BitcoinV1 {
-    fn migrate_from(value: BitcoinV0) -> OrgaResult<Self> {
+    fn migrate_from(mut value: BitcoinV0) -> OrgaResult<Self> {
+        #[cfg(not(feature = "testnet"))]
+        value.checkpoints.rewind(1607).unwrap();
+
         Ok(Self {
             headers: value.headers,
             processed_outpoints: value.processed_outpoints,
