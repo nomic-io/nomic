@@ -344,7 +344,6 @@ impl MigrateFrom<CheckpointV0> for CheckpointV1 {
         batch.push_back(bitcoin_tx)?;
 
         batches.push_back(batch)?;
-
         Ok(Self {
             status: value.status,
             sigset: value.sigset,
@@ -944,6 +943,66 @@ impl CheckpointQueue {
         Ok(())
     }
 
+    pub fn rewind(&mut self, to_index: u32) -> Result<()> {
+        if to_index > self.index || self.index - to_index > self.queue.len() as u32 {
+            return Err(OrgaError::App("Invalid index".to_string()).into());
+        }
+
+        let mut inputs = vec![];
+        let mut outputs = vec![];
+        let mut checkpoint = loop {
+            let mut removed = self.queue.pop_back()?.unwrap().into_inner();
+
+            let mut checkpoint_batch = removed
+                .batches
+                .get_mut(BatchType::Checkpoint as u64)?
+                .unwrap();
+            let mut checkpoint_tx = checkpoint_batch.back_mut()?.unwrap();
+
+            while let Some(input) = checkpoint_tx.input.pop_back()? {
+                if checkpoint_tx.input.len() == 0 && self.index != to_index {
+                    // skip reserve input (except on target index)
+                    continue;
+                }
+                let mut input = input.into_inner();
+                input.signatures = ThresholdSig::new();
+                inputs.push(input);
+            }
+
+            while let Some(output) = checkpoint_tx.output.pop_back()? {
+                if checkpoint_tx.output.len() == 0 {
+                    // skip reserve output
+                    continue;
+                }
+                outputs.push(output.into_inner());
+            }
+
+            if self.index == to_index {
+                break removed;
+            }
+            self.index -= 1;
+        };
+
+        checkpoint.status = CheckpointStatus::Building;
+
+        let mut checkpoint_batch = checkpoint
+            .batches
+            .get_mut(BatchType::Checkpoint as u64)?
+            .unwrap();
+        let mut checkpoint_tx = checkpoint_batch.back_mut()?.unwrap();
+        checkpoint_tx.input.push_back(inputs.pop().unwrap())?;
+        for input in inputs {
+            checkpoint_tx.input.push_back(input)?;
+        }
+        for output in outputs {
+            checkpoint_tx.output.push_back(output)?;
+        }
+
+        self.queue.push_back(checkpoint)?;
+
+        Ok(())
+    }
+
     #[query]
     pub fn get(&self, index: u32) -> Result<Ref<'_, Checkpoint>> {
         let index = self.get_deque_index(index)?;
@@ -1112,7 +1171,6 @@ impl CheckpointQueue {
 
             self.queue.pop_front()?;
         }
-
         Ok(())
     }
 
