@@ -209,21 +209,13 @@ impl StartCmd {
                 // TODO: set default seeds
                 set_p2p_seeds(
                     &new_config_path,
-                    &[
-                        "238120dfe716082754048057c1fdc3d6f09609b5@161.35.51.124:26656",
-                        "a67d7a4d90f84d5c67bfc196aac68441ba9484a6@167.99.119.196:26656",
-                        "26814903a767984b3f46970160c8b6e46f3e35e6@66.94.126.60:26656",
-                    ],
+                    &["8f956c31e1ca0951e81599b7dd51e3429985a8c0@10.16.57.40:26656"],
                 );
 
                 // TODO: set default RPC boostrap nodes
                 configure_for_statesync(
                     &new_config_path,
-                    &[
-                        "http://161.35.51.124:26667",
-                        "http://167.99.119.196:26657",
-                        "https://nomic-rpc.polkachu.com:443",
-                    ],
+                    &["http://10.16.57.40:26657", "http://10.16.57.40:26657"],
                 );
             }
 
