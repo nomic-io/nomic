@@ -100,7 +100,7 @@ mod abci {
                 period_length: year,
                 total_coins: 49_875_000_000_000.into(),
                 period_decay: two_thirds,
-                start_seconds: genesis_time + day,
+                start_seconds: genesis_time,
             })?;
 
             self.dev_rewards.configure(FaucetOptions {
@@ -108,7 +108,7 @@ mod abci {
                 period_length: year,
                 total_coins: 49_875_000_000_000.into(),
                 period_decay: two_thirds,
-                start_seconds: genesis_time + day,
+                start_seconds: genesis_time,
             })?;
 
             self.community_pool_rewards.configure(FaucetOptions {
@@ -116,7 +116,7 @@ mod abci {
                 period_length: year,
                 total_coins: 9_975_000_000_000.into(),
                 period_decay: two_thirds,
-                start_seconds: genesis_time + day,
+                start_seconds: genesis_time,
             })?;
 
             self.incentive_pool_rewards.configure(FaucetOptions {
@@ -124,10 +124,10 @@ mod abci {
                 period_length: year,
                 total_coins: 89_775_000_000_000.into(),
                 period_decay: two_thirds,
-                start_seconds: genesis_time + day,
+                start_seconds: genesis_time,
             })?;
 
-            self.accounts.allow_transfers(false);
+            self.accounts.allow_transfers(true);
             self.bitcoin.accounts.allow_transfers(true);
 
             let sr_address = STRATEGIC_RESERVE_ADDRESS.parse().unwrap();
