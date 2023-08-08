@@ -7,7 +7,7 @@ use orga::prelude::*;
 use orga::Error;
 use serde::{Deserialize, Serialize};
 
-pub const CHAIN_ID: &str = "nomic-stakenet-3";
+pub const CHAIN_ID: &str = "nomic-internalnet-6";
 pub type App = DefaultPlugins<Nom, InnerApp, CHAIN_ID>;
 
 #[derive(State, Debug, Clone)]
