@@ -18,10 +18,6 @@ fn main() {
         let version = std::env::var("NOMIC_LEGACY_VERSION");
         let rev = std::env::var("NOMIC_LEGACY_REV");
 
-        if version.is_ok() && rev.is_ok() {
-            panic!("Cannot specify both NOMIC_LEGACY_VERSION and NOMIC_LEGACY_REV");
-        }
-
         let rev = if let Ok(rev) = rev {
             rev
         } else {
