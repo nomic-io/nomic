@@ -196,6 +196,9 @@ impl StartCmd {
         if let Some(legacy_bin) = legacy_bin {
             let version_hex = hex::encode([InnerApp::CONSENSUS_VERSION]);
             let mut legacy_cmd = std::process::Command::new(legacy_bin);
+            if let Some(upgrade_height) = cmd.config.upgrade_height {
+                legacy_cmd.env("ORGA_STOP_HEIGHT", upgrade_height.to_string());
+            }
             legacy_cmd.args(["start", "--signal-version", &version_hex]);
             legacy_cmd.args(std::env::args().skip(2).collect::<Vec<_>>());
             log::info!("Starting legacy node... ({:#?})", legacy_cmd);
