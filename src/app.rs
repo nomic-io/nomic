@@ -73,6 +73,8 @@ impl Migrate<nomicv2::app::InnerApp> for InnerApp {
 
 #[cfg(feature = "full")]
 mod abci {
+    use std::time::Duration;
+
     use super::*;
 
     impl InitChain for InnerApp {
@@ -84,8 +86,46 @@ mod abci {
             self.staking.slash_fraction_double_sign = (Amount::new(1) / Amount::new(20))?;
             self.staking.min_self_delegation_min = 0;
 
-            let old_home_path = nomicv2::orga::abci::Node::<()>::home(nomicv2::app::CHAIN_ID);
-            exec_migration(self, old_home_path.join("merk"), &[0, 1, 0])?;
+            let day = 60 * 60 * 24;
+            let year = Duration::from_secs(60 * 60 * 24 * 365);
+            let two_thirds = (Amount::new(2) / Amount::new(3))?;
+
+            let genesis_time = self
+                .context::<Time>()
+                .ok_or_else(|| Error::App("No Time context available".into()))?
+                .seconds;
+
+            self.staking_rewards.configure(FaucetOptions {
+                num_periods: 9,
+                period_length: year,
+                total_coins: 49_875_000_000_000.into(),
+                period_decay: two_thirds,
+                start_seconds: genesis_time + day,
+            })?;
+
+            self.dev_rewards.configure(FaucetOptions {
+                num_periods: 9,
+                period_length: year,
+                total_coins: 49_875_000_000_000.into(),
+                period_decay: two_thirds,
+                start_seconds: genesis_time + day,
+            })?;
+
+            self.community_pool_rewards.configure(FaucetOptions {
+                num_periods: 9,
+                period_length: year,
+                total_coins: 9_975_000_000_000.into(),
+                period_decay: two_thirds,
+                start_seconds: genesis_time + day,
+            })?;
+
+            self.incentive_pool_rewards.configure(FaucetOptions {
+                num_periods: 9,
+                period_length: year,
+                total_coins: 89_775_000_000_000.into(),
+                period_decay: two_thirds,
+                start_seconds: genesis_time + day,
+            })?;
 
             self.accounts.allow_transfers(false);
             self.bitcoin.accounts.allow_transfers(true);
@@ -95,6 +135,28 @@ mod abci {
 
             let vb_address = VALIDATOR_BOOTSTRAP_ADDRESS.parse().unwrap();
             self.accounts.add_transfer_exception(vb_address)?;
+
+            let addresses = [
+                "nomic10s0k46fppc9wheenkq9r8pgdv7zm6ewyfsv53n",
+                "nomic1rk07saqmvfle50h4h9hul00g67xzrcc5ytfxjm",
+                "nomic1v2etn3ttwvra63m7esgmpqd3n2tf62nu5xgj5l",
+                "nomic124j0ky0luh9jzqh9w2dk77cze9v0ckdupk50ny",
+                "nomic1lrjlnj228jqr0m9ucd637knw974gga98eezpxm",
+                "nomic1nx0kr57khqxvn4my79vqrmm3u0057f856fn55k",
+                "nomic1yza655dh6mszhq9pq6geuv97ujuherlhsjn28z",
+                "nomic1uhnm7ymaqz9dkjf28l377uy0kv5vgdw36kev0f",
+                "nomic1e9ypzs3qgrkwzpstvw7z4ag96qzv9qtdhvrcyj",
+                "nomic10lggm4znqtt50tgtjfdgz4qkmpe2s92dn6qzfd",
+            ];
+            for addr in addresses {
+                self.atom_airdrop
+                    .accounts_mut()
+                    .deposit(addr.parse().unwrap(), Coin::mint(1_000_000_000_000))?;
+                self.accounts
+                    .deposit(addr.parse().unwrap(), Coin::mint(1_000_000_000_000))?;
+            }
+
+            self.incentive_pool.give(Coin::mint(2_000_000_000_000))?;
 
             Ok(())
         }
@@ -148,6 +210,10 @@ pub struct Airdrop<S: Symbol> {
 }
 
 impl<S: Symbol> Airdrop<S> {
+    pub fn accounts_mut(&mut self) -> &mut Accounts<S> {
+        &mut self.claimable
+    }
+
     #[query]
     pub fn balance(&self, address: Address) -> Result<Option<Amount>> {
         let exists = self.claimable.exists(address)?;
