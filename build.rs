@@ -29,7 +29,8 @@ fn main() {
                 version_req_str
             } else {
                 let toml = if branch_name == "main" {
-                    todo!()
+                    println!("cargo:rerun-if-changed=networks/stakenet.toml");
+                    include_str!("networks/stakenet.toml")
                 } else {
                     println!("cargo:rerun-if-changed=networks/testnet.toml");
                     include_str!("networks/testnet.toml")

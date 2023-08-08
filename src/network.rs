@@ -1,9 +1,10 @@
 use crate::error::{Error, Result};
 use clap::{self, ArgMatches, Args, Command, CommandFactory, ErrorKind, FromArgMatches, Parser};
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "full")]
+use std::path::PathBuf;
 use std::{
     ops::{Deref, DerefMut},
-    path::PathBuf,
     str::FromStr,
 };
 
@@ -17,7 +18,7 @@ pub enum Network {
 impl Network {
     pub fn config(&self) -> InnerConfig {
         let toml_src = match self {
-            Self::Mainnet => panic!("Mainnet is not yet configured"),
+            Self::Mainnet => include_str!("../networks/stakenet.toml"),
             Self::Testnet => include_str!("../networks/testnet.toml"),
         };
 
