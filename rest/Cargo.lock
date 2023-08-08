@@ -1805,7 +1805,7 @@ dependencies = [
 
 [[package]]
 name = "nomic"
-version = "3.0.0"
+version = "3.0.1"
 dependencies = [
  "base64",
  "bech32",
@@ -1839,7 +1839,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "hex",
- "nomic 3.0.0",
+ "nomic 3.0.1",
  "rocket",
  "serde",
  "serde_json",

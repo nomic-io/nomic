@@ -1,6 +1,6 @@
 [package]
 name = "nomic"
-version = "3.0.0"
+version = "3.0.1"
 authors = [ "The Nomic Team <hello@nomic.io>" ]
 edition = "2018"
 default-run = "nomic"
