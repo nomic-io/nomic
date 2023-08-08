@@ -117,8 +117,8 @@ impl StartCmd {
             let old_name = nomicv2::app::CHAIN_ID;
             let new_name = nomic::app::CHAIN_ID;
 
-            let has_old_node = Node::home(old_name).exists();
-            let has_new_node = Node::home(new_name).exists();
+            let has_old_node = Node::home(old_name).join("tendermint").exists();
+            let has_new_node = Node::home(new_name).join("tendermint").exists();
             let started_old_node = Node::height(old_name).unwrap() > 0;
             let started_new_node = Node::height(new_name).unwrap() > 0;
             let upgrade_time_passed = now_seconds() > STOP_SECONDS;
@@ -158,10 +158,7 @@ impl StartCmd {
                     // TODO: set default RPC boostrap nodes
                     configure_for_statesync(
                         &old_config_path,
-                        &[
-                            "http://161.35.51.124:26667",
-                            "http://161.35.51.124:26667",
-                        ],
+                        &["http://161.35.51.124:26667", "http://161.35.51.124:26667"],
                     );
                 }
 
@@ -218,10 +215,7 @@ impl StartCmd {
                 // TODO: set default RPC boostrap nodes
                 configure_for_statesync(
                     &new_config_path,
-                    &[
-                        "http://161.35.51.124:26667",
-                        "http://161.35.51.124:26667",
-                    ],
+                    &["http://161.35.51.124:26667", "http://161.35.51.124:26667"],
                 );
             }
 
@@ -481,7 +475,7 @@ impl ValidatorsCmd {
         for validator in validators {
             let info: DeclareInfo =
                 serde_json::from_slice(validator.info.bytes.as_slice()).unwrap();
-                println!(
+            println!(
                     "- {}\n\tVOTING POWER: {}\n\tMONIKER: {}\n\tCOMMISSION: {}\n\tDETAILS: {}\n\tJAILED: {}\n\tTOMBSTONED: {}\n\tACTIVE: {}\n\tUNBONDING: {}\n\tUNBONDING_START: {}",
                     validator.address, validator.amount_staked, info.moniker, validator.commission.rate, info.details, validator.jailed, validator.tombstoned, validator.in_active_set, validator.unbonding, validator.unbonding_start_seconds
                 );
