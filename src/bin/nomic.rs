@@ -810,12 +810,12 @@ impl DepositCmd {
         let sigset = app_client().bitcoin.checkpoints.active_sigset().await??;
         let script = sigset.output_script(dest_addr)?;
         // TODO: get network from somewhere
-        let btc_addr = bitcoin::Address::from_script(&script, bitcoin::Network::Bitcoin).unwrap();
+        let btc_addr = bitcoin::Address::from_script(&script, bitcoin::Network::Testnet).unwrap();
 
         let client = reqwest::Client::new();
         client
             .post(format!(
-                "https://relayer.nomic.io:8443?dest_addr={}&sigset_index={}&deposit_addr={}",
+                "http://localhost:9000?dest_addr={}&sigset_index={}&deposit_addr={}",
                 dest_addr,
                 sigset.index(),
                 btc_addr,
