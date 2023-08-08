@@ -1,0 +1,35 @@
+state_sync_rpc = [
+]
+tendermint_flags = [
+    "--p2p.seeds",
+    """
+    """,
+]
+
+legacy_version = "3.0.0"
+
+genesis = """
+{
+  "genesis_time": "2022-07-04T00:00:00Z",
+  "chain_id": "nomic-stakenet-3",
+  "initial_height": "0",
+  "consensus_params": {
+    "block": {
+      "max_bytes": "22020096",
+      "max_gas": "-1",
+      "time_iota_ms": "1000"
+    },
+    "evidence": {
+      "max_age_num_blocks": "100000",
+      "max_age_duration": "172800000000000",
+      "max_bytes": "1048576"
+    },
+    "validator": {
+      "pub_key_types": ["ed25519"]
+    },
+    "version": {}
+  },
+  "validators": [],
+  "app_hash": ""
+}
+"""
