@@ -203,26 +203,28 @@ impl StartCmd {
                 edit_block_time(&new_config_path, "3s");
             }
 
-            if upgrade_time_passed && !started_new_node && (!has_old_node || state_sync) {
-                println!("Configuring node for state sync...");
+            if !std::env::var("NOMIC_INITCHAIN").is_ok() {
+                if upgrade_time_passed && !started_new_node && (!has_old_node || state_sync) {
+                    println!("Configuring node for state sync...");
 
-                // TODO: set default seeds
-                set_p2p_seeds(
-                    &new_config_path,
-                    &["8f956c31e1ca0951e81599b7dd51e3429985a8c0@10.16.57.40:26656"],
-                );
+                    // TODO: set default seeds
+                    set_p2p_seeds(
+                        &new_config_path,
+                        &["8f956c31e1ca0951e81599b7dd51e3429985a8c0@10.16.57.40:26656"],
+                    );
 
-                // TODO: set default RPC boostrap nodes
-                configure_for_statesync(
-                    &new_config_path,
-                    &["http://10.16.57.40:26657", "http://10.16.57.40:26657"],
-                );
+                    // TODO: set default RPC boostrap nodes
+                    configure_for_statesync(
+                        &new_config_path,
+                        &["http://10.16.57.40:26657", "http://10.16.57.40:26657"],
+                    );
+                }
             }
 
             println!("Starting node...");
             // TODO: add cfg defaults
             Node::<nomic::app::App>::new(new_name, Default::default())
-                .with_genesis(include_bytes!("../../genesis/stakenet-3.json"))
+                .with_genesis(include_bytes!("../../genesis/internalnet-6.json"))
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
                 .run()
