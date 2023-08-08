@@ -199,8 +199,17 @@ impl StartCmd {
             if let Some(upgrade_height) = cmd.config.upgrade_height {
                 legacy_cmd.env("ORGA_STOP_HEIGHT", upgrade_height.to_string());
             }
-            legacy_cmd.args(["start", "--signal-version", &version_hex]);
-            legacy_cmd.args(std::env::args().skip(2).collect::<Vec<_>>());
+
+            #[cfg(feature = "testnet")]
+            {
+                legacy_cmd.args(["start", "--signal-version", &version_hex]);
+                legacy_cmd.args(std::env::args().skip(2).collect::<Vec<_>>());
+            }
+            #[cfg(not(feature = "testnet"))]
+            {
+                legacy_cmd.args(["start", "--state-sync"]);
+            }
+
             log::info!("Starting legacy node... ({:#?})", legacy_cmd);
             let res = legacy_cmd.spawn()?.wait()?;
             match res.code() {
