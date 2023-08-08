@@ -267,7 +267,7 @@ impl State for HeaderQueue {
         let mut queue = Self {
             deque: State::create(store.sub(&[0]), data.0)?,
             current_work: State::create(store.sub(&[1]), data.1)?,
-            config: Config::mainnet(),
+            config: Config::testnet(),
         };
 
         let height = match queue.height() {
