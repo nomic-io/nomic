@@ -694,6 +694,21 @@ impl ConvertSdkTx for InnerApp {
                         Ok(PaidCall { payer, paid })
                     }
 
+                    "nomic/MsgClaimAirdrop2" => {
+                        let msg = msg
+                            .value
+                            .as_object()
+                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
+                        if !msg.is_empty() {
+                            return Err(Error::App("Message should be empty".to_string()));
+                        }
+
+                        let payer = build_call!(self.airdrop.claim_airdrop2());
+                        let paid = build_call!(self.accounts.give_from_funding_all());
+
+                        Ok(PaidCall { payer, paid })
+                    }
+
                     #[cfg(feature = "stakenet")]
                     "nomic/MsgClaimTestnetParticipationAirdrop" => {
                         let msg = msg
