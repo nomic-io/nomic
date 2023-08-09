@@ -85,7 +85,7 @@ impl Incentives {
                 if v == "true" {
                     account.testnet_participation = Part {
                         locked: 0,
-                        claimable: funds.take(rate)?.amount.into(),
+                        claimable: rate.into(),
                         claimed: 0,
                     }
                 }
