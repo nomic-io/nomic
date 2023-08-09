@@ -153,7 +153,7 @@ impl Relayer {
                     };
                     let expected_addr = ::bitcoin::Address::from_script(
                         &sigset.output_script(dest_addr).map_err(|_| reject())?,
-                        ::bitcoin::Network::Bitcoin, // TODO: don't hardcode
+                        ::bitcoin::Network::Testnet, // TODO: don't hardcode
                     )
                     .unwrap()
                     .to_string();
@@ -256,6 +256,19 @@ impl Relayer {
                 .await??;
             for tx in txs {
                 if relayed.contains(&tx.txid()) {
+                    continue;
+                }
+
+                let maybe_dust = tx
+                    .output
+                    .iter()
+                    .find(|o| o.value < o.script_pubkey.dust_value().as_sat());
+                if let Some(dust) = maybe_dust {
+                    println!(
+                        "Dust output detected ({} sats), skipping checkpoint relay",
+                        dust.value
+                    );
+                    relayed.insert(tx.txid());
                     continue;
                 }
 

@@ -477,7 +477,7 @@ impl ValidatorsCmd {
         for validator in validators {
             let info: DeclareInfo =
                 serde_json::from_slice(validator.info.bytes.as_slice()).unwrap();
-                println!(
+            println!(
                     "- {}\n\tVOTING POWER: {}\n\tMONIKER: {}\n\tCOMMISSION: {}\n\tDETAILS: {}\n\tJAILED: {}\n\tTOMBSTONED: {}\n\tACTIVE: {}\n\tUNBONDING: {}\n\tUNBONDING_START: {}",
                     validator.address, validator.amount_staked, info.moniker, validator.commission.rate, info.details, validator.jailed, validator.tombstoned, validator.in_active_set, validator.unbonding, validator.unbonding_start_seconds
                 );
