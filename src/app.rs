@@ -1,7 +1,6 @@
 use crate::bitcoin::Bitcoin;
 
 #[cfg(feature = "full")]
-use orga::migrate::{exec_migration, Migrate};
 use orga::plugins::sdk_compat::{sdk, sdk::Tx as SdkTx, ConvertSdkTx};
 use orga::prelude::*;
 use orga::Error;
@@ -46,27 +45,6 @@ impl InnerApp {
     pub fn deposit_rewards(&mut self) -> Result<()> {
         self.accounts.give_from_funding_all()?;
         self.bitcoin.accounts.give_from_funding_all()?;
-        Ok(())
-    }
-}
-
-#[cfg(feature = "full")]
-impl Migrate<nomicv2::app::InnerApp> for InnerApp {
-    fn migrate(&mut self, legacy: nomicv2::app::InnerApp) -> Result<()> {
-        self.community_pool.migrate(legacy.community_pool())?;
-        self.incentive_pool.migrate(legacy.incentive_pool())?;
-
-        self.staking_rewards.migrate(legacy.staking_rewards())?;
-        self.dev_rewards.migrate(legacy.dev_rewards())?;
-        self.community_pool_rewards
-            .migrate(legacy.community_pool_rewards())?;
-        self.incentive_pool_rewards
-            .migrate(legacy.incentive_pool_rewards())?;
-
-        self.accounts.migrate(legacy.accounts)?;
-        self.staking.migrate(legacy.staking)?;
-        self.atom_airdrop.migrate(legacy.atom_airdrop)?;
-
         Ok(())
     }
 }
@@ -235,13 +213,6 @@ impl<S: Symbol> Airdrop<S> {
 
         let amount = self.claimable.balance(signer)?;
         self.claimable.take_as_funding(amount)
-    }
-}
-
-#[cfg(feature = "full")]
-impl Migrate<nomicv2::app::Airdrop<nomicv2::app::Nom>> for Airdrop<Nom> {
-    fn migrate(&mut self, legacy: nomicv2::app::Airdrop<nomicv2::app::Nom>) -> Result<()> {
-        self.claimable.migrate(legacy.accounts())
     }
 }
 

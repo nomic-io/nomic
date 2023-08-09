@@ -117,8 +117,8 @@ impl StartCmd {
             let old_name = nomicv2::app::CHAIN_ID;
             let new_name = nomic::app::CHAIN_ID;
 
-            let has_old_node = Node::home(old_name).exists();
-            let has_new_node = Node::home(new_name).exists();
+            let has_old_node = Node::home(old_name).join("tendermint").exists();
+            let has_new_node = Node::home(new_name).join("tendermint").exists();
             let started_old_node = Node::height(old_name).unwrap() > 0;
             let started_new_node = Node::height(new_name).unwrap() > 0;
             let upgrade_time_passed = now_seconds() > STOP_SECONDS;
@@ -158,11 +158,7 @@ impl StartCmd {
                     // TODO: set default RPC boostrap nodes
                     configure_for_statesync(
                         &old_config_path,
-                        &[
-                            "http://161.35.51.124:26667",
-                            "http://167.99.119.196:26657",
-                            "https://nomic-rpc.polkachu.com:443",
-                        ],
+                        &["http://161.35.51.124:26667", "http://161.35.51.124:26667"],
                     );
                 }
 
