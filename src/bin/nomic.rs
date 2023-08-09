@@ -685,8 +685,11 @@ impl BalanceCmd {
             .await?;
         println!("{} NBTC", balance);
 
-        let balance = app_client().query(|app| app.escrowed_nbtc(address)).await?;
-        println!("{} IBC-escrowed NBTC", balance);
+        #[cfg(feature = "testnet")]
+        {
+            let balance = app_client().query(|app| app.escrowed_nbtc(address)).await?;
+            println!("{} IBC-escrowed NBTC", balance);
+        }
 
         Ok(())
     }
