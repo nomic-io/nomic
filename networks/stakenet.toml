@@ -8,7 +8,7 @@ tendermint_flags = [
     """,
 ]
 
-legacy_version = "3.0.0"
+legacy_version = "3.0.1"
 
 genesis = """
 {
