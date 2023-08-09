@@ -974,6 +974,10 @@ impl CheckpointQueue {
                     // skip reserve output
                     continue;
                 }
+                if output.value < output.script_pubkey.dust_value().to_sat() {
+                    // skip dust outputs
+                    continue;
+                }
                 outputs.push(output.into_inner());
             }
 
