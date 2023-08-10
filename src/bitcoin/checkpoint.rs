@@ -957,7 +957,10 @@ impl CheckpointQueue {
                 .batches
                 .get_mut(BatchType::Checkpoint as u64)?
                 .unwrap();
+            checkpoint_batch.signed_txs = 0;
+
             let mut checkpoint_tx = checkpoint_batch.back_mut()?.unwrap();
+            checkpoint_tx.signed_inputs = 0;
 
             while let Some(input) = checkpoint_tx.input.pop_back()? {
                 if checkpoint_tx.input.len() == 0 && self.index != to_index {
