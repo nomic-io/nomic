@@ -444,10 +444,7 @@ mod test {
 
     #[cfg(not(feature = "testnet"))]
     fn amount_airdropped(acct: &Account) -> u64 {
-        acct.btc_deposit.locked
-            + acct.btc_withdraw.locked
-            + acct.ibc_transfer.locked
-            + acct.testnet_participation.claimable
+        acct.airdrop2.claimable
     }
 
     #[cfg(feature = "testnet")]
