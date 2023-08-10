@@ -179,6 +179,24 @@ impl ThresholdSig {
         self.message = message;
     }
 
+    pub fn clear_sigs(&mut self) -> Result<()> {
+        self.signed = 0;
+
+        let mut entries: Vec<_> = self
+            .sigs
+            .iter()?
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .map(|(k, _)| k.clone())
+            .collect();
+        for k in entries {
+            let mut sig = self.sigs.get_mut(k)?.unwrap();
+            sig.sig = None;
+        }
+
+        Ok(())
+    }
+
     pub fn message(&self) -> Message {
         self.message
     }
