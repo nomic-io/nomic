@@ -33,7 +33,9 @@ use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::ops::{Deref, DerefMut};
 
-#[derive(Debug, Encode, Decode, Default, Serialize, Deserialize)]
+#[derive(
+    Debug, Encode, Decode, Default, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord,
+)]
 pub enum CheckpointStatus {
     #[default]
     Building,
@@ -498,7 +500,7 @@ pub struct CheckpointQueue {
     pub(super) queue: Deque<Checkpoint>,
     pub(super) index: u32,
     #[orga(version(V1))]
-    config: Config,
+    pub config: Config,
 }
 
 impl MigrateFrom<CheckpointQueueV0> for CheckpointQueueV1 {
@@ -1273,7 +1275,7 @@ impl CheckpointQueue {
     }
 
     #[cfg(feature = "full")]
-    fn maybe_push(
+    pub fn maybe_push(
         &mut self,
         sig_keys: &Map<ConsensusKey, Xpub>,
     ) -> Result<Option<BuildingCheckpointMut>> {
@@ -1340,6 +1342,14 @@ impl CheckpointQueue {
 
 #[cfg(test)]
 mod test {
+    use bitcoin::{
+        util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey},
+        OutPoint, PubkeyHash, Script, Txid,
+    };
+    use rand::Rng;
+
+    use crate::bitcoin::{signatory::Signatory, threshold_sig::Share};
+
     use super::*;
 
     fn push_bitcoin_tx_output(tx: &mut BitcoinTx, value: u64) {
@@ -1386,4 +1396,211 @@ mod test {
     }
 
     //TODO: More fee deduction tests
+
+    #[test]
+    fn rewind() -> Result<()> {
+        // TODO: use CheckpointQueue step method to create initial checkpoint
+        // state instead of rawly constructing checkpoints
+
+        // TODO: extract signer into core logic and run it against CheckpointQueue
+
+        let seed: [u8; 32] = rand::thread_rng().gen();
+        let xpriv = ExtendedPrivKey::new_master(bitcoin::Network::Testnet, seed.as_slice())?;
+
+        let secp = bitcoin::secp256k1::Secp256k1::new();
+        let xpub = ExtendedPubKey::from_priv(&secp, &xpriv);
+
+        let sigset = |index| {
+            let derive_path = [ChildNumber::from_normal_idx(index)?];
+            let pubkey = xpub.derive_pub(&secp, &derive_path)?.public_key.into();
+
+            let mut sigset = SignatorySet::default();
+            sigset.index = index;
+            sigset.possible_vp = 100;
+            sigset.present_vp = 100;
+            sigset.signatories.push(Signatory {
+                voting_power: 100,
+                pubkey,
+            });
+            Ok::<_, Error>(sigset)
+        };
+
+        let txid = |n| Txid::from_slice(&[n; 32]);
+
+        let building_input = |sigset_index, prev_txid, dest, amount| {
+            let sigset = sigset(sigset_index)?;
+            let mut input = Input::new(OutPoint::new(prev_txid, 0), &sigset, dest, amount)?;
+            input.signatures = ThresholdSig::from_sigset(&sigset)?;
+            input.signatures.sigs.insert(
+                sigset.signatories[0].pubkey.into(),
+                Share {
+                    power: 100,
+                    sig: None,
+                },
+            );
+            Ok::<_, Error>(input)
+        };
+
+        let signing_input = |sigset_index, prev_txid, dest, amount| {
+            let mut input = building_input(sigset_index, prev_txid, dest, amount)?;
+            input.signatures.set_message([123; 32]);
+            Ok::<_, Error>(input)
+        };
+
+        let signed_input = |sigset_index, prev_txid, dest, amount| {
+            let sigset = sigset(sigset_index)?;
+            let mut input = signing_input(sigset_index, prev_txid, dest, amount)?;
+            input.signatures.sigs.insert(
+                sigset.signatories[0].pubkey.into(),
+                Share {
+                    power: 100,
+                    sig: Some(Signature([123; 64])),
+                },
+            );
+            input.signatures.signed = 100;
+            Ok::<_, Error>(input)
+        };
+
+        let mut checkpoints = CheckpointQueue::default();
+
+        let mut cp = Checkpoint::new(sigset(0)?)?;
+        cp.status = CheckpointStatus::Complete;
+        let mut cp_batch = cp.batches.get_mut(BatchType::Checkpoint as u64)?.unwrap();
+        let mut cp_tx = cp_batch.get_mut(0)?.unwrap();
+        cp_tx
+            .input
+            .push_back(signed_input(0, txid(0)?, &[0], 10_000)?)?;
+        cp_tx.signed_inputs = 1;
+        cp_tx.output.push_back(Adapter::new(TxOut {
+            script_pubkey: sigset(1)?.output_script(&[0])?,
+            value: 9_900,
+        }))?;
+        let prev_txid = cp_tx.txid()?;
+        cp_batch.signed_txs = 1;
+        checkpoints.queue.push_back(cp)?;
+
+        let mut cp = Checkpoint::new(sigset(1)?)?;
+        cp.status = CheckpointStatus::Complete;
+        let mut cp_batch = cp.batches.get_mut(BatchType::Checkpoint as u64)?.unwrap();
+        let mut cp_tx = cp_batch.get_mut(0)?.unwrap();
+        cp_tx
+            .input
+            .push_back(signed_input(1, prev_txid, &[0], 9_900)?)?;
+        cp_tx
+            .input
+            .push_back(signed_input(0, txid(1)?, &[1; 20], 10_000)?)?;
+        cp_tx.signed_inputs = 2;
+        cp_tx.output.push_back(Adapter::new(TxOut {
+            script_pubkey: sigset(2)?.output_script(&[0])?,
+            value: 19_799,
+        }))?;
+        cp_tx.output.push_back(Adapter::new(TxOut {
+            script_pubkey: Script::new_p2pkh(&PubkeyHash::from_slice(&[1; 20])?),
+            value: 1,
+        }))?;
+        let prev_txid = cp_tx.txid()?;
+        cp_batch.signed_txs = 1;
+        checkpoints.queue.push_back(cp)?;
+
+        let mut cp = Checkpoint::new(sigset(2)?)?;
+        cp.status = CheckpointStatus::Complete;
+        let mut cp_batch = cp.batches.get_mut(BatchType::Checkpoint as u64)?.unwrap();
+        let mut cp_tx = cp_batch.get_mut(0)?.unwrap();
+        cp_tx
+            .input
+            .push_back(signed_input(2, prev_txid, &[0], 19_799)?)?;
+        cp_tx
+            .input
+            .push_back(signed_input(2, txid(2)?, &[2; 20], 10_000)?)?;
+        cp_tx.signed_inputs = 2;
+        cp_tx.output.push_back(Adapter::new(TxOut {
+            script_pubkey: sigset(3)?.output_script(&[0])?,
+            value: 28_699,
+        }))?;
+        cp_tx.output.push_back(Adapter::new(TxOut {
+            script_pubkey: Script::new_p2pkh(&PubkeyHash::from_slice(&[2; 20])?),
+            value: 1_000,
+        }))?;
+        let prev_txid = cp_tx.txid()?;
+        cp_batch.signed_txs = 1;
+        checkpoints.queue.push_back(cp)?;
+
+        let mut cp = Checkpoint::new(sigset(3)?)?;
+        cp.status = CheckpointStatus::Signing;
+        let mut cp_batch = cp.batches.get_mut(BatchType::Checkpoint as u64)?.unwrap();
+        let mut cp_tx = cp_batch.get_mut(0)?.unwrap();
+        cp_tx
+            .input
+            .push_back(signing_input(3, prev_txid, &[0], 28_699)?)?;
+        cp_tx
+            .input
+            .push_back(signing_input(3, txid(3)?, &[2; 20], 10_000)?)?;
+        cp_tx.output.push_back(Adapter::new(TxOut {
+            script_pubkey: sigset(4)?.output_script(&[0])?,
+            value: 37_599,
+        }))?;
+        cp_tx.output.push_back(Adapter::new(TxOut {
+            script_pubkey: Script::new_p2pkh(&PubkeyHash::from_slice(&[3; 20])?),
+            value: 1_000,
+        }))?;
+        let prev_txid = cp_tx.txid()?;
+        checkpoints.queue.push_back(cp)?;
+
+        let mut cp = Checkpoint::new(sigset(4)?)?;
+        cp.status = CheckpointStatus::Building;
+        let mut cp_batch = cp.batches.get_mut(BatchType::Checkpoint as u64)?.unwrap();
+        let mut cp_tx = cp_batch.get_mut(0)?.unwrap();
+        cp_tx
+            .input
+            .push_back(building_input(4, prev_txid, &[0], 37_599)?)?;
+        cp_tx
+            .input
+            .push_back(building_input(3, txid(4)?, &[2; 20], 10_000)?)?;
+        cp_tx.output.push_back(Adapter::new(TxOut {
+            script_pubkey: sigset(4)?.output_script(&[0])?,
+            value: 46_499,
+        }))?;
+        cp_tx.output.push_back(Adapter::new(TxOut {
+            script_pubkey: Script::new_p2pkh(&PubkeyHash::from_slice(&[4; 20])?),
+            value: 1_000,
+        }))?;
+        checkpoints.queue.push_back(cp)?;
+        checkpoints.index = (checkpoints.queue.len() - 1) as u32;
+
+        checkpoints.rewind(1)?;
+
+        assert_eq!(checkpoints.len()?, 2);
+        assert_eq!(checkpoints.index, 1);
+        let cp = checkpoints.queue.back()?.unwrap();
+        assert_eq!(cp.status, CheckpointStatus::Building);
+        assert_eq!(cp.sigset, sigset(1)?);
+        let cp_batch = cp.batches.get(BatchType::Checkpoint as u64)?.unwrap();
+        assert_eq!(cp_batch.signed_txs, 0);
+        assert!(!cp_batch.signed());
+        let cp_tx = cp_batch.get(0)?.unwrap();
+        assert_eq!(cp_tx.signed_inputs, 0);
+        assert_eq!(cp_tx.input.len(), 5);
+        assert_eq!(cp_tx.output.len(), 3);
+        assert!(!cp_tx.signed());
+
+        checkpoints.building_mut()?.advance(
+            &Accounts::default(),
+            &Map::new(),
+            vec![].into_iter(),
+            &Config::regtest(),
+        )?;
+        checkpoints.queue.push_back(Checkpoint::new(sigset(5)?)?)?;
+        checkpoints.index += 1;
+
+        assert_eq!(
+            checkpoints
+                .signing_mut()?
+                .unwrap()
+                .to_sign(xpub.clone().into())?
+                .len(),
+            5
+        );
+
+        Ok(())
+    }
 }
