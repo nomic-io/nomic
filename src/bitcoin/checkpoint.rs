@@ -965,7 +965,7 @@ impl CheckpointQueue {
                     continue;
                 }
                 let mut input = input.into_inner();
-                input.signatures = ThresholdSig::new();
+                input.signatures.clear_sigs()?;
                 inputs.push(input);
             }
 
