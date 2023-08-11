@@ -125,6 +125,9 @@ mod abci {
                 "nomic1uhnm7ymaqz9dkjf28l377uy0kv5vgdw36kev0f",
                 "nomic1e9ypzs3qgrkwzpstvw7z4ag96qzv9qtdhvrcyj",
                 "nomic10lggm4znqtt50tgtjfdgz4qkmpe2s92dn6qzfd",
+                "nomic1eteh34vue8ze54atdsdnjedun8gx9f47kwz3r4",
+                "nomic14dq60x66p45yx2wxufy8m2plwpur8yvr09uhrx",
+                "nomic1krucz9xtj3z3drjgje6mkrwetw635w2zazkja2",
             ];
             for addr in addresses {
                 self.atom_airdrop
