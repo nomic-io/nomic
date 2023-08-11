@@ -455,6 +455,13 @@ impl Bitcoin {
             Some(value) => value,
         };
 
+        if bitcoin::Amount::from_sat(value) < script_pubkey.dust_value() {
+            return Err(OrgaError::App(
+                "Withdrawal is too small to pay its dust limit".to_string(),
+            )
+            .into());
+        }
+
         if value < self.config.min_withdrawal_amount {
             return Err(OrgaError::App(
                 "Withdrawal is smaller than than minimum amount".to_string(),
