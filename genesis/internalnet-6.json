@@ -1,6 +1,6 @@
 {
-  "genesis_time": "2023-08-08T21:57:43.834611Z",
-  "chain_id": "test-chain-3k1M5r",
+  "genesis_time": "2023-08-11T20:29:25.043469Z",
+  "chain_id": "nomic-internalnet-6",
   "initial_height": "0",
   "consensus_params": {
     "block": {
@@ -22,10 +22,10 @@
   },
   "validators": [
     {
-      "address": "19BD6CB7A1452E54240888311B51DA922E1CD075",
+      "address": "597A4ED9906E1880792942B46FF64BE48EC76D17",
       "pub_key": {
         "type": "tendermint/PubKeyEd25519",
-        "value": "3lEU37k5g2v5ayyUbdbCD2VFqi9KTDqzuWSL0zXRhE8="
+        "value": "5t9I23SLRwWP8ZcfFHIIri2b+c7AA8nx3D7M0Y4cgM0="
       },
       "power": "10",
       "name": ""
