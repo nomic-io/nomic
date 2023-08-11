@@ -5,7 +5,7 @@ use crate::{
 };
 use orga::migrate::MigrateFrom;
 use orga::{
-    coins::{Address, Amount, Coin, Take},
+    coins::{Address, Amount, Coin},
     collections::{ChildMut, Map},
     context::GetContext,
     orga,
@@ -56,7 +56,7 @@ impl Account {
 
 #[orga]
 impl Incentives {
-    pub fn from_csv(data: &[u8], mut funds: Coin<Nom>) -> Result<Self> {
+    pub fn from_csv(data: &[u8], funds: Coin<Nom>) -> Result<Self> {
         let mut accounts = Map::new();
         let mut rdr = csv::Reader::from_reader(data);
         let total_score = rdr.records().try_fold(0, |mut sum, row| {
@@ -72,29 +72,35 @@ impl Incentives {
             Ok::<_, Error>(sum)
         })?;
 
-        let rate = (funds.amount / Amount::new(total_score))
+        let rate: u64 = (funds.amount / Amount::new(total_score))
             .result()?
-            .amount()?;
+            .amount()?
+            .into();
 
         let mut rdr = csv::Reader::from_reader(data);
         for res in rdr.records() {
             let row = res?;
             let address: Address = row[0].parse().unwrap();
-            let mut account = Account::default();
+            let mut claimable: u64 = 0;
             let mut maybe_increment = |v| {
                 if v == "true" {
-                    account.testnet_participation = Part {
-                        locked: 0,
-                        claimable: rate.into(),
-                        claimed: 0,
-                    }
+                    claimable += rate;
                 }
-                Ok::<_, Error>(())
             };
-            maybe_increment(&row[1])?;
-            maybe_increment(&row[2])?;
-            maybe_increment(&row[3])?;
-            accounts.insert(address, account)?;
+            maybe_increment(&row[1]);
+            maybe_increment(&row[2]);
+            maybe_increment(&row[3]);
+
+            if claimable > 0 {
+                let account = Account {
+                    testnet_participation: Part {
+                        locked: 0,
+                        claimable,
+                        claimed: 0,
+                    },
+                };
+                accounts.insert(address, account)?;
+            }
         }
 
         Ok(Incentives { accounts })

@@ -24,7 +24,7 @@ pub struct Airdrop {
     x: u8,
     #[cfg(not(feature = "testnet"))]
     #[orga(version(V0))]
-    #[state(prefix(2))]
+    #[state(prefix(0, 2))]
     accounts: Map<Address, Account>,
     #[cfg(not(feature = "testnet"))]
     #[orga(version(V1))]
