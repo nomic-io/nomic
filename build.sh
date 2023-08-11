@@ -15,7 +15,7 @@ if [ ! -f "$NOMIC_LEGACY_PATH" ]; then
     git checkout main
     git pull
     git checkout $NOMIC_LEGACY_REV
-    git pull
+    git fetch
 
     rustc --version
     echo "Building with features: $CARGO_FEATURES"
