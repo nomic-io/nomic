@@ -218,60 +218,53 @@ impl InnerApp {
         sigset_index: u32,
         dest: DepositCommitment,
     ) -> Result<()> {
-        #[cfg(feature = "testnet")]
-        {
-            let nbtc = self.bitcoin.relay_deposit(
-                btc_tx,
-                btc_height,
-                btc_proof,
-                btc_vout,
-                sigset_index,
-                dest.commitment_bytes()?.as_slice(),
-            )?;
-            match dest {
-                DepositCommitment::Address(addr) => {
-                    self.bitcoin.accounts.deposit(addr, nbtc.into())?
-                }
-                DepositCommitment::Ibc(dest) => {
-                    use orga::ibc::ibc_rs::applications::transfer::msgs::transfer::MsgTransfer;
-                    let fee = ibc_fee(nbtc)?;
-                    let nbtc_after_fee = (nbtc - fee).result()?;
-                    let coins: Coin<Nbtc> = nbtc_after_fee.into();
-                    let src = dest.source;
-                    let msg_transfer = MsgTransfer {
-                        port_id_on_a: src.port_id()?,
-                        chan_id_on_a: src.channel_id()?,
-                        packet_data: PacketData {
-                            token: coins.into(),
-                            receiver: dest.receiver.0,
-                            sender: dest.sender.0.clone(),
-                            memo: "".to_string().into(),
-                        },
-                        timeout_height_on_b: TimeoutHeight::Never,
-                        timeout_timestamp_on_b: Timestamp::from_nanoseconds(dest.timeout_timestamp)
-                            .map_err(|e| Error::App(e.to_string()))?,
-                    };
+        let nbtc = self.bitcoin.relay_deposit(
+            btc_tx,
+            btc_height,
+            btc_proof,
+            btc_vout,
+            sigset_index,
+            dest.commitment_bytes()?.as_slice(),
+        )?;
+        match dest {
+            DepositCommitment::Address(addr) => self.bitcoin.accounts.deposit(addr, nbtc.into()),
+            #[cfg(not(feature = "testnet"))]
+            DepositCommitment::Ibc(dest) => Err(Error::Unknown),
+            #[cfg(feature = "testnet")]
+            DepositCommitment::Ibc(dest) => {
+                use orga::ibc::ibc_rs::applications::transfer::msgs::transfer::MsgTransfer;
+                let fee = ibc_fee(nbtc)?;
+                let nbtc_after_fee = (nbtc - fee).result()?;
+                let coins: Coin<Nbtc> = nbtc_after_fee.into();
+                let src = dest.source;
+                let msg_transfer = MsgTransfer {
+                    port_id_on_a: src.port_id()?,
+                    chan_id_on_a: src.channel_id()?,
+                    packet_data: PacketData {
+                        token: coins.into(),
+                        receiver: dest.receiver.0,
+                        sender: dest.sender.0.clone(),
+                        memo: "".to_string().into(),
+                    },
+                    timeout_height_on_b: TimeoutHeight::Never,
+                    timeout_timestamp_on_b: Timestamp::from_nanoseconds(dest.timeout_timestamp)
+                        .map_err(|e| Error::App(e.to_string()))?,
+                };
 
-                    let coins: Coin<Nbtc> = nbtc_after_fee.into();
-                    self.ibc.mint_coins_execute(
-                        &dest
-                            .sender
-                            .0
-                            .try_into()
-                            .map_err(|_| Error::App("Invalid sender address".into()))?,
-                        &coins.into(),
-                    )?;
-                    self.bitcoin.reward_pool.give(fee.into())?;
+                let coins: Coin<Nbtc> = nbtc_after_fee.into();
+                self.ibc.mint_coins_execute(
+                    &dest
+                        .sender
+                        .0
+                        .try_into()
+                        .map_err(|_| Error::App("Invalid sender address".into()))?,
+                    &coins.into(),
+                )?;
+                self.bitcoin.reward_pool.give(fee.into())?;
 
-                    self.ibc.deliver_message(IbcMessage::Ics20(msg_transfer))?;
-                }
+                self.ibc.deliver_message(IbcMessage::Ics20(msg_transfer))
             }
-
-            Ok(())
         }
-
-        #[cfg(not(feature = "testnet"))]
-        Err(orga::Error::Unknown)
     }
 
     #[call]
