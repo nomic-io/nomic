@@ -38,7 +38,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --verbose
+          args: --verbose --no-default-features --features=full,feat-ibc,testnet
 
   test-all-features:
     runs-on: ubuntu-latest
@@ -64,6 +64,38 @@ jobs:
         with:
           command: test
           args: --verbose --all-features
+
+  check-rest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Use Nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2023-05-08
+          override: true
+      - name: Check Rest
+        uses: actions-rs/cargo@v1
+        with:
+          command: check
+          args: --manifest-path rest/Cargo.toml --verbose
+
+  build-wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Use Nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2023-05-08
+          override: true
+      - name: Install
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: Build Wasm
+        working-directory: ./wasm
+        run: wasm-pack -v build --target web
 
   coverage:
     runs-on: ubuntu-latest
@@ -96,7 +128,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: llvm-cov
-          args: --all-features --workspace --lcov --output-path lcov.info
+          args: --no-default-features --features=full,feat-ibc,testnet,emergency-disbursal --workspace --lcov --output-path lcov.info
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v1
         with:
@@ -145,4 +177,4 @@ jobs:
         uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-features -- -D warnings
+          args: --no-default-features --features=full,feat-ibc,testnet,emergency-disbursal -- -D warnings
