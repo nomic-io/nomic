@@ -1780,32 +1780,7 @@ dependencies = [
 
 [[package]]
 name = "nomic"
-version = "2.0.1"
-source = "git+https://github.com/nomic-io/nomic?branch=v2-legacy-main#52a79b423eef4848bbc3dc97f426cb17d4fb2be2"
-dependencies = [
- "base64",
- "bech32",
- "bitcoin 0.27.1",
- "bitcoincore-rpc",
- "bitcoind",
- "clap",
- "csv",
- "ed 0.3.0",
- "futures",
- "js-sys",
- "orga 0.2.0",
- "secp256k1 0.21.2",
- "serde",
- "serde_json",
- "tendermint-rpc",
- "thiserror",
- "tokio",
- "toml_edit 0.13.4",
-]
-
-[[package]]
-name = "nomic"
-version = "3.0.1"
+version = "0.0.301"
 dependencies = [
  "base64",
  "bech32",
@@ -1834,12 +1809,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "nomic"
+version = "2.0.1"
+source = "git+https://github.com/nomic-io/nomic?branch=v2-legacy-main#52a79b423eef4848bbc3dc97f426cb17d4fb2be2"
+dependencies = [
+ "base64",
+ "bech32",
+ "bitcoin 0.27.1",
+ "bitcoincore-rpc",
+ "bitcoind",
+ "clap",
+ "csv",
+ "ed 0.3.0",
+ "futures",
+ "js-sys",
+ "orga 0.2.0",
+ "secp256k1 0.21.2",
+ "serde",
+ "serde_json",
+ "tendermint-rpc",
+ "thiserror",
+ "tokio",
+ "toml_edit 0.13.4",
+]
+
+[[package]]
 name = "nomic-rest"
 version = "0.1.0"
 dependencies = [
  "base64",
  "hex",
- "nomic 3.0.1",
+ "nomic 0.0.301",
  "rocket",
  "serde",
  "serde_json",
