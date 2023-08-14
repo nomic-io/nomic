@@ -1161,7 +1161,7 @@ async fn deposit(dest: DepositCommitment) -> Result<()> {
 
     let client = reqwest::Client::new();
     let res = client
-        .post("https://testnet-relayer.nomic.io:8443/address")
+        .post("https://relayer.nomic.io:8443/address")
         .query(&[
             ("sigset_index", sigset.index().to_string()),
             ("deposit_addr", btc_addr.to_string()),
