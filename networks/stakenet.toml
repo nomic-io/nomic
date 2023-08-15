@@ -9,6 +9,7 @@ tendermint_flags = [
     """,
 ]
 
+upgrade_height = 9357000
 legacy_version = "3.0.2"
 
 genesis = """
