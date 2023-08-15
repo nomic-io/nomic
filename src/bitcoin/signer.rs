@@ -39,7 +39,7 @@ impl<W: Wallet> Signer<W> {
         } else {
             info!("Generating signatory key at {}", path.display());
             let seed: [u8; 32] = rand::thread_rng().gen();
-            let xpriv = ExtendedPrivKey::new_master(bitcoin::Network::Testnet, seed.as_slice())?;
+            let xpriv = ExtendedPrivKey::new_master(bitcoin::Network::Bitcoin, seed.as_slice())?;
 
             fs::write(path, xpriv.to_string().as_bytes())?;
 
