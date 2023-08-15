@@ -704,3 +704,68 @@ where
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use bitcoin::{BlockHash, BlockHeader, TxMerkleNode, Txid};
+
+    use super::{
+        header_queue::{WorkHeader, WrappedHeader},
+        *,
+    };
+
+    #[test]
+    fn relay_height_validity() {
+        Context::add(Paid::default());
+
+        let mut btc = Bitcoin::default();
+
+        for _ in 0..10 {
+            btc.headers
+                .deque
+                .push_back(WorkHeader::new(
+                    WrappedHeader::new(
+                        Adapter::new(BlockHeader {
+                            bits: 0,
+                            merkle_root: TxMerkleNode::all_zeros(),
+                            nonce: 0,
+                            prev_blockhash: BlockHash::all_zeros(),
+                            time: 0,
+                            version: 0,
+                        }),
+                        btc.headers.height().unwrap() + 1,
+                    ),
+                    bitcoin::util::uint::Uint256([0, 0, 0, 0]),
+                ))
+                .unwrap();
+        }
+
+        let h = btc.headers.height().unwrap();
+        let mut try_relay = |height| {
+            // TODO: make test cases not fail at irrelevant steps in relay_deposit
+            // (either by passing in valid input, or by handling other error paths)
+            btc.relay_deposit(
+                Adapter::new(Transaction {
+                    input: vec![],
+                    lock_time: bitcoin::PackedLockTime(0),
+                    output: vec![],
+                    version: 0,
+                }),
+                height,
+                Adapter::new(PartialMerkleTree::from_txids(&[Txid::all_zeros()], &[true])),
+                0,
+                0,
+                &[],
+            )
+        };
+
+        assert_eq!(
+            try_relay(h + 100).unwrap_err().to_string(),
+            "App Error: Invalid bitcoin block height",
+        );
+        assert_eq!(
+            try_relay(h - 100).unwrap_err().to_string(),
+            "Passed index is greater than initial height. Referenced header does not exist on the Header Queue",
+        );
+    }
+}
