@@ -24,12 +24,15 @@ fn main() {
             let mut version_req_str = if let Ok(version_req_str) = version {
                 version_req_str
             } else {
-                let toml = if branch_name == "main" {
-                    println!("cargo:rerun-if-changed=networks/stakenet.toml");
-                    include_str!("networks/stakenet.toml")
-                } else {
+                #[cfg(feature = "testnet")]
+                let toml = {
                     println!("cargo:rerun-if-changed=networks/testnet.toml");
                     include_str!("networks/testnet.toml")
+                };
+                #[cfg(not(feature = "testnet"))]
+                let toml = {
+                    println!("cargo:rerun-if-changed=networks/stakenet.toml");
+                    include_str!("networks/stakenet.toml")
                 };
                 let config: toml::Value = toml::from_str(toml).unwrap();
                 config
