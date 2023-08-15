@@ -965,7 +965,7 @@ impl CheckpointQueue {
             checkpoint_tx.signed_inputs = 0;
 
             while let Some(input) = checkpoint_tx.input.pop_back()? {
-                if checkpoint_tx.input.len() == 0 && self.index != to_index {
+                if checkpoint_tx.input.is_empty() && self.index != to_index {
                     // skip reserve input (except on target index)
                     continue;
                 }
@@ -975,7 +975,7 @@ impl CheckpointQueue {
             }
 
             while let Some(output) = checkpoint_tx.output.pop_back()? {
-                if checkpoint_tx.output.len() == 0 {
+                if checkpoint_tx.output.is_empty() {
                     // skip reserve output
                     continue;
                 }
