@@ -82,7 +82,7 @@ impl Config {
             max_withdrawal_amount: 64,
             max_withdrawal_script_length: 64,
             transfer_fee: 1_000_000,
-            min_confirmations: 0,
+            min_confirmations: 3,
             units_per_sat: 1_000_000,
             emergency_disbursal_min_tx_amt: 1000,
             emergency_disbursal_lock_time_interval: 60 * 60 * 24 * 7, //one week
