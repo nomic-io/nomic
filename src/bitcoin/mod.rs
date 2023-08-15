@@ -714,6 +714,7 @@ mod tests {
         *,
     };
 
+    #[serial_test::serial]
     #[test]
     fn relay_height_validity() {
         Context::add(Paid::default());
@@ -767,5 +768,7 @@ mod tests {
             try_relay(h - 100).unwrap_err().to_string(),
             "Passed index is greater than initial height. Referenced header does not exist on the Header Queue",
         );
+
+        Context::remove::<Paid>();
     }
 }

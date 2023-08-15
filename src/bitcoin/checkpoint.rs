@@ -1397,12 +1397,16 @@ mod test {
 
     //TODO: More fee deduction tests
 
+    #[cfg(all(feature = "full", not(feature = "emergency-disbursal")))]
+    #[serial_test::serial]
     #[test]
     fn rewind() -> Result<()> {
         // TODO: use CheckpointQueue step method to create initial checkpoint
         // state instead of rawly constructing checkpoints
 
         // TODO: extract signer into core logic and run it against CheckpointQueue
+
+        orga::context::Context::add(orga::plugins::Time::from_seconds(0));
 
         let seed: [u8; 32] = rand::thread_rng().gen();
         let xpriv = ExtendedPrivKey::new_master(bitcoin::Network::Testnet, seed.as_slice())?;
