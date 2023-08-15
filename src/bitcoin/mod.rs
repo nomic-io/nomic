@@ -328,9 +328,9 @@ impl Bitcoin {
             .get_by_height(btc_height)?
             .ok_or_else(|| OrgaError::App("Invalid bitcoin block height".to_string()))?;
 
-        // if self.headers.height()? - btc_height < self.config.min_confirmations {
-        //     return Err(OrgaError::App("Block is not sufficiently confirmed".to_string()).into());
-        // }
+        if self.headers.height()? - btc_height < self.config.min_confirmations {
+            return Err(OrgaError::App("Block is not sufficiently confirmed".to_string()).into());
+        }
 
         let mut txids = vec![];
         let mut block_indexes = vec![];
