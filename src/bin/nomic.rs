@@ -194,10 +194,22 @@ impl StartCmd {
         let mut should_migrate = false;
         let legacy_bin = legacy_bin(&cmd.config)?;
         if let Some(legacy_bin) = legacy_bin {
-            let version_hex = hex::encode([InnerApp::CONSENSUS_VERSION]);
             let mut legacy_cmd = std::process::Command::new(legacy_bin);
-            legacy_cmd.args(["start", "--signal-version", &version_hex]);
-            legacy_cmd.args(std::env::args().skip(2).collect::<Vec<_>>());
+            if let Some(upgrade_height) = cmd.config.upgrade_height {
+                legacy_cmd.env("ORGA_STOP_HEIGHT", upgrade_height.to_string());
+            }
+
+            #[cfg(feature = "testnet")]
+            {
+                let version_hex = hex::encode([InnerApp::CONSENSUS_VERSION]);
+                legacy_cmd.args(["start", "--signal-version", &version_hex]);
+                legacy_cmd.args(std::env::args().skip(2).collect::<Vec<_>>());
+            }
+            #[cfg(not(feature = "testnet"))]
+            {
+                legacy_cmd.args(["start", "--state-sync"]);
+            }
+
             log::info!("Starting legacy node... ({:#?})", legacy_cmd);
             let res = legacy_cmd.spawn()?.wait()?;
             match res.code() {
@@ -673,8 +685,11 @@ impl BalanceCmd {
             .await?;
         println!("{} NBTC", balance);
 
-        let balance = app_client().query(|app| app.escrowed_nbtc(address)).await?;
-        println!("{} IBC-escrowed NBTC", balance);
+        #[cfg(feature = "testnet")]
+        {
+            let balance = app_client().query(|app| app.escrowed_nbtc(address)).await?;
+            println!("{} IBC-escrowed NBTC", balance);
+        }
 
         Ok(())
     }
@@ -1146,7 +1161,7 @@ async fn deposit(dest: DepositCommitment) -> Result<()> {
 
     let client = reqwest::Client::new();
     let res = client
-        .post("https://testnet-relayer.nomic.io:8443/address")
+        .post("https://relayer.nomic.io:8443/address")
         .query(&[
             ("sigset_index", sigset.index().to_string()),
             ("deposit_addr", btc_addr.to_string()),

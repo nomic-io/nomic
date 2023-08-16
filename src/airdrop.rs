@@ -24,7 +24,7 @@ pub struct Airdrop {
     x: u8,
     #[cfg(not(feature = "testnet"))]
     #[orga(version(V0))]
-    #[state(prefix(2))]
+    #[state(prefix(0, 2))]
     accounts: Map<Address, Account>,
     #[cfg(not(feature = "testnet"))]
     #[orga(version(V1))]
@@ -202,25 +202,9 @@ impl Airdrop {
     ) -> Result<(u64, u64)> {
         let mut acct = self.accounts.entry(addr)?.or_insert_default()?;
 
-        #[cfg(feature = "testnet")]
-        {
-            acct.airdrop2.claimable = unom;
+        acct.airdrop2.claimable = unom;
 
-            Ok((0, 0))
-        }
-
-        #[cfg(not(feature = "testnet"))]
-        {
-            acct.airdrop2.claimable = unom;
-            assert!(testnet_completions <= 3);
-            acct.testnet_participation.locked = unom / 12 * (3 - testnet_completions);
-            acct.testnet_participation.claimable = unom / 12 * testnet_completions;
-
-            Ok((
-                acct.testnet_participation.locked,
-                acct.testnet_participation.claimable,
-            ))
-        }
+        Ok((0, 0))
     }
 
     #[cfg(feature = "full")]
@@ -327,7 +311,7 @@ pub struct Account {
     #[orga(version(V0))]
     pub claimable: Amount,
 
-    #[orga(version(V1))]
+    #[orga(version(V1, V2))]
     pub airdrop1: Part,
     #[orga(version(V1))]
     pub btc_deposit: Part,
@@ -460,10 +444,7 @@ mod test {
 
     #[cfg(not(feature = "testnet"))]
     fn amount_airdropped(acct: &Account) -> u64 {
-        acct.btc_deposit.locked
-            + acct.btc_withdraw.locked
-            + acct.ibc_transfer.locked
-            + acct.testnet_participation.claimable
+        acct.airdrop2.claimable
     }
 
     #[cfg(feature = "testnet")]
@@ -533,117 +514,5 @@ nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs,1,1,1,1,1,1,1,1,1,1,true,true,true"
         let airdrop2_total = amount_airdropped(&*account);
 
         assert_approx_eq(airdrop2_total, expected);
-    }
-
-    #[cfg(not(feature = "testnet"))]
-    #[test]
-    fn airdrop_allocation_multiple_uneven() {
-        let mut airdrop = Airdrop::default();
-        let csv = "address,evmos_9000-1_staked,evmos_9000-1_count,kaiyo-1_staked,kaiyo-1_count,cosmoshub-4_staked,cosmoshub-4_count,juno-1_staked,juno-1_count,osmosis-1_staked,osmosis-1_count,btc_deposit_claimed,btc_withdraw_claimed,ibc_transfer_claimed
-nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x,1,1,1,1,1,1,1,1,1,1,true,true,true
-nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs,1,1,1,1,1,1,1,1,1,1,false,false,false".as_bytes();
-
-        airdrop.init_from_airdrop2_csv(csv).unwrap();
-
-        let account = airdrop
-            .get_mut(Address::from_str("nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x").unwrap())
-            .unwrap()
-            .unwrap();
-        let airdrop2_total = amount_airdropped(&*account);
-        let expected: u64 = (Amount::from(AIRDROP_II_TOTAL) / Amount::from(2))
-            .result()
-            .unwrap()
-            .amount()
-            .unwrap()
-            .into();
-        assert_approx_eq(airdrop2_total, expected);
-
-        let account = airdrop
-            .get_mut(Address::from_str("nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs").unwrap())
-            .unwrap()
-            .unwrap();
-        let airdrop2_total = amount_airdropped(&*account);
-        let expected: u64 = (Amount::from(AIRDROP_II_TOTAL) / Amount::from(16) * Amount::from(6))
-            .result()
-            .unwrap()
-            .amount()
-            .unwrap()
-            .into();
-
-        assert_approx_eq(airdrop2_total, expected);
-    }
-
-    #[cfg(not(feature = "testnet"))]
-    #[test]
-    fn airdrop_allocation_multiple_one_claim() {
-        let mut airdrop = Airdrop::default();
-        let csv = "address,evmos_9000-1_staked,evmos_9000-1_count,kaiyo-1_staked,kaiyo-1_count,cosmoshub-4_staked,cosmoshub-4_count,juno-1_staked,juno-1_count,osmosis-1_staked,osmosis-1_count,btc_deposit_claimed,btc_withdraw_claimed,ibc_transfer_claimed
-nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x,1,1,1,1,1,1,1,1,1,1,true,true,true
-nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs,1,1,1,1,1,1,1,1,1,1,true,false,false".as_bytes();
-
-        airdrop.init_from_airdrop2_csv(csv).unwrap();
-
-        let account = airdrop
-            .get_mut(Address::from_str("nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x").unwrap())
-            .unwrap()
-            .unwrap();
-        let airdrop2_total = amount_airdropped(&*account);
-        let expected: u64 = (Amount::from(AIRDROP_II_TOTAL) / Amount::from(2))
-            .result()
-            .unwrap()
-            .amount()
-            .unwrap()
-            .into();
-        assert_approx_eq(airdrop2_total, expected);
-
-        let account = airdrop
-            .get_mut(Address::from_str("nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs").unwrap())
-            .unwrap()
-            .unwrap();
-        let airdrop2_total = amount_airdropped(&*account);
-        let expected: u64 = (Amount::from(AIRDROP_II_TOTAL) / Amount::from(24) * Amount::from(10))
-            .result()
-            .unwrap()
-            .amount()
-            .unwrap()
-            .into();
-        assert_approx_eq(airdrop2_total, expected);
-    }
-
-    #[cfg(not(feature = "testnet"))]
-    #[test]
-    fn airdrop_allocation_multiple_two_claim() {
-        let mut airdrop = Airdrop::default();
-        let csv = "address,evmos_9000-1_staked,evmos_9000-1_count,kaiyo-1_staked,kaiyo-1_count,cosmoshub-4_staked,cosmoshub-4_count,juno-1_staked,juno-1_count,osmosis-1_staked,osmosis-1_count,btc_deposit_claimed,btc_withdraw_claimed,ibc_transfer_claimed
-nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x,1,1,1,1,1,1,1,1,1,1,true,true,true
-nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs,1,1,1,1,1,1,1,1,1,1,true,true,false".as_bytes();
-
-        airdrop.init_from_airdrop2_csv(csv).unwrap();
-
-        let account = airdrop
-            .get_mut(Address::from_str("nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x").unwrap())
-            .unwrap()
-            .unwrap();
-        let airdrop_total_1 = amount_airdropped(&*account);
-        let expected: u64 = (Amount::from(AIRDROP_II_TOTAL) / Amount::from(2))
-            .result()
-            .unwrap()
-            .amount()
-            .unwrap()
-            .into();
-        assert_approx_eq(airdrop_total_1, expected);
-
-        let account = airdrop
-            .get_mut(Address::from_str("nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs").unwrap())
-            .unwrap()
-            .unwrap();
-        let airdrop_total_2 = amount_airdropped(&*account);
-        let expected: u64 = (Amount::from(AIRDROP_II_TOTAL) / Amount::from(24) * Amount::from(11))
-            .result()
-            .unwrap()
-            .amount()
-            .unwrap()
-            .into();
-        assert_approx_eq(airdrop_total_2, expected);
     }
 }

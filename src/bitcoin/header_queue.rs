@@ -144,8 +144,8 @@ impl Terminated for HeaderList {}
 #[orga(skip(Default))]
 #[derive(Clone, Debug)]
 pub struct WorkHeader {
-    chain_work: Adapter<Uint256>,
-    header: WrappedHeader,
+    pub chain_work: Adapter<Uint256>,
+    pub header: WrappedHeader,
 }
 
 impl WorkHeader {
@@ -280,8 +280,8 @@ impl Config {
 
 #[orga(skip(Default), version = 1)]
 pub struct HeaderQueue {
-    pub(super) deque: Deque<WorkHeader>,
-    pub(super) current_work: Adapter<Uint256>,
+    pub(crate) deque: Deque<WorkHeader>,
+    pub(crate) current_work: Adapter<Uint256>,
     #[orga(version(V1))]
     config: Config,
 }
