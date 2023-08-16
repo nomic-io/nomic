@@ -4,15 +4,13 @@
 
 Nomic Bitcoin Bridge
 
-## Bitcoin Upgrade
+## Testnet Interchain Upgrade
 
-This release adds mainnet Bitcoin to the Nomic Stakenet. Users can now deposit Bitcoin to receive NBTC tokens, transfer them, and withdraw them back to the Bitcoin blockchain.
-
-Expect rapid improvements in the coming months, including the activation of IBC and transfers of the NOM token.
+This testnet version is the release candidate for the upcoming Stakenet upgrade.
 
 ## Upgrading existing nodes
 
-If you're upgrading your existing Nomic node:
+If you're upgrading your existing testnet node:
 
 1. Rebuild from this branch with:
 
@@ -26,11 +24,11 @@ cargo install --locked --path .
 
 3. Restart your node with `nomic start`.
 
-Your node will automatically perform the upgrade on Tuesday, July 5th at 18:00 UTC.
+Your node will automatically perform the upgrade on Friday, October 7 at 17:00 UTC.
 
 ## Node setup guide
 
-This guide will walk you through setting up a node for the Nomic Stakenet.
+This guide will walk you through setting up a node for the Nomic testnet.
 
 If you need any help getting your node running, join the [Discord](https://discord.gg/jH7U2NRJKn) and ask for the Validator role.
 
@@ -43,30 +41,43 @@ If you need any help getting your node running, join the [Discord](https://disco
 ### 1. Build Nomic
 
 Start by building Nomic - for now this requires Rust nightly.
-
-```bash
-# install rustup if you haven't already
+Install rustup if you haven't already:
+```
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+Install nightly as well (nomic currently requires rust nightly):
+```
+rustup default nightly
+```
 
-# install required dependencies (ubuntu)
+Install required dependencies (ubuntu):
+```
 sudo apt install build-essential libssl-dev pkg-config clang
-# or for systems running fedora
+```
+
+For systems running fedora:
+```
 sudo dnf install clang openssl-devel && sudo dnf group install "C Development Tools and Libraries"
+```
 
-# clone
-git clone https://github.com/nomic-io/nomic.git nomic && cd nomic
+Clone the github folder and switch to the correct folder:
+```
+git clone https://github.com/nomic-io/nomic.git && cd nomic
+git checkout testnet
+```
 
-# build and install, adding a `nomic` command to your PATH
+Build and install, adding a `nomic` command to your PATH:
+```
 cargo install --locked --path .
 ```
 
 ### 2. Run your node
-
-```bash
+Start your Nomic node:
+```
 nomic start
 ```
 
-This will run the Nomic state machine and a Tendermint process.
+This will run the Nomic state machine and a Tendermint process. For new nodes the statesync process will run automatically to get the node up to speed with the current chain.
 
 ### 3. Acquiring coins and staking for voting power
 
@@ -122,11 +133,11 @@ nomic declare \
 The funds in the Bitcoin bridge are held in a large multisig controlled by the Nomic validators. If you are a validator with a significant amount of voting power, it is very important that you run a signer.
 
 You can run the signer with:
-```bash
+```
 nomic signer
 ```
 
-This will automatically generate a Bitcoin extended private key and store it at `~/.nomic-stakenet-3/signer/xpriv`. It will also prompt you to submit your public key to the network so you can be added to the multisig. **KEEP THIS KEY SAFE** - similar to your validator private key, it is important to be mindful of this key so that it is never lost or stolen.
+This will automatically generate a Bitcoin extended private key and store it at `~/.nomic-testnet-4c/signer/xpriv`. It will also prompt you to submit your public key to the network so you can be added to the multisig. **KEEP THIS KEY SAFE** - similar to your validator private key, it is important to be mindful of this key so that it is never lost or stolen.
 
 Leave this process running, it will automatically sign Bitcoin transactions that the network wants to create.
 
@@ -141,8 +152,8 @@ Relayer nodes carry data between the Bitcoin blockchain and the Nomic blockchain
 Download Bitcoin Core: https://bitcoin.org/en/download
 
 Run it with:
-```bash
-bitcoind -server -rpcuser=satoshi -rpcpassword=nakamoto
+```
+bitcoind -server -testnet -rpcuser=satoshi -rpcpassword=nakamoto
 ```
 (The RPC server only listens on localhost, so the user and password are not critically important.)
 
@@ -150,8 +161,8 @@ bitcoind -server -rpcuser=satoshi -rpcpassword=nakamoto
 
 #### ii. Run the relayer process
 
-```bash
-nomic relayer --rpc-port=8332 --rpc-user=satoshi --rpc-pass=nakamoto
+```
+nomic relayer --rpc-port=18332 --rpc-user=satoshi --rpc-pass=nakamoto
 ```
 
 Leave this running - the relayer will constantly scan the Bitcoin and Nomic chains and broadcast relevant data.
@@ -160,5 +171,5 @@ The relayer will also create a server which listens on port 9000 for clients to 
 
 ---
 
-Thanks for participating in the Nomic Stakenet! We'll be updating the network
+Thanks for participating in the Nomic Testnet! We'll be updating the network
 often so stay tuned in [Discord](https://discord.gg/jH7U2NRJKn) for updates.

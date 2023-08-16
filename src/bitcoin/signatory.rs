@@ -1,40 +1,65 @@
-use crate::error::{Error, Result};
+#![allow(clippy::redundant_closure_call)] // TODO: fix bitcoin-script then remove this
+#![allow(unused_imports)] // TODO
+
+#[cfg(feature = "full")]
+use crate::error::Error;
+use crate::error::Result;
+use bitcoin::secp256k1::Context as SecpContext;
+use bitcoin::secp256k1::PublicKey;
+use bitcoin::secp256k1::Secp256k1;
+use bitcoin::secp256k1::Verification;
+#[cfg(feature = "full")]
 use bitcoin::util::bip32::ChildNumber;
 use bitcoin::Script;
 use bitcoin_script::bitcoin_script as script;
-use orga::call::Call;
-use orga::client::Client;
-use orga::coins::Address;
+#[cfg(feature = "full")]
 use orga::collections::Map;
+#[cfg(feature = "full")]
 use orga::context::Context;
-use orga::encoding::{Decode, Encode};
+use orga::encoding::Encode;
+use orga::orga;
+#[cfg(feature = "full")]
 use orga::plugins::Time;
 #[cfg(feature = "full")]
 use orga::plugins::Validators;
-use orga::query::Query;
-use orga::state::State;
 use orga::Error as OrgaError;
 
-use super::threshold_sig::Pubkey;
+use super::threshold_sig::VersionedPubkey;
 use super::ConsensusKey;
 use super::Xpub;
 
 pub const MAX_DEPOSIT_AGE: u64 = 60 * 60 * 24 * 5;
 pub const MAX_SIGNATORIES: u64 = 20;
 
-#[derive(Encode, Decode, Clone, Debug, PartialOrd, PartialEq, Eq, Ord)]
+#[orga]
+#[derive(Clone, Debug, PartialOrd, PartialEq, Eq, Ord)]
 pub struct Signatory {
     pub voting_power: u64,
-    pub pubkey: Pubkey,
+    pub pubkey: VersionedPubkey,
 }
 
-#[derive(State, Call, Query, Client, Clone, Debug)]
+pub fn derive_pubkey<T>(secp: &Secp256k1<T>, xpub: Xpub, sigset_index: u32) -> Result<PublicKey>
+where
+    T: SecpContext + Verification,
+{
+    Ok(xpub
+        .derive_pub(
+            secp,
+            &[bitcoin::util::bip32::ChildNumber::from_normal_idx(
+                sigset_index,
+            )?],
+        )?
+        .public_key)
+}
+
+#[orga]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SignatorySet {
-    create_time: u64,
-    present_vp: u64,
-    possible_vp: u64,
-    index: u32,
-    signatories: Vec<Signatory>,
+    pub create_time: u64,
+    pub present_vp: u64,
+    pub possible_vp: u64,
+    pub index: u32,
+    pub signatories: Vec<Signatory>,
 }
 
 impl SignatorySet {
@@ -90,11 +115,13 @@ impl SignatorySet {
         Ok(sigset)
     }
 
+    #[cfg(feature = "full")]
     fn insert(&mut self, signatory: Signatory) {
         self.present_vp += signatory.voting_power;
         self.signatories.push(signatory);
     }
 
+    #[cfg(feature = "full")]
     fn sort_and_truncate(&mut self) {
         self.signatories.sort_by(|a, b| b.cmp(a));
 
@@ -125,6 +152,8 @@ impl SignatorySet {
         self.present_vp >= self.quorum_threshold()
     }
 
+    // TODO: remove this attribute, not sure why clippy is complaining when is_empty is defined
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         self.signatories.len()
     }
@@ -133,7 +162,7 @@ impl SignatorySet {
         self.len() == 0
     }
 
-    pub fn redeem_script(&self, dest: Address) -> Result<Script> {
+    pub fn redeem_script(&self, dest: &[u8]) -> Result<Script> {
         let truncation = self.get_truncation(23);
 
         let mut iter = self.signatories.iter();
@@ -174,14 +203,14 @@ impl SignatorySet {
         bytes.extend(&script.into_bytes());
 
         // depositor data commitment
-        let data = &dest.bytes()[..];
+        let data = &dest.encode()?[..];
         let script = script!(<data> OP_DROP);
         bytes.extend(&script.into_bytes());
 
         Ok(bytes.into())
     }
 
-    pub fn output_script(&self, dest: Address) -> Result<Script> {
+    pub fn output_script(&self, dest: &[u8]) -> Result<Script> {
         Ok(self.redeem_script(dest)?.to_v0_p2wsh())
     }
 
@@ -213,7 +242,7 @@ impl SignatorySet {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    // use super::*;
 
     // #[test]
     // #[should_panic(expected = "Cannot build script for empty signatory set")]

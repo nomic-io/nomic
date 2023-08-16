@@ -1,14 +1,22 @@
-use orga::{call::Call, client::Client, collections::Map, query::Query, state::State, Result};
+use orga::{collections::Map, orga, Result};
 
 pub type Outpoint = ([u8; 32], u32);
 
-#[derive(State, Call, Query, Client)]
+#[orga]
 pub struct OutpointSet {
-    expiration_queue: Map<(u64, Outpoint), ()>,
-    outpoints: Map<Outpoint, ()>,
+    pub(super) expiration_queue: Map<(u64, Outpoint), ()>,
+    pub(super) outpoints: Map<Outpoint, ()>,
 }
 
+#[orga]
 impl OutpointSet {
+    pub fn reset(&mut self) -> Result<()> {
+        super::clear_map(&mut self.expiration_queue)?;
+        super::clear_map(&mut self.outpoints)?;
+
+        Ok(())
+    }
+
     #[query]
     pub fn contains(&self, outpoint: Outpoint) -> Result<bool> {
         self.outpoints.contains_key(outpoint)

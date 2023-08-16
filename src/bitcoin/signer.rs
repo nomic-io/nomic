@@ -1,32 +1,44 @@
-use crate::app::App;
+use crate::app::{InnerApp, Nom};
+use crate::bitcoin::threshold_sig::Signature;
 use crate::error::Result;
 use bitcoin::secp256k1::{Message, Secp256k1};
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
-use orga::abci::TendermintClient;
+use log::info;
+use orga::client::{AppClient, Wallet};
+use orga::coins::Address;
+use orga::encoding::LengthVec;
+use orga::macros::build_call;
+use orga::tendermint::client::HttpClient;
 use rand::Rng;
 use std::fs;
 use std::path::Path;
+use std::time::SystemTime;
 
-pub struct Signer {
-    client: TendermintClient<App>,
+pub struct Signer<W> {
+    op_addr: Address,
     xpriv: ExtendedPrivKey,
+    max_withdrawal_rate: f64,
+    max_sigset_change_rate: f64,
+    app_client: fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, W>,
 }
 
-impl Signer {
+impl<W: Wallet> Signer<W> {
     pub fn load_or_generate<P: AsRef<Path>>(
-        client: TendermintClient<App>,
+        op_addr: Address,
         key_path: P,
+        max_withdrawal_rate: f64,
+        max_sigset_change_rate: f64,
+        app_client: fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, W>,
     ) -> Result<Self> {
         let path = key_path.as_ref();
         let xpriv = if path.exists() {
-            println!("Loading signatory key from {}", path.display());
+            info!("Loading signatory key from {}", path.display());
             let bytes = fs::read(path)?;
             let text = String::from_utf8(bytes).unwrap();
             text.trim().parse()?
         } else {
-            println!("Generating signatory key at {}", path.display());
+            info!("Generating signatory key at {}", path.display());
             let seed: [u8; 32] = rand::thread_rng().gen();
-            // TODO: get network from somewhere
             let xpriv = ExtendedPrivKey::new_master(bitcoin::Network::Bitcoin, seed.as_slice())?;
 
             fs::write(path, xpriv.to_string().as_bytes())?;
@@ -36,63 +48,106 @@ impl Signer {
 
         let secp = bitcoin::secp256k1::Secp256k1::signing_only();
         let xpub = ExtendedPubKey::from_priv(&secp, &xpriv);
-        println!("Signatory xpub:\n{}", xpub);
+        dbg!("Signatory xpub:\n{}", xpub);
 
-        Ok(Self::new(client, xpriv))
+        Ok(Self::new(
+            op_addr,
+            xpriv,
+            max_withdrawal_rate,
+            max_sigset_change_rate,
+            app_client,
+        ))
     }
 
-    pub fn new(client: TendermintClient<App>, xpriv: ExtendedPrivKey) -> Self {
-        Signer { client, xpriv }
+    pub fn new(
+        op_addr: Address,
+        xpriv: ExtendedPrivKey,
+        max_withdrawal_rate: f64,
+        max_sigset_change_rate: f64,
+        app_client: fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, W>,
+    ) -> Self {
+        Signer {
+            op_addr,
+            xpriv,
+            max_withdrawal_rate,
+            max_sigset_change_rate,
+            app_client,
+        }
     }
 
     pub async fn start(mut self) -> Result<()> {
+        info!("Starting signer...");
         let secp = Secp256k1::signing_only();
         let xpub = ExtendedPubKey::from_priv(&secp, &self.xpriv);
 
-        let res = self
-            .client
-            .pay_from(async move |client| client.bitcoin.set_signatory_key(xpub.into()).await)
-            .noop()
-            .await;
-        match res {
-            Ok(_) => println!("Submitted signatory key."),
-            Err(e)
-                if e.to_string()
-                    .contains("Validator already has a signatory key") => {}
-            Err(e) => return Err(e.into()),
-        }
-
-        println!("Waiting for a checkpoint to sign...");
-
         loop {
-            if let Err(e) = self.try_sign(&xpub).await {
-                eprintln!("Signer error: {}", e);
-            }
+            self.maybe_submit_xpub(&xpub).await?;
 
-            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            let signed = match self.try_sign(&xpub).await {
+                Ok(signed) => signed,
+                Err(e) => {
+                    eprintln!("Signer error: {}", e);
+                    false
+                }
+            };
+
+            if !signed {
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            }
         }
     }
 
-    async fn try_sign(&mut self, xpub: &ExtendedPubKey) -> Result<()> {
+    async fn maybe_submit_xpub(&mut self, xpub: &ExtendedPubKey) -> Result<()> {
+        let cons_key = (self.app_client)()
+            .query(|app| app.staking.consensus_key(self.op_addr))
+            .await?;
+        let onchain_xpub = (self.app_client)()
+            .query(|app| Ok(app.bitcoin.signatory_keys.get(cons_key)?))
+            .await?;
+
+        match onchain_xpub {
+            None => self.submit_xpub(xpub).await,
+            Some(onchain_xpub) if onchain_xpub.inner() != xpub => Err(orga::Error::App(
+                "Local xpub does not match xpub found on chain".to_string(),
+            )
+            .into()),
+            Some(_) => Ok(()),
+        }
+    }
+
+    async fn submit_xpub(&mut self, xpub: &ExtendedPubKey) -> Result<()> {
+        (self.app_client)()
+            .call(
+                move |app| build_call!(app.bitcoin.set_signatory_key(xpub.into())),
+                |app| build_call!(app.app_noop()),
+            )
+            .await?;
+        info!("Submitted signatory key.");
+        Ok(())
+    }
+
+    async fn try_sign(&mut self, xpub: &ExtendedPubKey) -> Result<bool> {
         let secp = Secp256k1::signing_only();
 
-        if self.client.bitcoin.checkpoints.signing().await??.is_none() {
-            return Ok(());
+        if (self.app_client)()
+            .query(|app| Ok(app.bitcoin.checkpoints.signing()?.is_none()))
+            .await?
+        {
+            return Ok(false);
         }
 
-        let to_sign = self
-            .client
-            .bitcoin
-            .checkpoints
-            .to_sign(xpub.into())
-            .await??;
+        let to_sign = (self.app_client)()
+            .query(|app| Ok(app.bitcoin.checkpoints.to_sign(xpub.into())?))
+            .await?;
         if to_sign.is_empty() {
-            return Ok(());
+            return Ok(false);
         }
 
-        println!("Signing checkpoint... ({} inputs)", to_sign.len());
+        self.check_change_rates().await?;
+        info!("Signing checkpoint...");
+        dbg!("{} inputs", to_sign.len());
 
-        let sigs: Vec<_> = to_sign
+        let sigs: LengthVec<u16, Signature> = to_sign
             .into_iter()
             .map(|(msg, index)| {
                 let privkey = self
@@ -102,23 +157,58 @@ impl Signer {
 
                 Ok(secp
                     .sign_ecdsa(&Message::from_slice(&msg[..])?, &privkey)
-                    .serialize_compact())
+                    .serialize_compact()
+                    .into())
             })
-            .collect::<Result<_>>()?;
+            .collect::<Result<Vec<_>>>()?
+            .try_into()?;
 
-        self.client
-            .clone()
-            .pay_from(async move |client| {
-                client
-                    .bitcoin
-                    .checkpoints
-                    .sign(xpub.into(), sigs.into())
-                    .await
-            })
-            .noop()
+        (self.app_client)()
+            .call(
+                move |app| build_call!(app.bitcoin.checkpoints.sign(xpub.into(), sigs.clone())),
+                |app| build_call!(app.app_noop()),
+            )
             .await?;
 
-        println!("Submitted signatures");
+        info!("Submitted signatures");
+
+        Ok(true)
+    }
+
+    async fn check_change_rates(&self) -> Result<()> {
+        let checkpoint_index = (self.app_client)()
+            .query(|app| Ok(app.bitcoin.checkpoints.index()))
+            .await?;
+        if checkpoint_index < 100 {
+            return Ok(());
+        }
+
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let rates = (self.app_client)()
+            .query(|app| Ok(app.bitcoin.change_rates(60 * 60 * 24, now)?))
+            .await?;
+
+        let withdrawal_rate = rates.withdrawal as f64 / 10_000.0;
+        let sigset_change_rate = rates.sigset_change as f64 / 10_000.0;
+
+        if withdrawal_rate > self.max_withdrawal_rate {
+            return Err(orga::Error::App(format!(
+                "Withdrawal rate of {} is above maximum of {}",
+                withdrawal_rate, self.max_withdrawal_rate
+            ))
+            .into());
+        }
+
+        if sigset_change_rate > self.max_sigset_change_rate {
+            return Err(orga::Error::App(format!(
+                "Signatory set change rate of {} is above maximum of {}",
+                sigset_change_rate, self.max_sigset_change_rate
+            ))
+            .into());
+        }
 
         Ok(())
     }

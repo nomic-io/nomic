@@ -8,8 +8,10 @@ use nomic::bitcoin::adapter::Adapter;
 use nomic::bitcoin::header_queue::Config;
 use nomic::bitcoin::header_queue::HeaderQueue;
 use nomic::bitcoin::header_queue::WrappedHeader;
+use orga::context::Context;
 use orga::encoding::Encode;
-use orga::store::{MapStore, Shared, Store};
+use orga::plugins::Paid;
+use serial_test::serial;
 use std::fs;
 
 fn into_json<T>(val: T) -> Result<bitcoincore_rpc::jsonrpc::serde_json::Value, RpcError>
@@ -20,7 +22,11 @@ where
 }
 
 #[test]
+#[serial]
 fn reorg() {
+    let ctx = Paid::default();
+    Context::add(ctx);
+
     let mut conf = Conf::default();
     conf.p2p = P2P::Yes;
     let node_1 = BitcoinD::with_conf(bitcoind::downloaded_exe_path().unwrap(), &conf).unwrap();
@@ -37,21 +43,27 @@ fn reorg() {
         .unwrap();
 
     let tip_hash = node_1.client.get_best_block_hash().unwrap();
-    let tip_header = node_1.client.get_block_header(&tip_hash).unwrap();
     let tip_height = node_1
         .client
         .get_block_header_info(&tip_hash)
         .unwrap()
         .height;
-    let encoded_header = Encode::encode(&Adapter::new(tip_header)).unwrap();
 
-    let mut config: Config = Default::default();
-    config.encoded_trusted_header = encoded_header;
-    config.trusted_height = tip_height as u32;
-    config.retargeting = false;
+    let tip_header = node_1.client.get_block_header(&tip_hash).unwrap();
 
-    let store = Store::new(Shared::new(MapStore::new()).into());
-    let mut header_queue = HeaderQueue::with_conf(store, Default::default(), config).unwrap();
+    let config = Config {
+        encoded_trusted_header: Adapter::new(tip_header)
+            .encode()
+            .unwrap()
+            .try_into()
+            .unwrap(),
+        trusted_height: tip_height as u32,
+        retargeting: false,
+        ..Config::default()
+    };
+
+    let mut header_queue = HeaderQueue::default();
+    header_queue.configure(config).unwrap();
 
     let mut headers = Vec::with_capacity(11);
     for _ in 0..10 {
@@ -110,7 +122,11 @@ fn reorg() {
 }
 
 #[test]
+#[serial]
 fn reorg_competing_chain_similar() {
+    let ctx = Paid::default();
+    Context::add(ctx);
+
     let mut conf = Conf::default();
     conf.p2p = P2P::Yes;
     let node_1 = BitcoinD::with_conf(bitcoind::downloaded_exe_path().unwrap(), &conf).unwrap();
@@ -127,21 +143,27 @@ fn reorg_competing_chain_similar() {
         .unwrap();
 
     let tip_hash = node_1.client.get_best_block_hash().unwrap();
-    let tip_header = node_1.client.get_block_header(&tip_hash).unwrap();
     let tip_height = node_1
         .client
         .get_block_header_info(&tip_hash)
         .unwrap()
         .height;
-    let encoded_header = Encode::encode(&Adapter::new(tip_header)).unwrap();
 
-    let mut config: Config = Default::default();
-    config.encoded_trusted_header = encoded_header;
-    config.trusted_height = tip_height as u32;
-    config.retargeting = false;
+    let tip_header = node_1.client.get_block_header(&tip_hash).unwrap();
 
-    let store = Store::new(Shared::new(MapStore::new()).into());
-    let mut header_queue = HeaderQueue::with_conf(store, Default::default(), config).unwrap();
+    let config = Config {
+        encoded_trusted_header: Adapter::new(tip_header)
+            .encode()
+            .unwrap()
+            .try_into()
+            .unwrap(),
+        trusted_height: tip_height as u32,
+        retargeting: false,
+        ..Config::default()
+    };
+
+    let mut header_queue = HeaderQueue::default();
+    header_queue.configure(config).unwrap();
 
     let mut headers = Vec::with_capacity(11);
     for _ in 0..10 {
@@ -203,8 +225,12 @@ fn reorg_competing_chain_similar() {
 }
 
 #[test]
+#[serial]
 #[ignore]
 fn reorg_deep() {
+    let ctx = Paid::default();
+    Context::add(ctx);
+
     let mut conf = Conf::default();
     conf.p2p = P2P::Yes;
     let node_1 = BitcoinD::with_conf(bitcoind::downloaded_exe_path().unwrap(), &conf).unwrap();
@@ -221,21 +247,27 @@ fn reorg_deep() {
         .unwrap();
 
     let tip_hash = node_1.client.get_best_block_hash().unwrap();
-    let tip_header = node_1.client.get_block_header(&tip_hash).unwrap();
     let tip_height = node_1
         .client
         .get_block_header_info(&tip_hash)
         .unwrap()
         .height;
-    let encoded_header = Encode::encode(&Adapter::new(tip_header)).unwrap();
 
-    let mut config: Config = Default::default();
-    config.encoded_trusted_header = encoded_header;
-    config.trusted_height = tip_height as u32;
-    config.retargeting = false;
+    let tip_header = node_1.client.get_block_header(&tip_hash).unwrap();
 
-    let store = Store::new(Shared::new(MapStore::new()).into());
-    let mut header_queue = HeaderQueue::with_conf(store, Default::default(), config).unwrap();
+    let config = Config {
+        encoded_trusted_header: Adapter::new(tip_header)
+            .encode()
+            .unwrap()
+            .try_into()
+            .unwrap(),
+        trusted_height: tip_height as u32,
+        retargeting: false,
+        ..Config::default()
+    };
+
+    let mut header_queue = HeaderQueue::default();
+    header_queue.configure(config).unwrap();
 
     let mut headers = Vec::with_capacity(10);
     for _ in 0..10 {
@@ -278,8 +310,8 @@ fn reorg_deep() {
     }
 
     header_queue.add(headers.into()).unwrap();
-    let mut headers = Vec::with_capacity(1000);
-    for _ in 0..1000 {
+    let mut headers = Vec::with_capacity(25);
+    for _ in 0..25 {
         node_2.client.generate_to_address(1, &bob_address).unwrap();
 
         let tip_hash = node_2.client.get_best_block_hash().unwrap();
@@ -292,33 +324,45 @@ fn reorg_deep() {
 
     header_queue.add(headers.into()).unwrap();
 
-    assert_eq!(header_queue.height().unwrap(), 1011);
+    assert_eq!(header_queue.height().unwrap(), 36);
 }
 
 #[test]
+#[serial]
 #[ignore]
 fn mainnet_from_file() {
+    let ctx = Paid::default();
+    Context::add(ctx);
+
     let block_data = fs::read("tests/data/block-data").unwrap();
 
     let headers: Vec<BlockHeader> = block_data
         .chunks(80)
-        .map(|chunk| BlockHeader::consensus_decode(chunk).unwrap())
+        .map(|mut chunk| BlockHeader::consensus_decode(&mut chunk).unwrap())
         .collect();
 
-    let first_encoded_header = headers.get(2016).unwrap();
+    let first_header = headers.get(2016).unwrap();
 
-    let mut config: Config = Default::default();
-    config.encoded_trusted_header = Encode::encode(&Adapter::new(first_encoded_header)).unwrap();
-    config.trusted_height = 2016;
+    let config = Config {
+        encoded_trusted_header: Adapter::new(first_header)
+            .encode()
+            .unwrap()
+            .try_into()
+            .unwrap(),
+        trusted_height: 2016,
+        min_difficulty_blocks: false,
+        retargeting: true,
+        ..Config::default()
+    };
 
-    let store = Store::new(Shared::new(MapStore::new()).into());
-    let mut header_queue = HeaderQueue::with_conf(store, Default::default(), config).unwrap();
+    let mut header_queue = HeaderQueue::default();
+    header_queue.configure(config).unwrap();
 
     let mut add_headers = Vec::new();
     for i in 2017..headers.len() - 1 {
         let header = headers.get(i).unwrap();
 
-        if i % 100000 == 0 {
+        if i % 25 == 0 {
             header_queue.add(add_headers.clone().into()).unwrap();
             add_headers.clear();
             add_headers.push(WrappedHeader::from_header(header, i as u32));
