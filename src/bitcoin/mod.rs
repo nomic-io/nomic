@@ -82,7 +82,7 @@ impl Config {
             max_withdrawal_amount: 64,
             max_withdrawal_script_length: 64,
             transfer_fee: 1_000_000,
-            min_confirmations: 0,
+            min_confirmations: 3,
             units_per_sat: 1_000_000,
             emergency_disbursal_min_tx_amt: 1000,
             emergency_disbursal_lock_time_interval: 60 * 60 * 24 * 7, //one week
@@ -134,7 +134,11 @@ pub struct Bitcoin {
 }
 
 impl MigrateFrom<BitcoinV0> for BitcoinV1 {
-    fn migrate_from(value: BitcoinV0) -> OrgaResult<Self> {
+    #[allow(unused_mut)]
+    fn migrate_from(mut value: BitcoinV0) -> OrgaResult<Self> {
+        #[cfg(not(feature = "testnet"))]
+        value.checkpoints.rewind(1607).unwrap();
+
         Ok(Self {
             headers: value.headers,
             processed_outpoints: value.processed_outpoints,
@@ -324,9 +328,9 @@ impl Bitcoin {
             .get_by_height(btc_height)?
             .ok_or_else(|| OrgaError::App("Invalid bitcoin block height".to_string()))?;
 
-        // if self.headers.height()? - btc_height < self.config.min_confirmations {
-        //     return Err(OrgaError::App("Block is not sufficiently confirmed".to_string()).into());
-        // }
+        if self.headers.height()? - btc_height < self.config.min_confirmations {
+            return Err(OrgaError::App("Block is not sufficiently confirmed".to_string()).into());
+        }
 
         let mut txids = vec![];
         let mut block_indexes = vec![];
@@ -450,6 +454,13 @@ impl Bitcoin {
             }
             Some(value) => value,
         };
+
+        if bitcoin::Amount::from_sat(value) < script_pubkey.dust_value() {
+            return Err(OrgaError::App(
+                "Withdrawal is too small to pay its dust limit".to_string(),
+            )
+            .into());
+        }
 
         if value < self.config.min_withdrawal_amount {
             return Err(OrgaError::App(
@@ -692,4 +703,72 @@ where
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use bitcoin::{BlockHash, BlockHeader, TxMerkleNode, Txid};
+
+    use super::{
+        header_queue::{WorkHeader, WrappedHeader},
+        *,
+    };
+
+    #[serial_test::serial]
+    #[test]
+    fn relay_height_validity() {
+        Context::add(Paid::default());
+
+        let mut btc = Bitcoin::default();
+
+        for _ in 0..10 {
+            btc.headers
+                .deque
+                .push_back(WorkHeader::new(
+                    WrappedHeader::new(
+                        Adapter::new(BlockHeader {
+                            bits: 0,
+                            merkle_root: TxMerkleNode::all_zeros(),
+                            nonce: 0,
+                            prev_blockhash: BlockHash::all_zeros(),
+                            time: 0,
+                            version: 0,
+                        }),
+                        btc.headers.height().unwrap() + 1,
+                    ),
+                    bitcoin::util::uint::Uint256([0, 0, 0, 0]),
+                ))
+                .unwrap();
+        }
+
+        let h = btc.headers.height().unwrap();
+        let mut try_relay = |height| {
+            // TODO: make test cases not fail at irrelevant steps in relay_deposit
+            // (either by passing in valid input, or by handling other error paths)
+            btc.relay_deposit(
+                Adapter::new(Transaction {
+                    input: vec![],
+                    lock_time: bitcoin::PackedLockTime(0),
+                    output: vec![],
+                    version: 0,
+                }),
+                height,
+                Adapter::new(PartialMerkleTree::from_txids(&[Txid::all_zeros()], &[true])),
+                0,
+                0,
+                &[],
+            )
+        };
+
+        assert_eq!(
+            try_relay(h + 100).unwrap_err().to_string(),
+            "App Error: Invalid bitcoin block height",
+        );
+        assert_eq!(
+            try_relay(h - 100).unwrap_err().to_string(),
+            "Passed index is greater than initial height. Referenced header does not exist on the Header Queue",
+        );
+
+        Context::remove::<Paid>();
+    }
 }

@@ -53,13 +53,13 @@ where
 }
 
 #[orga]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SignatorySet {
-    create_time: u64,
-    present_vp: u64,
-    possible_vp: u64,
-    index: u32,
-    signatories: Vec<Signatory>,
+    pub create_time: u64,
+    pub present_vp: u64,
+    pub possible_vp: u64,
+    pub index: u32,
+    pub signatories: Vec<Signatory>,
 }
 
 impl SignatorySet {

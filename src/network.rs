@@ -1,9 +1,10 @@
 use crate::error::{Error, Result};
 use clap::{self, ArgMatches, Args, Command, CommandFactory, ErrorKind, FromArgMatches, Parser};
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "full")]
+use std::path::PathBuf;
 use std::{
     ops::{Deref, DerefMut},
-    path::PathBuf,
     str::FromStr,
 };
 
@@ -17,7 +18,7 @@ pub enum Network {
 impl Network {
     pub fn config(&self) -> InnerConfig {
         let toml_src = match self {
-            Self::Mainnet => panic!("Mainnet is not yet configured"),
+            Self::Mainnet => include_str!("../networks/stakenet.toml"),
             Self::Testnet => include_str!("../networks/testnet.toml"),
         };
 
@@ -57,7 +58,7 @@ pub struct InnerConfig {
     #[clap(long, global = true)]
     pub legacy_version: Option<String>,
     #[clap(long, global = true)]
-    pub upgrade_time: Option<i64>,
+    pub upgrade_height: Option<u64>,
     #[clap(long, global = true)]
     pub network: Option<Network>,
     #[clap(long, global = true)]
@@ -151,13 +152,13 @@ impl FromArgMatches for Config {
                     "Cannot use --genesis with --network",
                 ));
             }
-            if net_config.upgrade_time.is_some() && arg_config.upgrade_time.is_some() {
+            if net_config.upgrade_height.is_some() && arg_config.upgrade_height.is_some() {
                 return Err(clap::Error::raw(
                     ErrorKind::ArgumentConflict,
-                    "Cannot use --upgrade-time with --network",
+                    "Cannot use --upgrade_height with --network",
                 ));
-            } else if arg_config.upgrade_time.is_some() {
-                net_config.upgrade_time = arg_config.upgrade_time;
+            } else if arg_config.upgrade_height.is_some() {
+                net_config.upgrade_height = arg_config.upgrade_height;
             }
             if arg_config.home.is_some() {
                 net_config.home = arg_config.home.clone();

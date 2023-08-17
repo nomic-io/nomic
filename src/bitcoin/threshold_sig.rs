@@ -20,7 +20,9 @@ use serde::Serialize;
 pub type Message = [u8; MESSAGE_SIZE];
 
 #[derive(Encode, Decode, State, Debug, Clone, Deref, From, Copy, Migrate, Serialize, Describe)]
-pub struct Signature(#[serde(serialize_with = "<[_]>::serialize")] [u8; COMPACT_SIGNATURE_SIZE]);
+pub struct Signature(
+    #[serde(serialize_with = "<[_]>::serialize")] pub [u8; COMPACT_SIGNATURE_SIZE],
+);
 
 #[derive(
     Encode,
@@ -157,11 +159,11 @@ impl From<PublicKey> for VersionedPubkey {
 
 #[orga]
 pub struct ThresholdSig {
-    threshold: u64,
-    signed: u64,
-    message: Message,
-    len: u16,
-    sigs: Map<Pubkey, Share>,
+    pub threshold: u64,
+    pub signed: u64,
+    pub message: Message,
+    pub len: u16,
+    pub sigs: Map<Pubkey, Share>,
 }
 
 #[orga]
@@ -177,6 +179,24 @@ impl ThresholdSig {
 
     pub fn set_message(&mut self, message: Message) {
         self.message = message;
+    }
+
+    pub fn clear_sigs(&mut self) -> Result<()> {
+        self.signed = 0;
+
+        let entries: Vec<_> = self
+            .sigs
+            .iter()?
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .map(|(k, _)| *k)
+            .collect();
+        for k in entries {
+            let mut sig = self.sigs.get_mut(k)?.unwrap();
+            sig.sig = None;
+        }
+
+        Ok(())
     }
 
     pub fn message(&self) -> Message {
@@ -347,6 +367,6 @@ impl Debug for ThresholdSig {
 #[orga]
 #[derive(Clone)]
 pub struct Share {
-    power: u64,
-    sig: Option<Signature>,
+    pub power: u64,
+    pub(super) sig: Option<Signature>,
 }

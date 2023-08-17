@@ -18,21 +18,21 @@ fn main() {
         let version = std::env::var("NOMIC_LEGACY_VERSION");
         let rev = std::env::var("NOMIC_LEGACY_REV");
 
-        if version.is_ok() && rev.is_ok() {
-            panic!("Cannot specify both NOMIC_LEGACY_VERSION and NOMIC_LEGACY_REV");
-        }
-
         let rev = if let Ok(rev) = rev {
             rev
         } else {
             let mut version_req_str = if let Ok(version_req_str) = version {
                 version_req_str
             } else {
-                let toml = if branch_name == "main" {
-                    todo!()
-                } else {
+                #[cfg(feature = "testnet")]
+                let toml = {
                     println!("cargo:rerun-if-changed=networks/testnet.toml");
                     include_str!("networks/testnet.toml")
+                };
+                #[cfg(not(feature = "testnet"))]
+                let toml = {
+                    println!("cargo:rerun-if-changed=networks/stakenet.toml");
+                    include_str!("networks/stakenet.toml")
                 };
                 let config: toml::Value = toml::from_str(toml).unwrap();
                 config
@@ -80,8 +80,13 @@ fn main() {
         let shell = std::env::var("SHELL").unwrap_or("/bin/bash".to_string());
         println!("Using shell: {}", shell);
 
+        #[cfg(feature = "testnet")]
+        let default_features = "full,feat-ibc,testnet";
+        #[cfg(not(feature = "testnet"))]
+        let default_features = "full";
+
         let cargo_features =
-            std::env::var("NOMIC_LEGACY_FEATURES").unwrap_or("full,feat-ibc,testnet".to_string());
+            std::env::var("NOMIC_LEGACY_FEATURES").unwrap_or(default_features.to_string());
 
         let res = std::process::Command::new(shell)
             .env_clear()
