@@ -1,6 +1,6 @@
 [package]
 name = "nomic"
-version = "6.0.0"
+version = "6.0.1"
 authors = [ "The Nomic Team <hello@nomic.io>" ]
 edition = "2021"
 default-run = "nomic"
@@ -58,7 +58,7 @@ toml = { version = "0.7.2", features = ["parse"] }
 semver = "1.0.18"
 
 [features]
-default = ["full", "feat-ibc", "legacy-bin"]
+default = ["full", "feat-ibc"]
 full = ["bitcoind", "bitcoincore-rpc-async", "clap", "tokio", "orga/merk-full", "orga/abci", "orga/state-sync", "csv", "warp", "rand", "reqwest", "tendermint-rpc", "home"]
 feat-ibc = ["orga/feat-ibc"]
 testnet = []
