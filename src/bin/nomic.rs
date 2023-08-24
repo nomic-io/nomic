@@ -403,7 +403,12 @@ fn legacy_bin(config: &nomic::network::Config) -> Result<Option<PathBuf>> {
                 let utd = if let Some(store_ver) = store_ver {
                     store_ver == vec![InnerApp::CONSENSUS_VERSION]
                 } else {
-                    false
+                    let store_ver = store.merk().get(b"/version").unwrap();
+                    if let Some(store_ver) = store_ver {
+                        store_ver == vec![1, InnerApp::CONSENSUS_VERSION]
+                    } else {
+                        false
+                    }
                 };
                 let initialized = store.merk().get_aux(b"height").unwrap().is_some();
                 (utd, initialized)
