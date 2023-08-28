@@ -685,7 +685,10 @@ impl<'a> BuildingCheckpointMut<'a> {
 
         let mut disbursal_batch = self.batches.get_mut(BatchType::Disbursal as u64)?.unwrap();
         disbursal_batch.retain_unordered(|mut tx| {
-            let mut input = tx.input.get_mut(0)?.unwrap();
+            let mut input = match tx.input.get_mut(0)? {
+                Some(input) => input,
+                None => return Ok(false),
+            };
             input.amount -= intermediate_tx_fee / intermediate_tx_len;
             for (i, output) in intermediate_tx_outputs.iter() {
                 if output == &(input.amount) {
