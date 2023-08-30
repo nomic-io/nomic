@@ -96,6 +96,7 @@ pub enum Command {
     #[cfg(feature = "testnet")]
     IbcTransfer(IbcTransferCmd),
     Export(ExportCmd),
+    UpgradeStatus(UpgradeStatusCmd),
 }
 
 impl Command {
@@ -148,6 +149,7 @@ impl Command {
                 #[cfg(feature = "testnet")]
                 IbcTransfer(cmd) => cmd.run().await,
                 Export(cmd) => cmd.run().await,
+                UpgradeStatus(cmd) => cmd.run().await,
             }
         })
     }
@@ -1370,6 +1372,186 @@ impl ExportCmd {
             orga::plugins::ABCIPlugin::<nomic::app::App>::load(store, &mut root_bytes.as_slice())?;
 
         serde_json::to_writer_pretty(std::io::stdout(), &app).unwrap();
+
+        Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct UpgradeStatusCmd {}
+
+impl UpgradeStatusCmd {
+    async fn run(&self) -> Result<()> {
+        use orga::coins::staking::ValidatorQueryInfo;
+        use orga::coins::VersionedAddress;
+        use std::collections::{HashMap, HashSet};
+        let client = app_client();
+        let tm_client = tendermint_rpc::HttpClient::new("http://localhost:26657").unwrap();
+        let curr_height = tm_client
+            .status()
+            .await
+            .unwrap()
+            .sync_info
+            .latest_block_height;
+        let validators = tm_client
+            .validators(curr_height, tendermint_rpc::Paging::All)
+            .await
+            .unwrap()
+            .validators;
+
+        let mut vp_map: HashMap<[u8; 32], u64> = HashMap::new();
+        let mut total_vp = 0;
+        for validator in validators {
+            vp_map.insert(
+                validator.pub_key.to_bytes().try_into().unwrap(),
+                validator.power(),
+            );
+            total_vp += validator.power();
+        }
+
+        let (delay_seconds, threshold, current_version) = client
+            .query(|app: InnerApp| {
+                let current_version = app.upgrade.current_version.get(())?.unwrap();
+                Ok((
+                    app.upgrade.activation_delay_seconds,
+                    app.upgrade.threshold,
+                    current_version.to_vec(),
+                ))
+            })
+            .await?;
+
+        let next_version: orga::upgrade::Version = vec![current_version[0] + 1].try_into().unwrap();
+        let mut signals: Vec<([u8; 32], i64)> = client
+            .query(|app: InnerApp| {
+                let mut signals = vec![];
+                for entry in app.upgrade.signals.iter()? {
+                    let (pubkey, signal) = entry?;
+                    if signal.version == next_version {
+                        signals.push((*pubkey, signal.time));
+                    }
+                }
+                Ok(signals)
+            })
+            .await?;
+
+        signals.sort_by(|a, b| a.1.cmp(&b.1));
+        let mut signaled_vp = 0;
+        let mut activation_time = None;
+        let threshold: f64 = threshold.to_string().parse().unwrap();
+
+        for (pubkey, time) in signals.iter() {
+            signaled_vp += vp_map.get(pubkey).unwrap_or(&0);
+            let frac = signaled_vp as f64 / total_vp as f64;
+            if frac >= threshold && activation_time.is_none() {
+                activation_time.replace(time + delay_seconds);
+            }
+        }
+        let frac = signaled_vp as f64 / total_vp as f64;
+
+        if frac < 0.01 {
+            println!("No upgrade in progress");
+            return Ok(());
+        }
+
+        let all_validators: Vec<ValidatorQueryInfo> = client
+            .query(|app: InnerApp| app.staking.all_validators())
+            .await?;
+
+        let mut validator_names: HashMap<orga::coins::VersionedAddress, (String, u64)> =
+            HashMap::new();
+        all_validators
+            .into_iter()
+            .filter(|v| v.in_active_set)
+            .for_each(|v| {
+                let bytes: Vec<u8> = v.info.into();
+                let name = if let Ok(info) =
+                    serde_json::from_slice::<'_, serde_json::Value>(bytes.as_slice())
+                {
+                    info.get("moniker")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(v.address.to_string().as_str())
+                        .to_string()
+                } else {
+                    v.address.to_string()
+                };
+
+                validator_names.insert(v.address, (name, v.amount_staked.into()));
+            });
+
+        let mut consensus_keys: HashMap<VersionedAddress, [u8; 32]> = HashMap::new();
+        for (address, _) in validator_names.iter() {
+            let consensus_key = client
+                .query(|app: InnerApp| app.staking.consensus_key((*address).into()))
+                .await?;
+            consensus_keys.insert(*address, consensus_key);
+        }
+        let mut signaled_cons_keys: HashSet<[u8; 32]> = HashSet::new();
+
+        for (cons_key, _) in signals.iter() {
+            signaled_cons_keys.insert(*cons_key);
+        }
+
+        let mut entries = validator_names.iter().collect::<Vec<_>>();
+        entries.sort_by(|(_, (_, a)), (_, (_, b))| b.cmp(a));
+
+        println!("");
+        println!("Upgraded:");
+        for (addr, (name, power)) in entries.iter() {
+            let cons_key = consensus_keys.get(addr).unwrap();
+            if signaled_cons_keys.contains(cons_key) {
+                println!(
+                    "✅ {} ({:.2}%)",
+                    name,
+                    (*power as f64 / total_vp as f64) * 100.0
+                );
+            }
+        }
+        println!("");
+        println!("Not upgraded:");
+        for (addr, (name, power)) in entries.iter() {
+            let cons_key = consensus_keys.get(addr).unwrap();
+            if !signaled_cons_keys.contains(cons_key) {
+                println!(
+                    "❌ {} ({:.2}%)",
+                    name,
+                    (*power as f64 / total_vp as f64) * 100.0
+                );
+            }
+        }
+        println!("");
+
+        println!(
+            "Upgrade has been signaled by {:.2}% of voting power",
+            frac * 100.0
+        );
+
+        if let Some(t) = activation_time {
+            use chrono::prelude::*;
+            let mut activation_date = chrono::Utc.timestamp_opt(t, 0).unwrap();
+            if activation_date.hour() > 17
+                || activation_date.hour() == 17 && activation_date.minute() >= 10
+            {
+                activation_date = activation_date
+                    .checked_add_days(chrono::Days::new(1))
+                    .unwrap();
+            }
+            activation_date = activation_date
+                .with_hour(17)
+                .unwrap()
+                .with_minute(0)
+                .unwrap()
+                .with_second(0)
+                .unwrap();
+
+            while !nomic::app::in_upgrade_window(activation_date.timestamp()) {
+                activation_date = activation_date
+                    .checked_add_days(chrono::Days::new(1))
+                    .unwrap();
+            }
+            println!("Upgrade will activate at {}", activation_date);
+        } else {
+            println!("Upgrade requires {:.2}% of voting power", threshold * 100.0);
+        }
 
         Ok(())
     }
