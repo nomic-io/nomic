@@ -149,28 +149,13 @@ pub struct Bitcoin {
     pub signatory_keys: SignatoryKeys,
     pub(crate) reward_pool: Coin<Nbtc>,
 
-    #[orga(version(V1))]
     pub recovery_scripts: Map<Address, Adapter<Script>>,
-    #[orga(version(V1))]
     config: Config,
 }
 
 impl MigrateFrom<BitcoinV0> for BitcoinV1 {
-    #[allow(unused_mut)]
-    fn migrate_from(mut value: BitcoinV0) -> OrgaResult<Self> {
-        #[cfg(not(feature = "testnet"))]
-        value.checkpoints.rewind(1607).unwrap();
-
-        Ok(Self {
-            headers: value.headers,
-            processed_outpoints: value.processed_outpoints,
-            checkpoints: value.checkpoints,
-            accounts: value.accounts,
-            recovery_scripts: Map::default(),
-            signatory_keys: value.signatory_keys,
-            reward_pool: value.reward_pool,
-            config: Config::default(),
-        })
+    fn migrate_from(_value: BitcoinV0) -> OrgaResult<Self> {
+        unreachable!()
     }
 }
 

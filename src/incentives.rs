@@ -20,10 +20,6 @@ pub struct Incentives {
 
 #[orga(version = 1)]
 pub struct Account {
-    #[orga(version(V0))]
-    testnet_participation: Coin<Nom>,
-
-    #[orga(version(V1))]
     pub testnet_participation: Part,
 }
 
@@ -37,13 +33,7 @@ impl Clone for AccountV1 {
 
 impl MigrateFrom<AccountV0> for AccountV1 {
     fn migrate_from(old: AccountV0) -> orga::Result<Self> {
-        Ok(AccountV1 {
-            testnet_participation: Part {
-                locked: 0,
-                claimable: old.testnet_participation.amount.into(),
-                claimed: 0,
-            },
-        })
+        unreachable!()
     }
 }
 

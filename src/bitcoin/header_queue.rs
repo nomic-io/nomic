@@ -282,17 +282,12 @@ impl Config {
 pub struct HeaderQueue {
     pub(crate) deque: Deque<WorkHeader>,
     pub(crate) current_work: Adapter<Uint256>,
-    #[orga(version(V1))]
     config: Config,
 }
 
 impl MigrateFrom<HeaderQueueV0> for HeaderQueueV1 {
     fn migrate_from(value: HeaderQueueV0) -> OrgaResult<Self> {
-        Ok(Self {
-            deque: value.deque,
-            current_work: value.current_work,
-            config: Config::default(),
-        })
+        unreachable!()
     }
 }
 

@@ -91,13 +91,6 @@ pub struct Input {
     pub script_pubkey: Adapter<bitcoin::Script>,
     pub redeem_script: Adapter<bitcoin::Script>,
     pub sigset_index: u32,
-    #[cfg(not(feature = "testnet"))]
-    #[orga(version(V0))]
-    pub dest: orga::coins::VersionedAddress,
-    #[cfg(feature = "testnet")]
-    #[orga(version(V0))]
-    pub dest: LengthVec<u16, u8>,
-    #[orga(version(V1))]
     pub dest: LengthVec<u16, u8>,
     pub amount: u64,
     pub est_witness_vsize: u64,
@@ -147,19 +140,7 @@ impl Input {
 
 impl MigrateFrom<InputV0> for InputV1 {
     fn migrate_from(value: InputV0) -> OrgaResult<Self> {
-        Ok(Self {
-            prevout: value.prevout,
-            script_pubkey: value.script_pubkey,
-            redeem_script: value.redeem_script,
-            sigset_index: value.sigset_index,
-            #[cfg(not(feature = "testnet"))]
-            dest: value.dest.encode()?.try_into()?,
-            #[cfg(feature = "testnet")]
-            dest: value.dest,
-            amount: value.amount,
-            est_witness_vsize: value.est_witness_vsize,
-            signatures: value.signatures,
-        })
+        unreachable!()
     }
 }
 
@@ -312,45 +293,13 @@ impl Batch {
 #[derive(Debug)]
 pub struct Checkpoint {
     pub status: CheckpointStatus,
-
-    #[orga(version(V0))]
-    pub inputs: Deque<Input>,
-    #[orga(version(V0))]
-    signed_inputs: u16,
-    #[orga(version(V0))]
-    pub outputs: Deque<Output>,
-
-    #[orga(version(V1))]
     pub batches: Deque<Batch>,
-
     pub sigset: SignatorySet,
 }
 
 impl MigrateFrom<CheckpointV0> for CheckpointV1 {
     fn migrate_from(value: CheckpointV0) -> OrgaResult<Self> {
-        let bitcoin_tx = BitcoinTx {
-            input: value.inputs,
-            output: value.outputs,
-            signed_inputs: value.signed_inputs,
-            lock_time: 0,
-        };
-
-        let mut batches = Deque::default();
-        batches.push_back(Batch::default())?;
-        batches.push_back(Batch::default())?;
-
-        let mut batch = Batch::default();
-        if bitcoin_tx.signed() {
-            batch.signed_txs = 1;
-        }
-        batch.push_back(bitcoin_tx)?;
-
-        batches.push_back(batch)?;
-        Ok(Self {
-            status: value.status,
-            sigset: value.sigset,
-            batches,
-        })
+        unreachable!()
     }
 }
 
@@ -499,17 +448,12 @@ impl Default for Config {
 pub struct CheckpointQueue {
     pub(super) queue: Deque<Checkpoint>,
     pub(super) index: u32,
-    #[orga(version(V1))]
     pub config: Config,
 }
 
 impl MigrateFrom<CheckpointQueueV0> for CheckpointQueueV1 {
     fn migrate_from(value: CheckpointQueueV0) -> OrgaResult<Self> {
-        Ok(Self {
-            queue: value.queue,
-            index: value.index,
-            config: Config::default(),
-        })
+        unreachable!()
     }
 }
 
