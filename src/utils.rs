@@ -1,5 +1,4 @@
 #![cfg(not(target_arch = "wasm32"))]
-
 #[cfg(feature = "full")]
 use crate::app::App;
 use crate::app::Nom;
@@ -27,13 +26,14 @@ use chrono::{TimeZone, Utc};
 use ed::Encode;
 #[cfg(feature = "full")]
 use log::info;
+use orga::client::Wallet;
 use orga::coins::staking::{Commission, Declaration};
 use orga::coins::{Address, Coin, Decimal};
 use orga::context::Context;
 #[cfg(feature = "full")]
 use orga::merk::MerkStore;
 use orga::plugins::sdk_compat::sdk;
-use orga::plugins::{ABCIPlugin, ChainId, Time, MIN_FEE};
+use orga::plugins::{ABCIPlugin, ChainId, SignerCall, Time, MIN_FEE};
 use orga::state::State;
 #[cfg(feature = "full")]
 use orga::store::BackingStore;
@@ -42,13 +42,13 @@ use orga::store::Write;
 #[cfg(feature = "full")]
 use orga::store::{Shared, Store};
 use orga::tendermint::client::HttpClient;
+use orga::Result as OrgaResult;
 use orga::{client::wallet::DerivedKey, macros::build_call};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 #[cfg(feature = "full")]
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
-#[cfg(feature = "full")]
 use std::str::FromStr;
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -333,14 +333,34 @@ pub fn populate_bitcoin_block(client: &BitcoinD) -> BitcoinBlockData {
     }
 }
 
-pub struct KeyData {
+#[derive(Clone)]
+pub struct NomicTestWallet {
     pub privkey: SecretKey,
     pub address: Address,
     pub script: Script,
+    pub wallet: DerivedKey,
+}
+
+impl Wallet for NomicTestWallet {
+    fn address(&self) -> OrgaResult<Option<Address>> {
+        Ok(Some(self.wallet.address()))
+    }
+
+    fn sign(&self, call_bytes: &[u8]) -> OrgaResult<SignerCall> {
+        self.wallet.sign(call_bytes)
+    }
+}
+
+impl NomicTestWallet {
+    pub fn bitcoin_address(&self) -> bitcoin::Address {
+        bitcoin::Address::from_script(&self.script, bitcoin::Network::Regtest).unwrap()
+    }
 }
 
 #[cfg(feature = "full")]
-pub fn setup_test_app(home: &Path, block_data: &BitcoinBlockData) -> Vec<KeyData> {
+pub fn setup_test_app(home: &Path, block_data: &BitcoinBlockData) -> Vec<NomicTestWallet> {
+    use orga::client::Wallet;
+
     let mut app = ABCIPlugin::<App>::default();
     let mut store = Store::new(BackingStore::Merk(Shared::new(MerkStore::new(
         home.join("merk"),
@@ -380,15 +400,19 @@ pub fn setup_test_app(home: &Path, block_data: &BitcoinBlockData) -> Vec<KeyData
             .deposit(address, Coin::mint(1000000000))
             .unwrap();
 
-        let keys: Vec<KeyData> = (0..10)
+        let keys: Vec<NomicTestWallet> = (0..10)
             .map(|_| {
                 let privkey = SecretKey::new(&mut rand::thread_rng());
                 let address = address_from_privkey(&privkey);
                 let script = address_to_script(address).unwrap();
-                KeyData {
+                let secret_key =
+                    orga::secp256k1::SecretKey::from_slice(&privkey.secret_bytes()).unwrap();
+                let wallet = DerivedKey::from_secret_key(secret_key);
+                NomicTestWallet {
                     privkey,
                     address,
                     script,
+                    wallet,
                 }
             })
             .collect();
