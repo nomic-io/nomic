@@ -106,9 +106,7 @@ impl Config {
     }
 
     pub fn client(&self) -> AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned> {
-        // TODO: get port from config for default
-        let default_addr = "http://localhost:26657".to_string();
-        let node = self.args.node.as_ref().unwrap_or(&default_addr);
+        let node = self.args.node.as_ref().unwrap();
         crate::app_client(node)
     }
 }
@@ -214,6 +212,11 @@ impl FromArgMatches for Config {
             } else {
                 self.args.chain_id = Some(gensis_cid.to_string());
             }
+        }
+
+        if self.args.node.is_none() {
+            // TODO: get port from Tendermint config.toml for default
+            self.args.node = Some("http://localhost:26657".to_string());
         }
 
         Ok(())
