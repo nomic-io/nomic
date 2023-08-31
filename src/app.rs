@@ -87,7 +87,7 @@ pub struct InnerApp {
     pub ibc: Ibc,
 
     #[orga(version(V1, V2))]
-    upgrade: Upgrade,
+    pub upgrade: Upgrade,
 
     #[orga(version(V2))]
     #[call]
@@ -965,7 +965,7 @@ impl RewardTimer {
     }
 }
 
-fn in_upgrade_window(now_seconds: i64) -> bool {
+pub fn in_upgrade_window(now_seconds: i64) -> bool {
     use chrono::prelude::*;
     let now = Utc.timestamp_opt(now_seconds, 0).unwrap();
 
