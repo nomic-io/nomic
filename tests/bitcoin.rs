@@ -139,6 +139,15 @@ async fn withdraw_bitcoin(
     Ok(())
 }
 
+async fn get_signatory_script() -> Result<Script> {
+    Ok(app_client_testnet()
+        .query(|app: InnerApp| {
+            let tx = app.bitcoin.checkpoints.emergency_disbursal_txs()?;
+            Ok(tx[0].output[1].script_pubkey.clone())
+        })
+        .await?)
+}
+
 fn client_provider() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, DerivedKey> {
     let val_priv_key = load_privkey().unwrap();
     let wallet = DerivedKey::from_secret_key(val_priv_key);
