@@ -714,6 +714,10 @@ impl<'a> BuildingCheckpointMut<'a> {
         fee_rate: u64,
         reserve_value: u64,
     ) -> Result<()> {
+        #[cfg(not(feature = "full"))]
+        unimplemented!();
+
+        #[cfg(feature = "full")]
         {
             //TODO: Pull bitcoin config from state
             let bitcoin_config = super::Bitcoin::config();
