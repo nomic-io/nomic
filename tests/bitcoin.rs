@@ -164,7 +164,7 @@ async fn withdraw_bitcoin(
 async fn get_signatory_script() -> Result<Script> {
     Ok(app_client()
         .query(|app: InnerApp| {
-            let tx = app.bitcoin.checkpoints.emergency_disbursal_txs()?;
+            let tx = app.bitcoin.checkpoints.emergency_disbursal_txs(1_000)?;
             Ok(tx[0].output[1].script_pubkey.clone())
         })
         .await?)
