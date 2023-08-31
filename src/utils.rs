@@ -358,7 +358,11 @@ impl NomicTestWallet {
 }
 
 #[cfg(feature = "full")]
-pub fn setup_test_app(home: &Path, block_data: &BitcoinBlockData) -> Vec<NomicTestWallet> {
+pub fn setup_test_app(
+    home: &Path,
+    block_data: &BitcoinBlockData,
+    num_accounts: u16,
+) -> Vec<NomicTestWallet> {
     use orga::client::Wallet;
 
     let mut app = ABCIPlugin::<App>::default();
@@ -400,7 +404,7 @@ pub fn setup_test_app(home: &Path, block_data: &BitcoinBlockData) -> Vec<NomicTe
             .deposit(address, Coin::mint(1000000000))
             .unwrap();
 
-        let keys: Vec<NomicTestWallet> = (0..10)
+        let keys: Vec<NomicTestWallet> = (0..num_accounts)
             .map(|_| {
                 let privkey = SecretKey::new(&mut rand::thread_rng());
                 let address = address_from_privkey(&privkey);
