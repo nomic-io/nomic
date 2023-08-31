@@ -645,7 +645,8 @@ impl Bitcoin {
         let sigset = self.checkpoints.active_sigset()?;
         let lowest_power = sigset.signatories.last().unwrap().voting_power;
         let current_index = self.checkpoints.index;
-        if self.checkpoints.len()? <= offline_threshold {
+        let completed = self.checkpoints.completed(offline_threshold)?;
+        if completed.len() < offline_threshold as usize {
             return Ok(vec![]);
         }
         let mut validators = self
@@ -671,8 +672,7 @@ impl Bitcoin {
             };
 
             let mut offline = true;
-            for i in 1..offline_threshold {
-                let checkpoint = self.checkpoints.get(current_index - i)?;
+            for checkpoint in completed.iter().rev() {
                 if checkpoint.to_sign(xpub.clone())?.is_empty() {
                     offline = false;
                     break;
