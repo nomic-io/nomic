@@ -1,7 +1,9 @@
 #![cfg(not(target_arch = "wasm32"))]
 #[cfg(feature = "full")]
 use crate::app::App;
+use crate::app::InnerApp;
 use crate::app::Nom;
+use crate::app_client;
 #[cfg(feature = "full")]
 use crate::bitcoin::adapter::Adapter;
 #[cfg(feature = "full")]
@@ -9,7 +11,6 @@ use crate::bitcoin::header_queue::Config as HeaderQueueConfig;
 #[cfg(feature = "full")]
 use crate::bitcoin::signer::Signer;
 use crate::error::{Error, Result};
-use crate::{app::InnerApp, app_client_testnet};
 use bitcoin::hashes::hex::ToHex;
 use bitcoin::secp256k1::{self, rand, SecretKey};
 #[cfg(feature = "full")]
@@ -52,6 +53,8 @@ use std::process::{Child, Command, Stdio};
 use std::str::FromStr;
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+const DEFAULT_RPC: &str = "http://localhost:26657";
 
 pub fn retry<F, T, E>(f: F, max_retries: u32) -> std::result::Result<T, E>
 where
@@ -235,7 +238,7 @@ pub async fn declare_validator(home: &Path, wallet: DerivedKey) -> Result<()> {
         min_self_delegation: 0.into(),
     };
 
-    app_client_testnet()
+    app_client(DEFAULT_RPC)
         .with_wallet(wallet)
         .call(
             move |app| build_call!(app.accounts.take_as_funding((100000 + MIN_FEE).into())),
@@ -250,7 +253,10 @@ pub async fn declare_validator(home: &Path, wallet: DerivedKey) -> Result<()> {
 pub async fn poll_for_blocks() {
     info!("Scanning for blocks...");
     loop {
-        match app_client_testnet().query(|app| app.app_noop_query()).await {
+        match app_client(DEFAULT_RPC)
+            .query(|app| app.app_noop_query())
+            .await
+        {
             Ok(_) => {
                 break;
             }
@@ -264,7 +270,7 @@ pub async fn poll_for_blocks() {
 pub async fn poll_for_signatory_key() {
     info!("Scanning for signatory key...");
     loop {
-        match app_client_testnet()
+        match app_client(DEFAULT_RPC)
             .query(|app| Ok(app.bitcoin.checkpoints.active_sigset()?))
             .await
         {
@@ -276,13 +282,13 @@ pub async fn poll_for_signatory_key() {
 
 pub async fn poll_for_completed_checkpoint(num_checkpoints: u32) {
     info!("Scanning for signed checkpoints...");
-    let mut checkpoint_len = app_client_testnet()
+    let mut checkpoint_len = app_client(DEFAULT_RPC)
         .query(|app| Ok(app.bitcoin.checkpoints.completed()?.len()))
         .await
         .unwrap();
 
     while checkpoint_len < num_checkpoints as usize {
-        checkpoint_len = app_client_testnet()
+        checkpoint_len = app_client(DEFAULT_RPC)
             .query(|app| Ok(app.bitcoin.checkpoints.completed()?.len()))
             .await
             .unwrap();
@@ -293,7 +299,7 @@ pub async fn poll_for_completed_checkpoint(num_checkpoints: u32) {
 pub async fn poll_for_bitcoin_header(height: u32) -> Result<()> {
     info!("Scanning for bitcoin header {}...", height);
     loop {
-        let current_height = app_client_testnet()
+        let current_height = app_client(DEFAULT_RPC)
             .query(|app| Ok(app.bitcoin.headers.height()?))
             .await?;
         if current_height >= height {

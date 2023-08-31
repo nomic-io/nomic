@@ -1435,7 +1435,7 @@ mod test {
                     power: 100,
                     sig: None,
                 },
-            );
+            )?;
             Ok::<_, Error>(input)
         };
 
@@ -1454,7 +1454,7 @@ mod test {
                     power: 100,
                     sig: Some(Signature([123; 64])),
                 },
-            );
+            )?;
             input.signatures.signed = 100;
             Ok::<_, Error>(input)
         };

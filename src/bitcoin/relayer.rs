@@ -1,7 +1,7 @@
 use super::signatory::Signatory;
 use super::SignatorySet;
 use crate::app::DepositCommitment;
-use crate::app_client_testnet;
+use crate::app_client;
 use crate::bitcoin::{adapter::Adapter, header_queue::WrappedHeader};
 use crate::error::Error;
 use crate::error::Result;
@@ -34,20 +34,22 @@ const HEADER_BATCH_SIZE: usize = 250;
 
 pub struct Relayer {
     btc_client: BitcoinRpcClient,
+    app_client_addr: String,
 
     scripts: Option<WatchedScriptStore>,
 }
 
 impl Relayer {
-    pub fn new(btc_client: BitcoinRpcClient) -> Self {
+    pub fn new(btc_client: BitcoinRpcClient, app_client_addr: String) -> Self {
         Relayer {
             btc_client,
+            app_client_addr,
             scripts: None,
         }
     }
 
     async fn sidechain_block_hash(&self) -> Result<BlockHash> {
-        let hash = app_client_testnet()
+        let hash = app_client(&self.app_client_addr)
             .query(|app| Ok(app.bitcoin.headers.hash()?))
             .await?;
         let hash = BlockHash::from_slice(hash.as_slice())?;
@@ -95,7 +97,7 @@ impl Relayer {
     pub async fn start_deposit_relay<P: AsRef<Path>>(mut self, store_path: P) -> Result<()> {
         info!("Starting deposit relay...");
 
-        let scripts = WatchedScriptStore::open(store_path).await?;
+        let scripts = WatchedScriptStore::open(store_path, &self.app_client_addr).await?;
         self.scripts = Some(scripts);
 
         let (server, mut recv) = self.create_address_server();
@@ -121,6 +123,9 @@ impl Relayer {
 
         let sigsets = Arc::new(Mutex::new(BTreeMap::new()));
 
+        // TODO: pass into closures more cleanly
+        let app_client_addr: &'static str = self.app_client_addr.clone().leak();
+
         // TODO: configurable listen address
         use bytes::Bytes;
         use warp::Filter;
@@ -145,7 +150,7 @@ impl Relayer {
                     let sigset = match sigsets.get(&query.sigset_index) {
                         Some(sigset) => sigset,
                         None => {
-                            app_client_testnet()
+                            app_client(app_client_addr)
                                 .query(|app| {
                                     let sigset = app
                                         .bitcoin
@@ -191,8 +196,8 @@ impl Relayer {
             );
 
         let sigset_route = warp::path("sigset")
-            .and_then(async move || {
-                let sigset = app_client_testnet()
+            .and_then(move || async {
+                let sigset = app_client(app_client_addr)
                     .query(|app| {
                         let sigset: RawSignatorySet =
                             app.bitcoin.checkpoints.active_sigset()?.into();
@@ -292,7 +297,7 @@ impl Relayer {
 
         let mut relayed = HashSet::new();
         loop {
-            let disbursal_txs = app_client_testnet()
+            let disbursal_txs = app_client(&self.app_client_addr)
                 .query(|app| Ok(app.bitcoin.checkpoints.emergency_disbursal_txs()?))
                 .await?;
 
@@ -346,7 +351,7 @@ impl Relayer {
     }
 
     async fn relay_checkpoints(&mut self) -> Result<()> {
-        let last_checkpoint = app_client_testnet()
+        let last_checkpoint = app_client(&self.app_client_addr)
             .query(|app| Ok(app.bitcoin.checkpoints.last_completed_tx()?))
             .await?;
         info!("Last checkpoint tx: {}", last_checkpoint.txid());
@@ -354,7 +359,7 @@ impl Relayer {
         let mut relayed = HashSet::new();
 
         loop {
-            let txs = app_client_testnet()
+            let txs = app_client(&self.app_client_addr)
                 .query(|app| Ok(app.bitcoin.checkpoints.completed_txs()?))
                 .await?;
             for tx in txs {
@@ -389,7 +394,7 @@ impl Relayer {
         recv: &mut Receiver<(DepositCommitment, u32)>,
     ) -> Result<()> {
         while let Ok((addr, sigset_index)) = recv.try_recv() {
-            let sigset_res = app_client_testnet()
+            let sigset_res = app_client(&self.app_client_addr)
                 .query(|app| Ok(app.bitcoin.checkpoints.get(sigset_index)?.sigset.clone()))
                 .await;
             let sigset = match sigset_res {
@@ -479,7 +484,7 @@ impl Relayer {
         let outpoint = (txid.into_inner(), output.vout);
         let dest = output.dest.clone();
         let vout = output.vout;
-        let contains_outpoint = app_client_testnet()
+        let contains_outpoint = app_client(&self.app_client_addr)
             .query(|app| app.bitcoin.processed_outpoints.contains(outpoint))
             .await?;
 
@@ -499,7 +504,7 @@ impl Relayer {
             let tx = Adapter::new(tx);
             let proof = Adapter::new(proof);
 
-            let res = app_client_testnet()
+            let res = app_client(&self.app_client_addr)
                 .call(
                     move |app| {
                         build_call!(app.relay_deposit(
@@ -558,13 +563,13 @@ impl Relayer {
             batch[0].height(),
             batch.len(),
         );
-        app_client_testnet()
+        app_client(&self.app_client_addr)
             .call(
                 |app| build_call!(app.bitcoin.headers.add(batch.clone().into_iter().collect())),
                 |app| build_call!(app.app_noop()),
             )
             .await?;
-        let res = app_client_testnet()
+        let res = app_client(&self.app_client_addr)
             .call(
                 move |app| build_call!(app.bitcoin.headers.add(batch.clone().into())),
                 |app| build_call!(app.app_noop()),
@@ -757,11 +762,11 @@ pub struct WatchedScriptStore {
 }
 
 impl WatchedScriptStore {
-    pub async fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
+    pub async fn open<P: AsRef<Path>>(path: P, app_client_addr: &str) -> Result<Self> {
         let path = path.as_ref().join("watched-addrs.csv");
 
         let mut scripts = WatchedScripts::new();
-        Self::maybe_load(&path, &mut scripts).await?;
+        Self::maybe_load(&path, &mut scripts, app_client_addr).await?;
 
         let tmp_path = path.with_file_name("watched-addrs-tmp.csv");
         let mut tmp_file = File::create(&tmp_path)?;
@@ -779,7 +784,11 @@ impl WatchedScriptStore {
         Ok(WatchedScriptStore { scripts, file })
     }
 
-    async fn maybe_load<P: AsRef<Path>>(path: P, scripts: &mut WatchedScripts) -> Result<()> {
+    async fn maybe_load<P: AsRef<Path>>(
+        path: P,
+        scripts: &mut WatchedScripts,
+        app_client_addr: &str,
+    ) -> Result<()> {
         let file = match File::open(&path) {
             Err(ref e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
             Err(e) => return Err(e.into()),
@@ -787,7 +796,7 @@ impl WatchedScriptStore {
         };
 
         let mut sigsets = BTreeMap::new();
-        app_client_testnet()
+        app_client(app_client_addr)
             .query(|app| {
                 for (index, checkpoint) in app.bitcoin.checkpoints.all()? {
                     sigsets.insert(index, checkpoint.sigset.clone());
@@ -855,7 +864,7 @@ mod tests {
             BitcoinRpcClient::new(&bitcoind_url, Auth::CookieFile(bitcoin_cookie_file)).unwrap();
 
         bitcoind.client.generate_to_address(25, &address).unwrap();
-        let relayer = Relayer::new(rpc_client);
+        let relayer = Relayer::new(rpc_client, "http://localhost:26657".to_string());
 
         let block_hash = bitcoind.client.get_block_hash(30).unwrap();
         let headers = relayer.get_header_batch(block_hash).unwrap();
@@ -887,7 +896,7 @@ mod tests {
             BitcoinRpcClient::new(&bitcoind_url, Auth::CookieFile(bitcoin_cookie_file)).unwrap();
 
         bitcoind.client.generate_to_address(7, &address).unwrap();
-        let relayer = Relayer::new(rpc_client);
+        let relayer = Relayer::new(rpc_client, "http://localhost:26657".to_string());
         let block_hash = bitcoind.client.get_block_hash(30).unwrap();
         let headers = relayer.get_header_batch(block_hash).unwrap();
 
