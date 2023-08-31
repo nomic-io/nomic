@@ -641,20 +641,19 @@ impl Bitcoin {
     }
 
     fn offline_signers(&mut self) -> Result<Vec<ConsensusKey>> {
-        let offline_threshold = self.config.max_offline_checkpoints;
-        let sigset = self.checkpoints.active_sigset()?;
-        let lowest_power = sigset.signatories.last().unwrap().voting_power;
-        let current_index = self.checkpoints.index;
-        let completed = self.checkpoints.completed(offline_threshold)?;
-        if completed.len() < offline_threshold as usize {
-            return Ok(vec![]);
-        }
         let mut validators = self
             .context::<Validators>()
             .ok_or_else(|| OrgaError::App("No validator context found".to_string()))?
             .entries()?;
         validators.sort_by(|a, b| b.power.cmp(&a.power));
 
+        let offline_threshold = self.config.max_offline_checkpoints;
+        let sigset = self.checkpoints.active_sigset()?;
+        let lowest_power = sigset.signatories.last().unwrap().voting_power;
+        let completed = self.checkpoints.completed(offline_threshold)?;
+        if completed.len() < offline_threshold as usize {
+            return Ok(vec![]);
+        }
         let mut offline_signers = vec![];
         for ValidatorEntry {
             power,
