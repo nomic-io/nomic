@@ -8,8 +8,7 @@ use bitcoind::bitcoincore_rpc::{Auth, Client as BtcClient};
 use clap::Parser;
 use nomic::app::DepositCommitment;
 use nomic::app::InnerApp;
-use nomic::app::{self, Nom};
-use nomic::app_client_testnet;
+use nomic::app::Nom;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
 use orga::abci::Node;
@@ -36,10 +35,6 @@ const BANNER: &str = r#"
 ██║ ╚████║ ╚██████╔╝ ██║ ╚═╝ ██║ ██║ ╚██████╗
 ╚═╝  ╚═══╝  ╚═════╝  ╚═╝     ╚═╝ ╚═╝  ╚═════╝
 "#;
-
-fn app_client() -> AppClient<app::InnerApp, app::InnerApp, HttpClient, app::Nom, SimpleWallet> {
-    app_client_testnet().with_wallet(wallet())
-}
 
 fn wallet() -> SimpleWallet {
     let path = home::home_dir().unwrap().join(".orga-wallet");
@@ -329,6 +324,7 @@ impl StartCmd {
         if let Some(signal_version) = cmd.signal_version {
             let signal_version = hex::decode(signal_version).unwrap();
             let rt = tokio::runtime::Runtime::new().unwrap();
+            let client = self.config.client().with_wallet(wallet());
             std::thread::spawn(move || {
                 rt.block_on(async move {
                     dbg!();
@@ -342,7 +338,7 @@ impl StartCmd {
                     loop {
                         let signal_version = signal_version.clone().try_into().unwrap();
                         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                        if let Err(err) = app_client()
+                        if let Err(err) = client
                             .call(
                                 |app| build_call!(app.signal(signal_version)),
                                 |app| build_call!(app.app_noop()),
@@ -640,11 +636,17 @@ async fn get_bootstrap_state(rpc_servers: &[&str]) -> Result<(i64, String)> {
 pub struct SendCmd {
     to_addr: Address,
     amount: u64,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 impl SendCmd {
     async fn run(&self) -> Result<()> {
-        Ok(app_client()
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
             .call(
                 |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
                 |app| build_call!(app.accounts.transfer(self.to_addr, self.amount.into())),
@@ -657,11 +659,17 @@ impl SendCmd {
 pub struct SendNbtcCmd {
     to_addr: Address,
     amount: u64,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 impl SendNbtcCmd {
     async fn run(&self) -> Result<()> {
-        Ok(app_client()
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
             .call(
                 |app| build_call!(app.bitcoin.transfer(self.to_addr, self.amount.into())),
                 |app| build_call!(app.app_noop()),
@@ -673,6 +681,9 @@ impl SendNbtcCmd {
 #[derive(Parser, Debug)]
 pub struct BalanceCmd {
     address: Option<Address>,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 impl BalanceCmd {
@@ -680,19 +691,19 @@ impl BalanceCmd {
         let address = self.address.unwrap_or_else(my_address);
         println!("address: {}", address);
 
-        let balance = app_client()
-            .query(|app| app.accounts.balance(address))
-            .await?;
+        let client = self.config.client();
+
+        let balance = client.query(|app| app.accounts.balance(address)).await?;
         println!("{} NOM", balance);
 
-        let balance = app_client()
+        let balance = client
             .query(|app| app.bitcoin.accounts.balance(address))
             .await?;
         println!("{} NBTC", balance);
 
         #[cfg(feature = "testnet")]
         {
-            let balance = app_client().query(|app| app.escrowed_nbtc(address)).await?;
+            let balance = client.query(|app| app.escrowed_nbtc(address)).await?;
             println!("{} IBC-escrowed NBTC", balance);
         }
 
@@ -701,12 +712,17 @@ impl BalanceCmd {
 }
 
 #[derive(Parser, Debug)]
-pub struct DelegationsCmd;
+pub struct DelegationsCmd {
+    #[clap(flatten)]
+    config: nomic::network::Config,
+}
 
 impl DelegationsCmd {
     async fn run(&self) -> Result<()> {
         let address = my_address();
-        let delegations = app_client()
+        let delegations = self
+            .config
+            .client()
             .query(|app| app.staking.delegations(address))
             .await?;
 
@@ -750,11 +766,16 @@ impl DelegationsCmd {
 }
 
 #[derive(Parser, Debug)]
-pub struct ValidatorsCmd;
+pub struct ValidatorsCmd {
+    #[clap(flatten)]
+    config: nomic::network::Config,
+}
 
 impl ValidatorsCmd {
     async fn run(&self) -> Result<()> {
-        let mut validators = app_client()
+        let mut validators = self
+            .config
+            .client()
             .query(|app| app.staking.all_validators())
             .await?;
 
@@ -777,11 +798,17 @@ impl ValidatorsCmd {
 pub struct DelegateCmd {
     validator_addr: Address,
     amount: u64,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 impl DelegateCmd {
     async fn run(&self) -> Result<()> {
-        Ok(app_client()
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
             .call(
                 |app| build_call!(app.accounts.take_as_funding((self.amount + MIN_FEE).into())),
                 |app| {
@@ -806,6 +833,9 @@ pub struct DeclareCmd {
     website: String,
     identity: String,
     details: String,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -845,7 +875,10 @@ impl DeclareCmd {
             min_self_delegation: self.min_self_delegation.into(),
         };
 
-        Ok(app_client()
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
             .call(
                 |app| build_call!(app.accounts.take_as_funding((self.amount + MIN_FEE).into())),
                 |app| build_call!(app.staking.declare_self(declaration.clone())),
@@ -862,6 +895,9 @@ pub struct EditCmd {
     website: String,
     identity: String,
     details: String,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 impl EditCmd {
@@ -876,7 +912,10 @@ impl EditCmd {
             .map_err(|_| orga::Error::App("invalid json".to_string()))?;
         let info_bytes = info_json.as_bytes().to_vec();
 
-        Ok(app_client()
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
             .call(
                 |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
                 |app| {
@@ -895,11 +934,17 @@ impl EditCmd {
 pub struct UnbondCmd {
     validator_addr: Address,
     amount: u64,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 impl UnbondCmd {
     async fn run(&self) -> Result<()> {
-        Ok(app_client()
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
             .call(
                 |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
                 |app| {
@@ -917,11 +962,17 @@ pub struct RedelegateCmd {
     src_validator_addr: Address,
     dest_validator_addr: Address,
     amount: u64,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 impl RedelegateCmd {
     async fn run(&self) -> Result<()> {
-        Ok(app_client()
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
             .call(
                 |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
                 |app| {
@@ -937,11 +988,17 @@ impl RedelegateCmd {
 }
 
 #[derive(Parser, Debug)]
-pub struct UnjailCmd {}
+pub struct UnjailCmd {
+    #[clap(flatten)]
+    config: nomic::network::Config,
+}
 
 impl UnjailCmd {
     async fn run(&self) -> Result<()> {
-        Ok(app_client()
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
             .call(
                 |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
                 |app| build_call!(app.staking.unjail()),
@@ -951,11 +1008,17 @@ impl UnjailCmd {
 }
 
 #[derive(Parser, Debug)]
-pub struct ClaimCmd;
+pub struct ClaimCmd {
+    #[clap(flatten)]
+    config: nomic::network::Config,
+}
 
 impl ClaimCmd {
     async fn run(&self) -> Result<()> {
-        Ok(app_client()
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
             .call(
                 |app| build_call!(app.staking.claim_all()),
                 |app| build_call!(app.deposit_rewards()),
@@ -967,11 +1030,14 @@ impl ClaimCmd {
 #[derive(Parser, Debug)]
 pub struct AirdropCmd {
     address: Option<Address>,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 impl AirdropCmd {
     async fn run(&self) -> Result<()> {
-        let client = app_client();
+        let client = self.config.client();
 
         let addr = self.address.unwrap_or_else(my_address);
         let acct = match client.query(|app| app.airdrop.get(addr)).await? {
@@ -991,11 +1057,14 @@ impl AirdropCmd {
 #[derive(Parser, Debug)]
 pub struct ClaimAirdropCmd {
     address: Option<Address>,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 impl ClaimAirdropCmd {
     async fn run(&self) -> Result<()> {
-        let client = app_client();
+        let client = self.config.client();
 
         let addr = self.address.unwrap_or_else(my_address);
         let acct = match client.query(|app| app.airdrop.get(addr)).await? {
@@ -1009,7 +1078,9 @@ impl ClaimAirdropCmd {
         let mut claimed = false;
 
         if acct.airdrop1.claimable > 0 {
-            app_client()
+            self.config
+                .client()
+                .with_wallet(wallet())
                 .call(
                     |app| build_call!(app.airdrop.claim_airdrop1()),
                     |app| build_call!(app.accounts.give_from_funding_all()),
@@ -1020,7 +1091,9 @@ impl ClaimAirdropCmd {
         }
 
         if acct.airdrop2.claimable > 0 {
-            app_client()
+            self.config
+                .client()
+                .with_wallet(wallet())
                 .call(
                     |app| build_call!(app.airdrop.claim_airdrop2()),
                     |app| build_call!(app.accounts.give_from_funding_all()),
@@ -1071,7 +1144,7 @@ impl RelayerCmd {
         let create_relayer = async || {
             let btc_client = self.btc_client().await.unwrap();
 
-            Relayer::new(btc_client)
+            Relayer::new(btc_client, self.config.node.as_ref().unwrap().to_string())
         };
 
         let mut relayer = create_relayer().await;
@@ -1127,7 +1200,8 @@ impl SignerCmd {
             key_path,
             self.max_withdrawal_rate,
             self.max_sigset_change_rate,
-            app_client,
+            // TODO: check for custom RPC port, allow config, etc
+            || nomic::app_client("http://localhost:26657"),
         )?
         .start();
 
@@ -1142,11 +1216,16 @@ impl SignerCmd {
 #[derive(Parser, Debug)]
 pub struct SetSignatoryKeyCmd {
     xpub: bitcoin::util::bip32::ExtendedPubKey,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 impl SetSignatoryKeyCmd {
     async fn run(&self) -> Result<()> {
-        app_client()
+        self.config
+            .client()
+            .with_wallet(wallet())
             .call(
                 |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
                 |app| build_call!(app.bitcoin.set_signatory_key(self.xpub.into())),
@@ -1157,8 +1236,11 @@ impl SetSignatoryKeyCmd {
     }
 }
 
-async fn deposit(dest: DepositCommitment) -> Result<()> {
-    let sigset = app_client()
+async fn deposit(
+    dest: DepositCommitment,
+    client: AppClient<InnerApp, InnerApp, HttpClient, Nom, orga::client::wallet::Unsigned>,
+) -> Result<()> {
+    let sigset = client
         .query(|app| Ok(app.bitcoin.checkpoints.active_sigset()?))
         .await?;
     let script = sigset.output_script(dest.commitment_bytes()?.as_slice())?;
@@ -1190,13 +1272,16 @@ async fn deposit(dest: DepositCommitment) -> Result<()> {
 #[derive(Parser, Debug)]
 pub struct DepositCmd {
     address: Option<Address>,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 impl DepositCmd {
     async fn run(&self) -> Result<()> {
         let dest_addr = self.address.unwrap_or_else(my_address);
 
-        deposit(DepositCommitment::Address(dest_addr)).await
+        deposit(DepositCommitment::Address(dest_addr), self.config.client()).await
     }
 }
 
@@ -1233,6 +1318,9 @@ impl InterchainDepositCmd {
 pub struct WithdrawCmd {
     dest: bitcoin::Address,
     amount: u64,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 impl WithdrawCmd {
@@ -1241,7 +1329,9 @@ impl WithdrawCmd {
 
         let script = self.dest.script_pubkey();
 
-        app_client()
+        self.config
+            .client()
+            .with_wallet(wallet())
             .call(
                 |app| build_call!(app.withdraw_nbtc(Adapter::new(script), self.amount.into())),
                 |app| build_call!(app.app_noop()),
@@ -1262,7 +1352,10 @@ pub struct IbcDepositNbtcCmd {
 #[cfg(feature = "testnet")]
 impl IbcDepositNbtcCmd {
     async fn run(&self) -> Result<()> {
-        Ok(app_client()
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
             .call(
                 |app| build_call!(app.ibc_deposit_nbtc(self.to, self.amount.into())),
                 |app| build_call!(app.app_noop()),
@@ -1280,7 +1373,10 @@ pub struct IbcWithdrawNbtcCmd {
 #[cfg(feature = "testnet")]
 impl IbcWithdrawNbtcCmd {
     async fn run(&self) -> Result<()> {
-        Ok(app_client()
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
             .call(
                 |app| build_call!(app.ibc_withdraw_nbtc(self.amount.into())),
                 |app| build_call!(app.app_noop()),
@@ -1301,7 +1397,7 @@ impl GrpcCmd {
     async fn run(&self) -> Result<()> {
         use orga::ibc::GrpcOpts;
         orga::ibc::start_grpc(
-            || app_client().sub(|app| app.ibc),
+            || self.config.client().sub(|app| app.ibc),
             &GrpcOpts {
                 host: "127.0.0.1".to_string(),
                 port: self.port,
@@ -1338,7 +1434,7 @@ impl IbcTransferCmd {
         //     receiver: self.receiver.clone(),
         // };
 
-        // Ok(app_client()
+        // Ok(self.config.client()
         //     .pay_from(async move |client| {
         //         client
         //             .ibc_deposit_nbtc(my_address(), self.amount.into())

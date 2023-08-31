@@ -1,5 +1,12 @@
-use crate::error::{Error, Result};
+use crate::{
+    app::{InnerApp, Nom},
+    error::{Error, Result},
+};
 use clap::{self, ArgMatches, Args, Command, CommandFactory, ErrorKind, FromArgMatches, Parser};
+use orga::{
+    client::{wallet::Unsigned, AppClient},
+    tendermint::client::HttpClient,
+};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "full")]
 use std::path::PathBuf;
@@ -62,7 +69,9 @@ pub struct InnerConfig {
     #[clap(long, global = true)]
     pub network: Option<Network>,
     #[clap(long, global = true)]
-    home: Option<String>,
+    pub home: Option<String>,
+    #[clap(long, global = true)]
+    pub node: Option<String>,
 
     #[clap(global = true)]
     pub tendermint_flags: Vec<String>,
@@ -70,7 +79,9 @@ pub struct InnerConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct Config(InnerConfig);
+pub struct Config {
+    args: InnerConfig,
+}
 
 impl Config {
     #[cfg(feature = "full")]
@@ -88,23 +99,30 @@ impl Config {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.0.network.is_none()
-            && self.0.chain_id.is_none()
-            && self.0.genesis.is_none()
-            && self.0.home.is_none()
+        self.args.network.is_none()
+            && self.args.chain_id.is_none()
+            && self.args.genesis.is_none()
+            && self.args.home.is_none()
+    }
+
+    pub fn client(&self) -> AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned> {
+        // TODO: get port from config for default
+        let default_addr = "http://localhost:26657".to_string();
+        let node = self.args.node.as_ref().unwrap_or(&default_addr);
+        crate::app_client(node)
     }
 }
 
 impl Deref for Config {
     type Target = InnerConfig;
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.args
     }
 }
 
 impl DerefMut for Config {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+        &mut self.args
     }
 }
 
@@ -112,7 +130,9 @@ impl Parser for Config {}
 
 impl FromArgMatches for Config {
     fn from_arg_matches(matches: &ArgMatches) -> std::result::Result<Self, clap::Error> {
-        let mut config = Self(Default::default());
+        let mut config = Self {
+            args: Default::default(),
+        };
         config.update_from_arg_matches(matches)?;
         Ok(config)
     }
@@ -121,24 +141,24 @@ impl FromArgMatches for Config {
         &mut self,
         matches: &ArgMatches,
     ) -> std::result::Result<(), clap::Error> {
-        self.0.update_from_arg_matches(matches)?;
+        self.args.update_from_arg_matches(matches)?;
 
         if self.is_empty() {
-            self.0.network = match env!("GIT_BRANCH") {
+            self.args.network = match env!("GIT_BRANCH") {
                 "main" => Some(Network::Mainnet),
                 "testnet" => Some(Network::Testnet),
                 _ => None,
             };
-            if let Some(network) = self.0.network {
+            if let Some(network) = self.args.network {
                 log::debug!("Using default network: {:?}", network);
             } else {
                 log::debug!("Built on branch with no default network.");
             }
         }
 
-        if let Some(network) = self.0.network {
+        if let Some(network) = self.args.network {
             let mut net_config = network.config();
-            let arg_config = &self.0;
+            let arg_config = &self.args;
 
             if arg_config.chain_id.is_some() {
                 return Err(clap::Error::raw(
@@ -174,14 +194,14 @@ impl FromArgMatches for Config {
                 .tendermint_flags
                 .extend(arg_config.tendermint_flags.iter().cloned());
 
-            self.0 = net_config;
+            self.args = net_config;
         }
 
-        if let Some(genesis) = self.0.genesis.as_ref() {
+        if let Some(genesis) = self.args.genesis.as_ref() {
             let genesis: serde_json::Value = genesis.parse().unwrap();
             let gensis_cid = genesis["chain_id"].as_str().unwrap();
 
-            if let Some(cid) = self.0.chain_id.as_ref() {
+            if let Some(cid) = self.args.chain_id.as_ref() {
                 if cid != gensis_cid {
                     return Err(clap::Error::raw(
                         ErrorKind::ArgumentConflict,
@@ -192,7 +212,7 @@ impl FromArgMatches for Config {
                     ));
                 }
             } else {
-                self.0.chain_id = Some(gensis_cid.to_string());
+                self.args.chain_id = Some(gensis_cid.to_string());
             }
         }
 

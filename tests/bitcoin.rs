@@ -8,8 +8,7 @@ use bitcoind::bitcoincore_rpc::RpcApi;
 use bitcoind::{BitcoinD, Conf};
 use log::info;
 use nomic::app::DepositCommitment;
-use nomic::app::{InnerApp, Nom};
-use nomic::app_client_testnet;
+use nomic::app::{self, InnerApp, Nom};
 use nomic::bitcoin::relayer::DepositAddress;
 use nomic::bitcoin::relayer::Relayer;
 use nomic::error::{Error, Result};
@@ -19,8 +18,10 @@ use nomic::utils::{
     setup_test_signer, setup_time_context, test_bitcoin_client, KeyData,
 };
 use orga::abci::Node;
-use orga::client::wallet::DerivedKey;
-use orga::client::AppClient;
+use orga::client::{
+    wallet::{DerivedKey, Unsigned},
+    AppClient,
+};
 use orga::coins::{Address, Amount};
 use orga::encoding::Encode;
 use orga::macros::build_call;
@@ -36,9 +37,15 @@ use tempfile::tempdir;
 
 static INIT: Once = Once::new();
 
+fn app_client(
+) -> AppClient<app::InnerApp, app::InnerApp, orga::tendermint::client::HttpClient, app::Nom, Unsigned>
+{
+    nomic::app_client("http://localhost:26657")
+}
+
 async fn generate_deposit_address(address: &Address) -> Result<DepositAddress> {
     info!("Generating deposit address for {}...", address);
-    let sigset = app_client_testnet()
+    let sigset = app_client()
         .query(|app| Ok(app.bitcoin.checkpoints.active_sigset()?))
         .await?;
     let script = sigset.output_script(
@@ -129,7 +136,7 @@ async fn withdraw_bitcoin(
     let wallet = DerivedKey::from_secret_key(key);
 
     let dest_script = nomic::bitcoin::adapter::Adapter::new(dest_address.script_pubkey());
-    app_client_testnet()
+    app_client()
         .with_wallet(wallet)
         .call(
             move |app| build_call!(app.withdraw_nbtc(dest_script, Amount::from(usats))),
@@ -142,7 +149,7 @@ async fn withdraw_bitcoin(
 fn client_provider() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, DerivedKey> {
     let val_priv_key = load_privkey().unwrap();
     let wallet = DerivedKey::from_secret_key(val_priv_key);
-    app_client_testnet().with_wallet(wallet)
+    app_client().with_wallet(wallet)
 }
 
 #[tokio::test]
@@ -178,13 +185,15 @@ async fn bitcoin_test() {
             .unwrap();
     });
 
-    let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind));
+    let rpc_addr = "http://localhost:26657".to_string();
+
+    let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind), rpc_addr.clone());
     let headers = relayer.start_header_relay();
 
-    let relayer = Relayer::new(test_bitcoin_client(&bitcoind));
+    let relayer = Relayer::new(test_bitcoin_client(&bitcoind), rpc_addr.clone());
     let deposits = relayer.start_deposit_relay(&header_relayer_path);
 
-    let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind));
+    let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind), rpc_addr.clone());
     let checkpoints = relayer.start_checkpoint_relay();
 
     #[cfg(feature = "emergency-disbursal")]
@@ -246,7 +255,7 @@ async fn bitcoin_test() {
 
         poll_for_bitcoin_header(1120).await.unwrap();
 
-        let balance = app_client_testnet()
+        let balance = app_client()
             .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
             .await
             .unwrap();
@@ -271,7 +280,7 @@ async fn bitcoin_test() {
         poll_for_bitcoin_header(1121).await.unwrap();
         poll_for_completed_checkpoint(1).await;
 
-        let balance = app_client_testnet()
+        let balance = app_client()
             .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
             .await
             .unwrap();
@@ -295,7 +304,7 @@ async fn bitcoin_test() {
         poll_for_bitcoin_header(1122).await.unwrap();
         poll_for_completed_checkpoint(2).await;
 
-        let balance = app_client_testnet()
+        let balance = app_client()
             .query(|app| app.bitcoin.accounts.balance(funded_accounts[1].address))
             .await
             .unwrap();
@@ -315,7 +324,7 @@ async fn bitcoin_test() {
         poll_for_bitcoin_header(1123).await.unwrap();
         poll_for_completed_checkpoint(3).await;
 
-        let balance = app_client_testnet()
+        let balance = app_client()
             .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
             .await
             .unwrap();
@@ -349,7 +358,7 @@ async fn bitcoin_test() {
 
         for (i, account) in funded_accounts[0..=1].iter().enumerate() {
             let dump_address = wallet.get_new_address(None, None).unwrap();
-            let disbursal_txs = app_client_testnet()
+            let disbursal_txs = app_client()
                 .query(|app| Ok(app.bitcoin.checkpoints.emergency_disbursal_txs()?))
                 .await
                 .unwrap();
