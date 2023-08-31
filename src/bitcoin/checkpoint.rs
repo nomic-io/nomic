@@ -368,7 +368,6 @@ impl Checkpoint {
 
         #[allow(unused_mut)]
         let mut intermediate_tx_batch = Batch::default();
-        #[cfg(feature = "emergency-disbursal")]
         intermediate_tx_batch.push_back(BitcoinTx::default())?;
         checkpoint.batches.push_back(intermediate_tx_batch)?;
 
@@ -624,7 +623,6 @@ type BuildingAdvanceRes = (
 );
 
 impl<'a> BuildingCheckpointMut<'a> {
-    #[cfg(feature = "emergency-disbursal")]
     fn link_intermediate_tx(&mut self, tx: &mut BitcoinTx) -> Result<()> {
         let sigset = self.sigset.clone();
         let output_script = sigset.output_script(&[0u8])?;
@@ -659,7 +657,6 @@ impl<'a> BuildingCheckpointMut<'a> {
     }
 
     //TODO: Unit tests
-    #[cfg(feature = "emergency-disbursal")]
     fn deduct_emergency_disbursal_fees(&mut self, fee_rate: u64) -> Result<()> {
         let intermediate_tx_fee = {
             let mut intermediate_tx_batch = self
@@ -708,7 +705,6 @@ impl<'a> BuildingCheckpointMut<'a> {
     }
 
     //TODO: Generalize emergency disbursal to dynamic tree structure for intermediate tx overflow
-    #[cfg(feature = "emergency-disbursal")]
     fn generate_emergency_disbursal_txs(
         &mut self,
         nbtc_accounts: &Accounts<Nbtc>,
@@ -909,7 +905,6 @@ impl<'a> BuildingCheckpointMut<'a> {
             vout: 0,
         };
 
-        #[cfg(feature = "emergency-disbursal")]
         self.generate_emergency_disbursal_txs(
             nbtc_accounts,
             recovery_scripts,
@@ -1041,29 +1036,23 @@ impl CheckpointQueue {
 
     #[query]
     pub fn emergency_disbursal_txs(&self) -> Result<Vec<Adapter<bitcoin::Transaction>>> {
-        #[cfg(not(feature = "emergency-disbursal"))]
-        unimplemented!();
+        let mut vec = vec![];
 
-        #[cfg(feature = "emergency-disbursal")]
-        {
-            let mut vec = vec![];
+        if let Some(completed) = self.completed()?.last() {
+            let intermediate_tx_batch = completed
+                .batches
+                .get(BatchType::IntermediateTx as u64)?
+                .unwrap();
+            let intermediate_tx = intermediate_tx_batch.get(0)?.unwrap();
+            vec.push(Adapter::new(intermediate_tx.to_bitcoin_tx()?));
 
-            if let Some(completed) = self.completed()?.last() {
-                let intermediate_tx_batch = completed
-                    .batches
-                    .get(BatchType::IntermediateTx as u64)?
-                    .unwrap();
-                let intermediate_tx = intermediate_tx_batch.get(0)?.unwrap();
-                vec.push(Adapter::new(intermediate_tx.to_bitcoin_tx()?));
-
-                let disbursal_batch = completed.batches.get(BatchType::Disbursal as u64)?.unwrap();
-                for tx in disbursal_batch.iter()? {
-                    vec.push(Adapter::new(tx?.to_bitcoin_tx()?));
-                }
+            let disbursal_batch = completed.batches.get(BatchType::Disbursal as u64)?.unwrap();
+            for tx in disbursal_batch.iter()? {
+                vec.push(Adapter::new(tx?.to_bitcoin_tx()?));
             }
-
-            Ok(vec)
         }
+
+        Ok(vec)
     }
 
     #[query]
@@ -1275,15 +1264,15 @@ impl CheckpointQueue {
 
 #[cfg(test)]
 mod test {
-    #[cfg(all(feature = "full", not(feature = "emergency-disbursal")))]
+    #[cfg(all(feature = "full"))]
     use bitcoin::{
         util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey},
         OutPoint, PubkeyHash, Script, Txid,
     };
-    #[cfg(all(feature = "full", not(feature = "emergency-disbursal")))]
+    #[cfg(all(feature = "full"))]
     use rand::Rng;
 
-    #[cfg(all(feature = "full", not(feature = "emergency-disbursal")))]
+    #[cfg(all(feature = "full"))]
     use crate::bitcoin::{signatory::Signatory, threshold_sig::Share};
 
     use super::*;

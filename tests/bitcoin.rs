@@ -196,12 +196,8 @@ async fn bitcoin_test() {
     let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind), rpc_addr.clone());
     let checkpoints = relayer.start_checkpoint_relay();
 
-    #[cfg(feature = "emergency-disbursal")]
     let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind), rpc_addr.clone());
-    #[cfg(feature = "emergency-disbursal")]
     let disbursal = relayer.start_emergency_disbursal_transaction_relay();
-    #[cfg(not(feature = "emergency-disbursal"))]
-    let disbursal = async { Ok(()) };
 
     let signer = async {
         tokio::time::sleep(Duration::from_secs(20)).await;
