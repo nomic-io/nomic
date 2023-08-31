@@ -383,8 +383,14 @@ mod abci {
             self.incentive_pool.give(ip_reward)?;
 
             let external_outputs: Vec<crate::error::Result<bitcoin::TxOut>> = vec![]; // TODO: remote chain disbursal
-            self.bitcoin
+            let offline_signers = self
+                .bitcoin
                 .begin_block_step(external_outputs.into_iter())?;
+            for cons_key in offline_signers {
+                if let Some(address) = self.staking.address_by_consensus_key(cons_key)? {
+                    self.staking.punish_downtime(address)?;
+                }
+            }
 
             let has_nbtc_rewards = self.bitcoin.reward_pool.amount > 0;
             if self.reward_timer.tick(now) && has_stake && has_nbtc_rewards {
