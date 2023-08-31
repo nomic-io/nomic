@@ -87,6 +87,24 @@ pub async fn broadcast_deposit_addr(
     }
 }
 
+async fn set_recovery_address(nomic_account: NomicTestWallet) -> Result<()> {
+    info!("Setting recovery address...");
+
+    app_client_testnet()
+        .with_wallet(nomic_account.wallet)
+        .call(
+            move |app| build_call!(app.accounts.take_as_funding((MIN_FEE).into())),
+            move |app| {
+                build_call!(app
+                    .bitcoin
+                    .set_recovery_script(Adapter::new(nomic_account.script.clone())))
+            },
+        )
+        .await?;
+    info!("Validator declared");
+    Ok(())
+}
+
 async fn deposit_bitcoin(
     address: &Address,
     btc: bitcoin::Amount,
