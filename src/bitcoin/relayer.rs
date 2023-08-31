@@ -297,7 +297,7 @@ impl Relayer {
 
         let mut relayed = HashSet::new();
         loop {
-            let disbursal_txs = app_client()
+            let disbursal_txs = app_client(&self.app_client_addr)
                 .query(|app| Ok(app.bitcoin.checkpoints.emergency_disbursal_txs()?))
                 .await?;
 

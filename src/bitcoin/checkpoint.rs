@@ -1342,14 +1342,6 @@ impl CheckpointQueue {
 
 #[cfg(test)]
 mod test {
-    use bitcoin::{
-        util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey},
-        OutPoint, PubkeyHash, Script, Txid,
-    };
-    use rand::Rng;
-
-    use crate::bitcoin::{signatory::Signatory, threshold_sig::Share};
-
     use super::*;
 
     fn push_bitcoin_tx_output(tx: &mut BitcoinTx, value: u64) {

@@ -1347,6 +1347,9 @@ impl WithdrawCmd {
 pub struct IbcDepositNbtcCmd {
     to: Address,
     amount: u64,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 #[cfg(feature = "testnet")]
@@ -1368,6 +1371,9 @@ impl IbcDepositNbtcCmd {
 #[derive(Parser, Debug)]
 pub struct IbcWithdrawNbtcCmd {
     amount: u64,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 #[cfg(feature = "testnet")]
@@ -1390,6 +1396,9 @@ impl IbcWithdrawNbtcCmd {
 pub struct GrpcCmd {
     #[clap(default_value_t = 9001)]
     port: u16,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 #[cfg(feature = "testnet")]
@@ -1397,7 +1406,8 @@ impl GrpcCmd {
     async fn run(&self) -> Result<()> {
         use orga::ibc::GrpcOpts;
         orga::ibc::start_grpc(
-            || self.config.client().sub(|app| app.ibc),
+            // TODO: support configuring RPC address
+            || nomic::app_client("http://localhost:26657").sub(|app| app.ibc),
             &GrpcOpts {
                 host: "127.0.0.1".to_string(),
                 port: self.port,
@@ -1417,6 +1427,9 @@ pub struct IbcTransferCmd {
     channel_id: String,
     port_id: String,
     denom: String,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 #[cfg(feature = "testnet")]

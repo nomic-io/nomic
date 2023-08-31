@@ -197,7 +197,7 @@ async fn bitcoin_test() {
     let checkpoints = relayer.start_checkpoint_relay();
 
     #[cfg(feature = "emergency-disbursal")]
-    let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind));
+    let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind), rpc_addr.clone());
     #[cfg(feature = "emergency-disbursal")]
     let disbursal = relayer.start_emergency_disbursal_transaction_relay();
     #[cfg(not(feature = "emergency-disbursal"))]
