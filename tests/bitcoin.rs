@@ -368,7 +368,6 @@ async fn bitcoin_test() {
 
         let mut signatory_balance = 0;
         for tx in txs {
-            info!("tx: {:?}", tx);
             for output in tx.output.iter() {
                 if output.script_pubkey == signatory_script {
                     signatory_balance = output.value;
