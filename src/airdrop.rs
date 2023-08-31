@@ -23,7 +23,7 @@ pub struct Airdrop {
 }
 
 impl MigrateFrom<AirdropV0> for AirdropV1 {
-    fn migrate_from(value: AirdropV0) -> Result<Self> {
+    fn migrate_from(_value: AirdropV0) -> Result<Self> {
         unreachable!()
     }
 }
@@ -297,13 +297,13 @@ impl Account {
 }
 
 impl MigrateFrom<AccountV0> for AccountV1 {
-    fn migrate_from(prev: AccountV0) -> Result<Self> {
+    fn migrate_from(_prev: AccountV0) -> Result<Self> {
         unreachable!()
     }
 }
 
 impl MigrateFrom<AccountV1> for AccountV2 {
-    fn migrate_from(value: AccountV1) -> Result<Self> {
+    fn migrate_from(_value: AccountV1) -> Result<Self> {
         unreachable!()
     }
 }

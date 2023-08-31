@@ -139,7 +139,7 @@ impl Input {
 }
 
 impl MigrateFrom<InputV0> for InputV1 {
-    fn migrate_from(value: InputV0) -> OrgaResult<Self> {
+    fn migrate_from(_value: InputV0) -> OrgaResult<Self> {
         unreachable!()
     }
 }
@@ -298,7 +298,7 @@ pub struct Checkpoint {
 }
 
 impl MigrateFrom<CheckpointV0> for CheckpointV1 {
-    fn migrate_from(value: CheckpointV0) -> OrgaResult<Self> {
+    fn migrate_from(_value: CheckpointV0) -> OrgaResult<Self> {
         unreachable!()
     }
 }
@@ -452,7 +452,7 @@ pub struct CheckpointQueue {
 }
 
 impl MigrateFrom<CheckpointQueueV0> for CheckpointQueueV1 {
-    fn migrate_from(value: CheckpointQueueV0) -> OrgaResult<Self> {
+    fn migrate_from(_value: CheckpointQueueV0) -> OrgaResult<Self> {
         unreachable!()
     }
 }

@@ -32,7 +32,7 @@ impl Clone for AccountV1 {
 }
 
 impl MigrateFrom<AccountV0> for AccountV1 {
-    fn migrate_from(old: AccountV0) -> orga::Result<Self> {
+    fn migrate_from(_old: AccountV0) -> orga::Result<Self> {
         unreachable!()
     }
 }

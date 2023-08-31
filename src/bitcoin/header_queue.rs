@@ -286,7 +286,7 @@ pub struct HeaderQueue {
 }
 
 impl MigrateFrom<HeaderQueueV0> for HeaderQueueV1 {
-    fn migrate_from(value: HeaderQueueV0) -> OrgaResult<Self> {
+    fn migrate_from(_value: HeaderQueueV0) -> OrgaResult<Self> {
         unreachable!()
     }
 }
