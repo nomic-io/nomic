@@ -387,9 +387,8 @@ mod abci {
                 .bitcoin
                 .begin_block_step(external_outputs.into_iter())?;
             for cons_key in offline_signers {
-                if let Some(address) = self.staking.address_by_consensus_key(cons_key)? {
-                    self.staking.punish_downtime(address)?;
-                }
+                let address = self.staking.address_by_consensus_key(cons_key)?.unwrap();
+                self.staking.punish_downtime(address)?;
             }
 
             let has_nbtc_rewards = self.bitcoin.reward_pool.amount > 0;

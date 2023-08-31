@@ -1199,9 +1199,9 @@ impl CheckpointQueue {
         nbtc_accounts: &Accounts<Nbtc>,
         recovery_scripts: &Map<orga::coins::Address, Adapter<bitcoin::Script>>,
         external_outputs: impl Iterator<Item = Result<bitcoin::TxOut>>,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         if self.signing()?.is_some() {
-            return Ok(());
+            return Ok(false);
         }
 
         if !self.queue.is_empty() {
@@ -1211,7 +1211,7 @@ impl CheckpointQueue {
                 .seconds as u64;
             let elapsed = now - self.building()?.create_time();
             if elapsed < self.config.min_checkpoint_interval {
-                return Ok(());
+                return Ok(false);
             }
 
             if elapsed < self.config.max_checkpoint_interval || self.index == 0 {
@@ -1227,13 +1227,13 @@ impl CheckpointQueue {
                 let has_pending_withdrawal = !checkpoint_tx.output.is_empty();
 
                 if !has_pending_deposit && !has_pending_withdrawal {
-                    return Ok(());
+                    return Ok(false);
                 }
             }
         }
 
         if self.maybe_push(sig_keys)?.is_none() {
-            return Ok(());
+            return Ok(false);
         }
 
         #[cfg(feature = "testnet")]
@@ -1280,7 +1280,7 @@ impl CheckpointQueue {
             }
         }
 
-        Ok(())
+        Ok(true)
     }
 
     #[cfg(feature = "full")]

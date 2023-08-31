@@ -623,8 +623,8 @@ impl Bitcoin {
         &mut self,
         external_outputs: impl Iterator<Item = Result<bitcoin::TxOut>>,
     ) -> Result<Vec<ConsensusKey>> {
-        let index = self.checkpoints.index;
-        self.checkpoints
+        let pushed = self
+            .checkpoints
             .maybe_step(
                 self.signatory_keys.map(),
                 &self.accounts,
@@ -633,14 +633,14 @@ impl Bitcoin {
             )
             .map_err(|err| OrgaError::App(err.to_string()))?;
 
-        if self.checkpoints.index == index + 1 {
-            return self.offline_signers();
+        if pushed {
+            self.offline_signers()
+        } else {
+            Ok(vec![])
         }
-
-        Ok(vec![])
     }
 
-    pub fn offline_signers(&mut self) -> Result<Vec<ConsensusKey>> {
+    fn offline_signers(&mut self) -> Result<Vec<ConsensusKey>> {
         let offline_threshold = self.config.max_offline_checkpoints;
         let sigset = self.checkpoints.active_sigset()?;
         let lowest_power = sigset.signatories.last().unwrap().voting_power;
@@ -671,7 +671,7 @@ impl Bitcoin {
             };
 
             let mut offline = true;
-            for i in 0..offline_threshold {
+            for i in 1..offline_threshold {
                 let checkpoint = self.checkpoints.get(current_index - i)?;
                 if checkpoint.to_sign(xpub.clone())?.is_empty() {
                     offline = false;
