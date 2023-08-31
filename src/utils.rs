@@ -363,8 +363,6 @@ pub fn setup_test_app(
     block_data: &BitcoinBlockData,
     num_accounts: u16,
 ) -> Vec<NomicTestWallet> {
-    use orga::client::Wallet;
-
     let mut app = ABCIPlugin::<App>::default();
     let mut store = Store::new(BackingStore::Merk(Shared::new(MerkStore::new(
         home.join("merk"),

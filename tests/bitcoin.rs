@@ -26,7 +26,6 @@ use orga::coins::{Address, Amount};
 use orga::encoding::Encode;
 use orga::macros::build_call;
 use orga::plugins::{load_privkey, MIN_FEE};
-use orga::query::MethodQuery;
 use orga::tendermint::client::HttpClient;
 use reqwest::StatusCode;
 use serial_test::serial;
