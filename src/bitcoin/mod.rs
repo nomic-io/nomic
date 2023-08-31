@@ -640,6 +640,7 @@ impl Bitcoin {
         }
     }
 
+    #[cfg(feature = "full")]
     fn offline_signers(&mut self) -> Result<Vec<ConsensusKey>> {
         let mut validators = self
             .context::<Validators>()
