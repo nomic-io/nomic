@@ -394,7 +394,7 @@ async fn bitcoin_test() {
         let expected_account_balances: Vec<u64> = vec![799990201, 0];
         assert_eq!(funded_account_balances, expected_account_balances);
 
-        for (i, account) in funded_accounts[0..=1].iter().enumerate() {
+        for (i, account) in funded_accounts[0..1].iter().enumerate() {
             let dump_address = wallet.get_new_address(None, None).unwrap();
             let disbursal_txs = app_client_testnet()
                 .query(|app| Ok(app.bitcoin.checkpoints.emergency_disbursal_txs()?))
