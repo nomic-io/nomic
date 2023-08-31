@@ -1487,15 +1487,19 @@ impl ExportCmd {
 }
 
 #[derive(Parser, Debug)]
-pub struct UpgradeStatusCmd {}
+pub struct UpgradeStatusCmd {
+    #[clap(flatten)]
+    config: nomic::network::Config,
+}
 
 impl UpgradeStatusCmd {
     async fn run(&self) -> Result<()> {
         use orga::coins::staking::ValidatorQueryInfo;
         use orga::coins::VersionedAddress;
         use std::collections::{HashMap, HashSet};
-        let client = app_client();
-        let tm_client = tendermint_rpc::HttpClient::new("http://localhost:26657").unwrap();
+        let client = self.config.client();
+        let tm_client =
+            tendermint_rpc::HttpClient::new(self.config.node.as_ref().unwrap().as_str()).unwrap();
         let curr_height = tm_client
             .status()
             .await
