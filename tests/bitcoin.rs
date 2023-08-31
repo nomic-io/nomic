@@ -9,7 +9,6 @@ use bitcoind::{BitcoinD, Conf};
 use log::info;
 use nomic::app::DepositCommitment;
 use nomic::app::{InnerApp, Nom};
-use nomic::app_client_testnet;
 use nomic::bitcoin::adapter::Adapter;
 use nomic::bitcoin::relayer::DepositAddress;
 use nomic::bitcoin::relayer::Relayer;
@@ -39,8 +38,7 @@ use tempfile::tempdir;
 
 static INIT: Once = Once::new();
 
-fn app_client(
-) -> AppClient<app::InnerApp, app::InnerApp, orga::tendermint::client::HttpClient, app::Nom, Unsigned>
+fn app_client() -> AppClient<InnerApp, InnerApp, orga::tendermint::client::HttpClient, Nom, Unsigned>
 {
     nomic::app_client("http://localhost:26657")
 }
@@ -99,7 +97,7 @@ pub async fn broadcast_deposit_addr(
 async fn set_recovery_address(nomic_account: NomicTestWallet) -> Result<()> {
     info!("Setting recovery address...");
 
-    app_client_testnet()
+    app_client()
         .with_wallet(nomic_account.wallet)
         .call(
             move |app| build_call!(app.accounts.take_as_funding((MIN_FEE).into())),
@@ -153,7 +151,7 @@ async fn withdraw_bitcoin(
 ) -> Result<()> {
     let dest_script = nomic::bitcoin::adapter::Adapter::new(dest_address.script_pubkey());
     let usats = amount.to_sat() * 1_000_000;
-    app_client_testnet()
+    app_client()
         .with_wallet(nomic_account.wallet.clone())
         .call(
             move |app| build_call!(app.withdraw_nbtc(dest_script, Amount::from(usats))),
@@ -164,7 +162,7 @@ async fn withdraw_bitcoin(
 }
 
 async fn get_signatory_script() -> Result<Script> {
-    Ok(app_client_testnet()
+    Ok(app_client()
         .query(|app: InnerApp| {
             let tx = app.bitcoin.checkpoints.emergency_disbursal_txs()?;
             Ok(tx[0].output[1].script_pubkey.clone())
