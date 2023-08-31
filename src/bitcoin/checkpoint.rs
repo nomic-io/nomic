@@ -685,7 +685,10 @@ impl<'a> BuildingCheckpointMut<'a> {
 
         let mut disbursal_batch = self.batches.get_mut(BatchType::Disbursal as u64)?.unwrap();
         disbursal_batch.retain_unordered(|mut tx| {
-            let mut input = tx.input.get_mut(0)?.unwrap();
+            let mut input = match tx.input.get_mut(0)? {
+                Some(input) => input,
+                None => return Ok(false),
+            };
             input.amount -= intermediate_tx_fee / intermediate_tx_len;
             for (i, output) in intermediate_tx_outputs.iter() {
                 if output == &(input.amount) {
@@ -730,35 +733,23 @@ impl<'a> BuildingCheckpointMut<'a> {
             let lock_time =
                 time.seconds as u32 + bitcoin_config.emergency_disbursal_lock_time_interval;
 
-            let outputs: Vec<_> = nbtc_accounts
-                .iter()?
-                .map(|entry| {
-                    let (address, coins) = entry?;
-                    use bitcoin::hashes::hex::ToHex;
-                    use std::str::FromStr;
-                    let hash =
-                        bitcoin::hashes::hash160::Hash::from_str(address.bytes().to_hex().as_str())
-                            .map_err(|err| Error::BitcoinPubkeyHash(err.to_string()))?;
-                    let pubkey_hash = bitcoin::PubkeyHash::from(hash);
-                    let dest_script = match recovery_scripts.get(*address)? {
-                        Some(script) => script.clone(),
-                        None => Adapter::new(bitcoin::Script::new_p2pkh(&pubkey_hash)),
-                    };
-
+            let mut outputs = Vec::new();
+            for entry in nbtc_accounts.iter()? {
+                let (address, coins) = entry?;
+                if let Some(dest_script) = recovery_scripts.get(*address)? {
                     let tx_out = bitcoin::TxOut {
                         value: u64::from(coins.amount) / 1_000_000,
-                        script_pubkey: dest_script.into_inner(),
+                        script_pubkey: dest_script.clone().into_inner(),
                     };
 
-                    Ok::<_, crate::error::Error>(tx_out)
-                })
-                .chain(external_outputs)
-                .collect();
+                    outputs.push(Ok(tx_out));
+                }
+            }
 
             let mut final_txs = vec![BitcoinTx::with_lock_time(lock_time)];
 
             let num_outputs = outputs.len();
-            for (i, output) in outputs.into_iter().enumerate() {
+            for (i, output) in outputs.into_iter().chain(external_outputs).enumerate() {
                 let output = output?;
 
                 if output.value < bitcoin_config.emergency_disbursal_min_tx_amt {
