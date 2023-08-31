@@ -1333,6 +1333,17 @@ impl CheckpointQueue {
 
 #[cfg(test)]
 mod test {
+    #[cfg(all(feature = "full", not(feature = "emergency-disbursal")))]
+    use bitcoin::{
+        util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey},
+        OutPoint, PubkeyHash, Script, Txid,
+    };
+    #[cfg(all(feature = "full", not(feature = "emergency-disbursal")))]
+    use rand::Rng;
+
+    #[cfg(all(feature = "full", not(feature = "emergency-disbursal")))]
+    use crate::bitcoin::{signatory::Signatory, threshold_sig::Share};
+
     use super::*;
 
     fn push_bitcoin_tx_output(tx: &mut BitcoinTx, value: u64) {
