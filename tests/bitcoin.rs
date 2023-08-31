@@ -195,7 +195,7 @@ async fn bitcoin_test() {
 
     std::env::set_var("NOMIC_HOME_DIR", &path);
 
-    let funded_accounts = setup_test_app(&path, &block_data);
+    let funded_accounts = setup_test_app(&path, &block_data, 2);
 
     std::thread::spawn(move || {
         info!("Starting Nomic node...");
@@ -391,7 +391,7 @@ async fn bitcoin_test() {
             })
             .collect();
 
-        let expected_account_balances: Vec<u64> = vec![799990201, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let expected_account_balances: Vec<u64> = vec![799990201, 0];
         assert_eq!(funded_account_balances, expected_account_balances);
 
         for (i, account) in funded_accounts[0..=1].iter().enumerate() {
