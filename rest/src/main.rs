@@ -3,11 +3,12 @@ extern crate rocket;
 
 use nomic::{
     app::{App, InnerApp, Nom},
-    app_client,
     orga::{
+        client::{wallet::Unsigned, AppClient},
         coins::{Address, Amount, Decimal},
         plugins::*,
         query::Query,
+        tendermint::client::HttpClient,
     },
 };
 use rocket::response::status::BadRequest;
@@ -21,6 +22,10 @@ use tm::Client as _;
 
 lazy_static::lazy_static! {
     static ref QUERY_CACHE: Arc<RwLock<HashMap<String, (u64, String)>>> = Arc::new(RwLock::new(HashMap::new()));
+}
+
+fn app_client() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned> {
+    nomic::app_client("http://localhost:26657")
 }
 
 #[get("/cosmos/bank/v1beta1/balances/<address>")]
