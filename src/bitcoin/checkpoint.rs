@@ -1057,13 +1057,14 @@ impl CheckpointQueue {
     }
 
     #[query]
-    pub fn completed(&self) -> Result<Vec<CompletedCheckpoint<'_>>> {
+    pub fn completed(&self, limit: u32) -> Result<Vec<CompletedCheckpoint<'_>>> {
         // TODO: return iterator
         // TODO: use Deque iterator
 
         let mut out = vec![];
 
-        for i in 0..self.queue.len() {
+        let start = self.queue.len().saturating_sub(limit as u64);
+        for i in start..self.queue.len() {
             let checkpoint = self.queue.get(i)?.unwrap();
 
             if !matches!(checkpoint.status, CheckpointStatus::Complete) {
@@ -1077,7 +1078,7 @@ impl CheckpointQueue {
     }
 
     #[query]
-    pub fn last_completed_tx(&self) -> Result<Adapter<bitcoin::Transaction>> {
+    pub fn last_completed(&self) -> Result<Ref<Checkpoint>> {
         let index = if self.signing()?.is_some() {
             self.index.checked_sub(2)
         } else {
@@ -1085,28 +1086,36 @@ impl CheckpointQueue {
         }
         .ok_or_else(|| Error::Orga(OrgaError::App("No completed checkpoints yet".to_string())))?;
 
-        let bitcoin_tx = self.get(index)?.checkpoint_tx()?;
+        self.get(index)
+    }
+
+    #[query]
+    pub fn last_completed_tx(&self) -> Result<Adapter<bitcoin::Transaction>> {
+        let bitcoin_tx = self.last_completed()?.checkpoint_tx()?;
         Ok(Adapter::new(bitcoin_tx))
     }
 
     #[query]
-    pub fn completed_txs(&self) -> Result<Vec<Adapter<bitcoin::Transaction>>> {
-        self.completed()?
+    pub fn completed_txs(&self, limit: u32) -> Result<Vec<Adapter<bitcoin::Transaction>>> {
+        self.completed(limit)?
             .into_iter()
             .map(|c| Ok(Adapter::new(c.checkpoint_tx()?)))
             .collect()
     }
 
     #[query]
-    pub fn emergency_disbursal_txs(&self) -> Result<Vec<Adapter<bitcoin::Transaction>>> {
+    pub fn emergency_disbursal_txs(
+        &self,
+        limit: u32,
+    ) -> Result<Vec<Adapter<bitcoin::Transaction>>> {
         #[cfg(not(feature = "emergency-disbursal"))]
-        unimplemented!();
+        unimplemented!("{}", limit);
 
         #[cfg(feature = "emergency-disbursal")]
         {
             let mut vec = vec![];
 
-            if let Some(completed) = self.completed()?.last() {
+            if let Some(completed) = self.completed(limit)?.last() {
                 let intermediate_tx_batch = completed
                     .batches
                     .get(BatchType::IntermediateTx as u64)?

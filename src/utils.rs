@@ -283,13 +283,13 @@ pub async fn poll_for_signatory_key() {
 pub async fn poll_for_completed_checkpoint(num_checkpoints: u32) {
     info!("Scanning for signed checkpoints...");
     let mut checkpoint_len = app_client(DEFAULT_RPC)
-        .query(|app| Ok(app.bitcoin.checkpoints.completed()?.len()))
+        .query(|app| Ok(app.bitcoin.checkpoints.completed(1_000)?.len()))
         .await
         .unwrap();
 
     while checkpoint_len < num_checkpoints as usize {
         checkpoint_len = app_client(DEFAULT_RPC)
-            .query(|app| Ok(app.bitcoin.checkpoints.completed()?.len()))
+            .query(|app| Ok(app.bitcoin.checkpoints.completed(1_000)?.len()))
             .await
             .unwrap();
         tokio::time::sleep(Duration::from_secs(1)).await;

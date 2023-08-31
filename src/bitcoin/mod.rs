@@ -506,11 +506,7 @@ impl Bitcoin {
 
     #[query]
     pub fn value_locked(&self) -> Result<u64> {
-        let completed = self.checkpoints.completed()?;
-        if completed.is_empty() {
-            return Ok(0);
-        }
-        let last_completed = completed.iter().last().unwrap();
+        let last_completed = self.checkpoints.last_completed()?;
         Ok(last_completed.reserve_output()?.unwrap().value)
     }
 
@@ -530,7 +526,8 @@ impl Bitcoin {
         }
         let now = signing.create_time().max(now);
 
-        let completed = self.checkpoints.completed()?;
+        // TODO: is this a good completed query limit?
+        let completed = self.checkpoints.completed(1_000)?;
         if completed.is_empty() {
             return Ok(ChangeRates::default());
         }
