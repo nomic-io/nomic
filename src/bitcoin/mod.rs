@@ -455,7 +455,7 @@ impl Bitcoin {
             Some(value) => value,
         };
 
-        if bitcoin::Amount::from_sat(value) < script_pubkey.dust_value() {
+        if bitcoin::Amount::from_sat(value) <= script_pubkey.dust_value() {
             return Err(OrgaError::App(
                 "Withdrawal is too small to pay its dust limit".to_string(),
             )
