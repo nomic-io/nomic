@@ -1380,14 +1380,14 @@ mod test {
     #[test]
     fn deduct_fee_multi_pass() {
         let mut bitcoin_tx = BitcoinTx::default();
-        push_bitcoin_tx_output(&mut bitcoin_tx, 60);
-        push_bitcoin_tx_output(&mut bitcoin_tx, 70);
+        push_bitcoin_tx_output(&mut bitcoin_tx, 502);
+        push_bitcoin_tx_output(&mut bitcoin_tx, 482);
         push_bitcoin_tx_output(&mut bitcoin_tx, 300);
 
-        bitcoin_tx.deduct_fee(200).unwrap();
+        bitcoin_tx.deduct_fee(30).unwrap();
 
         assert_eq!(bitcoin_tx.output.len(), 1);
-        assert_eq!(bitcoin_tx.output.get(0).unwrap().unwrap().value, 100);
+        assert_eq!(bitcoin_tx.output.get(0).unwrap().unwrap().value, 472);
     }
 
     #[test]
