@@ -255,7 +255,8 @@ impl BitcoinTx {
                 if output.value < min_output {
                     min_output = output.value;
                 }
-                Ok(output.value >= threshold)
+                Ok(output.value >= threshold
+                    && output.value > output.script_pubkey.dust_value().to_sat())
             })?;
             if self.output.is_empty() {
                 break threshold;
