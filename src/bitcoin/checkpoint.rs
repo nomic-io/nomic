@@ -252,11 +252,12 @@ impl BitcoinTx {
             let threshold = fee / self.output.len();
             let mut min_output = u64::MAX;
             self.output.retain_unordered(|output| {
-                if output.value < min_output {
-                    min_output = output.value;
+                let dust_value = output.script_pubkey.dust_value().to_sat();
+                let adjusted_output = output.value.saturating_sub(dust_value);
+                if adjusted_output < min_output {
+                    min_output = adjusted_output;
                 }
-                Ok(output.value >= threshold
-                    && output.value > output.script_pubkey.dust_value().to_sat())
+                Ok(adjusted_output > threshold)
             })?;
             if self.output.is_empty() {
                 break threshold;
