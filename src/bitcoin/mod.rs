@@ -20,9 +20,9 @@ use orga::describe::Describe;
 use orga::encoding::{Decode, Encode, Terminated};
 use orga::migrate::{Migrate, MigrateFrom};
 use orga::orga;
-use orga::plugins::Paid;
 #[cfg(feature = "full")]
 use orga::plugins::Validators;
+use orga::plugins::{Paid, ValidatorEntry};
 use orga::plugins::{Signer, Time};
 use orga::prelude::FieldCall;
 use orga::query::FieldQuery;
@@ -58,7 +58,7 @@ pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Testnet;
 #[cfg(all(feature = "devnet", feature = "testnet"))]
 pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Regtest;
 
-#[orga(skip(Default))]
+#[orga(skip(Default), version = 1)]
 pub struct Config {
     min_withdrawal_checkpoints: u32,
     min_deposit_amount: u64,
@@ -71,6 +71,27 @@ pub struct Config {
     emergency_disbursal_min_tx_amt: u64,
     emergency_disbursal_lock_time_interval: u32,
     emergency_disbursal_max_tx_size: u64,
+    #[orga(version(V1))]
+    max_offline_checkpoints: u32,
+}
+
+impl MigrateFrom<ConfigV0> for ConfigV1 {
+    fn migrate_from(value: ConfigV0) -> OrgaResult<Self> {
+        Ok(Self {
+            min_withdrawal_checkpoints: value.min_withdrawal_checkpoints,
+            min_deposit_amount: value.min_deposit_amount,
+            min_withdrawal_amount: value.min_withdrawal_amount,
+            max_withdrawal_amount: value.max_withdrawal_amount,
+            max_withdrawal_script_length: value.max_withdrawal_script_length,
+            transfer_fee: value.transfer_fee,
+            min_confirmations: value.min_confirmations,
+            units_per_sat: value.units_per_sat,
+            emergency_disbursal_min_tx_amt: value.emergency_disbursal_min_tx_amt,
+            emergency_disbursal_lock_time_interval: value.emergency_disbursal_lock_time_interval,
+            emergency_disbursal_max_tx_size: value.emergency_disbursal_max_tx_size,
+            ..Default::default()
+        })
+    }
 }
 
 impl Config {
@@ -87,6 +108,7 @@ impl Config {
             emergency_disbursal_min_tx_amt: 1000,
             emergency_disbursal_lock_time_interval: 60 * 60 * 24 * 7, //one week
             emergency_disbursal_max_tx_size: 50_000,
+            max_offline_checkpoints: 20,
         }
     }
 
@@ -600,8 +622,9 @@ impl Bitcoin {
     pub fn begin_block_step(
         &mut self,
         external_outputs: impl Iterator<Item = Result<bitcoin::TxOut>>,
-    ) -> Result<()> {
-        self.checkpoints
+    ) -> Result<Vec<ConsensusKey>> {
+        let pushed = self
+            .checkpoints
             .maybe_step(
                 self.signatory_keys.map(),
                 &self.accounts,
@@ -610,7 +633,58 @@ impl Bitcoin {
             )
             .map_err(|err| OrgaError::App(err.to_string()))?;
 
-        Ok(())
+        if pushed {
+            self.offline_signers()
+        } else {
+            Ok(vec![])
+        }
+    }
+
+    #[cfg(feature = "full")]
+    fn offline_signers(&mut self) -> Result<Vec<ConsensusKey>> {
+        let mut validators = self
+            .context::<Validators>()
+            .ok_or_else(|| OrgaError::App("No validator context found".to_string()))?
+            .entries()?;
+        validators.sort_by(|a, b| b.power.cmp(&a.power));
+
+        let offline_threshold = self.config.max_offline_checkpoints;
+        let sigset = self.checkpoints.active_sigset()?;
+        let lowest_power = sigset.signatories.last().unwrap().voting_power;
+        let completed = self.checkpoints.completed(offline_threshold)?;
+        if completed.len() < offline_threshold as usize {
+            return Ok(vec![]);
+        }
+        let mut offline_signers = vec![];
+        for ValidatorEntry {
+            power,
+            pubkey: cons_key,
+        } in validators
+        {
+            if power < lowest_power {
+                break;
+            }
+
+            let xpub = if let Some(xpub) = self.signatory_keys.get(cons_key)? {
+                xpub
+            } else {
+                continue;
+            };
+
+            let mut offline = true;
+            for checkpoint in completed.iter().rev() {
+                if checkpoint.to_sign(xpub.clone())?.is_empty() {
+                    offline = false;
+                    break;
+                }
+            }
+
+            if offline {
+                offline_signers.push(cons_key);
+            }
+        }
+
+        Ok(offline_signers)
     }
 }
 
