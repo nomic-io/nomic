@@ -1103,7 +1103,11 @@ impl CheckpointQueue {
     }
 
     pub fn prune(&mut self) -> Result<()> {
-        let latest = self.building()?.create_time();
+        if self.len()? <= 3 {
+            return Ok(());
+        }
+
+        let latest = self.get(self.index - 2)?.create_time();
 
         while let Some(oldest) = self.queue.front()? {
             if latest - oldest.create_time() <= self.config.max_age {
