@@ -34,7 +34,18 @@ use std::convert::TryFrom;
 use std::ops::{Deref, DerefMut};
 
 #[derive(
-    Debug, Encode, Decode, Default, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord,
+    Debug,
+    Encode,
+    Decode,
+    Default,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Clone,
+    Copy,
 )]
 pub enum CheckpointStatus {
     #[default]
@@ -100,7 +111,7 @@ pub struct Input {
 impl Input {
     pub fn to_txin(&self) -> Result<TxIn> {
         let mut witness = self.signatures.to_witness()?;
-        if self.signatures.done() {
+        if self.signatures.signed() {
             witness.push(self.redeem_script.to_bytes());
         }
 
@@ -329,6 +340,55 @@ impl Checkpoint {
         Ok(checkpoint)
     }
 
+    fn sign(&mut self, xpub: Xpub, sigs: LengthVec<u16, Signature>) -> Result<()> {
+        let secp = bitcoin::secp256k1::Secp256k1::verification_only();
+
+        let mut sig_index = 0;
+        for i in 0..self.batches.len() {
+            let mut batch = self.batches.get_mut(i)?.unwrap();
+
+            for j in 0..batch.len() {
+                let mut tx = batch.get_mut(j)?.unwrap();
+                let tx_was_signed = tx.signed();
+
+                for k in 0..tx.input.len() {
+                    let mut input = tx.input.get_mut(k)?.unwrap();
+                    let pubkey = derive_pubkey(&secp, xpub, input.sigset_index)?;
+
+                    if !input.signatures.needs_sig(pubkey.into())? {
+                        continue;
+                    }
+
+                    if sig_index > sigs.len() {
+                        return Err(
+                            OrgaError::App("Not enough signatures supplied".to_string()).into()
+                        );
+                    }
+
+                    let sig = sigs[sig_index];
+                    sig_index += 1;
+
+                    let input_was_signed = input.signatures.signed();
+                    input.signatures.sign(pubkey.into(), sig)?;
+
+                    if !input_was_signed && input.signatures.signed() {
+                        tx.signed_inputs += 1;
+                    }
+                }
+
+                if !tx_was_signed && tx.signed() {
+                    batch.signed_txs += 1;
+                }
+            }
+        }
+
+        if sig_index != sigs.len() {
+            return Err(OrgaError::App("Excess signatures supplied".to_string()).into());
+        }
+
+        Ok(())
+    }
+
     pub fn checkpoint_tx(&self) -> Result<bitcoin::Transaction> {
         self.batches
             .get(BatchType::Checkpoint as u64)?
@@ -354,19 +414,20 @@ impl Checkpoint {
 
         let mut msgs = vec![];
 
-        let batch = self.current_batch()?;
-        if batch.is_none() {
-            return Ok(msgs);
-        }
+        for batch in self.batches.iter()? {
+            let batch = batch?;
+            for tx in batch.iter()? {
+                for input in tx?.input.iter()? {
+                    let input = input?;
 
-        for tx in batch.unwrap().iter()? {
-            for input in tx?.input.iter()? {
-                let input = input?;
-
-                let pubkey = derive_pubkey(&secp, xpub.clone(), input.sigset_index)?;
-                if input.signatures.needs_sig(pubkey.into())? {
-                    msgs.push((input.signatures.message(), input.sigset_index));
+                    let pubkey = derive_pubkey(&secp, xpub, input.sigset_index)?;
+                    if input.signatures.needs_sig(pubkey.into())? {
+                        msgs.push((input.signatures.message(), input.sigset_index));
+                    }
                 }
+            }
+            if !batch.signed() {
+                break;
             }
         }
 
@@ -476,63 +537,7 @@ pub struct SigningCheckpointMut<'a>(ChildMut<'a, u64, Checkpoint>);
 
 impl<'a> SigningCheckpointMut<'a> {
     pub fn sign(&mut self, xpub: Xpub, sigs: LengthVec<u16, Signature>) -> Result<()> {
-        let secp = bitcoin::secp256k1::Secp256k1::verification_only();
-
-        let batch = self.current_batch_mut()?;
-        if batch.is_none() {
-            return Err(OrgaError::App("No batch to sign".to_string()).into());
-        }
-
-        let mut sig_index = 0;
-        let mut batch = batch.unwrap();
-
-        for i in 0..batch.len() {
-            let mut tx = batch.get_mut(i)?.unwrap();
-            if tx.signed() {
-                continue;
-            }
-
-            for j in 0..tx.input.len() {
-                let mut input = tx.input.get_mut(j)?.unwrap();
-                let pubkey = derive_pubkey(&secp, xpub.clone(), input.sigset_index)?;
-
-                if !input.signatures.contains_key(pubkey.into())? {
-                    continue;
-                }
-
-                if input.signatures.done() {
-                    sig_index += 1;
-                    continue;
-                }
-
-                if sig_index > sigs.len() {
-                    return Err(OrgaError::App("Not enough signatures supplied".to_string()).into());
-                }
-
-                let sig = sigs[sig_index];
-                sig_index += 1;
-
-                input.signatures.sign(pubkey.into(), sig)?;
-
-                if input.signatures.done() {
-                    tx.signed_inputs += 1;
-                }
-            }
-
-            if tx.signed() {
-                batch.signed_txs += 1;
-            }
-        }
-
-        if sig_index != sigs.len() {
-            return Err(OrgaError::App("Excess signatures supplied".to_string()).into());
-        }
-
-        Ok(())
-    }
-
-    pub fn signed(&self) -> Result<bool> {
-        Ok(self.batches.len() == self.signed_batches()?)
+        self.0.sign(xpub, sigs)
     }
 
     pub fn advance(self) -> Result<()> {
@@ -541,16 +546,6 @@ impl<'a> SigningCheckpointMut<'a> {
         checkpoint.status = CheckpointStatus::Complete;
 
         Ok(())
-    }
-
-    pub fn current_batch_mut(&mut self) -> Result<Option<ChildMut<u64, Batch>>> {
-        if self.signed()? {
-            return Ok(None);
-        }
-        let signed_batches = self.signed_batches()?;
-        let batch = self.batches.get_mut(signed_batches)?.unwrap();
-
-        Ok(Some(batch))
     }
 }
 
@@ -1253,29 +1248,24 @@ impl CheckpointQueue {
     }
 
     #[call]
-    pub fn sign(&mut self, xpub: Xpub, sigs: LengthVec<u16, Signature>) -> Result<()> {
+    pub fn sign(&mut self, xpub: Xpub, sigs: LengthVec<u16, Signature>, index: u32) -> Result<()> {
         super::exempt_from_fee()?;
 
-        let mut signing = self
-            .signing_mut()?
-            .ok_or_else(|| Error::Orga(OrgaError::App("No checkpoint to be signed".to_string())))?;
+        let mut checkpoint = self.get_mut(index)?;
+        let status = checkpoint.status;
+        if matches!(status, CheckpointStatus::Building) {
+            return Err(OrgaError::App("Checkpoint is still building".to_string()).into());
+        }
 
-        signing.sign(xpub, sigs)?;
+        checkpoint.sign(xpub, sigs)?;
 
-        if signing.signed()? {
-            let checkpoint_tx = signing.checkpoint_tx()?;
+        if matches!(status, CheckpointStatus::Signing) && checkpoint.signed()? {
+            let checkpoint_tx = checkpoint.checkpoint_tx()?;
             info!("Checkpoint signing complete {:?}", checkpoint_tx);
-            signing.advance()?;
+            SigningCheckpointMut(checkpoint).advance()?;
         }
 
         Ok(())
-    }
-
-    #[query]
-    pub fn to_sign(&self, xpub: Xpub) -> Result<Vec<([u8; 32], u32)>> {
-        self.signing()?
-            .ok_or_else(|| OrgaError::App("No checkpoint to be signed".to_string()))?
-            .to_sign(xpub)
     }
 
     #[query]
