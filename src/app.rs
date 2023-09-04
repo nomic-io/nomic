@@ -959,7 +959,7 @@ impl Dest {
     ) -> Result<Option<Script>> {
         match self {
             Dest::Address(addr) => Ok(recovery_scripts
-                .get(addr.clone())?
+                .get(*addr)?
                 .map(|script| script.clone().into_inner())),
             _ => Ok(None),
         }
