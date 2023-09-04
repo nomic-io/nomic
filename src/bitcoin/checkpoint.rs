@@ -707,10 +707,32 @@ impl<'a> BuildingCheckpointMut<'a> {
                 }
             }
 
-            let mut final_txs = vec![BitcoinTx::with_lock_time(lock_time)];
+            // // TODO: combine pending transfer outputs into other outputs by adding to amount
+            let pending_outputs: Vec<_> = self
+                .pending
+                .iter()?
+                .filter_map(|entry| {
+                    let (dest, coins) = match entry {
+                        Err(err) => return Some(Err(err.into())),
+                        Ok(entry) => entry,
+                    };
+                    let script_pubkey = match dest.to_output_script(recovery_scripts) {
+                        Err(err) => return Some(Err(err.into())),
+                        Ok(maybe_script) => maybe_script,
+                    }?;
+                    Some(Ok::<_, Error>(TxOut {
+                        value: u64::from(coins.amount) / 1_000_000,
+                        script_pubkey,
+                    }))
+                })
+                .collect();
 
-            let num_outputs = outputs.len();
-            for (i, output) in outputs.into_iter().chain(external_outputs).enumerate() {
+            let mut final_txs = vec![BitcoinTx::with_lock_time(lock_time)];
+            for output in outputs
+                .into_iter()
+                .chain(pending_outputs.into_iter())
+                .chain(external_outputs)
+            {
                 let output = output?;
 
                 if output.value < bitcoin_config.emergency_disbursal_min_tx_amt {
@@ -726,12 +748,12 @@ impl<'a> BuildingCheckpointMut<'a> {
 
                 curr_tx.output.push_back(Adapter::new(output))?;
 
-                if i == num_outputs - 1 {
-                    self.link_intermediate_tx(&mut curr_tx)?;
-                }
-
                 final_txs.push(curr_tx);
             }
+
+            let mut last_tx = final_txs.pop().unwrap();
+            self.link_intermediate_tx(&mut last_tx)?;
+            final_txs.push(last_tx);
 
             let tx_in = Input::new(reserve_outpoint, &sigset, &[0u8], reserve_value)?;
             let output_script = self.sigset.output_script(&[0u8])?;

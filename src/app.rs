@@ -952,6 +952,18 @@ impl Dest {
         let bytes = self.encode()?;
         Ok(base64::encode(bytes))
     }
+
+    pub fn to_output_script(
+        &self,
+        recovery_scripts: &orga::collections::Map<Address, Adapter<Script>>,
+    ) -> Result<Option<Script>> {
+        match self {
+            Dest::Address(addr) => Ok(recovery_scripts
+                .get(addr.clone())?
+                .map(|script| script.clone().into_inner())),
+            _ => Ok(None),
+        }
+    }
 }
 
 impl State for Dest {
