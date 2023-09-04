@@ -149,35 +149,20 @@ pub struct Bitcoin {
     pub signatory_keys: SignatoryKeys,
     pub(crate) reward_pool: Coin<Nbtc>,
 
-    #[orga(version(V1))]
     pub recovery_scripts: Map<Address, Adapter<Script>>,
-    #[orga(version(V1))]
     config: Config,
 }
 
 impl MigrateFrom<BitcoinV0> for BitcoinV1 {
-    #[allow(unused_mut)]
-    fn migrate_from(mut value: BitcoinV0) -> OrgaResult<Self> {
-        #[cfg(not(feature = "testnet"))]
-        value.checkpoints.rewind(1607).unwrap();
-
-        Ok(Self {
-            headers: value.headers,
-            processed_outpoints: value.processed_outpoints,
-            checkpoints: value.checkpoints,
-            accounts: value.accounts,
-            recovery_scripts: Map::default(),
-            signatory_keys: value.signatory_keys,
-            reward_pool: value.reward_pool,
-            config: Config::default(),
-        })
+    fn migrate_from(_value: BitcoinV0) -> OrgaResult<Self> {
+        unreachable!()
     }
 }
 
 pub type ConsensusKey = [u8; 32];
 
 // #[derive(Call, Query, Clone, Debug, Client, PartialEq, Serialize)]
-#[derive(Debug, PartialEq, Serialize, FieldCall, FieldQuery, Clone)]
+#[derive(Debug, PartialEq, Serialize, FieldCall, FieldQuery, Clone, Copy)]
 pub struct Xpub {
     key: ExtendedPubKey,
 }
@@ -673,7 +658,7 @@ impl Bitcoin {
 
             let mut offline = true;
             for checkpoint in completed.iter().rev() {
-                if checkpoint.to_sign(xpub.clone())?.is_empty() {
+                if checkpoint.to_sign(xpub)?.is_empty() {
                     offline = false;
                     break;
                 }
@@ -706,10 +691,10 @@ impl SignatoryKeys {
         let mut xpubs = vec![];
         for entry in self.by_cons.iter()? {
             let (_k, v) = entry?;
-            xpubs.push(v.clone());
+            xpubs.push(v);
         }
         for xpub in xpubs {
-            self.xpubs.remove(xpub)?;
+            self.xpubs.remove(*xpub)?;
         }
 
         clear_map(&mut self.by_cons)?;
@@ -722,7 +707,7 @@ impl SignatoryKeys {
     }
 
     pub fn insert(&mut self, consensus_key: ConsensusKey, xpub: Xpub) -> Result<()> {
-        let mut normalized_xpub = xpub.clone();
+        let mut normalized_xpub = xpub;
         normalized_xpub.key.child_number = 0.into();
         normalized_xpub.key.depth = 0;
         normalized_xpub.key.parent_fingerprint = Default::default();
@@ -731,7 +716,7 @@ impl SignatoryKeys {
             return Err(OrgaError::App("Validator already has a signatory key".to_string()).into());
         }
 
-        if self.xpubs.contains_key(normalized_xpub.clone())? {
+        if self.xpubs.contains_key(normalized_xpub)? {
             return Err(OrgaError::App("Duplicate signatory key".to_string()).into());
         }
 
@@ -743,7 +728,7 @@ impl SignatoryKeys {
 
     #[query]
     pub fn get(&self, cons_key: ConsensusKey) -> Result<Option<Xpub>> {
-        Ok(self.by_cons.get(cons_key)?.map(|x| x.clone()))
+        Ok(self.by_cons.get(cons_key)?.map(|x| *x))
     }
 }
 

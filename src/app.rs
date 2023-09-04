@@ -83,13 +83,10 @@ pub struct InnerApp {
 
     #[cfg(feature = "testnet")]
     #[call]
-    #[orga(version(V1, V2))]
     pub ibc: Ibc,
 
-    #[orga(version(V1, V2))]
     pub upgrade: Upgrade,
 
-    #[orga(version(V2))]
     #[call]
     pub incentives: Incentives,
 }

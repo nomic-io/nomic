@@ -19,26 +19,12 @@ const AIRDROP_II_TOTAL: u64 = 3_500_000_000_000;
 
 #[orga(version = 1)]
 pub struct Airdrop {
-    #[cfg(not(feature = "testnet"))]
-    #[orga(version(V0))]
-    x: u8,
-    #[cfg(not(feature = "testnet"))]
-    #[orga(version(V0))]
-    #[state(prefix(0, 2))]
-    accounts: Map<Address, Account>,
-    #[cfg(not(feature = "testnet"))]
-    #[orga(version(V1))]
-    accounts: Map<Address, Account>,
-
-    #[cfg(feature = "testnet")]
     accounts: Map<Address, Account>,
 }
 
 impl MigrateFrom<AirdropV0> for AirdropV1 {
-    fn migrate_from(value: AirdropV0) -> Result<Self> {
-        Ok(Self {
-            accounts: value.accounts,
-        })
+    fn migrate_from(_value: AirdropV0) -> Result<Self> {
+        unreachable!()
     }
 }
 
@@ -296,54 +282,11 @@ impl Airdrop {
     }
 }
 
-// impl MigrateFrom<AirdropV0> for AirdropV1 {
-//     fn migrate_from(other: AirdropV0) -> Result<Self> {
-//         Ok(Self {
-//             accounts: other.accounts.accounts.migrate_into()?,
-//         })
-//     }
-// }
-
-#[cfg(not(feature = "testnet"))]
-#[orga(version = 2)]
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Account {
-    #[orga(version(V0))]
-    pub claimable: Amount,
-
-    #[orga(version(V1, V2))]
-    pub airdrop1: Part,
-    #[orga(version(V1))]
-    pub btc_deposit: Part,
-    #[orga(version(V1))]
-    pub btc_withdraw: Part,
-    #[orga(version(V1))]
-    pub ibc_transfer: Part,
-    #[orga(version(V1))]
-    pub testnet_participation: Part,
-
-    #[orga(version(V2))]
-    pub airdrop2: Part,
-    #[orga(version(V2))]
-    pub joined: bool,
-}
-
-#[cfg(feature = "testnet")]
 #[orga(version = 2)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Account {
     pub airdrop1: Part,
-
-    #[orga(version(V0, V1))]
-    pub btc_deposit: Part,
-    #[orga(version(V0, V1))]
-    pub btc_withdraw: Part,
-    #[orga(version(V0, V1))]
-    pub ibc_transfer: Part,
-
-    #[orga(version(V2))]
     pub airdrop2: Part,
-    #[orga(version(V2))]
     pub joined: bool,
 }
 
@@ -354,45 +297,14 @@ impl Account {
 }
 
 impl MigrateFrom<AccountV0> for AccountV1 {
-    fn migrate_from(prev: AccountV0) -> Result<Self> {
-        let mut account = AccountV1::default();
-
-        #[cfg(not(feature = "testnet"))]
-        {
-            // TODO: populate airdrop1 claimed
-            account.airdrop1.claimable = prev.claimable.into();
-        }
-
-        #[cfg(feature = "testnet")]
-        {
-            account.airdrop1 = prev.airdrop1;
-            account.btc_deposit = prev.btc_deposit;
-            account.btc_withdraw = prev.btc_withdraw;
-            account.ibc_transfer = prev.ibc_transfer;
-        }
-
-        Ok(account)
+    fn migrate_from(_prev: AccountV0) -> Result<Self> {
+        unreachable!()
     }
 }
 
 impl MigrateFrom<AccountV1> for AccountV2 {
-    fn migrate_from(value: AccountV1) -> Result<Self> {
-        let add_part = |dest: &mut Part, src: Part| {
-            dest.claimable += src.claimable + src.locked;
-            dest.claimed += src.claimed;
-        };
-
-        let mut airdrop2 = Part::default();
-
-        add_part(&mut airdrop2, value.btc_deposit);
-        add_part(&mut airdrop2, value.btc_withdraw);
-        add_part(&mut airdrop2, value.ibc_transfer);
-
-        Ok(Self {
-            airdrop1: value.airdrop1,
-            airdrop2,
-            joined: false,
-        })
+    fn migrate_from(_value: AccountV1) -> Result<Self> {
+        unreachable!()
     }
 }
 
