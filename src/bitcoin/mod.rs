@@ -144,7 +144,6 @@ pub struct Bitcoin {
     pub processed_outpoints: OutpointSet,
     #[call]
     pub checkpoints: CheckpointQueue,
-    #[call]
     pub accounts: Accounts<Nbtc>,
     // TODO: store recovery script data in account struct
     pub signatory_keys: SignatoryKeys,
@@ -510,7 +509,19 @@ impl Bitcoin {
             .accounts
             .withdraw(signer, self.config.transfer_fee.into())?;
         self.reward_pool.give(transfer_fee)?;
-        self.accounts.transfer(to, amount)?;
+
+        let dest = Dest::Address(to);
+        let mut pending = self
+            .checkpoints
+            .building()?
+            .pending
+            .get_or_default(dest.clone())?
+            .amount;
+        pending = (pending + amount).result()?;
+        self.checkpoints
+            .building_mut()?
+            .pending
+            .insert(dest, pending.into())?;
 
         Ok(())
     }
