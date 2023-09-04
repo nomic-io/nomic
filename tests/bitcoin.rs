@@ -294,6 +294,12 @@ async fn bitcoin_test() {
         .await
         .unwrap();
 
+        let balance = app_client()
+            .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
+            .await
+            .unwrap();
+        assert_eq!(balance, Amount::from(0));
+
         retry(
             || bitcoind.client.generate_to_address(4, &wallet_address),
             10,
@@ -301,13 +307,20 @@ async fn bitcoin_test() {
         .unwrap();
 
         poll_for_bitcoin_header(1124).await.unwrap();
+        poll_for_signing_checkpoint().await;
+
+        let balance = app_client()
+            .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
+            .await
+            .unwrap();
+        assert_eq!(balance, Amount::from(0));
+
         poll_for_completed_checkpoint(1).await;
 
         let balance = app_client()
             .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
             .await
             .unwrap();
-
         assert_eq!(balance, Amount::from(799998736000000));
 
         deposit_bitcoin(
