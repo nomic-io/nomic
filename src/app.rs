@@ -8,12 +8,13 @@ use crate::bitcoin::adapter::Adapter;
 use crate::bitcoin::{Bitcoin, Nbtc};
 use crate::incentives::Incentives;
 use bitcoin::util::merkleblock::PartialMerkleTree;
-use bitcoin::Transaction;
+use bitcoin::{Script, Transaction, TxOut};
 use orga::coins::{
     Accounts, Address, Amount, Coin, Faucet, FaucetOptions, Give, Staking, Symbol, Take,
 };
 use orga::context::GetContext;
 use orga::cosmrs::bank::MsgSend;
+use orga::describe::{Describe, Descriptor};
 use orga::encoding::{Decode, Encode};
 use std::time::Duration;
 
@@ -213,22 +214,25 @@ impl InnerApp {
         btc_proof: Adapter<PartialMerkleTree>,
         btc_vout: u32,
         sigset_index: u32,
-        dest: DepositCommitment,
+        dest: Dest,
     ) -> Result<()> {
-        let nbtc = self.bitcoin.relay_deposit(
+        Ok(self.bitcoin.relay_deposit(
             btc_tx,
             btc_height,
             btc_proof,
             btc_vout,
             sigset_index,
-            dest.commitment_bytes()?.as_slice(),
-        )?;
+            dest,
+        )?)
+    }
+
+    pub fn credit_deposit(&mut self, dest: Dest, nbtc: Amount) -> Result<()> {
         match dest {
-            DepositCommitment::Address(addr) => self.bitcoin.accounts.deposit(addr, nbtc.into()),
+            Dest::Address(addr) => self.bitcoin.accounts.deposit(addr, nbtc.into()),
             #[cfg(not(feature = "testnet"))]
-            DepositCommitment::Ibc(dest) => Err(Error::Unknown),
+            Dest::Ibc(dest) => Err(Error::Unknown),
             #[cfg(feature = "testnet")]
-            DepositCommitment::Ibc(dest) => {
+            Dest::Ibc(dest) => {
                 use orga::ibc::ibc_rs::applications::transfer::msgs::transfer::MsgTransfer;
                 let fee = ibc_fee(nbtc)?;
                 let nbtc_after_fee = (nbtc - fee).result()?;
@@ -379,6 +383,10 @@ mod abci {
             let ip_reward = self.incentive_pool_rewards.mint()?;
             self.incentive_pool.give(ip_reward)?;
 
+            let pending_nbtc_transfers = self.bitcoin.take_pending()?;
+            for (dest, coins) in pending_nbtc_transfers {
+                self.credit_deposit(dest, coins.amount)?;
+            }
             let external_outputs: Vec<crate::error::Result<bitcoin::TxOut>> = vec![]; // TODO: remote chain disbursal
             let offline_signers = self
                 .bitcoin
@@ -904,26 +912,28 @@ pub struct MsgIbcTransfer {
     pub timeout_timestamp: String,
 }
 
-#[derive(Encode, Decode, Debug, Clone)]
-pub enum DepositCommitment {
+#[derive(Encode, Decode, Debug, Clone, Serialize)]
+pub enum Dest {
     Address(Address),
-    Ibc(IbcDepositCommitment),
+    Ibc(IbcDest),
 }
 
 use orga::ibc::{IbcMessage, PortChannel, RawIbcTx};
 
-#[derive(Clone, Debug, Encode, Decode)]
-pub struct IbcDepositCommitment {
+#[derive(Clone, Debug, Encode, Decode, Serialize)]
+pub struct IbcDest {
     pub source: PortChannel,
+    #[serde(skip)]
     pub receiver: EdAdapter<IbcSigner>,
+    #[serde(skip)]
     pub sender: EdAdapter<IbcSigner>,
     pub timeout_timestamp: u64,
 }
 
-impl DepositCommitment {
+impl Dest {
     pub fn commitment_bytes(&self) -> Result<Vec<u8>> {
         use sha2::{Digest, Sha256};
-        use DepositCommitment::*;
+        use Dest::*;
         let bytes = match self {
             Address(addr) => addr.bytes().into(),
             Ibc(dest) => Sha256::digest(dest.encode()?).to_vec(),
@@ -941,6 +951,43 @@ impl DepositCommitment {
     pub fn to_base64(&self) -> Result<String> {
         let bytes = self.encode()?;
         Ok(base64::encode(bytes))
+    }
+}
+
+impl State for Dest {
+    fn attach(&mut self, store: Store) -> Result<()> {
+        Ok(())
+    }
+
+    fn load(_store: Store, bytes: &mut &[u8]) -> Result<Self> {
+        Ok(Self::decode(bytes)?)
+    }
+
+    fn flush<W: std::io::Write>(self, out: &mut W) -> Result<()> {
+        self.encode_into(out)?;
+        Ok(())
+    }
+}
+
+impl Query for Dest {
+    type Query = ();
+
+    fn query(&self, query: Self::Query) -> Result<()> {
+        Ok(())
+    }
+}
+
+impl Migrate for Dest {
+    fn migrate(src: Store, _dest: Store, bytes: &mut &[u8]) -> Result<Self> {
+        Self::load(src, bytes)
+    }
+}
+
+impl Describe for Dest {
+    fn describe() -> Descriptor {
+        ::orga::describe::Builder::new::<Self>()
+            .meta::<()>()
+            .build()
     }
 }
 

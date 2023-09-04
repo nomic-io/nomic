@@ -6,13 +6,16 @@ use super::{
     threshold_sig::{Signature, ThresholdSig},
     Xpub,
 };
-use crate::bitcoin::{signatory::derive_pubkey, Nbtc};
 use crate::error::{Error, Result};
+use crate::{
+    app::Dest,
+    bitcoin::{signatory::derive_pubkey, Nbtc},
+};
 use bitcoin::hashes::Hash;
 use bitcoin::{blockdata::transaction::EcdsaSighashType, Sequence, Transaction, TxIn, TxOut};
 use derive_more::{Deref, DerefMut};
 use log::info;
-use orga::coins::Accounts;
+use orga::coins::{Accounts, Coin};
 #[cfg(feature = "full")]
 use orga::context::GetContext;
 #[cfg(feature = "full")]
@@ -289,11 +292,13 @@ impl Batch {
     }
 }
 
-#[orga(skip(Default), version = 1)]
+#[orga(skip(Default), version = 2)]
 #[derive(Debug)]
 pub struct Checkpoint {
     pub status: CheckpointStatus,
     pub batches: Deque<Batch>,
+    #[orga(version(V2))]
+    pub pending: Map<Dest, Coin<Nbtc>>,
     pub sigset: SignatorySet,
 }
 
@@ -303,12 +308,24 @@ impl MigrateFrom<CheckpointV0> for CheckpointV1 {
     }
 }
 
+impl MigrateFrom<CheckpointV1> for CheckpointV2 {
+    fn migrate_from(value: CheckpointV1) -> OrgaResult<Self> {
+        Ok(Self {
+            status: value.status,
+            batches: value.batches,
+            pending: Map::new(),
+            sigset: value.sigset,
+        })
+    }
+}
+
 #[orga]
 impl Checkpoint {
     pub fn new(sigset: SignatorySet) -> Result<Self> {
         let mut checkpoint = Checkpoint {
             status: CheckpointStatus::default(),
             batches: Deque::default(),
+            pending: Map::new(),
             sigset,
         };
 
@@ -1021,16 +1038,22 @@ impl CheckpointQueue {
         Ok(out)
     }
 
-    #[query]
-    pub fn last_completed(&self) -> Result<Ref<Checkpoint>> {
-        let index = if self.signing()?.is_some() {
+    pub fn last_completed_index(&self) -> Result<u32> {
+        if self.signing()?.is_some() {
             self.index.checked_sub(2)
         } else {
             self.index.checked_sub(1)
         }
-        .ok_or_else(|| Error::Orga(OrgaError::App("No completed checkpoints yet".to_string())))?;
+        .ok_or_else(|| Error::Orga(OrgaError::App("No completed checkpoints yet".to_string())))
+    }
 
-        self.get(index)
+    #[query]
+    pub fn last_completed(&self) -> Result<Ref<Checkpoint>> {
+        self.get(self.last_completed_index()?)
+    }
+
+    pub fn last_completed_mut(&mut self) -> Result<ChildMut<u64, Checkpoint>> {
+        self.get_mut(self.last_completed_index()?)
     }
 
     #[query]

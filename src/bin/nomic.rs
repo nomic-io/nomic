@@ -6,7 +6,7 @@
 
 use bitcoind::bitcoincore_rpc::{Auth, Client as BtcClient};
 use clap::Parser;
-use nomic::app::DepositCommitment;
+use nomic::app::Dest;
 use nomic::app::InnerApp;
 use nomic::app::Nom;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
@@ -1239,7 +1239,7 @@ impl SetSignatoryKeyCmd {
 }
 
 async fn deposit(
-    dest: DepositCommitment,
+    dest: Dest,
     client: AppClient<InnerApp, InnerApp, HttpClient, Nom, orga::client::wallet::Unsigned>,
 ) -> Result<()> {
     let sigset = client
@@ -1283,7 +1283,7 @@ impl DepositCmd {
     async fn run(&self) -> Result<()> {
         let dest_addr = self.address.unwrap_or_else(my_address);
 
-        deposit(DepositCommitment::Address(dest_addr), self.config.client()).await
+        deposit(Dest::Address(dest_addr), self.config.client()).await
     }
 }
 
@@ -1304,7 +1304,7 @@ impl InterchainDepositCmd {
         todo!()
         // use orga::ibc::encoding::Adapter;
         // let now_ns = now_seconds() as u64 * 1_000_000_000;
-        // let dest = DepositCommitment::Ibc(nomic::app::IbcDepositCommitment {
+        // let dest = Dest::Ibc(nomic::app::IbcDest {
         //     receiver: Adapter::new(self.receiver.parse().unwrap()),
         //     sender: Adapter::new(my_address().to_string().parse().unwrap()),
         //     source_channel: Adapter::new(self.channel.parse().unwrap()),
