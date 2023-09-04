@@ -244,10 +244,12 @@ impl BitcoinTx {
             let threshold = fee / self.output.len();
             let mut min_output = u64::MAX;
             self.output.retain_unordered(|output| {
-                if output.value < min_output {
-                    min_output = output.value;
+                let dust_value = output.script_pubkey.dust_value().to_sat();
+                let adjusted_output = output.value.saturating_sub(dust_value);
+                if adjusted_output < min_output {
+                    min_output = adjusted_output;
                 }
-                Ok(output.value >= threshold)
+                Ok(adjusted_output > threshold)
             })?;
             if self.output.is_empty() {
                 break threshold;
@@ -909,7 +911,7 @@ impl CheckpointQueue {
                     // skip reserve output
                     continue;
                 }
-                if output.value < output.script_pubkey.dust_value().to_sat() {
+                if output.value <= output.script_pubkey.dust_value().to_sat() {
                     // skip dust outputs
                     continue;
                 }
@@ -1312,14 +1314,14 @@ mod test {
     #[test]
     fn deduct_fee_multi_pass() {
         let mut bitcoin_tx = BitcoinTx::default();
-        push_bitcoin_tx_output(&mut bitcoin_tx, 60);
-        push_bitcoin_tx_output(&mut bitcoin_tx, 70);
+        push_bitcoin_tx_output(&mut bitcoin_tx, 502);
+        push_bitcoin_tx_output(&mut bitcoin_tx, 482);
         push_bitcoin_tx_output(&mut bitcoin_tx, 300);
 
-        bitcoin_tx.deduct_fee(200).unwrap();
+        bitcoin_tx.deduct_fee(30).unwrap();
 
         assert_eq!(bitcoin_tx.output.len(), 1);
-        assert_eq!(bitcoin_tx.output.get(0).unwrap().unwrap().value, 100);
+        assert_eq!(bitcoin_tx.output.get(0).unwrap().unwrap().value, 472);
     }
 
     #[test]
