@@ -8,8 +8,7 @@ use bitcoind::bitcoincore_rpc::{Auth, Client as BtcClient};
 use clap::Parser;
 use nomic::app::DepositCommitment;
 use nomic::app::InnerApp;
-use nomic::app::{self, Nom};
-use nomic::app_client_testnet;
+use nomic::app::Nom;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
 use orga::abci::Node;
@@ -36,10 +35,6 @@ const BANNER: &str = r#"
 ██║ ╚████║ ╚██████╔╝ ██║ ╚═╝ ██║ ██║ ╚██████╗
 ╚═╝  ╚═══╝  ╚═════╝  ╚═╝     ╚═╝ ╚═╝  ╚═════╝
 "#;
-
-fn app_client() -> AppClient<app::InnerApp, app::InnerApp, HttpClient, app::Nom, SimpleWallet> {
-    app_client_testnet().with_wallet(wallet())
-}
 
 fn wallet() -> SimpleWallet {
     let path = home::home_dir().unwrap().join(".orga-wallet");
@@ -96,6 +91,7 @@ pub enum Command {
     #[cfg(feature = "testnet")]
     IbcTransfer(IbcTransferCmd),
     Export(ExportCmd),
+    UpgradeStatus(UpgradeStatusCmd),
 }
 
 impl Command {
@@ -148,6 +144,7 @@ impl Command {
                 #[cfg(feature = "testnet")]
                 IbcTransfer(cmd) => cmd.run().await,
                 Export(cmd) => cmd.run().await,
+                UpgradeStatus(cmd) => cmd.run().await,
             }
         })
     }
@@ -329,6 +326,7 @@ impl StartCmd {
         if let Some(signal_version) = cmd.signal_version {
             let signal_version = hex::decode(signal_version).unwrap();
             let rt = tokio::runtime::Runtime::new().unwrap();
+            let client = self.config.client().with_wallet(wallet());
             std::thread::spawn(move || {
                 rt.block_on(async move {
                     dbg!();
@@ -342,7 +340,7 @@ impl StartCmd {
                     loop {
                         let signal_version = signal_version.clone().try_into().unwrap();
                         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                        if let Err(err) = app_client()
+                        if let Err(err) = client
                             .call(
                                 |app| build_call!(app.signal(signal_version)),
                                 |app| build_call!(app.app_noop()),
@@ -640,11 +638,17 @@ async fn get_bootstrap_state(rpc_servers: &[&str]) -> Result<(i64, String)> {
 pub struct SendCmd {
     to_addr: Address,
     amount: u64,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 impl SendCmd {
     async fn run(&self) -> Result<()> {
-        Ok(app_client()
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
             .call(
                 |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
                 |app| build_call!(app.accounts.transfer(self.to_addr, self.amount.into())),
@@ -657,11 +661,17 @@ impl SendCmd {
 pub struct SendNbtcCmd {
     to_addr: Address,
     amount: u64,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 impl SendNbtcCmd {
     async fn run(&self) -> Result<()> {
-        Ok(app_client()
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
             .call(
                 |app| build_call!(app.bitcoin.transfer(self.to_addr, self.amount.into())),
                 |app| build_call!(app.app_noop()),
@@ -673,6 +683,9 @@ impl SendNbtcCmd {
 #[derive(Parser, Debug)]
 pub struct BalanceCmd {
     address: Option<Address>,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 impl BalanceCmd {
@@ -680,19 +693,19 @@ impl BalanceCmd {
         let address = self.address.unwrap_or_else(my_address);
         println!("address: {}", address);
 
-        let balance = app_client()
-            .query(|app| app.accounts.balance(address))
-            .await?;
+        let client = self.config.client();
+
+        let balance = client.query(|app| app.accounts.balance(address)).await?;
         println!("{} NOM", balance);
 
-        let balance = app_client()
+        let balance = client
             .query(|app| app.bitcoin.accounts.balance(address))
             .await?;
         println!("{} NBTC", balance);
 
         #[cfg(feature = "testnet")]
         {
-            let balance = app_client().query(|app| app.escrowed_nbtc(address)).await?;
+            let balance = client.query(|app| app.escrowed_nbtc(address)).await?;
             println!("{} IBC-escrowed NBTC", balance);
         }
 
@@ -701,12 +714,17 @@ impl BalanceCmd {
 }
 
 #[derive(Parser, Debug)]
-pub struct DelegationsCmd;
+pub struct DelegationsCmd {
+    #[clap(flatten)]
+    config: nomic::network::Config,
+}
 
 impl DelegationsCmd {
     async fn run(&self) -> Result<()> {
         let address = my_address();
-        let delegations = app_client()
+        let delegations = self
+            .config
+            .client()
             .query(|app| app.staking.delegations(address))
             .await?;
 
@@ -750,11 +768,16 @@ impl DelegationsCmd {
 }
 
 #[derive(Parser, Debug)]
-pub struct ValidatorsCmd;
+pub struct ValidatorsCmd {
+    #[clap(flatten)]
+    config: nomic::network::Config,
+}
 
 impl ValidatorsCmd {
     async fn run(&self) -> Result<()> {
-        let mut validators = app_client()
+        let mut validators = self
+            .config
+            .client()
             .query(|app| app.staking.all_validators())
             .await?;
 
@@ -777,11 +800,17 @@ impl ValidatorsCmd {
 pub struct DelegateCmd {
     validator_addr: Address,
     amount: u64,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 impl DelegateCmd {
     async fn run(&self) -> Result<()> {
-        Ok(app_client()
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
             .call(
                 |app| build_call!(app.accounts.take_as_funding((self.amount + MIN_FEE).into())),
                 |app| {
@@ -806,6 +835,9 @@ pub struct DeclareCmd {
     website: String,
     identity: String,
     details: String,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -845,7 +877,10 @@ impl DeclareCmd {
             min_self_delegation: self.min_self_delegation.into(),
         };
 
-        Ok(app_client()
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
             .call(
                 |app| build_call!(app.accounts.take_as_funding((self.amount + MIN_FEE).into())),
                 |app| build_call!(app.staking.declare_self(declaration.clone())),
@@ -862,6 +897,9 @@ pub struct EditCmd {
     website: String,
     identity: String,
     details: String,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 impl EditCmd {
@@ -876,7 +914,10 @@ impl EditCmd {
             .map_err(|_| orga::Error::App("invalid json".to_string()))?;
         let info_bytes = info_json.as_bytes().to_vec();
 
-        Ok(app_client()
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
             .call(
                 |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
                 |app| {
@@ -895,11 +936,17 @@ impl EditCmd {
 pub struct UnbondCmd {
     validator_addr: Address,
     amount: u64,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 impl UnbondCmd {
     async fn run(&self) -> Result<()> {
-        Ok(app_client()
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
             .call(
                 |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
                 |app| {
@@ -917,11 +964,17 @@ pub struct RedelegateCmd {
     src_validator_addr: Address,
     dest_validator_addr: Address,
     amount: u64,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 impl RedelegateCmd {
     async fn run(&self) -> Result<()> {
-        Ok(app_client()
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
             .call(
                 |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
                 |app| {
@@ -937,11 +990,17 @@ impl RedelegateCmd {
 }
 
 #[derive(Parser, Debug)]
-pub struct UnjailCmd {}
+pub struct UnjailCmd {
+    #[clap(flatten)]
+    config: nomic::network::Config,
+}
 
 impl UnjailCmd {
     async fn run(&self) -> Result<()> {
-        Ok(app_client()
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
             .call(
                 |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
                 |app| build_call!(app.staking.unjail()),
@@ -951,11 +1010,17 @@ impl UnjailCmd {
 }
 
 #[derive(Parser, Debug)]
-pub struct ClaimCmd;
+pub struct ClaimCmd {
+    #[clap(flatten)]
+    config: nomic::network::Config,
+}
 
 impl ClaimCmd {
     async fn run(&self) -> Result<()> {
-        Ok(app_client()
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
             .call(
                 |app| build_call!(app.staking.claim_all()),
                 |app| build_call!(app.deposit_rewards()),
@@ -967,11 +1032,14 @@ impl ClaimCmd {
 #[derive(Parser, Debug)]
 pub struct AirdropCmd {
     address: Option<Address>,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 impl AirdropCmd {
     async fn run(&self) -> Result<()> {
-        let client = app_client();
+        let client = self.config.client();
 
         let addr = self.address.unwrap_or_else(my_address);
         let acct = match client.query(|app| app.airdrop.get(addr)).await? {
@@ -991,11 +1059,14 @@ impl AirdropCmd {
 #[derive(Parser, Debug)]
 pub struct ClaimAirdropCmd {
     address: Option<Address>,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 impl ClaimAirdropCmd {
     async fn run(&self) -> Result<()> {
-        let client = app_client();
+        let client = self.config.client();
 
         let addr = self.address.unwrap_or_else(my_address);
         let acct = match client.query(|app| app.airdrop.get(addr)).await? {
@@ -1009,7 +1080,9 @@ impl ClaimAirdropCmd {
         let mut claimed = false;
 
         if acct.airdrop1.claimable > 0 {
-            app_client()
+            self.config
+                .client()
+                .with_wallet(wallet())
                 .call(
                     |app| build_call!(app.airdrop.claim_airdrop1()),
                     |app| build_call!(app.accounts.give_from_funding_all()),
@@ -1020,7 +1093,9 @@ impl ClaimAirdropCmd {
         }
 
         if acct.airdrop2.claimable > 0 {
-            app_client()
+            self.config
+                .client()
+                .with_wallet(wallet())
                 .call(
                     |app| build_call!(app.airdrop.claim_airdrop2()),
                     |app| build_call!(app.accounts.give_from_funding_all()),
@@ -1071,7 +1146,7 @@ impl RelayerCmd {
         let create_relayer = async || {
             let btc_client = self.btc_client().await.unwrap();
 
-            Relayer::new(btc_client)
+            Relayer::new(btc_client, self.config.node.as_ref().unwrap().to_string())
         };
 
         let mut relayer = create_relayer().await;
@@ -1127,7 +1202,8 @@ impl SignerCmd {
             key_path,
             self.max_withdrawal_rate,
             self.max_sigset_change_rate,
-            app_client,
+            // TODO: check for custom RPC port, allow config, etc
+            || nomic::app_client("http://localhost:26657"),
         )?
         .start();
 
@@ -1142,11 +1218,16 @@ impl SignerCmd {
 #[derive(Parser, Debug)]
 pub struct SetSignatoryKeyCmd {
     xpub: bitcoin::util::bip32::ExtendedPubKey,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 impl SetSignatoryKeyCmd {
     async fn run(&self) -> Result<()> {
-        app_client()
+        self.config
+            .client()
+            .with_wallet(wallet())
             .call(
                 |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
                 |app| build_call!(app.bitcoin.set_signatory_key(self.xpub.into())),
@@ -1157,8 +1238,11 @@ impl SetSignatoryKeyCmd {
     }
 }
 
-async fn deposit(dest: DepositCommitment) -> Result<()> {
-    let sigset = app_client()
+async fn deposit(
+    dest: DepositCommitment,
+    client: AppClient<InnerApp, InnerApp, HttpClient, Nom, orga::client::wallet::Unsigned>,
+) -> Result<()> {
+    let sigset = client
         .query(|app| Ok(app.bitcoin.checkpoints.active_sigset()?))
         .await?;
     let script = sigset.output_script(dest.commitment_bytes()?.as_slice())?;
@@ -1190,13 +1274,16 @@ async fn deposit(dest: DepositCommitment) -> Result<()> {
 #[derive(Parser, Debug)]
 pub struct DepositCmd {
     address: Option<Address>,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 impl DepositCmd {
     async fn run(&self) -> Result<()> {
         let dest_addr = self.address.unwrap_or_else(my_address);
 
-        deposit(DepositCommitment::Address(dest_addr)).await
+        deposit(DepositCommitment::Address(dest_addr), self.config.client()).await
     }
 }
 
@@ -1233,6 +1320,9 @@ impl InterchainDepositCmd {
 pub struct WithdrawCmd {
     dest: bitcoin::Address,
     amount: u64,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 impl WithdrawCmd {
@@ -1241,7 +1331,9 @@ impl WithdrawCmd {
 
         let script = self.dest.script_pubkey();
 
-        app_client()
+        self.config
+            .client()
+            .with_wallet(wallet())
             .call(
                 |app| build_call!(app.withdraw_nbtc(Adapter::new(script), self.amount.into())),
                 |app| build_call!(app.app_noop()),
@@ -1257,12 +1349,18 @@ impl WithdrawCmd {
 pub struct IbcDepositNbtcCmd {
     to: Address,
     amount: u64,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 #[cfg(feature = "testnet")]
 impl IbcDepositNbtcCmd {
     async fn run(&self) -> Result<()> {
-        Ok(app_client()
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
             .call(
                 |app| build_call!(app.ibc_deposit_nbtc(self.to, self.amount.into())),
                 |app| build_call!(app.app_noop()),
@@ -1275,12 +1373,18 @@ impl IbcDepositNbtcCmd {
 #[derive(Parser, Debug)]
 pub struct IbcWithdrawNbtcCmd {
     amount: u64,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 #[cfg(feature = "testnet")]
 impl IbcWithdrawNbtcCmd {
     async fn run(&self) -> Result<()> {
-        Ok(app_client()
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
             .call(
                 |app| build_call!(app.ibc_withdraw_nbtc(self.amount.into())),
                 |app| build_call!(app.app_noop()),
@@ -1294,6 +1398,9 @@ impl IbcWithdrawNbtcCmd {
 pub struct GrpcCmd {
     #[clap(default_value_t = 9001)]
     port: u16,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 #[cfg(feature = "testnet")]
@@ -1301,7 +1408,8 @@ impl GrpcCmd {
     async fn run(&self) -> Result<()> {
         use orga::ibc::GrpcOpts;
         orga::ibc::start_grpc(
-            || app_client().sub(|app| app.ibc),
+            // TODO: support configuring RPC address
+            || nomic::app_client("http://localhost:26657").sub(|app| app.ibc),
             &GrpcOpts {
                 host: "127.0.0.1".to_string(),
                 port: self.port,
@@ -1321,6 +1429,9 @@ pub struct IbcTransferCmd {
     channel_id: String,
     port_id: String,
     denom: String,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
 #[cfg(feature = "testnet")]
@@ -1338,7 +1449,7 @@ impl IbcTransferCmd {
         //     receiver: self.receiver.clone(),
         // };
 
-        // Ok(app_client()
+        // Ok(self.config.client()
         //     .pay_from(async move |client| {
         //         client
         //             .ibc_deposit_nbtc(my_address(), self.amount.into())
@@ -1370,6 +1481,190 @@ impl ExportCmd {
             orga::plugins::ABCIPlugin::<nomic::app::App>::load(store, &mut root_bytes.as_slice())?;
 
         serde_json::to_writer_pretty(std::io::stdout(), &app).unwrap();
+
+        Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct UpgradeStatusCmd {
+    #[clap(flatten)]
+    config: nomic::network::Config,
+}
+
+impl UpgradeStatusCmd {
+    async fn run(&self) -> Result<()> {
+        use orga::coins::staking::ValidatorQueryInfo;
+        use orga::coins::VersionedAddress;
+        use std::collections::{HashMap, HashSet};
+        let client = self.config.client();
+        let tm_client =
+            tendermint_rpc::HttpClient::new(self.config.node.as_ref().unwrap().as_str()).unwrap();
+        let curr_height = tm_client
+            .status()
+            .await
+            .unwrap()
+            .sync_info
+            .latest_block_height;
+        let validators = tm_client
+            .validators(curr_height, tendermint_rpc::Paging::All)
+            .await
+            .unwrap()
+            .validators;
+
+        let mut vp_map: HashMap<[u8; 32], u64> = HashMap::new();
+        let mut total_vp = 0;
+        for validator in validators {
+            vp_map.insert(
+                validator.pub_key.to_bytes().try_into().unwrap(),
+                validator.power(),
+            );
+            total_vp += validator.power();
+        }
+
+        let (delay_seconds, threshold, current_version) = client
+            .query(|app: InnerApp| {
+                let current_version = app.upgrade.current_version.get(())?.unwrap();
+                Ok((
+                    app.upgrade.activation_delay_seconds,
+                    app.upgrade.threshold,
+                    current_version.to_vec(),
+                ))
+            })
+            .await?;
+
+        let next_version: orga::upgrade::Version = vec![current_version[0] + 1].try_into().unwrap();
+        let mut signals: Vec<([u8; 32], i64)> = client
+            .query(|app: InnerApp| {
+                let mut signals = vec![];
+                for entry in app.upgrade.signals.iter()? {
+                    let (pubkey, signal) = entry?;
+                    if signal.version == next_version {
+                        signals.push((*pubkey, signal.time));
+                    }
+                }
+                Ok(signals)
+            })
+            .await?;
+
+        signals.sort_by(|a, b| a.1.cmp(&b.1));
+        let mut signaled_vp = 0;
+        let mut activation_time = None;
+        let threshold: f64 = threshold.to_string().parse().unwrap();
+
+        for (pubkey, time) in signals.iter() {
+            signaled_vp += vp_map.get(pubkey).unwrap_or(&0);
+            let frac = signaled_vp as f64 / total_vp as f64;
+            if frac >= threshold && activation_time.is_none() {
+                activation_time.replace(time + delay_seconds);
+            }
+        }
+        let frac = signaled_vp as f64 / total_vp as f64;
+
+        if frac < 0.01 {
+            println!("No upgrade in progress");
+            return Ok(());
+        }
+
+        let all_validators: Vec<ValidatorQueryInfo> = client
+            .query(|app: InnerApp| app.staking.all_validators())
+            .await?;
+
+        let mut validator_names: HashMap<orga::coins::VersionedAddress, (String, u64)> =
+            HashMap::new();
+        all_validators
+            .into_iter()
+            .filter(|v| v.in_active_set)
+            .for_each(|v| {
+                let bytes: Vec<u8> = v.info.into();
+                let name = if let Ok(info) =
+                    serde_json::from_slice::<'_, serde_json::Value>(bytes.as_slice())
+                {
+                    info.get("moniker")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(v.address.to_string().as_str())
+                        .to_string()
+                } else {
+                    v.address.to_string()
+                };
+
+                validator_names.insert(v.address, (name, v.amount_staked.into()));
+            });
+
+        let mut consensus_keys: HashMap<VersionedAddress, [u8; 32]> = HashMap::new();
+        for (address, _) in validator_names.iter() {
+            let consensus_key = client
+                .query(|app: InnerApp| app.staking.consensus_key((*address).into()))
+                .await?;
+            consensus_keys.insert(*address, consensus_key);
+        }
+        let mut signaled_cons_keys: HashSet<[u8; 32]> = HashSet::new();
+
+        for (cons_key, _) in signals.iter() {
+            signaled_cons_keys.insert(*cons_key);
+        }
+
+        let mut entries = validator_names.iter().collect::<Vec<_>>();
+        entries.sort_by(|(_, (_, a)), (_, (_, b))| b.cmp(a));
+
+        println!("");
+        println!("Upgraded:");
+        for (addr, (name, power)) in entries.iter() {
+            let cons_key = consensus_keys.get(addr).unwrap();
+            if signaled_cons_keys.contains(cons_key) {
+                println!(
+                    "✅ {} ({:.2}%)",
+                    name,
+                    (*power as f64 / total_vp as f64) * 100.0
+                );
+            }
+        }
+        println!("");
+        println!("Not upgraded:");
+        for (addr, (name, power)) in entries.iter() {
+            let cons_key = consensus_keys.get(addr).unwrap();
+            if !signaled_cons_keys.contains(cons_key) {
+                println!(
+                    "❌ {} ({:.2}%)",
+                    name,
+                    (*power as f64 / total_vp as f64) * 100.0
+                );
+            }
+        }
+        println!("");
+
+        println!(
+            "Upgrade has been signaled by {:.2}% of voting power",
+            frac * 100.0
+        );
+
+        if let Some(t) = activation_time {
+            use chrono::prelude::*;
+            let mut activation_date = chrono::Utc.timestamp_opt(t, 0).unwrap();
+            if activation_date.hour() > 17
+                || activation_date.hour() == 17 && activation_date.minute() >= 10
+            {
+                activation_date = activation_date
+                    .checked_add_days(chrono::Days::new(1))
+                    .unwrap();
+            }
+            activation_date = activation_date
+                .with_hour(17)
+                .unwrap()
+                .with_minute(0)
+                .unwrap()
+                .with_second(0)
+                .unwrap();
+
+            while !nomic::app::in_upgrade_window(activation_date.timestamp()) {
+                activation_date = activation_date
+                    .checked_add_days(chrono::Days::new(1))
+                    .unwrap();
+            }
+            println!("Upgrade will activate at {}", activation_date);
+        } else {
+            println!("Upgrade requires {:.2}% of voting power", threshold * 100.0);
+        }
 
         Ok(())
     }

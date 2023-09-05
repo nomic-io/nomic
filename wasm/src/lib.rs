@@ -11,7 +11,7 @@ use std::str::FromStr;
 // use crate::web_client::WebClient;
 use js_sys::{Array, Uint8Array};
 use nomic::app::{App, DepositCommitment, InnerApp, Nom};
-use nomic::bitcoin::Nbtc;
+use nomic::bitcoin::{Nbtc, NETWORK as BITCOIN_NETWORK};
 use nomic::orga::client::wallet::Unsigned;
 use nomic::orga::client::AppClient;
 use nomic::orga::coins::Address;
@@ -25,8 +25,6 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 use web_client::WebClient;
 use web_sys::{Request, RequestInit, RequestMode, Response};
-
-const BITCOIN_NETWORK: bitcoin::Network = ::bitcoin::Network::Testnet;
 
 #[wasm_bindgen(start)]
 pub fn main() -> std::result::Result<(), JsValue> {
@@ -433,7 +431,7 @@ pub async fn gen_deposit_addr(dest_addr: String) -> Result<DepositAddress, JsErr
     )?;
     // TODO: get network from somewhere
     // TODO: make test/mainnet option configurable
-    let btc_addr = bitcoin::Address::from_script(&script, bitcoin::Network::Testnet)?;
+    let btc_addr = bitcoin::Address::from_script(&script, BITCOIN_NETWORK)?;
 
     Ok(DepositAddress {
         address: btc_addr.to_string(),

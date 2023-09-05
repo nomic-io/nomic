@@ -1,8 +1,9 @@
 #![cfg(not(target_arch = "wasm32"))]
-
 #[cfg(feature = "full")]
 use crate::app::App;
+use crate::app::InnerApp;
 use crate::app::Nom;
+use crate::app_client;
 #[cfg(feature = "full")]
 use crate::bitcoin::adapter::Adapter;
 #[cfg(feature = "full")]
@@ -10,7 +11,6 @@ use crate::bitcoin::header_queue::Config as HeaderQueueConfig;
 #[cfg(feature = "full")]
 use crate::bitcoin::signer::Signer;
 use crate::error::{Error, Result};
-use crate::{app::InnerApp, app_client_testnet};
 use bitcoin::hashes::hex::ToHex;
 use bitcoin::secp256k1::{self, rand, SecretKey};
 #[cfg(feature = "full")]
@@ -27,13 +27,14 @@ use chrono::{TimeZone, Utc};
 use ed::Encode;
 #[cfg(feature = "full")]
 use log::info;
+use orga::client::Wallet;
 use orga::coins::staking::{Commission, Declaration};
 use orga::coins::{Address, Coin, Decimal};
 use orga::context::Context;
 #[cfg(feature = "full")]
 use orga::merk::MerkStore;
 use orga::plugins::sdk_compat::sdk;
-use orga::plugins::{ABCIPlugin, ChainId, Time, MIN_FEE};
+use orga::plugins::{ABCIPlugin, ChainId, SignerCall, Time, MIN_FEE};
 use orga::state::State;
 #[cfg(feature = "full")]
 use orga::store::BackingStore;
@@ -42,16 +43,18 @@ use orga::store::Write;
 #[cfg(feature = "full")]
 use orga::store::{Shared, Store};
 use orga::tendermint::client::HttpClient;
+use orga::Result as OrgaResult;
 use orga::{client::wallet::DerivedKey, macros::build_call};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 #[cfg(feature = "full")]
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
-#[cfg(feature = "full")]
 use std::str::FromStr;
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+const DEFAULT_RPC: &str = "http://localhost:26657";
 
 pub fn retry<F, T, E>(f: F, max_retries: u32) -> std::result::Result<T, E>
 where
@@ -235,7 +238,7 @@ pub async fn declare_validator(home: &Path, wallet: DerivedKey) -> Result<()> {
         min_self_delegation: 0.into(),
     };
 
-    app_client_testnet()
+    app_client(DEFAULT_RPC)
         .with_wallet(wallet)
         .call(
             move |app| build_call!(app.accounts.take_as_funding((100000 + MIN_FEE).into())),
@@ -250,7 +253,10 @@ pub async fn declare_validator(home: &Path, wallet: DerivedKey) -> Result<()> {
 pub async fn poll_for_blocks() {
     info!("Scanning for blocks...");
     loop {
-        match app_client_testnet().query(|app| app.app_noop_query()).await {
+        match app_client(DEFAULT_RPC)
+            .query(|app| app.app_noop_query())
+            .await
+        {
             Ok(_) => {
                 break;
             }
@@ -264,7 +270,7 @@ pub async fn poll_for_blocks() {
 pub async fn poll_for_signatory_key() {
     info!("Scanning for signatory key...");
     loop {
-        match app_client_testnet()
+        match app_client(DEFAULT_RPC)
             .query(|app| Ok(app.bitcoin.checkpoints.active_sigset()?))
             .await
         {
@@ -276,14 +282,14 @@ pub async fn poll_for_signatory_key() {
 
 pub async fn poll_for_completed_checkpoint(num_checkpoints: u32) {
     info!("Scanning for signed checkpoints...");
-    let mut checkpoint_len = app_client_testnet()
-        .query(|app| Ok(app.bitcoin.checkpoints.completed()?.len()))
+    let mut checkpoint_len = app_client(DEFAULT_RPC)
+        .query(|app| Ok(app.bitcoin.checkpoints.completed(1_000)?.len()))
         .await
         .unwrap();
 
     while checkpoint_len < num_checkpoints as usize {
-        checkpoint_len = app_client_testnet()
-            .query(|app| Ok(app.bitcoin.checkpoints.completed()?.len()))
+        checkpoint_len = app_client(DEFAULT_RPC)
+            .query(|app| Ok(app.bitcoin.checkpoints.completed(1_000)?.len()))
             .await
             .unwrap();
         tokio::time::sleep(Duration::from_secs(1)).await;
@@ -293,7 +299,7 @@ pub async fn poll_for_completed_checkpoint(num_checkpoints: u32) {
 pub async fn poll_for_bitcoin_header(height: u32) -> Result<()> {
     info!("Scanning for bitcoin header {}...", height);
     loop {
-        let current_height = app_client_testnet()
+        let current_height = app_client(DEFAULT_RPC)
             .query(|app| Ok(app.bitcoin.headers.height()?))
             .await?;
         if current_height >= height {
@@ -333,14 +339,36 @@ pub fn populate_bitcoin_block(client: &BitcoinD) -> BitcoinBlockData {
     }
 }
 
-pub struct KeyData {
+#[derive(Clone)]
+pub struct NomicTestWallet {
     pub privkey: SecretKey,
     pub address: Address,
     pub script: Script,
+    pub wallet: DerivedKey,
+}
+
+impl Wallet for NomicTestWallet {
+    fn address(&self) -> OrgaResult<Option<Address>> {
+        Ok(Some(self.wallet.address()))
+    }
+
+    fn sign(&self, call_bytes: &[u8]) -> OrgaResult<SignerCall> {
+        self.wallet.sign(call_bytes)
+    }
+}
+
+impl NomicTestWallet {
+    pub fn bitcoin_address(&self) -> bitcoin::Address {
+        bitcoin::Address::from_script(&self.script, bitcoin::Network::Regtest).unwrap()
+    }
 }
 
 #[cfg(feature = "full")]
-pub fn setup_test_app(home: &Path, block_data: &BitcoinBlockData) -> Vec<KeyData> {
+pub fn setup_test_app(
+    home: &Path,
+    block_data: &BitcoinBlockData,
+    num_accounts: u16,
+) -> Vec<NomicTestWallet> {
     let mut app = ABCIPlugin::<App>::default();
     let mut store = Store::new(BackingStore::Merk(Shared::new(MerkStore::new(
         home.join("merk"),
@@ -380,15 +408,19 @@ pub fn setup_test_app(home: &Path, block_data: &BitcoinBlockData) -> Vec<KeyData
             .deposit(address, Coin::mint(1000000000))
             .unwrap();
 
-        let keys: Vec<KeyData> = (0..10)
+        let keys: Vec<NomicTestWallet> = (0..num_accounts)
             .map(|_| {
                 let privkey = SecretKey::new(&mut rand::thread_rng());
                 let address = address_from_privkey(&privkey);
                 let script = address_to_script(address).unwrap();
-                KeyData {
+                let secret_key =
+                    orga::secp256k1::SecretKey::from_slice(&privkey.secret_bytes()).unwrap();
+                let wallet = DerivedKey::from_secret_key(secret_key);
+                NomicTestWallet {
                     privkey,
                     address,
                     script,
+                    wallet,
                 }
             })
             .collect();

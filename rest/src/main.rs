@@ -3,11 +3,12 @@ extern crate rocket;
 
 use nomic::{
     app::{App, InnerApp, Nom},
-    app_client_testnet,
     orga::{
+        client::{wallet::Unsigned, AppClient},
         coins::{Address, Amount, Decimal},
         plugins::*,
         query::Query,
+        tendermint::client::HttpClient,
     },
 };
 use rocket::response::status::BadRequest;
@@ -23,11 +24,15 @@ lazy_static::lazy_static! {
     static ref QUERY_CACHE: Arc<RwLock<HashMap<String, (u64, String)>>> = Arc::new(RwLock::new(HashMap::new()));
 }
 
+fn app_client() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned> {
+    nomic::app_client("http://localhost:26657")
+}
+
 #[get("/cosmos/bank/v1beta1/balances/<address>")]
 async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
 
-    let balance: u64 = app_client_testnet()
+    let balance: u64 = app_client()
         .query(|app| app.accounts.balance(address))
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
@@ -55,7 +60,7 @@ async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
 async fn bank_balances_2(address: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
 
-    let balance: u64 = app_client_testnet()
+    let balance: u64 = app_client()
         .query(|app| app.accounts.balance(address))
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
@@ -76,13 +81,13 @@ async fn bank_balances_2(address: &str) -> Result<Value, BadRequest<String>> {
 async fn auth_accounts(addr_str: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = addr_str.parse().unwrap();
 
-    let balance: u64 = app_client_testnet()
+    let balance: u64 = app_client()
         .query(|app| app.accounts.balance(address))
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
 
-    let mut nonce: u64 = app_client_testnet()
+    let mut nonce: u64 = app_client()
         .query_root(|app| app.inner.inner.borrow().inner.inner.inner.nonce(address))
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
@@ -111,13 +116,13 @@ async fn auth_accounts(addr_str: &str) -> Result<Value, BadRequest<String>> {
 async fn auth_accounts2(addr_str: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = addr_str.parse().unwrap();
 
-    let balance: u64 = app_client_testnet()
+    let balance: u64 = app_client()
         .query(|app| app.accounts.balance(address))
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
 
-    let mut nonce: u64 = app_client_testnet()
+    let mut nonce: u64 = app_client()
         .query_root(|app| app.inner.inner.borrow().inner.inner.inner.nonce(address))
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
@@ -286,7 +291,7 @@ async fn query(query: &str, height: Option<u32>) -> Result<String, BadRequest<St
 async fn staking_delegators_delegations(address: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
 
-    let delegations = app_client_testnet()
+    let delegations = app_client()
         .query(|app| app.staking.delegations(address))
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
@@ -315,7 +320,7 @@ async fn staking_delegators_delegations(address: &str) -> Result<Value, BadReque
 async fn staking_delegators_delegations_2(address: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
 
-    let delegations = app_client_testnet()
+    let delegations = app_client()
         .query(|app| app.staking.delegations(address))
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
@@ -439,7 +444,7 @@ async fn distribution_delegatrs_rewards_2(_address: &str) -> Value {
 
 #[get("/cosmos/mint/v1beta1/inflation")]
 async fn minting_inflation() -> Result<Value, BadRequest<String>> {
-    let validators = app_client_testnet()
+    let validators = app_client()
         .query(|app| app.staking.all_validators())
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
@@ -459,7 +464,7 @@ async fn minting_inflation() -> Result<Value, BadRequest<String>> {
 
 #[get("/minting/inflation")]
 async fn minting_inflation_2() -> Result<Value, BadRequest<String>> {
-    let validators = app_client_testnet()
+    let validators = app_client()
         .query(|app| app.staking.all_validators())
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;

@@ -20,9 +20,9 @@ use orga::describe::Describe;
 use orga::encoding::{Decode, Encode, Terminated};
 use orga::migrate::{Migrate, MigrateFrom};
 use orga::orga;
-use orga::plugins::Paid;
 #[cfg(feature = "full")]
 use orga::plugins::Validators;
+use orga::plugins::{Paid, ValidatorEntry};
 use orga::plugins::{Signer, Time};
 use orga::prelude::FieldCall;
 use orga::query::FieldQuery;
@@ -58,7 +58,7 @@ pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Testnet;
 #[cfg(all(feature = "devnet", feature = "testnet"))]
 pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Regtest;
 
-#[orga(skip(Default))]
+#[orga(skip(Default), version = 1)]
 pub struct Config {
     min_withdrawal_checkpoints: u32,
     min_deposit_amount: u64,
@@ -71,6 +71,27 @@ pub struct Config {
     emergency_disbursal_min_tx_amt: u64,
     emergency_disbursal_lock_time_interval: u32,
     emergency_disbursal_max_tx_size: u64,
+    #[orga(version(V1))]
+    max_offline_checkpoints: u32,
+}
+
+impl MigrateFrom<ConfigV0> for ConfigV1 {
+    fn migrate_from(value: ConfigV0) -> OrgaResult<Self> {
+        Ok(Self {
+            min_withdrawal_checkpoints: value.min_withdrawal_checkpoints,
+            min_deposit_amount: value.min_deposit_amount,
+            min_withdrawal_amount: value.min_withdrawal_amount,
+            max_withdrawal_amount: value.max_withdrawal_amount,
+            max_withdrawal_script_length: value.max_withdrawal_script_length,
+            transfer_fee: value.transfer_fee,
+            min_confirmations: value.min_confirmations,
+            units_per_sat: value.units_per_sat,
+            emergency_disbursal_min_tx_amt: value.emergency_disbursal_min_tx_amt,
+            emergency_disbursal_lock_time_interval: value.emergency_disbursal_lock_time_interval,
+            emergency_disbursal_max_tx_size: value.emergency_disbursal_max_tx_size,
+            ..Default::default()
+        })
+    }
 }
 
 impl Config {
@@ -87,6 +108,7 @@ impl Config {
             emergency_disbursal_min_tx_amt: 1000,
             emergency_disbursal_lock_time_interval: 60 * 60 * 24 * 7, //one week
             emergency_disbursal_max_tx_size: 50_000,
+            max_offline_checkpoints: 20,
         }
     }
 
@@ -127,35 +149,20 @@ pub struct Bitcoin {
     pub signatory_keys: SignatoryKeys,
     pub(crate) reward_pool: Coin<Nbtc>,
 
-    #[orga(version(V1))]
     pub recovery_scripts: Map<Address, Adapter<Script>>,
-    #[orga(version(V1))]
     config: Config,
 }
 
 impl MigrateFrom<BitcoinV0> for BitcoinV1 {
-    #[allow(unused_mut)]
-    fn migrate_from(mut value: BitcoinV0) -> OrgaResult<Self> {
-        #[cfg(not(feature = "testnet"))]
-        value.checkpoints.rewind(1607).unwrap();
-
-        Ok(Self {
-            headers: value.headers,
-            processed_outpoints: value.processed_outpoints,
-            checkpoints: value.checkpoints,
-            accounts: value.accounts,
-            recovery_scripts: Map::default(),
-            signatory_keys: value.signatory_keys,
-            reward_pool: value.reward_pool,
-            config: Config::default(),
-        })
+    fn migrate_from(_value: BitcoinV0) -> OrgaResult<Self> {
+        unreachable!()
     }
 }
 
 pub type ConsensusKey = [u8; 32];
 
 // #[derive(Call, Query, Clone, Debug, Client, PartialEq, Serialize)]
-#[derive(Debug, PartialEq, Serialize, FieldCall, FieldQuery, Clone)]
+#[derive(Debug, PartialEq, Serialize, FieldCall, FieldQuery, Clone, Copy)]
 pub struct Xpub {
     key: ExtendedPubKey,
 }
@@ -455,7 +462,7 @@ impl Bitcoin {
             Some(value) => value,
         };
 
-        if bitcoin::Amount::from_sat(value) < script_pubkey.dust_value() {
+        if bitcoin::Amount::from_sat(value) <= script_pubkey.dust_value() {
             return Err(OrgaError::App(
                 "Withdrawal is too small to pay its dust limit".to_string(),
             )
@@ -506,11 +513,7 @@ impl Bitcoin {
 
     #[query]
     pub fn value_locked(&self) -> Result<u64> {
-        let completed = self.checkpoints.completed()?;
-        if completed.is_empty() {
-            return Ok(0);
-        }
-        let last_completed = completed.iter().last().unwrap();
+        let last_completed = self.checkpoints.last_completed()?;
         Ok(last_completed.reserve_output()?.unwrap().value)
     }
 
@@ -530,7 +533,8 @@ impl Bitcoin {
         }
         let now = signing.create_time().max(now);
 
-        let completed = self.checkpoints.completed()?;
+        // TODO: is this a good completed query limit?
+        let completed = self.checkpoints.completed(1_000)?;
         if completed.is_empty() {
             return Ok(ChangeRates::default());
         }
@@ -603,8 +607,9 @@ impl Bitcoin {
     pub fn begin_block_step(
         &mut self,
         external_outputs: impl Iterator<Item = Result<bitcoin::TxOut>>,
-    ) -> Result<()> {
-        self.checkpoints
+    ) -> Result<Vec<ConsensusKey>> {
+        let pushed = self
+            .checkpoints
             .maybe_step(
                 self.signatory_keys.map(),
                 &self.accounts,
@@ -613,7 +618,58 @@ impl Bitcoin {
             )
             .map_err(|err| OrgaError::App(err.to_string()))?;
 
-        Ok(())
+        if pushed {
+            self.offline_signers()
+        } else {
+            Ok(vec![])
+        }
+    }
+
+    #[cfg(feature = "full")]
+    fn offline_signers(&mut self) -> Result<Vec<ConsensusKey>> {
+        let mut validators = self
+            .context::<Validators>()
+            .ok_or_else(|| OrgaError::App("No validator context found".to_string()))?
+            .entries()?;
+        validators.sort_by(|a, b| b.power.cmp(&a.power));
+
+        let offline_threshold = self.config.max_offline_checkpoints;
+        let sigset = self.checkpoints.active_sigset()?;
+        let lowest_power = sigset.signatories.last().unwrap().voting_power;
+        let completed = self.checkpoints.completed(offline_threshold)?;
+        if completed.len() < offline_threshold as usize {
+            return Ok(vec![]);
+        }
+        let mut offline_signers = vec![];
+        for ValidatorEntry {
+            power,
+            pubkey: cons_key,
+        } in validators
+        {
+            if power < lowest_power {
+                break;
+            }
+
+            let xpub = if let Some(xpub) = self.signatory_keys.get(cons_key)? {
+                xpub
+            } else {
+                continue;
+            };
+
+            let mut offline = true;
+            for checkpoint in completed.iter().rev() {
+                if checkpoint.to_sign(xpub)?.is_empty() {
+                    offline = false;
+                    break;
+                }
+            }
+
+            if offline {
+                offline_signers.push(cons_key);
+            }
+        }
+
+        Ok(offline_signers)
     }
 }
 
@@ -635,10 +691,10 @@ impl SignatoryKeys {
         let mut xpubs = vec![];
         for entry in self.by_cons.iter()? {
             let (_k, v) = entry?;
-            xpubs.push(v.clone());
+            xpubs.push(v);
         }
         for xpub in xpubs {
-            self.xpubs.remove(xpub)?;
+            self.xpubs.remove(*xpub)?;
         }
 
         clear_map(&mut self.by_cons)?;
@@ -651,7 +707,7 @@ impl SignatoryKeys {
     }
 
     pub fn insert(&mut self, consensus_key: ConsensusKey, xpub: Xpub) -> Result<()> {
-        let mut normalized_xpub = xpub.clone();
+        let mut normalized_xpub = xpub;
         normalized_xpub.key.child_number = 0.into();
         normalized_xpub.key.depth = 0;
         normalized_xpub.key.parent_fingerprint = Default::default();
@@ -660,7 +716,7 @@ impl SignatoryKeys {
             return Err(OrgaError::App("Validator already has a signatory key".to_string()).into());
         }
 
-        if self.xpubs.contains_key(normalized_xpub.clone())? {
+        if self.xpubs.contains_key(normalized_xpub)? {
             return Err(OrgaError::App("Duplicate signatory key".to_string()).into());
         }
 
@@ -672,7 +728,7 @@ impl SignatoryKeys {
 
     #[query]
     pub fn get(&self, cons_key: ConsensusKey) -> Result<Option<Xpub>> {
-        Ok(self.by_cons.get(cons_key)?.map(|x| x.clone()))
+        Ok(self.by_cons.get(cons_key)?.map(|x| *x))
     }
 }
 

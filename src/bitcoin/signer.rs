@@ -1,4 +1,5 @@
 use crate::app::{InnerApp, Nom};
+use crate::bitcoin::checkpoint::CheckpointStatus;
 use crate::bitcoin::threshold_sig::Signature;
 use crate::error::Result;
 use bitcoin::secp256k1::{Message, Secp256k1};
@@ -39,7 +40,13 @@ impl<W: Wallet> Signer<W> {
         } else {
             info!("Generating signatory key at {}", path.display());
             let seed: [u8; 32] = rand::thread_rng().gen();
-            let xpriv = ExtendedPrivKey::new_master(bitcoin::Network::Bitcoin, seed.as_slice())?;
+
+            let network = if super::NETWORK == bitcoin::Network::Regtest {
+                bitcoin::Network::Testnet
+            } else {
+                super::NETWORK
+            };
+            let xpriv = ExtendedPrivKey::new_master(network, seed.as_slice())?;
 
             fs::write(path, xpriv.to_string().as_bytes())?;
 
@@ -76,14 +83,21 @@ impl<W: Wallet> Signer<W> {
     }
 
     pub async fn start(mut self) -> Result<()> {
+        const CHECKPOINT_WINDOW: u32 = 20;
         info!("Starting signer...");
         let secp = Secp256k1::signing_only();
         let xpub = ExtendedPubKey::from_priv(&secp, &self.xpriv);
 
+        let mut index = (self.app_client)()
+            .query(|app| {
+                Ok(app.bitcoin.checkpoints.index().max(CHECKPOINT_WINDOW) - CHECKPOINT_WINDOW)
+            })
+            .await?;
+
         loop {
             self.maybe_submit_xpub(&xpub).await?;
 
-            let signed = match self.try_sign(&xpub).await {
+            let signed = match self.try_sign(&xpub, index).await {
                 Ok(signed) => signed,
                 Err(e) => {
                     eprintln!("Signer error: {}", e);
@@ -93,6 +107,8 @@ impl<W: Wallet> Signer<W> {
 
             if !signed {
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            } else {
+                index += 1;
             }
         }
     }
@@ -126,21 +142,29 @@ impl<W: Wallet> Signer<W> {
         Ok(())
     }
 
-    async fn try_sign(&mut self, xpub: &ExtendedPubKey) -> Result<bool> {
+    fn client(&self) -> AppClient<InnerApp, InnerApp, HttpClient, Nom, W> {
+        (self.app_client)()
+    }
+
+    async fn try_sign(&mut self, xpub: &ExtendedPubKey, index: u32) -> Result<bool> {
         let secp = Secp256k1::signing_only();
 
-        if (self.app_client)()
-            .query(|app| Ok(app.bitcoin.checkpoints.signing()?.is_none()))
-            .await?
-        {
+        let status = self
+            .client()
+            .query(|app| Ok(app.bitcoin.checkpoints.get(index)?.status))
+            .await?;
+
+        if matches!(status, CheckpointStatus::Building) {
             return Ok(false);
         }
 
-        let to_sign = (self.app_client)()
-            .query(|app| Ok(app.bitcoin.checkpoints.to_sign(xpub.into())?))
+        let to_sign = self
+            .client()
+            .query(|app| Ok(app.bitcoin.checkpoints.get(index)?.to_sign(xpub.into())?))
             .await?;
+
         if to_sign.is_empty() {
-            return Ok(false);
+            return Ok(matches!(status, CheckpointStatus::Complete));
         }
 
         self.check_change_rates().await?;
@@ -165,14 +189,19 @@ impl<W: Wallet> Signer<W> {
 
         (self.app_client)()
             .call(
-                move |app| build_call!(app.bitcoin.checkpoints.sign(xpub.into(), sigs.clone())),
+                move |app| {
+                    build_call!(app
+                        .bitcoin
+                        .checkpoints
+                        .sign(xpub.into(), sigs.clone(), index))
+                },
                 |app| build_call!(app.app_noop()),
             )
             .await?;
 
         info!("Submitted signatures");
 
-        Ok(true)
+        Ok(false)
     }
 
     async fn check_change_rates(&self) -> Result<()> {

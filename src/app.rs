@@ -83,13 +83,10 @@ pub struct InnerApp {
 
     #[cfg(feature = "testnet")]
     #[call]
-    #[orga(version(V1, V2))]
     pub ibc: Ibc,
 
-    #[orga(version(V1, V2))]
-    upgrade: Upgrade,
+    pub upgrade: Upgrade,
 
-    #[orga(version(V2))]
     #[call]
     pub incentives: Incentives,
 }
@@ -383,8 +380,13 @@ mod abci {
             self.incentive_pool.give(ip_reward)?;
 
             let external_outputs: Vec<crate::error::Result<bitcoin::TxOut>> = vec![]; // TODO: remote chain disbursal
-            self.bitcoin
+            let offline_signers = self
+                .bitcoin
                 .begin_block_step(external_outputs.into_iter())?;
+            for cons_key in offline_signers {
+                let address = self.staking.address_by_consensus_key(cons_key)?.unwrap();
+                self.staking.punish_downtime(address)?;
+            }
 
             let has_nbtc_rewards = self.bitcoin.reward_pool.amount > 0;
             if self.reward_timer.tick(now) && has_stake && has_nbtc_rewards {
@@ -965,7 +967,7 @@ impl RewardTimer {
     }
 }
 
-fn in_upgrade_window(now_seconds: i64) -> bool {
+pub fn in_upgrade_window(now_seconds: i64) -> bool {
     use chrono::prelude::*;
     let now = Utc.timestamp_opt(now_seconds, 0).unwrap();
 
