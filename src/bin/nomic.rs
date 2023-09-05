@@ -1213,7 +1213,7 @@ impl SignerCmd {
             self.max_withdrawal_rate,
             self.max_sigset_change_rate,
             // TODO: check for custom RPC port, allow config, etc
-            || nomic::app_client("http://localhost:26657"),
+            || nomic::app_client("http://localhost:26657").with_wallet(wallet()),
         )?
         .start();
 
