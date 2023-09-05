@@ -274,7 +274,6 @@ impl Relayer {
         Ok(tip)
     }
 
-    #[cfg(feature = "emergency-disbursal")]
     pub async fn start_emergency_disbursal_transaction_relay(&mut self) -> Result<()> {
         info!("Starting emergency disbursal transaction relay...");
 
@@ -289,14 +288,13 @@ impl Relayer {
         }
     }
 
-    #[cfg(feature = "emergency-disbursal")]
     async fn relay_emergency_disbursal_transactions(&mut self) -> Result<()> {
         use std::time::{SystemTime, UNIX_EPOCH};
 
         let mut relayed = HashSet::new();
         loop {
             let disbursal_txs = app_client(&self.app_client_addr)
-                .query(|app| Ok(app.bitcoin.checkpoints.emergency_disbursal_txs(1_000)?))
+                .query(|app| Ok(app.bitcoin.checkpoints.emergency_disbursal_txs()?))
                 .await?;
 
             for tx in disbursal_txs.iter() {

@@ -81,7 +81,6 @@ full = [
 feat-ibc = ["orga/feat-ibc"]
 testnet = []
 devnet = []
-emergency-disbursal = []
 legacy-bin = []
 
 [profile.release]

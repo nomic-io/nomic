@@ -133,7 +133,7 @@ impl SignatorySet {
     }
 
     pub fn signature_threshold(&self) -> u64 {
-        ((self.present_vp as u128) * 2 / 3) as u64
+        ((self.present_vp as u128) * 9 / 10) as u64
     }
 
     pub fn quorum_threshold(&self) -> u64 {
