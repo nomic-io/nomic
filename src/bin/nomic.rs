@@ -6,7 +6,7 @@
 
 use bitcoind::bitcoincore_rpc::{Auth, Client as BtcClient};
 use clap::Parser;
-use nomic::app::DepositCommitment;
+use nomic::app::Dest;
 use nomic::app::InnerApp;
 use nomic::app::Nom;
 use nomic::bitcoin::Nbtc;
@@ -87,8 +87,8 @@ pub enum Command {
     #[cfg(feature = "testnet")]
     InterchainDeposit(InterchainDepositCmd),
     Withdraw(WithdrawCmd),
-    #[cfg(feature = "testnet")]
-    IbcDepositNbtc(IbcDepositNbtcCmd),
+    // #[cfg(feature = "testnet")]
+    // IbcDepositNbtc(IbcDepositNbtcCmd),
     #[cfg(feature = "testnet")]
     IbcWithdrawNbtc(IbcWithdrawNbtcCmd),
     #[cfg(feature = "testnet")]
@@ -140,8 +140,8 @@ impl Command {
                 #[cfg(feature = "testnet")]
                 InterchainDeposit(cmd) => cmd.run().await,
                 Withdraw(cmd) => cmd.run().await,
-                #[cfg(feature = "testnet")]
-                IbcDepositNbtc(cmd) => cmd.run().await,
+                // #[cfg(feature = "testnet")]
+                // IbcDepositNbtc(cmd) => cmd.run().await,
                 #[cfg(feature = "testnet")]
                 IbcWithdrawNbtc(cmd) => cmd.run().await,
                 #[cfg(feature = "testnet")]
@@ -1243,7 +1243,7 @@ impl SetSignatoryKeyCmd {
 }
 
 async fn deposit(
-    dest: DepositCommitment,
+    dest: Dest,
     client: AppClient<InnerApp, InnerApp, HttpClient, Nom, orga::client::wallet::Unsigned>,
 ) -> Result<()> {
     let sigset = client
@@ -1287,7 +1287,7 @@ impl DepositCmd {
     async fn run(&self) -> Result<()> {
         let dest_addr = self.address.unwrap_or_else(my_address);
 
-        deposit(DepositCommitment::Address(dest_addr), self.config.client()).await
+        deposit(Dest::Address(dest_addr), self.config.client()).await
     }
 }
 
@@ -1308,7 +1308,7 @@ impl InterchainDepositCmd {
         todo!()
         // use orga::ibc::encoding::Adapter;
         // let now_ns = now_seconds() as u64 * 1_000_000_000;
-        // let dest = DepositCommitment::Ibc(nomic::app::IbcDepositCommitment {
+        // let dest = Dest::Ibc(nomic::app::IbcDest {
         //     receiver: Adapter::new(self.receiver.parse().unwrap()),
         //     sender: Adapter::new(my_address().to_string().parse().unwrap()),
         //     source_channel: Adapter::new(self.channel.parse().unwrap()),
@@ -1348,30 +1348,30 @@ impl WithdrawCmd {
     }
 }
 
-#[cfg(feature = "testnet")]
-#[derive(Parser, Debug)]
-pub struct IbcDepositNbtcCmd {
-    to: Address,
-    amount: u64,
+// #[cfg(feature = "testnet")]
+// #[derive(Parser, Debug)]
+// pub struct IbcTransferNbtcCmd {
+//     to: Address,
+//     amount: u64,
 
-    #[clap(flatten)]
-    config: nomic::network::Config,
-}
+//     #[clap(flatten)]
+//     config: nomic::network::Config,
+// }
 
-#[cfg(feature = "testnet")]
-impl IbcDepositNbtcCmd {
-    async fn run(&self) -> Result<()> {
-        Ok(self
-            .config
-            .client()
-            .with_wallet(wallet())
-            .call(
-                |app| build_call!(app.ibc_deposit_nbtc(self.to, self.amount.into())),
-                |app| build_call!(app.app_noop()),
-            )
-            .await?)
-    }
-}
+// #[cfg(feature = "testnet")]
+// impl IbcTransferNbtcCmd {
+//     async fn run(&self) -> Result<()> {
+//         Ok(self
+//             .config
+//             .client()
+//             .with_wallet(wallet())
+//             .call(
+//                 |app| build_call!(app.ibc_transfer_nbtc(self.to, self.amount.into())),
+//                 |app| build_call!(app.app_noop()),
+//             )
+//             .await?)
+//     }
+// }
 
 #[cfg(feature = "testnet")]
 #[derive(Parser, Debug)]

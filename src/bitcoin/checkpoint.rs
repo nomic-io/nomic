@@ -6,13 +6,16 @@ use super::{
     threshold_sig::{Signature, ThresholdSig},
     Xpub,
 };
-use crate::bitcoin::{signatory::derive_pubkey, Nbtc};
 use crate::error::{Error, Result};
+use crate::{
+    app::Dest,
+    bitcoin::{signatory::derive_pubkey, Nbtc},
+};
 use bitcoin::hashes::Hash;
 use bitcoin::{blockdata::transaction::EcdsaSighashType, Sequence, Transaction, TxIn, TxOut};
 use derive_more::{Deref, DerefMut};
 use log::info;
-use orga::coins::Accounts;
+use orga::coins::{Accounts, Coin};
 #[cfg(feature = "full")]
 use orga::context::GetContext;
 #[cfg(feature = "full")]
@@ -244,10 +247,12 @@ impl BitcoinTx {
             let threshold = fee / self.output.len();
             let mut min_output = u64::MAX;
             self.output.retain_unordered(|output| {
-                if output.value < min_output {
-                    min_output = output.value;
+                let dust_value = output.script_pubkey.dust_value().to_sat();
+                let adjusted_output = output.value.saturating_sub(dust_value);
+                if adjusted_output < min_output {
+                    min_output = adjusted_output;
                 }
-                Ok(output.value >= threshold)
+                Ok(adjusted_output > threshold)
             })?;
             if self.output.is_empty() {
                 break threshold;
@@ -300,11 +305,13 @@ impl Batch {
     }
 }
 
-#[orga(skip(Default), version = 1)]
+#[orga(skip(Default), version = 2)]
 #[derive(Debug)]
 pub struct Checkpoint {
     pub status: CheckpointStatus,
     pub batches: Deque<Batch>,
+    #[orga(version(V2))]
+    pub pending: Map<Dest, Coin<Nbtc>>,
     pub sigset: SignatorySet,
 }
 
@@ -314,12 +321,24 @@ impl MigrateFrom<CheckpointV0> for CheckpointV1 {
     }
 }
 
+impl MigrateFrom<CheckpointV1> for CheckpointV2 {
+    fn migrate_from(value: CheckpointV1) -> OrgaResult<Self> {
+        Ok(Self {
+            status: value.status,
+            batches: value.batches,
+            pending: Map::new(),
+            sigset: value.sigset,
+        })
+    }
+}
+
 #[orga]
 impl Checkpoint {
     pub fn new(sigset: SignatorySet) -> Result<Self> {
         let mut checkpoint = Checkpoint {
             status: CheckpointStatus::default(),
             batches: Deque::default(),
+            pending: Map::new(),
             sigset,
         };
 
@@ -328,7 +347,6 @@ impl Checkpoint {
 
         #[allow(unused_mut)]
         let mut intermediate_tx_batch = Batch::default();
-        #[cfg(feature = "emergency-disbursal")]
         intermediate_tx_batch.push_back(BitcoinTx::default())?;
         checkpoint.batches.push_back(intermediate_tx_batch)?;
 
@@ -563,7 +581,6 @@ type BuildingAdvanceRes = (
 );
 
 impl<'a> BuildingCheckpointMut<'a> {
-    #[cfg(feature = "emergency-disbursal")]
     fn link_intermediate_tx(&mut self, tx: &mut BitcoinTx) -> Result<()> {
         let sigset = self.sigset.clone();
         let output_script = sigset.output_script(&[0u8])?;
@@ -598,7 +615,6 @@ impl<'a> BuildingCheckpointMut<'a> {
     }
 
     //TODO: Unit tests
-    #[cfg(feature = "emergency-disbursal")]
     fn deduct_emergency_disbursal_fees(&mut self, fee_rate: u64) -> Result<()> {
         let intermediate_tx_fee = {
             let mut intermediate_tx_batch = self
@@ -650,7 +666,6 @@ impl<'a> BuildingCheckpointMut<'a> {
     }
 
     //TODO: Generalize emergency disbursal to dynamic tree structure for intermediate tx overflow
-    #[cfg(feature = "emergency-disbursal")]
     fn generate_emergency_disbursal_txs(
         &mut self,
         nbtc_accounts: &Accounts<Nbtc>,
@@ -660,6 +675,10 @@ impl<'a> BuildingCheckpointMut<'a> {
         fee_rate: u64,
         reserve_value: u64,
     ) -> Result<()> {
+        #[cfg(not(feature = "full"))]
+        unimplemented!();
+
+        #[cfg(feature = "full")]
         {
             //TODO: Pull bitcoin config from state
             let bitcoin_config = super::Bitcoin::config();
@@ -685,10 +704,32 @@ impl<'a> BuildingCheckpointMut<'a> {
                 }
             }
 
-            let mut final_txs = vec![BitcoinTx::with_lock_time(lock_time)];
+            // // TODO: combine pending transfer outputs into other outputs by adding to amount
+            let pending_outputs: Vec<_> = self
+                .pending
+                .iter()?
+                .filter_map(|entry| {
+                    let (dest, coins) = match entry {
+                        Err(err) => return Some(Err(err.into())),
+                        Ok(entry) => entry,
+                    };
+                    let script_pubkey = match dest.to_output_script(recovery_scripts) {
+                        Err(err) => return Some(Err(err.into())),
+                        Ok(maybe_script) => maybe_script,
+                    }?;
+                    Some(Ok::<_, Error>(TxOut {
+                        value: u64::from(coins.amount) / 1_000_000,
+                        script_pubkey,
+                    }))
+                })
+                .collect();
 
-            let num_outputs = outputs.len();
-            for (i, output) in outputs.into_iter().chain(external_outputs).enumerate() {
+            let mut final_txs = vec![BitcoinTx::with_lock_time(lock_time)];
+            for output in outputs
+                .into_iter()
+                .chain(pending_outputs.into_iter())
+                .chain(external_outputs)
+            {
                 let output = output?;
 
                 if output.value < bitcoin_config.emergency_disbursal_min_tx_amt {
@@ -704,12 +745,12 @@ impl<'a> BuildingCheckpointMut<'a> {
 
                 curr_tx.output.push_back(Adapter::new(output))?;
 
-                if i == num_outputs - 1 {
-                    self.link_intermediate_tx(&mut curr_tx)?;
-                }
-
                 final_txs.push(curr_tx);
             }
+
+            let mut last_tx = final_txs.pop().unwrap();
+            self.link_intermediate_tx(&mut last_tx)?;
+            final_txs.push(last_tx);
 
             let tx_in = Input::new(reserve_outpoint, &sigset, &[0u8], reserve_value)?;
             let output_script = self.sigset.output_script(&[0u8])?;
@@ -839,7 +880,6 @@ impl<'a> BuildingCheckpointMut<'a> {
             vout: 0,
         };
 
-        #[cfg(feature = "emergency-disbursal")]
         self.generate_emergency_disbursal_txs(
             nbtc_accounts,
             recovery_scripts,
@@ -871,73 +911,6 @@ impl CheckpointQueue {
     pub fn reset(&mut self) -> OrgaResult<()> {
         self.index = 0;
         super::clear_deque(&mut self.queue)?;
-
-        Ok(())
-    }
-
-    pub fn rewind(&mut self, to_index: u32) -> Result<()> {
-        if to_index > self.index || self.index - to_index > self.queue.len() as u32 {
-            return Err(OrgaError::App("Invalid index".to_string()).into());
-        }
-
-        let mut inputs = vec![];
-        let mut outputs = vec![];
-        let mut checkpoint = loop {
-            let mut removed = self.queue.pop_back()?.unwrap().into_inner();
-
-            let mut checkpoint_batch = removed
-                .batches
-                .get_mut(BatchType::Checkpoint as u64)?
-                .unwrap();
-            checkpoint_batch.signed_txs = 0;
-
-            let mut checkpoint_tx = checkpoint_batch.back_mut()?.unwrap();
-            checkpoint_tx.signed_inputs = 0;
-
-            while let Some(input) = checkpoint_tx.input.pop_back()? {
-                if checkpoint_tx.input.is_empty() && self.index != to_index {
-                    // skip reserve input (except on target index)
-                    continue;
-                }
-                let mut input = input.into_inner();
-                input.signatures.clear_sigs()?;
-                inputs.push(input);
-            }
-
-            while let Some(output) = checkpoint_tx.output.pop_back()? {
-                if checkpoint_tx.output.is_empty() {
-                    // skip reserve output
-                    continue;
-                }
-                if output.value < output.script_pubkey.dust_value().to_sat() {
-                    // skip dust outputs
-                    continue;
-                }
-                outputs.push(output.into_inner());
-            }
-
-            if self.index == to_index {
-                break removed;
-            }
-            self.index -= 1;
-        };
-
-        checkpoint.status = CheckpointStatus::Building;
-
-        let mut checkpoint_batch = checkpoint
-            .batches
-            .get_mut(BatchType::Checkpoint as u64)?
-            .unwrap();
-        let mut checkpoint_tx = checkpoint_batch.back_mut()?.unwrap();
-        checkpoint_tx.input.push_back(inputs.pop().unwrap())?;
-        for input in inputs {
-            checkpoint_tx.input.push_back(input)?;
-        }
-        for output in outputs {
-            checkpoint_tx.output.push_back(output)?;
-        }
-
-        self.queue.push_back(checkpoint)?;
 
         Ok(())
     }
@@ -1016,16 +989,22 @@ impl CheckpointQueue {
         Ok(out)
     }
 
-    #[query]
-    pub fn last_completed(&self) -> Result<Ref<Checkpoint>> {
-        let index = if self.signing()?.is_some() {
+    pub fn last_completed_index(&self) -> Result<u32> {
+        if self.signing()?.is_some() {
             self.index.checked_sub(2)
         } else {
             self.index.checked_sub(1)
         }
-        .ok_or_else(|| Error::Orga(OrgaError::App("No completed checkpoints yet".to_string())))?;
+        .ok_or_else(|| Error::Orga(OrgaError::App("No completed checkpoints yet".to_string())))
+    }
 
-        self.get(index)
+    #[query]
+    pub fn last_completed(&self) -> Result<Ref<Checkpoint>> {
+        self.get(self.last_completed_index()?)
+    }
+
+    pub fn last_completed_mut(&mut self) -> Result<ChildMut<u64, Checkpoint>> {
+        self.get_mut(self.last_completed_index()?)
     }
 
     #[query]
@@ -1043,33 +1022,24 @@ impl CheckpointQueue {
     }
 
     #[query]
-    pub fn emergency_disbursal_txs(
-        &self,
-        limit: u32,
-    ) -> Result<Vec<Adapter<bitcoin::Transaction>>> {
-        #[cfg(not(feature = "emergency-disbursal"))]
-        unimplemented!("{}", limit);
+    pub fn emergency_disbursal_txs(&self) -> Result<Vec<Adapter<bitcoin::Transaction>>> {
+        let mut txs = vec![];
 
-        #[cfg(feature = "emergency-disbursal")]
-        {
-            let mut vec = vec![];
+        if let Some(completed) = self.completed(1)?.last() {
+            let intermediate_tx_batch = completed
+                .batches
+                .get(BatchType::IntermediateTx as u64)?
+                .unwrap();
+            let intermediate_tx = intermediate_tx_batch.get(0)?.unwrap();
+            txs.push(Adapter::new(intermediate_tx.to_bitcoin_tx()?));
 
-            if let Some(completed) = self.completed(limit)?.last() {
-                let intermediate_tx_batch = completed
-                    .batches
-                    .get(BatchType::IntermediateTx as u64)?
-                    .unwrap();
-                let intermediate_tx = intermediate_tx_batch.get(0)?.unwrap();
-                vec.push(Adapter::new(intermediate_tx.to_bitcoin_tx()?));
-
-                let disbursal_batch = completed.batches.get(BatchType::Disbursal as u64)?.unwrap();
-                for tx in disbursal_batch.iter()? {
-                    vec.push(Adapter::new(tx?.to_bitcoin_tx()?));
-                }
+            let disbursal_batch = completed.batches.get(BatchType::Disbursal as u64)?.unwrap();
+            for tx in disbursal_batch.iter()? {
+                txs.push(Adapter::new(tx?.to_bitcoin_tx()?));
             }
-
-            Ok(vec)
         }
+
+        Ok(txs)
     }
 
     #[query]
@@ -1276,15 +1246,15 @@ impl CheckpointQueue {
 
 #[cfg(test)]
 mod test {
-    #[cfg(all(feature = "full", not(feature = "emergency-disbursal")))]
+    #[cfg(all(feature = "full"))]
     use bitcoin::{
         util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey},
         OutPoint, PubkeyHash, Script, Txid,
     };
-    #[cfg(all(feature = "full", not(feature = "emergency-disbursal")))]
+    #[cfg(all(feature = "full"))]
     use rand::Rng;
 
-    #[cfg(all(feature = "full", not(feature = "emergency-disbursal")))]
+    #[cfg(all(feature = "full"))]
     use crate::bitcoin::{signatory::Signatory, threshold_sig::Share};
 
     use super::*;
@@ -1312,14 +1282,14 @@ mod test {
     #[test]
     fn deduct_fee_multi_pass() {
         let mut bitcoin_tx = BitcoinTx::default();
-        push_bitcoin_tx_output(&mut bitcoin_tx, 60);
-        push_bitcoin_tx_output(&mut bitcoin_tx, 70);
+        push_bitcoin_tx_output(&mut bitcoin_tx, 502);
+        push_bitcoin_tx_output(&mut bitcoin_tx, 482);
         push_bitcoin_tx_output(&mut bitcoin_tx, 300);
 
-        bitcoin_tx.deduct_fee(200).unwrap();
+        bitcoin_tx.deduct_fee(30).unwrap();
 
         assert_eq!(bitcoin_tx.output.len(), 1);
-        assert_eq!(bitcoin_tx.output.get(0).unwrap().unwrap().value, 100);
+        assert_eq!(bitcoin_tx.output.get(0).unwrap().unwrap().value, 472);
     }
 
     #[test]
@@ -1333,215 +1303,4 @@ mod test {
     }
 
     //TODO: More fee deduction tests
-
-    #[cfg(all(feature = "full", not(feature = "emergency-disbursal")))]
-    #[serial_test::serial]
-    #[test]
-    fn rewind() -> Result<()> {
-        // TODO: use CheckpointQueue step method to create initial checkpoint
-        // state instead of rawly constructing checkpoints
-
-        // TODO: extract signer into core logic and run it against CheckpointQueue
-
-        orga::context::Context::add(orga::plugins::Time::from_seconds(0));
-
-        let seed: [u8; 32] = rand::thread_rng().gen();
-        let xpriv = ExtendedPrivKey::new_master(bitcoin::Network::Testnet, seed.as_slice())?;
-
-        let secp = bitcoin::secp256k1::Secp256k1::new();
-        let xpub = ExtendedPubKey::from_priv(&secp, &xpriv);
-
-        let sigset = |index| {
-            let derive_path = [ChildNumber::from_normal_idx(index)?];
-            let pubkey = xpub.derive_pub(&secp, &derive_path)?.public_key.into();
-
-            let mut sigset = SignatorySet::default();
-            sigset.index = index;
-            sigset.possible_vp = 100;
-            sigset.present_vp = 100;
-            sigset.signatories.push(Signatory {
-                voting_power: 100,
-                pubkey,
-            });
-            Ok::<_, Error>(sigset)
-        };
-
-        let txid = |n| Txid::from_slice(&[n; 32]);
-
-        let building_input = |sigset_index, prev_txid, dest, amount| {
-            let sigset = sigset(sigset_index)?;
-            let mut input = Input::new(OutPoint::new(prev_txid, 0), &sigset, dest, amount)?;
-            input.signatures = ThresholdSig::from_sigset(&sigset)?;
-            input.signatures.sigs.insert(
-                sigset.signatories[0].pubkey.into(),
-                Share {
-                    power: 100,
-                    sig: None,
-                },
-            )?;
-            Ok::<_, Error>(input)
-        };
-
-        let signing_input = |sigset_index, prev_txid, dest, amount| {
-            let mut input = building_input(sigset_index, prev_txid, dest, amount)?;
-            input.signatures.set_message([123; 32]);
-            Ok::<_, Error>(input)
-        };
-
-        let signed_input = |sigset_index, prev_txid, dest, amount| {
-            let sigset = sigset(sigset_index)?;
-            let mut input = signing_input(sigset_index, prev_txid, dest, amount)?;
-            input.signatures.sigs.insert(
-                sigset.signatories[0].pubkey.into(),
-                Share {
-                    power: 100,
-                    sig: Some(Signature([123; 64])),
-                },
-            )?;
-            input.signatures.signed = 100;
-            Ok::<_, Error>(input)
-        };
-
-        let mut checkpoints = CheckpointQueue::default();
-
-        let mut cp = Checkpoint::new(sigset(0)?)?;
-        cp.status = CheckpointStatus::Complete;
-        let mut cp_batch = cp.batches.get_mut(BatchType::Checkpoint as u64)?.unwrap();
-        let mut cp_tx = cp_batch.get_mut(0)?.unwrap();
-        cp_tx
-            .input
-            .push_back(signed_input(0, txid(0)?, &[0], 10_000)?)?;
-        cp_tx.signed_inputs = 1;
-        cp_tx.output.push_back(Adapter::new(TxOut {
-            script_pubkey: sigset(1)?.output_script(&[0])?,
-            value: 9_900,
-        }))?;
-        let prev_txid = cp_tx.txid()?;
-        cp_batch.signed_txs = 1;
-        checkpoints.queue.push_back(cp)?;
-
-        let mut cp = Checkpoint::new(sigset(1)?)?;
-        cp.status = CheckpointStatus::Complete;
-        let mut cp_batch = cp.batches.get_mut(BatchType::Checkpoint as u64)?.unwrap();
-        let mut cp_tx = cp_batch.get_mut(0)?.unwrap();
-        cp_tx
-            .input
-            .push_back(signed_input(1, prev_txid, &[0], 9_900)?)?;
-        cp_tx
-            .input
-            .push_back(signed_input(0, txid(1)?, &[1; 20], 10_000)?)?;
-        cp_tx.signed_inputs = 2;
-        cp_tx.output.push_back(Adapter::new(TxOut {
-            script_pubkey: sigset(2)?.output_script(&[0])?,
-            value: 19_799,
-        }))?;
-        cp_tx.output.push_back(Adapter::new(TxOut {
-            script_pubkey: Script::new_p2pkh(&PubkeyHash::from_slice(&[1; 20])?),
-            value: 1,
-        }))?;
-        let prev_txid = cp_tx.txid()?;
-        cp_batch.signed_txs = 1;
-        checkpoints.queue.push_back(cp)?;
-
-        let mut cp = Checkpoint::new(sigset(2)?)?;
-        cp.status = CheckpointStatus::Complete;
-        let mut cp_batch = cp.batches.get_mut(BatchType::Checkpoint as u64)?.unwrap();
-        let mut cp_tx = cp_batch.get_mut(0)?.unwrap();
-        cp_tx
-            .input
-            .push_back(signed_input(2, prev_txid, &[0], 19_799)?)?;
-        cp_tx
-            .input
-            .push_back(signed_input(2, txid(2)?, &[2; 20], 10_000)?)?;
-        cp_tx.signed_inputs = 2;
-        cp_tx.output.push_back(Adapter::new(TxOut {
-            script_pubkey: sigset(3)?.output_script(&[0])?,
-            value: 28_699,
-        }))?;
-        cp_tx.output.push_back(Adapter::new(TxOut {
-            script_pubkey: Script::new_p2pkh(&PubkeyHash::from_slice(&[2; 20])?),
-            value: 1_000,
-        }))?;
-        let prev_txid = cp_tx.txid()?;
-        cp_batch.signed_txs = 1;
-        checkpoints.queue.push_back(cp)?;
-
-        let mut cp = Checkpoint::new(sigset(3)?)?;
-        cp.status = CheckpointStatus::Signing;
-        let mut cp_batch = cp.batches.get_mut(BatchType::Checkpoint as u64)?.unwrap();
-        let mut cp_tx = cp_batch.get_mut(0)?.unwrap();
-        cp_tx
-            .input
-            .push_back(signing_input(3, prev_txid, &[0], 28_699)?)?;
-        cp_tx
-            .input
-            .push_back(signing_input(3, txid(3)?, &[2; 20], 10_000)?)?;
-        cp_tx.output.push_back(Adapter::new(TxOut {
-            script_pubkey: sigset(4)?.output_script(&[0])?,
-            value: 37_599,
-        }))?;
-        cp_tx.output.push_back(Adapter::new(TxOut {
-            script_pubkey: Script::new_p2pkh(&PubkeyHash::from_slice(&[3; 20])?),
-            value: 1_000,
-        }))?;
-        let prev_txid = cp_tx.txid()?;
-        checkpoints.queue.push_back(cp)?;
-
-        let mut cp = Checkpoint::new(sigset(4)?)?;
-        cp.status = CheckpointStatus::Building;
-        let mut cp_batch = cp.batches.get_mut(BatchType::Checkpoint as u64)?.unwrap();
-        let mut cp_tx = cp_batch.get_mut(0)?.unwrap();
-        cp_tx
-            .input
-            .push_back(building_input(4, prev_txid, &[0], 37_599)?)?;
-        cp_tx
-            .input
-            .push_back(building_input(3, txid(4)?, &[2; 20], 10_000)?)?;
-        cp_tx.output.push_back(Adapter::new(TxOut {
-            script_pubkey: sigset(4)?.output_script(&[0])?,
-            value: 46_499,
-        }))?;
-        cp_tx.output.push_back(Adapter::new(TxOut {
-            script_pubkey: Script::new_p2pkh(&PubkeyHash::from_slice(&[4; 20])?),
-            value: 1_000,
-        }))?;
-        checkpoints.queue.push_back(cp)?;
-        checkpoints.index = (checkpoints.queue.len() - 1) as u32;
-
-        checkpoints.rewind(1)?;
-
-        assert_eq!(checkpoints.len()?, 2);
-        assert_eq!(checkpoints.index, 1);
-        let cp = checkpoints.queue.back()?.unwrap();
-        assert_eq!(cp.status, CheckpointStatus::Building);
-        assert_eq!(cp.sigset, sigset(1)?);
-        let cp_batch = cp.batches.get(BatchType::Checkpoint as u64)?.unwrap();
-        assert_eq!(cp_batch.signed_txs, 0);
-        assert!(!cp_batch.signed());
-        let cp_tx = cp_batch.get(0)?.unwrap();
-        assert_eq!(cp_tx.signed_inputs, 0);
-        assert_eq!(cp_tx.input.len(), 5);
-        assert_eq!(cp_tx.output.len(), 3);
-        assert!(!cp_tx.signed());
-
-        checkpoints.building_mut()?.advance(
-            &Accounts::default(),
-            &Map::new(),
-            vec![].into_iter(),
-            &Config::regtest(),
-        )?;
-        checkpoints.queue.push_back(Checkpoint::new(sigset(5)?)?)?;
-        checkpoints.index += 1;
-
-        assert_eq!(
-            checkpoints
-                .signing_mut()?
-                .unwrap()
-                .to_sign(xpub.clone().into())?
-                .len(),
-            5
-        );
-
-        Ok(())
-    }
 }

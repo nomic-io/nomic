@@ -221,7 +221,7 @@ impl ThresholdSig {
         }
 
         // TODO: get threshold ratio from somewhere else
-        ts.threshold = ((total_vp as u128) * 2 / 3) as u64;
+        ts.threshold = ((total_vp as u128) * 9 / 10) as u64;
 
         Ok(ts)
     }
@@ -239,7 +239,7 @@ impl ThresholdSig {
         }
 
         // TODO: get threshold ratio from somewhere else
-        ts.threshold = ((total_vp as u128) * 2 / 3) as u64;
+        ts.threshold = ((total_vp as u128) * 9 / 10) as u64;
         ts.len = len;
 
         Ok(ts)

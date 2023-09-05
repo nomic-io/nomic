@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 
 use self::checkpoint::Input;
+use crate::app::Dest;
 use crate::bitcoin::checkpoint::BatchType;
 use crate::error::{Error, Result};
 use ::bitcoin::util::bip32::ChildNumber;
@@ -143,7 +144,6 @@ pub struct Bitcoin {
     pub processed_outpoints: OutpointSet,
     #[call]
     pub checkpoints: CheckpointQueue,
-    #[call]
     pub accounts: Accounts<Nbtc>,
     // TODO: store recovery script data in account struct
     pub signatory_keys: SignatoryKeys,
@@ -326,8 +326,8 @@ impl Bitcoin {
         btc_proof: Adapter<PartialMerkleTree>,
         btc_vout: u32,
         sigset_index: u32,
-        dest: &[u8],
-    ) -> Result<Amount> {
+        dest: super::app::Dest,
+    ) -> Result<()> {
         exempt_from_fee()?;
 
         let btc_header = self
@@ -381,12 +381,25 @@ impl Bitcoin {
             return Err(OrgaError::App("Deposit timeout has expired".to_string()))?;
         }
 
-        let expected_script = sigset.output_script(dest)?;
+        let dest_bytes = dest.commitment_bytes()?;
+        let expected_script = sigset.output_script(&dest_bytes)?;
         if output.script_pubkey != expected_script {
             return Err(OrgaError::App(
                 "Output script does not match signature set".to_string(),
             ))?;
         }
+
+        let prevout = bitcoin::OutPoint {
+            txid: btc_tx.txid(),
+            vout: btc_vout,
+        };
+        let input = Input::new(prevout, &sigset, &dest_bytes, output.value)?;
+        let input_size = input.est_vsize();
+
+        let fee = input_size * self.checkpoints.config().fee_rate;
+        let value = output.value.checked_sub(fee).ok_or_else(|| {
+            OrgaError::App("Deposit amount is too small to pay its spending fee".to_string())
+        })? * self.config.units_per_sat;
 
         let outpoint = (btc_tx.txid().into_inner(), btc_vout);
         if self.processed_outpoints.contains(outpoint)? {
@@ -397,34 +410,24 @@ impl Bitcoin {
         self.processed_outpoints
             .insert(outpoint, sigset.deposit_timeout())?;
 
-        let prevout = bitcoin::OutPoint {
-            txid: btc_tx.txid(),
-            vout: btc_vout,
-        };
-
-        // TODO: don't credit account until we're done signing including tx;
         let mut building_mut = self.checkpoints.building_mut()?;
         let mut building_checkpoint_batch = building_mut
             .batches
             .get_mut(BatchType::Checkpoint as u64)?
             .unwrap();
-
         let mut checkpoint_tx = building_checkpoint_batch.get_mut(0)?.unwrap();
-        let input = Input::new(prevout, &sigset, dest, output.value)?;
-        let input_size = input.est_vsize();
         checkpoint_tx.input.push_back(input)?;
-
-        let fee = input_size * self.checkpoints.config().fee_rate;
-
-        let value = output.value.checked_sub(fee).ok_or_else(|| {
-            OrgaError::App("Deposit amount is too small to pay its spending fee".to_string())
-        })? * self.config.units_per_sat;
 
         let mut minted_nbtc = Nbtc::mint(value);
         let deposit_fee = minted_nbtc.take(calc_deposit_fee(value))?;
         self.reward_pool.give(deposit_fee)?;
 
-        Ok(minted_nbtc.amount)
+        self.checkpoints
+            .building_mut()?
+            .pending
+            .insert(dest, minted_nbtc)?;
+
+        Ok(())
     }
 
     pub fn withdraw(&mut self, script_pubkey: Adapter<Script>, amount: Amount) -> Result<()> {
@@ -466,7 +469,7 @@ impl Bitcoin {
             Some(value) => value,
         };
 
-        if bitcoin::Amount::from_sat(value) < script_pubkey.dust_value() {
+        if bitcoin::Amount::from_sat(value) <= script_pubkey.dust_value() {
             return Err(OrgaError::App(
                 "Withdrawal is too small to pay its dust limit".to_string(),
             )
@@ -510,7 +513,19 @@ impl Bitcoin {
             .accounts
             .withdraw(signer, self.config.transfer_fee.into())?;
         self.reward_pool.give(transfer_fee)?;
-        self.accounts.transfer(to, amount)?;
+
+        let dest = Dest::Address(to);
+        let mut pending = self
+            .checkpoints
+            .building()?
+            .pending
+            .get_or_default(dest.clone())?
+            .amount;
+        pending = (pending + amount).result()?;
+        self.checkpoints
+            .building_mut()?
+            .pending
+            .insert(dest, pending.into())?;
 
         Ok(())
     }
@@ -675,6 +690,27 @@ impl Bitcoin {
 
         Ok(offline_signers)
     }
+
+    pub fn take_pending(&mut self) -> Result<Vec<(Dest, Coin<Nbtc>)>> {
+        if let Err(Error::Orga(OrgaError::App(err))) = self.checkpoints.last_completed_index() {
+            if err == "No completed checkpoints yet" {
+                return Ok(vec![]);
+            }
+        }
+
+        // TODO: drain iter
+        let pending = &mut self.checkpoints.last_completed_mut()?.pending;
+        let keys = pending
+            .iter()?
+            .map(|entry| entry.map(|(dest, _)| dest.clone()).map_err(Error::from))
+            .collect::<Result<Vec<Dest>>>()?;
+        let mut dests = vec![];
+        for dest in keys {
+            let coins = pending.remove(dest.clone())?.unwrap().into_inner();
+            dests.push((dest, coins));
+        }
+        Ok(dests)
+    }
 }
 
 #[orga]
@@ -816,7 +852,7 @@ mod tests {
                 Adapter::new(PartialMerkleTree::from_txids(&[Txid::all_zeros()], &[true])),
                 0,
                 0,
-                &[],
+                Dest::Address(Address::NULL),
             )
         };
 
