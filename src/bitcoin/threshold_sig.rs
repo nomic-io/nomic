@@ -246,7 +246,7 @@ impl ThresholdSig {
     }
 
     #[query]
-    pub fn done(&self) -> bool {
+    pub fn signed(&self) -> bool {
         self.signed > self.threshold
     }
 
@@ -288,10 +288,6 @@ impl ThresholdSig {
 
     // TODO: exempt from fee
     pub fn sign(&mut self, pubkey: Pubkey, sig: Signature) -> Result<()> {
-        if self.done() {
-            return Err(Error::App("Threshold signature is done".into()))?;
-        }
-
         let share = self
             .sigs
             .get(pubkey)?
@@ -330,7 +326,7 @@ impl ThresholdSig {
     // TODO: this shouldn't know so much about bitcoin-specific structure,
     // decouple by exposing a power-ordered iterator of Option<Signature>
     pub fn to_witness(&self) -> crate::error::Result<Vec<Vec<u8>>> {
-        if !self.done() {
+        if !self.signed() {
             return Ok(vec![]);
         }
 
