@@ -9,11 +9,16 @@ use clap::Parser;
 use nomic::app::DepositCommitment;
 use nomic::app::InnerApp;
 use nomic::app::Nom;
+use nomic::bitcoin::Nbtc;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
 use orga::abci::Node;
 use orga::client::wallet::{SimpleWallet, Wallet};
+use orga::coins::Coin;
 use orga::coins::{Address, Commission, Decimal, Declaration, Symbol};
+use orga::ibc::ibc_rs::applications::transfer::msgs::transfer::MsgTransfer;
+use orga::ibc::ibc_rs::core::ics04_channel::timeout::TimeoutHeight;
+use orga::ibc::ibc_rs::core::timestamp::Timestamp;
 use orga::macros::build_call;
 use orga::merk::MerkStore;
 use orga::plugins::MIN_FEE;
@@ -744,7 +749,6 @@ impl DelegationsCmd {
                 continue;
             }
 
-            use nomic::bitcoin::Nbtc;
             let liquid_nom = delegation
                 .liquid
                 .iter()
@@ -1428,8 +1432,8 @@ pub struct IbcTransferCmd {
     amount: u64,
     channel_id: String,
     port_id: String,
-    denom: String,
-
+    memo: String,
+    timeout_seconds: u64,
     #[clap(flatten)]
     config: nomic::network::Config,
 }
@@ -1437,27 +1441,37 @@ pub struct IbcTransferCmd {
 #[cfg(feature = "testnet")]
 impl IbcTransferCmd {
     async fn run(&self) -> Result<()> {
-        todo!()
+        let my_address = my_address();
+        let amount = self.amount;
+        let fee: u64 = nomic::app::ibc_fee(amount.into())?.into();
+        let amount_after_fee = amount - fee;
+        use orga::ibc::ibc_rs::applications::transfer::packet::PacketData;
+        let now_ns = Timestamp::now().nanoseconds();
+        let msg_transfer = MsgTransfer {
+            port_id_on_a: self.port_id.parse().unwrap(),
+            chan_id_on_a: self.channel_id.parse().unwrap(),
+            packet_data: PacketData {
+                token: Coin::<Nbtc>::mint(amount_after_fee).into(),
+                sender: my_address.to_string().try_into().unwrap(),
+                receiver: self.receiver.clone().try_into().unwrap(),
+                memo: self.memo.clone().into(),
+            },
+            timeout_height_on_b: TimeoutHeight::Never,
+            timeout_timestamp_on_b: Timestamp::from_nanoseconds(
+                self.timeout_seconds * 1_000_000_000 + now_ns,
+            )
+            .unwrap(),
+        };
 
-        // let fee: u64 = nomic::app::ibc_fee(self.amount.into())?.into();
-        // let amount_after_fee = self.amount - fee;
-        // let transfer_args = TransferArgs {
-        //     amount: amount_after_fee.into(),
-        //     channel_id: self.channel_id.clone(),
-        //     port_id: self.port_id.clone(),
-        //     denom: self.denom.clone(),
-        //     receiver: self.receiver.clone(),
-        // };
-
-        // Ok(self.config.client()
-        //     .pay_from(async move |client| {
-        //         client
-        //             .ibc_deposit_nbtc(my_address(), self.amount.into())
-        //             .await
-        //     })
-        //     .ibc
-        //     .transfer(transfer_args.try_into()?)
-        //     .await?)
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
+            .call(
+                |app| build_call!(app.ibc_deposit_nbtc(my_address, amount.into())),
+                |app| build_call!(app.ibc.raw_transfer(msg_transfer.clone().into())),
+            )
+            .await?)
     }
 }
 

@@ -15,6 +15,7 @@ use orga::coins::{
 use orga::context::GetContext;
 use orga::cosmrs::bank::MsgSend;
 use orga::encoding::{Decode, Encode};
+use std::str::FromStr;
 use std::time::Duration;
 
 use orga::ibc::ibc_rs::applications::transfer::context::TokenTransferExecutionContext;
@@ -33,7 +34,7 @@ use orga::macros::build_call;
 use orga::migrate::Migrate;
 use orga::orga;
 use orga::plugins::sdk_compat::{sdk, sdk::Tx as SdkTx, ConvertSdkTx};
-use orga::plugins::{disable_fee, DefaultPlugins, Paid, PaidCall, Signer, Time, MIN_FEE};
+use orga::plugins::{disable_fee, DefaultPlugins, Events, Paid, PaidCall, Signer, Time, MIN_FEE};
 use orga::prelude::*;
 use orga::upgrade::Version;
 use orga::upgrade::{Upgrade, UpgradeV0};
@@ -259,7 +260,8 @@ impl InnerApp {
                 )?;
                 self.bitcoin.reward_pool.give(fee.into())?;
 
-                self.ibc.deliver_message(IbcMessage::Ics20(msg_transfer))
+                self.ibc.deliver_message(IbcMessage::Ics20(msg_transfer))?;
+                Ok(())
             }
         }
     }
@@ -296,6 +298,39 @@ impl InnerApp {
     }
 
     #[call]
+    pub fn ibc_deliver(&mut self, messages: RawIbcTx) -> Result<()> {
+        let incoming_transfers = self.ibc.deliver(messages)?;
+
+        for transfer in incoming_transfers {
+            if transfer.denom.to_string() != "usat" {
+                continue;
+            }
+            let memo: NbtcMemo = transfer.memo.parse().unwrap_or_default();
+            if let NbtcMemo::Withdraw(script) = memo {
+                let amount = transfer.amount;
+                let receiver: Address = transfer
+                    .receiver
+                    .parse()
+                    .map_err(|_| Error::Coins("Invalid address".to_string()))?;
+                let coins = Coin::<Nbtc>::mint(amount);
+                self.ibc
+                    .burn_coins_execute(&receiver.into(), &coins.into())?;
+                if self.bitcoin.add_withdrawal(script, amount.into()).is_err() {
+                    let coins = Coin::<Nbtc>::mint(amount);
+                    self.ibc
+                        .mint_coins_execute(&receiver.into(), &coins.into())?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn ibc_raw_transfer(&mut self) -> Result<()> {
+        Ok(())
+    }
+
+    #[call]
     pub fn app_noop(&mut self) -> Result<()> {
         Ok(())
     }
@@ -303,6 +338,37 @@ impl InnerApp {
     #[query]
     pub fn app_noop_query(&self) -> Result<()> {
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub enum NbtcMemo {
+    Withdraw(Adapter<bitcoin::Script>),
+    #[default]
+    Empty,
+}
+impl FromStr for NbtcMemo {
+    type Err = Error;
+    fn from_str(s: &str) -> Result<Self> {
+        if s.is_empty() {
+            Ok(NbtcMemo::Empty)
+        } else {
+            let parts = s.split(':').collect::<Vec<_>>();
+            if parts.len() != 2 {
+                return Err(Error::App("Invalid memo".into()));
+            }
+            if parts[0] != "withdraw" {
+                return Err(Error::App("Only withdraw memo action is supported".into()));
+            }
+            let dest = parts[1];
+            let script = if let Ok(addr) = bitcoin::Address::from_str(dest) {
+                addr.script_pubkey()
+            } else {
+                bitcoin::Script::from_str(parts[1]).map_err(|e| Error::App(e.to_string()))?
+            };
+
+            Ok(NbtcMemo::Withdraw(script.into()))
+        }
     }
 }
 
@@ -427,7 +493,7 @@ impl ConvertSdkTx for InnerApp {
                     let payer = build_call!(self.accounts.take_as_funding(funding_amt.into()));
 
                     let raw_ibc_tx = RawIbcTx(tx.clone());
-                    let paid = build_call!(self.ibc.deliver(raw_ibc_tx.clone()));
+                    let paid = build_call!(self.ibc_deliver(raw_ibc_tx.clone()));
 
                     return Ok(PaidCall { payer, paid });
                 }

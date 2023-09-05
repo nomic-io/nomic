@@ -430,6 +430,18 @@ impl Bitcoin {
     pub fn withdraw(&mut self, script_pubkey: Adapter<Script>, amount: Amount) -> Result<()> {
         exempt_from_fee()?;
 
+        let signer = self
+            .context::<Signer>()
+            .ok_or_else(|| Error::Orga(OrgaError::App("No Signer context available".into())))?
+            .signer
+            .ok_or_else(|| Error::Orga(OrgaError::App("Call must be signed".into())))?;
+
+        self.accounts.withdraw(signer, amount)?.burn();
+
+        self.add_withdrawal(script_pubkey, amount)
+    }
+
+    pub fn add_withdrawal(&mut self, script_pubkey: Adapter<Script>, amount: Amount) -> Result<()> {
         if script_pubkey.len() as u64 > self.config.max_withdrawal_script_length {
             return Err(OrgaError::App("Script exceeds maximum length".to_string()).into());
         }
@@ -441,14 +453,6 @@ impl Bitcoin {
             ))
             .into());
         }
-
-        let signer = self
-            .context::<Signer>()
-            .ok_or_else(|| Error::Orga(OrgaError::App("No Signer context available".into())))?
-            .signer
-            .ok_or_else(|| Error::Orga(OrgaError::App("Call must be signed".into())))?;
-
-        self.accounts.withdraw(signer, amount)?.burn();
 
         let fee = (9 + script_pubkey.len() as u64) * self.checkpoints.config().fee_rate;
         let value: u64 = Into::<u64>::into(amount) / self.config.units_per_sat;
