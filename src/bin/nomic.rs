@@ -82,8 +82,8 @@ pub enum Command {
     #[cfg(feature = "testnet")]
     InterchainDeposit(InterchainDepositCmd),
     Withdraw(WithdrawCmd),
-    #[cfg(feature = "testnet")]
-    IbcDepositNbtc(IbcDepositNbtcCmd),
+    // #[cfg(feature = "testnet")]
+    // IbcDepositNbtc(IbcDepositNbtcCmd),
     #[cfg(feature = "testnet")]
     IbcWithdrawNbtc(IbcWithdrawNbtcCmd),
     #[cfg(feature = "testnet")]
@@ -135,8 +135,8 @@ impl Command {
                 #[cfg(feature = "testnet")]
                 InterchainDeposit(cmd) => cmd.run().await,
                 Withdraw(cmd) => cmd.run().await,
-                #[cfg(feature = "testnet")]
-                IbcDepositNbtc(cmd) => cmd.run().await,
+                // #[cfg(feature = "testnet")]
+                // IbcDepositNbtc(cmd) => cmd.run().await,
                 #[cfg(feature = "testnet")]
                 IbcWithdrawNbtc(cmd) => cmd.run().await,
                 #[cfg(feature = "testnet")]
@@ -1344,30 +1344,30 @@ impl WithdrawCmd {
     }
 }
 
-#[cfg(feature = "testnet")]
-#[derive(Parser, Debug)]
-pub struct IbcDepositNbtcCmd {
-    to: Address,
-    amount: u64,
+// #[cfg(feature = "testnet")]
+// #[derive(Parser, Debug)]
+// pub struct IbcTransferNbtcCmd {
+//     to: Address,
+//     amount: u64,
 
-    #[clap(flatten)]
-    config: nomic::network::Config,
-}
+//     #[clap(flatten)]
+//     config: nomic::network::Config,
+// }
 
-#[cfg(feature = "testnet")]
-impl IbcDepositNbtcCmd {
-    async fn run(&self) -> Result<()> {
-        Ok(self
-            .config
-            .client()
-            .with_wallet(wallet())
-            .call(
-                |app| build_call!(app.ibc_deposit_nbtc(self.to, self.amount.into())),
-                |app| build_call!(app.app_noop()),
-            )
-            .await?)
-    }
-}
+// #[cfg(feature = "testnet")]
+// impl IbcTransferNbtcCmd {
+//     async fn run(&self) -> Result<()> {
+//         Ok(self
+//             .config
+//             .client()
+//             .with_wallet(wallet())
+//             .call(
+//                 |app| build_call!(app.ibc_transfer_nbtc(self.to, self.amount.into())),
+//                 |app| build_call!(app.app_noop()),
+//             )
+//             .await?)
+//     }
+// }
 
 #[cfg(feature = "testnet")]
 #[derive(Parser, Debug)]

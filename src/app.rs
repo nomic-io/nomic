@@ -150,7 +150,7 @@ impl InnerApp {
     }
 
     #[call]
-    pub fn ibc_deposit_nbtc(&mut self, to: Address, amount: Amount) -> Result<()> {
+    pub fn ibc_transfer_nbtc(&mut self, dest: IbcDest, amount: Amount) -> Result<()> {
         #[cfg(feature = "testnet")]
         {
             crate::bitcoin::exempt_from_fee()?;
@@ -160,8 +160,15 @@ impl InnerApp {
 
             let fee = ibc_fee(amount)?;
             let fee = coins.take(fee)?;
-            self.ibc.mint_coins_execute(&to, &coins.into())?;
             self.bitcoin.reward_pool.give(fee)?;
+
+            let pending = &mut self.bitcoin.checkpoints.building_mut()?.pending;
+
+            let dest = Dest::Ibc(dest);
+            let dest_amount = (pending.get(dest.clone())?.map_or(0.into(), |c| c.amount)
+                + coins.amount)
+                .result()?;
+            pending.insert(dest, Coin::mint(dest_amount))?;
 
             Ok(())
         }
@@ -786,10 +793,6 @@ impl ConvertSdkTx for InnerApp {
 
                         let amount = msg.amount.into();
 
-                        let receiver: IbcSigner = msg.receiver.into();
-
-                        let sender: IbcSigner = msg.sender.clone().into();
-
                         let ibc_sender_addr = msg
                             .sender
                             .parse::<Address>()
@@ -801,34 +804,20 @@ impl ConvertSdkTx for InnerApp {
                             ));
                         }
 
-                        let timestamp = msg
+                        let timeout_timestamp = msg
                             .timeout_timestamp
                             .parse::<u64>()
                             .map_err(|_| Error::Ibc("Invalid timeout timestamp".into()))?;
 
-                        let timeout_timestamp: Timestamp =
-                            Timestamp::from_nanoseconds(timestamp)
-                                .map_err(|_| Error::Ibc("Invalid timeout timestamp".into()))?;
-
-                        let ibc_fee = ibc_fee(amount)?;
-
-                        let amount_after_fee = (amount - ibc_fee).result()?;
-                        let coins: Coin<Nbtc> = amount_after_fee.into();
-                        let msg_transfer = MsgTransfer {
-                            chan_id_on_a: channel_id,
-                            port_id_on_a: port_id,
-                            packet_data: PacketData {
-                                token: coins.into(),
-                                memo: "".to_string().into(),
-                                receiver,
-                                sender,
-                            },
-                            timeout_height_on_b: TimeoutHeight::Never,
-                            timeout_timestamp_on_b: timeout_timestamp,
+                        let dest = IbcDest {
+                            source: PortChannel::new(port_id, channel_id),
+                            sender: EdAdapter(msg.sender.into()),
+                            receiver: EdAdapter(msg.receiver.into()),
+                            timeout_timestamp,
                         };
 
-                        let payer = build_call!(self.ibc_deposit_nbtc(sender_address, amount));
-                        let paid = build_call!(self.ibc.raw_transfer(msg_transfer.clone().into()));
+                        let payer = build_call!(self.ibc_transfer_nbtc(dest, amount));
+                        let paid = build_call!(self.app_noop());
 
                         Ok(PaidCall { payer, paid })
                     }
