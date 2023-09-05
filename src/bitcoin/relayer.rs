@@ -1,6 +1,6 @@
 use super::signatory::Signatory;
 use super::SignatorySet;
-use crate::app::DepositCommitment;
+use crate::app::Dest;
 use crate::app_client;
 use crate::bitcoin::{adapter::Adapter, header_queue::WrappedHeader};
 use crate::error::Error;
@@ -116,9 +116,7 @@ impl Relayer {
         Ok(())
     }
 
-    fn create_address_server(
-        &self,
-    ) -> (impl Future<Output = ()>, Receiver<(DepositCommitment, u32)>) {
+    fn create_address_server(&self) -> (impl Future<Output = ()>, Receiver<(Dest, u32)>) {
         let (send, recv) = tokio::sync::mpsc::channel(1024);
 
         let sigsets = Arc::new(Mutex::new(BTreeMap::new()));
@@ -141,7 +139,7 @@ impl Relayer {
                     Arc<Mutex<BTreeMap<_, _>>>,
                     Bytes,
                 )| {
-                    let dest = DepositCommitment::decode(body.to_vec().as_slice())
+                    let dest = Dest::decode(body.to_vec().as_slice())
                         .map_err(|e| warp::reject::custom(Error::from(e)))?;
 
                     let mut sigsets = sigsets.lock().await;
@@ -185,7 +183,7 @@ impl Relayer {
             )
             .then(
                 async move |(dest, sigset_index, send): (
-                    DepositCommitment,
+                    Dest,
                     u32,
                     tokio::sync::mpsc::Sender<_>,
                 )| {
@@ -230,7 +228,7 @@ impl Relayer {
         (server, recv)
     }
 
-    async fn relay_deposits(&mut self, recv: &mut Receiver<(DepositCommitment, u32)>) -> Result<!> {
+    async fn relay_deposits(&mut self, recv: &mut Receiver<(Dest, u32)>) -> Result<!> {
         let mut prev_tip = None;
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
@@ -358,7 +356,7 @@ impl Relayer {
 
         loop {
             let txs = app_client(&self.app_client_addr)
-                .query(|app| Ok(app.bitcoin.checkpoints.completed_txs()?))
+                .query(|app| Ok(app.bitcoin.checkpoints.completed_txs(1_000)?))
                 .await?;
             for tx in txs {
                 if relayed.contains(&tx.txid()) {
@@ -387,10 +385,7 @@ impl Relayer {
         }
     }
 
-    async fn insert_announced_addrs(
-        &mut self,
-        recv: &mut Receiver<(DepositCommitment, u32)>,
-    ) -> Result<()> {
+    async fn insert_announced_addrs(&mut self, recv: &mut Receiver<(Dest, u32)>) -> Result<()> {
         while let Ok((addr, sigset_index)) = recv.try_recv() {
             let sigset_res = app_client(&self.app_client_addr)
                 .query(|app| Ok(app.bitcoin.checkpoints.get(sigset_index)?.sigset.clone()))
@@ -639,7 +634,7 @@ pub struct DepositAddress {
 pub struct OutputMatch {
     sigset_index: u32,
     vout: u32,
-    dest: DepositCommitment,
+    dest: Dest,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -681,8 +676,8 @@ impl From<Signatory> for RawSignatory {
 /// efficiently detecting deposit output scripts.
 #[derive(Default)]
 pub struct WatchedScripts {
-    scripts: HashMap<::bitcoin::Script, (DepositCommitment, u32)>,
-    sigsets: BTreeMap<u32, (SignatorySet, Vec<DepositCommitment>)>,
+    scripts: HashMap<::bitcoin::Script, (Dest, u32)>,
+    sigsets: BTreeMap<u32, (SignatorySet, Vec<Dest>)>,
 }
 
 impl WatchedScripts {
@@ -690,7 +685,7 @@ impl WatchedScripts {
         Default::default()
     }
 
-    pub fn get(&self, script: &::bitcoin::Script) -> Option<(DepositCommitment, u32)> {
+    pub fn get(&self, script: &::bitcoin::Script) -> Option<(Dest, u32)> {
         self.scripts.get(script).cloned()
     }
 
@@ -706,7 +701,7 @@ impl WatchedScripts {
         self.scripts.is_empty()
     }
 
-    pub fn insert(&mut self, dest: DepositCommitment, sigset: &SignatorySet) -> Result<bool> {
+    pub fn insert(&mut self, dest: Dest, sigset: &SignatorySet) -> Result<bool> {
         let script = self.derive_script(&dest, sigset)?;
 
         if self.scripts.contains_key(&script) {
@@ -741,11 +736,7 @@ impl WatchedScripts {
         Ok(())
     }
 
-    fn derive_script(
-        &self,
-        dest: &DepositCommitment,
-        sigset: &SignatorySet,
-    ) -> Result<::bitcoin::Script> {
+    fn derive_script(&self, dest: &Dest, sigset: &SignatorySet) -> Result<::bitcoin::Script> {
         sigset.output_script(dest.commitment_bytes()?.as_slice())
     }
 }
@@ -816,7 +807,7 @@ impl WatchedScriptStore {
                 None => continue,
             };
 
-            let dest = DepositCommitment::from_base64(items[0])?;
+            let dest = Dest::from_base64(items[0])?;
 
             scripts.insert(dest, sigset)?;
         }
@@ -828,7 +819,7 @@ impl WatchedScriptStore {
         Ok(())
     }
 
-    pub fn insert(&mut self, dest: DepositCommitment, sigset: &SignatorySet) -> Result<()> {
+    pub fn insert(&mut self, dest: Dest, sigset: &SignatorySet) -> Result<()> {
         if self.scripts.insert(dest.clone(), sigset)? {
             Self::write(&mut self.file, &dest, sigset.index())?;
         }
@@ -836,7 +827,7 @@ impl WatchedScriptStore {
         Ok(())
     }
 
-    fn write(file: &mut File, dest: &DepositCommitment, sigset_index: u32) -> Result<()> {
+    fn write(file: &mut File, dest: &Dest, sigset_index: u32) -> Result<()> {
         writeln!(file, "{},{}", dest.to_base64()?, sigset_index)?;
         file.flush()?;
         Ok(())

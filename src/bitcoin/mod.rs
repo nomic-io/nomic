@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 
 use self::checkpoint::Input;
+use crate::app::Dest;
 use crate::bitcoin::checkpoint::BatchType;
 use crate::error::{Error, Result};
 use ::bitcoin::util::bip32::ChildNumber;
@@ -20,9 +21,9 @@ use orga::describe::Describe;
 use orga::encoding::{Decode, Encode, Terminated};
 use orga::migrate::{Migrate, MigrateFrom};
 use orga::orga;
-use orga::plugins::Paid;
 #[cfg(feature = "full")]
 use orga::plugins::Validators;
+use orga::plugins::{Paid, ValidatorEntry};
 use orga::plugins::{Signer, Time};
 use orga::prelude::FieldCall;
 use orga::query::FieldQuery;
@@ -58,7 +59,7 @@ pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Testnet;
 #[cfg(all(feature = "devnet", feature = "testnet"))]
 pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Regtest;
 
-#[orga(skip(Default))]
+#[orga(skip(Default), version = 1)]
 pub struct Config {
     min_withdrawal_checkpoints: u32,
     min_deposit_amount: u64,
@@ -71,6 +72,27 @@ pub struct Config {
     emergency_disbursal_min_tx_amt: u64,
     emergency_disbursal_lock_time_interval: u32,
     emergency_disbursal_max_tx_size: u64,
+    #[orga(version(V1))]
+    max_offline_checkpoints: u32,
+}
+
+impl MigrateFrom<ConfigV0> for ConfigV1 {
+    fn migrate_from(value: ConfigV0) -> OrgaResult<Self> {
+        Ok(Self {
+            min_withdrawal_checkpoints: value.min_withdrawal_checkpoints,
+            min_deposit_amount: value.min_deposit_amount,
+            min_withdrawal_amount: value.min_withdrawal_amount,
+            max_withdrawal_amount: value.max_withdrawal_amount,
+            max_withdrawal_script_length: value.max_withdrawal_script_length,
+            transfer_fee: value.transfer_fee,
+            min_confirmations: value.min_confirmations,
+            units_per_sat: value.units_per_sat,
+            emergency_disbursal_min_tx_amt: value.emergency_disbursal_min_tx_amt,
+            emergency_disbursal_lock_time_interval: value.emergency_disbursal_lock_time_interval,
+            emergency_disbursal_max_tx_size: value.emergency_disbursal_max_tx_size,
+            ..Default::default()
+        })
+    }
 }
 
 impl Config {
@@ -87,6 +109,7 @@ impl Config {
             emergency_disbursal_min_tx_amt: 1000,
             emergency_disbursal_lock_time_interval: 60 * 60 * 24 * 7, //one week
             emergency_disbursal_max_tx_size: 50_000,
+            max_offline_checkpoints: 20,
         }
     }
 
@@ -121,38 +144,25 @@ pub struct Bitcoin {
     pub processed_outpoints: OutpointSet,
     #[call]
     pub checkpoints: CheckpointQueue,
-    #[call]
     pub accounts: Accounts<Nbtc>,
     // TODO: store recovery script data in account struct
     pub signatory_keys: SignatoryKeys,
     pub(crate) reward_pool: Coin<Nbtc>,
 
-    #[orga(version(V1))]
     pub recovery_scripts: Map<Address, Adapter<Script>>,
-    #[orga(version(V1))]
     config: Config,
 }
 
 impl MigrateFrom<BitcoinV0> for BitcoinV1 {
-    #[allow(unused_mut)]
-    fn migrate_from(mut value: BitcoinV0) -> OrgaResult<Self> {
-        Ok(Self {
-            headers: value.headers,
-            processed_outpoints: value.processed_outpoints,
-            checkpoints: value.checkpoints,
-            accounts: value.accounts,
-            recovery_scripts: Map::default(),
-            signatory_keys: value.signatory_keys,
-            reward_pool: value.reward_pool,
-            config: Config::default(),
-        })
+    fn migrate_from(_value: BitcoinV0) -> OrgaResult<Self> {
+        unreachable!()
     }
 }
 
 pub type ConsensusKey = [u8; 32];
 
 // #[derive(Call, Query, Clone, Debug, Client, PartialEq, Serialize)]
-#[derive(Debug, PartialEq, Serialize, FieldCall, FieldQuery, Clone)]
+#[derive(Debug, PartialEq, Serialize, FieldCall, FieldQuery, Clone, Copy)]
 pub struct Xpub {
     key: ExtendedPubKey,
 }
@@ -316,8 +326,8 @@ impl Bitcoin {
         btc_proof: Adapter<PartialMerkleTree>,
         btc_vout: u32,
         sigset_index: u32,
-        dest: &[u8],
-    ) -> Result<Amount> {
+        dest: super::app::Dest,
+    ) -> Result<()> {
         exempt_from_fee()?;
 
         let btc_header = self
@@ -371,12 +381,25 @@ impl Bitcoin {
             return Err(OrgaError::App("Deposit timeout has expired".to_string()))?;
         }
 
-        let expected_script = sigset.output_script(dest)?;
+        let dest_bytes = dest.commitment_bytes()?;
+        let expected_script = sigset.output_script(&dest_bytes)?;
         if output.script_pubkey != expected_script {
             return Err(OrgaError::App(
                 "Output script does not match signature set".to_string(),
             ))?;
         }
+
+        let prevout = bitcoin::OutPoint {
+            txid: btc_tx.txid(),
+            vout: btc_vout,
+        };
+        let input = Input::new(prevout, &sigset, &dest_bytes, output.value)?;
+        let input_size = input.est_vsize();
+
+        let fee = input_size * self.checkpoints.config().fee_rate;
+        let value = output.value.checked_sub(fee).ok_or_else(|| {
+            OrgaError::App("Deposit amount is too small to pay its spending fee".to_string())
+        })? * self.config.units_per_sat;
 
         let outpoint = (btc_tx.txid().into_inner(), btc_vout);
         if self.processed_outpoints.contains(outpoint)? {
@@ -387,34 +410,24 @@ impl Bitcoin {
         self.processed_outpoints
             .insert(outpoint, sigset.deposit_timeout())?;
 
-        let prevout = bitcoin::OutPoint {
-            txid: btc_tx.txid(),
-            vout: btc_vout,
-        };
-
-        // TODO: don't credit account until we're done signing including tx;
         let mut building_mut = self.checkpoints.building_mut()?;
         let mut building_checkpoint_batch = building_mut
             .batches
             .get_mut(BatchType::Checkpoint as u64)?
             .unwrap();
-
         let mut checkpoint_tx = building_checkpoint_batch.get_mut(0)?.unwrap();
-        let input = Input::new(prevout, &sigset, dest, output.value)?;
-        let input_size = input.est_vsize();
         checkpoint_tx.input.push_back(input)?;
-
-        let fee = input_size * self.checkpoints.config().fee_rate;
-
-        let value = output.value.checked_sub(fee).ok_or_else(|| {
-            OrgaError::App("Deposit amount is too small to pay its spending fee".to_string())
-        })? * self.config.units_per_sat;
 
         let mut minted_nbtc = Nbtc::mint(value);
         let deposit_fee = minted_nbtc.take(calc_deposit_fee(value))?;
         self.reward_pool.give(deposit_fee)?;
 
-        Ok(minted_nbtc.amount)
+        self.checkpoints
+            .building_mut()?
+            .pending
+            .insert(dest, minted_nbtc)?;
+
+        Ok(())
     }
 
     pub fn withdraw(&mut self, script_pubkey: Adapter<Script>, amount: Amount) -> Result<()> {
@@ -452,7 +465,7 @@ impl Bitcoin {
             Some(value) => value,
         };
 
-        if bitcoin::Amount::from_sat(value) < script_pubkey.dust_value() {
+        if bitcoin::Amount::from_sat(value) <= script_pubkey.dust_value() {
             return Err(OrgaError::App(
                 "Withdrawal is too small to pay its dust limit".to_string(),
             )
@@ -496,18 +509,26 @@ impl Bitcoin {
             .accounts
             .withdraw(signer, self.config.transfer_fee.into())?;
         self.reward_pool.give(transfer_fee)?;
-        self.accounts.transfer(to, amount)?;
+
+        let dest = Dest::Address(to);
+        let mut pending = self
+            .checkpoints
+            .building()?
+            .pending
+            .get_or_default(dest.clone())?
+            .amount;
+        pending = (pending + amount).result()?;
+        self.checkpoints
+            .building_mut()?
+            .pending
+            .insert(dest, pending.into())?;
 
         Ok(())
     }
 
     #[query]
     pub fn value_locked(&self) -> Result<u64> {
-        let completed = self.checkpoints.completed()?;
-        if completed.is_empty() {
-            return Ok(0);
-        }
-        let last_completed = completed.iter().last().unwrap();
+        let last_completed = self.checkpoints.last_completed()?;
         Ok(last_completed.reserve_output()?.unwrap().value)
     }
 
@@ -527,7 +548,8 @@ impl Bitcoin {
         }
         let now = signing.create_time().max(now);
 
-        let completed = self.checkpoints.completed()?;
+        // TODO: is this a good completed query limit?
+        let completed = self.checkpoints.completed(1_000)?;
         if completed.is_empty() {
             return Ok(ChangeRates::default());
         }
@@ -600,8 +622,9 @@ impl Bitcoin {
     pub fn begin_block_step(
         &mut self,
         external_outputs: impl Iterator<Item = Result<bitcoin::TxOut>>,
-    ) -> Result<()> {
-        self.checkpoints
+    ) -> Result<Vec<ConsensusKey>> {
+        let pushed = self
+            .checkpoints
             .maybe_step(
                 self.signatory_keys.map(),
                 &self.accounts,
@@ -610,7 +633,79 @@ impl Bitcoin {
             )
             .map_err(|err| OrgaError::App(err.to_string()))?;
 
-        Ok(())
+        if pushed {
+            self.offline_signers()
+        } else {
+            Ok(vec![])
+        }
+    }
+
+    #[cfg(feature = "full")]
+    fn offline_signers(&mut self) -> Result<Vec<ConsensusKey>> {
+        let mut validators = self
+            .context::<Validators>()
+            .ok_or_else(|| OrgaError::App("No validator context found".to_string()))?
+            .entries()?;
+        validators.sort_by(|a, b| b.power.cmp(&a.power));
+
+        let offline_threshold = self.config.max_offline_checkpoints;
+        let sigset = self.checkpoints.active_sigset()?;
+        let lowest_power = sigset.signatories.last().unwrap().voting_power;
+        let completed = self.checkpoints.completed(offline_threshold)?;
+        if completed.len() < offline_threshold as usize {
+            return Ok(vec![]);
+        }
+        let mut offline_signers = vec![];
+        for ValidatorEntry {
+            power,
+            pubkey: cons_key,
+        } in validators
+        {
+            if power < lowest_power {
+                break;
+            }
+
+            let xpub = if let Some(xpub) = self.signatory_keys.get(cons_key)? {
+                xpub
+            } else {
+                continue;
+            };
+
+            let mut offline = true;
+            for checkpoint in completed.iter().rev() {
+                if checkpoint.to_sign(xpub)?.is_empty() {
+                    offline = false;
+                    break;
+                }
+            }
+
+            if offline {
+                offline_signers.push(cons_key);
+            }
+        }
+
+        Ok(offline_signers)
+    }
+
+    pub fn take_pending(&mut self) -> Result<Vec<(Dest, Coin<Nbtc>)>> {
+        if let Err(Error::Orga(OrgaError::App(err))) = self.checkpoints.last_completed_index() {
+            if err == "No completed checkpoints yet" {
+                return Ok(vec![]);
+            }
+        }
+
+        // TODO: drain iter
+        let pending = &mut self.checkpoints.last_completed_mut()?.pending;
+        let keys = pending
+            .iter()?
+            .map(|entry| entry.map(|(dest, _)| dest.clone()).map_err(Error::from))
+            .collect::<Result<Vec<Dest>>>()?;
+        let mut dests = vec![];
+        for dest in keys {
+            let coins = pending.remove(dest.clone())?.unwrap().into_inner();
+            dests.push((dest, coins));
+        }
+        Ok(dests)
     }
 }
 
@@ -632,10 +727,10 @@ impl SignatoryKeys {
         let mut xpubs = vec![];
         for entry in self.by_cons.iter()? {
             let (_k, v) = entry?;
-            xpubs.push(v.clone());
+            xpubs.push(v);
         }
         for xpub in xpubs {
-            self.xpubs.remove(xpub)?;
+            self.xpubs.remove(*xpub)?;
         }
 
         clear_map(&mut self.by_cons)?;
@@ -648,7 +743,7 @@ impl SignatoryKeys {
     }
 
     pub fn insert(&mut self, consensus_key: ConsensusKey, xpub: Xpub) -> Result<()> {
-        let mut normalized_xpub = xpub.clone();
+        let mut normalized_xpub = xpub;
         normalized_xpub.key.child_number = 0.into();
         normalized_xpub.key.depth = 0;
         normalized_xpub.key.parent_fingerprint = Default::default();
@@ -657,7 +752,7 @@ impl SignatoryKeys {
             return Err(OrgaError::App("Validator already has a signatory key".to_string()).into());
         }
 
-        if self.xpubs.contains_key(normalized_xpub.clone())? {
+        if self.xpubs.contains_key(normalized_xpub)? {
             return Err(OrgaError::App("Duplicate signatory key".to_string()).into());
         }
 
@@ -669,7 +764,7 @@ impl SignatoryKeys {
 
     #[query]
     pub fn get(&self, cons_key: ConsensusKey) -> Result<Option<Xpub>> {
-        Ok(self.by_cons.get(cons_key)?.map(|x| x.clone()))
+        Ok(self.by_cons.get(cons_key)?.map(|x| *x))
     }
 }
 
@@ -753,7 +848,7 @@ mod tests {
                 Adapter::new(PartialMerkleTree::from_txids(&[Txid::all_zeros()], &[true])),
                 0,
                 0,
-                &[],
+                Dest::Address(Address::NULL),
             )
         };
 
