@@ -7,6 +7,7 @@
 use bitcoind::bitcoincore_rpc::{Auth, Client as BtcClient};
 use clap::Parser;
 use nomic::app::Dest;
+#[cfg(feature = "testnet")]
 use nomic::app::IbcDest;
 use nomic::app::InnerApp;
 use nomic::app::Nom;
@@ -16,10 +17,14 @@ use nomic::error::Result;
 use orga::abci::Node;
 use orga::client::wallet::{SimpleWallet, Wallet};
 use orga::coins::{Address, Commission, Decimal, Declaration, Symbol};
-use orga::ibc::ibc_rs::core::ics24_host::identifier::ChannelId;
-use orga::ibc::ibc_rs::core::ics24_host::identifier::PortId;
-use orga::ibc::ibc_rs::core::timestamp::Timestamp;
-use orga::ibc::PortChannel;
+#[cfg(feature = "testnet")]
+use orga::ibc::{
+    ibc_rs::core::{
+        ics24_host::identifier::{ChannelId, PortId},
+        timestamp::Timestamp,
+    },
+    PortChannel,
+};
 use orga::macros::build_call;
 use orga::merk::MerkStore;
 use orga::plugins::MIN_FEE;

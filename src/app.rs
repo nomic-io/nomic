@@ -310,35 +310,34 @@ impl InnerApp {
 
     #[call]
     pub fn ibc_deliver(&mut self, messages: RawIbcTx) -> Result<()> {
-        let incoming_transfers = self.ibc.deliver(messages)?;
+        #[cfg(feature = "testnet")]
+        {
+            let incoming_transfers = self.ibc.deliver(messages)?;
 
-        for transfer in incoming_transfers {
-            if transfer.denom.to_string() != "usat" {
-                continue;
-            }
-            let memo: NbtcMemo = transfer.memo.parse().unwrap_or_default();
-            if let NbtcMemo::Withdraw(script) = memo {
-                let amount = transfer.amount;
-                let receiver: Address = transfer
-                    .receiver
-                    .parse()
-                    .map_err(|_| Error::Coins("Invalid address".to_string()))?;
-                let coins = Coin::<Nbtc>::mint(amount);
-                self.ibc
-                    .burn_coins_execute(&receiver.into(), &coins.into())?;
-                if self.bitcoin.add_withdrawal(script, amount.into()).is_err() {
+            for transfer in incoming_transfers {
+                if transfer.denom.to_string() != "usat" {
+                    continue;
+                }
+                let memo: NbtcMemo = transfer.memo.parse().unwrap_or_default();
+                if let NbtcMemo::Withdraw(script) = memo {
+                    let amount = transfer.amount;
+                    let receiver: Address = transfer
+                        .receiver
+                        .parse()
+                        .map_err(|_| Error::Coins("Invalid address".to_string()))?;
                     let coins = Coin::<Nbtc>::mint(amount);
-                    self.ibc
-                        .mint_coins_execute(&receiver.into(), &coins.into())?;
+                    self.ibc.burn_coins_execute(&receiver, &coins.into())?;
+                    if self.bitcoin.add_withdrawal(script, amount.into()).is_err() {
+                        let coins = Coin::<Nbtc>::mint(amount);
+                        self.ibc.mint_coins_execute(&receiver, &coins.into())?;
+                    }
                 }
             }
+
+            Ok(())
         }
-
-        Ok(())
-    }
-
-    pub fn ibc_raw_transfer(&mut self) -> Result<()> {
-        Ok(())
+        #[cfg(not(feature = "testnet"))]
+        Err(orga::Error::Unknown)
     }
 
     #[call]
@@ -508,7 +507,7 @@ impl ConvertSdkTx for InnerApp {
                     let payer = build_call!(self.accounts.take_as_funding(funding_amt.into()));
 
                     let raw_ibc_tx = RawIbcTx(tx.clone());
-                    let paid = build_call!(self.ibc_deliver(raw_ibc_tx.clone()));
+                    let paid = build_call!(self.ibc_deliver(raw_ibc_tx));
 
                     return Ok(PaidCall { payer, paid });
                 }

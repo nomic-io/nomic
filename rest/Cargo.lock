@@ -1963,9 +1963,9 @@ dependencies = [
 
 [[package]]
 name = "ibc-proto"
-version = "0.32.0"
+version = "0.32.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c888103095b45bee90cb9104513ade30abd69902153b0682b5ad81940ae1f865"
+checksum = "11c352715b36685c2543556a77091fb16af5d26257d5ce9c28e6756c1ccd71aa"
 dependencies = [
  "base64 0.21.2",
  "borsh 0.9.3",
@@ -2652,7 +2652,7 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.3.1"
-source = "git+https://github.com/nomic-io/orga.git?rev=a48d8df18d230c7e69b8b73631d04330f91e7e2b#a48d8df18d230c7e69b8b73631d04330f91e7e2b"
+source = "git+https://github.com/nomic-io/orga.git?rev=0e74fc9328d12a52873636d1d0e7368b26938acc#0e74fc9328d12a52873636d1d0e7368b26938acc"
 dependencies = [
  "abci2",
  "async-trait",
@@ -2713,7 +2713,7 @@ dependencies = [
 [[package]]
 name = "orga-macros"
 version = "0.3.1"
-source = "git+https://github.com/nomic-io/orga.git?rev=a48d8df18d230c7e69b8b73631d04330f91e7e2b#a48d8df18d230c7e69b8b73631d04330f91e7e2b"
+source = "git+https://github.com/nomic-io/orga.git?rev=0e74fc9328d12a52873636d1d0e7368b26938acc#0e74fc9328d12a52873636d1d0e7368b26938acc"
 dependencies = [
  "darling",
  "heck 0.3.3",
@@ -2825,7 +2825,7 @@ checksum = "61a386cd715229d399604b50d1361683fe687066f42d56f54be995bc6868f71c"
 dependencies = [
  "inlinable_string",
  "pear_codegen",
- "yansi 1.0.0-rc",
+ "yansi 1.0.0-rc.1",
 ]
 
 [[package]]
@@ -3032,7 +3032,7 @@ dependencies = [
  "quote",
  "syn 2.0.26",
  "version_check",
- "yansi 1.0.0-rc",
+ "yansi 1.0.0-rc.1",
 ]
 
 [[package]]
@@ -3245,18 +3245,18 @@ dependencies = [
 
 [[package]]
 name = "ref-cast"
-version = "1.0.18"
+version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1641819477c319ef452a075ac34a4be92eb9ba09f6841f62d594d50fdcf0bf6b"
+checksum = "acde58d073e9c79da00f2b5b84eed919c8326832648a5b109b3fce1bb1175280"
 dependencies = [
  "ref-cast-impl",
 ]
 
 [[package]]
 name = "ref-cast-impl"
-version = "1.0.18"
+version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68bf53dad9b6086826722cdc99140793afd9f62faa14a1ad07eb4f955e7a7216"
+checksum = "7f7473c2cfcf90008193dd0e3e16599455cb601a9fce322b5bb55de799664925"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3488,7 +3488,7 @@ dependencies = [
  "percent-encoding",
  "pin-project-lite",
  "ref-cast",
- "rustls 0.20.8",
+ "rustls 0.20.9",
  "rustls-pemfile",
  "serde",
  "smallvec",
@@ -3602,14 +3602,14 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.20.8"
+version = "0.20.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fff78fc74d175294f4e83b28343315ffcfb114b156f0185e9741cb5570f50e2f"
+checksum = "1b80e3dec595989ea8510028f30c408a4630db12c9cbb8de34203b89d6577e99"
 dependencies = [
  "log",
  "ring",
  "sct 0.7.0",
- "webpki 0.22.0",
+ "webpki 0.22.1",
 ]
 
 [[package]]
@@ -4797,9 +4797,9 @@ version = "0.23.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c43ee83903113e03984cb9e5cebe6c04a5116269e900e3ddba8f068a62adda59"
 dependencies = [
- "rustls 0.20.8",
+ "rustls 0.20.9",
  "tokio",
- "webpki 0.22.0",
+ "webpki 0.22.1",
 ]
 
 [[package]]
@@ -5355,9 +5355,9 @@ dependencies = [
 
 [[package]]
 name = "webpki"
-version = "0.22.0"
+version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f095d78192e208183081cc07bc5515ef55216397af48b873e5edcd72637fa1bd"
+checksum = "f0e74f82d49d545ad128049b7e88f6576df2da6b02e9ce565c6f533be576957e"
 dependencies = [
  "ring",
  "untrusted",
@@ -5533,9 +5533,9 @@ checksum = "09041cd90cf85f7f8b2df60c646f853b7f535ce68f85244eb6731cf89fa498ec"
 
 [[package]]
 name = "yansi"
-version = "1.0.0-rc"
+version = "1.0.0-rc.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ee746ad3851dd3bc40e4a028ab3b00b99278d929e48957bcb2d111874a7e43e"
+checksum = "1367295b8f788d371ce2dbc842c7b709c73ee1364d30351dd300ec2203b12377"
 
 [[package]]
 name = "zeroize"
