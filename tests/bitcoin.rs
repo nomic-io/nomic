@@ -7,7 +7,7 @@ use bitcoind::bitcoincore_rpc::json::{
 use bitcoind::bitcoincore_rpc::RpcApi;
 use bitcoind::{BitcoinD, Conf};
 use log::info;
-use nomic::app::DepositCommitment;
+use nomic::app::Dest;
 use nomic::app::{InnerApp, Nom};
 use nomic::bitcoin::adapter::Adapter;
 use nomic::bitcoin::relayer::DepositAddress;
@@ -48,11 +48,7 @@ async fn generate_deposit_address(address: &Address) -> Result<DepositAddress> {
     let sigset = app_client()
         .query(|app| Ok(app.bitcoin.checkpoints.active_sigset()?))
         .await?;
-    let script = sigset.output_script(
-        DepositCommitment::Address(*address)
-            .commitment_bytes()?
-            .as_slice(),
-    )?;
+    let script = sigset.output_script(Dest::Address(*address).commitment_bytes()?.as_slice())?;
 
     Ok(DepositAddress {
         deposit_addr: bitcoin::Address::from_script(&script, bitcoin::Network::Regtest)
@@ -71,7 +67,7 @@ pub async fn broadcast_deposit_addr(
     info!("Broadcasting deposit address to relayer...");
     let dest_addr = dest_addr.parse().unwrap();
 
-    let commitment = DepositCommitment::Address(dest_addr).encode()?;
+    let commitment = Dest::Address(dest_addr).encode()?;
 
     let url = format!("{}/address", relayer,);
     let client = reqwest::Client::new();
@@ -298,6 +294,12 @@ async fn bitcoin_test() {
         .await
         .unwrap();
 
+        let balance = app_client()
+            .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
+            .await
+            .unwrap();
+        assert_eq!(balance, Amount::from(0));
+
         retry(
             || bitcoind.client.generate_to_address(4, &wallet_address),
             10,
@@ -305,13 +307,20 @@ async fn bitcoin_test() {
         .unwrap();
 
         poll_for_bitcoin_header(1124).await.unwrap();
+        poll_for_signing_checkpoint().await;
+
+        let balance = app_client()
+            .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
+            .await
+            .unwrap();
+        assert_eq!(balance, Amount::from(0));
+
         poll_for_completed_checkpoint(1).await;
 
         let balance = app_client()
             .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
             .await
             .unwrap();
-
         assert_eq!(balance, Amount::from(799998736000000));
 
         deposit_bitcoin(

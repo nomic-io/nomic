@@ -10,7 +10,7 @@ use nomic::orga::Error as OrgaError;
 use std::str::FromStr;
 // use crate::web_client::WebClient;
 use js_sys::{Array, Uint8Array};
-use nomic::app::{App, DepositCommitment, InnerApp, Nom};
+use nomic::app::{App, Dest, InnerApp, Nom};
 use nomic::bitcoin::{Nbtc, NETWORK as BITCOIN_NETWORK};
 use nomic::orga::client::wallet::Unsigned;
 use nomic::orga::client::AppClient;
@@ -424,11 +424,7 @@ pub async fn gen_deposit_addr(dest_addr: String) -> Result<DepositAddress, JsErr
     let sigset = app_client()
         .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.active_sigset()?))
         .await?;
-    let script = sigset.output_script(
-        DepositCommitment::Address(dest_addr)
-            .commitment_bytes()?
-            .as_slice(),
-    )?;
+    let script = sigset.output_script(Dest::Address(dest_addr).commitment_bytes()?.as_slice())?;
     // TODO: get network from somewhere
     // TODO: make test/mainnet option configurable
     let btc_addr = bitcoin::Address::from_script(&script, BITCOIN_NETWORK)?;
@@ -501,7 +497,7 @@ pub async fn broadcast_deposit_addr(
         .parse()
         .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
-    let commitment = DepositCommitment::Address(dest_addr);
+    let commitment = Dest::Address(dest_addr);
 
     let window = match web_sys::window() {
         Some(window) => window,
