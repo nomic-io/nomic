@@ -364,6 +364,7 @@ impl Checkpoint {
         let mut sig_index = 0;
         for i in 0..self.batches.len() {
             let mut batch = self.batches.get_mut(i)?.unwrap();
+            let batch_was_signed = batch.signed();
 
             for j in 0..batch.len() {
                 let mut tx = batch.get_mut(j)?.unwrap();
@@ -394,13 +395,13 @@ impl Checkpoint {
                     }
                 }
 
-                if !tx_was_signed {
-                    if tx.signed() {
-                        batch.signed_txs += 1;
-                    }
-
-                    break;
+                if !tx_was_signed && tx.signed() {
+                    batch.signed_txs += 1;
                 }
+            }
+
+            if !batch_was_signed {
+                break;
             }
         }
 
