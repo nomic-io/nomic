@@ -636,6 +636,12 @@ impl<'a> BuildingCheckpointMut<'a> {
         let intermediate_tx = intermediate_tx_batch.get(0)?.unwrap();
         let intermediate_tx_id = intermediate_tx.txid()?;
         let intermediate_tx_len = intermediate_tx.output.len();
+
+        if intermediate_tx_len == 0 {
+            log::warn!("Generated empty emergency disbursal");
+            return Ok(());
+        }
+
         let mut intermediate_tx_outputs: Vec<(usize, u64)> = intermediate_tx
             .output
             .iter()?
