@@ -1457,6 +1457,7 @@ impl IbcTransferCmd {
             receiver: EdAdapter(self.receiver.clone().into()),
             sender: EdAdapter(my_address.to_string().into()),
             timeout_timestamp,
+            memo: self.memo.clone().try_into()?,
         };
 
         Ok(self
