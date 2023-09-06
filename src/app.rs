@@ -239,45 +239,13 @@ impl InnerApp {
         )?)
     }
 
-    pub fn credit_deposit(&mut self, dest: Dest, nbtc: Amount) -> Result<()> {
+    pub fn credit_transfer(&mut self, dest: Dest, nbtc: Coin<Nbtc>) -> Result<()> {
         match dest {
-            Dest::Address(addr) => self.bitcoin.accounts.deposit(addr, nbtc.into()),
+            Dest::Address(addr) => self.bitcoin.accounts.deposit(addr, nbtc),
             #[cfg(not(feature = "testnet"))]
             Dest::Ibc(dest) => Err(Error::Unknown),
             #[cfg(feature = "testnet")]
-            Dest::Ibc(dest) => {
-                use orga::ibc::ibc_rs::applications::transfer::msgs::transfer::MsgTransfer;
-                let fee = ibc_fee(nbtc)?;
-                let nbtc_after_fee = (nbtc - fee).result()?;
-                let coins: Coin<Nbtc> = nbtc_after_fee.into();
-                let msg_transfer = MsgTransfer {
-                    port_id_on_a: dest.source_port()?,
-                    chan_id_on_a: dest.source_channel()?,
-                    packet_data: PacketData {
-                        token: coins.into(),
-                        receiver: dest.receiver.0.clone(),
-                        sender: dest.sender.0.clone(),
-                        memo: dest.memo()?,
-                    },
-                    timeout_height_on_b: TimeoutHeight::Never,
-                    timeout_timestamp_on_b: Timestamp::from_nanoseconds(dest.timeout_timestamp)
-                        .map_err(|e| Error::App(e.to_string()))?,
-                };
-
-                let coins: Coin<Nbtc> = nbtc_after_fee.into();
-                self.ibc.mint_coins_execute(
-                    &dest
-                        .sender
-                        .0
-                        .try_into()
-                        .map_err(|_| Error::App("Invalid sender address".into()))?,
-                    &coins.into(),
-                )?;
-                self.bitcoin.reward_pool.give(fee.into())?;
-
-                self.ibc.deliver_message(IbcMessage::Ics20(msg_transfer))?;
-                Ok(())
-            }
+            Dest::Ibc(dest) => dest.transfer(nbtc, &mut self.bitcoin, &mut self.ibc),
         }
     }
 
@@ -461,7 +429,7 @@ mod abci {
 
             let pending_nbtc_transfers = self.bitcoin.take_pending()?;
             for (dest, coins) in pending_nbtc_transfers {
-                self.credit_deposit(dest, coins.amount)?;
+                self.credit_transfer(dest, coins)?;
             }
             let external_outputs: Vec<crate::error::Result<bitcoin::TxOut>> = vec![]; // TODO: remote chain disbursal
             let offline_signers = self
@@ -994,6 +962,49 @@ pub struct IbcDest {
 }
 
 impl IbcDest {
+    pub fn transfer(
+        &self,
+        mut coins: Coin<Nbtc>,
+        bitcoin: &mut Bitcoin,
+        ibc: &mut Ibc,
+    ) -> Result<()> {
+        use orga::ibc::ibc_rs::applications::transfer::msgs::transfer::MsgTransfer;
+
+        let fee_amount = ibc_fee(coins.amount)?;
+        let fee = coins.take(fee_amount)?;
+        bitcoin.reward_pool.give(fee)?;
+        let nbtc_amount = coins.amount;
+
+        ibc.mint_coins_execute(
+            &self
+                .sender
+                .0
+                .clone()
+                .try_into()
+                .map_err(|_| Error::App("Invalid sender address".into()))?,
+            &coins.into(),
+        )?;
+
+        let msg_transfer = MsgTransfer {
+            port_id_on_a: self.source_port()?,
+            chan_id_on_a: self.source_channel()?,
+            packet_data: PacketData {
+                token: Nbtc::mint(nbtc_amount).into(),
+                receiver: self.receiver.0.clone(),
+                sender: self.sender.0.clone(),
+                memo: self.memo()?,
+            },
+            timeout_height_on_b: TimeoutHeight::Never,
+            timeout_timestamp_on_b: Timestamp::from_nanoseconds(self.timeout_timestamp)
+                .map_err(|e| Error::App(e.to_string()))?,
+        };
+        if let Err(err) = ibc.deliver_message(IbcMessage::Ics20(msg_transfer)) {
+            log::debug!("Failed IBC transfer: {}", err);
+        }
+
+        Ok(())
+    }
+
     pub fn source_channel(&self) -> Result<ChannelId> {
         let channel_id: String = self.source_channel.clone().try_into()?;
         channel_id
