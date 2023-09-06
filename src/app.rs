@@ -163,13 +163,9 @@ impl InnerApp {
             let fee = coins.take(fee)?;
             self.bitcoin.reward_pool.give(fee)?;
 
-            let pending = &mut self.bitcoin.checkpoints.building_mut()?.pending;
-
+            let building = &mut self.bitcoin.checkpoints.building_mut()?;
             let dest = Dest::Ibc(dest);
-            let dest_amount = (pending.get(dest.clone())?.map_or(0.into(), |c| c.amount)
-                + coins.amount)
-                .result()?;
-            pending.insert(dest, Coin::mint(dest_amount))?;
+            building.insert_pending(dest, coins)?;
 
             Ok(())
         }

@@ -904,6 +904,16 @@ impl<'a> BuildingCheckpointMut<'a> {
             excess_outputs,
         ))
     }
+
+    pub fn insert_pending(&mut self, dest: Dest, coins: Coin<Nbtc>) -> Result<()> {
+        let mut amount = self
+            .pending
+            .remove(dest.clone())?
+            .map_or(0.into(), |c| c.amount);
+        amount = (amount + coins.amount).result()?;
+        self.pending.insert(dest, Coin::mint(amount))?;
+        Ok(())
+    }
 }
 
 #[orga]

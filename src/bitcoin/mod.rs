@@ -424,8 +424,7 @@ impl Bitcoin {
 
         self.checkpoints
             .building_mut()?
-            .pending
-            .insert(dest, minted_nbtc)?;
+            .insert_pending(dest, minted_nbtc)?;
 
         Ok(())
     }
@@ -515,17 +514,10 @@ impl Bitcoin {
         self.reward_pool.give(transfer_fee)?;
 
         let dest = Dest::Address(to);
-        let mut pending = self
-            .checkpoints
-            .building()?
-            .pending
-            .get_or_default(dest.clone())?
-            .amount;
-        pending = (pending + amount).result()?;
+        let coins = self.accounts.withdraw(signer, amount)?;
         self.checkpoints
             .building_mut()?
-            .pending
-            .insert(dest, pending.into())?;
+            .insert_pending(dest, coins)?;
 
         Ok(())
     }
