@@ -16,6 +16,7 @@ use orga::context::GetContext;
 use orga::cosmrs::bank::MsgSend;
 use orga::describe::{Describe, Descriptor};
 use orga::encoding::{Decode, Encode, LengthVec};
+use orga::ibc::ibc_rs::applications::transfer::Memo;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -156,12 +157,8 @@ impl InnerApp {
         {
             crate::bitcoin::exempt_from_fee()?;
 
-            let source_port: String = dest.source_port.clone().try_into()?;
-            PortId::new(source_port)
-                .map_err(|err| Error::Ibc(format!("Could not parse port ID: {}", err)))?;
-            let source_channel: String = dest.source_channel.clone().try_into()?;
-            ChannelId::from_str(&source_channel)
-                .map_err(|err| Error::Ibc(format!("Could not parse channel ID: {}", err)))?;
+            dest.source_port()?;
+            dest.source_channel()?;
 
             let signer = self.signer()?;
             let mut coins = self.bitcoin.accounts.withdraw(signer, amount)?;
@@ -228,12 +225,8 @@ impl InnerApp {
         dest: Dest,
     ) -> Result<()> {
         if let Dest::Ibc(dest) = dest.clone() {
-            let source_port: String = dest.source_port.try_into()?;
-            PortId::new(source_port)
-                .map_err(|err| Error::Ibc(format!("Could not parse port ID: {}", err)))?;
-            let source_channel: String = dest.source_channel.try_into()?;
-            ChannelId::from_str(&source_channel)
-                .map_err(|err| Error::Ibc(format!("Could not parse channel ID: {}", err)))?;
+            dest.source_port()?;
+            dest.source_channel()?;
         }
 
         Ok(self.bitcoin.relay_deposit(
@@ -257,19 +250,14 @@ impl InnerApp {
                 let fee = ibc_fee(nbtc)?;
                 let nbtc_after_fee = (nbtc - fee).result()?;
                 let coins: Coin<Nbtc> = nbtc_after_fee.into();
-                let source_port: String = dest.source_port.try_into()?;
-                let source_channel: String = dest.source_channel.try_into()?;
                 let msg_transfer = MsgTransfer {
-                    port_id_on_a: PortId::new(source_port)
-                        .map_err(|err| Error::Ibc(format!("Could not parse port ID: {}", err)))?,
-                    chan_id_on_a: source_channel.parse().map_err(|err| {
-                        Error::Ibc(format!("Could not parse channel ID: {}", err))
-                    })?,
+                    port_id_on_a: dest.source_port()?,
+                    chan_id_on_a: dest.source_channel()?,
                     packet_data: PacketData {
                         token: coins.into(),
-                        receiver: dest.receiver.0,
+                        receiver: dest.receiver.0.clone(),
                         sender: dest.sender.0.clone(),
-                        memo: "".to_string().into(),
+                        memo: dest.memo()?,
                     },
                     timeout_height_on_b: TimeoutHeight::Never,
                     timeout_timestamp_on_b: Timestamp::from_nanoseconds(dest.timeout_timestamp)
@@ -896,6 +884,7 @@ impl ConvertSdkTx for InnerApp {
                             sender: EdAdapter(msg.sender.into()),
                             receiver: EdAdapter(msg.receiver.into()),
                             timeout_timestamp,
+                            memo: msg.memo.try_into()?,
                         };
 
                         let payer = build_call!(self.ibc_transfer_nbtc(dest, amount));
@@ -981,6 +970,7 @@ pub struct MsgIbcTransfer {
     pub receiver: String,
     pub sender: String,
     pub timeout_timestamp: String,
+    pub memo: String,
 }
 
 #[derive(Encode, Decode, Debug, Clone, Serialize)]
@@ -1000,6 +990,29 @@ pub struct IbcDest {
     #[serde(skip)]
     pub sender: EdAdapter<IbcSigner>,
     pub timeout_timestamp: u64,
+    pub memo: LengthVec<u8, u8>,
+}
+
+impl IbcDest {
+    pub fn source_channel(&self) -> Result<ChannelId> {
+        let channel_id: String = self.source_channel.clone().try_into()?;
+        channel_id
+            .parse()
+            .map_err(|_| Error::Ibc("Invalid channel id".into()))
+    }
+
+    pub fn source_port(&self) -> Result<PortId> {
+        let port_id: String = self.source_port.clone().try_into()?;
+        port_id
+            .parse()
+            .map_err(|_| Error::Ibc("Invalid port id".into()))
+    }
+
+    pub fn memo(&self) -> Result<Memo> {
+        let memo: String = self.memo.clone().try_into()?;
+
+        Ok(memo.into())
+    }
 }
 
 impl Dest {
