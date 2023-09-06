@@ -525,8 +525,8 @@ impl Default for Config {
 
 #[orga(version = 1)]
 pub struct CheckpointQueue {
-    pub(super) queue: Deque<Checkpoint>,
-    pub(super) index: u32,
+    pub queue: Deque<Checkpoint>,
+    pub index: u32,
     pub config: Config,
 }
 
