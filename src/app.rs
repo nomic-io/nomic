@@ -159,6 +159,7 @@ impl InnerApp {
 
             dest.source_port()?;
             dest.source_channel()?;
+            dest.sender_address()?;
 
             let signer = self.signer()?;
             let mut coins = self.bitcoin.accounts.withdraw(signer, amount)?;
@@ -227,6 +228,7 @@ impl InnerApp {
         if let Dest::Ibc(dest) = dest.clone() {
             dest.source_port()?;
             dest.source_channel()?;
+            dest.sender_address()?;
         }
 
         Ok(self.bitcoin.relay_deposit(
@@ -975,15 +977,7 @@ impl IbcDest {
         bitcoin.reward_pool.give(fee)?;
         let nbtc_amount = coins.amount;
 
-        ibc.mint_coins_execute(
-            &self
-                .sender
-                .0
-                .clone()
-                .try_into()
-                .map_err(|_| Error::App("Invalid sender address".into()))?,
-            &coins.into(),
-        )?;
+        ibc.mint_coins_execute(&self.sender_address()?, &coins.into())?;
 
         let msg_transfer = MsgTransfer {
             port_id_on_a: self.source_port()?,
@@ -1003,6 +997,14 @@ impl IbcDest {
         }
 
         Ok(())
+    }
+
+    pub fn sender_address(&self) -> Result<Address> {
+        self.sender
+            .0
+            .to_string()
+            .parse()
+            .map_err(|e: bech32::Error| Error::Coins(e.to_string()))
     }
 
     pub fn source_channel(&self) -> Result<ChannelId> {
