@@ -377,7 +377,7 @@ impl Checkpoint {
                         continue;
                     }
 
-                    if sig_index > sigs.len() {
+                    if sig_index >= sigs.len() {
                         return Err(
                             OrgaError::App("Not enough signatures supplied".to_string()).into()
                         );
@@ -394,8 +394,12 @@ impl Checkpoint {
                     }
                 }
 
-                if !tx_was_signed && tx.signed() {
-                    batch.signed_txs += 1;
+                if !tx_was_signed {
+                    if tx.signed() {
+                        batch.signed_txs += 1;
+                    }
+
+                    break;
                 }
             }
         }
