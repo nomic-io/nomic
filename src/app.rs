@@ -15,7 +15,7 @@ use orga::coins::{
 use orga::context::GetContext;
 use orga::cosmrs::bank::MsgSend;
 use orga::describe::{Describe, Descriptor};
-use orga::encoding::{Decode, Encode};
+use orga::encoding::{Decode, Encode, LengthVec};
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -156,6 +156,13 @@ impl InnerApp {
         {
             crate::bitcoin::exempt_from_fee()?;
 
+            let source_port: String = dest.source_port.clone().try_into()?;
+            PortId::new(source_port)
+                .map_err(|err| Error::Ibc(format!("Could not parse port ID: {}", err)))?;
+            let source_channel: String = dest.source_channel.clone().try_into()?;
+            ChannelId::from_str(&source_channel)
+                .map_err(|err| Error::Ibc(format!("Could not parse channel ID: {}", err)))?;
+
             let signer = self.signer()?;
             let mut coins = self.bitcoin.accounts.withdraw(signer, amount)?;
 
@@ -220,6 +227,15 @@ impl InnerApp {
         sigset_index: u32,
         dest: Dest,
     ) -> Result<()> {
+        if let Dest::Ibc(dest) = dest.clone() {
+            let source_port: String = dest.source_port.try_into()?;
+            PortId::new(source_port)
+                .map_err(|err| Error::Ibc(format!("Could not parse port ID: {}", err)))?;
+            let source_channel: String = dest.source_channel.try_into()?;
+            ChannelId::from_str(&source_channel)
+                .map_err(|err| Error::Ibc(format!("Could not parse channel ID: {}", err)))?;
+        }
+
         Ok(self.bitcoin.relay_deposit(
             btc_tx,
             btc_height,
@@ -241,10 +257,14 @@ impl InnerApp {
                 let fee = ibc_fee(nbtc)?;
                 let nbtc_after_fee = (nbtc - fee).result()?;
                 let coins: Coin<Nbtc> = nbtc_after_fee.into();
-                let src = dest.source;
+                let source_port: String = dest.source_port.try_into()?;
+                let source_channel: String = dest.source_channel.try_into()?;
                 let msg_transfer = MsgTransfer {
-                    port_id_on_a: src.port_id()?,
-                    chan_id_on_a: src.channel_id()?,
+                    port_id_on_a: PortId::new(source_port)
+                        .map_err(|err| Error::Ibc(format!("Could not parse port ID: {}", err)))?,
+                    chan_id_on_a: source_channel.parse().map_err(|err| {
+                        Error::Ibc(format!("Could not parse channel ID: {}", err))
+                    })?,
                     packet_data: PacketData {
                         token: coins.into(),
                         receiver: dest.receiver.0,
@@ -871,7 +891,8 @@ impl ConvertSdkTx for InnerApp {
                             .map_err(|_| Error::Ibc("Invalid timeout timestamp".into()))?;
 
                         let dest = IbcDest {
-                            source: PortChannel::new(port_id, channel_id),
+                            source_port: port_id.to_string().try_into()?,
+                            source_channel: channel_id.to_string().try_into()?,
                             sender: EdAdapter(msg.sender.into()),
                             receiver: EdAdapter(msg.receiver.into()),
                             timeout_timestamp,
@@ -972,7 +993,8 @@ use orga::ibc::{IbcMessage, PortChannel, RawIbcTx};
 
 #[derive(Clone, Debug, Encode, Decode, Serialize)]
 pub struct IbcDest {
-    pub source: PortChannel,
+    pub source_port: LengthVec<u8, u8>,
+    pub source_channel: LengthVec<u8, u8>,
     #[serde(skip)]
     pub receiver: EdAdapter<IbcSigner>,
     #[serde(skip)]

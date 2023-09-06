@@ -18,12 +18,9 @@ use orga::abci::Node;
 use orga::client::wallet::{SimpleWallet, Wallet};
 use orga::coins::{Address, Commission, Decimal, Declaration, Symbol};
 #[cfg(feature = "testnet")]
-use orga::ibc::{
-    ibc_rs::core::{
-        ics24_host::identifier::{ChannelId, PortId},
-        timestamp::Timestamp,
-    },
-    PortChannel,
+use orga::ibc::ibc_rs::core::{
+    ics24_host::identifier::{ChannelId, PortId},
+    timestamp::Timestamp,
 };
 use orga::macros::build_call;
 use orga::merk::MerkStore;
@@ -1455,9 +1452,10 @@ impl IbcTransferCmd {
         let timeout_timestamp = self.timeout_seconds * 1_000_000_000 + now_ns;
 
         let ibc_dest = IbcDest {
+            source_port: self.port_id.to_string().try_into()?,
+            source_channel: self.channel_id.to_string().try_into()?,
             receiver: EdAdapter(self.receiver.clone().into()),
             sender: EdAdapter(my_address.to_string().into()),
-            source: PortChannel::new(self.port_id.clone(), self.channel_id.clone()),
             timeout_timestamp,
         };
 
