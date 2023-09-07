@@ -999,14 +999,12 @@ impl CheckpointQueue {
 
         let mut out = vec![];
 
-        let start = self.queue.len().saturating_sub(limit as u64);
-        for i in start..self.queue.len() {
-            let checkpoint = self.queue.get(i)?.unwrap();
+        let skip = if self.signing()?.is_some() { 2 } else { 1 };
+        let end = self.index.saturating_sub(skip - 1);
+        let start = end - limit.min(self.len()? - skip);
 
-            if !matches!(checkpoint.status, CheckpointStatus::Complete) {
-                break;
-            }
-
+        for i in start..end {
+            let checkpoint = self.get(i)?;
             out.push(CompletedCheckpoint(checkpoint));
         }
 
