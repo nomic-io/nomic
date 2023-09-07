@@ -8,13 +8,15 @@ use crate::bitcoin::adapter::Adapter;
 use crate::bitcoin::{Bitcoin, Nbtc};
 use crate::incentives::Incentives;
 use bitcoin::util::merkleblock::PartialMerkleTree;
-use bitcoin::Transaction;
+use bitcoin::{Script, Transaction, TxOut};
 use orga::coins::{
     Accounts, Address, Amount, Coin, Faucet, FaucetOptions, Give, Staking, Symbol, Take,
 };
 use orga::context::GetContext;
 use orga::cosmrs::bank::MsgSend;
+use orga::describe::{Describe, Descriptor};
 use orga::encoding::{Decode, Encode};
+use std::str::FromStr;
 use std::time::Duration;
 
 use orga::ibc::ibc_rs::applications::transfer::context::TokenTransferExecutionContext;
@@ -33,7 +35,7 @@ use orga::macros::build_call;
 use orga::migrate::Migrate;
 use orga::orga;
 use orga::plugins::sdk_compat::{sdk, sdk::Tx as SdkTx, ConvertSdkTx};
-use orga::plugins::{disable_fee, DefaultPlugins, Paid, PaidCall, Signer, Time, MIN_FEE};
+use orga::plugins::{disable_fee, DefaultPlugins, Events, Paid, PaidCall, Signer, Time, MIN_FEE};
 use orga::prelude::*;
 use orga::upgrade::Version;
 use orga::upgrade::{Upgrade, UpgradeV0};
@@ -93,7 +95,7 @@ pub struct InnerApp {
 
 #[orga]
 impl InnerApp {
-    pub const CONSENSUS_VERSION: u8 = 4;
+    pub const CONSENSUS_VERSION: u8 = 5;
 
     #[cfg(feature = "full")]
     fn configure_faucets(&mut self) -> Result<()> {
@@ -149,7 +151,7 @@ impl InnerApp {
     }
 
     #[call]
-    pub fn ibc_deposit_nbtc(&mut self, to: Address, amount: Amount) -> Result<()> {
+    pub fn ibc_transfer_nbtc(&mut self, dest: IbcDest, amount: Amount) -> Result<()> {
         #[cfg(feature = "testnet")]
         {
             crate::bitcoin::exempt_from_fee()?;
@@ -159,8 +161,15 @@ impl InnerApp {
 
             let fee = ibc_fee(amount)?;
             let fee = coins.take(fee)?;
-            self.ibc.mint_coins_execute(&to, &coins.into())?;
             self.bitcoin.reward_pool.give(fee)?;
+
+            let pending = &mut self.bitcoin.checkpoints.building_mut()?.pending;
+
+            let dest = Dest::Ibc(dest);
+            let dest_amount = (pending.get(dest.clone())?.map_or(0.into(), |c| c.amount)
+                + coins.amount)
+                .result()?;
+            pending.insert(dest, Coin::mint(dest_amount))?;
 
             Ok(())
         }
@@ -213,22 +222,25 @@ impl InnerApp {
         btc_proof: Adapter<PartialMerkleTree>,
         btc_vout: u32,
         sigset_index: u32,
-        dest: DepositCommitment,
+        dest: Dest,
     ) -> Result<()> {
-        let nbtc = self.bitcoin.relay_deposit(
+        Ok(self.bitcoin.relay_deposit(
             btc_tx,
             btc_height,
             btc_proof,
             btc_vout,
             sigset_index,
-            dest.commitment_bytes()?.as_slice(),
-        )?;
+            dest,
+        )?)
+    }
+
+    pub fn credit_deposit(&mut self, dest: Dest, nbtc: Amount) -> Result<()> {
         match dest {
-            DepositCommitment::Address(addr) => self.bitcoin.accounts.deposit(addr, nbtc.into()),
+            Dest::Address(addr) => self.bitcoin.accounts.deposit(addr, nbtc.into()),
             #[cfg(not(feature = "testnet"))]
-            DepositCommitment::Ibc(dest) => Err(Error::Unknown),
+            Dest::Ibc(dest) => Err(Error::Unknown),
             #[cfg(feature = "testnet")]
-            DepositCommitment::Ibc(dest) => {
+            Dest::Ibc(dest) => {
                 use orga::ibc::ibc_rs::applications::transfer::msgs::transfer::MsgTransfer;
                 let fee = ibc_fee(nbtc)?;
                 let nbtc_after_fee = (nbtc - fee).result()?;
@@ -259,7 +271,8 @@ impl InnerApp {
                 )?;
                 self.bitcoin.reward_pool.give(fee.into())?;
 
-                self.ibc.deliver_message(IbcMessage::Ics20(msg_transfer))
+                self.ibc.deliver_message(IbcMessage::Ics20(msg_transfer))?;
+                Ok(())
             }
         }
     }
@@ -296,6 +309,38 @@ impl InnerApp {
     }
 
     #[call]
+    pub fn ibc_deliver(&mut self, messages: RawIbcTx) -> Result<()> {
+        #[cfg(feature = "testnet")]
+        {
+            let incoming_transfers = self.ibc.deliver(messages)?;
+
+            for transfer in incoming_transfers {
+                if transfer.denom.to_string() != "usat" {
+                    continue;
+                }
+                let memo: NbtcMemo = transfer.memo.parse().unwrap_or_default();
+                if let NbtcMemo::Withdraw(script) = memo {
+                    let amount = transfer.amount;
+                    let receiver: Address = transfer
+                        .receiver
+                        .parse()
+                        .map_err(|_| Error::Coins("Invalid address".to_string()))?;
+                    let coins = Coin::<Nbtc>::mint(amount);
+                    self.ibc.burn_coins_execute(&receiver, &coins.into())?;
+                    if self.bitcoin.add_withdrawal(script, amount.into()).is_err() {
+                        let coins = Coin::<Nbtc>::mint(amount);
+                        self.ibc.mint_coins_execute(&receiver, &coins.into())?;
+                    }
+                }
+            }
+
+            Ok(())
+        }
+        #[cfg(not(feature = "testnet"))]
+        Err(orga::Error::Unknown)
+    }
+
+    #[call]
     pub fn app_noop(&mut self) -> Result<()> {
         Ok(())
     }
@@ -303,6 +348,37 @@ impl InnerApp {
     #[query]
     pub fn app_noop_query(&self) -> Result<()> {
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub enum NbtcMemo {
+    Withdraw(Adapter<bitcoin::Script>),
+    #[default]
+    Empty,
+}
+impl FromStr for NbtcMemo {
+    type Err = Error;
+    fn from_str(s: &str) -> Result<Self> {
+        if s.is_empty() {
+            Ok(NbtcMemo::Empty)
+        } else {
+            let parts = s.split(':').collect::<Vec<_>>();
+            if parts.len() != 2 {
+                return Err(Error::App("Invalid memo".into()));
+            }
+            if parts[0] != "withdraw" {
+                return Err(Error::App("Only withdraw memo action is supported".into()));
+            }
+            let dest = parts[1];
+            let script = if let Ok(addr) = bitcoin::Address::from_str(dest) {
+                addr.script_pubkey()
+            } else {
+                bitcoin::Script::from_str(parts[1]).map_err(|e| Error::App(e.to_string()))?
+            };
+
+            Ok(NbtcMemo::Withdraw(script.into()))
+        }
     }
 }
 
@@ -379,6 +455,10 @@ mod abci {
             let ip_reward = self.incentive_pool_rewards.mint()?;
             self.incentive_pool.give(ip_reward)?;
 
+            let pending_nbtc_transfers = self.bitcoin.take_pending()?;
+            for (dest, coins) in pending_nbtc_transfers {
+                self.credit_deposit(dest, coins.amount)?;
+            }
             let external_outputs: Vec<crate::error::Result<bitcoin::TxOut>> = vec![]; // TODO: remote chain disbursal
             let offline_signers = self
                 .bitcoin
@@ -427,7 +507,7 @@ impl ConvertSdkTx for InnerApp {
                     let payer = build_call!(self.accounts.take_as_funding(funding_amt.into()));
 
                     let raw_ibc_tx = RawIbcTx(tx.clone());
-                    let paid = build_call!(self.ibc.deliver(raw_ibc_tx.clone()));
+                    let paid = build_call!(self.ibc_deliver(raw_ibc_tx));
 
                     return Ok(PaidCall { payer, paid });
                 }
@@ -778,10 +858,6 @@ impl ConvertSdkTx for InnerApp {
 
                         let amount = msg.amount.into();
 
-                        let receiver: IbcSigner = msg.receiver.into();
-
-                        let sender: IbcSigner = msg.sender.clone().into();
-
                         let ibc_sender_addr = msg
                             .sender
                             .parse::<Address>()
@@ -793,34 +869,20 @@ impl ConvertSdkTx for InnerApp {
                             ));
                         }
 
-                        let timestamp = msg
+                        let timeout_timestamp = msg
                             .timeout_timestamp
                             .parse::<u64>()
                             .map_err(|_| Error::Ibc("Invalid timeout timestamp".into()))?;
 
-                        let timeout_timestamp: Timestamp =
-                            Timestamp::from_nanoseconds(timestamp)
-                                .map_err(|_| Error::Ibc("Invalid timeout timestamp".into()))?;
-
-                        let ibc_fee = ibc_fee(amount)?;
-
-                        let amount_after_fee = (amount - ibc_fee).result()?;
-                        let coins: Coin<Nbtc> = amount_after_fee.into();
-                        let msg_transfer = MsgTransfer {
-                            chan_id_on_a: channel_id,
-                            port_id_on_a: port_id,
-                            packet_data: PacketData {
-                                token: coins.into(),
-                                memo: "".to_string().into(),
-                                receiver,
-                                sender,
-                            },
-                            timeout_height_on_b: TimeoutHeight::Never,
-                            timeout_timestamp_on_b: timeout_timestamp,
+                        let dest = IbcDest {
+                            source: PortChannel::new(port_id, channel_id),
+                            sender: EdAdapter(msg.sender.into()),
+                            receiver: EdAdapter(msg.receiver.into()),
+                            timeout_timestamp,
                         };
 
-                        let payer = build_call!(self.ibc_deposit_nbtc(sender_address, amount));
-                        let paid = build_call!(self.ibc.raw_transfer(msg_transfer.clone().into()));
+                        let payer = build_call!(self.ibc_transfer_nbtc(dest, amount));
+                        let paid = build_call!(self.app_noop());
 
                         Ok(PaidCall { payer, paid })
                     }
@@ -904,26 +966,28 @@ pub struct MsgIbcTransfer {
     pub timeout_timestamp: String,
 }
 
-#[derive(Encode, Decode, Debug, Clone)]
-pub enum DepositCommitment {
+#[derive(Encode, Decode, Debug, Clone, Serialize)]
+pub enum Dest {
     Address(Address),
-    Ibc(IbcDepositCommitment),
+    Ibc(IbcDest),
 }
 
 use orga::ibc::{IbcMessage, PortChannel, RawIbcTx};
 
-#[derive(Clone, Debug, Encode, Decode)]
-pub struct IbcDepositCommitment {
+#[derive(Clone, Debug, Encode, Decode, Serialize)]
+pub struct IbcDest {
     pub source: PortChannel,
+    #[serde(skip)]
     pub receiver: EdAdapter<IbcSigner>,
+    #[serde(skip)]
     pub sender: EdAdapter<IbcSigner>,
     pub timeout_timestamp: u64,
 }
 
-impl DepositCommitment {
+impl Dest {
     pub fn commitment_bytes(&self) -> Result<Vec<u8>> {
         use sha2::{Digest, Sha256};
-        use DepositCommitment::*;
+        use Dest::*;
         let bytes = match self {
             Address(addr) => addr.bytes().into(),
             Ibc(dest) => Sha256::digest(dest.encode()?).to_vec(),
@@ -941,6 +1005,55 @@ impl DepositCommitment {
     pub fn to_base64(&self) -> Result<String> {
         let bytes = self.encode()?;
         Ok(base64::encode(bytes))
+    }
+
+    pub fn to_output_script(
+        &self,
+        recovery_scripts: &orga::collections::Map<Address, Adapter<Script>>,
+    ) -> Result<Option<Script>> {
+        match self {
+            Dest::Address(addr) => Ok(recovery_scripts
+                .get(*addr)?
+                .map(|script| script.clone().into_inner())),
+            _ => Ok(None),
+        }
+    }
+}
+
+impl State for Dest {
+    fn attach(&mut self, store: Store) -> Result<()> {
+        Ok(())
+    }
+
+    fn load(_store: Store, bytes: &mut &[u8]) -> Result<Self> {
+        Ok(Self::decode(bytes)?)
+    }
+
+    fn flush<W: std::io::Write>(self, out: &mut W) -> Result<()> {
+        self.encode_into(out)?;
+        Ok(())
+    }
+}
+
+impl Query for Dest {
+    type Query = ();
+
+    fn query(&self, query: Self::Query) -> Result<()> {
+        Ok(())
+    }
+}
+
+impl Migrate for Dest {
+    fn migrate(src: Store, _dest: Store, bytes: &mut &[u8]) -> Result<Self> {
+        Self::load(src, bytes)
+    }
+}
+
+impl Describe for Dest {
+    fn describe() -> Descriptor {
+        ::orga::describe::Builder::new::<Self>()
+            .meta::<()>()
+            .build()
     }
 }
 

@@ -6,14 +6,25 @@
 
 use bitcoind::bitcoincore_rpc::{Auth, Client as BtcClient};
 use clap::Parser;
-use nomic::app::DepositCommitment;
+use nomic::app::Dest;
+#[cfg(feature = "testnet")]
+use nomic::app::IbcDest;
 use nomic::app::InnerApp;
 use nomic::app::Nom;
+use nomic::bitcoin::Nbtc;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
 use orga::abci::Node;
 use orga::client::wallet::{SimpleWallet, Wallet};
 use orga::coins::{Address, Commission, Decimal, Declaration, Symbol};
+#[cfg(feature = "testnet")]
+use orga::ibc::{
+    ibc_rs::core::{
+        ics24_host::identifier::{ChannelId, PortId},
+        timestamp::Timestamp,
+    },
+    PortChannel,
+};
 use orga::macros::build_call;
 use orga::merk::MerkStore;
 use orga::plugins::MIN_FEE;
@@ -82,8 +93,8 @@ pub enum Command {
     #[cfg(feature = "testnet")]
     InterchainDeposit(InterchainDepositCmd),
     Withdraw(WithdrawCmd),
-    #[cfg(feature = "testnet")]
-    IbcDepositNbtc(IbcDepositNbtcCmd),
+    // #[cfg(feature = "testnet")]
+    // IbcDepositNbtc(IbcDepositNbtcCmd),
     #[cfg(feature = "testnet")]
     IbcWithdrawNbtc(IbcWithdrawNbtcCmd),
     #[cfg(feature = "testnet")]
@@ -135,8 +146,8 @@ impl Command {
                 #[cfg(feature = "testnet")]
                 InterchainDeposit(cmd) => cmd.run().await,
                 Withdraw(cmd) => cmd.run().await,
-                #[cfg(feature = "testnet")]
-                IbcDepositNbtc(cmd) => cmd.run().await,
+                // #[cfg(feature = "testnet")]
+                // IbcDepositNbtc(cmd) => cmd.run().await,
                 #[cfg(feature = "testnet")]
                 IbcWithdrawNbtc(cmd) => cmd.run().await,
                 #[cfg(feature = "testnet")]
@@ -744,7 +755,6 @@ impl DelegationsCmd {
                 continue;
             }
 
-            use nomic::bitcoin::Nbtc;
             let liquid_nom = delegation
                 .liquid
                 .iter()
@@ -1239,7 +1249,7 @@ impl SetSignatoryKeyCmd {
 }
 
 async fn deposit(
-    dest: DepositCommitment,
+    dest: Dest,
     client: AppClient<InnerApp, InnerApp, HttpClient, Nom, orga::client::wallet::Unsigned>,
 ) -> Result<()> {
     let sigset = client
@@ -1283,7 +1293,7 @@ impl DepositCmd {
     async fn run(&self) -> Result<()> {
         let dest_addr = self.address.unwrap_or_else(my_address);
 
-        deposit(DepositCommitment::Address(dest_addr), self.config.client()).await
+        deposit(Dest::Address(dest_addr), self.config.client()).await
     }
 }
 
@@ -1304,7 +1314,7 @@ impl InterchainDepositCmd {
         todo!()
         // use orga::ibc::encoding::Adapter;
         // let now_ns = now_seconds() as u64 * 1_000_000_000;
-        // let dest = DepositCommitment::Ibc(nomic::app::IbcDepositCommitment {
+        // let dest = Dest::Ibc(nomic::app::IbcDest {
         //     receiver: Adapter::new(self.receiver.parse().unwrap()),
         //     sender: Adapter::new(my_address().to_string().parse().unwrap()),
         //     source_channel: Adapter::new(self.channel.parse().unwrap()),
@@ -1344,30 +1354,30 @@ impl WithdrawCmd {
     }
 }
 
-#[cfg(feature = "testnet")]
-#[derive(Parser, Debug)]
-pub struct IbcDepositNbtcCmd {
-    to: Address,
-    amount: u64,
+// #[cfg(feature = "testnet")]
+// #[derive(Parser, Debug)]
+// pub struct IbcTransferNbtcCmd {
+//     to: Address,
+//     amount: u64,
 
-    #[clap(flatten)]
-    config: nomic::network::Config,
-}
+//     #[clap(flatten)]
+//     config: nomic::network::Config,
+// }
 
-#[cfg(feature = "testnet")]
-impl IbcDepositNbtcCmd {
-    async fn run(&self) -> Result<()> {
-        Ok(self
-            .config
-            .client()
-            .with_wallet(wallet())
-            .call(
-                |app| build_call!(app.ibc_deposit_nbtc(self.to, self.amount.into())),
-                |app| build_call!(app.app_noop()),
-            )
-            .await?)
-    }
-}
+// #[cfg(feature = "testnet")]
+// impl IbcTransferNbtcCmd {
+//     async fn run(&self) -> Result<()> {
+//         Ok(self
+//             .config
+//             .client()
+//             .with_wallet(wallet())
+//             .call(
+//                 |app| build_call!(app.ibc_transfer_nbtc(self.to, self.amount.into())),
+//                 |app| build_call!(app.app_noop()),
+//             )
+//             .await?)
+//     }
+// }
 
 #[cfg(feature = "testnet")]
 #[derive(Parser, Debug)]
@@ -1426,10 +1436,10 @@ impl GrpcCmd {
 pub struct IbcTransferCmd {
     receiver: String,
     amount: u64,
-    channel_id: String,
-    port_id: String,
-    denom: String,
-
+    channel_id: ChannelId,
+    port_id: PortId,
+    memo: String,
+    timeout_seconds: u64,
     #[clap(flatten)]
     config: nomic::network::Config,
 }
@@ -1437,27 +1447,29 @@ pub struct IbcTransferCmd {
 #[cfg(feature = "testnet")]
 impl IbcTransferCmd {
     async fn run(&self) -> Result<()> {
-        todo!()
+        use orga::encoding::Adapter as EdAdapter;
 
-        // let fee: u64 = nomic::app::ibc_fee(self.amount.into())?.into();
-        // let amount_after_fee = self.amount - fee;
-        // let transfer_args = TransferArgs {
-        //     amount: amount_after_fee.into(),
-        //     channel_id: self.channel_id.clone(),
-        //     port_id: self.port_id.clone(),
-        //     denom: self.denom.clone(),
-        //     receiver: self.receiver.clone(),
-        // };
+        let my_address = my_address();
+        let amount = self.amount;
+        let now_ns = Timestamp::now().nanoseconds();
+        let timeout_timestamp = self.timeout_seconds * 1_000_000_000 + now_ns;
 
-        // Ok(self.config.client()
-        //     .pay_from(async move |client| {
-        //         client
-        //             .ibc_deposit_nbtc(my_address(), self.amount.into())
-        //             .await
-        //     })
-        //     .ibc
-        //     .transfer(transfer_args.try_into()?)
-        //     .await?)
+        let ibc_dest = IbcDest {
+            receiver: EdAdapter(self.receiver.clone().into()),
+            sender: EdAdapter(my_address.to_string().into()),
+            source: PortChannel::new(self.port_id.clone(), self.channel_id.clone()),
+            timeout_timestamp,
+        };
+
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
+            .call(
+                |app| build_call!(app.ibc_transfer_nbtc(ibc_dest, amount.into())),
+                |app| build_call!(app.app_noop()),
+            )
+            .await?)
     }
 }
 

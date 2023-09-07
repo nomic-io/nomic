@@ -280,6 +280,21 @@ pub async fn poll_for_signatory_key() {
     }
 }
 
+pub async fn poll_for_signing_checkpoint() {
+    info!("Scanning for signing checkpoint...");
+
+    loop {
+        let has_signing = app_client(DEFAULT_RPC)
+            .query(|app| Ok(app.bitcoin.checkpoints.signing()?.is_some()))
+            .await
+            .unwrap();
+        if has_signing {
+            break;
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+}
+
 pub async fn poll_for_completed_checkpoint(num_checkpoints: u32) {
     info!("Scanning for signed checkpoints...");
     let mut checkpoint_len = app_client(DEFAULT_RPC)
