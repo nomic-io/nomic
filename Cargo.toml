@@ -62,7 +62,7 @@ toml = { version = "0.7.2", features = ["parse"] }
 semver = "1.0.18"
 
 [features]
-default = ["full", "feat-ibc", "testnet"]
+default = ["full", "feat-ibc", "testnet", "legacy-bin"]
 full = [
     "bitcoind",
     "bitcoincore-rpc-async",
