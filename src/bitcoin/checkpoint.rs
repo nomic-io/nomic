@@ -1105,12 +1105,18 @@ impl CheckpointQueue {
         let latest = self.building()?.create_time();
 
         while let Some(oldest) = self.queue.front()? {
+            // TODO: move to min_checkpoints field in config
+            if self.queue.len() <= 10 {
+                break;
+            }
+
             if latest - oldest.create_time() <= self.config.max_age {
                 break;
             }
 
             self.queue.pop_front()?;
         }
+
         Ok(())
     }
 
