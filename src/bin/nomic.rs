@@ -1316,7 +1316,7 @@ impl InterchainDepositCmd {
         let now_ns = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
-            .as_secs() as u64
+            .as_secs()
             * 1_000_000_000;
         let dest = Dest::Ibc(nomic::app::IbcDest {
             source_port: "transfer".try_into().unwrap(),
