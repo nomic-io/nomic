@@ -1325,4 +1325,77 @@ mod test {
     }
 
     //TODO: More fee deduction tests
+
+    fn create_queue_with_statuses(complete: u32, signing: bool) -> CheckpointQueue {
+        let mut queue = CheckpointQueue::default();
+        let mut push = |status| {
+            let mut cp = Checkpoint {
+                status,
+                batches: Deque::new(),
+                pending: Map::new(),
+                sigset: SignatorySet::default(),
+            };
+            cp.status = status;
+            queue.queue.push_back(cp).unwrap();
+        };
+
+        queue.index = complete;
+
+        for _ in 0..complete {
+            push(CheckpointStatus::Complete);
+        }
+        if signing {
+            push(CheckpointStatus::Signing);
+            queue.index += 1;
+        }
+        push(CheckpointStatus::Building);
+
+        queue
+    }
+
+    #[test]
+    fn completed_with_signing() {
+        let queue = create_queue_with_statuses(10, true);
+        let cp = queue.completed(1).unwrap();
+        assert_eq!(cp.len(), 1);
+        assert_eq!(cp[0].status, CheckpointStatus::Complete);
+    }
+
+    #[test]
+    fn completed_without_signing() {
+        let queue = create_queue_with_statuses(10, false);
+        let cp = queue.completed(1).unwrap();
+        assert_eq!(cp.len(), 1);
+        assert_eq!(cp[0].status, CheckpointStatus::Complete);
+    }
+
+    #[test]
+    fn completed_no_complete() {
+        let queue = create_queue_with_statuses(0, false);
+        let cp = queue.completed(10).unwrap();
+        assert_eq!(cp.len(), 0);
+    }
+
+    #[test]
+    fn completed_zero_limit() {
+        let queue = create_queue_with_statuses(10, false);
+        let cp = queue.completed(0).unwrap();
+        assert_eq!(cp.len(), 0);
+    }
+
+    #[test]
+    fn completed_oversized_limit() {
+        let queue = create_queue_with_statuses(10, false);
+        let cp = queue.completed(100).unwrap();
+        assert_eq!(cp.len(), 10);
+    }
+
+    #[test]
+    fn completed_pruned() {
+        let mut queue = create_queue_with_statuses(10, false);
+        queue.index += 10;
+        let cp = queue.completed(2).unwrap();
+        assert_eq!(cp.len(), 2);
+        assert_eq!(cp[1].status, CheckpointStatus::Complete);
+    }
 }
