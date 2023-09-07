@@ -182,10 +182,9 @@ impl FromArgMatches for Config {
                 net_config.home = arg_config.home.clone();
             }
 
-            // TODO: deduplicate
-            net_config
-                .state_sync_rpc
-                .extend(arg_config.state_sync_rpc.iter().cloned());
+            if !arg_config.state_sync_rpc.is_empty() {
+                net_config.state_sync_rpc = arg_config.state_sync_rpc.clone();
+            }
 
             // TODO: should all built-in tmflags get shadowed by user-specified tmflags?
             net_config

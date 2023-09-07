@@ -364,6 +364,7 @@ impl Checkpoint {
         let mut sig_index = 0;
         for i in 0..self.batches.len() {
             let mut batch = self.batches.get_mut(i)?.unwrap();
+            let batch_was_signed = batch.signed();
 
             for j in 0..batch.len() {
                 let mut tx = batch.get_mut(j)?.unwrap();
@@ -377,7 +378,7 @@ impl Checkpoint {
                         continue;
                     }
 
-                    if sig_index > sigs.len() {
+                    if sig_index >= sigs.len() {
                         return Err(
                             OrgaError::App("Not enough signatures supplied".to_string()).into()
                         );
@@ -397,6 +398,10 @@ impl Checkpoint {
                 if !tx_was_signed && tx.signed() {
                     batch.signed_txs += 1;
                 }
+            }
+
+            if !batch_was_signed {
+                break;
             }
         }
 
@@ -525,8 +530,8 @@ impl Default for Config {
 
 #[orga(version = 1)]
 pub struct CheckpointQueue {
-    pub(super) queue: Deque<Checkpoint>,
-    pub(super) index: u32,
+    pub queue: Deque<Checkpoint>,
+    pub index: u32,
     pub config: Config,
 }
 
@@ -631,6 +636,12 @@ impl<'a> BuildingCheckpointMut<'a> {
         let intermediate_tx = intermediate_tx_batch.get(0)?.unwrap();
         let intermediate_tx_id = intermediate_tx.txid()?;
         let intermediate_tx_len = intermediate_tx.output.len();
+
+        if intermediate_tx_len == 0 {
+            log::warn!("Generated empty emergency disbursal");
+            return Ok(());
+        }
+
         let mut intermediate_tx_outputs: Vec<(usize, u64)> = intermediate_tx
             .output
             .iter()?
@@ -644,6 +655,9 @@ impl<'a> BuildingCheckpointMut<'a> {
                 Some(input) => input,
                 None => return Ok(false),
             };
+            if input.amount < intermediate_tx_fee / intermediate_tx_len {
+                return Ok(false);
+            }
             input.amount -= intermediate_tx_fee / intermediate_tx_len;
             for (i, output) in intermediate_tx_outputs.iter() {
                 if output == &(input.amount) {
@@ -896,6 +910,16 @@ impl<'a> BuildingCheckpointMut<'a> {
             excess_outputs,
         ))
     }
+
+    pub fn insert_pending(&mut self, dest: Dest, coins: Coin<Nbtc>) -> Result<()> {
+        let mut amount = self
+            .pending
+            .remove(dest.clone())?
+            .map_or(0.into(), |c| c.amount);
+        amount = (amount + coins.amount).result()?;
+        self.pending.insert(dest, Coin::mint(amount))?;
+        Ok(())
+    }
 }
 
 #[orga]
@@ -975,14 +999,12 @@ impl CheckpointQueue {
 
         let mut out = vec![];
 
-        let start = self.queue.len().saturating_sub(limit as u64);
-        for i in start..self.queue.len() {
-            let checkpoint = self.queue.get(i)?.unwrap();
+        let skip = if self.signing()?.is_some() { 2 } else { 1 };
+        let end = self.index.saturating_sub(skip - 1);
+        let start = end - limit.min(self.len()? - skip);
 
-            if !matches!(checkpoint.status, CheckpointStatus::Complete) {
-                break;
-            }
-
+        for i in start..end {
+            let checkpoint = self.get(i)?;
             out.push(CompletedCheckpoint(checkpoint));
         }
 
@@ -1083,12 +1105,18 @@ impl CheckpointQueue {
         let latest = self.building()?.create_time();
 
         while let Some(oldest) = self.queue.front()? {
+            // TODO: move to min_checkpoints field in config
+            if self.queue.len() <= 10 {
+                break;
+            }
+
             if latest - oldest.create_time() <= self.config.max_age {
                 break;
             }
 
             self.queue.pop_front()?;
         }
+
         Ok(())
     }
 
@@ -1125,8 +1153,9 @@ impl CheckpointQueue {
                 };
 
                 let has_pending_withdrawal = !checkpoint_tx.output.is_empty();
+                let has_pending_transfers = building.pending.iter()?.next().transpose()?.is_some();
 
-                if !has_pending_deposit && !has_pending_withdrawal {
+                if !has_pending_deposit && !has_pending_withdrawal && !has_pending_transfers {
                     return Ok(false);
                 }
             }
@@ -1303,4 +1332,77 @@ mod test {
     }
 
     //TODO: More fee deduction tests
+
+    fn create_queue_with_statuses(complete: u32, signing: bool) -> CheckpointQueue {
+        let mut queue = CheckpointQueue::default();
+        let mut push = |status| {
+            let mut cp = Checkpoint {
+                status,
+                batches: Deque::new(),
+                pending: Map::new(),
+                sigset: SignatorySet::default(),
+            };
+            cp.status = status;
+            queue.queue.push_back(cp).unwrap();
+        };
+
+        queue.index = complete;
+
+        for _ in 0..complete {
+            push(CheckpointStatus::Complete);
+        }
+        if signing {
+            push(CheckpointStatus::Signing);
+            queue.index += 1;
+        }
+        push(CheckpointStatus::Building);
+
+        queue
+    }
+
+    #[test]
+    fn completed_with_signing() {
+        let queue = create_queue_with_statuses(10, true);
+        let cp = queue.completed(1).unwrap();
+        assert_eq!(cp.len(), 1);
+        assert_eq!(cp[0].status, CheckpointStatus::Complete);
+    }
+
+    #[test]
+    fn completed_without_signing() {
+        let queue = create_queue_with_statuses(10, false);
+        let cp = queue.completed(1).unwrap();
+        assert_eq!(cp.len(), 1);
+        assert_eq!(cp[0].status, CheckpointStatus::Complete);
+    }
+
+    #[test]
+    fn completed_no_complete() {
+        let queue = create_queue_with_statuses(0, false);
+        let cp = queue.completed(10).unwrap();
+        assert_eq!(cp.len(), 0);
+    }
+
+    #[test]
+    fn completed_zero_limit() {
+        let queue = create_queue_with_statuses(10, false);
+        let cp = queue.completed(0).unwrap();
+        assert_eq!(cp.len(), 0);
+    }
+
+    #[test]
+    fn completed_oversized_limit() {
+        let queue = create_queue_with_statuses(10, false);
+        let cp = queue.completed(100).unwrap();
+        assert_eq!(cp.len(), 10);
+    }
+
+    #[test]
+    fn completed_pruned() {
+        let mut queue = create_queue_with_statuses(10, false);
+        queue.index += 10;
+        let cp = queue.completed(2).unwrap();
+        assert_eq!(cp.len(), 2);
+        assert_eq!(cp[1].status, CheckpointStatus::Complete);
+    }
 }

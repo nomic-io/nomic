@@ -18,12 +18,9 @@ use orga::abci::Node;
 use orga::client::wallet::{SimpleWallet, Wallet};
 use orga::coins::{Address, Commission, Decimal, Declaration, Symbol};
 #[cfg(feature = "testnet")]
-use orga::ibc::{
-    ibc_rs::core::{
-        ics24_host::identifier::{ChannelId, PortId},
-        timestamp::Timestamp,
-    },
-    PortChannel,
+use orga::ibc::ibc_rs::core::{
+    ics24_host::identifier::{ChannelId, PortId},
+    timestamp::Timestamp,
 };
 use orga::macros::build_call;
 use orga::merk::MerkStore;
@@ -1213,7 +1210,7 @@ impl SignerCmd {
             self.max_withdrawal_rate,
             self.max_sigset_change_rate,
             // TODO: check for custom RPC port, allow config, etc
-            || nomic::app_client("http://localhost:26657"),
+            || nomic::app_client("http://localhost:26657").with_wallet(wallet()),
         )?
         .start();
 
@@ -1300,29 +1297,37 @@ impl DepositCmd {
 #[cfg(feature = "testnet")]
 #[derive(Parser, Debug)]
 pub struct InterchainDepositCmd {
-    #[clap(long, value_name = "ADDRESS")]
-    receiver: String,
-    #[clap(long, value_name = "CHANNEL_ID")]
+    address: String,
     channel: String,
+    memo: String,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
 }
 
-// #[cfg(feature = "testnet")]
-// const ONE_DAY_NS: u64 = 86400 * 1_000_000_000;
+#[cfg(feature = "testnet")]
+const ONE_DAY_NS: u64 = 86400 * 1_000_000_000;
 #[cfg(feature = "testnet")]
 impl InterchainDepositCmd {
     async fn run(&self) -> Result<()> {
-        todo!()
-        // use orga::ibc::encoding::Adapter;
-        // let now_ns = now_seconds() as u64 * 1_000_000_000;
-        // let dest = Dest::Ibc(nomic::app::IbcDest {
-        //     receiver: Adapter::new(self.receiver.parse().unwrap()),
-        //     sender: Adapter::new(my_address().to_string().parse().unwrap()),
-        //     source_channel: Adapter::new(self.channel.parse().unwrap()),
-        //     source_port: Adapter::new("transfer".parse().unwrap()),
-        //     timeout_timestamp: now_ns + 8 * ONE_DAY_NS - (now_ns % ONE_DAY_NS),
-        // });
+        use orga::encoding::Adapter;
+        use std::time::SystemTime;
 
-        // deposit(dest).await
+        let now_ns = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            * 1_000_000_000;
+        let dest = Dest::Ibc(nomic::app::IbcDest {
+            source_port: "transfer".try_into().unwrap(),
+            source_channel: self.channel.clone().try_into().unwrap(),
+            sender: Adapter(my_address().to_string().into()),
+            receiver: Adapter(self.address.clone().into()),
+            timeout_timestamp: now_ns + ONE_DAY_NS,
+            memo: self.memo.clone().try_into().unwrap(),
+        });
+
+        deposit(dest, self.config.client()).await
     }
 }
 
@@ -1455,10 +1460,12 @@ impl IbcTransferCmd {
         let timeout_timestamp = self.timeout_seconds * 1_000_000_000 + now_ns;
 
         let ibc_dest = IbcDest {
+            source_port: self.port_id.to_string().try_into()?,
+            source_channel: self.channel_id.to_string().try_into()?,
             receiver: EdAdapter(self.receiver.clone().into()),
             sender: EdAdapter(my_address.to_string().into()),
-            source: PortChannel::new(self.port_id.clone(), self.channel_id.clone()),
             timeout_timestamp,
+            memo: self.memo.clone().try_into()?,
         };
 
         Ok(self
