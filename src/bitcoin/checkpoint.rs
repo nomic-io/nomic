@@ -1147,8 +1147,9 @@ impl CheckpointQueue {
                 };
 
                 let has_pending_withdrawal = !checkpoint_tx.output.is_empty();
+                let has_pending_transfers = building.pending.iter()?.next().transpose()?.is_some();
 
-                if !has_pending_deposit && !has_pending_withdrawal {
+                if !has_pending_deposit && !has_pending_withdrawal && !has_pending_transfers {
                     return Ok(false);
                 }
             }
