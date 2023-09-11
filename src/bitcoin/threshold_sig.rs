@@ -82,6 +82,17 @@ impl Pubkey {
         Pubkey { bytes: pubkey }
     }
 
+    pub fn try_from_slice(bytes: &[u8]) -> Result<Self> {
+        if bytes.len() != PUBLIC_KEY_SIZE {
+            return Err(Error::App("Incorrect length".to_string()));
+        }
+
+        let mut buf = [0; PUBLIC_KEY_SIZE];
+        buf.copy_from_slice(bytes);
+
+        Ok(Self::new(buf))
+    }
+
     pub fn as_slice(&self) -> &[u8] {
         &self.bytes
     }
