@@ -366,7 +366,7 @@ async fn bitcoin_test() {
             .unwrap();
         assert_eq!(balance, Amount::from(799991736000000));
 
-        tokio::time::sleep(Duration::from_secs(300)).await;
+        tokio::time::sleep(Duration::from_secs(8 * 60)).await;
 
         retry(
             || bitcoind.client.generate_to_address(1, &wallet_address),
