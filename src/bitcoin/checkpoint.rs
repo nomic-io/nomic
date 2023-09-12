@@ -1001,7 +1001,14 @@ impl CheckpointQueue {
 
         let skip = if self.signing()?.is_some() { 2 } else { 1 };
         let end = self.index.saturating_sub(skip - 1);
-        let start = end - limit.min(self.len()? - skip);
+
+        let length = self.len()?;
+
+        if skip > length {
+            return Ok(out);
+        }
+
+        let start = end - limit.min(length - skip);
 
         for i in start..end {
             let checkpoint = self.get(i)?;
