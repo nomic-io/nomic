@@ -229,7 +229,10 @@ async fn bitcoin_test() {
     let test = async {
         let val_priv_key = load_privkey().unwrap();
         let nomic_wallet = DerivedKey::from_secret_key(val_priv_key);
-        declare_validator(&path, nomic_wallet).await.unwrap();
+        let consensus_key = load_consensus_key(&path)?;
+        declare_validator(consensus_key, nomic_wallet)
+            .await
+            .unwrap();
 
         let wallet = retry(|| bitcoind.create_wallet("nomic-integration-test"), 10).unwrap();
         let wallet_address = wallet.get_new_address(None, None).unwrap();

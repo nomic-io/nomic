@@ -210,10 +210,8 @@ pub struct DeclareInfo {
 }
 
 #[cfg(feature = "full")]
-pub async fn declare_validator(home: &Path, wallet: DerivedKey) -> Result<()> {
+pub async fn declare_validator(consensus_key: [u8; 32], wallet: DerivedKey) -> Result<()> {
     info!("Declaring validator...");
-
-    let consensus_key = load_consensus_key(home)?;
 
     let info = DeclareInfo {
         moniker: "nomic-integration-test".to_string(),
