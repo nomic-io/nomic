@@ -210,7 +210,11 @@ pub struct DeclareInfo {
 }
 
 #[cfg(feature = "full")]
-pub async fn declare_validator(consensus_key: [u8; 32], wallet: DerivedKey) -> Result<()> {
+pub async fn declare_validator(
+    consensus_key: [u8; 32],
+    wallet: DerivedKey,
+    amount: u64,
+) -> Result<()> {
     info!("Declaring validator...");
 
     let info = DeclareInfo {
@@ -226,7 +230,7 @@ pub async fn declare_validator(consensus_key: [u8; 32], wallet: DerivedKey) -> R
 
     let declaration = Declaration {
         consensus_key,
-        amount: 100000.into(),
+        amount: amount.into(),
         validator_info: info_bytes.try_into().unwrap(),
         commission: Commission {
             rate: Decimal::from_str("0.1").unwrap(),

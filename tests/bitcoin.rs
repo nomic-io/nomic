@@ -230,7 +230,7 @@ async fn bitcoin_test() {
         let val_priv_key = load_privkey().unwrap();
         let nomic_wallet = DerivedKey::from_secret_key(val_priv_key);
         let consensus_key = load_consensus_key(&path)?;
-        declare_validator(consensus_key, nomic_wallet)
+        declare_validator(consensus_key, nomic_wallet, 100_000)
             .await
             .unwrap();
 
