@@ -999,14 +999,11 @@ impl CheckpointQueue {
 
         let mut out = vec![];
 
+        let length = self.len()?;
+        if length == 0 { return Ok(out) }
+
         let skip = if self.signing()?.is_some() { 2 } else { 1 };
         let end = self.index.saturating_sub(skip - 1);
-
-        let length = self.len()?;
-
-        if skip > length {
-            return Ok(out);
-        }
 
         let start = end - limit.min(length - skip);
 
