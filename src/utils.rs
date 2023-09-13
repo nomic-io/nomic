@@ -180,10 +180,10 @@ pub fn address_from_privkey(privkey: &SecretKey) -> Address {
 }
 
 #[cfg(feature = "full")]
-pub fn setup_test_signer<T: AsRef<Path>>(
-    home: T,
-    client: fn() -> orga::client::AppClient<InnerApp, InnerApp, HttpClient, Nom, DerivedKey>,
-) -> Signer<DerivedKey> {
+pub fn setup_test_signer<T: AsRef<Path>, F>(home: T, client: F) -> Signer<DerivedKey, F>
+where
+    F: Fn() -> orga::client::AppClient<InnerApp, InnerApp, HttpClient, Nom, DerivedKey>,
+{
     let signer_dir_path = home.as_ref().join("signer");
 
     if !signer_dir_path.exists() {
