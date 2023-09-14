@@ -1,5 +1,6 @@
 #![feature(async_closure)]
 use bitcoin::blockdata::transaction::EcdsaSighashType;
+use bitcoin::util::bip32::ExtendedPrivKey;
 use bitcoin::Script;
 use bitcoind::bitcoincore_rpc::json::{
     ImportMultiRequest, ImportMultiRequestScriptPubkey, ImportMultiRescanSince,
@@ -12,6 +13,7 @@ use nomic::app::{InnerApp, Nom};
 use nomic::bitcoin::adapter::Adapter;
 use nomic::bitcoin::relayer::DepositAddress;
 use nomic::bitcoin::relayer::Relayer;
+use nomic::bitcoin::signer::Signer;
 use nomic::error::{Error, Result};
 use nomic::utils::*;
 use nomic::utils::{
@@ -28,6 +30,7 @@ use orga::encoding::Encode;
 use orga::macros::build_call;
 use orga::plugins::{load_privkey, MIN_FEE};
 use orga::tendermint::client::HttpClient;
+use rand::Rng;
 use reqwest::StatusCode;
 use serial_test::serial;
 use std::collections::HashMap;
@@ -35,6 +38,7 @@ use std::str::FromStr;
 use std::sync::Once;
 use std::time::Duration;
 use tempfile::tempdir;
+use tokio::sync::mpsc;
 
 static INIT: Once = Once::new();
 
@@ -196,7 +200,7 @@ async fn bitcoin_test() {
 
     std::env::set_var("NOMIC_HOME_DIR", &path);
 
-    let funded_accounts = setup_test_app(&path, &block_data, 2);
+    let funded_accounts = setup_test_app(&path, &block_data, 3);
 
     std::thread::spawn(move || {
         info!("Starting Nomic node...");
@@ -226,10 +230,46 @@ async fn bitcoin_test() {
             .await
     };
 
+    let (tx, mut rx) = mpsc::channel(100);
+    let shutdown_listener = async {
+        rx.recv().await;
+        Err::<(), Error>(Error::Test("Signer shutdown initiated".to_string()))
+    };
+
+    let slashable_signer = async {
+        tokio::time::sleep(Duration::from_secs(30)).await;
+        let seed: [u8; 32] = rand::thread_rng().gen();
+        let xpriv = ExtendedPrivKey::new_master(bitcoin::Network::Testnet, seed.as_slice())?;
+        let privkey_bytes = funded_accounts[2].privkey.secret_bytes();
+        let privkey = orga::secp256k1::SecretKey::from_slice(&privkey_bytes).unwrap();
+        let signer = Signer::new(
+            address_from_privkey(&funded_accounts[2].privkey),
+            xpriv,
+            0.1,
+            1.0,
+            || {
+                let wallet = DerivedKey::from_secret_key(privkey);
+                app_client().with_wallet(wallet)
+            },
+        )
+        .start();
+
+        match futures::try_join!(signer, shutdown_listener) {
+            Err(Error::Test(_)) | Ok(_) => Ok(()),
+            Err(e) => Err(e),
+        }
+    };
+
     let test = async {
         let val_priv_key = load_privkey().unwrap();
         let nomic_wallet = DerivedKey::from_secret_key(val_priv_key);
-        declare_validator(&path, nomic_wallet).await.unwrap();
+        let consensus_key = load_consensus_key(&path)?;
+        declare_validator(consensus_key, nomic_wallet, 100_000)
+            .await
+            .unwrap();
+        declare_validator([0; 32], funded_accounts[2].wallet.clone(), 4_000)
+            .await
+            .unwrap();
 
         let wallet = retry(|| bitcoind.create_wallet("nomic-integration-test"), 10).unwrap();
         let wallet_address = wallet.get_new_address(None, None).unwrap();
@@ -313,6 +353,8 @@ async fn bitcoin_test() {
 
         poll_for_completed_checkpoint(1).await;
 
+        tx.send(Some(())).await.unwrap();
+
         let balance = app_client()
             .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
             .await
@@ -341,7 +383,7 @@ async fn bitcoin_test() {
             .await
             .unwrap();
 
-        assert_eq!(balance, Amount::from(31998736000000));
+        assert_eq!(balance, Amount::from(31998104000000));
 
         withdraw_bitcoin(
             &funded_accounts[0],
@@ -360,13 +402,25 @@ async fn bitcoin_test() {
         poll_for_bitcoin_header(1132).await.unwrap();
         poll_for_completed_checkpoint(3).await;
 
+        let signer_jailed = app_client()
+            .query(|app| {
+                Ok(app
+                    .staking
+                    .all_validators()?
+                    .iter()
+                    .any(|val| val.address == funded_accounts[2].address.into() && val.jailed))
+            })
+            .await
+            .unwrap();
+        assert!(signer_jailed);
+
         let balance = app_client()
             .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
             .await
             .unwrap();
         assert_eq!(balance, Amount::from(799991736000000));
 
-        tokio::time::sleep(Duration::from_secs(300)).await;
+        tokio::time::sleep(Duration::from_secs(8 * 60)).await;
 
         retry(
             || bitcoind.client.generate_to_address(1, &wallet_address),
@@ -387,7 +441,7 @@ async fn bitcoin_test() {
                 }
             }
         }
-        assert_eq!(signatory_balance, 239992629);
+        assert_eq!(signatory_balance, 239991049);
 
         let funded_account_balances: Vec<_> = funded_accounts
             .iter()
@@ -402,7 +456,7 @@ async fn bitcoin_test() {
             })
             .collect();
 
-        let expected_account_balances: Vec<u64> = vec![799990201, 0];
+        let expected_account_balances: Vec<u64> = vec![799990201, 0, 0];
         assert_eq!(funded_account_balances, expected_account_balances);
 
         for (i, account) in funded_accounts[0..1].iter().enumerate() {
@@ -476,7 +530,15 @@ async fn bitcoin_test() {
 
     poll_for_blocks().await;
 
-    match futures::try_join!(headers, deposits, checkpoints, disbursal, signer, test) {
+    match futures::try_join!(
+        headers,
+        deposits,
+        checkpoints,
+        disbursal,
+        signer,
+        slashable_signer,
+        test
+    ) {
         Err(Error::Test(_)) => (),
         Ok(_) => (),
         other => {
