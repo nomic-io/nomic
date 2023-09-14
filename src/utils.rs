@@ -180,10 +180,10 @@ pub fn address_from_privkey(privkey: &SecretKey) -> Address {
 }
 
 #[cfg(feature = "full")]
-pub fn setup_test_signer<T: AsRef<Path>>(
-    home: T,
-    client: fn() -> orga::client::AppClient<InnerApp, InnerApp, HttpClient, Nom, DerivedKey>,
-) -> Signer<DerivedKey> {
+pub fn setup_test_signer<T: AsRef<Path>, F>(home: T, client: F) -> Signer<DerivedKey, F>
+where
+    F: Fn() -> orga::client::AppClient<InnerApp, InnerApp, HttpClient, Nom, DerivedKey>,
+{
     let signer_dir_path = home.as_ref().join("signer");
 
     if !signer_dir_path.exists() {
@@ -210,10 +210,12 @@ pub struct DeclareInfo {
 }
 
 #[cfg(feature = "full")]
-pub async fn declare_validator(home: &Path, wallet: DerivedKey) -> Result<()> {
+pub async fn declare_validator(
+    consensus_key: [u8; 32],
+    wallet: DerivedKey,
+    amount: u64,
+) -> Result<()> {
     info!("Declaring validator...");
-
-    let consensus_key = load_consensus_key(home)?;
 
     let info = DeclareInfo {
         moniker: "nomic-integration-test".to_string(),
@@ -228,7 +230,7 @@ pub async fn declare_validator(home: &Path, wallet: DerivedKey) -> Result<()> {
 
     let declaration = Declaration {
         consensus_key,
-        amount: 100000.into(),
+        amount: amount.into(),
         validator_info: info_bytes.try_into().unwrap(),
         commission: Commission {
             rate: Decimal::from_str("0.1").unwrap(),
