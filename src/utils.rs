@@ -6,10 +6,12 @@ use crate::app::Nom;
 use crate::app_client;
 #[cfg(feature = "full")]
 use crate::bitcoin::adapter::Adapter;
+use crate::bitcoin::checkpoint::Config as CheckpointQueueConfig;
 #[cfg(feature = "full")]
 use crate::bitcoin::header_queue::Config as HeaderQueueConfig;
 #[cfg(feature = "full")]
 use crate::bitcoin::signer::Signer;
+use crate::bitcoin::Config as BitcoinConfig;
 use crate::error::{Error, Result};
 use bitcoin::hashes::hex::ToHex;
 use bitcoin::secp256k1::{self, rand, SecretKey};
@@ -328,8 +330,8 @@ pub async fn poll_for_bitcoin_header(height: u32) -> Result<()> {
 
 #[cfg(feature = "full")]
 pub struct BitcoinBlockData {
-    height: u32,
-    block_header: BlockHeader,
+    pub height: u32,
+    pub block_header: BlockHeader,
 }
 
 #[cfg(feature = "full")]
@@ -383,8 +385,10 @@ impl NomicTestWallet {
 #[cfg(feature = "full")]
 pub fn setup_test_app(
     home: &Path,
-    block_data: &BitcoinBlockData,
     num_accounts: u16,
+    header_queue_config: Option<HeaderQueueConfig>,
+    checkpoint_queue_config: Option<CheckpointQueueConfig>,
+    bitcoin_config: Option<BitcoinConfig>,
 ) -> Vec<NomicTestWallet> {
     let mut app = ABCIPlugin::<App>::default();
     let mut store = Store::new(BackingStore::Merk(Shared::new(MerkStore::new(
@@ -405,19 +409,17 @@ pub fn setup_test_app(
             .inner
             .inner;
 
-        let headers_config = HeaderQueueConfig {
-            encoded_trusted_header: Adapter::new(block_data.block_header)
-                .encode()
-                .unwrap()
-                .try_into()
-                .unwrap(),
-            trusted_height: block_data.height,
-            retargeting: false,
-            min_difficulty_blocks: true,
-            max_length: 59,
-            ..Default::default()
-        };
-        inner_app.bitcoin.headers.configure(headers_config).unwrap();
+        if let Some(config) = header_queue_config {
+            inner_app.bitcoin.headers.configure(config).unwrap();
+        }
+
+        if let Some(config) = checkpoint_queue_config {
+            inner_app.bitcoin.checkpoints.configure(config);
+        }
+
+        if let Some(config) = bitcoin_config {
+            inner_app.bitcoin.configure(config);
+        }
 
         let address = address_from_privkey(&load_privkey(home).unwrap());
         inner_app

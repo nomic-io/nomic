@@ -258,6 +258,10 @@ pub fn exempt_from_fee() -> Result<()> {
 
 #[orga]
 impl Bitcoin {
+    pub fn configure(&mut self, config: Config) {
+        self.config = config;
+    }
+
     pub fn config() -> Config {
         Config::default()
     }

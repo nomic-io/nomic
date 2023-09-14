@@ -11,6 +11,7 @@ use log::info;
 use nomic::app::Dest;
 use nomic::app::{InnerApp, Nom};
 use nomic::bitcoin::adapter::Adapter;
+use nomic::bitcoin::header_queue::Config as HeaderQueueConfig;
 use nomic::bitcoin::relayer::DepositAddress;
 use nomic::bitcoin::relayer::Relayer;
 use nomic::bitcoin::signer::Signer;
@@ -200,7 +201,19 @@ async fn bitcoin_test() {
 
     std::env::set_var("NOMIC_HOME_DIR", &path);
 
-    let funded_accounts = setup_test_app(&path, &block_data, 3);
+    let headers_config = HeaderQueueConfig {
+        encoded_trusted_header: Adapter::new(block_data.block_header)
+            .encode()
+            .unwrap()
+            .try_into()
+            .unwrap(),
+        trusted_height: block_data.height,
+        retargeting: false,
+        min_difficulty_blocks: true,
+        max_length: 59,
+        ..Default::default()
+    };
+    let funded_accounts = setup_test_app(&path, 4, Some(headers_config), None, None);
 
     std::thread::spawn(move || {
         info!("Starting Nomic node...");
