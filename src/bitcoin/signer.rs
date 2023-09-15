@@ -99,7 +99,9 @@ where
 
         let mut index = (self.app_client)()
             .query(|app| {
-                Ok(app.bitcoin.checkpoints.index().max(CHECKPOINT_WINDOW) - CHECKPOINT_WINDOW)
+                let index = app.bitcoin.checkpoints.index();
+                let first = index + 1 - app.bitcoin.checkpoints.len()?;
+                Ok(index.saturating_sub(CHECKPOINT_WINDOW).max(first))
             })
             .await?;
 
