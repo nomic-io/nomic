@@ -694,6 +694,14 @@ impl<'a> BuildingCheckpointMut<'a> {
 
         #[cfg(feature = "full")]
         {
+            let intermediate_tx_batch = self
+                .batches
+                .get_mut(BatchType::IntermediateTx as u64)?
+                .unwrap();
+            if intermediate_tx_batch.is_empty() {
+                return Ok(());
+            }
+
             //TODO: Pull bitcoin config from state
             let bitcoin_config = super::Bitcoin::config();
             use orga::context::Context;
