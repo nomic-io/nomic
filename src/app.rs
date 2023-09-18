@@ -1129,12 +1129,12 @@ pub fn in_upgrade_window(now_seconds: i64) -> bool {
     let now = Utc.timestamp_opt(now_seconds, 0).unwrap();
 
     #[cfg(not(feature = "testnet"))]
-    let valid_weekday = now.weekday().num_days_from_monday() == 2;  // Wednesday
+    let valid_weekday = now.weekday().num_days_from_monday() == 2; // Wednesday
 
     #[cfg(feature = "testnet")]
-    let valid_weekday = now.weekday().num_days_from_monday() < 5;   // Monday - Friday
-    
-    valid_weekday && now.hour() == 17 && now.minute() < 10  // 17:00 - 17:10 UTC
+    let valid_weekday = now.weekday().num_days_from_monday() < 5; // Monday - Friday
+
+    valid_weekday && now.hour() == 17 && now.minute() < 10 // 17:00 - 17:10 UTC
 }
 
 #[cfg(test)]
