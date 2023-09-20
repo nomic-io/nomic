@@ -1128,8 +1128,13 @@ pub fn in_upgrade_window(now_seconds: i64) -> bool {
     use chrono::prelude::*;
     let now = Utc.timestamp_opt(now_seconds, 0).unwrap();
 
-    // Monday - Friday, 17:00 - 17:10 UTC
-    now.weekday().num_days_from_monday() < 5 && now.hour() == 17 && now.minute() < 10
+    #[cfg(not(feature = "testnet"))]
+    let valid_weekday = now.weekday().num_days_from_monday() == 2; // Wednesday
+
+    #[cfg(feature = "testnet")]
+    let valid_weekday = now.weekday().num_days_from_monday() < 5; // Monday - Friday
+
+    valid_weekday && now.hour() == 17 && now.minute() < 10 // 17:00 - 17:10 UTC
 }
 
 #[cfg(test)]
