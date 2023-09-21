@@ -63,6 +63,8 @@ const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1d5n325zrf4elfu0heqd59gna5j6xyunhe
 #[cfg(feature = "full")]
 const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhqd8dcqeq";
 
+const IBC_FEE_USATS: u64 = 1_000_000;
+
 #[orga(version = 2)]
 pub struct InnerApp {
     #[call]
@@ -286,6 +288,7 @@ impl InnerApp {
     pub fn ibc_deliver(&mut self, messages: RawIbcTx) -> Result<()> {
         #[cfg(feature = "testnet")]
         {
+            self.deduct_nbtc_ibc_fee(IBC_FEE_USATS.into())?;
             let incoming_transfers = self.ibc.deliver(messages)?;
 
             for transfer in incoming_transfers {
@@ -312,6 +315,14 @@ impl InnerApp {
         }
         #[cfg(not(feature = "testnet"))]
         Err(orga::Error::Unknown)
+    }
+
+    fn deduct_nbtc_ibc_fee(&mut self, amount: Amount) -> Result<()> {
+        disable_fee();
+        let signer = self.signer()?;
+        self.bitcoin.accounts.withdraw(signer, amount)?.burn();
+
+        Ok(())
     }
 
     #[call]
@@ -477,11 +488,9 @@ impl ConvertSdkTx for InnerApp {
             SdkTx::Protobuf(tx) => {
                 #[cfg(feature = "testnet")]
                 if IbcTx::try_from(tx.clone()).is_ok() {
-                    let funding_amt = MIN_FEE;
-                    let payer = build_call!(self.accounts.take_as_funding(funding_amt.into()));
-
                     let raw_ibc_tx = RawIbcTx(tx.clone());
-                    let paid = build_call!(self.ibc_deliver(raw_ibc_tx));
+                    let payer = build_call!(self.ibc_deliver(raw_ibc_tx));
+                    let paid = build_call!(self.app_noop());
 
                     return Ok(PaidCall { payer, paid });
                 }
