@@ -271,8 +271,8 @@ pub async fn poll_for_blocks() {
     }
 }
 
-pub async fn poll_for_signatory_key() {
-    info!("Scanning for signatory key...");
+pub async fn poll_for_active_sigset() {
+    info!("Polling for active sigset...");
     loop {
         match app_client(DEFAULT_RPC)
             .query(|app| Ok(app.bitcoin.checkpoints.active_sigset()?))
@@ -280,6 +280,19 @@ pub async fn poll_for_signatory_key() {
         {
             Ok(_) => break,
             Err(_) => tokio::time::sleep(Duration::from_secs(2)).await,
+        }
+    }
+}
+
+pub async fn poll_for_signatory_key(consensus_key: [u8; 32]) {
+    info!("Scanning for signatory key...");
+    loop {
+        match app_client(DEFAULT_RPC)
+            .query(|app| Ok(app.bitcoin.signatory_keys.get(consensus_key)?))
+            .await
+        {
+            Ok(Some(_)) => break,
+            Err(_) | Ok(None) => tokio::time::sleep(Duration::from_secs(2)).await,
         }
     }
 }
