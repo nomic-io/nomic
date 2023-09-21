@@ -108,20 +108,20 @@ impl Command {
         let rt = tokio::runtime::Runtime::new().unwrap();
 
         if let Start(cmd) = self {
-            return Ok(cmd.run()?);
-        }
-
-        if let Some(legacy_bin) = legacy_bin(config)? {
-            let mut legacy_cmd = std::process::Command::new(legacy_bin);
-            legacy_cmd.args(std::env::args().skip(1));
-            log::debug!("Running legacy binary... ({:#?})", legacy_cmd);
-            legacy_cmd.spawn()?.wait()?;
-            return Ok(());
+            // return Ok(cmd.run()?);
+        } else {
+            if let Some(legacy_bin) = legacy_bin(config)? {
+                let mut legacy_cmd = std::process::Command::new(legacy_bin);
+                legacy_cmd.args(std::env::args().skip(1));
+                log::debug!("Running legacy binary... ({:#?})", legacy_cmd);
+                legacy_cmd.spawn()?.wait()?;
+                return Ok(());
+            }
         }
 
         rt.block_on(async move {
             match self {
-                Start(_cmd) => unreachable!(),
+                Start(cmd) => Ok(cmd.run().await?),
                 Send(cmd) => cmd.run().await,
                 SendNbtc(cmd) => cmd.run().await,
                 Balance(cmd) => cmd.run().await,
@@ -188,7 +188,7 @@ pub struct StartCmd {
 }
 
 impl StartCmd {
-    fn run(&self) -> orga::Result<()> {
+    async fn run(&self) -> orga::Result<()> {
         let cmd = self.clone();
         let home = cmd.config.home_expect()?;
 
@@ -243,7 +243,7 @@ impl StartCmd {
         if !has_node {
             log::info!("Initializing node at {}...", home.display());
 
-            let node = Node::<nomic::app::App>::new(&home, chain_id, Default::default());
+            let node = Node::<nomic::app::App>::new(&home, chain_id, Default::default()).await;
 
             if let Some(source) = cmd.clone_store {
                 let mut source = PathBuf::from_str(&source).unwrap();
@@ -306,10 +306,10 @@ impl StartCmd {
         }
 
         log::info!("Starting node at {}...", home.display());
-        let mut node = Node::<nomic::app::App>::new(&home, chain_id, Default::default());
+        let mut node = Node::<nomic::app::App>::new(&home, chain_id, Default::default()).await;
 
         if cmd.unsafe_reset {
-            node = node.reset();
+            node = node.reset().await;
         }
         if let Some(genesis) = &cmd.config.genesis {
             let genesis_bytes = if genesis.contains('\n') {
@@ -379,6 +379,8 @@ impl StartCmd {
             .print_tendermint_logs(cmd.tendermint_logs)
             .tendermint_flags(cmd.config.tendermint_flags.clone())
             .run()
+            .await?
+            .wait()
     }
 }
 
