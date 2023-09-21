@@ -215,12 +215,8 @@ async fn bitcoin_test() {
     };
     let funded_accounts = setup_test_app(&path, 4, Some(headers_config), None, None);
 
-    std::thread::spawn(move || {
-        info!("Starting Nomic node...");
-        Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"), Default::default())
-            .run()
-            .unwrap();
-    });
+    let node = Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"), Default::default());
+    let node_child = node.await.run().await.unwrap();
 
     let rpc_addr = "http://localhost:26657".to_string();
 
