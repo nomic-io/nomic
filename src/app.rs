@@ -187,7 +187,9 @@ impl InnerApp {
 
             let signer = self.signer()?;
             let coins: Coin<Nbtc> = amount.into();
-            self.ibc.burn_coins_execute(&signer, &coins.into())?;
+            self.ibc
+                .transfer_mut()
+                .burn_coins_execute(&signer, &coins.into())?;
             self.bitcoin.accounts.deposit(signer, amount.into())?;
 
             Ok(())
@@ -201,7 +203,7 @@ impl InnerApp {
     pub fn escrowed_nbtc(&self, address: Address) -> Result<Amount> {
         #[cfg(feature = "testnet")]
         {
-            self.ibc.transfer.symbol_balance::<Nbtc>(address)
+            self.ibc.transfer().symbol_balance::<Nbtc>(address)
         }
 
         #[cfg(not(feature = "testnet"))]
@@ -300,10 +302,14 @@ impl InnerApp {
                         .parse()
                         .map_err(|_| Error::Coins("Invalid address".to_string()))?;
                     let coins = Coin::<Nbtc>::mint(amount);
-                    self.ibc.burn_coins_execute(&receiver, &coins.into())?;
+                    self.ibc
+                        .transfer_mut()
+                        .burn_coins_execute(&receiver, &coins.into())?;
                     if self.bitcoin.add_withdrawal(script, amount.into()).is_err() {
                         let coins = Coin::<Nbtc>::mint(amount);
-                        self.ibc.mint_coins_execute(&receiver, &coins.into())?;
+                        self.ibc
+                            .transfer_mut()
+                            .mint_coins_execute(&receiver, &coins.into())?;
                     }
                 }
             }
@@ -977,7 +983,8 @@ impl IbcDest {
         bitcoin.reward_pool.give(fee)?;
         let nbtc_amount = coins.amount;
 
-        ibc.mint_coins_execute(&self.sender_address()?, &coins.into())?;
+        ibc.transfer_mut()
+            .mint_coins_execute(&self.sender_address()?, &coins.into())?;
 
         let msg_transfer = MsgTransfer {
             port_id_on_a: self.source_port()?,
