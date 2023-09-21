@@ -61,19 +61,19 @@ pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Regtest;
 
 #[orga(skip(Default), version = 1)]
 pub struct Config {
-    min_withdrawal_checkpoints: u32,
-    min_deposit_amount: u64,
-    min_withdrawal_amount: u64,
-    max_withdrawal_amount: u64,
-    max_withdrawal_script_length: u64,
-    transfer_fee: u64,
-    min_confirmations: u32,
-    units_per_sat: u64,
-    emergency_disbursal_min_tx_amt: u64,
-    emergency_disbursal_lock_time_interval: u32,
-    emergency_disbursal_max_tx_size: u64,
+    pub min_withdrawal_checkpoints: u32,
+    pub min_deposit_amount: u64,
+    pub min_withdrawal_amount: u64,
+    pub max_withdrawal_amount: u64,
+    pub max_withdrawal_script_length: u64,
+    pub transfer_fee: u64,
+    pub min_confirmations: u32,
+    pub units_per_sat: u64,
+    pub emergency_disbursal_min_tx_amt: u64,
+    pub emergency_disbursal_lock_time_interval: u32,
+    pub emergency_disbursal_max_tx_size: u64,
     #[orga(version(V1))]
-    max_offline_checkpoints: u32,
+    pub max_offline_checkpoints: u32,
 }
 
 impl MigrateFrom<ConfigV0> for ConfigV1 {
