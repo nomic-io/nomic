@@ -1,4 +1,15 @@
-use crate::{bitcoin::threshold_sig::Pubkey, error::Result};
+use crate::{
+    bitcoin::{
+        signatory::{derive_pubkey, Signatory, SignatorySet},
+        threshold_sig::Pubkey,
+        Xpub,
+    },
+    error::Result,
+};
+use bitcoin::{
+    secp256k1::Secp256k1,
+    util::bip32::{ChainCode, ChildNumber, ExtendedPubKey, Fingerprint},
+};
 use ibc::{
     clients::ics07_tendermint,
     core::{
@@ -8,11 +19,11 @@ use ibc::{
 use ics23::ExistenceProof;
 use orga::{
     abci::prost::Adapter,
-    collections::Map,
+    collections::{map::Entry, Map},
     cosmrs::proto,
     encoding::LengthVec,
     ibc::ibc_rs::{self as ibc},
-    ibc::{ibc_rs::Height, ClientId, Ibc},
+    ibc::{ibc_rs::Height, Client, ClientId, Ibc},
     orga, Error as OrgaError,
 };
 use proto::traits::{Message, MessageExt};
@@ -50,23 +61,37 @@ impl Cosmos {
             .ok_or_else(|| OrgaError::Ibc("No consensus state for given height".to_string()))?;
         let root = cons_state.root();
 
-        // TODO: verify consensus key is in validator set
+        let cons_addr = tmhash(cons_key.as_slice());
+
+        let header = client.last_header()?;
+        let val = header.validator_set.validator(
+            cons_addr
+                .to_vec()
+                .try_into()
+                .map_err(|_| OrgaError::App("Could not convert consensus address".to_string()))?,
+        );
+        if val.is_none() {
+            return Err(OrgaError::App(
+                "Consensus key is not in most recent validator set".to_string(),
+            )
+            .into());
+        }
 
         op_addr.verify(root, "staking")?;
         acc.verify(root, "acc")?;
 
-        let calc_op_addr = tmhash(cons_key.as_slice());
-        if op_addr.key()? != &vec![&[0x22, 0x14], calc_op_addr.as_slice()].concat() {
+        if op_addr.key()? != &vec![&[0x22, 0x14], cons_addr.as_slice()].concat() {
             return Err(OrgaError::App(
-                "Consensus address does not match consensus key".to_string(),
+                "Operator address proof does not match consensus address".to_string(),
             )
             .into());
         }
 
         if acc.key()? != &vec![&[0x01], op_addr.value()?.as_slice()].concat() {
-            return Err(
-                OrgaError::App("Account does not match operator address".to_string()).into(),
-            );
+            return Err(OrgaError::App(
+                "Account proof does not match operator address".to_string(),
+            )
+            .into());
         }
 
         let any = proto::Any::decode(acc.value()?.as_slice())
@@ -85,6 +110,9 @@ impl Cosmos {
         )?;
 
         let mut chain = self.chains.entry(client_id)?.or_default()?;
+        if chain.op_keys_by_cons.contains_key(cons_key.clone())? {
+            return Err(OrgaError::App("Operator key already relayed".to_string()).into());
+        }
         chain.op_keys_by_cons.insert(cons_key, op_key)?;
 
         Ok(())
@@ -175,8 +203,44 @@ pub struct Chain {
 
 #[orga]
 impl Chain {
-    pub fn to_btc_script(&self) -> Result<bitcoin::Script> {
-        todo!()
+    pub fn to_sigset(&self, index: u32, client: &Client) -> Result<Option<SignatorySet>> {
+        let vals = &client.last_header()?.validator_set;
+
+        let mut sigset = SignatorySet::default();
+        sigset.index = index;
+
+        let secp = Secp256k1::new();
+
+        for val in vals.validators() {
+            sigset.possible_vp += val.power();
+
+            let cons_addr = val.address.as_bytes().to_vec().try_into()?;
+            let op_key = match self.op_keys_by_cons.get(cons_addr)? {
+                None => continue,
+                Some(op_key) => op_key,
+            };
+            let op_key = bitcoin::secp256k1::PublicKey::from_slice(op_key.as_slice())?;
+
+            let xpub = ExtendedPubKey {
+                network: bitcoin::Network::Bitcoin,
+                child_number: ChildNumber::Normal { index: 0 },
+                chain_code: [0; 32].as_slice().into(),
+                depth: 0,
+                parent_fingerprint: Fingerprint::default(),
+                public_key: op_key,
+            };
+            let xpub = Xpub::new(xpub);
+
+            let sig_key = derive_pubkey(&secp, xpub, index)?;
+
+            sigset.signatories.push(Signatory {
+                voting_power: val.power(),
+                pubkey: sig_key.into(),
+            });
+            sigset.present_vp += val.power();
+        }
+
+        Ok(Some(sigset))
     }
 }
 
