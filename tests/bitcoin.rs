@@ -731,7 +731,6 @@ async fn signing_completed_checkpoint_test() {
             .iter()
             .map(|tx| tx.vsize())
             .collect::<Vec<_>>();
-        info!("tx sizes: {:?}", pre_tx_sizes);
 
         tokio::spawn(slashable_signer_2);
         tokio::time::sleep(Duration::from_secs(2 * 60)).await;
@@ -744,7 +743,6 @@ async fn signing_completed_checkpoint_test() {
             .iter()
             .map(|tx| tx.vsize())
             .collect::<Vec<_>>();
-        info!("witness sizes: {:?}", post_tx_sizes);
 
         let signatory_lengths = app_client()
             .query(|app: InnerApp| {
