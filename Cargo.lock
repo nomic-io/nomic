@@ -1878,9 +1878,9 @@ dependencies = [
 
 [[package]]
 name = "ibc"
-version = "0.42.0"
+version = "0.44.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c08c44b986e0fb3e779adc52bb99b5680fd3997d0f71b7d756711418e5caf4e"
+checksum = "18b0357f6a0c6241c4a5bcd52f82147a216d405f8bffd3d3066472fa25bb96f9"
 dependencies = [
  "borsh 0.9.3",
  "bytes",
@@ -1908,9 +1908,9 @@ dependencies = [
 
 [[package]]
 name = "ibc-derive"
-version = "0.1.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d85108c4f4eda7e033b9888971fda4355b0ba0403b4057a6e7b0c28c36241134"
+checksum = "92f1528535e9ca495badb76c143bdd4763c1c9d987f59d1f8b47963ba0c11674"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -2258,7 +2258,7 @@ checksum = "2dffe52ecf27772e601905b7522cb4ef790d2cc203488bbd0e2fe85fcb74566d"
 [[package]]
 name = "merk"
 version = "2.0.0"
-source = "git+https://github.com/nomic-io/merk?rev=34c237624f923c05137e7cb22edf5726482b79ce#34c237624f923c05137e7cb22edf5726482b79ce"
+source = "git+https://github.com/nomic-io/merk?rev=db64bb3024eee6c1e77861d645d20110b1fe549b#db64bb3024eee6c1e77861d645d20110b1fe549b"
 dependencies = [
  "byteorder",
  "colored",
@@ -2558,7 +2558,7 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.3.1"
-source = "git+https://github.com/nomic-io/orga.git?rev=7885d3b302674b5aca8d2a4f89ad5a630115a578#7885d3b302674b5aca8d2a4f89ad5a630115a578"
+source = "git+https://github.com/nomic-io/orga.git?rev=2ee12867393ba63859a7bacbdf5a883dc4a54c3f#2ee12867393ba63859a7bacbdf5a883dc4a54c3f"
 dependencies = [
  "abci2",
  "async-trait",
@@ -2619,7 +2619,7 @@ dependencies = [
 [[package]]
 name = "orga-macros"
 version = "0.3.1"
-source = "git+https://github.com/nomic-io/orga.git?rev=7885d3b302674b5aca8d2a4f89ad5a630115a578#7885d3b302674b5aca8d2a4f89ad5a630115a578"
+source = "git+https://github.com/nomic-io/orga.git?rev=2ee12867393ba63859a7bacbdf5a883dc4a54c3f#2ee12867393ba63859a7bacbdf5a883dc4a54c3f"
 dependencies = [
  "darling",
  "heck 0.3.3",
