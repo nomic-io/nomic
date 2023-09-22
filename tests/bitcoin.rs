@@ -15,11 +15,13 @@ use nomic::bitcoin::header_queue::Config as HeaderQueueConfig;
 use nomic::bitcoin::relayer::DepositAddress;
 use nomic::bitcoin::relayer::Relayer;
 use nomic::bitcoin::signer::Signer;
+use nomic::bitcoin::Config as BitcoinConfig;
 use nomic::error::{Error, Result};
+use nomic::orga::Error as OrgaError;
 use nomic::utils::*;
 use nomic::utils::{
-    declare_validator, poll_for_blocks, populate_bitcoin_block, retry, setup_test_app,
-    setup_test_signer, setup_time_context, test_bitcoin_client, NomicTestWallet,
+    declare_validator, poll_for_active_sigset, poll_for_blocks, populate_bitcoin_block, retry,
+    setup_test_app, setup_test_signer, setup_time_context, test_bitcoin_client, NomicTestWallet,
 };
 use orga::abci::Node;
 use orga::client::{
@@ -36,6 +38,7 @@ use reqwest::StatusCode;
 use serial_test::serial;
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Once;
 use std::time::Duration;
 use tempfile::tempdir;
@@ -329,7 +332,8 @@ async fn bitcoin_test() {
             .unwrap();
         assert_eq!(balance, Amount::from(0));
 
-        poll_for_signatory_key().await;
+        poll_for_active_sigset().await;
+        poll_for_signatory_key(consensus_key).await;
 
         deposit_bitcoin(
             &funded_accounts[0].address,
@@ -429,7 +433,7 @@ async fn bitcoin_test() {
             .unwrap();
         assert_eq!(balance, Amount::from(799991736000000));
 
-        tokio::time::sleep(Duration::from_secs(8 * 60)).await;
+        tokio::time::sleep(Duration::from_secs(7 * 60)).await;
 
         retry(
             || bitcoind.client.generate_to_address(1, &wallet_address),
@@ -465,7 +469,7 @@ async fn bitcoin_test() {
             })
             .collect();
 
-        let expected_account_balances: Vec<u64> = vec![799990201, 0, 0];
+        let expected_account_balances: Vec<u64> = vec![799990201, 0, 0, 0];
         assert_eq!(funded_account_balances, expected_account_balances);
 
         for (i, account) in funded_accounts[0..1].iter().enumerate() {
