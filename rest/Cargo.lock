@@ -1921,9 +1921,9 @@ dependencies = [
 
 [[package]]
 name = "ibc"
-version = "0.42.0"
+version = "0.44.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c08c44b986e0fb3e779adc52bb99b5680fd3997d0f71b7d756711418e5caf4e"
+checksum = "18b0357f6a0c6241c4a5bcd52f82147a216d405f8bffd3d3066472fa25bb96f9"
 dependencies = [
  "borsh 0.9.3",
  "bytes",
@@ -1951,9 +1951,9 @@ dependencies = [
 
 [[package]]
 name = "ibc-derive"
-version = "0.1.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d85108c4f4eda7e033b9888971fda4355b0ba0403b4057a6e7b0c28c36241134"
+checksum = "92f1528535e9ca495badb76c143bdd4763c1c9d987f59d1f8b47963ba0c11674"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -2241,9 +2241,9 @@ dependencies = [
 
 [[package]]
 name = "librocksdb-sys"
-version = "0.6.3+6.28.2"
+version = "0.11.0+8.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "184ce2a189a817be2731070775ad053b6804a340fee05c6686d711db27455917"
+checksum = "d3386f101bcb4bd252d8e9d2fb41ec3b0862a15a62b478c355b2982efa469e3e"
 dependencies = [
  "bindgen",
  "bzip2-sys",
@@ -2331,13 +2331,14 @@ checksum = "2dffe52ecf27772e601905b7522cb4ef790d2cc203488bbd0e2fe85fcb74566d"
 [[package]]
 name = "merk"
 version = "2.0.0"
-source = "git+https://github.com/nomic-io/merk?rev=aaa870e603b0cbe8437aee5c9538926ed078a082#aaa870e603b0cbe8437aee5c9538926ed078a082"
+source = "git+https://github.com/nomic-io/merk?rev=db64bb3024eee6c1e77861d645d20110b1fe549b#db64bb3024eee6c1e77861d645d20110b1fe549b"
 dependencies = [
  "byteorder",
  "colored",
  "ed 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "failure",
  "hex",
+ "log",
  "num_cpus",
  "rand 0.8.5",
  "rocksdb",
@@ -2448,7 +2449,7 @@ dependencies = [
 
 [[package]]
 name = "nomic"
-version = "6.1.0"
+version = "6.1.4"
 dependencies = [
  "base64 0.13.1",
  "bech32 0.9.1",
@@ -2652,7 +2653,7 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.3.1"
-source = "git+https://github.com/nomic-io/orga.git?rev=e010e450530dccd2965779a4caddc4966ff5d04c#e010e450530dccd2965779a4caddc4966ff5d04c"
+source = "git+https://github.com/nomic-io/orga.git?rev=2ee12867393ba63859a7bacbdf5a883dc4a54c3f#2ee12867393ba63859a7bacbdf5a883dc4a54c3f"
 dependencies = [
  "abci2",
  "async-trait",
@@ -2713,7 +2714,7 @@ dependencies = [
 [[package]]
 name = "orga-macros"
 version = "0.3.1"
-source = "git+https://github.com/nomic-io/orga.git?rev=e010e450530dccd2965779a4caddc4966ff5d04c#e010e450530dccd2965779a4caddc4966ff5d04c"
+source = "git+https://github.com/nomic-io/orga.git?rev=2ee12867393ba63859a7bacbdf5a883dc4a54c3f#2ee12867393ba63859a7bacbdf5a883dc4a54c3f"
 dependencies = [
  "darling",
  "heck 0.3.3",
@@ -3502,9 +3503,9 @@ dependencies = [
 
 [[package]]
 name = "rocksdb"
-version = "0.18.0"
+version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "620f4129485ff1a7128d184bc687470c21c7951b64779ebc9cfdad3dcd920290"
+checksum = "bb6f170a4041d50a0ce04b0d2e14916d6ca863ea2e422689a5b694395d299ffe"
 dependencies = [
  "libc",
  "librocksdb-sys",

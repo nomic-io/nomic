@@ -1424,7 +1424,7 @@ impl GrpcCmd {
         use orga::ibc::GrpcOpts;
         orga::ibc::start_grpc(
             // TODO: support configuring RPC address
-            || nomic::app_client("http://localhost:26657").sub(|app| app.ibc),
+            || nomic::app_client("http://localhost:26657").sub(|app| app.ibc.ctx),
             &GrpcOpts {
                 host: "127.0.0.1".to_string(),
                 port: self.port,

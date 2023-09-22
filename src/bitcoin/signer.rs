@@ -12,24 +12,29 @@ use orga::macros::build_call;
 use orga::tendermint::client::HttpClient;
 use rand::Rng;
 use std::fs;
+use std::marker::PhantomData;
 use std::path::Path;
 use std::time::SystemTime;
 
-pub struct Signer<W> {
+pub struct Signer<W, F> {
     op_addr: Address,
     xpriv: ExtendedPrivKey,
     max_withdrawal_rate: f64,
     max_sigset_change_rate: f64,
-    app_client: fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, W>,
+    app_client: F,
+    _phantom: PhantomData<W>,
 }
 
-impl<W: Wallet> Signer<W> {
+impl<W: Wallet, F> Signer<W, F>
+where
+    F: Fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, W>,
+{
     pub fn load_or_generate<P: AsRef<Path>>(
         op_addr: Address,
         key_path: P,
         max_withdrawal_rate: f64,
         max_sigset_change_rate: f64,
-        app_client: fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, W>,
+        app_client: F,
     ) -> Result<Self> {
         let path = key_path.as_ref();
         let xpriv = if path.exists() {
@@ -71,14 +76,18 @@ impl<W: Wallet> Signer<W> {
         xpriv: ExtendedPrivKey,
         max_withdrawal_rate: f64,
         max_sigset_change_rate: f64,
-        app_client: fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, W>,
-    ) -> Self {
+        app_client: F,
+    ) -> Self
+    where
+        F: Fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, W>,
+    {
         Signer {
             op_addr,
             xpriv,
             max_withdrawal_rate,
             max_sigset_change_rate,
             app_client,
+            _phantom: PhantomData,
         }
     }
 
@@ -90,7 +99,9 @@ impl<W: Wallet> Signer<W> {
 
         let mut index = (self.app_client)()
             .query(|app| {
-                Ok(app.bitcoin.checkpoints.index().max(CHECKPOINT_WINDOW) - CHECKPOINT_WINDOW)
+                let index = app.bitcoin.checkpoints.index();
+                let first = index + 1 - app.bitcoin.checkpoints.len()?;
+                Ok(index.saturating_sub(CHECKPOINT_WINDOW).max(first))
             })
             .await?;
 

@@ -694,6 +694,14 @@ impl<'a> BuildingCheckpointMut<'a> {
 
         #[cfg(feature = "full")]
         {
+            let intermediate_tx_batch = self
+                .batches
+                .get_mut(BatchType::IntermediateTx as u64)?
+                .unwrap();
+            if intermediate_tx_batch.is_empty() {
+                return Ok(());
+            }
+
             //TODO: Pull bitcoin config from state
             let bitcoin_config = super::Bitcoin::config();
             use orga::context::Context;
@@ -999,9 +1007,15 @@ impl CheckpointQueue {
 
         let mut out = vec![];
 
+        let length = self.len()?;
+        if length == 0 {
+            return Ok(out);
+        }
+
         let skip = if self.signing()?.is_some() { 2 } else { 1 };
         let end = self.index.saturating_sub(skip - 1);
-        let start = end - limit.min(self.len()? - skip);
+
+        let start = end - limit.min(length - skip);
 
         for i in start..end {
             let checkpoint = self.get(i)?;

@@ -1,6 +1,6 @@
 [package]
 name = "nomic"
-version = "6.1.0"
+version = "6.1.4"
 authors = ["The Nomic Team <hello@nomic.io>"]
 edition = "2021"
 default-run = "nomic"
@@ -8,7 +8,7 @@ default-run = "nomic"
 [dependencies]
 bitcoin = { version = "0.29.2", features = ["serde", "rand"] }
 bitcoind = { version = "0.27.0", features = ["22_0"], optional = true }
-orga = { git = "https://github.com/nomic-io/orga.git", rev = "e010e450530dccd2965779a4caddc4966ff5d04c", features = [
+orga = { git = "https://github.com/nomic-io/orga.git", rev = "2ee12867393ba63859a7bacbdf5a883dc4a54c3f", features = [
     "merk-verify",
 ] }
 thiserror = "1.0.30"
@@ -64,7 +64,7 @@ toml = { version = "0.7.2", features = ["parse"] }
 semver = "1.0.18"
 
 [features]
-default = ["full", "feat-ibc", "testnet", "legacy-bin"]
+default = ["full", "feat-ibc", "testnet"]
 full = [
     "bitcoind",
     "bitcoincore-rpc-async",

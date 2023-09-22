@@ -1,5 +1,5 @@
 #![allow(clippy::too_many_arguments)]
-// TODO: remove after swtiching from "testnet" feature flag to orga channels
+// TODO: remove after switching from "testnet" feature flag to orga channels
 #![allow(unused_variables)]
 #![allow(unused_imports)]
 
@@ -31,6 +31,7 @@ use orga::ibc::{Ibc, IbcTx};
 
 use orga::ibc::ibc_rs::Signer as IbcSigner;
 
+use orga::coins::Declaration;
 use orga::encoding::Adapter as EdAdapter;
 use orga::macros::build_call;
 use orga::migrate::Migrate;
@@ -62,6 +63,9 @@ const DEV_ADDRESS: &str = "nomic14z79y3yrghqx493mwgcj0qd2udy6lm26lmduah";
 const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1d5n325zrf4elfu0heqd59gna5j6xyunhev23cj";
 #[cfg(feature = "full")]
 const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhqd8dcqeq";
+
+const IBC_FEE_USATS: u64 = 1_000_000;
+const DECLARE_FEE_USATS: u64 = 100_000_000;
 
 #[orga(version = 2)]
 pub struct InnerApp {
@@ -187,7 +191,9 @@ impl InnerApp {
 
             let signer = self.signer()?;
             let coins: Coin<Nbtc> = amount.into();
-            self.ibc.burn_coins_execute(&signer, &coins.into())?;
+            self.ibc
+                .transfer_mut()
+                .burn_coins_execute(&signer, &coins.into())?;
             self.bitcoin.accounts.deposit(signer, amount.into())?;
 
             Ok(())
@@ -201,7 +207,7 @@ impl InnerApp {
     pub fn escrowed_nbtc(&self, address: Address) -> Result<Amount> {
         #[cfg(feature = "testnet")]
         {
-            self.ibc.transfer.symbol_balance::<Nbtc>(address)
+            self.ibc.transfer().symbol_balance::<Nbtc>(address)
         }
 
         #[cfg(not(feature = "testnet"))]
@@ -286,6 +292,7 @@ impl InnerApp {
     pub fn ibc_deliver(&mut self, messages: RawIbcTx) -> Result<()> {
         #[cfg(feature = "testnet")]
         {
+            self.deduct_nbtc_fee(IBC_FEE_USATS.into())?;
             let incoming_transfers = self.ibc.deliver(messages)?;
 
             for transfer in incoming_transfers {
@@ -300,10 +307,14 @@ impl InnerApp {
                         .parse()
                         .map_err(|_| Error::Coins("Invalid address".to_string()))?;
                     let coins = Coin::<Nbtc>::mint(amount);
-                    self.ibc.burn_coins_execute(&receiver, &coins.into())?;
+                    self.ibc
+                        .transfer_mut()
+                        .burn_coins_execute(&receiver, &coins.into())?;
                     if self.bitcoin.add_withdrawal(script, amount.into()).is_err() {
                         let coins = Coin::<Nbtc>::mint(amount);
-                        self.ibc.mint_coins_execute(&receiver, &coins.into())?;
+                        self.ibc
+                            .transfer_mut()
+                            .mint_coins_execute(&receiver, &coins.into())?;
                     }
                 }
             }
@@ -312,6 +323,21 @@ impl InnerApp {
         }
         #[cfg(not(feature = "testnet"))]
         Err(orga::Error::Unknown)
+    }
+
+    #[call]
+    pub fn declare_with_nbtc(&mut self, declaration: Declaration) -> Result<()> {
+        self.deduct_nbtc_fee(DECLARE_FEE_USATS.into())?;
+        let signer = self.signer()?;
+        self.staking.declare(signer, declaration, 0.into())
+    }
+
+    fn deduct_nbtc_fee(&mut self, amount: Amount) -> Result<()> {
+        disable_fee();
+        let signer = self.signer()?;
+        self.bitcoin.accounts.withdraw(signer, amount)?.burn();
+
+        Ok(())
     }
 
     #[call]
@@ -477,11 +503,9 @@ impl ConvertSdkTx for InnerApp {
             SdkTx::Protobuf(tx) => {
                 #[cfg(feature = "testnet")]
                 if IbcTx::try_from(tx.clone()).is_ok() {
-                    let funding_amt = MIN_FEE;
-                    let payer = build_call!(self.accounts.take_as_funding(funding_amt.into()));
-
                     let raw_ibc_tx = RawIbcTx(tx.clone());
-                    let paid = build_call!(self.ibc_deliver(raw_ibc_tx));
+                    let payer = build_call!(self.ibc_deliver(raw_ibc_tx));
+                    let paid = build_call!(self.app_noop());
 
                     return Ok(PaidCall { payer, paid });
                 }
@@ -977,7 +1001,8 @@ impl IbcDest {
         bitcoin.reward_pool.give(fee)?;
         let nbtc_amount = coins.amount;
 
-        ibc.mint_coins_execute(&self.sender_address()?, &coins.into())?;
+        ibc.transfer_mut()
+            .mint_coins_execute(&self.sender_address()?, &coins.into())?;
 
         let msg_transfer = MsgTransfer {
             port_id_on_a: self.source_port()?,
@@ -1128,8 +1153,13 @@ pub fn in_upgrade_window(now_seconds: i64) -> bool {
     use chrono::prelude::*;
     let now = Utc.timestamp_opt(now_seconds, 0).unwrap();
 
-    // Monday - Friday, 17:00 - 17:10 UTC
-    now.weekday().num_days_from_monday() < 5 && now.hour() == 17 && now.minute() < 10
+    #[cfg(not(feature = "testnet"))]
+    let valid_weekday = now.weekday().num_days_from_monday() == 2; // Wednesday
+
+    #[cfg(feature = "testnet")]
+    let valid_weekday = now.weekday().num_days_from_monday() < 5; // Monday - Friday
+
+    valid_weekday && now.hour() == 17 && now.minute() < 10 // 17:00 - 17:10 UTC
 }
 
 #[cfg(test)]
