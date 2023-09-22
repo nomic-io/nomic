@@ -31,6 +31,7 @@ use orga::ibc::{Ibc, IbcTx};
 
 use orga::ibc::ibc_rs::Signer as IbcSigner;
 
+use super::cosmos::Cosmos;
 use orga::coins::Declaration;
 use orga::encoding::Adapter as EdAdapter;
 use orga::macros::build_call;
@@ -96,6 +97,8 @@ pub struct InnerApp {
 
     #[call]
     pub incentives: Incentives,
+
+    pub cosmos: Cosmos,
 }
 
 #[orga]
@@ -459,10 +462,12 @@ mod abci {
             for (dest, coins) in pending_nbtc_transfers {
                 self.credit_transfer(dest, coins)?;
             }
-            let external_outputs: Vec<crate::error::Result<bitcoin::TxOut>> = vec![]; // TODO: remote chain disbursal
+            let external_outputs = self
+                .cosmos
+                .build_outputs(&self.ibc, self.bitcoin.checkpoints.index)?;
             let offline_signers = self
                 .bitcoin
-                .begin_block_step(external_outputs.into_iter())?;
+                .begin_block_step(external_outputs.into_iter().map(|v| Ok(v)))?;
             for cons_key in offline_signers {
                 let address = self.staking.address_by_consensus_key(cons_key)?.unwrap();
                 self.staking.punish_downtime(address)?;

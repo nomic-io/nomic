@@ -2,7 +2,7 @@ use crate::{
     bitcoin::{
         signatory::{derive_pubkey, Signatory, SignatorySet},
         threshold_sig::Pubkey,
-        Xpub,
+        Nbtc, Xpub,
     },
     error::Result,
 };
@@ -11,6 +11,9 @@ use bitcoin::{
     util::bip32::{ChainCode, ChildNumber, ExtendedPubKey, Fingerprint},
 };
 use ibc::{
+    applications::transfer::context::{
+        TokenTransferExecutionContext, TokenTransferValidationContext,
+    },
     clients::ics07_tendermint,
     core::{
         ics02_client::consensus_state::ConsensusState, ics23_commitment::commitment::CommitmentRoot,
@@ -19,11 +22,20 @@ use ibc::{
 use ics23::ExistenceProof;
 use orga::{
     abci::prost::Adapter,
-    collections::{map::Entry, Map},
+    coins::Amount,
+    collections::{
+        map::{Entry, Ref},
+        Map,
+    },
     cosmrs::proto,
     encoding::LengthVec,
     ibc::ibc_rs::{self as ibc},
-    ibc::{ibc_rs::Height, Client, ClientId, Ibc},
+    ibc::{
+        ibc_rs::{
+            applications::transfer::PORT_ID_STR, core::ics24_host::identifier::PortId, Height,
+        },
+        Client, ClientId, Ibc,
+    },
     orga, Error as OrgaError,
 };
 use proto::traits::{Message, MessageExt};
@@ -35,6 +47,63 @@ pub struct Cosmos {
 
 #[orga]
 impl Cosmos {
+    pub fn build_outputs(&self, ibc: &Ibc, index: u32) -> Result<Vec<bitcoin::TxOut>> {
+        let mut outputs = vec![];
+
+        for entry in self.chains.iter()? {
+            let (client_id, chain) = entry?;
+            let client = ibc
+                .ctx
+                .clients
+                .get(client_id.clone())?
+                .ok_or_else(|| OrgaError::Ibc("Client not found".to_string()))?;
+            let sigset = if let Some(sigset) = chain.to_sigset(index, &client)? {
+                sigset
+            } else {
+                continue;
+            };
+
+            if !sigset.has_quorum() {
+                continue;
+            }
+            let mut total_usats = 0;
+            let connection_ids = ibc.ctx.query_client_connections(client_id.clone())?;
+            for connection_id in connection_ids {
+                let channels = ibc.ctx.query_connection_channels(connection_id.clone())?;
+                for channel in channels {
+                    if channel.port_id != ibc.transfer().get_port().unwrap().to_string() {
+                        continue;
+                    }
+                    let port_id: PortId = channel
+                        .port_id
+                        .parse()
+                        .map_err(|_| crate::error::Error::Ibc("Invalid port".to_string()))?;
+                    let channel_id = channel
+                        .channel_id
+                        .parse()
+                        .map_err(|_| crate::error::Error::Ibc("Invalid channel id".to_string()))?;
+
+                    let escrow_address = ibc
+                        .transfer()
+                        .get_escrow_account(&port_id, &channel_id)
+                        .map_err(|e| crate::error::Error::Ibc(e.to_string()))?;
+                    let balance: u64 = ibc
+                        .transfer()
+                        .symbol_balance::<Nbtc>(escrow_address)
+                        .map_err(|e| crate::error::Error::Ibc(e.to_string()))?
+                        .into();
+                    total_usats += balance;
+                }
+            }
+            outputs.push(bitcoin::TxOut {
+                value: total_usats / 1_000_000,
+                script_pubkey: sigset.output_script(&[0])?,
+            })
+        }
+
+        Ok(outputs)
+    }
+
     pub fn relay_op_key(
         &mut self,
         ibc: &Ibc,
@@ -45,6 +114,7 @@ impl Cosmos {
         acc: Proof,
     ) -> Result<()> {
         let client = ibc
+            .ctx
             .clients
             .get(client_id.clone())?
             .ok_or_else(|| OrgaError::Ibc("Client not found".to_string()))?;
@@ -281,7 +351,8 @@ mod tests {
             .unwrap();
 
         let mut ibc = Ibc::default();
-        ibc.clients
+        ibc.ctx
+            .clients
             .insert(client_id.clone().into(), client)
             .unwrap();
 
