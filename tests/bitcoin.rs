@@ -178,7 +178,6 @@ fn client_provider() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, DerivedKe
 
 #[tokio::test]
 #[serial]
-#[ignore]
 async fn bitcoin_test() {
     INIT.call_once(|| {
         pretty_env_logger::init();
