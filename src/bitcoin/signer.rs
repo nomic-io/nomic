@@ -100,6 +100,9 @@ where
         let mut index = (self.app_client)()
             .query(|app| {
                 let index = app.bitcoin.checkpoints.index();
+                if index == 0 {
+                    return Ok(0);
+                }
                 let first = index + 1 - app.bitcoin.checkpoints.len()?;
                 Ok(index.saturating_sub(CHECKPOINT_WINDOW).max(first))
             })
