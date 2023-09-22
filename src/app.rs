@@ -1,5 +1,5 @@
 #![allow(clippy::too_many_arguments)]
-// TODO: remove after swtiching from "testnet" feature flag to orga channels
+// TODO: remove after switching from "testnet" feature flag to orga channels
 #![allow(unused_variables)]
 #![allow(unused_imports)]
 
@@ -31,6 +31,7 @@ use orga::ibc::{Ibc, IbcTx};
 
 use orga::ibc::ibc_rs::Signer as IbcSigner;
 
+use orga::coins::Declaration;
 use orga::encoding::Adapter as EdAdapter;
 use orga::macros::build_call;
 use orga::migrate::Migrate;
@@ -289,7 +290,7 @@ impl InnerApp {
     pub fn ibc_deliver(&mut self, messages: RawIbcTx) -> Result<()> {
         #[cfg(feature = "testnet")]
         {
-            self.deduct_nbtc_ibc_fee(IBC_FEE_USATS.into())?;
+            self.deduct_nbtc_fee(IBC_FEE_USATS.into())?;
             let incoming_transfers = self.ibc.deliver(messages)?;
 
             for transfer in incoming_transfers {
@@ -320,7 +321,7 @@ impl InnerApp {
 
     #[call]
     pub fn declare_with_nbtc(&mut self, declaration: Declaration) -> Result<()> {
-        self.deduct_nbtc_fee(DECLARE_FEE_USATS.into());
+        self.deduct_nbtc_fee(DECLARE_FEE_USATS.into())?;
         let signer = self.signer()?;
         self.staking.declare(signer, declaration, 0.into())
     }
