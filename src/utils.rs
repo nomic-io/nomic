@@ -4,8 +4,6 @@ use crate::app::App;
 use crate::app::InnerApp;
 use crate::app::Nom;
 use crate::app_client;
-#[cfg(feature = "full")]
-use crate::bitcoin::adapter::Adapter;
 use crate::bitcoin::checkpoint::Config as CheckpointQueueConfig;
 #[cfg(feature = "full")]
 use crate::bitcoin::header_queue::Config as HeaderQueueConfig;
@@ -25,8 +23,6 @@ use bitcoind::bitcoincore_rpc::{Auth, Client as BitcoinRpcClient};
 #[cfg(feature = "full")]
 use bitcoind::BitcoinD;
 use chrono::{TimeZone, Utc};
-#[cfg(feature = "full")]
-use ed::Encode;
 #[cfg(feature = "full")]
 use log::info;
 use orga::client::Wallet;

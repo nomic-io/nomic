@@ -107,16 +107,14 @@ impl Command {
         use Command::*;
         let rt = tokio::runtime::Runtime::new().unwrap();
 
-        if let Start(cmd) = self {
+        if let Start(_cmd) = self {
             // return Ok(cmd.run()?);
-        } else {
-            if let Some(legacy_bin) = legacy_bin(config)? {
-                let mut legacy_cmd = std::process::Command::new(legacy_bin);
-                legacy_cmd.args(std::env::args().skip(1));
-                log::debug!("Running legacy binary... ({:#?})", legacy_cmd);
-                legacy_cmd.spawn()?.wait()?;
-                return Ok(());
-            }
+        } else if let Some(legacy_bin) = legacy_bin(config)? {
+            let mut legacy_cmd = std::process::Command::new(legacy_bin);
+            legacy_cmd.args(std::env::args().skip(1));
+            log::debug!("Running legacy binary... ({:#?})", legacy_cmd);
+            legacy_cmd.spawn()?.wait()?;
+            return Ok(());
         }
 
         rt.block_on(async move {
