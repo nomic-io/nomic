@@ -182,8 +182,7 @@ where
         }
 
         self.check_change_rates().await?;
-        info!("Signing checkpoint...");
-        dbg!("{} inputs", to_sign.len());
+        info!("Signing checkpoint ({} inputs)...", to_sign.len());
 
         let sigs: LengthVec<u16, Signature> = to_sign
             .into_iter()
