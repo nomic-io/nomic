@@ -64,6 +64,7 @@ const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1d5n325zrf4elfu0heqd59gna5j6xyunhe
 const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhqd8dcqeq";
 
 const IBC_FEE_USATS: u64 = 1_000_000;
+const DECLARE_FEE_USATS: u64 = 100_000_000;
 
 #[orga(version = 2)]
 pub struct InnerApp {
@@ -317,7 +318,14 @@ impl InnerApp {
         Err(orga::Error::Unknown)
     }
 
-    fn deduct_nbtc_ibc_fee(&mut self, amount: Amount) -> Result<()> {
+    #[call]
+    pub fn declare_with_nbtc(&mut self, declaration: Declaration) -> Result<()> {
+        self.deduct_nbtc_fee(DECLARE_FEE_USATS.into());
+        let signer = self.signer()?;
+        self.staking.declare(signer, declaration, 0.into())
+    }
+
+    fn deduct_nbtc_fee(&mut self, amount: Amount) -> Result<()> {
         disable_fee();
         let signer = self.signer()?;
         self.bitcoin.accounts.withdraw(signer, amount)?.burn();
