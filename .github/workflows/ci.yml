@@ -13,6 +13,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   NOMIC_CLEANUP_LEGACY_BUILD: 1
+  RUST_LOG: info
 
 jobs:
   test-base:
