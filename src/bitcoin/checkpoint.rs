@@ -490,7 +490,7 @@ impl Checkpoint {
 #[orga(skip(Default))]
 #[derive(Clone)]
 pub struct Config {
-    pub min_checkpoints: u64,
+    pub max_checkpoints: u64,
     pub min_checkpoint_interval: u64,
     pub max_checkpoint_interval: u64,
     pub max_inputs: u64,
@@ -1121,7 +1121,7 @@ impl CheckpointQueue {
         let latest = self.building()?.create_time();
 
         while let Some(oldest) = self.queue.front()? {
-            if self.queue.len() <= self.config.min_checkpoints {
+            if self.queue.len() <= self.config.max_checkpoints {
                 break;
             }
 
