@@ -105,3 +105,7 @@ required-features = ["csv"]
 [[bin]]
 name = "append-airdrop-snapshot"
 required-features = ["testnet"]
+
+[[test]]
+name = "bitcoin"
+required-features = ["devnet"]
