@@ -509,7 +509,7 @@ impl Config {
 
     fn bitcoin() -> Self {
         Self {
-            min_checkpoints: 10,
+            max_checkpoints: 10,
             min_checkpoint_interval: 60 * 5,
             max_checkpoint_interval: 60 * 60 * 8,
             max_inputs: 40,
