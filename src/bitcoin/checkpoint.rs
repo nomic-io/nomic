@@ -1324,6 +1324,25 @@ impl CheckpointQueue {
     pub fn sigset(&self, index: u32) -> Result<SignatorySet> {
         Ok(self.get(index)?.sigset.clone())
     }
+
+    #[query]
+    pub fn num_unconfirmed_checkpoints(&self) -> Result<u32> {
+        let has_signing = self.signing()?.is_some();
+        let signing_offset = has_signing as u32;
+
+        let last_completed_index = self.index.checked_sub(1 + signing_offset);
+        let last_completed_index = match last_completed_index {
+            None => return Ok(0),
+            Some(index) => index,
+        };
+
+        let confirmed_index = match self.confirmed_index {
+            None => return Ok(self.len()? - 1 - signing_offset),
+            Some(index) => index,
+        };
+
+        Ok(last_completed_index - confirmed_index)
+    }
 }
 
 #[cfg(test)]
@@ -1457,5 +1476,32 @@ mod test {
         let cp = queue.completed(2).unwrap();
         assert_eq!(cp.len(), 2);
         assert_eq!(cp[1].status, CheckpointStatus::Complete);
+    }
+
+    #[test]
+    fn num_unconfirmed_checkpoints() {
+        let mut queue = create_queue_with_statuses(10, false);
+        queue.confirmed_index = Some(5);
+        assert_eq!(queue.num_unconfirmed_checkpoints().unwrap(), 4);
+
+        let mut queue = create_queue_with_statuses(10, true);
+        queue.confirmed_index = Some(5);
+        assert_eq!(queue.num_unconfirmed_checkpoints().unwrap(), 4);
+
+        let mut queue = create_queue_with_statuses(0, false);
+        queue.confirmed_index = None;
+        assert_eq!(queue.num_unconfirmed_checkpoints().unwrap(), 0);
+
+        let mut queue = create_queue_with_statuses(0, true);
+        queue.confirmed_index = None;
+        assert_eq!(queue.num_unconfirmed_checkpoints().unwrap(), 0);
+
+        let mut queue = create_queue_with_statuses(10, false);
+        queue.confirmed_index = None;
+        assert_eq!(queue.num_unconfirmed_checkpoints().unwrap(), 10);
+
+        let mut queue = create_queue_with_statuses(10, true);
+        queue.confirmed_index = None;
+        assert_eq!(queue.num_unconfirmed_checkpoints().unwrap(), 10);
     }
 }
