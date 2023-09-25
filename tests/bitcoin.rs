@@ -763,7 +763,6 @@ async fn signing_completed_checkpoint_test() {
             .unwrap();
 
         for (i, length) in signatory_lengths.iter().enumerate() {
-            info!("length: {}", length);
             if length == &(2 as usize) {
                 assert!(post_tx_sizes[i] > pre_tx_sizes[i]);
             }
