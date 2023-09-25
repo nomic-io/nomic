@@ -527,7 +527,7 @@ pub struct Config {
     pub fee_rate: u64,
     pub max_age: u64,
     #[orga(version(V1))]
-    pub target_checkpoint_inclusion: u64,
+    pub target_checkpoint_inclusion: u32,
     #[orga(version(V1))]
     pub min_fee_rate: u64,
     #[orga(version(V1))]
@@ -1212,6 +1212,7 @@ impl CheckpointQueue {
         nbtc_accounts: &Accounts<Nbtc>,
         recovery_scripts: &Map<orga::coins::Address, Adapter<bitcoin::Script>>,
         external_outputs: impl Iterator<Item = Result<bitcoin::TxOut>>,
+        btc_height: u32,
     ) -> Result<bool> {
         if !self.should_push(sig_keys)? {
             return Ok(false);
@@ -1228,6 +1229,7 @@ impl CheckpointQueue {
             let config = self.config();
             let second = self.get_mut(self.index - 1)?;
             let sigset = second.sigset.clone();
+            let prev_fee_rate = second.fee_rate;
             let (reserve_outpoint, reserve_value, excess_inputs, excess_outputs) =
                 BuildingCheckpointMut(second).advance(
                     nbtc_accounts,
@@ -1236,7 +1238,20 @@ impl CheckpointQueue {
                     &config,
                 )?;
 
+            let fee_rate = if let Some(unconf_index) = self.first_unconfirmed_index()? {
+                let unconf = self.get(unconf_index)?;
+                let btc_blocks_since_unconf = btc_height - unconf.signed_at_btc_height.unwrap_or(0);
+                adjust_fee_rate(
+                    prev_fee_rate,
+                    btc_blocks_since_unconf < config.target_checkpoint_inclusion,
+                    &config,
+                )
+            } else {
+                prev_fee_rate
+            };
+
             let mut building = self.building_mut()?;
+            building.fee_rate = fee_rate;
             let mut building_checkpoint_batch = building
                 .batches
                 .get_mut(BatchType::Checkpoint as u64)?
