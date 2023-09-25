@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 
 use self::checkpoint::Input;
+use self::threshold_sig::Signature;
 use crate::app::Dest;
 use crate::bitcoin::checkpoint::BatchType;
 use crate::error::{Error, Result};
@@ -18,7 +19,7 @@ use orga::collections::Map;
 use orga::collections::{Deque, Next};
 use orga::context::{Context, GetContext};
 use orga::describe::Describe;
-use orga::encoding::{Decode, Encode, Terminated};
+use orga::encoding::{Decode, Encode, LengthVec, Terminated};
 use orga::migrate::{Migrate, MigrateFrom};
 use orga::orga;
 #[cfg(feature = "full")]
@@ -514,7 +515,11 @@ impl Bitcoin {
         }
 
         self.checkpoints.confirmed_index = Some(cp_index);
-        log::info!("Confirmed checkpoint {}", cp_index);
+        log::info!(
+            "Checkpoint {} confirmed at Bitcoin height {}",
+            cp_index,
+            btc_height
+        );
 
         Ok(())
     }
@@ -610,6 +615,17 @@ impl Bitcoin {
             .insert_pending(dest, coins)?;
 
         Ok(())
+    }
+
+    #[call]
+    pub fn sign(
+        &mut self,
+        xpub: Xpub,
+        sigs: LengthVec<u16, Signature>,
+        cp_index: u32,
+    ) -> Result<()> {
+        self.checkpoints
+            .sign(xpub, sigs, cp_index, self.headers.height()?)
     }
 
     #[query]
@@ -716,6 +732,7 @@ impl Bitcoin {
                 &self.accounts,
                 &self.recovery_scripts,
                 external_outputs,
+                self.headers.height()?,
             )
             .map_err(|err| OrgaError::App(err.to_string()))?;
 

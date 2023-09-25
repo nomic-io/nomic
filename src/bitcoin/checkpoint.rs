@@ -316,6 +316,8 @@ pub struct Checkpoint {
     pub pending: Map<Dest, Coin<Nbtc>>,
     #[orga(version(V3))]
     pub fee_rate: u64,
+    #[orga(version(V3))]
+    pub signed_at_btc_height: Option<u32>,
     pub sigset: SignatorySet,
 }
 
@@ -343,6 +345,7 @@ impl MigrateFrom<CheckpointV2> for CheckpointV3 {
             batches: value.batches,
             pending: value.pending,
             fee_rate: DEFAULT_FEE_RATE,
+            signed_at_btc_height: None,
             sigset: value.sigset,
         })
     }
@@ -356,6 +359,7 @@ impl Checkpoint {
             batches: Deque::default(),
             pending: Map::new(),
             fee_rate: DEFAULT_FEE_RATE,
+            signed_at_btc_height: None,
             sigset,
         };
 
@@ -375,9 +379,10 @@ impl Checkpoint {
         Ok(checkpoint)
     }
 
-    fn sign(&mut self, xpub: Xpub, sigs: LengthVec<u16, Signature>) -> Result<()> {
+    fn sign(&mut self, xpub: Xpub, sigs: LengthVec<u16, Signature>, btc_height: u32) -> Result<()> {
         let secp = bitcoin::secp256k1::Secp256k1::verification_only();
 
+        let cp_was_signed = self.signed()?;
         let mut sig_index = 0;
         for i in 0..self.batches.len() {
             let mut batch = self.batches.get_mut(i)?.unwrap();
@@ -424,6 +429,10 @@ impl Checkpoint {
 
         if sig_index != sigs.len() {
             return Err(OrgaError::App("Excess signatures supplied".to_string()).into());
+        }
+
+        if self.signed()? && !cp_was_signed {
+            self.signed_at_btc_height = Some(btc_height);
         }
 
         Ok(())
@@ -614,8 +623,13 @@ impl<'a> Query for SigningCheckpoint<'a> {
 pub struct SigningCheckpointMut<'a>(ChildMut<'a, u64, Checkpoint>);
 
 impl<'a> SigningCheckpointMut<'a> {
-    pub fn sign(&mut self, xpub: Xpub, sigs: LengthVec<u16, Signature>) -> Result<()> {
-        self.0.sign(xpub, sigs)
+    pub fn sign(
+        &mut self,
+        xpub: Xpub,
+        sigs: LengthVec<u16, Signature>,
+        btc_height: u32,
+    ) -> Result<()> {
+        self.0.sign(xpub, sigs, btc_height)
     }
 
     pub fn advance(self) -> Result<()> {
@@ -1340,8 +1354,13 @@ impl CheckpointQueue {
         Ok(self.building()?.sigset.clone())
     }
 
-    #[call]
-    pub fn sign(&mut self, xpub: Xpub, sigs: LengthVec<u16, Signature>, index: u32) -> Result<()> {
+    pub fn sign(
+        &mut self,
+        xpub: Xpub,
+        sigs: LengthVec<u16, Signature>,
+        index: u32,
+        btc_height: u32,
+    ) -> Result<()> {
         super::exempt_from_fee()?;
 
         let mut checkpoint = self.get_mut(index)?;
@@ -1350,7 +1369,7 @@ impl CheckpointQueue {
             return Err(OrgaError::App("Checkpoint is still building".to_string()).into());
         }
 
-        checkpoint.sign(xpub, sigs)?;
+        checkpoint.sign(xpub, sigs, btc_height)?;
 
         if matches!(status, CheckpointStatus::Signing) && checkpoint.signed()? {
             let checkpoint_tx = checkpoint.checkpoint_tx()?;
@@ -1454,6 +1473,7 @@ mod test {
                 batches: Deque::new(),
                 pending: Map::new(),
                 fee_rate: DEFAULT_FEE_RATE,
+                signed_at_btc_height: None,
                 sigset: SignatorySet::default(),
             };
             cp.status = status;

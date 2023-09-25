@@ -202,12 +202,7 @@ where
 
         (self.app_client)()
             .call(
-                move |app| {
-                    build_call!(app
-                        .bitcoin
-                        .checkpoints
-                        .sign(xpub.into(), sigs.clone(), index))
-                },
+                move |app| build_call!(app.bitcoin.sign(xpub.into(), sigs.clone(), index)),
                 |app| build_call!(app.app_noop()),
             )
             .await?;
