@@ -47,6 +47,15 @@ pub struct Cosmos {
 
 #[orga]
 impl Cosmos {
+    #[query]
+    pub fn op_key_present(&self, client_id: ClientId, cons_key: LengthVec<u8, u8>) -> Result<bool> {
+        if let Some(chain) = self.chains.get(client_id)? {
+            return Ok(chain.op_keys_by_cons.contains_key(cons_key)?);
+        } else {
+            return Ok(false);
+        }
+    }
+
     pub fn build_outputs(&self, ibc: &Ibc, index: u32) -> Result<Vec<bitcoin::TxOut>> {
         let mut outputs = vec![];
 
