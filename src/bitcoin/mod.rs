@@ -320,6 +320,10 @@ impl Bitcoin {
         Ok(())
     }
 
+    pub fn should_push_checkpoint(&mut self) -> Result<bool> {
+        self.checkpoints.should_push(self.signatory_keys.map())
+    }
+
     pub fn relay_deposit(
         &mut self,
         btc_tx: Adapter<Transaction>,

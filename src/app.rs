@@ -462,9 +462,12 @@ mod abci {
             for (dest, coins) in pending_nbtc_transfers {
                 self.credit_transfer(dest, coins)?;
             }
-            let external_outputs = self
-                .cosmos
-                .build_outputs(&self.ibc, self.bitcoin.checkpoints.index)?;
+            let external_outputs = if self.bitcoin.should_push_checkpoint()? {
+                self.cosmos
+                    .build_outputs(&self.ibc, self.bitcoin.checkpoints.index)?
+            } else {
+                vec![]
+            };
             let offline_signers = self
                 .bitcoin
                 .begin_block_step(external_outputs.into_iter().map(|v| Ok(v)))?;
