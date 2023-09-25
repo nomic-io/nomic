@@ -1205,7 +1205,14 @@ mod tests {
 
     #[test]
     fn upgrade_date() {
+        #[cfg(feature = "testnet")]
         assert!(in_upgrade_window(1690218300)); // Monday 17:05 UTC
+        #[cfg(not(feature = "testnet"))]
+        assert!(!in_upgrade_window(1690218300)); // Monday 17:05 UTC
+        #[cfg(feature = "testnet")]
+        assert!(in_upgrade_window(1690391100)); // Wednesday 17:05 UTC
+        #[cfg(not(feature = "testnet"))]
+        assert!(in_upgrade_window(1690391100)); // Wednesday 17:05 UTC
         assert!(!in_upgrade_window(1690219200)); // Monday 17:20 UTC
         assert!(!in_upgrade_window(1690736700)); // Sunday 17:05 UTC
     }
