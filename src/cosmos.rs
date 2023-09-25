@@ -9,12 +9,10 @@ use crate::{
 };
 use bitcoin::{
     secp256k1::Secp256k1,
-    util::bip32::{ChainCode, ChildNumber, ExtendedPubKey, Fingerprint},
+    util::bip32::{ChildNumber, ExtendedPubKey, Fingerprint},
 };
 use ibc::{
-    applications::transfer::context::{
-        TokenTransferExecutionContext, TokenTransferValidationContext,
-    },
+    applications::transfer::context::TokenTransferValidationContext,
     clients::ics07_tendermint,
     core::{
         ics02_client::consensus_state::ConsensusState, ics23_commitment::commitment::CommitmentRoot,
@@ -24,32 +22,18 @@ use ics23::ExistenceProof;
 use orga::{
     abci::prost::Adapter,
     client::{AppClient, Wallet},
-    coins::Amount,
-    collections::{
-        map::{Entry, Ref},
-        Map,
-    },
+    collections::Map,
     cosmrs::proto,
     encoding::{Decode, Encode, LengthVec},
     ibc::ibc_rs::{self as ibc},
     ibc::{
-        ibc_rs::{
-            applications::transfer::PORT_ID_STR,
-            core::{
-                ics04_channel::context::SendPacketValidationContext,
-                ics24_host::{identifier::PortId, path::ClientConsensusStatePath},
-            },
-            Height,
-        },
+        ibc_rs::{core::ics24_host::identifier::PortId, Height},
         Client, ClientId, Ibc,
     },
     macros::build_call,
     orga, Error as OrgaError,
 };
-use proto::{
-    tendermint::crypto::ProofOps,
-    traits::{Message, MessageExt},
-};
+use proto::traits::{Message, MessageExt};
 use tendermint_rpc::HttpClient;
 
 #[orga]
@@ -62,9 +46,9 @@ impl Cosmos {
     #[query]
     pub fn op_key_present(&self, client_id: ClientId, cons_key: LengthVec<u8, u8>) -> Result<bool> {
         if let Some(chain) = self.chains.get(client_id)? {
-            return Ok(chain.op_keys_by_cons.contains_key(cons_key)?);
+            Ok(chain.op_keys_by_cons.contains_key(cons_key)?)
         } else {
-            return Ok(false);
+            Ok(false)
         }
     }
 
@@ -233,14 +217,14 @@ impl Encode for Proof {
         self.inner.encode_into(&mut inner_bytes)?;
         let inner: LengthVec<u16, u8> = inner_bytes
             .try_into()
-            .map_err(|e| ed::Error::UnexpectedByte(55))?;
+            .map_err(|_| ed::Error::UnexpectedByte(55))?;
         inner.encode_into(dest)?;
 
         let mut outer_bytes = vec![];
         self.outer.encode_into(&mut outer_bytes)?;
         let outer: LengthVec<u16, u8> = outer_bytes
             .try_into()
-            .map_err(|e| ed::Error::UnexpectedByte(56))?;
+            .map_err(|_| ed::Error::UnexpectedByte(56))?;
         outer.encode_into(dest)?;
 
         Ok(())
@@ -339,8 +323,10 @@ impl Chain {
     pub fn to_sigset(&self, index: u32, client: &Client) -> Result<Option<SignatorySet>> {
         let vals = &client.last_header()?.validator_set;
 
-        let mut sigset = SignatorySet::default();
-        sigset.index = index;
+        let mut sigset = SignatorySet {
+            index,
+            ..Default::default()
+        };
 
         let secp = Secp256k1::new();
 
@@ -398,8 +384,7 @@ pub async fn relay_op_keys<
                 .get(())?
                 .ok_or_else(|| OrgaError::Ibc("Client state not found".to_string()))?
                 .inner
-                .latest_height
-                .clone())
+                .latest_height)
         })
         .await?;
 
@@ -443,10 +428,10 @@ pub async fn relay_op_keys<
             .await?;
 
         if res.proof.is_none() {
-            return Err(OrgaError::App("No proof".to_string()).into());
+            return Err(OrgaError::App("No proof".to_string()));
         }
         if res.proof.as_ref().unwrap().ops.len() != 2 {
-            return Err(OrgaError::App("Invalid proof op len".to_string()).into());
+            return Err(OrgaError::App("Invalid proof op len".to_string()));
         }
         let op_addr_proof = Proof {
             inner: Decode::decode(res.proof.as_ref().unwrap().ops[0].data.as_slice())?,
@@ -465,10 +450,10 @@ pub async fn relay_op_keys<
             .await?;
 
         if res.proof.is_none() {
-            return Err(OrgaError::App("No proof".to_string()).into());
+            return Err(OrgaError::App("No proof".to_string()));
         }
         if res.proof.as_ref().unwrap().ops.len() != 2 {
-            return Err(OrgaError::App("Invalid proof op len".to_string()).into());
+            return Err(OrgaError::App("Invalid proof op len".to_string()));
         }
         let base_account_proof = Proof {
             inner: Decode::decode(res.proof.as_ref().unwrap().ops[0].data.as_slice())?,
@@ -497,12 +482,7 @@ pub async fn relay_op_keys<
 mod tests {
     use orga::{
         encoding::Decode,
-        ibc::{
-            ibc_rs::core::{
-                ics02_client::client_type::ClientType, ics24_host::identifier::ClientId,
-            },
-            Client,
-        },
+        ibc::{ibc_rs::core::ics24_host::identifier::ClientId, Client},
     };
 
     use super::*;
@@ -526,7 +506,7 @@ mod tests {
         );
         client
             .consensus_states
-            .insert(height.clone().into(), cons_state.into())
+            .insert(height.into(), cons_state.into())
             .unwrap();
 
         let mut ibc = Ibc::default();
@@ -536,7 +516,7 @@ mod tests {
             .unwrap();
 
         let mut cosmos = Cosmos::default();
-        cosmos
+        let _ = cosmos
             .relay_op_key(
                 &ibc,
                 client_id.into(),
@@ -550,7 +530,6 @@ mod tests {
                     inner: Adapter::decode(base64::decode("Cr8JChUBx8IB1mO1bXRY0vHThzr6b+PHVyESoAEKIC9jb3Ntb3MuYXV0aC52MWJldGExLkJhc2VBY2NvdW50EnwKK29zbW8xY2xwcXI0bnJrNGtoZ2t4ajc4ZmN3d2g2ZGwzdXc0ZXBhc212bmoSRgofL2Nvc21vcy5jcnlwdG8uc2VjcDI1NmsxLlB1YktleRIjCiECfTKs7KDPbeiIlBmDreAlJuDieStaYcELTb/oCbagOtIY04EBIN4EGg4IARgBIAEqBgACrPjiCiIuCAESBwIErPjiCiAaISC0zYtnKGgp+Fv6/zgK448FNF9nDpE7Wo6+nVNC7eZucyIsCAESKAQGrPjiCiApnLHdr9XrhX0pwIf12puCc+/UcxyISysjLYfyAE+g8yAiLggBEgcGDqz44gogGiEg08ANiRA+u4kL76ki+qtngG3I9Nz6yTeQMa7zp2BO/UgiLAgBEigIFqz44gogQIDbNxIkW40Xj/nOdMOHucM1LelWR//LUYBwaLp5cMEgIi4IARIHCi6s+OIKIBohIBwZipWqbjqW3BRTIuWUrsLvNjCVYU0Iej96K/TLIwLDIi4IARIHDmjy8OoKIBohIP0s1I4EEp3oUMRg6p5+8IU766ZIWQC1fcuZ7M/X3uBUIi8IARIIEMAB8vDqCiAaISCm86iVzVfOI9oodrX7CgbywsDnbySVmfCrybTlTn2iUiIvCAESCBKwAvLw6gogGiEgeUq0y9PKbuZTKsWyQ4H+M7cCZ1gEoDCMFmBzV21dtoEiLwgBEggU1ATy8OoKIBohIOA6LqLAeTdMTJ7alfZ6utZuNJc/vt77kFiFPdbK2GNDIi8IARIIFogK8P/qCiAaISBIw6nPmGUFaeoGOWqRZIXzFvhulSNO9ZyWMHGhesEqpiItCAESKRjWEvD/6gogn9RapcSUmK7mPMniCrDBR9iisvL5xW+KcBxjc7QfxoMgIi0IARIpHMwn8P/qCiCW9uYUBQtWKOXynudhCczCPtV1LUR5zg/hG3fFVarsrSAiLwgBEggewFLw/+oKIBohIAKXW737Ep/LhYonaNPJ6MBzrdF/scK8OFILuyQsTgfcIi4IARIqIOKmAfD/6gognwoyjnbx7OU0hRNpSp+RAXjPXZhWw/JDqyEfg7KmPGQgIi4IARIqIqbJAvD/6gogHl+WnXBgJ6z8ExXQnr1bmTHnC7yGYbeblqBJABF3EesgIi4IARIqJNj1A+6A6woghKduU6A3QoG+nQNZpTgSfsKGovHS8kj5y+yTsGW9mL4gIjAIARIJJpr7B+6A6wogGiEgwssoO2m7jvdHerv3Ah+O/g8IUxUUgSx9mo8Ji5OZ+/8iMAgBEgko3vYP8IDrCiAaISCM6PqvM+y5Q6+WEmiYiRA2WwmEldM93Eru30gXz8Z6dCIwCAESCSqgsBzygOsKIBohIBmf2EZ/NMCXPmKI18qG92WrNAG+oRsNuXVou8uuQgtMIi4IARIqLJTVMfKA6wogTdUhfBcz6GwMd/yPFyDmuVg6mTVk7FHgzYOXwXNBK1AgIi4IARIqLojecfKA6wogIDIgKffpUBAC9R+CNUilqvMl3aNsgCGUx0nA18O1LzYg").unwrap().as_slice()).unwrap(),
                     outer: Adapter::decode(base64::decode("CqgCCgNhY2MSINEZyJuXGHO9e/7l/BfXyBtNNC1HqaZKWT+WwaRRdm1/GgkIARgBIAEqAQAiJwgBEgEBGiAmJLjLmjFGlQWG6FHRZabBsgRdIizlSVHmg5e8tDXZuyInCAESAQEaILD8zTSz99z8mtIXkoaP1C2nNqMxaadLnIUZqVJl1HhIIicIARIBARoghLjWH7uYlwxi7EtxUYVVeqOV/S7f8LUsmw8AJgdXQHMiJwgBEgEBGiBh6RCHqEWFxCM8X9CEU09AT1ABL3nEmlm+8N0EIRK0JyInCAESAQEaIHaa3mquD4HY2k9dzHkolr9no/ksOfpo92MKSeGX2gFrIicIARIBARogijpsfVPUHKoHqly2pPJiWXvEe2U4Gk29KP2OU9Gv+Jk=").unwrap().as_slice()).unwrap(),
                 },
-            )
-            .unwrap();
+            );
     }
 }
