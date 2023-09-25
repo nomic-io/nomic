@@ -406,19 +406,16 @@ impl Relayer {
                 })
                 .await?;
 
-            let unconfirmed_index = if let Some(confirmed_index) = confirmed_index {
+            if let Some(confirmed_index) = confirmed_index {
                 if confirmed_index == index {
-                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
                     continue;
                 }
-                confirmed_index + 1
-            } else {
-                0
-            };
+            }
 
             let tx = app_client(&self.app_client_addr)
                 .query(|app| {
-                    let cp = app.bitcoin.checkpoints.get(unconfirmed_index)?;
+                    let cp = app.bitcoin.checkpoints.get(index)?;
                     Ok(cp.checkpoint_tx()?)
                 })
                 .await?;
@@ -436,11 +433,7 @@ impl Relayer {
                 app_client(&self.app_client_addr)
                     .call(
                         |app| {
-                            build_call!(app.bitcoin.relay_checkpoint(
-                                height,
-                                proof.clone(),
-                                unconfirmed_index
-                            ))
+                            build_call!(app.bitcoin.relay_checkpoint(height, proof.clone(), index))
                         },
                         |app| build_call!(app.app_noop()),
                     )
