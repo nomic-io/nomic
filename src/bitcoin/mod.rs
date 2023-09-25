@@ -132,7 +132,7 @@ impl Config {
             emergency_disbursal_lock_time_interval: 60 * 60 * 24 * 7, //one week
             emergency_disbursal_max_tx_size: 50_000,
             max_offline_checkpoints: 20,
-            min_checkpoint_confirmations: 3,
+            min_checkpoint_confirmations: 2,
         }
     }
 

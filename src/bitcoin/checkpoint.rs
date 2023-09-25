@@ -412,13 +412,16 @@ impl Checkpoint {
         Ok(())
     }
 
-    pub fn checkpoint_tx(&self) -> Result<bitcoin::Transaction> {
-        self.batches
-            .get(BatchType::Checkpoint as u64)?
-            .unwrap()
-            .back()?
-            .unwrap()
-            .to_bitcoin_tx()
+    #[query]
+    pub fn checkpoint_tx(&self) -> Result<Adapter<bitcoin::Transaction>> {
+        Ok(Adapter::new(
+            self.batches
+                .get(BatchType::Checkpoint as u64)?
+                .unwrap()
+                .back()?
+                .unwrap()
+                .to_bitcoin_tx()?,
+        ))
     }
 
     pub fn reserve_output(&self) -> Result<Option<TxOut>> {
@@ -1058,15 +1061,14 @@ impl CheckpointQueue {
 
     #[query]
     pub fn last_completed_tx(&self) -> Result<Adapter<bitcoin::Transaction>> {
-        let bitcoin_tx = self.last_completed()?.checkpoint_tx()?;
-        Ok(Adapter::new(bitcoin_tx))
+        self.last_completed()?.checkpoint_tx()
     }
 
     #[query]
     pub fn completed_txs(&self, limit: u32) -> Result<Vec<Adapter<bitcoin::Transaction>>> {
         self.completed(limit)?
             .into_iter()
-            .map(|c| Ok(Adapter::new(c.checkpoint_tx()?)))
+            .map(|c| c.checkpoint_tx())
             .collect()
     }
 

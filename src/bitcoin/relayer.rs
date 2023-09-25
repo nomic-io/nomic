@@ -386,14 +386,14 @@ impl Relayer {
     }
 
     pub async fn start_checkpoint_conf_relay(&mut self) -> Result<()> {
-        info!("Starting checkpoint relay...");
+        info!("Starting checkpoint confirmation relay...");
 
         loop {
             if let Err(e) = self.relay_checkpoint_confs().await {
                 error!("Checkpoint confirmation relay error: {}", e);
             }
 
-            tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
     }
 
@@ -408,7 +408,7 @@ impl Relayer {
 
             let unconfirmed_index = if let Some(confirmed_index) = confirmed_index {
                 if confirmed_index == index {
-                    tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                     continue;
                 }
                 confirmed_index + 1
@@ -416,16 +416,13 @@ impl Relayer {
                 0
             };
 
-            let unconfirmed_txid = app_client(&self.app_client_addr)
+            let tx = app_client(&self.app_client_addr)
                 .query(|app| {
-                    Ok(app
-                        .bitcoin
-                        .checkpoints
-                        .get(unconfirmed_index)?
-                        .checkpoint_tx()?
-                        .txid())
+                    let cp = app.bitcoin.checkpoints.get(unconfirmed_index)?;
+                    Ok(cp.checkpoint_tx()?)
                 })
                 .await?;
+            let unconfirmed_txid = tx.txid();
 
             let maybe_conf = self.scan_for_txid(unconfirmed_txid, 100).await?;
             if let Some((height, block_hash)) = maybe_conf {
