@@ -6,6 +6,7 @@
 use crate::airdrop::Airdrop;
 use crate::bitcoin::adapter::Adapter;
 use crate::bitcoin::{Bitcoin, Nbtc};
+use crate::cosmos::{Chain, Cosmos, Proof};
 use crate::incentives::Incentives;
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::{Script, Transaction, TxOut};
@@ -27,11 +28,10 @@ use orga::ibc::ibc_rs::core::ics04_channel::timeout::TimeoutHeight;
 use orga::ibc::ibc_rs::core::ics24_host::identifier::{ChannelId, PortId};
 use orga::ibc::ibc_rs::core::timestamp::Timestamp;
 #[cfg(feature = "testnet")]
-use orga::ibc::{Ibc, IbcTx};
+use orga::ibc::{ClientId, Ibc, IbcTx};
 
 use orga::ibc::ibc_rs::Signer as IbcSigner;
 
-use super::cosmos::Cosmos;
 use orga::coins::Declaration;
 use orga::encoding::Adapter as EdAdapter;
 use orga::macros::build_call;
@@ -248,6 +248,22 @@ impl InnerApp {
             sigset_index,
             dest,
         )?)
+    }
+
+    #[call]
+    pub fn relay_op_key(
+        &mut self,
+        client_id: ClientId,
+        height: (u64, u64),
+        cons_key: LengthVec<u8, u8>,
+        op_addr: Proof,
+        acc: Proof,
+    ) -> Result<()> {
+        self.deduct_nbtc_fee(IBC_FEE_USATS.into())?;
+
+        Ok(self
+            .cosmos
+            .relay_op_key(&self.ibc, client_id, height, cons_key, op_addr, acc)?)
     }
 
     pub fn credit_transfer(&mut self, dest: Dest, nbtc: Coin<Nbtc>) -> Result<()> {
