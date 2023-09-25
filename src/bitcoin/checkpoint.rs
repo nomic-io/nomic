@@ -1121,9 +1121,9 @@ impl CheckpointQueue {
         let latest = self.building()?.create_time();
 
         while let Some(oldest) = self.queue.front()? {
-            let over_max = self.queue.len() <= self.config.max_checkpoints;
-            let over_age = latest - oldest.create_time() <= self.config.max_age;
-            if over_max || over_age {
+            let under_max_length = self.queue.len() <= self.config.max_checkpoints;
+            let under_max_age = latest - oldest.create_time() <= self.config.max_age;
+            if under_max_length || under_max_age {
                 break;
             }
 
