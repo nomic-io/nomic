@@ -200,10 +200,52 @@ pub fn tmhash(bytes: &[u8]) -> [u8; 20] {
     output
 }
 
+#[derive(Debug)]
 pub struct Proof {
     pub inner: Adapter<ics23::CommitmentProof>,
     pub outer: Adapter<ics23::CommitmentProof>,
 }
+
+impl Encode for Proof {
+    fn encode_into<W: std::io::Write>(&self, dest: &mut W) -> ed::Result<()> {
+        let mut inner_bytes = vec![];
+        self.inner.encode_into(&mut inner_bytes)?;
+        let inner: LengthVec<u16, u8> = inner_bytes
+            .try_into()
+            .map_err(|e| ed::Error::UnexpectedByte(55))?;
+        inner.encode_into(dest)?;
+
+        let mut outer_bytes = vec![];
+        self.outer.encode_into(&mut outer_bytes)?;
+        let outer: LengthVec<u16, u8> = outer_bytes
+            .try_into()
+            .map_err(|e| ed::Error::UnexpectedByte(56))?;
+        outer.encode_into(dest)?;
+
+        Ok(())
+    }
+    fn encoding_length(&self) -> ed::Result<usize> {
+        let mut len = 4;
+        len += self.inner.encoding_length()?;
+        len += self.outer.encoding_length()?;
+
+        Ok(len)
+    }
+}
+
+impl Decode for Proof {
+    fn decode<R: std::io::Read>(mut input: R) -> ed::Result<Self> {
+        let inner: LengthVec<u16, u8> = Decode::decode(&mut input)?;
+        let inner = Adapter::decode(inner.as_slice())?;
+
+        let outer: LengthVec<u16, u8> = Decode::decode(input)?;
+        let outer = Adapter::decode(outer.as_slice())?;
+
+        Ok(Proof { inner, outer })
+    }
+}
+
+impl orga::encoding::Terminated for Proof {}
 
 impl Proof {
     pub fn verify(&self, root: &CommitmentRoot, store: &str) -> Result<()> {
