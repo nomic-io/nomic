@@ -1,4 +1,5 @@
 use crate::{
+    app::{InnerApp, Nom},
     bitcoin::{
         signatory::{derive_pubkey, Signatory, SignatorySet},
         threshold_sig::Pubkey,
@@ -22,23 +23,34 @@ use ibc::{
 use ics23::ExistenceProof;
 use orga::{
     abci::prost::Adapter,
+    client::{AppClient, Wallet},
     coins::Amount,
     collections::{
         map::{Entry, Ref},
         Map,
     },
     cosmrs::proto,
-    encoding::LengthVec,
+    encoding::{Decode, Encode, LengthVec},
     ibc::ibc_rs::{self as ibc},
     ibc::{
         ibc_rs::{
-            applications::transfer::PORT_ID_STR, core::ics24_host::identifier::PortId, Height,
+            applications::transfer::PORT_ID_STR,
+            core::{
+                ics04_channel::context::SendPacketValidationContext,
+                ics24_host::{identifier::PortId, path::ClientConsensusStatePath},
+            },
+            Height,
         },
         Client, ClientId, Ibc,
     },
+    macros::build_call,
     orga, Error as OrgaError,
 };
-use proto::traits::{Message, MessageExt};
+use proto::{
+    tendermint::crypto::ProofOps,
+    traits::{Message, MessageExt},
+};
+use tendermint_rpc::HttpClient;
 
 #[orga]
 pub struct Cosmos {
@@ -363,6 +375,122 @@ impl Chain {
 
         Ok(Some(sigset))
     }
+}
+
+pub async fn relay_op_keys<
+    W: Wallet,
+    F: Fn() -> AppClient<InnerApp, InnerApp, orga::tendermint::client::HttpClient, Nom, W>,
+>(
+    app_client: F,
+    client_id: ClientId,
+    rpc_url: &str,
+) -> orga::Result<()> {
+    use tendermint_rpc::Client as RpcClient;
+    let latest_height: Height = (app_client)()
+        .query(|app: InnerApp| {
+            Ok(app
+                .ibc
+                .ctx
+                .clients
+                .get(client_id.clone())?
+                .ok_or_else(|| OrgaError::Ibc("Client not found".to_string()))?
+                .client_state
+                .get(())?
+                .ok_or_else(|| OrgaError::Ibc("Client state not found".to_string()))?
+                .inner
+                .latest_height
+                .clone())
+        })
+        .await?;
+
+    let latest_height_rev = latest_height.revision_number();
+    let latest_height: u32 = latest_height.revision_height().try_into().unwrap();
+
+    let rpc_client = HttpClient::new(rpc_url).unwrap();
+    let res = rpc_client
+        .validators(latest_height, tendermint_rpc::Paging::All)
+        .await?;
+
+    for validator in res.validators.iter() {
+        let client_id = client_id.clone();
+        let cons_addr_bytes = validator.address.as_bytes().to_vec();
+        let cons_key = validator
+            .pub_key
+            .ed25519()
+            .ok_or_else(|| OrgaError::App("Unexpected pubkey type".to_string()))?
+            .as_bytes()
+            .to_vec();
+        let already_relayed = (app_client)()
+            .query(|app: InnerApp| {
+                Ok(app
+                    .cosmos
+                    .op_key_present(client_id.clone(), cons_key.clone().try_into().unwrap())?)
+            })
+            .await?;
+
+        if already_relayed {
+            continue;
+        }
+        let query_path = "/store/staking/key".to_string();
+        let query_data = [vec![0x22, 0x14], cons_addr_bytes].concat();
+        let res = rpc_client
+            .abci_query(
+                Some(query_path),
+                query_data,
+                Some((latest_height - 1).into()),
+                true,
+            )
+            .await?;
+
+        if res.proof.is_none() {
+            return Err(OrgaError::App("No proof".to_string()).into());
+        }
+        if res.proof.as_ref().unwrap().ops.len() != 2 {
+            return Err(OrgaError::App("Invalid proof op len".to_string()).into());
+        }
+        let op_addr_proof = Proof {
+            inner: Decode::decode(res.proof.as_ref().unwrap().ops[0].data.as_slice())?,
+            outer: Decode::decode(res.proof.as_ref().unwrap().ops[1].data.as_slice())?,
+        };
+
+        let query_path = "/store/acc/key".to_string();
+        let query_data = [vec![1], res.value].concat();
+        let res = rpc_client
+            .abci_query(
+                Some(query_path),
+                query_data,
+                Some((latest_height - 1).into()),
+                true,
+            )
+            .await?;
+
+        if res.proof.is_none() {
+            return Err(OrgaError::App("No proof".to_string()).into());
+        }
+        if res.proof.as_ref().unwrap().ops.len() != 2 {
+            return Err(OrgaError::App("Invalid proof op len".to_string()).into());
+        }
+        let base_account_proof = Proof {
+            inner: Decode::decode(res.proof.as_ref().unwrap().ops[0].data.as_slice())?,
+            outer: Decode::decode(res.proof.as_ref().unwrap().ops[1].data.as_slice())?,
+        };
+        (app_client)()
+            .call(
+                move |app| {
+                    build_call!(app.relay_op_key(
+                        client_id.clone(),
+                        (latest_height_rev, latest_height.into()),
+                        cons_key.clone().try_into().unwrap(),
+                        op_addr_proof,
+                        base_account_proof
+                    ))
+                },
+                |app| build_call!(app.app_noop()),
+            )
+            .await?;
+        log::info!("Relayed an operator key");
+    }
+    Ok(())
 }
 
 #[cfg(test)]
