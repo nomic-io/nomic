@@ -1096,6 +1096,7 @@ impl CheckpointQueue {
         Ok(out)
     }
 
+    #[query]
     pub fn last_completed_index(&self) -> Result<u32> {
         if self.signing()?.is_some() {
             self.index.checked_sub(2)
@@ -1386,7 +1387,7 @@ impl CheckpointQueue {
     }
 
     #[query]
-    pub fn num_unconfirmed_checkpoints(&self) -> Result<u32> {
+    pub fn num_unconfirmed(&self) -> Result<u32> {
         let has_signing = self.signing()?.is_some();
         let signing_offset = has_signing as u32;
 
@@ -1402,6 +1403,31 @@ impl CheckpointQueue {
         };
 
         Ok(last_completed_index - confirmed_index)
+    }
+
+    #[query]
+    pub fn first_unconfirmed_index(&self) -> Result<Option<u32>> {
+        let num_unconf = self.num_unconfirmed()?;
+        if num_unconf == 0 {
+            return Ok(None);
+        }
+
+        let has_signing = self.signing()?.is_some();
+        let signing_offset = has_signing as u32;
+
+        Ok(Some(self.index - num_unconf - signing_offset))
+    }
+}
+
+pub fn adjust_fee_rate(prev_fee_rate: u64, up: bool, config: &Config) -> u64 {
+    if up {
+        (prev_fee_rate * 5 / 4)
+            .max(prev_fee_rate + 1)
+            .min(config.max_fee_rate)
+    } else {
+        (prev_fee_rate * 3 / 4)
+            .min(prev_fee_rate - 1)
+            .max(config.min_fee_rate)
     }
 }
 
@@ -1541,29 +1567,56 @@ mod test {
     }
 
     #[test]
-    fn num_unconfirmed_checkpoints() {
+    fn num_unconfirmed() {
         let mut queue = create_queue_with_statuses(10, false);
         queue.confirmed_index = Some(5);
-        assert_eq!(queue.num_unconfirmed_checkpoints().unwrap(), 4);
+        assert_eq!(queue.num_unconfirmed().unwrap(), 4);
 
         let mut queue = create_queue_with_statuses(10, true);
         queue.confirmed_index = Some(5);
-        assert_eq!(queue.num_unconfirmed_checkpoints().unwrap(), 4);
+        assert_eq!(queue.num_unconfirmed().unwrap(), 4);
 
         let mut queue = create_queue_with_statuses(0, false);
         queue.confirmed_index = None;
-        assert_eq!(queue.num_unconfirmed_checkpoints().unwrap(), 0);
+        assert_eq!(queue.num_unconfirmed().unwrap(), 0);
 
         let mut queue = create_queue_with_statuses(0, true);
         queue.confirmed_index = None;
-        assert_eq!(queue.num_unconfirmed_checkpoints().unwrap(), 0);
+        assert_eq!(queue.num_unconfirmed().unwrap(), 0);
 
         let mut queue = create_queue_with_statuses(10, false);
         queue.confirmed_index = None;
-        assert_eq!(queue.num_unconfirmed_checkpoints().unwrap(), 10);
+        assert_eq!(queue.num_unconfirmed().unwrap(), 10);
 
         let mut queue = create_queue_with_statuses(10, true);
         queue.confirmed_index = None;
-        assert_eq!(queue.num_unconfirmed_checkpoints().unwrap(), 10);
+        assert_eq!(queue.num_unconfirmed().unwrap(), 10);
+    }
+
+    #[test]
+    fn first_unconfirmed_index() {
+        let mut queue = create_queue_with_statuses(10, false);
+        queue.confirmed_index = Some(5);
+        assert_eq!(queue.first_unconfirmed_index().unwrap(), Some(6));
+
+        let mut queue = create_queue_with_statuses(10, true);
+        queue.confirmed_index = Some(5);
+        assert_eq!(queue.first_unconfirmed_index().unwrap(), Some(6));
+
+        let mut queue = create_queue_with_statuses(0, false);
+        queue.confirmed_index = None;
+        assert_eq!(queue.first_unconfirmed_index().unwrap(), None);
+
+        let mut queue = create_queue_with_statuses(0, true);
+        queue.confirmed_index = None;
+        assert_eq!(queue.first_unconfirmed_index().unwrap(), None);
+
+        let mut queue = create_queue_with_statuses(10, false);
+        queue.confirmed_index = None;
+        assert_eq!(queue.first_unconfirmed_index().unwrap(), Some(0));
+
+        let mut queue = create_queue_with_statuses(10, true);
+        queue.confirmed_index = None;
+        assert_eq!(queue.first_unconfirmed_index().unwrap(), Some(0));
     }
 }
