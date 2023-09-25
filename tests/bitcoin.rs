@@ -220,7 +220,7 @@ async fn bitcoin_test() {
     let funded_accounts = setup_test_app(&path, 4, Some(headers_config), None, None);
 
     let node = Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"), Default::default());
-    let node_child = node.await.run().await.unwrap();
+    let _node_child = node.await.run().await.unwrap();
 
     let rpc_addr = "http://localhost:26657".to_string();
 
@@ -607,7 +607,7 @@ async fn signing_completed_checkpoint_test() {
 
     info!("Starting Nomic node...");
     let node = Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"), Default::default()).await;
-    let node_child = node.run().await.unwrap();
+    let _node_child = node.run().await.unwrap();
 
     let rpc_addr = "http://localhost:26657".to_string();
 
