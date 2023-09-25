@@ -59,7 +59,7 @@ pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Testnet;
 #[cfg(all(feature = "devnet", feature = "testnet"))]
 pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Regtest;
 
-#[orga(skip(Default), version = 1)]
+#[orga(skip(Default), version = 2)]
 pub struct Config {
     pub min_withdrawal_checkpoints: u32,
     pub min_deposit_amount: u64,
@@ -72,8 +72,10 @@ pub struct Config {
     pub emergency_disbursal_min_tx_amt: u64,
     pub emergency_disbursal_lock_time_interval: u32,
     pub emergency_disbursal_max_tx_size: u64,
-    #[orga(version(V1))]
+    #[orga(version(V1, V2))]
     pub max_offline_checkpoints: u32,
+    #[orga(version(V2))]
+    pub min_checkpoint_confirmations: u32,
 }
 
 impl MigrateFrom<ConfigV0> for ConfigV1 {
@@ -90,7 +92,27 @@ impl MigrateFrom<ConfigV0> for ConfigV1 {
             emergency_disbursal_min_tx_amt: value.emergency_disbursal_min_tx_amt,
             emergency_disbursal_lock_time_interval: value.emergency_disbursal_lock_time_interval,
             emergency_disbursal_max_tx_size: value.emergency_disbursal_max_tx_size,
-            ..Default::default()
+            max_offline_checkpoints: Config::default().max_offline_checkpoints,
+        })
+    }
+}
+
+impl MigrateFrom<ConfigV1> for ConfigV2 {
+    fn migrate_from(value: ConfigV1) -> OrgaResult<Self> {
+        Ok(Self {
+            min_withdrawal_checkpoints: value.min_withdrawal_checkpoints,
+            min_deposit_amount: value.min_deposit_amount,
+            min_withdrawal_amount: value.min_withdrawal_amount,
+            max_withdrawal_amount: value.max_withdrawal_amount,
+            max_withdrawal_script_length: value.max_withdrawal_script_length,
+            transfer_fee: value.transfer_fee,
+            min_confirmations: value.min_confirmations,
+            units_per_sat: value.units_per_sat,
+            emergency_disbursal_min_tx_amt: value.emergency_disbursal_min_tx_amt,
+            emergency_disbursal_lock_time_interval: value.emergency_disbursal_lock_time_interval,
+            emergency_disbursal_max_tx_size: value.emergency_disbursal_max_tx_size,
+            max_offline_checkpoints: value.max_offline_checkpoints,
+            min_checkpoint_confirmations: Config::default().min_checkpoint_confirmations,
         })
     }
 }
@@ -110,6 +132,7 @@ impl Config {
             emergency_disbursal_lock_time_interval: 60 * 60 * 24 * 7, //one week
             emergency_disbursal_max_tx_size: 50_000,
             max_offline_checkpoints: 20,
+            min_checkpoint_confirmations: 3,
         }
     }
 
@@ -435,6 +458,61 @@ impl Bitcoin {
         self.checkpoints
             .building_mut()?
             .insert_pending(dest, minted_nbtc)?;
+
+        Ok(())
+    }
+
+    #[call]
+    pub fn relay_checkpoint(
+        &mut self,
+        btc_height: u32,
+        btc_proof: Adapter<PartialMerkleTree>,
+        cp_index: u32,
+    ) -> Result<()> {
+        exempt_from_fee()?;
+
+        if let Some(conf_index) = self.checkpoints.confirmed_index {
+            if cp_index <= conf_index {
+                return Err(OrgaError::App(
+                    "Checkpoint has already been relayed".to_string(),
+                ))?;
+            }
+        }
+
+        let btc_header = self
+            .headers
+            .get_by_height(btc_height)?
+            .ok_or_else(|| OrgaError::App("Invalid bitcoin block height".to_string()))?;
+
+        if self.headers.height()? - btc_height < self.config.min_checkpoint_confirmations {
+            return Err(OrgaError::App("Block is not sufficiently confirmed".to_string()).into());
+        }
+
+        let mut txids = vec![];
+        let mut block_indexes = vec![];
+        let proof_merkle_root = btc_proof
+            .extract_matches(&mut txids, &mut block_indexes)
+            .map_err(|_| Error::BitcoinMerkleBlockError)?;
+        if proof_merkle_root != btc_header.merkle_root() {
+            return Err(OrgaError::App(
+                "Bitcoin merkle proof does not match header".to_string(),
+            ))?;
+        }
+        if txids.len() != 1 {
+            return Err(OrgaError::App(
+                "Bitcoin merkle proof contains an invalid number of txids".to_string(),
+            ))?;
+        }
+
+        let btc_tx = self.checkpoints.get(cp_index)?.checkpoint_tx()?;
+        if txids[0] != btc_tx.txid() {
+            return Err(OrgaError::App(
+                "Bitcoin merkle proof does not match transaction".to_string(),
+            ))?;
+        }
+
+        self.checkpoints.confirmed_index = Some(cp_index);
+        log::info!("Confirmed checkpoint {}", cp_index);
 
         Ok(())
     }

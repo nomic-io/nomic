@@ -528,16 +528,29 @@ impl Default for Config {
     }
 }
 
-#[orga(version = 1)]
+#[orga(version = 2)]
 pub struct CheckpointQueue {
     pub queue: Deque<Checkpoint>,
     pub index: u32,
+    #[orga(version(V2))]
+    pub confirmed_index: Option<u32>,
     pub config: Config,
 }
 
 impl MigrateFrom<CheckpointQueueV0> for CheckpointQueueV1 {
     fn migrate_from(_value: CheckpointQueueV0) -> OrgaResult<Self> {
         unreachable!()
+    }
+}
+
+impl MigrateFrom<CheckpointQueueV1> for CheckpointQueueV2 {
+    fn migrate_from(value: CheckpointQueueV1) -> OrgaResult<Self> {
+        Ok(Self {
+            queue: value.queue,
+            index: value.index,
+            confirmed_index: None,
+            config: value.config,
+        })
     }
 }
 

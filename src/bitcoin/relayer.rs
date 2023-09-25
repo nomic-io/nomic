@@ -385,6 +385,94 @@ impl Relayer {
         }
     }
 
+    pub async fn start_checkpoint_conf_relay(&mut self) -> Result<()> {
+        info!("Starting checkpoint relay...");
+
+        loop {
+            if let Err(e) = self.relay_checkpoint_confs().await {
+                error!("Checkpoint confirmation relay error: {}", e);
+            }
+
+            tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+        }
+    }
+
+    async fn relay_checkpoint_confs(&mut self) -> Result<()> {
+        loop {
+            let (confirmed_index, index) = app_client(&self.app_client_addr)
+                .query(|app| {
+                    let checkpoints = &app.bitcoin.checkpoints;
+                    Ok((checkpoints.confirmed_index, checkpoints.index))
+                })
+                .await?;
+
+            let unconfirmed_index = if let Some(confirmed_index) = confirmed_index {
+                if confirmed_index == index {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+                    continue;
+                }
+                confirmed_index + 1
+            } else {
+                0
+            };
+
+            let unconfirmed_txid = app_client(&self.app_client_addr)
+                .query(|app| {
+                    Ok(app
+                        .bitcoin
+                        .checkpoints
+                        .get(unconfirmed_index)?
+                        .checkpoint_tx()?
+                        .txid())
+                })
+                .await?;
+
+            let maybe_conf = self.scan_for_txid(unconfirmed_txid, 100).await?;
+            if let Some((height, block_hash)) = maybe_conf {
+                let proof_bytes = self
+                    .btc_client
+                    .get_tx_out_proof(&[unconfirmed_txid], Some(&block_hash))?;
+                let proof = Adapter::new(
+                    ::bitcoin::MerkleBlock::consensus_decode(&mut proof_bytes.as_slice())?.txn,
+                );
+
+                app_client(&self.app_client_addr)
+                    .call(
+                        |app| {
+                            build_call!(app.bitcoin.relay_checkpoint(
+                                height,
+                                proof.clone(),
+                                unconfirmed_index
+                            ))
+                        },
+                        |app| build_call!(app.app_noop()),
+                    )
+                    .await?;
+            }
+        }
+    }
+
+    async fn scan_for_txid(
+        &mut self,
+        txid: bitcoin::Txid,
+        num_blocks: usize,
+    ) -> Result<Option<(u32, BlockHash)>> {
+        let tip = self.sidechain_block_hash().await?;
+        let base_height = self.btc_client.get_block_header_info(&tip)?.height;
+        let blocks = self.last_n_blocks(num_blocks, tip)?;
+
+        for (i, block) in blocks.into_iter().enumerate().rev() {
+            let height = (base_height - i) as u32;
+            for tx in block.txdata.iter() {
+                if tx.txid() == txid {
+                    return Ok(Some((height, block.block_hash())));
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
     async fn insert_announced_addrs(&mut self, recv: &mut Receiver<(Dest, u32)>) -> Result<()> {
         while let Ok((addr, sigset_index)) = recv.try_recv() {
             let sigset_res = app_client(&self.app_client_addr)
