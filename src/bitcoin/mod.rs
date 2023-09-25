@@ -363,6 +363,11 @@ impl Bitcoin {
     ) -> Result<()> {
         exempt_from_fee()?;
 
+        let now = self
+            .context::<Time>()
+            .ok_or_else(|| Error::Orga(OrgaError::App("No time context available".to_string())))?
+            .seconds as u64;
+
         let btc_header = self
             .headers
             .get_by_height(btc_height)?
@@ -404,12 +409,9 @@ impl Bitcoin {
             ))?;
         }
 
-        let sigset = self.checkpoints.get(sigset_index)?.sigset.clone();
+        let checkpoint = self.checkpoints.get(sigset_index)?;
+        let sigset = checkpoint.sigset.clone();
 
-        let now = self
-            .context::<Time>()
-            .ok_or_else(|| Error::Orga(OrgaError::App("No time context available".to_string())))?
-            .seconds as u64;
         if now > sigset.deposit_timeout() {
             return Err(OrgaError::App("Deposit timeout has expired".to_string()))?;
         }
@@ -429,7 +431,7 @@ impl Bitcoin {
         let input = Input::new(prevout, &sigset, &dest_bytes, output.value)?;
         let input_size = input.est_vsize();
 
-        let fee = input_size * self.checkpoints.config().fee_rate;
+        let fee = input_size * checkpoint.fee_rate;
         let value = output.value.checked_sub(fee).ok_or_else(|| {
             OrgaError::App("Deposit amount is too small to pay its spending fee".to_string())
         })? * self.config.units_per_sat;
@@ -544,7 +546,7 @@ impl Bitcoin {
             .into());
         }
 
-        let fee = (9 + script_pubkey.len() as u64) * self.checkpoints.config().fee_rate;
+        let fee = (9 + script_pubkey.len() as u64) * self.checkpoints.building()?.fee_rate;
         let value: u64 = Into::<u64>::into(amount) / self.config.units_per_sat;
         let value = match value.checked_sub(fee) {
             None => {

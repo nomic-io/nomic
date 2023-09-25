@@ -305,13 +305,17 @@ impl Batch {
     }
 }
 
-#[orga(skip(Default), version = 2)]
+pub const DEFAULT_FEE_RATE: u64 = 10;
+
+#[orga(skip(Default), version = 3)]
 #[derive(Debug)]
 pub struct Checkpoint {
     pub status: CheckpointStatus,
     pub batches: Deque<Batch>,
-    #[orga(version(V2))]
+    #[orga(version(V2, V3))]
     pub pending: Map<Dest, Coin<Nbtc>>,
+    #[orga(version(V3))]
+    pub fee_rate: u64,
     pub sigset: SignatorySet,
 }
 
@@ -332,6 +336,18 @@ impl MigrateFrom<CheckpointV1> for CheckpointV2 {
     }
 }
 
+impl MigrateFrom<CheckpointV2> for CheckpointV3 {
+    fn migrate_from(value: CheckpointV2) -> OrgaResult<Self> {
+        Ok(Self {
+            status: value.status,
+            batches: value.batches,
+            pending: value.pending,
+            fee_rate: DEFAULT_FEE_RATE,
+            sigset: value.sigset,
+        })
+    }
+}
+
 #[orga]
 impl Checkpoint {
     pub fn new(sigset: SignatorySet) -> Result<Self> {
@@ -339,6 +355,7 @@ impl Checkpoint {
             status: CheckpointStatus::default(),
             batches: Deque::default(),
             pending: Map::new(),
+            fee_rate: DEFAULT_FEE_RATE,
             sigset,
         };
 
@@ -490,15 +507,35 @@ impl Checkpoint {
     }
 }
 
-#[orga(skip(Default))]
+#[orga(skip(Default), version = 1)]
 #[derive(Clone)]
 pub struct Config {
     pub min_checkpoint_interval: u64,
     pub max_checkpoint_interval: u64,
     pub max_inputs: u64,
     pub max_outputs: u64,
+    #[orga(version(V0))]
     pub fee_rate: u64,
     pub max_age: u64,
+    #[orga(version(V1))]
+    pub target_checkpoint_inclusion: u64,
+    #[orga(version(V1))]
+    pub min_fee_rate: u64,
+    #[orga(version(V1))]
+    pub max_fee_rate: u64,
+}
+
+impl MigrateFrom<ConfigV0> for ConfigV1 {
+    fn migrate_from(value: ConfigV0) -> OrgaResult<Self> {
+        Ok(Self {
+            min_checkpoint_interval: value.min_checkpoint_interval,
+            max_checkpoint_interval: value.max_checkpoint_interval,
+            max_inputs: value.max_inputs,
+            max_outputs: value.max_outputs,
+            max_age: value.max_age,
+            ..Self::default()
+        })
+    }
 }
 
 impl Config {
@@ -515,8 +552,10 @@ impl Config {
             max_checkpoint_interval: 60 * 60 * 8,
             max_inputs: 40,
             max_outputs: 200,
-            fee_rate: 10,
             max_age: 60 * 60 * 24 * 7 * 3,
+            target_checkpoint_inclusion: 2,
+            min_fee_rate: 2, // relay threshold is 1 sat/vbyte
+            max_fee_rate: 200,
         }
     }
 }
@@ -851,6 +890,8 @@ impl<'a> BuildingCheckpointMut<'a> {
             script_pubkey: self.0.sigset.output_script(&[0u8])?, // TODO: double-check safety
         };
 
+        let fee_rate = self.fee_rate;
+
         let mut checkpoint_batch = self
             .0
             .batches
@@ -893,7 +934,7 @@ impl<'a> BuildingCheckpointMut<'a> {
                     Ok(sum? + input?.est_witness_vsize)
                 })?;
 
-        let fee = est_vsize * config.fee_rate;
+        let fee = est_vsize * fee_rate;
         let reserve_value = in_amount
             .checked_sub(out_amount + fee)
             .ok_or_else(|| OrgaError::App("Insufficient funds to cover fees".to_string()))?;
@@ -923,7 +964,7 @@ impl<'a> BuildingCheckpointMut<'a> {
             recovery_scripts,
             reserve_outpoint,
             external_outputs,
-            config.fee_rate,
+            self.fee_rate,
             reserve_value,
         )?;
 
@@ -1412,6 +1453,7 @@ mod test {
                 status,
                 batches: Deque::new(),
                 pending: Map::new(),
+                fee_rate: DEFAULT_FEE_RATE,
                 sigset: SignatorySet::default(),
             };
             cp.status = status;
