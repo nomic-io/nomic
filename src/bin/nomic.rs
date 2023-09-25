@@ -100,6 +100,7 @@ pub enum Command {
     IbcTransfer(IbcTransferCmd),
     Export(ExportCmd),
     UpgradeStatus(UpgradeStatusCmd),
+    #[cfg(feature = "testnet")]
     RelayOpKeys(RelayOpKeysCmd),
 }
 
@@ -152,6 +153,7 @@ impl Command {
                 IbcTransfer(cmd) => cmd.run().await,
                 Export(cmd) => cmd.run().await,
                 UpgradeStatus(cmd) => cmd.run().await,
+                #[cfg(feature = "testnet")]
                 RelayOpKeys(cmd) => cmd.run().await,
             }
         })
@@ -1691,12 +1693,14 @@ impl UpgradeStatusCmd {
     }
 }
 
+#[cfg(feature = "testnet")]
 #[derive(Parser, Debug)]
 pub struct RelayOpKeysCmd {
     client_id: String,
     rpc_url: String,
 }
 
+#[cfg(feature = "testnet")]
 impl RelayOpKeysCmd {
     async fn run(&self) -> Result<()> {
         use nomic::cosmos::relay_op_keys;

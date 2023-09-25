@@ -1,5 +1,4 @@
 use crate::{
-    app::{InnerApp, Nom},
     bitcoin::{
         signatory::{derive_pubkey, Signatory, SignatorySet},
         threshold_sig::Pubkey,
@@ -7,6 +6,15 @@ use crate::{
     },
     error::Result,
 };
+
+#[cfg(feature = "testnet")]
+use crate::app::{InnerApp, Nom};
+#[cfg(feature = "testnet")]
+use orga::{
+    client::{AppClient, Wallet},
+    macros::build_call,
+};
+
 use bitcoin::{
     secp256k1::Secp256k1,
     util::bip32::{ChildNumber, ExtendedPubKey, Fingerprint},
@@ -21,7 +29,6 @@ use ibc::{
 use ics23::ExistenceProof;
 use orga::{
     abci::prost::Adapter,
-    client::{AppClient, Wallet},
     collections::Map,
     cosmrs::proto,
     encoding::{Decode, Encode, LengthVec},
@@ -30,10 +37,10 @@ use orga::{
         ibc_rs::{core::ics24_host::identifier::PortId, Height},
         Client, ClientId, Ibc,
     },
-    macros::build_call,
     orga, Error as OrgaError,
 };
 use proto::traits::{Message, MessageExt};
+#[cfg(feature = "testnet")]
 use tendermint_rpc::HttpClient;
 
 #[orga]
@@ -363,6 +370,7 @@ impl Chain {
     }
 }
 
+#[cfg(feature = "testnet")]
 pub async fn relay_op_keys<
     W: Wallet,
     F: Fn() -> AppClient<InnerApp, InnerApp, orga::tendermint::client::HttpClient, Nom, W>,
