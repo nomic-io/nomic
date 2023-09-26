@@ -195,7 +195,12 @@ impl FromArgMatches for Config {
         }
 
         if let Some(genesis) = self.args.genesis.as_ref() {
-            let genesis: serde_json::Value = std::fs::read_to_string(genesis).unwrap().parse().unwrap();
+            let genesis_bytes = if genesis.contains('\n') {
+                genesis.clone()
+            } else {
+                std::fs::read_to_string(genesis)?
+            };
+            let genesis: serde_json::Value = genesis_bytes.parse().unwrap();
             let gensis_cid = genesis["chain_id"].as_str().unwrap();
 
             if let Some(cid) = self.args.chain_id.as_ref() {
