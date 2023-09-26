@@ -573,7 +573,7 @@ async fn bitcoin_test() {
 
             deposit_bitcoin(
                 &funded_accounts[1].address,
-                bitcoin::Amount::from_btc(20).unwrap(),
+                bitcoin::Amount::from_btc(20.0).unwrap(),
                 &wallet,
             )
             .await
@@ -593,7 +593,7 @@ async fn bitcoin_test() {
                 .unwrap();
 
             assert!(broadcast_deposit_addr(
-                &funded_accounts[1].address.to_string(),
+                funded_accounts[1].address.to_string(),
                 deposit_address.sigset_index,
                 "http://localhost:8999".to_string(),
                 deposit_address.deposit_addr.clone(),
