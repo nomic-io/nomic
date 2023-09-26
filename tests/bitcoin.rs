@@ -21,7 +21,6 @@ use nomic::bitcoin::signer::Signer;
 use nomic::bitcoin::threshold_sig::Signature;
 use nomic::bitcoin::Config as BitcoinConfig;
 use nomic::error::{Error, Result};
-use nomic::orga::Error as OrgaError;
 use nomic::utils::*;
 use nomic::utils::{
     declare_validator, poll_for_active_sigset, poll_for_blocks, populate_bitcoin_block, retry,
@@ -42,7 +41,6 @@ use reqwest::StatusCode;
 use serial_test::serial;
 use std::collections::HashMap;
 use std::str::FromStr;
-use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Once;
 use std::time::Duration;
 use tempfile::tempdir;
@@ -967,7 +965,7 @@ async fn signing_pruned_checkpoint_test() {
                     .get(0)?
                     .to_sign(slashable_signer_xpub)?
                     .iter()
-                    .map(|(msg, index)| {
+                    .map(|(msg, _)| {
                         Ok(secp
                             .sign_ecdsa(
                                 &Message::from_slice(&msg[..])?,
