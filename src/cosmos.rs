@@ -409,12 +409,11 @@ pub async fn relay_op_keys<
     for validator in res.validators.iter() {
         let client_id = client_id.clone();
         let cons_addr_bytes = validator.address.as_bytes().to_vec();
-        let cons_key = validator
+        let Some(cons_key) = validator
             .pub_key
-            .ed25519()
-            .ok_or_else(|| OrgaError::App("Unexpected pubkey type".to_string()))?
-            .as_bytes()
-            .to_vec();
+            .ed25519().map(|v|v.as_bytes().to_vec()) else  {
+                continue;
+            };
         let already_relayed = (app_client)()
             .query(|app: InnerApp| {
                 Ok(app
@@ -469,7 +468,7 @@ pub async fn relay_op_keys<
             inner: Decode::decode(res.proof.as_ref().unwrap().ops[0].data.as_slice())?,
             outer: Decode::decode(res.proof.as_ref().unwrap().ops[1].data.as_slice())?,
         };
-        (app_client)()
+        if let Err(e) = (app_client)()
             .call(
                 move |app| {
                     build_call!(app.relay_op_key(
@@ -482,8 +481,12 @@ pub async fn relay_op_keys<
                 },
                 |app| build_call!(app.app_noop()),
             )
-            .await?;
-        log::info!("Relayed an operator key");
+            .await
+        {
+            log::warn!("{}", e);
+        } else {
+            log::info!("Relayed an operator key");
+        }
     }
     Ok(())
 }
