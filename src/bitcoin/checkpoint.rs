@@ -305,13 +305,21 @@ impl Batch {
     }
 }
 
-#[orga(skip(Default), version = 2)]
+pub const DEFAULT_FEE_RATE: u64 = 10;
+
+#[orga(skip(Default), version = 3)]
 #[derive(Debug)]
 pub struct Checkpoint {
     pub status: CheckpointStatus,
     pub batches: Deque<Batch>,
-    #[orga(version(V2))]
+    #[orga(version(V2, V3))]
     pub pending: Map<Dest, Coin<Nbtc>>,
+    #[orga(version(V3))]
+    pub fee_rate: u64,
+    #[orga(version(V3))]
+    pub signed_at_btc_height: Option<u32>,
+    #[orga(version(V3))]
+    pub deposits_enabled: bool,
     pub sigset: SignatorySet,
 }
 
@@ -332,6 +340,20 @@ impl MigrateFrom<CheckpointV1> for CheckpointV2 {
     }
 }
 
+impl MigrateFrom<CheckpointV2> for CheckpointV3 {
+    fn migrate_from(value: CheckpointV2) -> OrgaResult<Self> {
+        Ok(Self {
+            status: value.status,
+            batches: value.batches,
+            pending: value.pending,
+            fee_rate: DEFAULT_FEE_RATE,
+            signed_at_btc_height: None,
+            sigset: value.sigset,
+            deposits_enabled: true,
+        })
+    }
+}
+
 #[orga]
 impl Checkpoint {
     pub fn new(sigset: SignatorySet) -> Result<Self> {
@@ -339,6 +361,9 @@ impl Checkpoint {
             status: CheckpointStatus::default(),
             batches: Deque::default(),
             pending: Map::new(),
+            fee_rate: DEFAULT_FEE_RATE,
+            signed_at_btc_height: None,
+            deposits_enabled: true,
             sigset,
         };
 
@@ -358,9 +383,10 @@ impl Checkpoint {
         Ok(checkpoint)
     }
 
-    fn sign(&mut self, xpub: Xpub, sigs: LengthVec<u16, Signature>) -> Result<()> {
+    fn sign(&mut self, xpub: Xpub, sigs: LengthVec<u16, Signature>, btc_height: u32) -> Result<()> {
         let secp = bitcoin::secp256k1::Secp256k1::verification_only();
 
+        let cp_was_signed = self.signed()?;
         let mut sig_index = 0;
         for i in 0..self.batches.len() {
             let mut batch = self.batches.get_mut(i)?.unwrap();
@@ -409,16 +435,23 @@ impl Checkpoint {
             return Err(OrgaError::App("Excess signatures supplied".to_string()).into());
         }
 
+        if self.signed()? && !cp_was_signed {
+            self.signed_at_btc_height = Some(btc_height);
+        }
+
         Ok(())
     }
 
-    pub fn checkpoint_tx(&self) -> Result<bitcoin::Transaction> {
-        self.batches
-            .get(BatchType::Checkpoint as u64)?
-            .unwrap()
-            .back()?
-            .unwrap()
-            .to_bitcoin_tx()
+    #[query]
+    pub fn checkpoint_tx(&self) -> Result<Adapter<bitcoin::Transaction>> {
+        Ok(Adapter::new(
+            self.batches
+                .get(BatchType::Checkpoint as u64)?
+                .unwrap()
+                .back()?
+                .unwrap()
+                .to_bitcoin_tx()?,
+        ))
     }
 
     pub fn reserve_output(&self) -> Result<Option<TxOut>> {
@@ -487,7 +520,7 @@ impl Checkpoint {
     }
 }
 
-#[orga(skip(Default))]
+#[orga(skip(Default), version = 1)]
 #[derive(Clone)]
 pub struct Config {
     pub min_checkpoints: u64,
@@ -495,8 +528,28 @@ pub struct Config {
     pub max_checkpoint_interval: u64,
     pub max_inputs: u64,
     pub max_outputs: u64,
+    #[orga(version(V0))]
     pub fee_rate: u64,
     pub max_age: u64,
+    #[orga(version(V1))]
+    pub target_checkpoint_inclusion: u32,
+    #[orga(version(V1))]
+    pub min_fee_rate: u64,
+    #[orga(version(V1))]
+    pub max_fee_rate: u64,
+}
+
+impl MigrateFrom<ConfigV0> for ConfigV1 {
+    fn migrate_from(value: ConfigV0) -> OrgaResult<Self> {
+        Ok(Self {
+            min_checkpoint_interval: value.min_checkpoint_interval,
+            max_checkpoint_interval: value.max_checkpoint_interval,
+            max_inputs: value.max_inputs,
+            max_outputs: value.max_outputs,
+            max_age: value.max_age,
+            ..Self::default()
+        })
+    }
 }
 
 impl Config {
@@ -514,8 +567,10 @@ impl Config {
             max_checkpoint_interval: 60 * 60 * 8,
             max_inputs: 40,
             max_outputs: 200,
-            fee_rate: 10,
             max_age: 60 * 60 * 24 * 7 * 3,
+            target_checkpoint_inclusion: 2,
+            min_fee_rate: 2, // relay threshold is 1 sat/vbyte
+            max_fee_rate: 200,
         }
     }
 }
@@ -530,16 +585,29 @@ impl Default for Config {
     }
 }
 
-#[orga(version = 1)]
+#[orga(version = 2)]
 pub struct CheckpointQueue {
     pub queue: Deque<Checkpoint>,
     pub index: u32,
+    #[orga(version(V2))]
+    pub confirmed_index: Option<u32>,
     pub config: Config,
 }
 
 impl MigrateFrom<CheckpointQueueV0> for CheckpointQueueV1 {
     fn migrate_from(_value: CheckpointQueueV0) -> OrgaResult<Self> {
         unreachable!()
+    }
+}
+
+impl MigrateFrom<CheckpointQueueV1> for CheckpointQueueV2 {
+    fn migrate_from(value: CheckpointQueueV1) -> OrgaResult<Self> {
+        Ok(Self {
+            queue: value.queue,
+            index: value.index,
+            confirmed_index: None,
+            config: value.config,
+        })
     }
 }
 
@@ -561,8 +629,13 @@ impl<'a> Query for SigningCheckpoint<'a> {
 pub struct SigningCheckpointMut<'a>(ChildMut<'a, u64, Checkpoint>);
 
 impl<'a> SigningCheckpointMut<'a> {
-    pub fn sign(&mut self, xpub: Xpub, sigs: LengthVec<u16, Signature>) -> Result<()> {
-        self.0.sign(xpub, sigs)
+    pub fn sign(
+        &mut self,
+        xpub: Xpub,
+        sigs: LengthVec<u16, Signature>,
+        btc_height: u32,
+    ) -> Result<()> {
+        self.0.sign(xpub, sigs, btc_height)
     }
 
     pub fn advance(self) -> Result<()> {
@@ -837,6 +910,8 @@ impl<'a> BuildingCheckpointMut<'a> {
             script_pubkey: self.0.sigset.output_script(&[0u8])?, // TODO: double-check safety
         };
 
+        let fee_rate = self.fee_rate;
+
         let mut checkpoint_batch = self
             .0
             .batches
@@ -879,7 +954,7 @@ impl<'a> BuildingCheckpointMut<'a> {
                     Ok(sum? + input?.est_witness_vsize)
                 })?;
 
-        let fee = est_vsize * config.fee_rate;
+        let fee = est_vsize * fee_rate;
         let reserve_value = in_amount
             .checked_sub(out_amount + fee)
             .ok_or_else(|| OrgaError::App("Insufficient funds to cover fees".to_string()))?;
@@ -909,7 +984,7 @@ impl<'a> BuildingCheckpointMut<'a> {
             recovery_scripts,
             reserve_outpoint,
             external_outputs,
-            config.fee_rate,
+            self.fee_rate,
             reserve_value,
         )?;
 
@@ -1048,15 +1123,14 @@ impl CheckpointQueue {
 
     #[query]
     pub fn last_completed_tx(&self) -> Result<Adapter<bitcoin::Transaction>> {
-        let bitcoin_tx = self.last_completed()?.checkpoint_tx()?;
-        Ok(Adapter::new(bitcoin_tx))
+        self.last_completed()?.checkpoint_tx()
     }
 
     #[query]
     pub fn completed_txs(&self, limit: u32) -> Result<Vec<Adapter<bitcoin::Transaction>>> {
         self.completed(limit)?
             .into_iter()
-            .map(|c| Ok(Adapter::new(c.checkpoint_tx()?)))
+            .map(|c| c.checkpoint_tx())
             .collect()
     }
 
@@ -1142,12 +1216,14 @@ impl CheckpointQueue {
         nbtc_accounts: &Accounts<Nbtc>,
         recovery_scripts: &Map<orga::coins::Address, Adapter<bitcoin::Script>>,
         external_outputs: impl Iterator<Item = Result<bitcoin::TxOut>>,
+        btc_height: u32,
+        should_allow_deposits: bool,
     ) -> Result<bool> {
         if !self.should_push(sig_keys)? {
             return Ok(false);
         }
 
-        if self.maybe_push(sig_keys)?.is_none() {
+        if self.maybe_push(sig_keys, should_allow_deposits)?.is_none() {
             return Ok(false);
         }
 
@@ -1158,6 +1234,7 @@ impl CheckpointQueue {
             let config = self.config();
             let second = self.get_mut(self.index - 1)?;
             let sigset = second.sigset.clone();
+            let prev_fee_rate = second.fee_rate;
             let (reserve_outpoint, reserve_value, excess_inputs, excess_outputs) =
                 BuildingCheckpointMut(second).advance(
                     nbtc_accounts,
@@ -1166,7 +1243,42 @@ impl CheckpointQueue {
                     &config,
                 )?;
 
+            let fee_rate = if let Some(first_unconf_index) = self.first_unconfirmed_index()? {
+                // There are unconfirmed checkpoints.
+
+                let first_unconf = self.get(first_unconf_index)?;
+                let btc_blocks_since_first =
+                    btc_height - first_unconf.signed_at_btc_height.unwrap_or(0);
+                let miners_excluded_cps =
+                    btc_blocks_since_first >= config.target_checkpoint_inclusion;
+
+                let last_unconf_index = self.last_completed_index()?;
+                let last_unconf = self.get(last_unconf_index)?;
+                let btc_blocks_since_last =
+                    btc_height - last_unconf.signed_at_btc_height.unwrap_or(0);
+                let block_was_mined = btc_blocks_since_last > 0;
+
+                if miners_excluded_cps && block_was_mined {
+                    // Blocks were mined since a signed checkpoint, but it was
+                    // not included.
+                    adjust_fee_rate(prev_fee_rate, true, &config)
+                } else {
+                    prev_fee_rate
+                }
+            } else {
+                let has_completed = self.last_completed_index().is_ok();
+                if has_completed {
+                    // No unconfirmed checkpoints.
+                    adjust_fee_rate(prev_fee_rate, false, &config)
+                } else {
+                    // This case only happens at start of chain - having no
+                    // unconfs doesn't mean anything.
+                    prev_fee_rate
+                }
+            };
+
             let mut building = self.building_mut()?;
+            building.fee_rate = fee_rate;
             let mut building_checkpoint_batch = building
                 .batches
                 .get_mut(BatchType::Checkpoint as u64)?
@@ -1255,6 +1367,7 @@ impl CheckpointQueue {
     pub fn maybe_push(
         &mut self,
         sig_keys: &Map<ConsensusKey, Xpub>,
+        deposits_enabled: bool,
     ) -> Result<Option<BuildingCheckpointMut>> {
         let mut index = self.index;
         if !self.queue.is_empty() {
@@ -1275,7 +1388,8 @@ impl CheckpointQueue {
 
         self.queue.push_back(Checkpoint::new(sigset)?)?;
 
-        let building = self.building_mut()?;
+        let mut building = self.building_mut()?;
+        building.deposits_enabled = deposits_enabled;
 
         Ok(Some(building))
     }
@@ -1285,8 +1399,13 @@ impl CheckpointQueue {
         Ok(self.building()?.sigset.clone())
     }
 
-    #[call]
-    pub fn sign(&mut self, xpub: Xpub, sigs: LengthVec<u16, Signature>, index: u32) -> Result<()> {
+    pub fn sign(
+        &mut self,
+        xpub: Xpub,
+        sigs: LengthVec<u16, Signature>,
+        index: u32,
+        btc_height: u32,
+    ) -> Result<()> {
         super::exempt_from_fee()?;
 
         let mut checkpoint = self.get_mut(index)?;
@@ -1295,7 +1414,7 @@ impl CheckpointQueue {
             return Err(OrgaError::App("Checkpoint is still building".to_string()).into());
         }
 
-        checkpoint.sign(xpub, sigs)?;
+        checkpoint.sign(xpub, sigs, btc_height)?;
 
         if matches!(status, CheckpointStatus::Signing) && checkpoint.signed()? {
             let checkpoint_tx = checkpoint.checkpoint_tx()?;
@@ -1310,10 +1429,62 @@ impl CheckpointQueue {
     pub fn sigset(&self, index: u32) -> Result<SignatorySet> {
         Ok(self.get(index)?.sigset.clone())
     }
+
+    #[query]
+    pub fn num_unconfirmed(&self) -> Result<u32> {
+        let has_signing = self.signing()?.is_some();
+        let signing_offset = has_signing as u32;
+
+        let last_completed_index = self.index.checked_sub(1 + signing_offset);
+        let last_completed_index = match last_completed_index {
+            None => return Ok(0),
+            Some(index) => index,
+        };
+
+        let confirmed_index = match self.confirmed_index {
+            None => return Ok(self.len()? - 1 - signing_offset),
+            Some(index) => index,
+        };
+
+        Ok(last_completed_index - confirmed_index)
+    }
+
+    #[query]
+    pub fn first_unconfirmed_index(&self) -> Result<Option<u32>> {
+        let num_unconf = self.num_unconfirmed()?;
+        if num_unconf == 0 {
+            return Ok(None);
+        }
+
+        let has_signing = self.signing()?.is_some();
+        let signing_offset = has_signing as u32;
+
+        Ok(Some(self.index - num_unconf - signing_offset))
+    }
+}
+
+pub fn adjust_fee_rate(prev_fee_rate: u64, up: bool, config: &Config) -> u64 {
+    if up {
+        (prev_fee_rate * 5 / 4).max(prev_fee_rate + 1)
+    } else {
+        (prev_fee_rate * 3 / 4).min(prev_fee_rate - 1)
+    }
+    .min(config.max_fee_rate)
+    .max(config.min_fee_rate)
 }
 
 #[cfg(test)]
 mod test {
+    use std::{cell::RefCell, rc::Rc};
+
+    #[cfg(all(feature = "full"))]
+    use bitcoin::{
+        secp256k1::Secp256k1,
+        util::bip32::{ExtendedPrivKey, ExtendedPubKey},
+        OutPoint, Script, Txid,
+    };
+    use orga::{collections::EntryMap, context::Context};
+
     use super::*;
 
     fn push_bitcoin_tx_output(tx: &mut BitcoinTx, value: u64) {
@@ -1368,6 +1539,9 @@ mod test {
                 status,
                 batches: Deque::new(),
                 pending: Map::new(),
+                fee_rate: DEFAULT_FEE_RATE,
+                signed_at_btc_height: None,
+                deposits_enabled: true,
                 sigset: SignatorySet::default(),
             };
             cp.status = status;
@@ -1432,5 +1606,279 @@ mod test {
         let cp = queue.completed(2).unwrap();
         assert_eq!(cp.len(), 2);
         assert_eq!(cp[1].status, CheckpointStatus::Complete);
+    }
+
+    #[test]
+    fn num_unconfirmed() {
+        let mut queue = create_queue_with_statuses(10, false);
+        queue.confirmed_index = Some(5);
+        assert_eq!(queue.num_unconfirmed().unwrap(), 4);
+
+        let mut queue = create_queue_with_statuses(10, true);
+        queue.confirmed_index = Some(5);
+        assert_eq!(queue.num_unconfirmed().unwrap(), 4);
+
+        let mut queue = create_queue_with_statuses(0, false);
+        queue.confirmed_index = None;
+        assert_eq!(queue.num_unconfirmed().unwrap(), 0);
+
+        let mut queue = create_queue_with_statuses(0, true);
+        queue.confirmed_index = None;
+        assert_eq!(queue.num_unconfirmed().unwrap(), 0);
+
+        let mut queue = create_queue_with_statuses(10, false);
+        queue.confirmed_index = None;
+        assert_eq!(queue.num_unconfirmed().unwrap(), 10);
+
+        let mut queue = create_queue_with_statuses(10, true);
+        queue.confirmed_index = None;
+        assert_eq!(queue.num_unconfirmed().unwrap(), 10);
+    }
+
+    #[test]
+    fn first_unconfirmed_index() {
+        let mut queue = create_queue_with_statuses(10, false);
+        queue.confirmed_index = Some(5);
+        assert_eq!(queue.first_unconfirmed_index().unwrap(), Some(6));
+
+        let mut queue = create_queue_with_statuses(10, true);
+        queue.confirmed_index = Some(5);
+        assert_eq!(queue.first_unconfirmed_index().unwrap(), Some(6));
+
+        let mut queue = create_queue_with_statuses(0, false);
+        queue.confirmed_index = None;
+        assert_eq!(queue.first_unconfirmed_index().unwrap(), None);
+
+        let mut queue = create_queue_with_statuses(0, true);
+        queue.confirmed_index = None;
+        assert_eq!(queue.first_unconfirmed_index().unwrap(), None);
+
+        let mut queue = create_queue_with_statuses(10, false);
+        queue.confirmed_index = None;
+        assert_eq!(queue.first_unconfirmed_index().unwrap(), Some(0));
+
+        let mut queue = create_queue_with_statuses(10, true);
+        queue.confirmed_index = None;
+        assert_eq!(queue.first_unconfirmed_index().unwrap(), Some(0));
+    }
+
+    #[test]
+    fn adjust_fee_rate() {
+        let config = Config::default();
+        assert_eq!(super::adjust_fee_rate(100, true, &config), 125);
+        assert_eq!(super::adjust_fee_rate(100, false, &config), 75);
+        assert_eq!(super::adjust_fee_rate(2, true, &config), 3);
+        assert_eq!(super::adjust_fee_rate(0, true, &config), 2);
+        assert_eq!(super::adjust_fee_rate(2, false, &config), 2);
+        assert_eq!(super::adjust_fee_rate(200, true, &config), 200);
+        assert_eq!(super::adjust_fee_rate(300, true, &config), 200);
+    }
+
+    #[cfg(feature = "full")]
+    #[test]
+    #[serial_test::serial]
+    fn fee_adjustments() {
+        // TODO: extract pieces into util functions, test more cases
+
+        let paid = orga::plugins::Paid::default();
+        Context::add(paid);
+
+        let mut vals = orga::plugins::Validators::new(
+            Rc::new(RefCell::new(Some(EntryMap::new()))),
+            Rc::new(RefCell::new(None)),
+        );
+        vals.set_voting_power([0; 32], 100);
+        Context::add(vals);
+
+        let secp = Secp256k1::new();
+        let xpriv = ExtendedPrivKey::new_master(bitcoin::Network::Regtest, &[0]).unwrap();
+        let xpub = ExtendedPubKey::from_priv(&secp, &xpriv);
+
+        let mut sig_keys = Map::new();
+        sig_keys.insert([0; 32], Xpub::new(xpub));
+
+        let queue = Rc::new(RefCell::new(CheckpointQueue::default()));
+        queue.borrow_mut().config = Config {
+            min_fee_rate: 2,
+            max_fee_rate: 200,
+            target_checkpoint_inclusion: 2,
+            min_checkpoint_interval: 100,
+            ..Default::default()
+        };
+
+        let set_time = |time| {
+            let time = orga::plugins::Time::from_seconds(time);
+            Context::add(time);
+        };
+        let maybe_step = |btc_height| {
+            queue
+                .borrow_mut()
+                .maybe_step(
+                    &sig_keys,
+                    &Accounts::default(),
+                    &Map::new(),
+                    vec![Ok(bitcoin::TxOut {
+                        script_pubkey: Script::new(),
+                        value: 1_000_000,
+                    })]
+                    .into_iter(),
+                    btc_height,
+                    true,
+                )
+                .unwrap();
+        };
+        let push_deposit = || {
+            let mut input = Input::new(
+                OutPoint {
+                    txid: Txid::from_slice(&[0; 32]).unwrap(),
+                    vout: 0,
+                },
+                &queue.borrow().building().unwrap().sigset,
+                &[0u8],
+                100_000_000,
+            )
+            .unwrap();
+            let mut queue = queue.borrow_mut();
+            let mut building_mut = queue.building_mut().unwrap();
+            let mut building_checkpoint_batch = building_mut
+                .batches
+                .get_mut(BatchType::Checkpoint as u64)
+                .unwrap()
+                .unwrap();
+            let mut checkpoint_tx = building_checkpoint_batch.get_mut(0).unwrap().unwrap();
+            checkpoint_tx.input.push_back(input).unwrap();
+        };
+        let sign_batch = |btc_height| {
+            let mut queue = queue.borrow_mut();
+            let cp = queue.signing().unwrap().unwrap();
+            let sigset_index = cp.sigset.index;
+            let to_sign = cp.to_sign(Xpub::new(xpub.clone())).unwrap();
+            let secp2 = Secp256k1::signing_only();
+            let sigs = crate::bitcoin::signer::sign(&secp2, &xpriv, &to_sign).unwrap();
+            drop(cp);
+            queue
+                .sign(Xpub::new(xpub), sigs, sigset_index, btc_height)
+                .unwrap();
+        };
+        let sign_cp = |btc_height| {
+            sign_batch(btc_height);
+            sign_batch(btc_height);
+            if queue.borrow().signing().unwrap().is_some() {
+                sign_batch(btc_height);
+            }
+        };
+        let confirm_cp = |index, btc_height| {
+            let mut queue = queue.borrow_mut();
+            queue.confirmed_index = Some(index);
+        };
+
+        assert_eq!(queue.borrow().len().unwrap(), 0);
+
+        set_time(0);
+        maybe_step(10);
+
+        assert_eq!(queue.borrow().len().unwrap(), 1);
+        assert_eq!(queue.borrow().building().unwrap().create_time(), 0);
+
+        push_deposit();
+        maybe_step(10);
+
+        assert_eq!(queue.borrow().len().unwrap(), 1);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 10);
+
+        set_time(1_000);
+        maybe_step(10);
+
+        assert_eq!(queue.borrow().len().unwrap(), 2);
+        assert!(queue.borrow().last_completed_index().is_err());
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 10);
+
+        sign_cp(11);
+
+        assert_eq!(queue.borrow().len().unwrap(), 2);
+        assert_eq!(queue.borrow().last_completed_index().unwrap(), 0);
+        assert_eq!(
+            queue
+                .borrow()
+                .last_completed()
+                .unwrap()
+                .signed_at_btc_height
+                .unwrap(),
+            11
+        );
+
+        set_time(2_000);
+        push_deposit();
+        maybe_step(11);
+        sign_cp(11);
+
+        assert_eq!(queue.borrow().len().unwrap(), 3);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 10);
+
+        set_time(3_000);
+        push_deposit();
+        maybe_step(11);
+        sign_cp(11);
+
+        assert_eq!(queue.borrow().len().unwrap(), 4);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 10);
+
+        set_time(4_000);
+        push_deposit();
+        maybe_step(12);
+        sign_cp(12);
+
+        assert_eq!(queue.borrow().len().unwrap(), 5);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 10);
+
+        set_time(5_000);
+        push_deposit();
+        maybe_step(13);
+        sign_cp(13);
+
+        assert_eq!(queue.borrow().len().unwrap(), 6);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 12);
+
+        set_time(6_000);
+        push_deposit();
+        maybe_step(13);
+        sign_cp(13);
+
+        assert_eq!(queue.borrow().len().unwrap(), 7);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 12);
+
+        set_time(7_000);
+        push_deposit();
+        maybe_step(14);
+        sign_cp(14);
+
+        assert_eq!(queue.borrow().len().unwrap(), 8);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 15);
+
+        confirm_cp(5, 14);
+        set_time(8_000);
+        push_deposit();
+        maybe_step(15);
+        sign_cp(15);
+
+        assert_eq!(queue.borrow().len().unwrap(), 9);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 15);
+
+        confirm_cp(7, 15);
+        set_time(9_000);
+        push_deposit();
+        maybe_step(16);
+        sign_cp(16);
+
+        assert_eq!(queue.borrow().len().unwrap(), 10);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 11);
+
+        set_time(10_000);
+        push_deposit();
+        maybe_step(17);
+        sign_cp(17);
+
+        assert_eq!(queue.borrow().len().unwrap(), 11);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 11);
     }
 }

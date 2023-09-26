@@ -1174,9 +1174,12 @@ impl RelayerCmd {
         let mut relayer = create_relayer().await;
         let checkpoints = relayer.start_checkpoint_relay();
 
+        let mut relayer = create_relayer().await;
+        let checkpoint_confs = relayer.start_checkpoint_conf_relay();
+
         let relaunch = relaunch_on_migrate(&self.config);
 
-        futures::try_join!(headers, deposits, checkpoints, relaunch).unwrap();
+        futures::try_join!(headers, deposits, checkpoints, checkpoint_confs, relaunch).unwrap();
 
         Ok(())
     }
