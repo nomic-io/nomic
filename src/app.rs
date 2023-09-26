@@ -6,6 +6,8 @@
 use crate::airdrop::Airdrop;
 use crate::bitcoin::adapter::Adapter;
 use crate::bitcoin::{Bitcoin, Nbtc};
+use crate::cosmos::{Chain, Cosmos, Proof};
+
 use crate::incentives::Incentives;
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::{Script, Transaction, TxOut};
@@ -26,8 +28,7 @@ use orga::ibc::ibc_rs::applications::transfer::packet::PacketData;
 use orga::ibc::ibc_rs::core::ics04_channel::timeout::TimeoutHeight;
 use orga::ibc::ibc_rs::core::ics24_host::identifier::{ChannelId, PortId};
 use orga::ibc::ibc_rs::core::timestamp::Timestamp;
-#[cfg(feature = "testnet")]
-use orga::ibc::{Ibc, IbcTx};
+use orga::ibc::{ClientId, Ibc, IbcTx};
 
 use orga::ibc::ibc_rs::Signer as IbcSigner;
 
@@ -64,6 +65,7 @@ const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1d5n325zrf4elfu0heqd59gna5j6xyunhe
 #[cfg(feature = "full")]
 const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhqd8dcqeq";
 
+#[cfg(feature = "testnet")]
 const IBC_FEE_USATS: u64 = 1_000_000;
 const DECLARE_FEE_USATS: u64 = 100_000_000;
 
@@ -96,6 +98,9 @@ pub struct InnerApp {
 
     #[call]
     pub incentives: Incentives,
+
+    #[cfg(feature = "testnet")]
+    pub cosmos: Cosmos,
 }
 
 #[orga]
@@ -245,6 +250,27 @@ impl InnerApp {
             sigset_index,
             dest,
         )?)
+    }
+
+    #[call]
+    pub fn relay_op_key(
+        &mut self,
+        client_id: ClientId,
+        height: (u64, u64),
+        cons_key: LengthVec<u8, u8>,
+        op_addr: Proof,
+        acc: Proof,
+    ) -> Result<()> {
+        #[cfg(feature = "testnet")]
+        {
+            self.deduct_nbtc_fee(IBC_FEE_USATS.into())?;
+
+            Ok(self
+                .cosmos
+                .relay_op_key(&self.ibc, client_id, height, cons_key, op_addr, acc)?)
+        }
+        #[cfg(not(feature = "testnet"))]
+        Err(orga::Error::Unknown)
     }
 
     pub fn credit_transfer(&mut self, dest: Dest, nbtc: Coin<Nbtc>) -> Result<()> {
@@ -459,10 +485,21 @@ mod abci {
             for (dest, coins) in pending_nbtc_transfers {
                 self.credit_transfer(dest, coins)?;
             }
-            let external_outputs: Vec<crate::error::Result<bitcoin::TxOut>> = vec![]; // TODO: remote chain disbursal
+
+            let external_outputs = if self.bitcoin.should_push_checkpoint()? {
+                #[cfg(feature = "testnet")]
+                {
+                    self.cosmos
+                        .build_outputs(&self.ibc, self.bitcoin.checkpoints.index)?
+                }
+                #[cfg(not(feature = "testnet"))]
+                vec![]
+            } else {
+                vec![]
+            };
             let offline_signers = self
                 .bitcoin
-                .begin_block_step(external_outputs.into_iter())?;
+                .begin_block_step(external_outputs.into_iter().map(Ok))?;
             for cons_key in offline_signers {
                 let address = self.staking.address_by_consensus_key(cons_key)?.unwrap();
                 self.staking.punish_downtime(address)?;
@@ -1168,7 +1205,14 @@ mod tests {
 
     #[test]
     fn upgrade_date() {
+        #[cfg(feature = "testnet")]
         assert!(in_upgrade_window(1690218300)); // Monday 17:05 UTC
+        #[cfg(not(feature = "testnet"))]
+        assert!(!in_upgrade_window(1690218300)); // Monday 17:05 UTC
+        #[cfg(feature = "testnet")]
+        assert!(in_upgrade_window(1690391100)); // Wednesday 17:05 UTC
+        #[cfg(not(feature = "testnet"))]
+        assert!(in_upgrade_window(1690391100)); // Wednesday 17:05 UTC
         assert!(!in_upgrade_window(1690219200)); // Monday 17:20 UTC
         assert!(!in_upgrade_window(1690736700)); // Sunday 17:05 UTC
     }
