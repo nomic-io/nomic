@@ -150,12 +150,13 @@ impl Relayer {
                         None => {
                             app_client(app_client_addr)
                                 .query(|app| {
-                                    let sigset = app
-                                        .bitcoin
-                                        .checkpoints
-                                        .get(query.sigset_index)?
-                                        .sigset
-                                        .clone();
+                                    let cp = app.bitcoin.checkpoints.get(query.sigset_index)?;
+                                    if !cp.deposits_enabled {
+                                        return Err(orga::Error::App(
+                                            "Deposits disabled for this checkpoint".to_string(),
+                                        ));
+                                    }
+                                    let sigset = cp.sigset.clone();
                                     Ok(sigsets.insert(query.sigset_index, sigset))
                                 })
                                 .await
@@ -383,6 +384,98 @@ impl Relayer {
 
             tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
         }
+    }
+
+    pub async fn start_checkpoint_conf_relay(&mut self) -> Result<()> {
+        info!("Starting checkpoint confirmation relay...");
+
+        loop {
+            if let Err(e) = self.relay_checkpoint_confs().await {
+                error!("Checkpoint confirmation relay error: {}", e);
+            }
+
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        }
+    }
+
+    async fn relay_checkpoint_confs(&mut self) -> Result<()> {
+        loop {
+            let (confirmed_index, index) = match app_client(&self.app_client_addr)
+                .query(|app| {
+                    let checkpoints = &app.bitcoin.checkpoints;
+                    Ok((
+                        checkpoints.confirmed_index,
+                        checkpoints.last_completed_index()?,
+                    ))
+                })
+                .await
+            {
+                Ok(res) => res,
+                Err(err) => {
+                    if err.to_string().contains("No completed checkpoints yet") {
+                        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                        continue;
+                    } else {
+                        return Err(err.into());
+                    }
+                }
+            };
+
+            if let Some(confirmed_index) = confirmed_index {
+                if confirmed_index == index {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                    continue;
+                }
+            }
+
+            let tx = app_client(&self.app_client_addr)
+                .query(|app| {
+                    let cp = app.bitcoin.checkpoints.get(index)?;
+                    Ok(cp.checkpoint_tx()?)
+                })
+                .await?;
+            let unconfirmed_txid = tx.txid();
+
+            let maybe_conf = self.scan_for_txid(unconfirmed_txid, 100).await?;
+            if let Some((height, block_hash)) = maybe_conf {
+                let proof_bytes = self
+                    .btc_client
+                    .get_tx_out_proof(&[unconfirmed_txid], Some(&block_hash))?;
+                let proof = Adapter::new(
+                    ::bitcoin::MerkleBlock::consensus_decode(&mut proof_bytes.as_slice())?.txn,
+                );
+
+                app_client(&self.app_client_addr)
+                    .call(
+                        |app| {
+                            build_call!(app.bitcoin.relay_checkpoint(height, proof.clone(), index))
+                        },
+                        |app| build_call!(app.app_noop()),
+                    )
+                    .await?;
+            }
+        }
+    }
+
+    async fn scan_for_txid(
+        &mut self,
+        txid: bitcoin::Txid,
+        num_blocks: usize,
+    ) -> Result<Option<(u32, BlockHash)>> {
+        let tip = self.sidechain_block_hash().await?;
+        let base_height = self.btc_client.get_block_header_info(&tip)?.height;
+        let blocks = self.last_n_blocks(num_blocks, tip)?;
+
+        for (i, block) in blocks.into_iter().enumerate().rev() {
+            let height = (base_height - i) as u32;
+            for tx in block.txdata.iter() {
+                if tx.txid() == txid {
+                    return Ok(Some((height, block.block_hash())));
+                }
+            }
+        }
+
+        Ok(None)
     }
 
     async fn insert_announced_addrs(&mut self, recv: &mut Receiver<(Dest, u32)>) -> Result<()> {
