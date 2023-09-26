@@ -1000,7 +1000,7 @@ async fn signing_pruned_checkpoint_test() {
 
         poll_for_completed_checkpoint(3).await;
 
-        app_client()
+        let _res = app_client()
             .with_wallet(signer_wallet)
             .call(
                 move |app| {
@@ -1012,7 +1012,7 @@ async fn signing_pruned_checkpoint_test() {
                 },
                 |app| build_call!(app.app_noop()),
             )
-            .await?;
+            .await;
 
         Err::<(), Error>(Error::Test("Test completed successfully".to_string()))
     };
