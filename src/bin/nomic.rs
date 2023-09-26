@@ -290,7 +290,7 @@ impl StartCmd {
                     .iter()
                     .map(|s| s.as_str())
                     .collect();
-                configure_for_statesync(&home.join("tendermint/config/config.toml"), &servers);
+                configure_for_statesync(&home.join("tendermint/config/config.toml"), &servers).await;
             }
         } else if cmd.clone_store.is_some() {
             log::warn!(
@@ -569,12 +569,11 @@ fn edit_block_time(cfg_path: &PathBuf, timeout_commit: &str) {
     });
 }
 
-fn configure_for_statesync(cfg_path: &PathBuf, rpc_servers: &[&str]) {
+async fn configure_for_statesync(cfg_path: &PathBuf, rpc_servers: &[&str]) {
     log::info!("Getting bootstrap state for Tendermint light client...");
 
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let (height, hash) = rt
-        .block_on(get_bootstrap_state(rpc_servers))
+    let (height, hash) =
+        get_bootstrap_state(rpc_servers).await
         .expect("Failed to bootstrap state");
     log::info!(
         "Configuring light client at height {} with hash {}",
