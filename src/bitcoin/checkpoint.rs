@@ -490,7 +490,7 @@ impl Checkpoint {
 #[orga(skip(Default))]
 #[derive(Clone)]
 pub struct Config {
-    pub max_checkpoints: u64,
+    pub min_checkpoints: u64,
     pub min_checkpoint_interval: u64,
     pub max_checkpoint_interval: u64,
     pub max_inputs: u64,
@@ -509,7 +509,7 @@ impl Config {
 
     fn bitcoin() -> Self {
         Self {
-            max_checkpoints: 10,
+            min_checkpoints: 10,
             min_checkpoint_interval: 60 * 5,
             max_checkpoint_interval: 60 * 60 * 8,
             max_inputs: 40,
@@ -1121,9 +1121,9 @@ impl CheckpointQueue {
         let latest = self.building()?.create_time();
 
         while let Some(oldest) = self.queue.front()? {
-            let under_max_length = self.queue.len() <= self.config.max_checkpoints;
+            let under_min_keep = self.queue.len() <= self.config.min_checkpoints;
             let under_max_age = latest - oldest.create_time() <= self.config.max_age;
-            if under_max_length || under_max_age {
+            if under_min_keep || under_max_age {
                 break;
             }
 
