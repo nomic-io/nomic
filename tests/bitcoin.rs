@@ -3,10 +3,12 @@ use bitcoin::blockdata::transaction::EcdsaSighashType;
 use bitcoin::secp256k1::Message;
 use bitcoin::util::bip32::ExtendedPrivKey;
 use bitcoin::Script;
+use bitcoincore_rpc_async::Auth;
+use bitcoincore_rpc_async::RpcApi;
 use bitcoind::bitcoincore_rpc::json::{
     ImportMultiRequest, ImportMultiRequestScriptPubkey, ImportMultiRescanSince,
 };
-use bitcoind::bitcoincore_rpc::RpcApi;
+use bitcoind::bitcoincore_rpc::RpcApi as AsyncRpcApi;
 use bitcoind::{BitcoinD, Conf};
 use log::info;
 use nomic::app::Dest;
@@ -195,6 +197,12 @@ async fn bitcoin_test() {
     conf.args.push("-txindex");
     let bitcoind = BitcoinD::with_conf(bitcoind::downloaded_exe_path().unwrap(), &conf).unwrap();
 
+    let btc_client = bitcoincore_rpc_async::Client::new(
+        bitcoind.rpc_url(),
+        Auth::CookieFile(bitcoind.params.cookie_file.clone()),
+    )
+    .await
+    .unwrap();
     let block_data = populate_bitcoin_block(&bitcoind);
 
     let home = tempdir().unwrap();
@@ -218,7 +226,13 @@ async fn bitcoin_test() {
         max_length: 59,
         ..Default::default()
     };
-    let funded_accounts = setup_test_app(&path, 4, Some(headers_config), None, None);
+    let bitcoin_config = BitcoinConfig {
+        emergency_disbursal_lock_time_interval: 3 * 60,
+        ..Default::default()
+    };
+
+    let funded_accounts =
+        setup_test_app(&path, 4, Some(headers_config), None, Some(bitcoin_config));
 
     let node = Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"), Default::default());
     let _node_child = node.await.run().await.unwrap();
@@ -288,6 +302,8 @@ async fn bitcoin_test() {
         let wallet = retry(|| bitcoind.create_wallet("nomic-integration-test"), 10).unwrap();
         let wallet_address = wallet.get_new_address(None, None).unwrap();
         let withdraw_address = wallet.get_new_address(None, None).unwrap();
+        let async_wallet_address =
+            bitcoincore_rpc_async::bitcoin::Address::from_str(&wallet_address.to_string()).unwrap();
 
         let mut labels = vec![];
         for i in 0..funded_accounts.len() {
@@ -320,11 +336,9 @@ async fn bitcoin_test() {
             .await
             .unwrap();
 
-        retry(
-            || bitcoind.client.generate_to_address(120, &wallet_address),
-            10,
-        )
-        .unwrap();
+        btc_client
+            .generate_to_address(120, &async_wallet_address)
+            .await?;
 
         poll_for_bitcoin_header(1120).await.unwrap();
 
@@ -351,11 +365,9 @@ async fn bitcoin_test() {
             .unwrap();
         assert_eq!(balance, Amount::from(0));
 
-        retry(
-            || bitcoind.client.generate_to_address(4, &wallet_address),
-            10,
-        )
-        .unwrap();
+        btc_client
+            .generate_to_address(4, &async_wallet_address)
+            .await?;
 
         poll_for_bitcoin_header(1124).await.unwrap();
         poll_for_signing_checkpoint().await;
@@ -384,11 +396,9 @@ async fn bitcoin_test() {
         .await
         .unwrap();
 
-        retry(
-            || bitcoind.client.generate_to_address(4, &wallet_address),
-            10,
-        )
-        .unwrap();
+        btc_client
+            .generate_to_address(4, &async_wallet_address)
+            .await?;
 
         poll_for_bitcoin_header(1128).await.unwrap();
         poll_for_completed_checkpoint(2).await;
@@ -408,11 +418,9 @@ async fn bitcoin_test() {
         .await
         .unwrap();
 
-        retry(
-            || bitcoind.client.generate_to_address(4, &wallet_address),
-            10,
-        )
-        .unwrap();
+        btc_client
+            .generate_to_address(4, &async_wallet_address)
+            .await?;
 
         poll_for_bitcoin_header(1132).await.unwrap();
         poll_for_completed_checkpoint(3).await;
@@ -435,13 +443,34 @@ async fn bitcoin_test() {
             .unwrap();
         assert_eq!(balance, Amount::from(799991736000000));
 
-        tokio::time::sleep(Duration::from_secs(7 * 60)).await;
+        let disbursal_txs = app_client()
+            .query(|app: InnerApp| {
+                Ok(app
+                    .bitcoin
+                    .checkpoints
+                    .emergency_disbursal_txs()?
+                    .iter()
+                    .map(|tx| tx.txid())
+                    .collect::<Vec<_>>())
+            })
+            .await?;
 
-        retry(
-            || bitcoind.client.generate_to_address(1, &wallet_address),
-            10,
-        )
-        .unwrap();
+        for txid in disbursal_txs.iter() {
+            let async_txid =
+                bitcoincore_rpc_async::bitcoin::hash_types::Txid::from_str(&txid.to_string())
+                    .unwrap();
+            while btc_client
+                .get_raw_transaction(&async_txid, None)
+                .await
+                .is_err()
+            {
+                tokio::time::sleep(Duration::from_secs(2)).await;
+            }
+        }
+
+        btc_client
+            .generate_to_address(1, &async_wallet_address)
+            .await?;
 
         let signatory_script = get_signatory_script().await.unwrap();
         let last_header = wallet.get_best_block_hash().unwrap();
@@ -526,11 +555,9 @@ async fn bitcoin_test() {
 
             bitcoind.client.send_raw_transaction(&signed_tx).unwrap();
 
-            retry(
-                || bitcoind.client.generate_to_address(1, &wallet_address),
-                10,
-            )
-            .unwrap();
+            btc_client
+                .generate_to_address(1, &async_wallet_address)
+                .await?;
 
             let sent_amount = match wallet.get_received_by_address(&dump_address, None) {
                 Ok(amount) => amount.to_sat(),
@@ -756,7 +783,7 @@ async fn signing_completed_checkpoint_test() {
                         if checkpoint.1.status != CheckpointStatus::Complete {
                             return None;
                         }
-                        Some(checkpoint.1.sigset.signatories.len().clone())
+                        Some(checkpoint.1.sigset.signatories.len())
                     })
                     .collect::<Vec<_>>())
             })
@@ -764,7 +791,7 @@ async fn signing_completed_checkpoint_test() {
             .unwrap();
 
         for (i, length) in signatory_lengths.iter().enumerate() {
-            if length == &(2 as usize) {
+            if length == &2 {
                 assert!(post_tx_sizes[i] > pre_tx_sizes[i]);
             }
         }
