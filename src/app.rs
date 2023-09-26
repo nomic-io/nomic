@@ -69,7 +69,7 @@ const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhq
 const IBC_FEE_USATS: u64 = 1_000_000;
 const DECLARE_FEE_USATS: u64 = 100_000_000;
 
-#[orga(version = 2)]
+#[orga(version = 3)]
 pub struct InnerApp {
     #[call]
     pub accounts: Accounts<Nom>,
@@ -100,6 +100,7 @@ pub struct InnerApp {
     pub incentives: Incentives,
 
     #[cfg(feature = "testnet")]
+    #[orga(version(V3))]
     pub cosmos: Cosmos,
 }
 
