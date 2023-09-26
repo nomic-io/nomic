@@ -830,7 +830,7 @@ async fn signing_pruned_checkpoint_test() {
     };
 
     let checkpoint_queue_config = CheckpointQueueConfig {
-        max_checkpoints: 5,
+        min_checkpoints: 5,
         ..Default::default()
     };
 
