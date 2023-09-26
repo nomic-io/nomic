@@ -150,12 +150,13 @@ impl Relayer {
                         None => {
                             app_client(app_client_addr)
                                 .query(|app| {
-                                    let sigset = app
-                                        .bitcoin
-                                        .checkpoints
-                                        .get(query.sigset_index)?
-                                        .sigset
-                                        .clone();
+                                    let cp = app.bitcoin.checkpoints.get(query.sigset_index)?;
+                                    if !cp.deposits_enabled {
+                                        return Err(orga::Error::App(
+                                            "Deposits disabled for this checkpoint".to_string(),
+                                        ));
+                                    }
+                                    let sigset = cp.sigset.clone();
                                     Ok(sigsets.insert(query.sigset_index, sigset))
                                 })
                                 .await
@@ -399,12 +400,26 @@ impl Relayer {
 
     async fn relay_checkpoint_confs(&mut self) -> Result<()> {
         loop {
-            let (confirmed_index, index) = app_client(&self.app_client_addr)
+            let (confirmed_index, index) = match app_client(&self.app_client_addr)
                 .query(|app| {
                     let checkpoints = &app.bitcoin.checkpoints;
-                    Ok((checkpoints.confirmed_index, checkpoints.index))
+                    Ok((
+                        checkpoints.confirmed_index,
+                        checkpoints.last_completed_index()?,
+                    ))
                 })
-                .await?;
+                .await
+            {
+                Ok(res) => res,
+                Err(err) => {
+                    if err.to_string().contains("No completed checkpoints yet") {
+                        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                        continue;
+                    } else {
+                        return Err(err.into());
+                    }
+                }
+            };
 
             if let Some(confirmed_index) = confirmed_index {
                 if confirmed_index == index {

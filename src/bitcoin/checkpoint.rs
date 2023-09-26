@@ -318,6 +318,8 @@ pub struct Checkpoint {
     pub fee_rate: u64,
     #[orga(version(V3))]
     pub signed_at_btc_height: Option<u32>,
+    #[orga(version(V3))]
+    pub deposits_enabled: bool,
     pub sigset: SignatorySet,
 }
 
@@ -347,6 +349,7 @@ impl MigrateFrom<CheckpointV2> for CheckpointV3 {
             fee_rate: DEFAULT_FEE_RATE,
             signed_at_btc_height: None,
             sigset: value.sigset,
+            deposits_enabled: true,
         })
     }
 }
@@ -360,6 +363,7 @@ impl Checkpoint {
             pending: Map::new(),
             fee_rate: DEFAULT_FEE_RATE,
             signed_at_btc_height: None,
+            deposits_enabled: true,
             sigset,
         };
 
@@ -1213,12 +1217,13 @@ impl CheckpointQueue {
         recovery_scripts: &Map<orga::coins::Address, Adapter<bitcoin::Script>>,
         external_outputs: impl Iterator<Item = Result<bitcoin::TxOut>>,
         btc_height: u32,
+        should_allow_deposits: bool,
     ) -> Result<bool> {
         if !self.should_push(sig_keys)? {
             return Ok(false);
         }
 
-        if self.maybe_push(sig_keys)?.is_none() {
+        if self.maybe_push(sig_keys, should_allow_deposits)?.is_none() {
             return Ok(false);
         }
 
@@ -1362,6 +1367,7 @@ impl CheckpointQueue {
     pub fn maybe_push(
         &mut self,
         sig_keys: &Map<ConsensusKey, Xpub>,
+        deposits_enabled: bool,
     ) -> Result<Option<BuildingCheckpointMut>> {
         let mut index = self.index;
         if !self.queue.is_empty() {
@@ -1382,7 +1388,8 @@ impl CheckpointQueue {
 
         self.queue.push_back(Checkpoint::new(sigset)?)?;
 
-        let building = self.building_mut()?;
+        let mut building = self.building_mut()?;
+        building.deposits_enabled = deposits_enabled;
 
         Ok(Some(building))
     }
@@ -1539,6 +1546,7 @@ mod test {
                 pending: Map::new(),
                 fee_rate: DEFAULT_FEE_RATE,
                 signed_at_btc_height: None,
+                deposits_enabled: true,
                 sigset: SignatorySet::default(),
             };
             cp.status = status;
@@ -1720,6 +1728,7 @@ mod test {
                     })]
                     .into_iter(),
                     btc_height,
+                    true,
                 )
                 .unwrap();
         };
