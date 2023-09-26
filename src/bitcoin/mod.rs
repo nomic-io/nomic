@@ -77,6 +77,8 @@ pub struct Config {
     pub max_offline_checkpoints: u32,
     #[orga(version(V2))]
     pub min_checkpoint_confirmations: u32,
+    #[orga(version(V2))]
+    pub capacity_limit: u64,
 }
 
 impl MigrateFrom<ConfigV0> for ConfigV1 {
@@ -114,6 +116,7 @@ impl MigrateFrom<ConfigV1> for ConfigV2 {
             emergency_disbursal_max_tx_size: value.emergency_disbursal_max_tx_size,
             max_offline_checkpoints: value.max_offline_checkpoints,
             min_checkpoint_confirmations: Config::default().min_checkpoint_confirmations,
+            capacity_limit: Config::bitcoin().capacity_limit,
         })
     }
 }
@@ -130,10 +133,11 @@ impl Config {
             min_confirmations: 3,
             units_per_sat: 1_000_000,
             emergency_disbursal_min_tx_amt: 1000,
-            emergency_disbursal_lock_time_interval: 60 * 60 * 24 * 7, //one week
+            emergency_disbursal_lock_time_interval: 60 * 60 * 24 * 7, // one week
             emergency_disbursal_max_tx_size: 50_000,
             max_offline_checkpoints: 20,
             min_checkpoint_confirmations: 2,
+            capacity_limit: 21 * 100_000_000, // 21 BTC
         }
     }
 
@@ -447,6 +451,11 @@ impl Bitcoin {
             .insert(outpoint, sigset.deposit_timeout())?;
 
         let mut building_mut = self.checkpoints.building_mut()?;
+        if !building_mut.deposits_enabled {
+            return Err(OrgaError::App(
+                "Deposits are disabled for the given checkpoint".to_string(),
+            ))?;
+        }
         let mut building_checkpoint_batch = building_mut
             .batches
             .get_mut(BatchType::Checkpoint as u64)?
@@ -725,6 +734,24 @@ impl Bitcoin {
         &mut self,
         external_outputs: impl Iterator<Item = Result<bitcoin::TxOut>>,
     ) -> Result<Vec<ConsensusKey>> {
+        let has_completed_cp = if let Err(Error::Orga(OrgaError::App(err))) =
+            self.checkpoints.last_completed_index()
+        {
+            if err == "No completed checkpoints yet" {
+                false
+            } else {
+                return Err(Error::Orga(OrgaError::App(err)));
+            }
+        } else {
+            true
+        };
+
+        let reached_capacity_limit = if has_completed_cp {
+            self.value_locked()? >= self.config.capacity_limit
+        } else {
+            false
+        };
+
         let pushed = self
             .checkpoints
             .maybe_step(
@@ -733,6 +760,7 @@ impl Bitcoin {
                 &self.recovery_scripts,
                 external_outputs,
                 self.headers.height()?,
+                !reached_capacity_limit,
             )
             .map_err(|err| OrgaError::App(err.to_string()))?;
 
