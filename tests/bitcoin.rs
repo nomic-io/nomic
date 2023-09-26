@@ -830,7 +830,8 @@ async fn signing_pruned_checkpoint_test() {
     };
 
     let checkpoint_queue_config = CheckpointQueueConfig {
-        min_checkpoints: 5,
+        min_checkpoints: 3,
+        max_age: 0,
         ..Default::default()
     };
 
@@ -934,7 +935,7 @@ async fn signing_pruned_checkpoint_test() {
 
         tx.send(Some(())).await.unwrap();
 
-        for i in 0..3 {
+        for i in 0..2 {
             deposit_bitcoin(
                 &funded_accounts[0].address,
                 bitcoin::Amount::from_btc(1.0).unwrap(),
@@ -982,24 +983,22 @@ async fn signing_pruned_checkpoint_test() {
             .try_into()
             .unwrap();
 
-        for i in 3..=6 {
-            deposit_bitcoin(
-                &funded_accounts[0].address,
-                bitcoin::Amount::from_btc(1.0).unwrap(),
-                &wallet,
-            )
-            .await
-            .unwrap();
+        deposit_bitcoin(
+            &funded_accounts[0].address,
+            bitcoin::Amount::from_btc(1.0).unwrap(),
+            &wallet,
+        )
+        .await
+        .unwrap();
 
-            retry(
-                || bitcoind.client.generate_to_address(4, &wallet_address),
-                10,
-            )
-            .unwrap();
-            poll_for_bitcoin_header(1120 + (i + 1) * 4).await.unwrap();
+        retry(
+            || bitcoind.client.generate_to_address(4, &wallet_address),
+            10,
+        )
+        .unwrap();
+        poll_for_bitcoin_header(1132).await.unwrap();
 
-            poll_for_completed_checkpoint(i + 1).await;
-        }
+        poll_for_completed_checkpoint(3).await;
 
         app_client()
             .with_wallet(signer_wallet)
