@@ -1291,14 +1291,6 @@ impl CheckpointQueue {
 #[cfg(test)]
 mod test {
     #[cfg(all(feature = "full"))]
-    use bitcoin::{
-        util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey},
-        OutPoint, PubkeyHash, Script, Txid,
-    };
-    #[cfg(all(feature = "full"))]
-    use rand::Rng;
-
-    #[cfg(all(feature = "full"))]
     use crate::bitcoin::{signatory::Signatory, threshold_sig::Share};
 
     use super::*;
