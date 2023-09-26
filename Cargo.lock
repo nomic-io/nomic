@@ -1885,8 +1885,7 @@ dependencies = [
 [[package]]
 name = "ibc"
 version = "0.44.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18b0357f6a0c6241c4a5bcd52f82147a216d405f8bffd3d3066472fa25bb96f9"
+source = "git+https://github.com/nomic-io/ibc-rs?rev=91de3c673c59ed0a4344272dee6dd822d1355d59#91de3c673c59ed0a4344272dee6dd822d1355d59"
 dependencies = [
  "borsh 0.9.3",
  "bytes",
@@ -1915,8 +1914,7 @@ dependencies = [
 [[package]]
 name = "ibc-derive"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92f1528535e9ca495badb76c143bdd4763c1c9d987f59d1f8b47963ba0c11674"
+source = "git+https://github.com/nomic-io/ibc-rs?rev=91de3c673c59ed0a4344272dee6dd822d1355d59#91de3c673c59ed0a4344272dee6dd822d1355d59"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -2399,7 +2397,7 @@ dependencies = [
 
 [[package]]
 name = "nomic"
-version = "6.1.4"
+version = "6.2.0"
 dependencies = [
  "base64 0.13.1",
  "bech32 0.9.1",
@@ -2576,7 +2574,7 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.3.1"
-source = "git+https://github.com/nomic-io/orga.git?rev=1bb08e513b133adc8166980d047f8e3f9a9b668f#1bb08e513b133adc8166980d047f8e3f9a9b668f"
+source = "git+https://github.com/nomic-io/orga.git?rev=cab616b77532af5996a4c48bb178ce25dc49b80e#cab616b77532af5996a4c48bb178ce25dc49b80e"
 dependencies = [
  "abci2",
  "async-trait",
@@ -2637,7 +2635,7 @@ dependencies = [
 [[package]]
 name = "orga-macros"
 version = "0.3.1"
-source = "git+https://github.com/nomic-io/orga.git?rev=1bb08e513b133adc8166980d047f8e3f9a9b668f#1bb08e513b133adc8166980d047f8e3f9a9b668f"
+source = "git+https://github.com/nomic-io/orga.git?rev=cab616b77532af5996a4c48bb178ce25dc49b80e#cab616b77532af5996a4c48bb178ce25dc49b80e"
 dependencies = [
  "darling",
  "heck 0.3.3",
