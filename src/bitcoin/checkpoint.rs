@@ -1027,6 +1027,7 @@ impl CheckpointQueue {
         Ok(out)
     }
 
+    #[query]
     pub fn last_completed_index(&self) -> Result<u32> {
         if self.signing()?.is_some() {
             self.index.checked_sub(2)
