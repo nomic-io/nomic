@@ -393,13 +393,20 @@ async fn bitcoin_test() {
         .unwrap();
 
         poll_for_bitcoin_header(1127).await.unwrap();
-        tokio::time::sleep(Duration::from_secs(10)).await;
+        tokio::time::sleep(Duration::from_secs(20)).await;
 
-        let confirmed_index = app_client()
-            .query(|app| Ok(app.bitcoin.checkpoints.confirmed_index))
-            .await
-            .unwrap();
-        assert_eq!(confirmed_index, Some(0));
+        loop {
+            let confirmed_index = app_client()
+                .query(|app| Ok(app.bitcoin.checkpoints.confirmed_index))
+                .await
+                .unwrap();
+            if confirmed_index.is_some() {
+                assert_eq!(confirmed_index, Some(0));
+                break;
+            } else {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+        }
 
         deposit_bitcoin(
             &funded_accounts[1].address,
@@ -563,6 +570,36 @@ async fn bitcoin_test() {
             };
 
             assert_eq!(sent_amount, expected_account_balances[i] - 10000);
+
+            deposit_bitcoin(
+                &funded_accounts[1].address,
+                bitcoin::Amount::from_btc(20).unwrap(),
+                &wallet,
+            )
+            .await
+            .unwrap();
+
+            retry(
+                || bitcoind.client.generate_to_address(4, &wallet_address),
+                10,
+            )
+            .unwrap();
+
+            poll_for_bitcoin_header(1140).await.unwrap();
+            poll_for_completed_checkpoint(4).await;
+
+            let deposit_address = generate_deposit_address(&funded_accounts[1].address)
+                .await
+                .unwrap();
+
+            assert!(broadcast_deposit_addr(
+                &funded_accounts[1].address.to_string(),
+                deposit_address.sigset_index,
+                "http://localhost:8999".to_string(),
+                deposit_address.deposit_addr.clone(),
+            )
+            .await
+            .is_err());
         }
 
         Err::<(), Error>(Error::Test("Test completed successfully".to_string()))
