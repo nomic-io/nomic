@@ -243,7 +243,7 @@ pub fn sign(
     to_sign: &[([u8; 32], u32)],
 ) -> Result<LengthVec<u16, Signature>> {
     Ok(to_sign
-        .into_iter()
+        .iter()
         .map(|(msg, index)| {
             let privkey = xpriv
                 .derive_priv(secp, &[ChildNumber::from_normal_idx(*index)?])?
