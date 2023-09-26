@@ -1458,7 +1458,7 @@ impl CheckpointQueue {
 
 pub fn adjust_fee_rate(prev_fee_rate: u64, up: bool, config: &Config) -> u64 {
     if up {
-        (prev_fee_rate * 5 / 4)
+        (prev_fee_rate * 5 / 4).max(prev_fee_rate + 1)
     } else {
         (prev_fee_rate * 3 / 4).min(prev_fee_rate - 1)
     }
@@ -1673,6 +1673,7 @@ mod test {
 
     #[cfg(feature = "full")]
     #[test]
+    #[serial_test::serial]
     fn fee_adjustments() {
         // TODO: extract pieces into util functions, test more cases
 

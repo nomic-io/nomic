@@ -913,6 +913,7 @@ mod tests {
     #[test]
     fn relay_height_validity() {
         Context::add(Paid::default());
+        Context::add(Time::from_seconds(0));
 
         let mut btc = Bitcoin::default();
 
