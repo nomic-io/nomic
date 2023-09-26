@@ -1436,14 +1436,12 @@ impl CheckpointQueue {
 
 pub fn adjust_fee_rate(prev_fee_rate: u64, up: bool, config: &Config) -> u64 {
     if up {
-        (prev_fee_rate * 5 / 4)
-            .max(prev_fee_rate + 1)
-            .min(config.max_fee_rate)
+        (prev_fee_rate * 5 / 4).max(prev_fee_rate + 1)
     } else {
-        (prev_fee_rate * 3 / 4)
-            .min(prev_fee_rate - 1)
-            .max(config.min_fee_rate)
+        (prev_fee_rate * 3 / 4).min(prev_fee_rate - 1)
     }
+    .min(config.max_fee_rate)
+    .max(config.min_fee_rate)
 }
 
 #[cfg(test)]
@@ -1633,5 +1631,17 @@ mod test {
         let mut queue = create_queue_with_statuses(10, true);
         queue.confirmed_index = None;
         assert_eq!(queue.first_unconfirmed_index().unwrap(), Some(0));
+    }
+
+    #[test]
+    fn adjust_fee_rate() {
+        let config = Config::default();
+        assert_eq!(super::adjust_fee_rate(100, true, &config), 125);
+        assert_eq!(super::adjust_fee_rate(100, false, &config), 75);
+        assert_eq!(super::adjust_fee_rate(2, true, &config), 3);
+        assert_eq!(super::adjust_fee_rate(0, true, &config), 2);
+        assert_eq!(super::adjust_fee_rate(2, false, &config), 2);
+        assert_eq!(super::adjust_fee_rate(200, true, &config), 200);
+        assert_eq!(super::adjust_fee_rate(300, true, &config), 200);
     }
 }
