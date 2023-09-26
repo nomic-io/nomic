@@ -1238,16 +1238,38 @@ impl CheckpointQueue {
                     &config,
                 )?;
 
-            let fee_rate = if let Some(unconf_index) = self.first_unconfirmed_index()? {
-                let unconf = self.get(unconf_index)?;
-                let btc_blocks_since_unconf = btc_height - unconf.signed_at_btc_height.unwrap_or(0);
-                adjust_fee_rate(
-                    prev_fee_rate,
-                    btc_blocks_since_unconf < config.target_checkpoint_inclusion,
-                    &config,
-                )
+            let fee_rate = if let Some(first_unconf_index) = self.first_unconfirmed_index()? {
+                // There are unconfirmed checkpoints.
+
+                let first_unconf = self.get(first_unconf_index)?;
+                let btc_blocks_since_first =
+                    btc_height - first_unconf.signed_at_btc_height.unwrap_or(0);
+                let miners_excluded_cps =
+                    btc_blocks_since_first >= config.target_checkpoint_inclusion;
+
+                let last_unconf_index = self.last_completed_index()?;
+                let last_unconf = self.get(last_unconf_index)?;
+                let btc_blocks_since_last =
+                    btc_height - last_unconf.signed_at_btc_height.unwrap_or(0);
+                let block_was_mined = btc_blocks_since_last > 0;
+
+                if miners_excluded_cps && block_was_mined {
+                    // Blocks were mined since a signed checkpoint, but it was
+                    // not included.
+                    adjust_fee_rate(prev_fee_rate, true, &config)
+                } else {
+                    prev_fee_rate
+                }
             } else {
-                prev_fee_rate
+                let has_completed = self.last_completed_index().is_ok();
+                if has_completed {
+                    // No unconfirmed checkpoints.
+                    adjust_fee_rate(prev_fee_rate, false, &config)
+                } else {
+                    // This case only happens at start of chain - having no
+                    // unconfs doesn't mean anything.
+                    prev_fee_rate
+                }
             };
 
             let mut building = self.building_mut()?;
@@ -1436,7 +1458,7 @@ impl CheckpointQueue {
 
 pub fn adjust_fee_rate(prev_fee_rate: u64, up: bool, config: &Config) -> u64 {
     if up {
-        (prev_fee_rate * 5 / 4).max(prev_fee_rate + 1)
+        (prev_fee_rate * 5 / 4)
     } else {
         (prev_fee_rate * 3 / 4).min(prev_fee_rate - 1)
     }
