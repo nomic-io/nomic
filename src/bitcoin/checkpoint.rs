@@ -1468,11 +1468,15 @@ pub fn adjust_fee_rate(prev_fee_rate: u64, up: bool, config: &Config) -> u64 {
 
 #[cfg(test)]
 mod test {
+    use std::{cell::RefCell, rc::Rc};
+
     #[cfg(all(feature = "full"))]
     use bitcoin::{
+        secp256k1::Secp256k1,
         util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey},
         OutPoint, PubkeyHash, Script, Txid,
     };
+    use orga::{collections::EntryMap, context::Context};
     #[cfg(all(feature = "full"))]
     use rand::Rng;
 
@@ -1665,5 +1669,211 @@ mod test {
         assert_eq!(super::adjust_fee_rate(2, false, &config), 2);
         assert_eq!(super::adjust_fee_rate(200, true, &config), 200);
         assert_eq!(super::adjust_fee_rate(300, true, &config), 200);
+    }
+
+    #[cfg(feature = "full")]
+    #[test]
+    fn fee_adjustments() {
+        // TODO: extract pieces into util functions, test more cases
+
+        let paid = orga::plugins::Paid::default();
+        Context::add(paid);
+
+        let mut vals = orga::plugins::Validators::new(
+            Rc::new(RefCell::new(Some(EntryMap::new()))),
+            Rc::new(RefCell::new(None)),
+        );
+        vals.set_voting_power([0; 32], 100);
+        Context::add(vals);
+
+        let secp = Secp256k1::new();
+        let xpriv = ExtendedPrivKey::new_master(bitcoin::Network::Regtest, &[0]).unwrap();
+        let xpub = ExtendedPubKey::from_priv(&secp, &xpriv);
+
+        let mut sig_keys = Map::new();
+        sig_keys.insert([0; 32], Xpub::new(xpub));
+
+        let queue = Rc::new(RefCell::new(CheckpointQueue::default()));
+        queue.borrow_mut().config = Config {
+            min_fee_rate: 2,
+            max_fee_rate: 200,
+            target_checkpoint_inclusion: 2,
+            min_checkpoint_interval: 100,
+            ..Default::default()
+        };
+
+        let set_time = |time| {
+            let time = orga::plugins::Time::from_seconds(time);
+            Context::add(time);
+        };
+        let maybe_step = |btc_height| {
+            queue
+                .borrow_mut()
+                .maybe_step(
+                    &sig_keys,
+                    &Accounts::default(),
+                    &Map::new(),
+                    vec![Ok(bitcoin::TxOut {
+                        script_pubkey: Script::new(),
+                        value: 1_000_000,
+                    })]
+                    .into_iter(),
+                    btc_height,
+                )
+                .unwrap();
+        };
+        let push_deposit = || {
+            let mut input = Input::new(
+                OutPoint {
+                    txid: Txid::from_slice(&[0; 32]).unwrap(),
+                    vout: 0,
+                },
+                &queue.borrow().building().unwrap().sigset,
+                &[0u8],
+                100_000_000,
+            )
+            .unwrap();
+            let mut queue = queue.borrow_mut();
+            let mut building_mut = queue.building_mut().unwrap();
+            let mut building_checkpoint_batch = building_mut
+                .batches
+                .get_mut(BatchType::Checkpoint as u64)
+                .unwrap()
+                .unwrap();
+            let mut checkpoint_tx = building_checkpoint_batch.get_mut(0).unwrap().unwrap();
+            checkpoint_tx.input.push_back(input).unwrap();
+        };
+        let sign_batch = |btc_height| {
+            let mut queue = queue.borrow_mut();
+            let cp = queue.signing().unwrap().unwrap();
+            let sigset_index = cp.sigset.index;
+            let to_sign = cp.to_sign(Xpub::new(xpub.clone())).unwrap();
+            let secp2 = Secp256k1::signing_only();
+            let sigs = crate::bitcoin::signer::sign(&secp2, &xpriv, &to_sign).unwrap();
+            drop(cp);
+            queue
+                .sign(Xpub::new(xpub), sigs, sigset_index, btc_height)
+                .unwrap();
+        };
+        let sign_cp = |btc_height| {
+            sign_batch(btc_height);
+            sign_batch(btc_height);
+            if queue.borrow().signing().unwrap().is_some() {
+                sign_batch(btc_height);
+            }
+        };
+        let confirm_cp = |index, btc_height| {
+            let mut queue = queue.borrow_mut();
+            queue.confirmed_index = Some(index);
+        };
+
+        assert_eq!(queue.borrow().len().unwrap(), 0);
+
+        set_time(0);
+        maybe_step(10);
+
+        assert_eq!(queue.borrow().len().unwrap(), 1);
+        assert_eq!(queue.borrow().building().unwrap().create_time(), 0);
+
+        push_deposit();
+        maybe_step(10);
+
+        assert_eq!(queue.borrow().len().unwrap(), 1);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 10);
+
+        set_time(1_000);
+        maybe_step(10);
+
+        assert_eq!(queue.borrow().len().unwrap(), 2);
+        assert!(queue.borrow().last_completed_index().is_err());
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 10);
+
+        sign_cp(11);
+
+        assert_eq!(queue.borrow().len().unwrap(), 2);
+        assert_eq!(queue.borrow().last_completed_index().unwrap(), 0);
+        assert_eq!(
+            queue
+                .borrow()
+                .last_completed()
+                .unwrap()
+                .signed_at_btc_height
+                .unwrap(),
+            11
+        );
+
+        set_time(2_000);
+        push_deposit();
+        maybe_step(11);
+        sign_cp(11);
+
+        assert_eq!(queue.borrow().len().unwrap(), 3);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 10);
+
+        set_time(3_000);
+        push_deposit();
+        maybe_step(11);
+        sign_cp(11);
+
+        assert_eq!(queue.borrow().len().unwrap(), 4);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 10);
+
+        set_time(4_000);
+        push_deposit();
+        maybe_step(12);
+        sign_cp(12);
+
+        assert_eq!(queue.borrow().len().unwrap(), 5);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 10);
+
+        set_time(5_000);
+        push_deposit();
+        maybe_step(13);
+        sign_cp(13);
+
+        assert_eq!(queue.borrow().len().unwrap(), 6);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 12);
+
+        set_time(6_000);
+        push_deposit();
+        maybe_step(13);
+        sign_cp(13);
+
+        assert_eq!(queue.borrow().len().unwrap(), 7);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 12);
+
+        set_time(7_000);
+        push_deposit();
+        maybe_step(14);
+        sign_cp(14);
+
+        assert_eq!(queue.borrow().len().unwrap(), 8);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 15);
+
+        confirm_cp(5, 14);
+        set_time(8_000);
+        push_deposit();
+        maybe_step(15);
+        sign_cp(15);
+
+        assert_eq!(queue.borrow().len().unwrap(), 9);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 15);
+
+        confirm_cp(7, 15);
+        set_time(9_000);
+        push_deposit();
+        maybe_step(16);
+        sign_cp(16);
+
+        assert_eq!(queue.borrow().len().unwrap(), 10);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 11);
+
+        set_time(10_000);
+        push_deposit();
+        maybe_step(17);
+        sign_cp(17);
+
+        assert_eq!(queue.borrow().len().unwrap(), 11);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 11);
     }
 }
