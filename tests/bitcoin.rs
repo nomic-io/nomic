@@ -1065,13 +1065,7 @@ async fn signing_pruned_checkpoint_test() {
         let _res = app_client()
             .with_wallet(signer_wallet)
             .call(
-                move |app| {
-                    build_call!(app.bitcoin.checkpoints.sign(
-                        slashable_signer_xpub,
-                        sigs.clone(),
-                        0
-                    ))
-                },
+                move |app| build_call!(app.bitcoin.sign(slashable_signer_xpub, sigs.clone(), 0)),
                 |app| build_call!(app.app_noop()),
             )
             .await;
