@@ -1290,9 +1290,6 @@ impl CheckpointQueue {
 
 #[cfg(test)]
 mod test {
-    #[cfg(all(feature = "full"))]
-    use crate::bitcoin::{signatory::Signatory, threshold_sig::Share};
-
     use super::*;
 
     fn push_bitcoin_tx_output(tx: &mut BitcoinTx, value: u64) {
