@@ -1142,37 +1142,8 @@ impl CheckpointQueue {
         recovery_scripts: &Map<orga::coins::Address, Adapter<bitcoin::Script>>,
         external_outputs: impl Iterator<Item = Result<bitcoin::TxOut>>,
     ) -> Result<bool> {
-        if self.signing()?.is_some() {
+        if !self.should_push(sig_keys)? {
             return Ok(false);
-        }
-
-        if !self.queue.is_empty() {
-            let now = self
-                .context::<Time>()
-                .ok_or_else(|| OrgaError::App("No time context".to_string()))?
-                .seconds as u64;
-            let elapsed = now - self.building()?.create_time();
-            if elapsed < self.config.min_checkpoint_interval {
-                return Ok(false);
-            }
-
-            if elapsed < self.config.max_checkpoint_interval || self.index == 0 {
-                let building = self.building()?;
-                let checkpoint_tx = building.checkpoint_tx()?;
-
-                let has_pending_deposit = if self.index == 0 {
-                    !checkpoint_tx.input.is_empty()
-                } else {
-                    checkpoint_tx.input.len() > 1
-                };
-
-                let has_pending_withdrawal = !checkpoint_tx.output.is_empty();
-                let has_pending_transfers = building.pending.iter()?.next().transpose()?.is_some();
-
-                if !has_pending_deposit && !has_pending_withdrawal && !has_pending_transfers {
-                    return Ok(false);
-                }
-            }
         }
 
         if self.maybe_push(sig_keys)?.is_none() {
@@ -1221,6 +1192,59 @@ impl CheckpointQueue {
                 let data = output.into_inner();
                 checkpoint_tx.output.push_back(data)?;
             }
+        }
+
+        Ok(true)
+    }
+
+    #[cfg(feature = "full")]
+    pub fn should_push(&mut self, sig_keys: &Map<ConsensusKey, Xpub>) -> Result<bool> {
+        if self.signing()?.is_some() {
+            return Ok(false);
+        }
+
+        if !self.queue.is_empty() {
+            let now = self
+                .context::<Time>()
+                .ok_or_else(|| OrgaError::App("No time context".to_string()))?
+                .seconds as u64;
+            let elapsed = now - self.building()?.create_time();
+            if elapsed < self.config.min_checkpoint_interval {
+                return Ok(false);
+            }
+
+            if elapsed < self.config.max_checkpoint_interval || self.index == 0 {
+                let building = self.building()?;
+                let checkpoint_tx = building.checkpoint_tx()?;
+
+                let has_pending_deposit = if self.index == 0 {
+                    !checkpoint_tx.input.is_empty()
+                } else {
+                    checkpoint_tx.input.len() > 1
+                };
+
+                let has_pending_withdrawal = !checkpoint_tx.output.is_empty();
+                let has_pending_transfers = building.pending.iter()?.next().transpose()?.is_some();
+
+                if !has_pending_deposit && !has_pending_withdrawal && !has_pending_transfers {
+                    return Ok(false);
+                }
+            }
+        }
+
+        let mut index = self.index;
+        if !self.queue.is_empty() {
+            index += 1;
+        }
+
+        let sigset = SignatorySet::from_validator_ctx(index, sig_keys)?;
+
+        if sigset.possible_vp() == 0 {
+            return Ok(false);
+        }
+
+        if !sigset.has_quorum() {
+            return Ok(false);
         }
 
         Ok(true)

@@ -100,6 +100,8 @@ pub enum Command {
     IbcTransfer(IbcTransferCmd),
     Export(ExportCmd),
     UpgradeStatus(UpgradeStatusCmd),
+    #[cfg(feature = "testnet")]
+    RelayOpKeys(RelayOpKeysCmd),
 }
 
 impl Command {
@@ -151,6 +153,8 @@ impl Command {
                 IbcTransfer(cmd) => cmd.run().await,
                 Export(cmd) => cmd.run().await,
                 UpgradeStatus(cmd) => cmd.run().await,
+                #[cfg(feature = "testnet")]
+                RelayOpKeys(cmd) => cmd.run().await,
             }
         })
     }
@@ -1684,6 +1688,33 @@ impl UpgradeStatusCmd {
         } else {
             println!("Upgrade requires {:.2}% of voting power", threshold * 100.0);
         }
+
+        Ok(())
+    }
+}
+
+#[cfg(feature = "testnet")]
+#[derive(Parser, Debug)]
+pub struct RelayOpKeysCmd {
+    client_id: String,
+    rpc_url: String,
+}
+
+#[cfg(feature = "testnet")]
+impl RelayOpKeysCmd {
+    async fn run(&self) -> Result<()> {
+        use nomic::cosmos::relay_op_keys;
+        log::info!("Relaying operator keys for client {}", self.client_id);
+        let bytes = format!("{}/", self.client_id).as_bytes().to_vec();
+        let client_id = Decode::decode(&mut bytes.as_slice())?;
+        relay_op_keys(
+            || nomic::app_client("http://localhost:26657").with_wallet(wallet()),
+            client_id,
+            self.rpc_url.as_str(),
+        )
+        .await?;
+
+        log::info!("Finished relaying operator keys");
 
         Ok(())
     }
