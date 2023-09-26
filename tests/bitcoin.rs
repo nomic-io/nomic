@@ -236,6 +236,9 @@ async fn bitcoin_test() {
     let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind), rpc_addr.clone());
     let disbursal = relayer.start_emergency_disbursal_transaction_relay();
 
+    let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind), rpc_addr.clone());
+    let checkpoint_conf = relayer.start_checkpoint_conf_relay();
+
     let signer = async {
         tokio::time::sleep(Duration::from_secs(20)).await;
         setup_test_signer(&signer_path, client_provider)
@@ -365,6 +368,12 @@ async fn bitcoin_test() {
             .unwrap();
         assert_eq!(balance, Amount::from(0));
 
+        let confirmed_index = app_client()
+            .query(|app| Ok(app.bitcoin.checkpoints.confirmed_index))
+            .await
+            .unwrap();
+        assert_eq!(confirmed_index, None);
+
         poll_for_completed_checkpoint(1).await;
 
         tx.send(Some(())).await.unwrap();
@@ -374,6 +383,30 @@ async fn bitcoin_test() {
             .await
             .unwrap();
         assert_eq!(balance, Amount::from(799998736000000));
+
+        tokio::time::sleep(Duration::from_secs(10)).await;
+
+        retry(
+            || bitcoind.client.generate_to_address(3, &wallet_address),
+            10,
+        )
+        .unwrap();
+
+        poll_for_bitcoin_header(1127).await.unwrap();
+        tokio::time::sleep(Duration::from_secs(20)).await;
+
+        loop {
+            let confirmed_index = app_client()
+                .query(|app| Ok(app.bitcoin.checkpoints.confirmed_index))
+                .await
+                .unwrap();
+            if confirmed_index.is_some() {
+                assert_eq!(confirmed_index, Some(0));
+                break;
+            } else {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+        }
 
         deposit_bitcoin(
             &funded_accounts[1].address,
@@ -389,7 +422,7 @@ async fn bitcoin_test() {
         )
         .unwrap();
 
-        poll_for_bitcoin_header(1128).await.unwrap();
+        poll_for_bitcoin_header(1131).await.unwrap();
         poll_for_completed_checkpoint(2).await;
 
         let balance = app_client()
@@ -413,7 +446,7 @@ async fn bitcoin_test() {
         )
         .unwrap();
 
-        poll_for_bitcoin_header(1132).await.unwrap();
+        poll_for_bitcoin_header(1136).await.unwrap();
         poll_for_completed_checkpoint(3).await;
 
         let signer_jailed = app_client()
@@ -537,6 +570,36 @@ async fn bitcoin_test() {
             };
 
             assert_eq!(sent_amount, expected_account_balances[i] - 10000);
+
+            deposit_bitcoin(
+                &funded_accounts[1].address,
+                bitcoin::Amount::from_btc(20.0).unwrap(),
+                &wallet,
+            )
+            .await
+            .unwrap();
+
+            retry(
+                || bitcoind.client.generate_to_address(4, &wallet_address),
+                10,
+            )
+            .unwrap();
+
+            poll_for_bitcoin_header(1140).await.unwrap();
+            poll_for_completed_checkpoint(4).await;
+
+            let deposit_address = generate_deposit_address(&funded_accounts[1].address)
+                .await
+                .unwrap();
+
+            assert!(broadcast_deposit_addr(
+                funded_accounts[1].address.to_string(),
+                deposit_address.sigset_index,
+                "http://localhost:8999".to_string(),
+                deposit_address.deposit_addr.clone(),
+            )
+            .await
+            .is_err());
         }
 
         Err::<(), Error>(Error::Test("Test completed successfully".to_string()))
@@ -549,6 +612,7 @@ async fn bitcoin_test() {
         deposits,
         checkpoints,
         disbursal,
+        checkpoint_conf,
         signer,
         slashable_signer,
         test

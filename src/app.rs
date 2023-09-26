@@ -430,11 +430,6 @@ mod abci {
 
             let sr_address = STRATEGIC_RESERVE_ADDRESS.parse().unwrap();
 
-            self.airdrop
-                .init_from_airdrop1_csv(include_bytes!("../airdrop1_snapshot.csv"))?;
-            self.airdrop
-                .init_from_airdrop2_csv(include_bytes!("../airdrop2_snapshot.csv"))?;
-
             self.accounts.allow_transfers(true);
             self.bitcoin.accounts.allow_transfers(true);
 
