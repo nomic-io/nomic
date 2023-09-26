@@ -1197,6 +1197,7 @@ impl CheckpointQueue {
         Ok(true)
     }
 
+    #[cfg(feature = "full")]
     pub fn should_push(&mut self, sig_keys: &Map<ConsensusKey, Xpub>) -> Result<bool> {
         if self.signing()?.is_some() {
             return Ok(false);

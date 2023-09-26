@@ -41,6 +41,7 @@ use orga::{
 };
 use proto::traits::{Message, MessageExt};
 #[cfg(feature = "testnet")]
+#[cfg(feature = "full")]
 use tendermint_rpc::HttpClient;
 
 #[orga]
@@ -371,6 +372,7 @@ impl Chain {
 }
 
 #[cfg(feature = "testnet")]
+#[cfg(feature = "full")]
 pub async fn relay_op_keys<
     W: Wallet,
     F: Fn() -> AppClient<InnerApp, InnerApp, orga::tendermint::client::HttpClient, Nom, W>,

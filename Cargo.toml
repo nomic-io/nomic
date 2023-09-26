@@ -45,7 +45,7 @@ tempfile = "3"
 home = { version = "0.5.5", optional = true }
 semver = "1.0.18"
 ics23 = "0.10.2"
-cosmos-sdk-proto = "0.19.0"
+cosmos-sdk-proto = {version = "0.19.0", optional = true }
 
 [dev-dependencies]
 bitcoin_hashes = "0.11.0"
@@ -78,6 +78,7 @@ full = [
     "rand",
     "reqwest",
     "tendermint-rpc",
+    "cosmos-sdk-proto",
     "home",
 ]
 feat-ibc = ["orga/feat-ibc"]

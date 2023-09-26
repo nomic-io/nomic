@@ -324,6 +324,7 @@ impl Bitcoin {
         Ok(())
     }
 
+    #[cfg(feature = "full")]
     pub fn should_push_checkpoint(&mut self) -> Result<bool> {
         self.checkpoints.should_push(self.signatory_keys.map())
     }
