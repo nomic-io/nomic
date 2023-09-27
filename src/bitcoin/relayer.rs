@@ -432,16 +432,21 @@ impl Relayer {
                 }
             }
 
-            let tx = app_client(&self.app_client_addr)
+            let (tx, btc_height, min_confs) = app_client(&self.app_client_addr)
                 .query(|app| {
                     let cp = app.bitcoin.checkpoints.get(unconf_index)?;
-                    Ok(cp.checkpoint_tx()?)
+                    let btc_height = app.bitcoin.headers.height()?;
+                    let min_confs = app.bitcoin.config.min_checkpoint_confirmations;
+                    Ok((cp.checkpoint_tx()?, btc_height, min_confs))
                 })
                 .await?;
             let unconfirmed_txid = tx.txid();
 
             let maybe_conf = self.scan_for_txid(unconfirmed_txid, 100).await?;
             if let Some((height, block_hash)) = maybe_conf {
+                if height > btc_height - min_confs {
+                    continue;
+                }
                 let proof_bytes = self
                     .btc_client
                     .get_tx_out_proof(&[unconfirmed_txid], Some(&block_hash))?;

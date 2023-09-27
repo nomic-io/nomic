@@ -176,7 +176,7 @@ pub struct Bitcoin {
     pub(crate) reward_pool: Coin<Nbtc>,
 
     pub recovery_scripts: Map<Address, Adapter<Script>>,
-    config: Config,
+    pub config: Config,
 }
 
 impl MigrateFrom<BitcoinV0> for BitcoinV1 {
