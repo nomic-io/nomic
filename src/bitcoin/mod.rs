@@ -163,7 +163,7 @@ impl Default for Config {
 }
 
 pub fn calc_deposit_fee(amount: u64) -> u64 {
-    amount / 5
+    amount / 100
 }
 
 #[orga(version = 1)]
