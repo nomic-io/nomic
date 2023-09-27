@@ -341,8 +341,12 @@ impl Chain {
         for val in vals.validators() {
             sigset.possible_vp += val.power();
 
-            let cons_addr = val.address.as_bytes().to_vec().try_into()?;
-            let op_key = match self.op_keys_by_cons.get(cons_addr)? {
+            let Some(cons_key) = val
+                .pub_key
+                .ed25519().map(|v|v.as_bytes().to_vec()) else  {
+                    continue;
+                };
+            let op_key = match self.op_keys_by_cons.get(cons_key.try_into()?)? {
                 None => continue,
                 Some(op_key) => op_key,
             };
