@@ -31,6 +31,7 @@ where
 }
 
 const HEADER_BATCH_SIZE: usize = 250;
+const THRESHOLD: (u64, u64) = (9, 10);
 
 pub struct Relayer {
     btc_client: BitcoinRpcClient,
@@ -169,6 +170,7 @@ impl Relayer {
                         &sigset
                             .output_script(
                                 dest.commitment_bytes().map_err(|_| reject())?.as_slice(),
+                                THRESHOLD,
                             )
                             .map_err(warp::reject::custom)?,
                         super::NETWORK,
@@ -801,7 +803,7 @@ impl WatchedScripts {
     }
 
     pub fn insert(&mut self, dest: Dest, sigset: &SignatorySet) -> Result<bool> {
-        let script = self.derive_script(&dest, sigset)?;
+        let script = self.derive_script(&dest, sigset, THRESHOLD)?;
 
         if self.scripts.contains_key(&script) {
             return Ok(false);
@@ -827,7 +829,7 @@ impl WatchedScripts {
             }
 
             for dest in dests {
-                let script = self.derive_script(dest, sigset)?;
+                let script = self.derive_script(dest, sigset, THRESHOLD)?; // TODO: get threshold from state
                 self.scripts.remove(&script);
             }
         }
@@ -835,8 +837,13 @@ impl WatchedScripts {
         Ok(())
     }
 
-    fn derive_script(&self, dest: &Dest, sigset: &SignatorySet) -> Result<::bitcoin::Script> {
-        sigset.output_script(dest.commitment_bytes()?.as_slice())
+    fn derive_script(
+        &self,
+        dest: &Dest,
+        sigset: &SignatorySet,
+        threshold: (u64, u64),
+    ) -> Result<::bitcoin::Script> {
+        sigset.output_script(dest.commitment_bytes()?.as_slice(), threshold)
     }
 }
 

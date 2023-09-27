@@ -1269,10 +1269,15 @@ async fn deposit(
     dest: Dest,
     client: AppClient<InnerApp, InnerApp, HttpClient, Nom, orga::client::wallet::Unsigned>,
 ) -> Result<()> {
-    let sigset = client
-        .query(|app| Ok(app.bitcoin.checkpoints.active_sigset()?))
+    let (sigset, threshold) = client
+        .query(|app| {
+            Ok((
+                app.bitcoin.checkpoints.active_sigset()?,
+                app.bitcoin.checkpoints.config.sigset_threshold,
+            ))
+        })
         .await?;
-    let script = sigset.output_script(dest.commitment_bytes()?.as_slice())?;
+    let script = sigset.output_script(dest.commitment_bytes()?.as_slice(), threshold)?;
     let btc_addr = bitcoin::Address::from_script(&script, nomic::bitcoin::NETWORK).unwrap();
 
     let client = reqwest::Client::new();
