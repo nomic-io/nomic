@@ -423,10 +423,10 @@ pub async fn gen_deposit_addr(dest_addr: String) -> Result<DepositAddress, JsErr
 
     let (sigset, threshold) = app_client()
         .query(|app: InnerApp| {
-            Ok(
+            Ok((
                 app.bitcoin.checkpoints.active_sigset()?,
                 app.bitcoin.checkpoints.config.sigset_threshold,
-            )
+            ))
         })
         .await?;
     let script = sigset.output_script(
