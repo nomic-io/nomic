@@ -44,6 +44,9 @@ use proto::traits::{Message, MessageExt};
 #[cfg(feature = "full")]
 use tendermint_rpc::HttpClient;
 
+pub const MAX_SIGSET_SIZE: usize = 40;
+pub const RECOVERY_THRESHOLD: (u64, u64) = (2, 3);
+
 #[orga]
 pub struct Cosmos {
     pub chains: Map<ClientId, Chain>,
@@ -110,7 +113,7 @@ impl Cosmos {
             }
             outputs.push(bitcoin::TxOut {
                 value: total_usats / 1_000_000,
-                script_pubkey: sigset.output_script(&[0])?,
+                script_pubkey: sigset.output_script(&[0], RECOVERY_THRESHOLD)?,
             })
         }
 
@@ -329,6 +332,7 @@ pub struct Chain {
 #[orga]
 impl Chain {
     pub fn to_sigset(&self, index: u32, client: &Client) -> Result<Option<SignatorySet>> {
+        // vals are already sorted by voting power
         let vals = &client.last_header()?.validator_set;
 
         let mut sigset = SignatorySet {
@@ -337,7 +341,6 @@ impl Chain {
         };
 
         let secp = Secp256k1::new();
-
         for val in vals.validators() {
             sigset.possible_vp += val.power();
 
@@ -364,11 +367,13 @@ impl Chain {
 
             let sig_key = derive_pubkey(&secp, xpub, index)?;
 
-            sigset.signatories.push(Signatory {
-                voting_power: val.power(),
-                pubkey: sig_key.into(),
-            });
-            sigset.present_vp += val.power();
+            if sigset.signatories.len() < MAX_SIGSET_SIZE {
+                sigset.signatories.push(Signatory {
+                    voting_power: val.power(),
+                    pubkey: sig_key.into(),
+                });
+                sigset.present_vp += val.power();
+            }
         }
 
         Ok(Some(sigset))
