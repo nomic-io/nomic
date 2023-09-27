@@ -421,10 +421,18 @@ pub async fn gen_deposit_addr(dest_addr: String) -> Result<DepositAddress, JsErr
         .parse()
         .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
-    let sigset = app_client()
-        .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.active_sigset()?))
+    let (sigset, threshold) = app_client()
+        .query(|app: InnerApp| {
+            Ok(
+                app.bitcoin.checkpoints.active_sigset()?,
+                app.bitcoin.checkpoints.config.sigset_threshold,
+            )
+        })
         .await?;
-    let script = sigset.output_script(Dest::Address(dest_addr).commitment_bytes()?.as_slice())?;
+    let script = sigset.output_script(
+        Dest::Address(dest_addr).commitment_bytes()?.as_slice(),
+        threshold,
+    )?;
     // TODO: get network from somewhere
     // TODO: make test/mainnet option configurable
     let btc_addr = bitcoin::Address::from_script(&script, BITCOIN_NETWORK)?;
