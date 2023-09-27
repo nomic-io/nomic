@@ -1512,7 +1512,7 @@ impl ExportCmd {
 
         let store_path = home.join("merk");
         let store = Store::new(orga::store::BackingStore::Merk(orga::store::Shared::new(
-            MerkStore::new(store_path),
+            MerkStore::open_readonly(store_path),
         )));
         let root_bytes = store.get(&[])?.unwrap();
 
