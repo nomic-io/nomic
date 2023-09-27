@@ -292,7 +292,8 @@ impl StartCmd {
                     .iter()
                     .map(|s| s.as_str())
                     .collect();
-                configure_for_statesync(&home.join("tendermint/config/config.toml"), &servers).await;
+                configure_for_statesync(&home.join("tendermint/config/config.toml"), &servers)
+                    .await;
             }
         } else if cmd.clone_store.is_some() {
             log::warn!(
@@ -574,8 +575,8 @@ fn edit_block_time(cfg_path: &PathBuf, timeout_commit: &str) {
 async fn configure_for_statesync(cfg_path: &PathBuf, rpc_servers: &[&str]) {
     log::info!("Getting bootstrap state for Tendermint light client...");
 
-    let (height, hash) =
-        get_bootstrap_state(rpc_servers).await
+    let (height, hash) = get_bootstrap_state(rpc_servers)
+        .await
         .expect("Failed to bootstrap state");
     log::info!(
         "Configuring light client at height {} with hash {}",
@@ -1178,9 +1179,20 @@ impl RelayerCmd {
         let mut relayer = create_relayer().await;
         let checkpoint_confs = relayer.start_checkpoint_conf_relay();
 
+        let mut relayer = create_relayer().await;
+        let emdis = relayer.start_emergency_disbursal_transaction_relay();
+
         let relaunch = relaunch_on_migrate(&self.config);
 
-        futures::try_join!(headers, deposits, checkpoints, checkpoint_confs, relaunch).unwrap();
+        futures::try_join!(
+            headers,
+            deposits,
+            checkpoints,
+            checkpoint_confs,
+            emdis,
+            relaunch
+        )
+        .unwrap();
 
         Ok(())
     }
