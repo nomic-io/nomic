@@ -1167,7 +1167,7 @@ impl CheckpointQueue {
                 .batches
                 .get(BatchType::IntermediateTx as u64)?
                 .unwrap();
-            let intermediate_tx = intermediate_tx_batch.get(0)?.unwrap();
+            let Some(intermediate_tx) = intermediate_tx_batch.get(0)? else { return Ok(txs) };
             txs.push(Adapter::new(intermediate_tx.to_bitcoin_tx()?));
 
             let disbursal_batch = completed.batches.get(BatchType::Disbursal as u64)?.unwrap();
