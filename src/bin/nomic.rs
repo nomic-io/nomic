@@ -102,6 +102,7 @@ pub enum Command {
     UpgradeStatus(UpgradeStatusCmd),
     #[cfg(feature = "testnet")]
     RelayOpKeys(RelayOpKeysCmd),
+    SetRecoveryAddress(SetRecoveryAddressCmd),
 }
 
 impl Command {
@@ -155,6 +156,7 @@ impl Command {
                 UpgradeStatus(cmd) => cmd.run().await,
                 #[cfg(feature = "testnet")]
                 RelayOpKeys(cmd) => cmd.run().await,
+                SetRecoveryAddress(cmd) => cmd.run().await,
             }
         })
     }
@@ -1719,6 +1721,33 @@ impl RelayOpKeysCmd {
         log::info!("Finished relaying operator keys");
 
         Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct SetRecoveryAddressCmd {
+    address: bitcoin::Address,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
+}
+
+impl SetRecoveryAddressCmd {
+    async fn run(&self) -> Result<()> {
+        let script = self.address.script_pubkey();
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
+            .call(
+                |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
+                |app| {
+                    build_call!(app
+                        .bitcoin
+                        .set_recovery_script(nomic::bitcoin::adapter::Adapter::new(script.clone())))
+                },
+            )
+            .await?)
     }
 }
 
