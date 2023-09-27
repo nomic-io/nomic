@@ -343,7 +343,7 @@ impl Chain {
 
             let Some(cons_key) = val
                 .pub_key
-                .ed25519().map(|v|v.as_bytes().to_vec()) else  {
+                .ed25519().map(|v|v.as_bytes().to_vec()) else {
                     continue;
                 };
             let op_key = match self.op_keys_by_cons.get(cons_key.try_into()?)? {
