@@ -154,10 +154,8 @@ pub fn load_consensus_key(dir: &Path) -> Result<[u8; 32]> {
         .map_err(|_| orga::Error::App("invalid consensus key".to_string()))?)
 }
 
-pub fn setup_time_context() {
-    let genesis_time = Utc.with_ymd_and_hms(2022, 10, 5, 0, 0, 0).unwrap();
-    let ctx = Time::from_seconds(genesis_time.timestamp());
-    Context::add(ctx);
+pub fn set_time<T: Into<Time>>(time: T) {
+    Context::add(time.into());
 }
 
 pub fn setup_chain_id_context(chain_id: String) {

@@ -1475,6 +1475,9 @@ pub fn adjust_fee_rate(prev_fee_rate: u64, up: bool, config: &Config) -> u64 {
 
 #[cfg(test)]
 mod test {
+    #[cfg(feature = "full")]
+    use crate::utils::set_time;
+
     use std::{cell::RefCell, rc::Rc};
 
     #[cfg(all(feature = "full"))]
@@ -1711,10 +1714,6 @@ mod test {
             ..Default::default()
         };
 
-        let set_time = |time| {
-            let time = orga::plugins::Time::from_seconds(time);
-            Context::add(time);
-        };
         let maybe_step = |btc_height| {
             queue
                 .borrow_mut()
