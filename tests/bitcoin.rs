@@ -55,10 +55,18 @@ fn app_client() -> AppClient<InnerApp, InnerApp, orga::tendermint::client::HttpC
 
 async fn generate_deposit_address(address: &Address) -> Result<DepositAddress> {
     info!("Generating deposit address for {}...", address);
-    let sigset = app_client()
-        .query(|app| Ok(app.bitcoin.checkpoints.active_sigset()?))
+    let (sigset, threshold) = app_client()
+        .query(|app| {
+            Ok((
+                app.bitcoin.checkpoints.active_sigset()?,
+                app.bitcoin.checkpoints.config.sigset_threshold,
+            ))
+        })
         .await?;
-    let script = sigset.output_script(Dest::Address(*address).commitment_bytes()?.as_slice())?;
+    let script = sigset.output_script(
+        Dest::Address(*address).commitment_bytes()?.as_slice(),
+        threshold,
+    )?;
 
     Ok(DepositAddress {
         deposit_addr: bitcoin::Address::from_script(&script, bitcoin::Network::Regtest)
@@ -664,7 +672,6 @@ async fn signing_completed_checkpoint_test() {
     };
     let bitcoin_config = BitcoinConfig {
         max_offline_checkpoints: 20,
-        emergency_disbursal_lock_time_interval: 24 * 60 * 7,
         ..Default::default()
     };
     let funded_accounts =

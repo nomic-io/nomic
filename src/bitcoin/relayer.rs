@@ -31,6 +31,7 @@ where
 }
 
 const HEADER_BATCH_SIZE: usize = 250;
+const THRESHOLD: (u64, u64) = (9, 10);
 
 pub struct Relayer {
     btc_client: BitcoinRpcClient,
@@ -169,6 +170,7 @@ impl Relayer {
                         &sigset
                             .output_script(
                                 dest.commitment_bytes().map_err(|_| reject())?.as_slice(),
+                                THRESHOLD,
                             )
                             .map_err(warp::reject::custom)?,
                         super::NETWORK,
@@ -400,12 +402,14 @@ impl Relayer {
 
     async fn relay_checkpoint_confs(&mut self) -> Result<()> {
         loop {
-            let (confirmed_index, index) = match app_client(&self.app_client_addr)
+            let (confirmed_index, unconf_index) = match app_client(&self.app_client_addr)
                 .query(|app| {
                     let checkpoints = &app.bitcoin.checkpoints;
                     Ok((
                         checkpoints.confirmed_index,
-                        checkpoints.last_completed_index()?,
+                        checkpoints
+                            .first_unconfirmed_index()?
+                            .ok_or(orga::Error::App("No completed checkpoints yet".to_string()))?,
                     ))
                 })
                 .await
@@ -422,22 +426,27 @@ impl Relayer {
             };
 
             if let Some(confirmed_index) = confirmed_index {
-                if confirmed_index == index {
+                if confirmed_index == unconf_index {
                     tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
                     continue;
                 }
             }
 
-            let tx = app_client(&self.app_client_addr)
+            let (tx, btc_height, min_confs) = app_client(&self.app_client_addr)
                 .query(|app| {
-                    let cp = app.bitcoin.checkpoints.get(index)?;
-                    Ok(cp.checkpoint_tx()?)
+                    let cp = app.bitcoin.checkpoints.get(unconf_index)?;
+                    let btc_height = app.bitcoin.headers.height()?;
+                    let min_confs = app.bitcoin.config.min_checkpoint_confirmations;
+                    Ok((cp.checkpoint_tx()?, btc_height, min_confs))
                 })
                 .await?;
             let unconfirmed_txid = tx.txid();
 
             let maybe_conf = self.scan_for_txid(unconfirmed_txid, 100).await?;
             if let Some((height, block_hash)) = maybe_conf {
+                if height > btc_height - min_confs {
+                    continue;
+                }
                 let proof_bytes = self
                     .btc_client
                     .get_tx_out_proof(&[unconfirmed_txid], Some(&block_hash))?;
@@ -448,7 +457,11 @@ impl Relayer {
                 app_client(&self.app_client_addr)
                     .call(
                         |app| {
-                            build_call!(app.bitcoin.relay_checkpoint(height, proof.clone(), index))
+                            build_call!(app.bitcoin.relay_checkpoint(
+                                height,
+                                proof.clone(),
+                                unconf_index
+                            ))
                         },
                         |app| build_call!(app.app_noop()),
                     )
@@ -795,7 +808,7 @@ impl WatchedScripts {
     }
 
     pub fn insert(&mut self, dest: Dest, sigset: &SignatorySet) -> Result<bool> {
-        let script = self.derive_script(&dest, sigset)?;
+        let script = self.derive_script(&dest, sigset, THRESHOLD)?;
 
         if self.scripts.contains_key(&script) {
             return Ok(false);
@@ -821,7 +834,7 @@ impl WatchedScripts {
             }
 
             for dest in dests {
-                let script = self.derive_script(dest, sigset)?;
+                let script = self.derive_script(dest, sigset, THRESHOLD)?; // TODO: get threshold from state
                 self.scripts.remove(&script);
             }
         }
@@ -829,8 +842,13 @@ impl WatchedScripts {
         Ok(())
     }
 
-    fn derive_script(&self, dest: &Dest, sigset: &SignatorySet) -> Result<::bitcoin::Script> {
-        sigset.output_script(dest.commitment_bytes()?.as_slice())
+    fn derive_script(
+        &self,
+        dest: &Dest,
+        sigset: &SignatorySet,
+        threshold: (u64, u64),
+    ) -> Result<::bitcoin::Script> {
+        sigset.output_script(dest.commitment_bytes()?.as_slice(), threshold)
     }
 }
 

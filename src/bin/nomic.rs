@@ -102,6 +102,7 @@ pub enum Command {
     UpgradeStatus(UpgradeStatusCmd),
     #[cfg(feature = "testnet")]
     RelayOpKeys(RelayOpKeysCmd),
+    SetRecoveryAddress(SetRecoveryAddressCmd),
 }
 
 impl Command {
@@ -155,6 +156,7 @@ impl Command {
                 UpgradeStatus(cmd) => cmd.run().await,
                 #[cfg(feature = "testnet")]
                 RelayOpKeys(cmd) => cmd.run().await,
+                SetRecoveryAddress(cmd) => cmd.run().await,
             }
         })
     }
@@ -290,7 +292,8 @@ impl StartCmd {
                     .iter()
                     .map(|s| s.as_str())
                     .collect();
-                configure_for_statesync(&home.join("tendermint/config/config.toml"), &servers);
+                configure_for_statesync(&home.join("tendermint/config/config.toml"), &servers)
+                    .await;
             }
         } else if cmd.clone_store.is_some() {
             log::warn!(
@@ -569,12 +572,11 @@ fn edit_block_time(cfg_path: &PathBuf, timeout_commit: &str) {
     });
 }
 
-fn configure_for_statesync(cfg_path: &PathBuf, rpc_servers: &[&str]) {
+async fn configure_for_statesync(cfg_path: &PathBuf, rpc_servers: &[&str]) {
     log::info!("Getting bootstrap state for Tendermint light client...");
 
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let (height, hash) = rt
-        .block_on(get_bootstrap_state(rpc_servers))
+    let (height, hash) = get_bootstrap_state(rpc_servers)
+        .await
         .expect("Failed to bootstrap state");
     log::info!(
         "Configuring light client at height {} with hash {}",
@@ -1177,9 +1179,20 @@ impl RelayerCmd {
         let mut relayer = create_relayer().await;
         let checkpoint_confs = relayer.start_checkpoint_conf_relay();
 
+        let mut relayer = create_relayer().await;
+        let emdis = relayer.start_emergency_disbursal_transaction_relay();
+
         let relaunch = relaunch_on_migrate(&self.config);
 
-        futures::try_join!(headers, deposits, checkpoints, checkpoint_confs, relaunch).unwrap();
+        futures::try_join!(
+            headers,
+            deposits,
+            checkpoints,
+            checkpoint_confs,
+            emdis,
+            relaunch
+        )
+        .unwrap();
 
         Ok(())
     }
@@ -1256,10 +1269,15 @@ async fn deposit(
     dest: Dest,
     client: AppClient<InnerApp, InnerApp, HttpClient, Nom, orga::client::wallet::Unsigned>,
 ) -> Result<()> {
-    let sigset = client
-        .query(|app| Ok(app.bitcoin.checkpoints.active_sigset()?))
+    let (sigset, threshold) = client
+        .query(|app| {
+            Ok((
+                app.bitcoin.checkpoints.active_sigset()?,
+                app.bitcoin.checkpoints.config.sigset_threshold,
+            ))
+        })
         .await?;
-    let script = sigset.output_script(dest.commitment_bytes()?.as_slice())?;
+    let script = sigset.output_script(dest.commitment_bytes()?.as_slice(), threshold)?;
     let btc_addr = bitcoin::Address::from_script(&script, nomic::bitcoin::NETWORK).unwrap();
 
     let client = reqwest::Client::new();
@@ -1499,7 +1517,7 @@ impl ExportCmd {
 
         let store_path = home.join("merk");
         let store = Store::new(orga::store::BackingStore::Merk(orga::store::Shared::new(
-            MerkStore::new(store_path),
+            MerkStore::open_readonly(store_path),
         )));
         let root_bytes = store.get(&[])?.unwrap();
 
@@ -1720,6 +1738,33 @@ impl RelayOpKeysCmd {
         log::info!("Finished relaying operator keys");
 
         Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct SetRecoveryAddressCmd {
+    address: bitcoin::Address,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
+}
+
+impl SetRecoveryAddressCmd {
+    async fn run(&self) -> Result<()> {
+        let script = self.address.script_pubkey();
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
+            .call(
+                |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
+                |app| {
+                    build_call!(app
+                        .bitcoin
+                        .set_recovery_script(nomic::bitcoin::adapter::Adapter::new(script.clone())))
+                },
+            )
+            .await?)
     }
 }
 

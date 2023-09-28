@@ -70,9 +70,14 @@ pub struct Config {
     pub transfer_fee: u64,
     pub min_confirmations: u32,
     pub units_per_sat: u64,
+
+    #[orga(version(V0, V1))]
     pub emergency_disbursal_min_tx_amt: u64,
+    #[orga(version(V0, V1))]
     pub emergency_disbursal_lock_time_interval: u32,
+    #[orga(version(V0, V1))]
     pub emergency_disbursal_max_tx_size: u64,
+
     #[orga(version(V1, V2))]
     pub max_offline_checkpoints: u32,
     #[orga(version(V2))]
@@ -111,9 +116,6 @@ impl MigrateFrom<ConfigV1> for ConfigV2 {
             transfer_fee: value.transfer_fee,
             min_confirmations: value.min_confirmations,
             units_per_sat: value.units_per_sat,
-            emergency_disbursal_min_tx_amt: value.emergency_disbursal_min_tx_amt,
-            emergency_disbursal_lock_time_interval: value.emergency_disbursal_lock_time_interval,
-            emergency_disbursal_max_tx_size: value.emergency_disbursal_max_tx_size,
             max_offline_checkpoints: value.max_offline_checkpoints,
             min_checkpoint_confirmations: Config::default().min_checkpoint_confirmations,
             capacity_limit: Config::bitcoin().capacity_limit,
@@ -132,9 +134,6 @@ impl Config {
             transfer_fee: 1_000_000,
             min_confirmations: 3,
             units_per_sat: 1_000_000,
-            emergency_disbursal_min_tx_amt: 1000,
-            emergency_disbursal_lock_time_interval: 60 * 60 * 24 * 7, // one week
-            emergency_disbursal_max_tx_size: 50_000,
             max_offline_checkpoints: 20,
             min_checkpoint_confirmations: 2,
             capacity_limit: 21 * 100_000_000, // 21 BTC
@@ -144,8 +143,6 @@ impl Config {
     fn regtest() -> Self {
         Self {
             min_withdrawal_checkpoints: 1,
-            emergency_disbursal_lock_time_interval: 4 * 60,
-            emergency_disbursal_max_tx_size: 11,
             max_offline_checkpoints: 1,
             ..Self::bitcoin()
         }
@@ -163,7 +160,7 @@ impl Default for Config {
 }
 
 pub fn calc_deposit_fee(amount: u64) -> u64 {
-    amount / 5
+    amount / 100
 }
 
 #[orga(version = 1)]
@@ -179,7 +176,7 @@ pub struct Bitcoin {
     pub(crate) reward_pool: Coin<Nbtc>,
 
     pub recovery_scripts: Map<Address, Adapter<Script>>,
-    config: Config,
+    pub config: Config,
 }
 
 impl MigrateFrom<BitcoinV0> for BitcoinV1 {
@@ -422,7 +419,8 @@ impl Bitcoin {
         }
 
         let dest_bytes = dest.commitment_bytes()?;
-        let expected_script = sigset.output_script(&dest_bytes)?;
+        let expected_script =
+            sigset.output_script(&dest_bytes, self.checkpoints.config.sigset_threshold)?;
         if output.script_pubkey != expected_script {
             return Err(OrgaError::App(
                 "Output script does not match signature set".to_string(),
@@ -433,7 +431,13 @@ impl Bitcoin {
             txid: btc_tx.txid(),
             vout: btc_vout,
         };
-        let input = Input::new(prevout, &sigset, &dest_bytes, output.value)?;
+        let input = Input::new(
+            prevout,
+            &sigset,
+            &dest_bytes,
+            output.value,
+            self.checkpoints.config.sigset_threshold,
+        )?;
         let input_size = input.est_vsize();
 
         let fee = input_size * checkpoint.fee_rate;
