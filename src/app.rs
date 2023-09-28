@@ -69,7 +69,7 @@ const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhq
 const IBC_FEE_USATS: u64 = 1_000_000;
 const DECLARE_FEE_USATS: u64 = 100_000_000;
 
-#[orga(version = 2)]
+#[orga(version = 3)]
 pub struct InnerApp {
     #[call]
     pub accounts: Accounts<Nom>,
@@ -100,12 +100,13 @@ pub struct InnerApp {
     pub incentives: Incentives,
 
     #[cfg(feature = "testnet")]
+    #[orga(version(V3))]
     pub cosmos: Cosmos,
 }
 
 #[orga]
 impl InnerApp {
-    pub const CONSENSUS_VERSION: u8 = 5;
+    pub const CONSENSUS_VERSION: u8 = 6;
 
     #[cfg(feature = "full")]
     fn configure_faucets(&mut self) -> Result<()> {
@@ -1159,7 +1160,7 @@ impl Describe for Dest {
 }
 
 pub fn ibc_fee(amount: Amount) -> Result<Amount> {
-    let fee_rate: orga::coins::Decimal = "0.015".parse().unwrap();
+    let fee_rate: orga::coins::Decimal = "0.005".parse().unwrap();
     (amount * fee_rate)?.amount()
 }
 

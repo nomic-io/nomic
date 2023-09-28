@@ -131,9 +131,10 @@ impl Input {
         sigset: &SignatorySet,
         dest: &[u8],
         amount: u64,
+        threshold: (u64, u64),
     ) -> Result<Self> {
-        let script_pubkey = sigset.output_script(dest)?;
-        let redeem_script = sigset.redeem_script(dest)?;
+        let script_pubkey = sigset.output_script(dest, threshold)?;
+        let redeem_script = sigset.redeem_script(dest, threshold)?;
 
         Ok(Input {
             prevout: Adapter::new(prevout),
@@ -536,6 +537,14 @@ pub struct Config {
     pub min_fee_rate: u64,
     #[orga(version(V1))]
     pub max_fee_rate: u64,
+    #[orga(version(V1))]
+    pub sigset_threshold: (u64, u64),
+    #[orga(version(V1))]
+    pub emergency_disbursal_min_tx_amt: u64,
+    #[orga(version(V1))]
+    pub emergency_disbursal_lock_time_interval: u32,
+    #[orga(version(V1))]
+    pub emergency_disbursal_max_tx_size: u64,
 }
 
 impl MigrateFrom<ConfigV0> for ConfigV1 {
@@ -555,6 +564,8 @@ impl Config {
     fn regtest() -> Self {
         Self {
             min_checkpoint_interval: 15,
+            emergency_disbursal_lock_time_interval: 4 * 60,
+            emergency_disbursal_max_tx_size: 11,
             ..Config::bitcoin()
         }
     }
@@ -569,6 +580,10 @@ impl Config {
             target_checkpoint_inclusion: 2,
             min_fee_rate: 2, // relay threshold is 1 sat/vbyte
             max_fee_rate: 200,
+            sigset_threshold: (9, 10),
+            emergency_disbursal_min_tx_amt: 1000,
+            emergency_disbursal_lock_time_interval: 60 * 60 * 24 * 7, // one week
+            emergency_disbursal_max_tx_size: 50_000,
         }
     }
 }
@@ -659,9 +674,9 @@ type BuildingAdvanceRes = (
 );
 
 impl<'a> BuildingCheckpointMut<'a> {
-    fn link_intermediate_tx(&mut self, tx: &mut BitcoinTx) -> Result<()> {
+    fn link_intermediate_tx(&mut self, tx: &mut BitcoinTx, threshold: (u64, u64)) -> Result<()> {
         let sigset = self.sigset.clone();
-        let output_script = sigset.output_script(&[0u8])?;
+        let output_script = sigset.output_script(&[0u8], threshold)?;
         let tx_value = tx.value()?;
 
         let mut intermediate_tx_batch = self
@@ -676,6 +691,7 @@ impl<'a> BuildingCheckpointMut<'a> {
             &sigset,
             &[0u8],
             tx_value,
+            threshold,
         )?;
 
         let intermediate_tx_output = bitcoin::TxOut {
@@ -752,7 +768,9 @@ impl<'a> BuildingCheckpointMut<'a> {
         Ok(())
     }
 
-    //TODO: Generalize emergency disbursal to dynamic tree structure for intermediate tx overflow
+    //TODO: Generalize emergency disbursal to dynamic tree structure for
+    //intermediate tx overflow
+    #[allow(clippy::too_many_arguments)]
     fn generate_emergency_disbursal_txs(
         &mut self,
         nbtc_accounts: &Accounts<Nbtc>,
@@ -761,6 +779,7 @@ impl<'a> BuildingCheckpointMut<'a> {
         external_outputs: impl Iterator<Item = Result<bitcoin::TxOut>>,
         fee_rate: u64,
         reserve_value: u64,
+        config: &Config,
     ) -> Result<()> {
         #[cfg(not(feature = "full"))]
         unimplemented!();
@@ -775,16 +794,13 @@ impl<'a> BuildingCheckpointMut<'a> {
                 return Ok(());
             }
 
-            //TODO: Pull bitcoin config from state
-            let bitcoin_config = super::Bitcoin::config();
             use orga::context::Context;
             let time = Context::resolve::<Time>()
                 .ok_or_else(|| OrgaError::Coins("No Time context found".into()))?;
 
             let sigset = self.sigset.clone();
 
-            let lock_time =
-                time.seconds as u32 + bitcoin_config.emergency_disbursal_lock_time_interval;
+            let lock_time = time.seconds as u32 + config.emergency_disbursal_lock_time_interval;
 
             let mut outputs = Vec::new();
             for entry in nbtc_accounts.iter()? {
@@ -827,13 +843,13 @@ impl<'a> BuildingCheckpointMut<'a> {
             {
                 let output = output?;
 
-                if output.value < bitcoin_config.emergency_disbursal_min_tx_amt {
+                if output.value < config.emergency_disbursal_min_tx_amt {
                     continue;
                 }
 
                 let mut curr_tx = final_txs.pop().unwrap();
-                if curr_tx.vsize()? >= bitcoin_config.emergency_disbursal_max_tx_size {
-                    self.link_intermediate_tx(&mut curr_tx)?;
+                if curr_tx.vsize()? >= config.emergency_disbursal_max_tx_size {
+                    self.link_intermediate_tx(&mut curr_tx, config.sigset_threshold)?;
                     final_txs.push(curr_tx);
                     curr_tx = BitcoinTx::with_lock_time(lock_time);
                 }
@@ -844,11 +860,17 @@ impl<'a> BuildingCheckpointMut<'a> {
             }
 
             let mut last_tx = final_txs.pop().unwrap();
-            self.link_intermediate_tx(&mut last_tx)?;
+            self.link_intermediate_tx(&mut last_tx, config.sigset_threshold)?;
             final_txs.push(last_tx);
 
-            let tx_in = Input::new(reserve_outpoint, &sigset, &[0u8], reserve_value)?;
-            let output_script = self.sigset.output_script(&[0u8])?;
+            let tx_in = Input::new(
+                reserve_outpoint,
+                &sigset,
+                &[0u8],
+                reserve_value,
+                config.sigset_threshold,
+            )?;
+            let output_script = self.sigset.output_script(&[0u8], config.sigset_threshold)?;
             let mut intermediate_tx_batch = self
                 .batches
                 .get_mut(BatchType::IntermediateTx as u64)?
@@ -905,7 +927,10 @@ impl<'a> BuildingCheckpointMut<'a> {
 
         let reserve_out = bitcoin::TxOut {
             value: 0, // will be updated after counting ins/outs and fees
-            script_pubkey: self.0.sigset.output_script(&[0u8])?, // TODO: double-check safety
+            script_pubkey: self
+                .0
+                .sigset
+                .output_script(&[0u8], config.sigset_threshold)?,
         };
 
         let fee_rate = self.fee_rate;
@@ -984,6 +1009,7 @@ impl<'a> BuildingCheckpointMut<'a> {
             external_outputs,
             self.fee_rate,
             reserve_value,
+            config,
         )?;
 
         Ok((
@@ -1141,7 +1167,7 @@ impl CheckpointQueue {
                 .batches
                 .get(BatchType::IntermediateTx as u64)?
                 .unwrap();
-            let intermediate_tx = intermediate_tx_batch.get(0)?.unwrap();
+            let Some(intermediate_tx) = intermediate_tx_batch.get(0)? else { return Ok(txs) };
             txs.push(Adapter::new(intermediate_tx.to_bitcoin_tx()?));
 
             let disbursal_batch = completed.batches.get(BatchType::Disbursal as u64)?.unwrap();
@@ -1290,6 +1316,7 @@ impl CheckpointQueue {
                 &sigset,
                 &[0u8], // TODO: double-check safety
                 reserve_value,
+                config.sigset_threshold,
             )?;
 
             checkpoint_tx.input.push_back(input)?;
@@ -1741,6 +1768,7 @@ mod test {
                 &queue.borrow().building().unwrap().sigset,
                 &[0u8],
                 100_000_000,
+                (9, 10),
             )
             .unwrap();
             let mut queue = queue.borrow_mut();

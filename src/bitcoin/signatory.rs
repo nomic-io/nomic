@@ -132,8 +132,8 @@ impl SignatorySet {
         }
     }
 
-    pub fn signature_threshold(&self) -> u64 {
-        ((self.present_vp as u128) * 9 / 10) as u64
+    pub fn signature_threshold(&self, (numerator, denominator): (u64, u64)) -> u64 {
+        ((self.present_vp as u128) * numerator as u128 / denominator as u128) as u64
     }
 
     pub fn quorum_threshold(&self) -> u64 {
@@ -162,7 +162,7 @@ impl SignatorySet {
         self.len() == 0
     }
 
-    pub fn redeem_script(&self, dest: &[u8]) -> Result<Script> {
+    pub fn redeem_script(&self, dest: &[u8], threshold: (u64, u64)) -> Result<Script> {
         let truncation = self.get_truncation(23);
 
         let mut iter = self.signatories.iter();
@@ -196,7 +196,7 @@ impl SignatorySet {
         }
 
         // > threshold check
-        let truncated_threshold = self.signature_threshold() >> truncation;
+        let truncated_threshold = self.signature_threshold(threshold) >> truncation;
         let script = script! {
             <truncated_threshold as i64> OP_GREATERTHAN
         };
@@ -210,8 +210,8 @@ impl SignatorySet {
         Ok(bytes.into())
     }
 
-    pub fn output_script(&self, dest: &[u8]) -> Result<Script> {
-        Ok(self.redeem_script(dest)?.to_v0_p2wsh())
+    pub fn output_script(&self, dest: &[u8], threshold: (u64, u64)) -> Result<Script> {
+        Ok(self.redeem_script(dest, threshold)?.to_v0_p2wsh())
     }
 
     fn get_truncation(&self, target_precision: u32) -> u32 {
