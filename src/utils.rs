@@ -384,6 +384,20 @@ impl Wallet for NomicTestWallet {
 }
 
 impl NomicTestWallet {
+    pub fn new_rand() -> Self {
+        let privkey = SecretKey::new(&mut rand::thread_rng());
+        let address = address_from_privkey(&privkey);
+        let script = address_to_script(address).unwrap();
+        let secret_key = orga::secp256k1::SecretKey::from_slice(&privkey.secret_bytes()).unwrap();
+        let wallet = DerivedKey::from_secret_key(secret_key);
+        Self {
+            privkey,
+            address,
+            script,
+            wallet,
+        }
+    }
+
     pub fn bitcoin_address(&self) -> bitcoin::Address {
         bitcoin::Address::from_script(&self.script, bitcoin::Network::Regtest).unwrap()
     }
@@ -435,20 +449,7 @@ pub fn setup_test_app(
             .unwrap();
 
         let keys: Vec<NomicTestWallet> = (0..num_accounts)
-            .map(|_| {
-                let privkey = SecretKey::new(&mut rand::thread_rng());
-                let address = address_from_privkey(&privkey);
-                let script = address_to_script(address).unwrap();
-                let secret_key =
-                    orga::secp256k1::SecretKey::from_slice(&privkey.secret_bytes()).unwrap();
-                let wallet = DerivedKey::from_secret_key(secret_key);
-                NomicTestWallet {
-                    privkey,
-                    address,
-                    script,
-                    wallet,
-                }
-            })
+            .map(|_| NomicTestWallet::new_rand())
             .collect();
 
         keys.iter().for_each(|key| {
