@@ -900,13 +900,13 @@ async fn signing_pruned_checkpoint_test() {
 
     let checkpoint_queue_config = CheckpointQueueConfig {
         min_checkpoints: 3,
+        emergency_disbursal_lock_time_interval: 24 * 60 * 7,
         max_age: 0,
         ..Default::default()
     };
 
     let bitcoin_config = BitcoinConfig {
         max_offline_checkpoints: 20,
-        emergency_disbursal_lock_time_interval: 24 * 60 * 7,
         ..Default::default()
     };
 
