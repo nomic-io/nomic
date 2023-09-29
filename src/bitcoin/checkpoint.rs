@@ -524,6 +524,7 @@ impl Checkpoint {
 #[orga(skip(Default), version = 1)]
 #[derive(Clone)]
 pub struct Config {
+    pub min_checkpoints: u64,
     pub min_checkpoint_interval: u64,
     pub max_checkpoint_interval: u64,
     pub max_inputs: u64,
@@ -572,6 +573,7 @@ impl Config {
 
     fn bitcoin() -> Self {
         Self {
+            min_checkpoints: 10,
             min_checkpoint_interval: 60 * 5,
             max_checkpoint_interval: 60 * 60 * 8,
             max_inputs: 40,
@@ -1220,11 +1222,9 @@ impl CheckpointQueue {
         let latest = self.building()?.create_time();
 
         while let Some(oldest) = self.queue.front()? {
-            // TODO: move to min_checkpoints field in config
-            if self.queue.len() <= 10 {
+            if self.queue.len() <= self.config.min_checkpoints {
                 break;
             }
-
             if latest - oldest.create_time() <= self.config.max_age {
                 break;
             }
@@ -1507,15 +1507,10 @@ mod test {
     #[cfg(all(feature = "full"))]
     use bitcoin::{
         secp256k1::Secp256k1,
-        util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey},
-        OutPoint, PubkeyHash, Script, Txid,
+        util::bip32::{ExtendedPrivKey, ExtendedPubKey},
+        OutPoint, Script, Txid,
     };
     use orga::{collections::EntryMap, context::Context};
-    #[cfg(all(feature = "full"))]
-    use rand::Rng;
-
-    #[cfg(all(feature = "full"))]
-    use crate::bitcoin::{signatory::Signatory, threshold_sig::Share};
 
     use super::*;
 
