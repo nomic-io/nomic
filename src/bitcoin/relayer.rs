@@ -753,6 +753,12 @@ pub struct OutputMatch {
 pub struct RawSignatorySet {
     pub signatories: Vec<RawSignatory>,
     pub index: u32,
+    #[serde(rename = "bridgeFeeRate")]
+    pub bridge_fee_rate: f64,
+    #[serde(rename = "minerFeeRate")]
+    pub miner_fee_rate: f64,
+    #[serde(rename = "depositsEnabled")]
+    pub deposits_enabled: bool,
 }
 
 impl From<SignatorySet> for RawSignatorySet {
@@ -765,6 +771,10 @@ impl From<SignatorySet> for RawSignatorySet {
         RawSignatorySet {
             signatories,
             index: sigset.index(),
+            // TODO
+            bridge_fee_rate: 0.015,
+            miner_fee_rate: 0.0001,
+            deposits_enabled: true,
         }
     }
 }
