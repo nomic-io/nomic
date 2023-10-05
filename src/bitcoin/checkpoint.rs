@@ -800,6 +800,17 @@ impl<'a> BuildingCheckpointMut<'a> {
                 }
             }
 
+            for entry in recovery_scripts.iter()? {
+                let (address, dest_script) = entry?;
+                let balance = nbtc_accounts.balance(*address)?;
+                let tx_out = bitcoin::TxOut {
+                    value: u64::from(balance) / 1_000_000,
+                    script_pubkey: dest_script.clone().into_inner(),
+                };
+
+                outputs.push(Ok(tx_out))
+            }
+
             // // TODO: combine pending transfer outputs into other outputs by adding to amount
             let pending_outputs: Vec<_> = self
                 .pending
