@@ -732,13 +732,14 @@ impl<'a> BuildingCheckpointMut<'a> {
                 return Ok(false);
             }
             input.amount -= intermediate_tx_fee / intermediate_tx_len;
-            for (i, output) in intermediate_tx_outputs.iter() {
+
+            for (i, (vout, output)) in intermediate_tx_outputs.iter().enumerate() {
                 if output == &(input.amount) {
                     input.prevout = Adapter::new(bitcoin::OutPoint {
                         txid: intermediate_tx_id,
-                        vout: *i as u32,
+                        vout: *vout as u32,
                     });
-                    intermediate_tx_outputs.remove(*i);
+                    intermediate_tx_outputs.remove(i);
                     let tx_size = tx.vsize().map_err(|err| OrgaError::App(err.to_string()))?;
                     let fee = intermediate_tx_fee / intermediate_tx_len + tx_size * fee_rate;
                     tx.deduct_fee(fee)
