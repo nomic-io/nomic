@@ -518,6 +518,21 @@ impl Checkpoint {
     pub fn signed(&self) -> Result<bool> {
         Ok(self.signed_batches()? == self.batches.len())
     }
+
+    pub fn emergency_disbursal_txs(&self) -> Result<Vec<Adapter<bitcoin::Transaction>>> {
+        let mut txs = vec![];
+
+        let intermediate_tx_batch = self.batches.get(BatchType::IntermediateTx as u64)?.unwrap();
+        let intermediate_tx = intermediate_tx_batch.get(0)?.unwrap();
+        txs.push(Adapter::new(intermediate_tx.to_bitcoin_tx()?));
+
+        let disbursal_batch = self.batches.get(BatchType::Disbursal as u64)?.unwrap();
+        for tx in disbursal_batch.iter()? {
+            txs.push(Adapter::new(tx?.to_bitcoin_tx()?));
+        }
+
+        Ok(txs)
+    }
 }
 
 #[orga(skip(Default), version = 1)]
@@ -1135,23 +1150,11 @@ impl CheckpointQueue {
 
     #[query]
     pub fn emergency_disbursal_txs(&self) -> Result<Vec<Adapter<bitcoin::Transaction>>> {
-        let mut txs = vec![];
-
         if let Some(completed) = self.completed(1)?.last() {
-            let intermediate_tx_batch = completed
-                .batches
-                .get(BatchType::IntermediateTx as u64)?
-                .unwrap();
-            let intermediate_tx = intermediate_tx_batch.get(0)?.unwrap();
-            txs.push(Adapter::new(intermediate_tx.to_bitcoin_tx()?));
-
-            let disbursal_batch = completed.batches.get(BatchType::Disbursal as u64)?.unwrap();
-            for tx in disbursal_batch.iter()? {
-                txs.push(Adapter::new(tx?.to_bitcoin_tx()?));
-            }
+            completed.emergency_disbursal_txs()
+        } else {
+            Ok(vec![])
         }
-
-        Ok(txs)
     }
 
     #[query]
