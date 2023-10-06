@@ -103,6 +103,7 @@ pub enum Command {
     #[cfg(feature = "testnet")]
     RelayOpKeys(RelayOpKeysCmd),
     SetRecoveryAddress(SetRecoveryAddressCmd),
+    SigningStatus(SigningStatusCmd),
 }
 
 impl Command {
@@ -157,6 +158,7 @@ impl Command {
                 #[cfg(feature = "testnet")]
                 RelayOpKeys(cmd) => cmd.run().await,
                 SetRecoveryAddress(cmd) => cmd.run().await,
+                SigningStatus(cmd) => cmd.run().await,
             }
         })
     }
@@ -1765,6 +1767,102 @@ impl SetRecoveryAddressCmd {
                 },
             )
             .await?)
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct SigningStatusCmd {
+    #[clap(flatten)]
+    config: nomic::network::Config,
+}
+
+impl SigningStatusCmd {
+    async fn run(&self) -> Result<()> {
+        use bitcoin::util::bip32::ChildNumber;
+        let home = self.config.home_expect()?;
+
+        let store_path = home.join("merk");
+        let store = Store::new(orga::store::BackingStore::Merk(orga::store::Shared::new(
+            MerkStore::open_readonly(store_path),
+        )));
+        let root_bytes = store.get(&[])?.unwrap();
+
+        let app =
+            orga::plugins::ABCIPlugin::<nomic::app::App>::load(store, &mut root_bytes.as_slice())?;
+
+        let app = app
+            .inner
+            .inner
+            .into_inner()
+            .inner
+            .inner
+            .inner
+            .inner
+            .inner
+            .inner;
+        let Some(signing) = app.bitcoin.checkpoints.signing()? else {
+           println!("No signing checkpoint");
+           return Ok(())
+        };
+        let batch = signing.current_batch()?.unwrap();
+        let mut lowest_index = 0;
+        let mut lowest_frac = 2.0;
+        let tx = batch.front()?.unwrap();
+        for (index, inp) in (tx.input.iter()?).enumerate() {
+            let inp = inp?;
+            let sigs = &inp.signatures;
+            let threshold = sigs.threshold;
+            let signed = sigs.signed;
+            let frac = signed as f64 / threshold as f64;
+            if frac < lowest_frac {
+                lowest_frac = frac;
+                lowest_index = index as u64;
+            }
+        }
+        let res_out = tx.input.get(lowest_index)?.unwrap();
+        let sigs = &res_out.signatures;
+        let sig_keys = &app.bitcoin.signatory_keys;
+        let sigset_index = res_out.sigset_index;
+
+        let secp = bitcoin::secp256k1::Secp256k1::verification_only();
+        let mut missing_cons_keys = vec![];
+        for entry in sig_keys.map().iter()? {
+            use nomic::bitcoin::threshold_sig::Pubkey;
+            let (k, xpub) = entry?;
+
+            let derive_path = [ChildNumber::from_normal_idx(sigset_index)?];
+            let pubkey: Pubkey = xpub.derive_pub(&secp, &derive_path)?.public_key.into();
+            let needs_to_sign = sigs.needs_sig(pubkey)?;
+            if needs_to_sign {
+                missing_cons_keys.push((k, *xpub));
+            }
+        }
+        let all_vals = app.staking.all_validators()?;
+        for val in all_vals {
+            if val.amount_staked == 0 {
+                continue;
+            }
+            let cons_key = app.staking.consensus_key(val.address.into())?;
+            if let Some(missing) = missing_cons_keys.iter().find(|v| *v.0 == cons_key) {
+                let json: serde_json::Value =
+                    serde_json::from_str(String::from_utf8(val.info.to_vec()).unwrap().as_str())
+                        .unwrap();
+                let name = json.get("moniker").unwrap().to_string();
+                let to_sign = app
+                    .bitcoin
+                    .checkpoints
+                    .get(app.bitcoin.checkpoints.index)?
+                    .to_sign(missing.1)?;
+                println!("Missing {} signature(s) from {}", to_sign.len(), name);
+            }
+        }
+
+        println!(
+            "Checkpoint is at {:.2}% of the minimum required voting power",
+            lowest_frac * 100.0
+        );
+
+        Ok(())
     }
 }
 
