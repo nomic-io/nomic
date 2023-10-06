@@ -788,17 +788,6 @@ impl<'a> BuildingCheckpointMut<'a> {
                 time.seconds as u32 + bitcoin_config.emergency_disbursal_lock_time_interval;
 
             let mut outputs = Vec::new();
-            for entry in nbtc_accounts.iter()? {
-                let (address, coins) = entry?;
-                if let Some(dest_script) = recovery_scripts.get(*address)? {
-                    let tx_out = bitcoin::TxOut {
-                        value: u64::from(coins.amount) / 1_000_000,
-                        script_pubkey: dest_script.clone().into_inner(),
-                    };
-
-                    outputs.push(Ok(tx_out));
-                }
-            }
 
             for entry in recovery_scripts.iter()? {
                 let (address, dest_script) = entry?;
