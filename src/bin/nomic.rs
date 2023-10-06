@@ -100,6 +100,9 @@ pub enum Command {
     IbcTransfer(IbcTransferCmd),
     Export(ExportCmd),
     UpgradeStatus(UpgradeStatusCmd),
+    #[cfg(feature = "testnet")]
+    RelayOpKeys(RelayOpKeysCmd),
+    SetRecoveryAddress(SetRecoveryAddressCmd),
 }
 
 impl Command {
@@ -107,11 +110,9 @@ impl Command {
         use Command::*;
         let rt = tokio::runtime::Runtime::new().unwrap();
 
-        if let Start(cmd) = self {
-            return Ok(cmd.run()?);
-        }
-
-        if let Some(legacy_bin) = legacy_bin(config)? {
+        if let Start(_cmd) = self {
+            // return Ok(cmd.run()?);
+        } else if let Some(legacy_bin) = legacy_bin(config)? {
             let mut legacy_cmd = std::process::Command::new(legacy_bin);
             legacy_cmd.args(std::env::args().skip(1));
             log::debug!("Running legacy binary... ({:#?})", legacy_cmd);
@@ -121,7 +122,7 @@ impl Command {
 
         rt.block_on(async move {
             match self {
-                Start(_cmd) => unreachable!(),
+                Start(cmd) => Ok(cmd.run().await?),
                 Send(cmd) => cmd.run().await,
                 SendNbtc(cmd) => cmd.run().await,
                 Balance(cmd) => cmd.run().await,
@@ -153,6 +154,9 @@ impl Command {
                 IbcTransfer(cmd) => cmd.run().await,
                 Export(cmd) => cmd.run().await,
                 UpgradeStatus(cmd) => cmd.run().await,
+                #[cfg(feature = "testnet")]
+                RelayOpKeys(cmd) => cmd.run().await,
+                SetRecoveryAddress(cmd) => cmd.run().await,
             }
         })
     }
@@ -188,7 +192,7 @@ pub struct StartCmd {
 }
 
 impl StartCmd {
-    fn run(&self) -> orga::Result<()> {
+    async fn run(&self) -> orga::Result<()> {
         let cmd = self.clone();
         let home = cmd.config.home_expect()?;
 
@@ -243,7 +247,7 @@ impl StartCmd {
         if !has_node {
             log::info!("Initializing node at {}...", home.display());
 
-            let node = Node::<nomic::app::App>::new(&home, chain_id, Default::default());
+            let node = Node::<nomic::app::App>::new(&home, chain_id, Default::default()).await;
 
             if let Some(source) = cmd.clone_store {
                 let mut source = PathBuf::from_str(&source).unwrap();
@@ -288,7 +292,8 @@ impl StartCmd {
                     .iter()
                     .map(|s| s.as_str())
                     .collect();
-                configure_for_statesync(&home.join("tendermint/config/config.toml"), &servers);
+                configure_for_statesync(&home.join("tendermint/config/config.toml"), &servers)
+                    .await;
             }
         } else if cmd.clone_store.is_some() {
             log::warn!(
@@ -306,10 +311,10 @@ impl StartCmd {
         }
 
         log::info!("Starting node at {}...", home.display());
-        let mut node = Node::<nomic::app::App>::new(&home, chain_id, Default::default());
+        let mut node = Node::<nomic::app::App>::new(&home, chain_id, Default::default()).await;
 
         if cmd.unsafe_reset {
-            node = node.reset();
+            node = node.reset().await;
         }
         if let Some(genesis) = &cmd.config.genesis {
             let genesis_bytes = if genesis.contains('\n') {
@@ -379,6 +384,8 @@ impl StartCmd {
             .print_tendermint_logs(cmd.tendermint_logs)
             .tendermint_flags(cmd.config.tendermint_flags.clone())
             .run()
+            .await?
+            .wait()
     }
 }
 
@@ -565,12 +572,11 @@ fn edit_block_time(cfg_path: &PathBuf, timeout_commit: &str) {
     });
 }
 
-fn configure_for_statesync(cfg_path: &PathBuf, rpc_servers: &[&str]) {
+async fn configure_for_statesync(cfg_path: &PathBuf, rpc_servers: &[&str]) {
     log::info!("Getting bootstrap state for Tendermint light client...");
 
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let (height, hash) = rt
-        .block_on(get_bootstrap_state(rpc_servers))
+    let (height, hash) = get_bootstrap_state(rpc_servers)
+        .await
         .expect("Failed to bootstrap state");
     log::info!(
         "Configuring light client at height {} with hash {}",
@@ -1170,9 +1176,23 @@ impl RelayerCmd {
         let mut relayer = create_relayer().await;
         let checkpoints = relayer.start_checkpoint_relay();
 
+        let mut relayer = create_relayer().await;
+        let checkpoint_confs = relayer.start_checkpoint_conf_relay();
+
+        let mut relayer = create_relayer().await;
+        let emdis = relayer.start_emergency_disbursal_transaction_relay();
+
         let relaunch = relaunch_on_migrate(&self.config);
 
-        futures::try_join!(headers, deposits, checkpoints, relaunch).unwrap();
+        futures::try_join!(
+            headers,
+            deposits,
+            checkpoints,
+            checkpoint_confs,
+            emdis,
+            relaunch
+        )
+        .unwrap();
 
         Ok(())
     }
@@ -1249,10 +1269,15 @@ async fn deposit(
     dest: Dest,
     client: AppClient<InnerApp, InnerApp, HttpClient, Nom, orga::client::wallet::Unsigned>,
 ) -> Result<()> {
-    let sigset = client
-        .query(|app| Ok(app.bitcoin.checkpoints.active_sigset()?))
+    let (sigset, threshold) = client
+        .query(|app| {
+            Ok((
+                app.bitcoin.checkpoints.active_sigset()?,
+                app.bitcoin.checkpoints.config.sigset_threshold,
+            ))
+        })
         .await?;
-    let script = sigset.output_script(dest.commitment_bytes()?.as_slice())?;
+    let script = sigset.output_script(dest.commitment_bytes()?.as_slice(), threshold)?;
     let btc_addr = bitcoin::Address::from_script(&script, nomic::bitcoin::NETWORK).unwrap();
 
     let client = reqwest::Client::new();
@@ -1424,7 +1449,7 @@ impl GrpcCmd {
         use orga::ibc::GrpcOpts;
         orga::ibc::start_grpc(
             // TODO: support configuring RPC address
-            || nomic::app_client("http://localhost:26657").sub(|app| app.ibc),
+            || nomic::app_client("http://localhost:26657").sub(|app| app.ibc.ctx),
             &GrpcOpts {
                 host: "127.0.0.1".to_string(),
                 port: self.port,
@@ -1492,7 +1517,7 @@ impl ExportCmd {
 
         let store_path = home.join("merk");
         let store = Store::new(orga::store::BackingStore::Merk(orga::store::Shared::new(
-            MerkStore::new(store_path),
+            MerkStore::open_readonly(store_path),
         )));
         let root_bytes = store.get(&[])?.unwrap();
 
@@ -1686,6 +1711,60 @@ impl UpgradeStatusCmd {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(feature = "testnet")]
+#[derive(Parser, Debug)]
+pub struct RelayOpKeysCmd {
+    client_id: String,
+    rpc_url: String,
+}
+
+#[cfg(feature = "testnet")]
+impl RelayOpKeysCmd {
+    async fn run(&self) -> Result<()> {
+        use nomic::cosmos::relay_op_keys;
+        log::info!("Relaying operator keys for client {}", self.client_id);
+        let bytes = format!("{}/", self.client_id).as_bytes().to_vec();
+        let client_id = Decode::decode(&mut bytes.as_slice())?;
+        relay_op_keys(
+            || nomic::app_client("http://localhost:26657").with_wallet(wallet()),
+            client_id,
+            self.rpc_url.as_str(),
+        )
+        .await?;
+
+        log::info!("Finished relaying operator keys");
+
+        Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct SetRecoveryAddressCmd {
+    address: bitcoin::Address,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
+}
+
+impl SetRecoveryAddressCmd {
+    async fn run(&self) -> Result<()> {
+        let script = self.address.script_pubkey();
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
+            .call(
+                |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
+                |app| {
+                    build_call!(app
+                        .bitcoin
+                        .set_recovery_script(nomic::bitcoin::adapter::Adapter::new(script.clone())))
+                },
+            )
+            .await?)
     }
 }
 

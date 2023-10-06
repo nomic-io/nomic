@@ -100,6 +100,9 @@ where
         let mut index = (self.app_client)()
             .query(|app| {
                 let index = app.bitcoin.checkpoints.index();
+                if index == 0 {
+                    return Ok(0);
+                }
                 let first = index + 1 - app.bitcoin.checkpoints.len()?;
                 Ok(index.saturating_sub(CHECKPOINT_WINDOW).max(first))
             })
@@ -179,33 +182,13 @@ where
         }
 
         self.check_change_rates().await?;
-        info!("Signing checkpoint...");
-        dbg!("{} inputs", to_sign.len());
+        info!("Signing checkpoint ({} inputs)...", to_sign.len());
 
-        let sigs: LengthVec<u16, Signature> = to_sign
-            .into_iter()
-            .map(|(msg, index)| {
-                let privkey = self
-                    .xpriv
-                    .derive_priv(&secp, &[ChildNumber::from_normal_idx(index)?])?
-                    .private_key;
-
-                Ok(secp
-                    .sign_ecdsa(&Message::from_slice(&msg[..])?, &privkey)
-                    .serialize_compact()
-                    .into())
-            })
-            .collect::<Result<Vec<_>>>()?
-            .try_into()?;
+        let sigs = sign(&secp, &self.xpriv, &to_sign)?;
 
         (self.app_client)()
             .call(
-                move |app| {
-                    build_call!(app
-                        .bitcoin
-                        .checkpoints
-                        .sign(xpub.into(), sigs.clone(), index))
-                },
+                move |app| build_call!(app.bitcoin.sign(xpub.into(), sigs.clone(), index)),
                 |app| build_call!(app.app_noop()),
             )
             .await?;
@@ -252,4 +235,25 @@ where
 
         Ok(())
     }
+}
+
+pub fn sign(
+    secp: &Secp256k1<bitcoin::secp256k1::SignOnly>,
+    xpriv: &ExtendedPrivKey,
+    to_sign: &[([u8; 32], u32)],
+) -> Result<LengthVec<u16, Signature>> {
+    Ok(to_sign
+        .iter()
+        .map(|(msg, index)| {
+            let privkey = xpriv
+                .derive_priv(secp, &[ChildNumber::from_normal_idx(*index)?])?
+                .private_key;
+
+            Ok(secp
+                .sign_ecdsa(&Message::from_slice(&msg[..])?, &privkey)
+                .serialize_compact()
+                .into())
+        })
+        .collect::<Result<Vec<_>>>()?
+        .try_into()?)
 }
