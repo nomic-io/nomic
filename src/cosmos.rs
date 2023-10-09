@@ -298,7 +298,7 @@ impl Proof {
     }
 
     pub fn outer_proof(&self) -> Result<&ExistenceProof> {
-        let proof = self
+        let proof = &self
             .outer
             .proof
             .as_ref()
@@ -311,7 +311,7 @@ impl Proof {
     }
 
     pub fn inner_proof(&self) -> Result<&ExistenceProof> {
-        let proof = self
+        let proof = &self
             .inner
             .proof
             .as_ref()
@@ -344,11 +344,9 @@ impl Chain {
         for val in vals.validators() {
             sigset.possible_vp += val.power();
 
-            let Some(cons_key) = val
-                .pub_key
-                .ed25519().map(|v|v.as_bytes().to_vec()) else {
-                    continue;
-                };
+            let Some(cons_key) = val.pub_key.ed25519().map(|v| v.as_bytes().to_vec()) else {
+                continue;
+            };
             let op_key = match self.op_keys_by_cons.get(cons_key.try_into()?)? {
                 None => continue,
                 Some(op_key) => op_key,
@@ -418,11 +416,9 @@ pub async fn relay_op_keys<
     for validator in res.validators.iter() {
         let client_id = client_id.clone();
         let cons_addr_bytes = validator.address.as_bytes().to_vec();
-        let Some(cons_key) = validator
-            .pub_key
-            .ed25519().map(|v|v.as_bytes().to_vec()) else  {
-                continue;
-            };
+        let Some(cons_key) = validator.pub_key.ed25519().map(|v| v.as_bytes().to_vec()) else {
+            continue;
+        };
         let already_relayed = (app_client)()
             .query(|app: InnerApp| {
                 Ok(app

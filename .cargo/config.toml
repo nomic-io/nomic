@@ -1,0 +1,4 @@
+[env]
+GIT_BRANCH = "develop"
+NOMIC_LEGACY_VERSION = "0.1"
+NOMIC_LEGACY_PATH = "../../target/nomic"

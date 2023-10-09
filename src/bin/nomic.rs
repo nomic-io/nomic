@@ -446,9 +446,9 @@ fn legacy_bin(config: &nomic::network::Config) -> Result<Option<PathBuf>> {
                     std::fs::create_dir_all(&bin_dir)?;
                 }
 
-                let bin_name = env!("NOMIC_LEGACY_BUILD_VERSION").trim().replace(' ', "-");
+                let bin_name = env!("NOMIC_LEGACY_VERSION").trim().replace(' ', "-");
                 let bin_path = bin_dir.join(bin_name);
-                let bin_bytes = include_bytes!(env!("NOMIC_LEGACY_BUILD_PATH"));
+                let bin_bytes = include_bytes!(env!("NOMIC_LEGACY_PATH"));
                 if !bin_path.exists() {
                     log::debug!("Writing legacy binary to {}...", bin_path.display());
                     std::fs::write(&bin_path, bin_bytes).unwrap();
