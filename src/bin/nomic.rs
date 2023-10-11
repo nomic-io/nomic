@@ -1447,12 +1447,14 @@ pub struct GrpcCmd {
 impl GrpcCmd {
     async fn run(&self) -> Result<()> {
         use orga::ibc::GrpcOpts;
+        std::panic::set_hook(Box::new(|_| {}));
         orga::ibc::start_grpc(
             // TODO: support configuring RPC address
             || nomic::app_client("http://localhost:26657").sub(|app| app.ibc.ctx),
             &GrpcOpts {
                 host: "127.0.0.1".to_string(),
                 port: self.port,
+                chain_id: self.config.chain_id.clone().unwrap(),
             },
         )
         .await;
