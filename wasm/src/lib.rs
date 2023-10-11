@@ -486,6 +486,13 @@ pub async fn bitcoin_height() -> Result<u32, JsError> {
         .await?)
 }
 
+#[wasm_bindgen(js_name = capacityLimit)]
+pub async fn capacity_limit() -> Result<u64, JsError> {
+    Ok(app_client()
+        .query(|app: InnerApp| Ok(app.bitcoin.capacity_limit()?))
+        .await?)
+}
+
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = getAddress)]
 pub async fn get_address() -> Result<String, JsError> {

@@ -673,6 +673,11 @@ impl Bitcoin {
         Ok(last_completed.reserve_output()?.unwrap().value)
     }
 
+    #[query]
+    pub fn capacity_limit(&self) -> Result<u64> {
+        Ok(self.config.capacity_limit)
+    }
+
     pub fn network(&self) -> bitcoin::Network {
         self.headers.network()
     }
