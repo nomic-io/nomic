@@ -199,9 +199,17 @@ impl Relayer {
         let sigset_route = warp::path("sigset")
             .and_then(move || async {
                 let sigset = app_client(app_client_addr)
-                    .query(|app| {
-                        let sigset: RawSignatorySet =
-                            app.bitcoin.checkpoints.active_sigset()?.into();
+                    .query(|app: crate::app::InnerApp| {
+                        let building = app.bitcoin.checkpoints.building()?;
+                        let est_miner_fee = building.fee_rate
+                            * app.bitcoin.checkpoints.active_sigset()?.est_witness_vsize();
+                        let deposits_enabled = building.deposits_enabled;
+                        let sigset = RawSignatorySet::new(
+                            app.bitcoin.checkpoints.active_sigset()?,
+                            0.015,
+                            est_miner_fee as f64 / 100_000_000.0,
+                            deposits_enabled,
+                        );
                         Ok(sigset)
                     })
                     .await
@@ -753,10 +761,21 @@ pub struct OutputMatch {
 pub struct RawSignatorySet {
     pub signatories: Vec<RawSignatory>,
     pub index: u32,
+    #[serde(rename = "bridgeFeeRate")]
+    pub bridge_fee_rate: f64,
+    #[serde(rename = "minerFeeRate")]
+    pub miner_fee_rate: f64,
+    #[serde(rename = "depositsEnabled")]
+    pub deposits_enabled: bool,
 }
 
-impl From<SignatorySet> for RawSignatorySet {
-    fn from(sigset: SignatorySet) -> Self {
+impl RawSignatorySet {
+    pub fn new(
+        sigset: SignatorySet,
+        bridge_fee_rate: f64,
+        miner_fee_rate: f64,
+        deposits_enabled: bool,
+    ) -> Self {
         let signatories = sigset
             .iter()
             .map(|s| RawSignatory::from(s.clone()))
@@ -765,6 +784,9 @@ impl From<SignatorySet> for RawSignatorySet {
         RawSignatorySet {
             signatories,
             index: sigset.index(),
+            bridge_fee_rate,
+            miner_fee_rate,
+            deposits_enabled,
         }
     }
 }
