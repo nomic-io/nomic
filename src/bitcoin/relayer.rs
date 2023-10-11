@@ -402,28 +402,34 @@ impl Relayer {
 
     async fn relay_checkpoint_confs(&mut self) -> Result<()> {
         loop {
-            let (confirmed_index, unconf_index) = match app_client(&self.app_client_addr)
-                .query(|app| {
-                    let checkpoints = &app.bitcoin.checkpoints;
-                    Ok((
-                        checkpoints.confirmed_index,
-                        checkpoints
-                            .first_unconfirmed_index()?
-                            .ok_or(orga::Error::App("No completed checkpoints yet".to_string()))?,
-                    ))
-                })
-                .await
-            {
-                Ok(res) => res,
-                Err(err) => {
-                    if err.to_string().contains("No completed checkpoints yet") {
-                        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-                        continue;
-                    } else {
-                        return Err(err.into());
+            let (confirmed_index, unconf_index, last_completed_index) =
+                match app_client(&self.app_client_addr)
+                    .query(|app| {
+                        let checkpoints = &app.bitcoin.checkpoints;
+                        Ok((
+                            checkpoints.confirmed_index,
+                            checkpoints
+                                .first_unconfirmed_index()?
+                                .ok_or(orga::Error::App(
+                                    "No completed checkpoints yet".to_string(),
+                                ))?,
+                            checkpoints.last_completed_index()?,
+                        ))
+                    })
+                    .await
+                {
+                    Ok(res) => res,
+                    Err(err) => {
+                        if err.to_string().contains("No completed checkpoints yet") {
+                            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                            continue;
+                        } else {
+                            return Err(err.into());
+                        }
                     }
-                }
-            };
+                };
+
+            let unconf_index = unconf_index.max(last_completed_index - 5);
 
             if let Some(confirmed_index) = confirmed_index {
                 if confirmed_index == unconf_index {
