@@ -1205,13 +1205,13 @@ pub struct SignerCmd {
 
     /// Limits the fraction of the total reserve that may be withdrawn within
     /// the trailing 24-hour period
-    #[clap(long, default_value_t = 0.04)]
+    #[clap(long, default_value_t = 0.1)]
     max_withdrawal_rate: f64,
     /// Limits the maximum allowed signatory set change within 24 hours
     ///
     /// The Total Variation Distance between a day-old signatory set and the
     /// newly-proposed signatory set may not exceed this value
-    #[clap(long, default_value_t = 0.04)]
+    #[clap(long, default_value_t = 0.1)]
     max_sigset_change_rate: f64,
 
     reset_limits_at_index: Option<u32>,
