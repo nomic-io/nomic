@@ -590,7 +590,7 @@ async fn bitcoin_test() {
                 .unwrap();
             let signed_tx: bitcoin::Transaction = sign_res.transaction().unwrap();
 
-            bitcoind.client.send_raw_transaction(&signed_tx).unwrap();
+            btc_client.send_raw_transaction(&signed_tx).await.unwrap();
 
             btc_client
                 .generate_to_address(1, &async_wallet_address)
