@@ -397,7 +397,7 @@ async fn bitcoin_test() {
             .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
             .await
             .unwrap();
-        assert_eq!(balance, Amount::from(799998736000000));
+        assert_eq!(balance, Amount::from(989998435800000));
 
         tokio::time::sleep(Duration::from_secs(10)).await;
 
@@ -443,7 +443,7 @@ async fn bitcoin_test() {
             .await
             .unwrap();
 
-        assert_eq!(balance, Amount::from(31998104000000));
+        assert_eq!(balance, Amount::from(39597653700000));
 
         withdraw_bitcoin(
             &funded_accounts[0],
@@ -477,7 +477,7 @@ async fn bitcoin_test() {
             .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
             .await
             .unwrap();
-        assert_eq!(balance, Amount::from(799991736000000));
+        assert_eq!(balance, Amount::from(989991435800000));
 
         tokio::time::sleep(Duration::from_secs(7 * 60)).await;
 
@@ -499,7 +499,7 @@ async fn bitcoin_test() {
                 }
             }
         }
-        assert_eq!(signatory_balance, 239991049);
+        assert_eq!(signatory_balance, 49992429);
 
         let funded_account_balances: Vec<_> = funded_accounts
             .iter()
@@ -514,7 +514,7 @@ async fn bitcoin_test() {
             })
             .collect();
 
-        let expected_account_balances: Vec<u64> = vec![799990201, 0, 0, 0];
+        let expected_account_balances: Vec<u64> = vec![989990361, 0, 0, 0];
         assert_eq!(funded_account_balances, expected_account_balances);
 
         for (i, account) in funded_accounts[0..1].iter().enumerate() {
