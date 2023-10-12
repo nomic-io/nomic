@@ -429,7 +429,7 @@ impl Relayer {
                     }
                 };
 
-            let unconf_index = unconf_index.max(last_completed_index - 5);
+            let unconf_index = unconf_index.max(last_completed_index.saturating_sub(5));
 
             if let Some(confirmed_index) = confirmed_index {
                 if confirmed_index == unconf_index {
