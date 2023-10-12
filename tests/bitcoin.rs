@@ -2,11 +2,11 @@
 use bitcoin::blockdata::transaction::EcdsaSighashType;
 use bitcoin::util::bip32::ExtendedPrivKey;
 use bitcoin::Script;
-use bitcoincore_rpc_async::{Auth, RpcApi};
+use bitcoincore_rpc_async::{Auth, RpcApi as AsyncRpcApi};
 use bitcoind::bitcoincore_rpc::json::{
     ImportMultiRequest, ImportMultiRequestScriptPubkey, ImportMultiRescanSince,
 };
-use bitcoind::bitcoincore_rpc::RpcApi as AsyncRpcApi;
+use bitcoind::bitcoincore_rpc::RpcApi;
 use bitcoind::{BitcoinD, Conf};
 use log::info;
 use nomic::app::Dest;
