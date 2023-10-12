@@ -2,7 +2,7 @@
 use bitcoin::blockdata::transaction::EcdsaSighashType;
 use bitcoin::util::bip32::ExtendedPrivKey;
 use bitcoin::Script;
-use bitcoincore_rpc_async::{Auth, RpcApi as AsyncRpcApi};
+use bitcoincore_rpc_async::RpcApi as AsyncRpcApi;
 use bitcoind::bitcoincore_rpc::json::{
     ImportMultiRequest, ImportMultiRequestScriptPubkey, ImportMultiRescanSince,
 };
@@ -202,14 +202,11 @@ async fn bitcoin_test() {
     let mut conf = Conf::default();
     conf.args.push("-txindex");
     let bitcoind = BitcoinD::with_conf(bitcoind::downloaded_exe_path().unwrap(), &conf).unwrap();
-    let btc_client = bitcoincore_rpc_async::Client::new(
-        bitcoind.rpc_url(),
-        Auth::CookieFile(bitcoind.params.cookie_file.clone()),
-    )
-    .await
-    .unwrap();
+    let rpc_url = bitcoind.rpc_url();
+    let cookie_file = bitcoind.params.cookie_file.clone();
+    let btc_client = test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await;
 
-    let block_data = populate_bitcoin_block(&bitcoind);
+    let block_data = populate_bitcoin_block(&btc_client).await;
 
     let home = tempdir().unwrap();
     let path = home.into_path();
@@ -239,16 +236,28 @@ async fn bitcoin_test() {
 
     let rpc_addr = "http://localhost:26657".to_string();
 
-    let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind), rpc_addr.clone());
+    let mut relayer = Relayer::new(
+        test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
+        rpc_addr.clone(),
+    );
     let headers = relayer.start_header_relay();
 
-    let relayer = Relayer::new(test_bitcoin_client(&bitcoind), rpc_addr.clone());
+    let relayer = Relayer::new(
+        test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
+        rpc_addr.clone(),
+    );
     let deposits = relayer.start_deposit_relay(&header_relayer_path);
 
-    let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind), rpc_addr.clone());
+    let mut relayer = Relayer::new(
+        test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
+        rpc_addr.clone(),
+    );
     let checkpoints = relayer.start_checkpoint_relay();
 
-    let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind), rpc_addr.clone());
+    let mut relayer = Relayer::new(
+        test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
+        rpc_addr.clone(),
+    );
     let disbursal = relayer.start_emergency_disbursal_transaction_relay();
 
     let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind), rpc_addr.clone());
@@ -641,14 +650,11 @@ async fn signing_completed_checkpoint_test() {
     let mut conf = Conf::default();
     conf.args.push("-txindex");
     let bitcoind = BitcoinD::with_conf(bitcoind::downloaded_exe_path().unwrap(), &conf).unwrap();
-    let btc_client = bitcoincore_rpc_async::Client::new(
-        bitcoind.rpc_url(),
-        Auth::CookieFile(bitcoind.params.cookie_file.clone()),
-    )
-    .await
-    .unwrap();
+    let rpc_url = bitcoind.rpc_url();
+    let cookie_file = bitcoind.params.cookie_file.clone();
+    let btc_client = test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await;
 
-    let block_data = populate_bitcoin_block(&bitcoind);
+    let block_data = populate_bitcoin_block(&btc_client).await;
 
     let home = tempdir().unwrap();
     let path = home.into_path();
@@ -684,13 +690,22 @@ async fn signing_completed_checkpoint_test() {
 
     let rpc_addr = "http://localhost:26657".to_string();
 
-    let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind), rpc_addr.clone());
+    let mut relayer = Relayer::new(
+        test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
+        rpc_addr.clone(),
+    );
     let headers = relayer.start_header_relay();
 
-    let relayer = Relayer::new(test_bitcoin_client(&bitcoind), rpc_addr.clone());
+    let relayer = Relayer::new(
+        test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
+        rpc_addr.clone(),
+    );
     let deposits = relayer.start_deposit_relay(&header_relayer_path);
 
-    let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind), rpc_addr.clone());
+    let mut relayer = Relayer::new(
+        test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
+        rpc_addr.clone(),
+    );
     let checkpoints = relayer.start_checkpoint_relay();
 
     let signer = async {
