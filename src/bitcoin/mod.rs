@@ -60,7 +60,7 @@ pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Testnet;
 #[cfg(all(feature = "devnet", feature = "testnet"))]
 pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Regtest;
 
-#[orga(skip(Default), version = 2)]
+#[orga(skip(Default), version = 3)]
 pub struct Config {
     pub min_withdrawal_checkpoints: u32,
     pub min_deposit_amount: u64,
@@ -78,11 +78,11 @@ pub struct Config {
     #[orga(version(V0, V1))]
     pub emergency_disbursal_max_tx_size: u64,
 
-    #[orga(version(V1, V2))]
+    #[orga(version(V1, V2, V3))]
     pub max_offline_checkpoints: u32,
-    #[orga(version(V2))]
+    #[orga(version(V2, V3))]
     pub min_checkpoint_confirmations: u32,
-    #[orga(version(V2))]
+    #[orga(version(V2, V3))]
     pub capacity_limit: u64,
 }
 
@@ -119,6 +119,25 @@ impl MigrateFrom<ConfigV1> for ConfigV2 {
             max_offline_checkpoints: value.max_offline_checkpoints,
             min_checkpoint_confirmations: Config::default().min_checkpoint_confirmations,
             capacity_limit: Config::bitcoin().capacity_limit,
+        })
+    }
+}
+
+impl MigrateFrom<ConfigV2> for ConfigV3 {
+    fn migrate_from(value: ConfigV2) -> OrgaResult<Self> {
+        // Migrating to set min_checkpoint_confirmations to 0
+        Ok(Self {
+            min_withdrawal_checkpoints: value.min_withdrawal_checkpoints,
+            min_deposit_amount: value.min_deposit_amount,
+            min_withdrawal_amount: value.min_withdrawal_amount,
+            max_withdrawal_amount: value.max_withdrawal_amount,
+            max_withdrawal_script_length: value.max_withdrawal_script_length,
+            transfer_fee: value.transfer_fee,
+            min_confirmations: value.min_confirmations,
+            units_per_sat: value.units_per_sat,
+            max_offline_checkpoints: value.max_offline_checkpoints,
+            min_checkpoint_confirmations: 0,
+            capacity_limit: value.capacity_limit,
         })
     }
 }
