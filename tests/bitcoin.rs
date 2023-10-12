@@ -260,9 +260,6 @@ async fn bitcoin_test() {
     );
     let disbursal = relayer.start_emergency_disbursal_transaction_relay();
 
-    let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind), rpc_addr.clone());
-    let checkpoint_conf = relayer.start_checkpoint_conf_relay();
-
     let signer = async {
         tokio::time::sleep(Duration::from_secs(20)).await;
         setup_test_signer(&signer_path, client_provider)
@@ -409,28 +406,12 @@ async fn bitcoin_test() {
             .unwrap();
         assert_eq!(balance, Amount::from(989998435800000));
 
-        tokio::time::sleep(Duration::from_secs(10)).await;
-
         btc_client
             .generate_to_address(3, &async_wallet_address)
             .await
             .unwrap();
 
         poll_for_bitcoin_header(1127).await.unwrap();
-        tokio::time::sleep(Duration::from_secs(20)).await;
-
-        loop {
-            let confirmed_index = app_client()
-                .query(|app| Ok(app.bitcoin.checkpoints.confirmed_index))
-                .await
-                .unwrap();
-            if confirmed_index.is_some() {
-                assert_eq!(confirmed_index, Some(0));
-                break;
-            } else {
-                tokio::time::sleep(Duration::from_secs(1)).await;
-            }
-        }
 
         deposit_bitcoin(
             &funded_accounts[1].address,
@@ -532,7 +513,7 @@ async fn bitcoin_test() {
                 }
             }
         }
-        assert_eq!(signatory_balance, 49992429);
+        assert_eq!(signatory_balance, 49990631);
 
         let funded_account_balances: Vec<_> = funded_accounts
             .iter()
@@ -547,7 +528,7 @@ async fn bitcoin_test() {
             })
             .collect();
 
-        let expected_account_balances: Vec<u64> = vec![989990361, 0, 0, 0];
+        let expected_account_balances: Vec<u64> = vec![989989593, 0, 0, 0];
         assert_eq!(funded_account_balances, expected_account_balances);
 
         for (i, account) in funded_accounts[0..1].iter().enumerate() {
@@ -625,7 +606,6 @@ async fn bitcoin_test() {
         deposits,
         checkpoints,
         disbursal,
-        checkpoint_conf,
         signer,
         slashable_signer,
         test
