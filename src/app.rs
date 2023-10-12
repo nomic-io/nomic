@@ -106,7 +106,7 @@ pub struct InnerApp {
 
 #[orga]
 impl InnerApp {
-    pub const CONSENSUS_VERSION: u8 = 6;
+    pub const CONSENSUS_VERSION: u8 = 7;
 
     #[cfg(feature = "full")]
     fn configure_faucets(&mut self) -> Result<()> {
