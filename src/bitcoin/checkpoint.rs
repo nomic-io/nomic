@@ -564,7 +564,7 @@ impl Config {
     fn regtest() -> Self {
         Self {
             min_checkpoint_interval: 15,
-            emergency_disbursal_lock_time_interval: 4 * 60,
+            emergency_disbursal_lock_time_interval: 45,
             emergency_disbursal_max_tx_size: 11,
             ..Config::bitcoin()
         }

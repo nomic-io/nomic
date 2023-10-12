@@ -261,7 +261,7 @@ async fn bitcoin_test() {
     let disbursal = relayer.start_emergency_disbursal_transaction_relay();
 
     let signer = async {
-        tokio::time::sleep(Duration::from_secs(20)).await;
+        tokio::time::sleep(Duration::from_secs(10)).await;
         setup_test_signer(&signer_path, client_provider)
             .start()
             .await
@@ -274,7 +274,7 @@ async fn bitcoin_test() {
     };
 
     let slashable_signer = async {
-        tokio::time::sleep(Duration::from_secs(30)).await;
+        tokio::time::sleep(Duration::from_secs(15)).await;
         let seed: [u8; 32] = rand::thread_rng().gen();
         let xpriv = ExtendedPrivKey::new_master(bitcoin::Network::Testnet, seed.as_slice())?;
         let privkey_bytes = funded_accounts[2].privkey.secret_bytes();
@@ -689,7 +689,7 @@ async fn signing_completed_checkpoint_test() {
     let checkpoints = relayer.start_checkpoint_relay();
 
     let signer = async {
-        tokio::time::sleep(Duration::from_secs(20)).await;
+        tokio::time::sleep(Duration::from_secs(10)).await;
         setup_test_signer(&signer_path, client_provider)
             .start()
             .await
@@ -704,7 +704,7 @@ async fn signing_completed_checkpoint_test() {
     let seed: [u8; 32] = rand::thread_rng().gen();
 
     let slashable_signer = async {
-        tokio::time::sleep(Duration::from_secs(30)).await;
+        tokio::time::sleep(Duration::from_secs(15)).await;
         let xpriv =
             ExtendedPrivKey::new_master(bitcoin::Network::Testnet, seed.as_slice()).unwrap();
         let privkey_bytes = funded_accounts[2].privkey.secret_bytes();
@@ -729,7 +729,7 @@ async fn signing_completed_checkpoint_test() {
     };
 
     let slashable_signer_2 = {
-        tokio::time::sleep(Duration::from_secs(30)).await;
+        tokio::time::sleep(Duration::from_secs(15)).await;
         let xpriv =
             ExtendedPrivKey::new_master(bitcoin::Network::Testnet, seed.as_slice()).unwrap();
         let privkey_bytes = funded_accounts[2].privkey.secret_bytes();
@@ -803,7 +803,7 @@ async fn signing_completed_checkpoint_test() {
             .collect::<Vec<_>>();
 
         tokio::spawn(slashable_signer_2);
-        tokio::time::sleep(Duration::from_secs(2 * 60)).await;
+        tokio::time::sleep(Duration::from_secs(30)).await;
 
         let checkpoint_txs = app_client()
             .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.completed_txs(20)?))
