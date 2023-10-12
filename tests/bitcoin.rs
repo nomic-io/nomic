@@ -479,7 +479,30 @@ async fn bitcoin_test() {
             .unwrap();
         assert_eq!(balance, Amount::from(989991435800000));
 
-        tokio::time::sleep(Duration::from_secs(7 * 60)).await;
+        let disbursal_txs = app_client()
+            .query(|app: InnerApp| {
+                Ok(app
+                    .bitcoin
+                    .checkpoints
+                    .emergency_disbursal_txs()?
+                    .iter()
+                    .map(|tx| tx.txid())
+                    .collect::<Vec<_>>())
+            })
+            .await?;
+
+        for txid in disbursal_txs.iter() {
+            let async_txid =
+                bitcoincore_rpc_async::bitcoin::hash_types::Txid::from_str(&txid.to_string())
+                    .unwrap();
+            while btc_client
+                .get_raw_transaction(&async_txid, None)
+                .await
+                .is_err()
+            {
+                tokio::time::sleep(Duration::from_secs(2)).await;
+            }
+        }
 
         btc_client
             .generate_to_address(1, &async_wallet_address)
