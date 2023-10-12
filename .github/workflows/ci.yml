@@ -85,6 +85,8 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-test-all-features-
       - name: Test
+        env:
+          RUST_LOG: info
         uses: actions-rs/cargo@v1
         with:
           command: test
