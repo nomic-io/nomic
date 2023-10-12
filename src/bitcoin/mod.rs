@@ -927,7 +927,13 @@ where
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::{BlockHash, BlockHeader, TxMerkleNode, Txid};
+    use std::{cell::RefCell, rc::Rc};
+
+    use bitcoin::{
+        secp256k1::Secp256k1, util::bip32::ExtendedPrivKey, BlockHash, BlockHeader, OutPoint,
+        TxMerkleNode, Txid,
+    };
+    use orga::collections::EntryMap;
 
     use super::{
         header_queue::{WorkHeader, WrappedHeader},
@@ -991,5 +997,177 @@ mod tests {
         );
 
         Context::remove::<Paid>();
+    }
+
+    #[test]
+    fn check_change_rates() -> Result<()> {
+        // use checkpoint::*;
+        let paid = orga::plugins::Paid::default();
+        Context::add(paid);
+
+        let mut vals = orga::plugins::Validators::new(
+            Rc::new(RefCell::new(Some(EntryMap::new()))),
+            Rc::new(RefCell::new(Some(Map::new()))),
+        );
+        let addr = vec![Address::from_pubkey([0; 33]), Address::from_pubkey([1; 33])];
+        vals.set_voting_power([0; 32], 100);
+        vals.set_operator([0; 32], addr[0])?;
+        vals.set_voting_power([1; 32], 10);
+        vals.set_operator([1; 32], addr[1])?;
+        Context::add(vals);
+
+        let set_signer = |addr| {
+            Context::add(Signer { signer: Some(addr) });
+        };
+        let set_time = |time| {
+            let time = orga::plugins::Time::from_seconds(time);
+            Context::add(time);
+        };
+
+        let secp = Secp256k1::new();
+        let xpriv = vec![
+            ExtendedPrivKey::new_master(bitcoin::Network::Testnet, &[0]).unwrap(),
+            ExtendedPrivKey::new_master(bitcoin::Network::Testnet, &[1]).unwrap(),
+        ];
+        let xpub = vec![
+            ExtendedPubKey::from_priv(&secp, &xpriv[0]),
+            ExtendedPubKey::from_priv(&secp, &xpriv[1]),
+        ];
+
+        let btc = Rc::new(RefCell::new(Bitcoin::default()));
+
+        let push_deposit = || {
+            let input = Input::new(
+                OutPoint {
+                    txid: Txid::from_slice(&[0; 32]).unwrap(),
+                    vout: 0,
+                },
+                &btc.borrow().checkpoints.building().unwrap().sigset,
+                &[0u8],
+                100_000_000,
+                (9, 10),
+            )
+            .unwrap();
+            let mut btc = btc.borrow_mut();
+            let mut building_mut = btc.checkpoints.building_mut().unwrap();
+            let mut building_checkpoint_batch = building_mut
+                .batches
+                .get_mut(BatchType::Checkpoint as u64)
+                .unwrap()
+                .unwrap();
+            let mut checkpoint_tx = building_checkpoint_batch.get_mut(0).unwrap().unwrap();
+            checkpoint_tx.input.push_back(input).unwrap();
+        };
+
+        let push_withdrawal = || {
+            let mut btc = btc.borrow_mut();
+
+            btc.add_withdrawal(Adapter::new(Script::new()), 459_459_927_000_000.into())
+                .unwrap();
+        };
+
+        let sign_batch = |btc_height| {
+            let mut btc = btc.borrow_mut();
+            let queue = &mut btc.checkpoints;
+            let cp = queue.signing().unwrap().unwrap();
+            let sigset_index = cp.sigset.index;
+            for i in 0..2 {
+                if queue.signing().unwrap().is_none() {
+                    break;
+                }
+                let cp = queue.signing().unwrap().unwrap();
+                let to_sign = cp.to_sign(Xpub::new(xpub[i])).unwrap();
+                let secp2 = Secp256k1::signing_only();
+                let sigs = crate::bitcoin::signer::sign(&secp2, &xpriv[i], &to_sign).unwrap();
+                queue
+                    .sign(Xpub::new(xpub[i]), sigs, sigset_index, btc_height)
+                    .unwrap();
+            }
+        };
+        let sign_cp = |btc_height| {
+            sign_batch(btc_height);
+            sign_batch(btc_height);
+            if btc.borrow().checkpoints.signing().unwrap().is_some() {
+                sign_batch(btc_height);
+            }
+        };
+        let maybe_step = || {
+            let mut btc = btc.borrow_mut();
+
+            btc.begin_block_step(vec![].into_iter()).unwrap();
+        };
+
+        set_time(0);
+        for i in 0..2 {
+            set_signer(addr[i]);
+            btc.borrow_mut().set_signatory_key(Xpub::new(xpub[i]))?;
+        }
+
+        assert_eq!(btc.borrow().checkpoints.len()?, 0);
+        maybe_step();
+        assert_eq!(btc.borrow().checkpoints.len()?, 1);
+
+        set_time(1000);
+        push_deposit();
+        maybe_step();
+        sign_cp(10);
+
+        assert_eq!(btc.borrow().checkpoints.len()?, 2);
+
+        set_time(2000);
+        push_deposit();
+        maybe_step();
+        let change_rates = btc.borrow().change_rates(2000, 2100, 0)?;
+        assert_eq!(change_rates.withdrawal, 0);
+        assert_eq!(change_rates.sigset_change, 0);
+        sign_cp(10);
+
+        assert_eq!(btc.borrow().checkpoints.len()?, 3);
+
+        // Change the sigset
+        let vals = Context::resolve::<Validators>().unwrap();
+        vals.set_voting_power([1; 32], 100);
+
+        set_time(3000);
+        push_deposit();
+        maybe_step();
+        let change_rates = btc.borrow().change_rates(3000, 3100, 0)?;
+        assert_eq!(change_rates.withdrawal, 0);
+        assert_eq!(change_rates.sigset_change, 0);
+        sign_cp(10);
+
+        assert_eq!(btc.borrow().checkpoints.len()?, 4);
+
+        set_time(4000);
+        push_deposit();
+        maybe_step();
+        let change_rates = btc.borrow().change_rates(3000, 4100, 0)?;
+        assert_eq!(change_rates.withdrawal, 0);
+        assert_eq!(change_rates.sigset_change, 4090);
+        assert_eq!(btc.borrow().checkpoints.len()?, 5);
+
+        sign_cp(10);
+
+        set_time(5000);
+        push_deposit();
+        maybe_step();
+        let change_rates = btc.borrow().change_rates(3000, 5100, 0)?;
+        assert_eq!(change_rates.withdrawal, 0);
+        assert_eq!(change_rates.sigset_change, 4090);
+        assert_eq!(btc.borrow().checkpoints.len()?, 6);
+        sign_cp(10);
+
+        set_time(6000);
+        push_withdrawal();
+        maybe_step();
+        let change_rates = btc.borrow().change_rates(3000, 5100, 0)?;
+        assert_eq!(change_rates.withdrawal, 8649);
+        assert_eq!(change_rates.sigset_change, 4090);
+        assert_eq!(btc.borrow().checkpoints.signing()?.unwrap().sigset.index, 5);
+        let change_rates = btc.borrow().change_rates(3000, 5100, 5)?;
+        assert_eq!(change_rates.withdrawal, 0);
+        assert_eq!(change_rates.sigset_change, 0);
+
+        Ok(())
     }
 }
