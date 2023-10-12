@@ -921,6 +921,7 @@ impl<'a> BuildingCheckpointMut<'a> {
         nbtc_accounts: &Accounts<Nbtc>,
         recovery_scripts: &Map<orga::coins::Address, Adapter<bitcoin::Script>>,
         external_outputs: impl Iterator<Item = Result<bitcoin::TxOut>>,
+        timestamping_commitment: Vec<u8>,
         config: &Config,
     ) -> Result<BuildingAdvanceRes> {
         self.0.status = CheckpointStatus::Signing;
@@ -933,6 +934,11 @@ impl<'a> BuildingCheckpointMut<'a> {
                 .output_script(&[0u8], config.sigset_threshold)?,
         };
 
+        let timestamping_commitment_out = bitcoin::TxOut {
+            value: 0,
+            script_pubkey: bitcoin::Script::new_op_return(&timestamping_commitment),
+        };
+
         let fee_rate = self.fee_rate;
 
         let mut checkpoint_batch = self
@@ -942,6 +948,9 @@ impl<'a> BuildingCheckpointMut<'a> {
             .unwrap();
         let mut checkpoint_tx = checkpoint_batch.get_mut(0)?.unwrap();
 
+        checkpoint_tx
+            .output
+            .push_front(Adapter::new(timestamping_commitment_out))?;
         checkpoint_tx.output.push_front(Adapter::new(reserve_out))?;
 
         let mut excess_inputs = vec![];
@@ -1236,6 +1245,7 @@ impl CheckpointQueue {
     }
 
     #[cfg(feature = "full")]
+    #[allow(clippy::too_many_arguments)]
     pub fn maybe_step(
         &mut self,
         sig_keys: &Map<ConsensusKey, Xpub>,
@@ -1244,6 +1254,7 @@ impl CheckpointQueue {
         external_outputs: impl Iterator<Item = Result<bitcoin::TxOut>>,
         btc_height: u32,
         should_allow_deposits: bool,
+        timestamping_commitment: Vec<u8>,
     ) -> Result<bool> {
         if !self.should_push(sig_keys)? {
             return Ok(false);
@@ -1266,6 +1277,7 @@ impl CheckpointQueue {
                     nbtc_accounts,
                     recovery_scripts,
                     external_outputs,
+                    timestamping_commitment,
                     &config,
                 )?;
 
@@ -1756,6 +1768,7 @@ mod test {
                     .into_iter(),
                     btc_height,
                     true,
+                    vec![1, 2, 3],
                 )
                 .unwrap();
         };

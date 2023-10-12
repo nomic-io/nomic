@@ -106,7 +106,7 @@ pub struct InnerApp {
 
 #[orga]
 impl InnerApp {
-    pub const CONSENSUS_VERSION: u8 = 6;
+    pub const CONSENSUS_VERSION: u8 = 7;
 
     #[cfg(feature = "full")]
     fn configure_faucets(&mut self) -> Result<()> {
@@ -495,7 +495,7 @@ mod abci {
             };
             let offline_signers = self
                 .bitcoin
-                .begin_block_step(external_outputs.into_iter().map(Ok))?;
+                .begin_block_step(external_outputs.into_iter().map(Ok), ctx.hash.clone())?;
             for cons_key in offline_signers {
                 let address = self.staking.address_by_consensus_key(cons_key)?.unwrap();
                 self.staking.punish_downtime(address)?;
