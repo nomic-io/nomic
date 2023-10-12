@@ -1000,6 +1000,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn check_change_rates() -> Result<()> {
         // use checkpoint::*;
         let paid = orga::plugins::Paid::default();
