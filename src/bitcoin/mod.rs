@@ -132,10 +132,13 @@ impl Config {
             max_withdrawal_amount: 64,
             max_withdrawal_script_length: 64,
             transfer_fee: 1_000_000,
-            min_confirmations: 3,
+            #[cfg(feature = "testnet")]
+            min_confirmations: 0,
+            #[cfg(not(feature = "testnet"))]
+            min_confirmations: 5,
             units_per_sat: 1_000_000,
             max_offline_checkpoints: 20,
-            min_checkpoint_confirmations: 2,
+            min_checkpoint_confirmations: 0,
             capacity_limit: 21 * 100_000_000, // 21 BTC
         }
     }
