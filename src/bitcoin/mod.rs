@@ -652,45 +652,37 @@ impl Bitcoin {
     }
 
     #[query]
-    pub fn change_rates(&self, interval: u64, now: u64) -> Result<ChangeRates> {
+    pub fn change_rates(&self, interval: u64, now: u64, reset_index: u32) -> Result<ChangeRates> {
         let signing = self
             .checkpoints
             .signing()?
             .ok_or_else(|| OrgaError::App("No checkpoint to be signed".to_string()))?;
 
-        if now > interval && now - interval > signing.create_time() {
+        if now > interval && now - interval > signing.create_time()
+            || reset_index >= signing.sigset.index
+        {
             return Ok(ChangeRates::default());
         }
         let now = signing.create_time().max(now);
 
-        // TODO: is this a good completed query limit?
-        let completed = self.checkpoints.completed(1_000)?;
+        let completed = self
+            .checkpoints
+            .completed((interval / self.checkpoints.config.min_checkpoint_interval) as u32 + 1)?;
         if completed.is_empty() {
             return Ok(ChangeRates::default());
         }
 
-        let last_completed = completed.iter().last().unwrap();
-
         let prev_index = completed
             .iter()
-            .rposition(|c| (now - c.create_time()) > interval)
+            .rposition(|c| (now - c.create_time()) > interval || c.sigset.index <= reset_index)
             .unwrap_or(0);
 
-        if prev_index == 0 {
-            // No previous checkpoint to compare to. Return no change
-            return Ok(ChangeRates::default());
-        }
+        let prev_checkpoint = completed.get(prev_index).unwrap();
 
-        let prev = completed.get(prev_index).unwrap();
-        let prev_value_checkpoint = completed.get(prev_index - 1).unwrap();
+        let amount_prev = prev_checkpoint.reserve_output()?.unwrap().value;
+        let amount_now = signing.reserve_output()?.unwrap().value;
 
-        let amount_now = last_completed.reserve_output()?.unwrap().value;
-        let amount_prev = prev_value_checkpoint.reserve_output()?.unwrap().value;
-        let decrease = if amount_now > amount_prev {
-            0
-        } else {
-            amount_prev - amount_now
-        };
+        let reserve_decrease = amount_prev.saturating_sub(amount_now);
 
         let vp_shares = |sigset: &SignatorySet| -> Result<_> {
             let secp = bitcoin::secp256k1::Secp256k1::verification_only();
@@ -716,7 +708,7 @@ impl Bitcoin {
         };
 
         let now_sigset = vp_shares(&signing.sigset)?;
-        let prev_sigset = vp_shares(&prev.sigset)?;
+        let prev_sigset = vp_shares(&prev_checkpoint.sigset)?;
         let sigset_change = now_sigset.iter().fold(0.0, |acc, (k, v)| {
             let prev_share = prev_sigset.get(k).unwrap_or(&0.0);
             if v > prev_share {
@@ -728,7 +720,7 @@ impl Bitcoin {
         let sigset_change = (sigset_change * 10_000.0) as u16;
 
         Ok(ChangeRates {
-            withdrawal: (decrease * 10_000 / amount_prev) as u16,
+            withdrawal: (reserve_decrease * 10_000 / amount_prev) as u16,
             sigset_change,
         })
     }
@@ -845,6 +837,7 @@ impl Bitcoin {
 }
 
 #[orga]
+#[derive(Debug, Clone)]
 pub struct ChangeRates {
     pub withdrawal: u16,
     pub sigset_change: u16,
