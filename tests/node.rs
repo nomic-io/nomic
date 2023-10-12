@@ -3,6 +3,7 @@ use nomic::utils::{poll_for_blocks, setup_test_app, setup_time_context};
 use orga::abci::Node;
 use serial_test::serial;
 use std::sync::Once;
+use std::time::Duration;
 use tempfile::tempdir;
 
 static INIT: Once = Once::new();

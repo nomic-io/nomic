@@ -309,29 +309,16 @@ pub async fn poll_for_signing_checkpoint() {
     }
 }
 
-async fn poll_for_first_completed_checkpoint() {
-    while app_client(DEFAULT_RPC)
-        .query(|app| Ok(app.bitcoin.checkpoints.completed(1000)?.len()))
-        .await
-        .unwrap()
-        < 1
-    {
-        tokio::time::sleep(Duration::from_secs(3)).await;
-    }
-}
-
 pub async fn poll_for_completed_checkpoint(num_checkpoints: u32) {
-    info!("Scanning for completed checkpoint...");
-    poll_for_first_completed_checkpoint().await;
-
-    let mut last_completed_index = app_client(DEFAULT_RPC)
-        .query(|app| Ok(app.bitcoin.checkpoints.last_completed_index()?))
+    info!("Scanning for signed checkpoints...");
+    let mut checkpoint_len = app_client(DEFAULT_RPC)
+        .query(|app| Ok(app.bitcoin.checkpoints.completed(1_000)?.len()))
         .await
         .unwrap();
 
-    while last_completed_index + 1 < num_checkpoints {
-        last_completed_index = app_client(DEFAULT_RPC)
-            .query(|app| Ok(app.bitcoin.checkpoints.last_completed_index()?))
+    while checkpoint_len < num_checkpoints as usize {
+        checkpoint_len = app_client(DEFAULT_RPC)
+            .query(|app| Ok(app.bitcoin.checkpoints.completed(1_000)?.len()))
             .await
             .unwrap();
         tokio::time::sleep(Duration::from_secs(1)).await;
