@@ -1767,6 +1767,7 @@ mod test {
                     .into_iter(),
                     btc_height,
                     true,
+                    vec![1, 2, 3],
                 )
                 .unwrap();
         };

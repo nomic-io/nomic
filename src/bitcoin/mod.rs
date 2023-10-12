@@ -1097,7 +1097,8 @@ mod tests {
         let maybe_step = || {
             let mut btc = btc.borrow_mut();
 
-            btc.begin_block_step(vec![].into_iter()).unwrap();
+            btc.begin_block_step(vec![].into_iter(), vec![1, 2, 3])
+                .unwrap();
         };
 
         set_time(0);
