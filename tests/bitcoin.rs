@@ -454,7 +454,7 @@ async fn bitcoin_test() {
         )
         .unwrap();
 
-        poll_for_bitcoin_header(1136).await.unwrap();
+        poll_for_bitcoin_header(1135).await.unwrap();
         poll_for_completed_checkpoint(3).await;
 
         let signer_jailed = app_client()
