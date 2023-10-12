@@ -2,10 +2,11 @@
 use bitcoin::blockdata::transaction::EcdsaSighashType;
 use bitcoin::util::bip32::ExtendedPrivKey;
 use bitcoin::Script;
+use bitcoincore_rpc_async::{Auth, RpcApi};
 use bitcoind::bitcoincore_rpc::json::{
     ImportMultiRequest, ImportMultiRequestScriptPubkey, ImportMultiRescanSince,
 };
-use bitcoind::bitcoincore_rpc::RpcApi;
+use bitcoind::bitcoincore_rpc::RpcApi as AsyncRpcApi;
 use bitcoind::{BitcoinD, Conf};
 use log::info;
 use nomic::app::Dest;
@@ -201,6 +202,12 @@ async fn bitcoin_test() {
     let mut conf = Conf::default();
     conf.args.push("-txindex");
     let bitcoind = BitcoinD::with_conf(bitcoind::downloaded_exe_path().unwrap(), &conf).unwrap();
+    let btc_client = bitcoincore_rpc_async::Client::new(
+        bitcoind.rpc_url(),
+        Auth::CookieFile(bitcoind.params.cookie_file.clone()),
+    )
+    .await
+    .unwrap();
 
     let block_data = populate_bitcoin_block(&bitcoind);
 
@@ -297,6 +304,8 @@ async fn bitcoin_test() {
 
         let wallet = retry(|| bitcoind.create_wallet("nomic-integration-test"), 10).unwrap();
         let wallet_address = wallet.get_new_address(None, None).unwrap();
+        let async_wallet_address =
+            bitcoincore_rpc_async::bitcoin::Address::from_str(&wallet_address.to_string()).unwrap();
         let withdraw_address = wallet.get_new_address(None, None).unwrap();
 
         let mut labels = vec![];
@@ -330,11 +339,10 @@ async fn bitcoin_test() {
             .await
             .unwrap();
 
-        retry(
-            || bitcoind.client.generate_to_address(120, &wallet_address),
-            10,
-        )
-        .unwrap();
+        btc_client
+            .generate_to_address(120, &async_wallet_address)
+            .await
+            .unwrap();
 
         poll_for_bitcoin_header(1120).await.unwrap();
 
@@ -361,11 +369,10 @@ async fn bitcoin_test() {
             .unwrap();
         assert_eq!(balance, Amount::from(0));
 
-        retry(
-            || bitcoind.client.generate_to_address(4, &wallet_address),
-            10,
-        )
-        .unwrap();
+        btc_client
+            .generate_to_address(4, &async_wallet_address)
+            .await
+            .unwrap();
 
         poll_for_bitcoin_header(1124).await.unwrap();
         poll_for_signing_checkpoint().await;
@@ -394,11 +401,10 @@ async fn bitcoin_test() {
 
         tokio::time::sleep(Duration::from_secs(10)).await;
 
-        retry(
-            || bitcoind.client.generate_to_address(3, &wallet_address),
-            10,
-        )
-        .unwrap();
+        btc_client
+            .generate_to_address(3, &async_wallet_address)
+            .await
+            .unwrap();
 
         poll_for_bitcoin_header(1127).await.unwrap();
         tokio::time::sleep(Duration::from_secs(20)).await;
@@ -424,11 +430,10 @@ async fn bitcoin_test() {
         .await
         .unwrap();
 
-        retry(
-            || bitcoind.client.generate_to_address(4, &wallet_address),
-            10,
-        )
-        .unwrap();
+        btc_client
+            .generate_to_address(4, &async_wallet_address)
+            .await
+            .unwrap();
 
         poll_for_bitcoin_header(1131).await.unwrap();
         poll_for_completed_checkpoint(2).await;
@@ -448,11 +453,10 @@ async fn bitcoin_test() {
         .await
         .unwrap();
 
-        retry(
-            || bitcoind.client.generate_to_address(4, &wallet_address),
-            10,
-        )
-        .unwrap();
+        btc_client
+            .generate_to_address(4, &async_wallet_address)
+            .await
+            .unwrap();
 
         poll_for_bitcoin_header(1135).await.unwrap();
         poll_for_completed_checkpoint(3).await;
@@ -477,11 +481,10 @@ async fn bitcoin_test() {
 
         tokio::time::sleep(Duration::from_secs(7 * 60)).await;
 
-        retry(
-            || bitcoind.client.generate_to_address(1, &wallet_address),
-            10,
-        )
-        .unwrap();
+        btc_client
+            .generate_to_address(1, &async_wallet_address)
+            .await
+            .unwrap();
 
         let signatory_script = get_signatory_script().await.unwrap();
         let last_header = wallet.get_best_block_hash().unwrap();
@@ -566,11 +569,10 @@ async fn bitcoin_test() {
 
             bitcoind.client.send_raw_transaction(&signed_tx).unwrap();
 
-            retry(
-                || bitcoind.client.generate_to_address(1, &wallet_address),
-                10,
-            )
-            .unwrap();
+            btc_client
+                .generate_to_address(1, &async_wallet_address)
+                .await
+                .unwrap();
 
             let sent_amount = match wallet.get_received_by_address(&dump_address, None) {
                 Ok(amount) => amount.to_sat(),
@@ -587,11 +589,10 @@ async fn bitcoin_test() {
             .await
             .unwrap();
 
-            retry(
-                || bitcoind.client.generate_to_address(4, &wallet_address),
-                10,
-            )
-            .unwrap();
+            btc_client
+                .generate_to_address(4, &async_wallet_address)
+                .await
+                .unwrap();
 
             poll_for_bitcoin_header(1140).await.unwrap();
             poll_for_completed_checkpoint(4).await;
@@ -645,6 +646,12 @@ async fn signing_completed_checkpoint_test() {
     let mut conf = Conf::default();
     conf.args.push("-txindex");
     let bitcoind = BitcoinD::with_conf(bitcoind::downloaded_exe_path().unwrap(), &conf).unwrap();
+    let btc_client = bitcoincore_rpc_async::Client::new(
+        bitcoind.rpc_url(),
+        Auth::CookieFile(bitcoind.params.cookie_file.clone()),
+    )
+    .await
+    .unwrap();
 
     let block_data = populate_bitcoin_block(&bitcoind);
 
@@ -762,12 +769,13 @@ async fn signing_completed_checkpoint_test() {
 
         let wallet = retry(|| bitcoind.create_wallet("nomic-integration-test"), 10).unwrap();
         let wallet_address = wallet.get_new_address(None, None).unwrap();
+        let async_wallet_address =
+            bitcoincore_rpc_async::bitcoin::Address::from_str(&wallet_address.to_string()).unwrap();
 
-        retry(
-            || bitcoind.client.generate_to_address(120, &wallet_address),
-            10,
-        )
-        .unwrap();
+        btc_client
+            .generate_to_address(120, &async_wallet_address)
+            .await
+            .unwrap();
 
         poll_for_bitcoin_header(1120).await.unwrap();
 
@@ -784,11 +792,10 @@ async fn signing_completed_checkpoint_test() {
             .await
             .unwrap();
 
-            retry(
-                || bitcoind.client.generate_to_address(4, &wallet_address),
-                10,
-            )
-            .unwrap();
+            btc_client
+                .generate_to_address(4, &async_wallet_address)
+                .await
+                .unwrap();
             poll_for_bitcoin_header(1120 + (i + 1) * 4).await.unwrap();
 
             poll_for_completed_checkpoint(i + 1).await;
