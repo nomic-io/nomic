@@ -1245,6 +1245,7 @@ impl CheckpointQueue {
     }
 
     #[cfg(feature = "full")]
+    #[allow(clippy::too_many_arguments)]
     pub fn maybe_step(
         &mut self,
         sig_keys: &Map<ConsensusKey, Xpub>,
