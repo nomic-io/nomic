@@ -521,7 +521,7 @@ impl Checkpoint {
     }
 }
 
-#[orga(skip(Default), version = 1)]
+#[orga(skip(Default), version = 2)]
 #[derive(Clone)]
 pub struct Config {
     pub min_checkpoint_interval: u64,
@@ -531,20 +531,22 @@ pub struct Config {
     #[orga(version(V0))]
     pub fee_rate: u64,
     pub max_age: u64,
-    #[orga(version(V1))]
+    #[orga(version(V1, V2))]
     pub target_checkpoint_inclusion: u32,
-    #[orga(version(V1))]
+    #[orga(version(V1, V2))]
     pub min_fee_rate: u64,
-    #[orga(version(V1))]
+    #[orga(version(V1, V2))]
     pub max_fee_rate: u64,
-    #[orga(version(V1))]
+    #[orga(version(V1, V2))]
     pub sigset_threshold: (u64, u64),
-    #[orga(version(V1))]
+    #[orga(version(V1, V2))]
     pub emergency_disbursal_min_tx_amt: u64,
-    #[orga(version(V1))]
+    #[orga(version(V1, V2))]
     pub emergency_disbursal_lock_time_interval: u32,
-    #[orga(version(V1))]
+    #[orga(version(V1, V2))]
     pub emergency_disbursal_max_tx_size: u64,
+    #[orga(version(V2))]
+    pub max_unconfirmed_checkpoints: u32,
 }
 
 impl MigrateFrom<ConfigV0> for ConfigV1 {
@@ -555,7 +557,34 @@ impl MigrateFrom<ConfigV0> for ConfigV1 {
             max_inputs: value.max_inputs,
             max_outputs: value.max_outputs,
             max_age: value.max_age,
-            ..Self::default()
+            target_checkpoint_inclusion: ConfigV2::default().target_checkpoint_inclusion,
+            min_fee_rate: ConfigV2::default().min_fee_rate,
+            max_fee_rate: ConfigV2::default().max_fee_rate,
+            sigset_threshold: ConfigV2::default().sigset_threshold,
+            emergency_disbursal_min_tx_amt: ConfigV2::default().emergency_disbursal_min_tx_amt,
+            emergency_disbursal_lock_time_interval: ConfigV2::default()
+                .emergency_disbursal_lock_time_interval,
+            emergency_disbursal_max_tx_size: ConfigV2::default().emergency_disbursal_max_tx_size,
+        })
+    }
+}
+
+impl MigrateFrom<ConfigV1> for ConfigV2 {
+    fn migrate_from(value: ConfigV1) -> OrgaResult<Self> {
+        Ok(Self {
+            min_checkpoint_interval: value.min_checkpoint_interval,
+            max_checkpoint_interval: value.max_checkpoint_interval,
+            max_inputs: value.max_inputs,
+            max_outputs: value.max_outputs,
+            max_age: value.max_age,
+            target_checkpoint_inclusion: value.target_checkpoint_inclusion,
+            min_fee_rate: value.min_fee_rate,
+            max_fee_rate: value.max_fee_rate,
+            sigset_threshold: value.sigset_threshold,
+            emergency_disbursal_min_tx_amt: value.emergency_disbursal_min_tx_amt,
+            emergency_disbursal_lock_time_interval: value.emergency_disbursal_lock_time_interval,
+            emergency_disbursal_max_tx_size: value.emergency_disbursal_max_tx_size,
+            ..Default::default()
         })
     }
 }
@@ -584,6 +613,7 @@ impl Config {
             emergency_disbursal_min_tx_amt: 1000,
             emergency_disbursal_lock_time_interval: 60 * 60 * 24 * 7, // one week
             emergency_disbursal_max_tx_size: 50_000,
+            max_unconfirmed_checkpoints: 15,
         }
     }
 }
@@ -921,6 +951,7 @@ impl<'a> BuildingCheckpointMut<'a> {
         nbtc_accounts: &Accounts<Nbtc>,
         recovery_scripts: &Map<orga::coins::Address, Adapter<bitcoin::Script>>,
         external_outputs: impl Iterator<Item = Result<bitcoin::TxOut>>,
+        timestamping_commitment: Vec<u8>,
         config: &Config,
     ) -> Result<BuildingAdvanceRes> {
         self.0.status = CheckpointStatus::Signing;
@@ -933,6 +964,11 @@ impl<'a> BuildingCheckpointMut<'a> {
                 .output_script(&[0u8], config.sigset_threshold)?,
         };
 
+        let timestamping_commitment_out = bitcoin::TxOut {
+            value: 0,
+            script_pubkey: bitcoin::Script::new_op_return(&timestamping_commitment),
+        };
+
         let fee_rate = self.fee_rate;
 
         let mut checkpoint_batch = self
@@ -942,6 +978,9 @@ impl<'a> BuildingCheckpointMut<'a> {
             .unwrap();
         let mut checkpoint_tx = checkpoint_batch.get_mut(0)?.unwrap();
 
+        checkpoint_tx
+            .output
+            .push_front(Adapter::new(timestamping_commitment_out))?;
         checkpoint_tx.output.push_front(Adapter::new(reserve_out))?;
 
         let mut excess_inputs = vec![];
@@ -1236,6 +1275,7 @@ impl CheckpointQueue {
     }
 
     #[cfg(feature = "full")]
+    #[allow(clippy::too_many_arguments)]
     pub fn maybe_step(
         &mut self,
         sig_keys: &Map<ConsensusKey, Xpub>,
@@ -1244,6 +1284,7 @@ impl CheckpointQueue {
         external_outputs: impl Iterator<Item = Result<bitcoin::TxOut>>,
         btc_height: u32,
         should_allow_deposits: bool,
+        timestamping_commitment: Vec<u8>,
     ) -> Result<bool> {
         if !self.should_push(sig_keys)? {
             return Ok(false);
@@ -1266,6 +1307,7 @@ impl CheckpointQueue {
                     nbtc_accounts,
                     recovery_scripts,
                     external_outputs,
+                    timestamping_commitment,
                     &config,
                 )?;
 
@@ -1370,6 +1412,11 @@ impl CheckpointQueue {
                     return Ok(false);
                 }
             }
+        }
+
+        let unconfs = self.num_unconfirmed()?;
+        if unconfs >= self.config.max_unconfirmed_checkpoints {
+            return Ok(false);
         }
 
         let mut index = self.index;
@@ -1756,6 +1803,7 @@ mod test {
                     .into_iter(),
                     btc_height,
                     true,
+                    vec![1, 2, 3],
                 )
                 .unwrap();
         };
@@ -1913,5 +1961,149 @@ mod test {
 
         assert_eq!(queue.borrow().len().unwrap(), 11);
         assert_eq!(queue.borrow().building().unwrap().fee_rate, 11);
+    }
+
+    #[cfg(feature = "full")]
+    #[test]
+    #[serial_test::serial]
+    fn max_unconfirmed_checkpoints() {
+        // TODO: extract pieces into util functions, test more cases
+
+        let paid = orga::plugins::Paid::default();
+        Context::add(paid);
+
+        let mut vals = orga::plugins::Validators::new(
+            Rc::new(RefCell::new(Some(EntryMap::new()))),
+            Rc::new(RefCell::new(None)),
+        );
+        vals.set_voting_power([0; 32], 100);
+        Context::add(vals);
+
+        let secp = Secp256k1::new();
+        let xpriv = ExtendedPrivKey::new_master(bitcoin::Network::Regtest, &[0]).unwrap();
+        let xpub = ExtendedPubKey::from_priv(&secp, &xpriv);
+
+        let mut sig_keys = Map::new();
+        sig_keys.insert([0; 32], Xpub::new(xpub));
+
+        let queue = Rc::new(RefCell::new(CheckpointQueue::default()));
+        queue.borrow_mut().config = Config {
+            min_fee_rate: 2,
+            max_fee_rate: 200,
+            target_checkpoint_inclusion: 2,
+            min_checkpoint_interval: 100,
+            max_unconfirmed_checkpoints: 2,
+            ..Default::default()
+        };
+
+        let set_time = |time| {
+            let time = orga::plugins::Time::from_seconds(time);
+            Context::add(time);
+        };
+        let maybe_step = |btc_height| {
+            queue
+                .borrow_mut()
+                .maybe_step(
+                    &sig_keys,
+                    &Accounts::default(),
+                    &Map::new(),
+                    vec![Ok(bitcoin::TxOut {
+                        script_pubkey: Script::new(),
+                        value: 1_000_000,
+                    })]
+                    .into_iter(),
+                    btc_height,
+                    true,
+                    vec![1, 2, 3],
+                )
+                .unwrap();
+        };
+        let push_deposit = || {
+            let mut input = Input::new(
+                OutPoint {
+                    txid: Txid::from_slice(&[0; 32]).unwrap(),
+                    vout: 0,
+                },
+                &queue.borrow().building().unwrap().sigset,
+                &[0u8],
+                100_000_000,
+                (9, 10),
+            )
+            .unwrap();
+            let mut queue = queue.borrow_mut();
+            let mut building_mut = queue.building_mut().unwrap();
+            let mut building_checkpoint_batch = building_mut
+                .batches
+                .get_mut(BatchType::Checkpoint as u64)
+                .unwrap()
+                .unwrap();
+            let mut checkpoint_tx = building_checkpoint_batch.get_mut(0).unwrap().unwrap();
+            checkpoint_tx.input.push_back(input).unwrap();
+        };
+        let sign_batch = |btc_height| {
+            let mut queue = queue.borrow_mut();
+            let cp = queue.signing().unwrap().unwrap();
+            let sigset_index = cp.sigset.index;
+            let to_sign = cp.to_sign(Xpub::new(xpub.clone())).unwrap();
+            let secp2 = Secp256k1::signing_only();
+            let sigs = crate::bitcoin::signer::sign(&secp2, &xpriv, &to_sign).unwrap();
+            drop(cp);
+            queue
+                .sign(Xpub::new(xpub), sigs, sigset_index, btc_height)
+                .unwrap();
+        };
+        let sign_cp = |btc_height| {
+            sign_batch(btc_height);
+            sign_batch(btc_height);
+            if queue.borrow().signing().unwrap().is_some() {
+                sign_batch(btc_height);
+            }
+        };
+        let confirm_cp = |index, btc_height| {
+            let mut queue = queue.borrow_mut();
+            queue.confirmed_index = Some(index);
+        };
+
+        assert_eq!(queue.borrow().len().unwrap(), 0);
+
+        set_time(0);
+        maybe_step(8);
+        push_deposit();
+        maybe_step(8);
+
+        set_time(1_000);
+        maybe_step(8);
+        sign_cp(8);
+        confirm_cp(0, 9);
+
+        set_time(2_000);
+        push_deposit();
+        maybe_step(10);
+        sign_cp(10);
+
+        set_time(3_000);
+        push_deposit();
+        maybe_step(10);
+        sign_cp(10);
+
+        assert_eq!(queue.borrow().len().unwrap(), 4);
+
+        set_time(4_000);
+        push_deposit();
+        maybe_step(10);
+
+        assert_eq!(queue.borrow().len().unwrap(), 4);
+
+        set_time(5_000);
+        push_deposit();
+        maybe_step(10);
+
+        assert_eq!(queue.borrow().len().unwrap(), 4);
+
+        confirm_cp(2, 11);
+        set_time(6_000);
+        maybe_step(11);
+
+        assert_eq!(queue.borrow().len().unwrap(), 5);
     }
 }

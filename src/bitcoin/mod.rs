@@ -729,6 +729,7 @@ impl Bitcoin {
     pub fn begin_block_step(
         &mut self,
         external_outputs: impl Iterator<Item = Result<bitcoin::TxOut>>,
+        timestamping_commitment: Vec<u8>,
     ) -> Result<Vec<ConsensusKey>> {
         let has_completed_cp = if let Err(Error::Orga(OrgaError::App(err))) =
             self.checkpoints.last_completed_index()
@@ -757,6 +758,7 @@ impl Bitcoin {
                 external_outputs,
                 self.headers.height()?,
                 !reached_capacity_limit,
+                timestamping_commitment,
             )
             .map_err(|err| OrgaError::App(err.to_string()))?;
 
@@ -1095,7 +1097,8 @@ mod tests {
         let maybe_step = || {
             let mut btc = btc.borrow_mut();
 
-            btc.begin_block_step(vec![].into_iter()).unwrap();
+            btc.begin_block_step(vec![].into_iter(), vec![1, 2, 3])
+                .unwrap();
         };
 
         set_time(0);
