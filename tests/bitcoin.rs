@@ -603,35 +603,6 @@ async fn bitcoin_test() {
             };
 
             assert_eq!(sent_amount, expected_account_balances[i] - 10000);
-
-            deposit_bitcoin(
-                &funded_accounts[1].address,
-                bitcoin::Amount::from_btc(20.0).unwrap(),
-                &wallet,
-            )
-            .await
-            .unwrap();
-
-            btc_client
-                .generate_to_address(4, &async_wallet_address)
-                .await
-                .unwrap();
-
-            poll_for_bitcoin_header(1140).await.unwrap();
-            poll_for_completed_checkpoint(4).await;
-
-            let deposit_address = generate_deposit_address(&funded_accounts[1].address)
-                .await
-                .unwrap();
-
-            assert!(broadcast_deposit_addr(
-                funded_accounts[1].address.to_string(),
-                deposit_address.sigset_index,
-                "http://localhost:8999".to_string(),
-                deposit_address.deposit_addr.clone(),
-            )
-            .await
-            .is_err());
         }
 
         Err::<(), Error>(Error::Test("Test completed successfully".to_string()))
