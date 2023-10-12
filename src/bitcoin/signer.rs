@@ -21,6 +21,7 @@ pub struct Signer<W, F> {
     xpriv: ExtendedPrivKey,
     max_withdrawal_rate: f64,
     max_sigset_change_rate: f64,
+    reset_index: Option<u32>,
     app_client: F,
     _phantom: PhantomData<W>,
 }
@@ -34,6 +35,7 @@ where
         key_path: P,
         max_withdrawal_rate: f64,
         max_sigset_change_rate: f64,
+        reset_index: Option<u32>,
         app_client: F,
     ) -> Result<Self> {
         let path = key_path.as_ref();
@@ -67,6 +69,7 @@ where
             xpriv,
             max_withdrawal_rate,
             max_sigset_change_rate,
+            reset_index,
             app_client,
         ))
     }
@@ -76,6 +79,7 @@ where
         xpriv: ExtendedPrivKey,
         max_withdrawal_rate: f64,
         max_sigset_change_rate: f64,
+        reset_index: Option<u32>,
         app_client: F,
     ) -> Self
     where
@@ -86,6 +90,7 @@ where
             xpriv,
             max_withdrawal_rate,
             max_sigset_change_rate,
+            reset_index,
             app_client,
             _phantom: PhantomData,
         }
@@ -107,6 +112,14 @@ where
                 Ok(index.saturating_sub(CHECKPOINT_WINDOW).max(first))
             })
             .await?;
+        if let Some(reset_index) = self.reset_index {
+            if reset_index > index {
+                return Err(crate::error::Error::Checkpoint(format!(
+                    "Limit reset index {} is greater than current checkpoint index {}",
+                    reset_index, index
+                )));
+            }
+        }
 
         loop {
             self.maybe_submit_xpub(&xpub).await?;
@@ -210,8 +223,9 @@ where
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
             .as_secs();
+        let reset_index = self.reset_index.unwrap_or(0);
         let rates = (self.app_client)()
-            .query(|app| Ok(app.bitcoin.change_rates(60 * 60 * 24, now)?))
+            .query(|app| Ok(app.bitcoin.change_rates(60 * 60 * 24, now, reset_index)?))
             .await?;
 
         let withdrawal_rate = rates.withdrawal as f64 / 10_000.0;

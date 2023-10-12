@@ -1213,6 +1213,8 @@ pub struct SignerCmd {
     /// newly-proposed signatory set may not exceed this value
     #[clap(long, default_value_t = 0.04)]
     max_sigset_change_rate: f64,
+
+    reset_limits_at_index: Option<u32>,
 }
 
 impl SignerCmd {
@@ -1229,6 +1231,7 @@ impl SignerCmd {
             key_path,
             self.max_withdrawal_rate,
             self.max_sigset_change_rate,
+            self.reset_limits_at_index,
             // TODO: check for custom RPC port, allow config, etc
             || nomic::app_client("http://localhost:26657").with_wallet(wallet()),
         )?
