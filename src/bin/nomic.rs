@@ -1279,7 +1279,14 @@ impl SetSignatoryKeyCmd {
 async fn deposit(
     dest: Dest,
     client: AppClient<InnerApp, InnerApp, HttpClient, Nom, orga::client::wallet::Unsigned>,
+    relayers: Vec<String>,
 ) -> Result<()> {
+    if relayers.is_empty() {
+        return Err(nomic::error::Error::Orga(orga::Error::App(format!(
+            "No relayers configured, please specify at least one with --btc-relayer"
+        ))));
+    }
+
     let (sigset, threshold) = client
         .query(|app| {
             Ok((
@@ -1291,21 +1298,29 @@ async fn deposit(
     let script = sigset.output_script(dest.commitment_bytes()?.as_slice(), threshold)?;
     let btc_addr = bitcoin::Address::from_script(&script, nomic::bitcoin::NETWORK).unwrap();
 
-    let client = reqwest::Client::new();
-    let res = client
-        .post("https://relayer.nomic.io:8443/address")
-        .query(&[
-            ("sigset_index", sigset.index().to_string()),
-            ("deposit_addr", btc_addr.to_string()),
-        ])
-        .body(dest.encode()?)
-        .send()
-        .await
-        .map_err(|err| nomic::error::Error::Orga(orga::Error::App(err.to_string())))?;
-    if res.status() != 200 {
-        return Err(
-            orga::Error::App(format!("Relayer responded with code {}", res.status())).into(),
-        );
+    let mut successes = 0;
+    let required_successes = relayers.len() * 2 / 3 + 1;
+    for relayer in relayers {
+        let client = reqwest::Client::new();
+        let res = client
+            .post(format!("{}/sigset", relayer))
+            .query(&[
+                ("sigset_index", sigset.index().to_string()),
+                ("deposit_addr", btc_addr.to_string()),
+            ])
+            .body(dest.encode()?)
+            .send()
+            .await
+            .map_err(|err| nomic::error::Error::Orga(orga::Error::App(err.to_string())))?;
+        if res.status() == 200 {
+            successes += 1;
+        }
+    }
+
+    if successes < required_successes {
+        return Err(nomic::error::Error::Orga(orga::Error::App(format!(
+            "Failed to broadcast deposit address to relayers"
+        ))));
     }
 
     println!("Deposit address: {}", btc_addr);
@@ -1326,7 +1341,12 @@ impl DepositCmd {
     async fn run(&self) -> Result<()> {
         let dest_addr = self.address.unwrap_or_else(my_address);
 
-        deposit(Dest::Address(dest_addr), self.config.client()).await
+        deposit(
+            Dest::Address(dest_addr),
+            self.config.client(),
+            self.config.btc_relayer.clone(),
+        )
+        .await
     }
 }
 
@@ -1363,7 +1383,7 @@ impl InterchainDepositCmd {
             memo: self.memo.clone().try_into().unwrap(),
         });
 
-        deposit(dest, self.config.client()).await
+        deposit(dest, self.config.client(), self.config.btc_relayer.clone()).await
     }
 }
 
