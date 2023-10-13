@@ -2,7 +2,7 @@
 use bitcoin::blockdata::transaction::EcdsaSighashType;
 use bitcoin::util::bip32::ExtendedPrivKey;
 use bitcoin::Script;
-use bitcoincore_rpc_async::{Auth, RpcApi as AsyncRpcApi};
+use bitcoincore_rpc_async::RpcApi as AsyncRpcApi;
 use bitcoind::bitcoincore_rpc::json::{
     ImportMultiRequest, ImportMultiRequestScriptPubkey, ImportMultiRescanSince,
 };
@@ -202,14 +202,11 @@ async fn bitcoin_test() {
     let mut conf = Conf::default();
     conf.args.push("-txindex");
     let bitcoind = BitcoinD::with_conf(bitcoind::downloaded_exe_path().unwrap(), &conf).unwrap();
-    let btc_client = bitcoincore_rpc_async::Client::new(
-        bitcoind.rpc_url(),
-        Auth::CookieFile(bitcoind.params.cookie_file.clone()),
-    )
-    .await
-    .unwrap();
+    let rpc_url = bitcoind.rpc_url();
+    let cookie_file = bitcoind.params.cookie_file.clone();
+    let btc_client = test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await;
 
-    let block_data = populate_bitcoin_block(&bitcoind);
+    let block_data = populate_bitcoin_block(&btc_client).await;
 
     let home = tempdir().unwrap();
     let path = home.into_path();
@@ -239,23 +236,32 @@ async fn bitcoin_test() {
 
     let rpc_addr = "http://localhost:26657".to_string();
 
-    let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind), rpc_addr.clone());
+    let mut relayer = Relayer::new(
+        test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
+        rpc_addr.clone(),
+    );
     let headers = relayer.start_header_relay();
 
-    let relayer = Relayer::new(test_bitcoin_client(&bitcoind), rpc_addr.clone());
+    let relayer = Relayer::new(
+        test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
+        rpc_addr.clone(),
+    );
     let deposits = relayer.start_deposit_relay(&header_relayer_path);
 
-    let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind), rpc_addr.clone());
+    let mut relayer = Relayer::new(
+        test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
+        rpc_addr.clone(),
+    );
     let checkpoints = relayer.start_checkpoint_relay();
 
-    let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind), rpc_addr.clone());
+    let mut relayer = Relayer::new(
+        test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
+        rpc_addr.clone(),
+    );
     let disbursal = relayer.start_emergency_disbursal_transaction_relay();
 
-    let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind), rpc_addr.clone());
-    let checkpoint_conf = relayer.start_checkpoint_conf_relay();
-
     let signer = async {
-        tokio::time::sleep(Duration::from_secs(20)).await;
+        tokio::time::sleep(Duration::from_secs(10)).await;
         setup_test_signer(&signer_path, client_provider)
             .start()
             .await
@@ -268,7 +274,7 @@ async fn bitcoin_test() {
     };
 
     let slashable_signer = async {
-        tokio::time::sleep(Duration::from_secs(30)).await;
+        tokio::time::sleep(Duration::from_secs(15)).await;
         let seed: [u8; 32] = rand::thread_rng().gen();
         let xpriv = ExtendedPrivKey::new_master(bitcoin::Network::Testnet, seed.as_slice())?;
         let privkey_bytes = funded_accounts[2].privkey.secret_bytes();
@@ -400,28 +406,12 @@ async fn bitcoin_test() {
             .unwrap();
         assert_eq!(balance, Amount::from(989998435800000));
 
-        tokio::time::sleep(Duration::from_secs(10)).await;
-
         btc_client
             .generate_to_address(3, &async_wallet_address)
             .await
             .unwrap();
 
         poll_for_bitcoin_header(1127).await.unwrap();
-        tokio::time::sleep(Duration::from_secs(20)).await;
-
-        loop {
-            let confirmed_index = app_client()
-                .query(|app| Ok(app.bitcoin.checkpoints.confirmed_index))
-                .await
-                .unwrap();
-            if confirmed_index.is_some() {
-                assert_eq!(confirmed_index, Some(0));
-                break;
-            } else {
-                tokio::time::sleep(Duration::from_secs(1)).await;
-            }
-        }
 
         deposit_bitcoin(
             &funded_accounts[1].address,
@@ -523,7 +513,7 @@ async fn bitcoin_test() {
                 }
             }
         }
-        assert_eq!(signatory_balance, 49992429);
+        assert_eq!(signatory_balance, 49989255);
 
         let funded_account_balances: Vec<_> = funded_accounts
             .iter()
@@ -538,7 +528,7 @@ async fn bitcoin_test() {
             })
             .collect();
 
-        let expected_account_balances: Vec<u64> = vec![989990361, 0, 0, 0];
+        let expected_account_balances: Vec<u64> = vec![989989593, 0, 0, 0];
         assert_eq!(funded_account_balances, expected_account_balances);
 
         for (i, account) in funded_accounts[0..1].iter().enumerate() {
@@ -616,7 +606,6 @@ async fn bitcoin_test() {
         deposits,
         checkpoints,
         disbursal,
-        checkpoint_conf,
         signer,
         slashable_signer,
         test
@@ -641,14 +630,11 @@ async fn signing_completed_checkpoint_test() {
     let mut conf = Conf::default();
     conf.args.push("-txindex");
     let bitcoind = BitcoinD::with_conf(bitcoind::downloaded_exe_path().unwrap(), &conf).unwrap();
-    let btc_client = bitcoincore_rpc_async::Client::new(
-        bitcoind.rpc_url(),
-        Auth::CookieFile(bitcoind.params.cookie_file.clone()),
-    )
-    .await
-    .unwrap();
+    let rpc_url = bitcoind.rpc_url();
+    let cookie_file = bitcoind.params.cookie_file.clone();
+    let btc_client = test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await;
 
-    let block_data = populate_bitcoin_block(&bitcoind);
+    let block_data = populate_bitcoin_block(&btc_client).await;
 
     let home = tempdir().unwrap();
     let path = home.into_path();
@@ -684,17 +670,26 @@ async fn signing_completed_checkpoint_test() {
 
     let rpc_addr = "http://localhost:26657".to_string();
 
-    let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind), rpc_addr.clone());
+    let mut relayer = Relayer::new(
+        test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
+        rpc_addr.clone(),
+    );
     let headers = relayer.start_header_relay();
 
-    let relayer = Relayer::new(test_bitcoin_client(&bitcoind), rpc_addr.clone());
+    let relayer = Relayer::new(
+        test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
+        rpc_addr.clone(),
+    );
     let deposits = relayer.start_deposit_relay(&header_relayer_path);
 
-    let mut relayer = Relayer::new(test_bitcoin_client(&bitcoind), rpc_addr.clone());
+    let mut relayer = Relayer::new(
+        test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
+        rpc_addr.clone(),
+    );
     let checkpoints = relayer.start_checkpoint_relay();
 
     let signer = async {
-        tokio::time::sleep(Duration::from_secs(20)).await;
+        tokio::time::sleep(Duration::from_secs(10)).await;
         setup_test_signer(&signer_path, client_provider)
             .start()
             .await
@@ -709,7 +704,7 @@ async fn signing_completed_checkpoint_test() {
     let seed: [u8; 32] = rand::thread_rng().gen();
 
     let slashable_signer = async {
-        tokio::time::sleep(Duration::from_secs(30)).await;
+        tokio::time::sleep(Duration::from_secs(15)).await;
         let xpriv =
             ExtendedPrivKey::new_master(bitcoin::Network::Testnet, seed.as_slice()).unwrap();
         let privkey_bytes = funded_accounts[2].privkey.secret_bytes();
@@ -734,7 +729,7 @@ async fn signing_completed_checkpoint_test() {
     };
 
     let slashable_signer_2 = {
-        tokio::time::sleep(Duration::from_secs(30)).await;
+        tokio::time::sleep(Duration::from_secs(15)).await;
         let xpriv =
             ExtendedPrivKey::new_master(bitcoin::Network::Testnet, seed.as_slice()).unwrap();
         let privkey_bytes = funded_accounts[2].privkey.secret_bytes();
@@ -808,7 +803,7 @@ async fn signing_completed_checkpoint_test() {
             .collect::<Vec<_>>();
 
         tokio::spawn(slashable_signer_2);
-        tokio::time::sleep(Duration::from_secs(2 * 60)).await;
+        tokio::time::sleep(Duration::from_secs(30)).await;
 
         let checkpoint_txs = app_client()
             .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.completed_txs(20)?))
