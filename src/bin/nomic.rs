@@ -1267,6 +1267,12 @@ async fn deposit(
     client: AppClient<InnerApp, InnerApp, HttpClient, Nom, orga::client::wallet::Unsigned>,
     relayers: Vec<String>,
 ) -> Result<()> {
+    if relayers.is_empty() {
+        return Err(nomic::error::Error::Orga(orga::Error::App(format!(
+            "No relayers configured, please specify at least one with --btc-relayer"
+        ))));
+    }
+
     let (sigset, threshold) = client
         .query(|app| {
             Ok((
