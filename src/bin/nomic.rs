@@ -1303,7 +1303,7 @@ async fn deposit(
     for relayer in relayers {
         let client = reqwest::Client::new();
         let res = client
-            .post(format!("{}/sigset", relayer))
+            .post(format!("{}/address", relayer))
             .query(&[
                 ("sigset_index", sigset.index().to_string()),
                 ("deposit_addr", btc_addr.to_string()),
@@ -1312,6 +1312,7 @@ async fn deposit(
             .send()
             .await
             .map_err(|err| nomic::error::Error::Orga(orga::Error::App(err.to_string())))?;
+        log::debug!("Relayer response status code: {}", res.status());
         if res.status() == 200 {
             successes += 1;
         }
