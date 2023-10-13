@@ -884,6 +884,19 @@ impl DeclareCmd {
             min_self_delegation: self.min_self_delegation.into(),
         };
 
+        // declare with nBTC if amount is 0
+        if self.amount == 0 {
+            return Ok(self
+                .config
+                .client()
+                .with_wallet(wallet())
+                .call(
+                    |app| build_call!(app.declare_with_nbtc(declaration.clone())),
+                    |app| build_call!(app.app_noop()),
+                )
+                .await?);
+        }
+
         Ok(self
             .config
             .client()
