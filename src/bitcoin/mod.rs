@@ -125,7 +125,8 @@ impl MigrateFrom<ConfigV1> for ConfigV2 {
 
 impl MigrateFrom<ConfigV2> for ConfigV3 {
     fn migrate_from(value: ConfigV2) -> OrgaResult<Self> {
-        // Migrating to set min_checkpoint_confirmations to 0
+        // Migrating to set min_checkpoint_confirmations to 0 and testnet
+        // capacity limit to 100 BTC
         Ok(Self {
             min_withdrawal_checkpoints: value.min_withdrawal_checkpoints,
             min_deposit_amount: value.min_deposit_amount,
@@ -137,7 +138,7 @@ impl MigrateFrom<ConfigV2> for ConfigV3 {
             units_per_sat: value.units_per_sat,
             max_offline_checkpoints: value.max_offline_checkpoints,
             min_checkpoint_confirmations: 0,
-            capacity_limit: value.capacity_limit,
+            capacity_limit: Self::default().capacity_limit,
         })
     }
 }
@@ -158,6 +159,9 @@ impl Config {
             units_per_sat: 1_000_000,
             max_offline_checkpoints: 20,
             min_checkpoint_confirmations: 0,
+            #[cfg(feature = "testnet")]
+            capacity_limit: 100 * 100_000_000, // 100 BTC
+            #[cfg(not(feature = "testnet"))]
             capacity_limit: 21 * 100_000_000, // 21 BTC
         }
     }
