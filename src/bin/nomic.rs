@@ -4,7 +4,7 @@
 #![feature(async_closure)]
 #![feature(never_type)]
 
-use bitcoind::bitcoincore_rpc::{Auth, Client as BtcClient};
+use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
 use nomic::app::Dest;
 #[cfg(feature = "testnet")]
@@ -884,6 +884,19 @@ impl DeclareCmd {
             min_self_delegation: self.min_self_delegation.into(),
         };
 
+        // declare with nBTC if amount is 0
+        if self.amount == 0 {
+            return Ok(self
+                .config
+                .client()
+                .with_wallet(wallet())
+                .call(
+                    |app| build_call!(app.declare_with_nbtc(declaration.clone())),
+                    |app| build_call!(app.app_noop()),
+                )
+                .await?);
+        }
+
         Ok(self
             .config
             .client()
@@ -1143,8 +1156,9 @@ impl RelayerCmd {
             _ => Auth::None,
         };
 
-        let btc_client =
-            BtcClient::new(&rpc_url, auth).map_err(|e| orga::Error::App(e.to_string()))?;
+        let btc_client = BtcClient::new(rpc_url, auth)
+            .await
+            .map_err(|e| orga::Error::App(e.to_string()))?;
 
         Ok(btc_client)
     }

@@ -7,7 +7,6 @@ default-run = "nomic"
 
 [dependencies]
 bitcoin = { version = "0.29.2", features = ["serde", "rand"] }
-bitcoind = { version = "0.27.0", features = ["22_0"], optional = true }
 orga = { git = "https://github.com/nomic-io/orga.git", rev = "1d159edb7e0b7d3d073823bfffb8322f68c36312", features = [
     "merk-verify",
 ] }
@@ -48,6 +47,7 @@ ics23 = "0.10.2"
 cosmos-sdk-proto = {version = "0.19.0", optional = true }
 
 [dev-dependencies]
+bitcoind = { version = "0.27.0", features = ["22_0"] }
 bitcoin_hashes = "0.11.0"
 serde_json = "1.0.68"
 serde = "1.0.130"
@@ -66,7 +66,6 @@ semver = "1.0.18"
 [features]
 default = ["full", "feat-ibc", "testnet", "legacy-bin"]
 full = [
-    "bitcoind",
     "bitcoincore-rpc-async",
     "clap",
     "tokio",
