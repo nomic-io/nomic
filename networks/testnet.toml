@@ -9,6 +9,9 @@ tendermint_flags = [
         6a6c1af342ce45d550e30ddc187bbbb81167d9b8@147.182.171.216:26656,\
     """,
 ]
+btc_relayer = [
+  "https://relayer.nomic-testnet.mappum.io:8443"
+]
 
 legacy_version = "6.1"
 
