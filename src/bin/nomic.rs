@@ -1877,17 +1877,16 @@ impl SigningStatusCmd {
                 continue;
             }
             let cons_key = app.staking.consensus_key(val.address.into())?;
-            if let Some(missing) = missing_cons_keys.iter().find(|v| *v.0 == cons_key) {
+            if missing_cons_keys
+                .iter()
+                .find(|v| *v.0 == cons_key)
+                .is_some()
+            {
                 let json: serde_json::Value =
                     serde_json::from_str(String::from_utf8(val.info.to_vec()).unwrap().as_str())
                         .unwrap();
                 let name = json.get("moniker").unwrap().to_string();
-                let to_sign = app
-                    .bitcoin
-                    .checkpoints
-                    .get(app.bitcoin.checkpoints.index)?
-                    .to_sign(missing.1)?;
-                println!("Missing {} signature(s) from {}", to_sign.len(), name);
+                println!("Missing signature from {}", name);
             }
         }
 
