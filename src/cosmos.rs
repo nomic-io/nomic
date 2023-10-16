@@ -353,7 +353,13 @@ impl Chain {
                 None => continue,
                 Some(op_key) => op_key,
             };
-            let op_key = bitcoin::secp256k1::PublicKey::from_slice(op_key.as_slice())?;
+            let op_key = match bitcoin::secp256k1::PublicKey::from_slice(op_key.as_slice()) {
+                Ok(op_key) => op_key,
+                Err(err) => {
+                    log::debug!("Warning: invalid operator key: {}", err);
+                    continue;
+                }
+            };
 
             let xpub = ExtendedPubKey {
                 network: bitcoin::Network::Bitcoin,
