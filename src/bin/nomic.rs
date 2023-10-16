@@ -1877,11 +1877,7 @@ impl SigningStatusCmd {
                 continue;
             }
             let cons_key = app.staking.consensus_key(val.address.into())?;
-            if missing_cons_keys
-                .iter()
-                .find(|v| *v.0 == cons_key)
-                .is_some()
-            {
+            if missing_cons_keys.iter().any(|v| *v.0 == cons_key) {
                 let json: serde_json::Value =
                     serde_json::from_str(String::from_utf8(val.info.to_vec()).unwrap().as_str())
                         .unwrap();
