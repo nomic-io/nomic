@@ -17,11 +17,7 @@ use bitcoin::secp256k1::{self, rand, SecretKey};
 use bitcoin::BlockHeader;
 use bitcoin::Script;
 #[cfg(feature = "full")]
-use bitcoind::bitcoincore_rpc::RpcApi;
-#[cfg(feature = "full")]
-use bitcoind::bitcoincore_rpc::{Auth, Client as BitcoinRpcClient};
-#[cfg(feature = "full")]
-use bitcoind::BitcoinD;
+use bitcoincore_rpc_async::{Auth, Client as BitcoinRpcClient, RpcApi};
 use chrono::{TimeZone, Utc};
 #[cfg(feature = "full")]
 use log::info;
@@ -47,6 +43,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 #[cfg(feature = "full")]
 use std::path::Path;
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::str::FromStr;
 use std::time::Duration;
@@ -166,10 +163,10 @@ pub fn setup_chain_id_context(chain_id: String) {
 }
 
 #[cfg(feature = "full")]
-pub fn test_bitcoin_client(bitcoind: &BitcoinD) -> BitcoinRpcClient {
-    let bitcoind_url = bitcoind.rpc_url();
-    let bitcoin_cookie_file = bitcoind.params.cookie_file.clone();
-    BitcoinRpcClient::new(&bitcoind_url, Auth::CookieFile(bitcoin_cookie_file)).unwrap()
+pub async fn test_bitcoin_client(rpc_url: String, cookie_file: PathBuf) -> BitcoinRpcClient {
+    BitcoinRpcClient::new(rpc_url, Auth::CookieFile(cookie_file))
+        .await
+        .unwrap()
 }
 
 pub fn address_from_privkey(privkey: &SecretKey) -> Address {
@@ -194,6 +191,7 @@ where
         key_path,
         0.1,
         1.0,
+        None,
         client,
     )
     .unwrap()
@@ -308,29 +306,16 @@ pub async fn poll_for_signing_checkpoint() {
     }
 }
 
-async fn poll_for_first_completed_checkpoint() {
-    while app_client(DEFAULT_RPC)
-        .query(|app| Ok(app.bitcoin.checkpoints.completed(1000)?.len()))
-        .await
-        .unwrap()
-        < 1
-    {
-        tokio::time::sleep(Duration::from_secs(3)).await;
-    }
-}
-
 pub async fn poll_for_completed_checkpoint(num_checkpoints: u32) {
-    info!("Scanning for completed checkpoint...");
-    poll_for_first_completed_checkpoint().await;
-
-    let mut last_completed_index = app_client(DEFAULT_RPC)
-        .query(|app| Ok(app.bitcoin.checkpoints.last_completed_index()?))
+    info!("Scanning for signed checkpoints...");
+    let mut checkpoint_len = app_client(DEFAULT_RPC)
+        .query(|app| Ok(app.bitcoin.checkpoints.completed(1_000)?.len()))
         .await
         .unwrap();
 
-    while last_completed_index + 1 < num_checkpoints {
-        last_completed_index = app_client(DEFAULT_RPC)
-            .query(|app| Ok(app.bitcoin.checkpoints.last_completed_index()?))
+    while checkpoint_len < num_checkpoints as usize {
+        checkpoint_len = app_client(DEFAULT_RPC)
+            .query(|app| Ok(app.bitcoin.checkpoints.completed(1_000)?.len()))
             .await
             .unwrap();
         tokio::time::sleep(Duration::from_secs(1)).await;
@@ -357,20 +342,20 @@ pub struct BitcoinBlockData {
 }
 
 #[cfg(feature = "full")]
-pub fn populate_bitcoin_block(client: &BitcoinD) -> BitcoinBlockData {
-    let tip_address = client.client.get_new_address(Some("tip"), None).unwrap();
+pub async fn populate_bitcoin_block(client: &BitcoinRpcClient) -> BitcoinBlockData {
+    let tip_address = client.get_new_address(Some("tip"), None).await.unwrap();
 
     client
-        .client
         .generate_to_address(1000, &tip_address)
+        .await
         .unwrap();
 
-    let tip_hash = client.client.get_best_block_hash().unwrap();
-    let tip_header = client.client.get_block_header(&tip_hash).unwrap();
+    let tip_hash = client.get_best_block_hash().await.unwrap();
+    let tip_header = client.get_block_header(&tip_hash).await.unwrap();
 
     let tip_height = client
-        .client
         .get_block_header_info(&tip_hash)
+        .await
         .unwrap()
         .height;
 

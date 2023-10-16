@@ -8,8 +8,7 @@ use crate::error::Result;
 use crate::utils::time_now;
 use bitcoin::consensus::{Decodable, Encodable};
 use bitcoin::{hashes::Hash, Block, BlockHash, Transaction};
-use bitcoind::bitcoincore_rpc::json::GetBlockHeaderResult;
-use bitcoind::bitcoincore_rpc::{Client as BitcoinRpcClient, RpcApi};
+use bitcoincore_rpc_async::{json::GetBlockHeaderResult, Client as BitcoinRpcClient, RpcApi};
 use log::{debug, error, info, warn};
 use orga::encoding::Decode;
 use orga::macros::build_call;
@@ -73,7 +72,7 @@ impl Relayer {
         let mut last_hash = None;
 
         loop {
-            let fullnode_hash = self.btc_client.get_best_block_hash()?;
+            let fullnode_hash = self.btc_client.get_best_block_hash().await?;
             let sidechain_hash = self.sidechain_block_hash().await?;
 
             if fullnode_hash != sidechain_hash {
@@ -84,14 +83,14 @@ impl Relayer {
 
             if last_hash.is_none() || last_hash.is_some_and(|h| h != fullnode_hash) {
                 last_hash = Some(fullnode_hash);
-                let info = self.btc_client.get_block_info(&fullnode_hash)?;
+                let info = self.btc_client.get_block_info(&fullnode_hash).await?;
                 info!(
                     "Sidechain header state is up-to-date:\n\thash={}\n\theight={}",
                     info.hash, info.height
                 );
             }
 
-            self.btc_client.wait_for_new_block(3_000)?;
+            self.btc_client.wait_for_new_block(3_000).await?;
         }
     }
 
@@ -199,9 +198,17 @@ impl Relayer {
         let sigset_route = warp::path("sigset")
             .and_then(move || async {
                 let sigset = app_client(app_client_addr)
-                    .query(|app| {
-                        let sigset: RawSignatorySet =
-                            app.bitcoin.checkpoints.active_sigset()?.into();
+                    .query(|app: crate::app::InnerApp| {
+                        let building = app.bitcoin.checkpoints.building()?;
+                        let est_miner_fee = building.fee_rate
+                            * app.bitcoin.checkpoints.active_sigset()?.est_witness_vsize();
+                        let deposits_enabled = building.deposits_enabled;
+                        let sigset = RawSignatorySet::new(
+                            app.bitcoin.checkpoints.active_sigset()?,
+                            0.015,
+                            est_miner_fee as f64 / 100_000_000.0,
+                            deposits_enabled,
+                        );
                         Ok(sigset)
                     })
                     .await
@@ -244,8 +251,8 @@ impl Relayer {
                 continue;
             }
 
-            let start_height = self.common_ancestor(tip, prev)?.height;
-            let end_height = self.btc_client.get_block_header_info(&tip)?.height;
+            let start_height = self.common_ancestor(tip, prev).await?.height;
+            let end_height = self.btc_client.get_block_header_info(&tip).await?.height;
             let num_blocks = (end_height - start_height).max(1100);
 
             self.scan_for_deposits(num_blocks).await?;
@@ -256,8 +263,8 @@ impl Relayer {
 
     async fn scan_for_deposits(&mut self, num_blocks: usize) -> Result<BlockHash> {
         let tip = self.sidechain_block_hash().await?;
-        let base_height = self.btc_client.get_block_header_info(&tip)?.height;
-        let blocks = self.last_n_blocks(num_blocks, tip)?;
+        let base_height = self.btc_client.get_block_header_info(&tip).await?.height;
+        let blocks = self.last_n_blocks(num_blocks, tip).await?;
 
         for (i, block) in blocks.into_iter().enumerate().rev() {
             let height = (base_height - i) as u32;
@@ -316,7 +323,7 @@ impl Relayer {
                 let mut tx_bytes = vec![];
                 tx.consensus_encode(&mut tx_bytes)?;
 
-                match self.btc_client.send_raw_transaction(&tx_bytes) {
+                match self.btc_client.send_raw_transaction(&tx_bytes).await {
                     Ok(_) => {
                         info!("Relayed emergency disbursal transaction: {}", tx.txid());
                     }
@@ -369,7 +376,7 @@ impl Relayer {
                 let mut tx_bytes = vec![];
                 tx.consensus_encode(&mut tx_bytes)?;
 
-                match self.btc_client.send_raw_transaction(&tx_bytes) {
+                match self.btc_client.send_raw_transaction(&tx_bytes).await {
                     Ok(_) => {
                         info!("Relayed checkpoint: {}", tx.txid());
                     }
@@ -402,28 +409,34 @@ impl Relayer {
 
     async fn relay_checkpoint_confs(&mut self) -> Result<()> {
         loop {
-            let (confirmed_index, unconf_index) = match app_client(&self.app_client_addr)
-                .query(|app| {
-                    let checkpoints = &app.bitcoin.checkpoints;
-                    Ok((
-                        checkpoints.confirmed_index,
-                        checkpoints
-                            .first_unconfirmed_index()?
-                            .ok_or(orga::Error::App("No completed checkpoints yet".to_string()))?,
-                    ))
-                })
-                .await
-            {
-                Ok(res) => res,
-                Err(err) => {
-                    if err.to_string().contains("No completed checkpoints yet") {
-                        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-                        continue;
-                    } else {
-                        return Err(err.into());
+            let (confirmed_index, unconf_index, last_completed_index) =
+                match app_client(&self.app_client_addr)
+                    .query(|app| {
+                        let checkpoints = &app.bitcoin.checkpoints;
+                        Ok((
+                            checkpoints.confirmed_index,
+                            checkpoints
+                                .first_unconfirmed_index()?
+                                .ok_or(orga::Error::App(
+                                    "No completed checkpoints yet".to_string(),
+                                ))?,
+                            checkpoints.last_completed_index()?,
+                        ))
+                    })
+                    .await
+                {
+                    Ok(res) => res,
+                    Err(err) => {
+                        if err.to_string().contains("No completed checkpoints yet") {
+                            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                            continue;
+                        } else {
+                            return Err(err.into());
+                        }
                     }
-                }
-            };
+                };
+
+            let unconf_index = unconf_index.max(last_completed_index.saturating_sub(5));
 
             if let Some(confirmed_index) = confirmed_index {
                 if confirmed_index == unconf_index {
@@ -449,7 +462,8 @@ impl Relayer {
                 }
                 let proof_bytes = self
                     .btc_client
-                    .get_tx_out_proof(&[unconfirmed_txid], Some(&block_hash))?;
+                    .get_tx_out_proof(&[unconfirmed_txid], Some(&block_hash))
+                    .await?;
                 let proof = Adapter::new(
                     ::bitcoin::MerkleBlock::consensus_decode(&mut proof_bytes.as_slice())?.txn,
                 );
@@ -476,8 +490,8 @@ impl Relayer {
         num_blocks: usize,
     ) -> Result<Option<(u32, BlockHash)>> {
         let tip = self.sidechain_block_hash().await?;
-        let base_height = self.btc_client.get_block_header_info(&tip)?.height;
-        let blocks = self.last_n_blocks(num_blocks, tip)?;
+        let base_height = self.btc_client.get_block_header_info(&tip).await?.height;
+        let blocks = self.last_n_blocks(num_blocks, tip).await?;
 
         for (i, block) in blocks.into_iter().enumerate().rev() {
             let height = (base_height - i) as u32;
@@ -512,13 +526,13 @@ impl Relayer {
         Ok(())
     }
 
-    pub fn last_n_blocks(&self, n: usize, hash: BlockHash) -> Result<Vec<Block>> {
+    pub async fn last_n_blocks(&self, n: usize, hash: BlockHash) -> Result<Vec<Block>> {
         let mut blocks = vec![];
 
         let mut hash = bitcoin::BlockHash::from_inner(hash.into_inner());
 
         for _ in 0..n {
-            let block = self.btc_client.get_block(&hash.clone())?;
+            let block = self.btc_client.get_block(&hash.clone()).await?;
             hash = block.header.prev_blockhash;
 
             let mut block_bytes = vec![];
@@ -593,7 +607,8 @@ impl Relayer {
 
         let proof_bytes = self
             .btc_client
-            .get_tx_out_proof(&[tx.txid()], Some(block_hash))?;
+            .get_tx_out_proof(&[tx.txid()], Some(block_hash))
+            .await?;
         let proof = ::bitcoin::MerkleBlock::consensus_decode(&mut proof_bytes.as_slice())?.txn;
 
         {
@@ -645,16 +660,22 @@ impl Relayer {
         fullnode_hash: BlockHash,
         sidechain_hash: BlockHash,
     ) -> Result<()> {
-        let fullnode_info = self.btc_client.get_block_header_info(&fullnode_hash)?;
-        let sidechain_info = self.btc_client.get_block_header_info(&sidechain_hash)?;
+        let fullnode_info = self
+            .btc_client
+            .get_block_header_info(&fullnode_hash)
+            .await?;
+        let sidechain_info = self
+            .btc_client
+            .get_block_header_info(&sidechain_hash)
+            .await?;
 
         if fullnode_info.height < sidechain_info.height {
             // full node is still syncing
             return Ok(());
         }
 
-        let start = self.common_ancestor(fullnode_hash, sidechain_hash)?;
-        let batch = self.get_header_batch(start.hash)?;
+        let start = self.common_ancestor(fullnode_hash, sidechain_hash).await?;
+        let batch = self.get_header_batch(start.hash).await?;
 
         info!(
             "Relaying headers...\n\thash={}\n\theight={}\n\tbatch_len={}",
@@ -685,17 +706,19 @@ impl Relayer {
         Ok(())
     }
 
-    fn get_header_batch(&self, from_hash: BlockHash) -> Result<Vec<WrappedHeader>> {
-        let mut cursor = self.btc_client.get_block_header_info(&from_hash)?;
+    async fn get_header_batch(&self, from_hash: BlockHash) -> Result<Vec<WrappedHeader>> {
+        let mut cursor = self.btc_client.get_block_header_info(&from_hash).await?;
 
         let mut headers = Vec::with_capacity(HEADER_BATCH_SIZE);
         for _ in 0..HEADER_BATCH_SIZE {
             match cursor.next_block_hash {
-                Some(next_hash) => cursor = self.btc_client.get_block_header_info(&next_hash)?,
+                Some(next_hash) => {
+                    cursor = self.btc_client.get_block_header_info(&next_hash).await?
+                }
                 None => break,
             };
 
-            let header = self.btc_client.get_block_header(&cursor.hash)?;
+            let header = self.btc_client.get_block_header(&cursor.hash).await?;
             let mut header_bytes = vec![];
             header.consensus_encode(&mut header_bytes).unwrap();
             let header =
@@ -709,9 +732,9 @@ impl Relayer {
         Ok(headers)
     }
 
-    fn common_ancestor(&self, a: BlockHash, b: BlockHash) -> Result<GetBlockHeaderResult> {
-        let mut a = self.btc_client.get_block_header_info(&a)?;
-        let mut b = self.btc_client.get_block_header_info(&b)?;
+    async fn common_ancestor(&self, a: BlockHash, b: BlockHash) -> Result<GetBlockHeaderResult> {
+        let mut a = self.btc_client.get_block_header_info(&a).await?;
+        let mut b = self.btc_client.get_block_header_info(&b).await?;
 
         while a != b {
             if a.height > b.height && (b.confirmations - 1) as usize == a.height - b.height {
@@ -720,10 +743,10 @@ impl Relayer {
                 return Ok(a);
             } else if a.height > b.height {
                 let prev = a.previous_block_hash.unwrap();
-                a = self.btc_client.get_block_header_info(&prev)?;
+                a = self.btc_client.get_block_header_info(&prev).await?;
             } else {
                 let prev = b.previous_block_hash.unwrap();
-                b = self.btc_client.get_block_header_info(&prev)?;
+                b = self.btc_client.get_block_header_info(&prev).await?;
             }
         }
 
@@ -747,10 +770,21 @@ pub struct OutputMatch {
 pub struct RawSignatorySet {
     pub signatories: Vec<RawSignatory>,
     pub index: u32,
+    #[serde(rename = "bridgeFeeRate")]
+    pub bridge_fee_rate: f64,
+    #[serde(rename = "minerFeeRate")]
+    pub miner_fee_rate: f64,
+    #[serde(rename = "depositsEnabled")]
+    pub deposits_enabled: bool,
 }
 
-impl From<SignatorySet> for RawSignatorySet {
-    fn from(sigset: SignatorySet) -> Self {
+impl RawSignatorySet {
+    pub fn new(
+        sigset: SignatorySet,
+        bridge_fee_rate: f64,
+        miner_fee_rate: f64,
+        deposits_enabled: bool,
+    ) -> Self {
         let signatories = sigset
             .iter()
             .map(|s| RawSignatory::from(s.clone()))
@@ -759,6 +793,9 @@ impl From<SignatorySet> for RawSignatorySet {
         RawSignatorySet {
             signatories,
             index: sigset.index(),
+            bridge_fee_rate,
+            miner_fee_rate,
+            deposits_enabled,
         }
     }
 }
@@ -948,33 +985,34 @@ impl WatchedScriptStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitcoind::bitcoincore_rpc::{Auth, RpcApi};
+    use crate::utils::test_bitcoin_client;
+    use bitcoincore_rpc_async::RpcApi as RpcApiAsync;
     use bitcoind::BitcoinD;
 
     #[tokio::test]
     async fn relayer_fetch_batch() {
         let bitcoind = BitcoinD::new(bitcoind::downloaded_exe_path().unwrap()).unwrap();
+        let rpc_url = bitcoind.rpc_url();
+        let cookie_file = bitcoind.params.cookie_file.clone();
+        let btc_client = test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await;
 
-        let address = bitcoind.client.get_new_address(None, None).unwrap();
-        bitcoind.client.generate_to_address(30, &address).unwrap();
+        let address = btc_client.get_new_address(None, None).await.unwrap();
+        btc_client.generate_to_address(30, &address).await.unwrap();
 
-        let bitcoind_url = bitcoind.rpc_url();
-        let bitcoin_cookie_file = bitcoind.params.cookie_file.clone();
-        let rpc_client =
-            BitcoinRpcClient::new(&bitcoind_url, Auth::CookieFile(bitcoin_cookie_file)).unwrap();
+        let relayer_client = test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await;
 
-        bitcoind.client.generate_to_address(25, &address).unwrap();
-        let relayer = Relayer::new(rpc_client, "http://localhost:26657".to_string());
+        btc_client.generate_to_address(25, &address).await.unwrap();
+        let relayer = Relayer::new(relayer_client, "http://localhost:26657".to_string());
 
-        let block_hash = bitcoind.client.get_block_hash(30).unwrap();
-        let headers = relayer.get_header_batch(block_hash).unwrap();
+        let block_hash = btc_client.get_block_hash(30).await.unwrap();
+        let headers = relayer.get_header_batch(block_hash).await.unwrap();
 
         assert_eq!(headers.len(), 25);
 
         for (i, header) in headers.iter().enumerate() {
             let height = 31 + i;
-            let btc_hash = bitcoind.client.get_block_hash(height as u64).unwrap();
-            let btc_header = bitcoind.client.get_block_header(&btc_hash).unwrap();
+            let btc_hash = btc_client.get_block_hash(height as u64).await.unwrap();
+            let btc_header = btc_client.get_block_header(&btc_hash).await.unwrap();
 
             assert_eq!(header.block_hash(), btc_header.block_hash());
             assert_eq!(header.bits(), btc_header.bits);
@@ -986,26 +1024,25 @@ mod tests {
     #[tokio::test]
     async fn relayer_seek_uneven_batch() {
         let bitcoind = BitcoinD::new(bitcoind::downloaded_exe_path().unwrap()).unwrap();
+        let rpc_url = bitcoind.rpc_url();
+        let cookie_file = bitcoind.params.cookie_file.clone();
+        let btc_client = test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await;
+        let address = btc_client.get_new_address(None, None).await.unwrap();
+        btc_client.generate_to_address(30, &address).await.unwrap();
 
-        let address = bitcoind.client.get_new_address(None, None).unwrap();
-        bitcoind.client.generate_to_address(30, &address).unwrap();
+        let relayer_client = test_bitcoin_client(rpc_url, cookie_file).await;
 
-        let bitcoind_url = bitcoind.rpc_url();
-        let bitcoin_cookie_file = bitcoind.params.cookie_file.clone();
-        let rpc_client =
-            BitcoinRpcClient::new(&bitcoind_url, Auth::CookieFile(bitcoin_cookie_file)).unwrap();
-
-        bitcoind.client.generate_to_address(7, &address).unwrap();
-        let relayer = Relayer::new(rpc_client, "http://localhost:26657".to_string());
-        let block_hash = bitcoind.client.get_block_hash(30).unwrap();
-        let headers = relayer.get_header_batch(block_hash).unwrap();
+        btc_client.generate_to_address(7, &address).await.unwrap();
+        let relayer = Relayer::new(relayer_client, "http://localhost:26657".to_string());
+        let block_hash = btc_client.get_block_hash(30).await.unwrap();
+        let headers = relayer.get_header_batch(block_hash).await.unwrap();
 
         assert_eq!(headers.len(), 7);
 
         for (i, header) in headers.iter().enumerate() {
             let height = 31 + i;
-            let btc_hash = bitcoind.client.get_block_hash(height as u64).unwrap();
-            let btc_header = bitcoind.client.get_block_header(&btc_hash).unwrap();
+            let btc_hash = btc_client.get_block_hash(height as u64).await.unwrap();
+            let btc_header = btc_client.get_block_header(&btc_hash).await.unwrap();
 
             assert_eq!(header.block_hash(), btc_header.block_hash());
             assert_eq!(header.bits(), btc_header.bits);
