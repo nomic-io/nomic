@@ -196,8 +196,10 @@ impl Cosmos {
         )?;
 
         let mut chain = self.chains.entry(client_id)?.or_default()?;
-        if chain.op_keys_by_cons.contains_key(cons_key.clone())? {
-            return Err(OrgaError::App("Operator key already relayed".to_string()).into());
+        if let Some(existing_key) = chain.op_keys_by_cons.get(cons_key.clone())? {
+            if *existing_key == op_key {
+                return Err(OrgaError::App("Operator key already relayed".to_string()).into());
+            }
         }
         chain.op_keys_by_cons.insert(cons_key, op_key)?;
 
@@ -353,7 +355,13 @@ impl Chain {
                 None => continue,
                 Some(op_key) => op_key,
             };
-            let op_key = bitcoin::secp256k1::PublicKey::from_slice(op_key.as_slice())?;
+            let op_key = match bitcoin::secp256k1::PublicKey::from_slice(op_key.as_slice()) {
+                Ok(op_key) => op_key,
+                Err(err) => {
+                    log::debug!("Warning: invalid operator key: {}", err);
+                    continue;
+                }
+            };
 
             let xpub = ExtendedPubKey {
                 network: bitcoin::Network::Bitcoin,
