@@ -489,7 +489,7 @@ pub async fn bitcoin_height() -> Result<u32, JsError> {
 #[wasm_bindgen(js_name = capacityLimit)]
 pub async fn capacity_limit() -> Result<u64, JsError> {
     Ok(app_client()
-        .query(|app: InnerApp| Ok(app.bitcoin.capacity_limit()?))
+        .query(|app: InnerApp| Ok(app.bitcoin.config.capacity_limit))
         .await?)
 }
 
