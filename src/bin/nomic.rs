@@ -4,7 +4,7 @@
 #![feature(async_closure)]
 #![feature(never_type)]
 
-use bitcoind::bitcoincore_rpc::{Auth, Client as BtcClient};
+use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
 use nomic::app::Dest;
 #[cfg(feature = "testnet")]
@@ -521,33 +521,27 @@ fn legacy_bin(config: &nomic::network::Config) -> Result<Option<PathBuf>> {
 }
 
 async fn relaunch_on_migrate(config: &nomic::network::Config) -> Result<()> {
-    let home = match config.home() {
-        Some(home) => home,
-        None => {
-            log::warn!("Unknown home directory, cannot automatically relaunch on migrate");
-            return Ok(());
-        }
-    };
-
     let mut initial_ver = None;
     loop {
-        if !home.exists() {
-            continue;
-        }
-        let store = MerkStore::open_readonly(home.join("merk"));
-        let store_ver = store.merk().get_aux(b"consensus_version").unwrap();
-        if initial_ver.is_some() {
-            if store_ver != initial_ver {
-                log::info!(
-                    "Node has migrated from version {:?} to version {:?}, exiting",
+        let version: Vec<_> = config
+            .client()
+            .query(|app| Ok(app.upgrade.current_version.get(())?.unwrap().clone()))
+            .await?
+            .into();
+
+        if let Some(initial_ver) = initial_ver {
+            if version != initial_ver {
+                log::warn!(
+                    "Version changed from {:?} to {:?}, exiting",
                     initial_ver,
-                    store_ver
+                    version
                 );
                 std::process::exit(138);
             }
-        } else {
-            initial_ver = store_ver;
         }
+
+        initial_ver = Some(version);
+
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     }
 }
@@ -892,6 +886,19 @@ impl DeclareCmd {
             min_self_delegation: self.min_self_delegation.into(),
         };
 
+        // declare with nBTC if amount is 0
+        if self.amount == 0 {
+            return Ok(self
+                .config
+                .client()
+                .with_wallet(wallet())
+                .call(
+                    |app| build_call!(app.declare_with_nbtc(declaration.clone())),
+                    |app| build_call!(app.app_noop()),
+                )
+                .await?);
+        }
+
         Ok(self
             .config
             .client()
@@ -1151,8 +1158,9 @@ impl RelayerCmd {
             _ => Auth::None,
         };
 
-        let btc_client =
-            BtcClient::new(&rpc_url, auth).map_err(|e| orga::Error::App(e.to_string()))?;
+        let btc_client = BtcClient::new(rpc_url, auth)
+            .await
+            .map_err(|e| orga::Error::App(e.to_string()))?;
 
         Ok(btc_client)
     }
@@ -1207,14 +1215,16 @@ pub struct SignerCmd {
 
     /// Limits the fraction of the total reserve that may be withdrawn within
     /// the trailing 24-hour period
-    #[clap(long, default_value_t = 0.04)]
+    #[clap(long, default_value_t = 0.1)]
     max_withdrawal_rate: f64,
     /// Limits the maximum allowed signatory set change within 24 hours
     ///
     /// The Total Variation Distance between a day-old signatory set and the
     /// newly-proposed signatory set may not exceed this value
-    #[clap(long, default_value_t = 0.04)]
+    #[clap(long, default_value_t = 0.1)]
     max_sigset_change_rate: f64,
+
+    reset_limits_at_index: Option<u32>,
 }
 
 impl SignerCmd {
@@ -1231,6 +1241,7 @@ impl SignerCmd {
             key_path,
             self.max_withdrawal_rate,
             self.max_sigset_change_rate,
+            self.reset_limits_at_index,
             // TODO: check for custom RPC port, allow config, etc
             || nomic::app_client("http://localhost:26657").with_wallet(wallet()),
         )?
@@ -1270,7 +1281,14 @@ impl SetSignatoryKeyCmd {
 async fn deposit(
     dest: Dest,
     client: AppClient<InnerApp, InnerApp, HttpClient, Nom, orga::client::wallet::Unsigned>,
+    relayers: Vec<String>,
 ) -> Result<()> {
+    if relayers.is_empty() {
+        return Err(nomic::error::Error::Orga(orga::Error::App(format!(
+            "No relayers configured, please specify at least one with --btc-relayer"
+        ))));
+    }
+
     let (sigset, threshold) = client
         .query(|app| {
             Ok((
@@ -1282,21 +1300,30 @@ async fn deposit(
     let script = sigset.output_script(dest.commitment_bytes()?.as_slice(), threshold)?;
     let btc_addr = bitcoin::Address::from_script(&script, nomic::bitcoin::NETWORK).unwrap();
 
-    let client = reqwest::Client::new();
-    let res = client
-        .post("https://relayer.nomic.io:8443/address")
-        .query(&[
-            ("sigset_index", sigset.index().to_string()),
-            ("deposit_addr", btc_addr.to_string()),
-        ])
-        .body(dest.encode()?)
-        .send()
-        .await
-        .map_err(|err| nomic::error::Error::Orga(orga::Error::App(err.to_string())))?;
-    if res.status() != 200 {
-        return Err(
-            orga::Error::App(format!("Relayer responded with code {}", res.status())).into(),
-        );
+    let mut successes = 0;
+    let required_successes = relayers.len() * 2 / 3 + 1;
+    for relayer in relayers {
+        let client = reqwest::Client::new();
+        let res = client
+            .post(format!("{}/address", relayer))
+            .query(&[
+                ("sigset_index", sigset.index().to_string()),
+                ("deposit_addr", btc_addr.to_string()),
+            ])
+            .body(dest.encode()?)
+            .send()
+            .await
+            .map_err(|err| nomic::error::Error::Orga(orga::Error::App(err.to_string())))?;
+        log::debug!("Relayer response status code: {}", res.status());
+        if res.status() == 200 {
+            successes += 1;
+        }
+    }
+
+    if successes < required_successes {
+        return Err(nomic::error::Error::Orga(orga::Error::App(format!(
+            "Failed to broadcast deposit address to relayers"
+        ))));
     }
 
     println!("Deposit address: {}", btc_addr);
@@ -1317,7 +1344,12 @@ impl DepositCmd {
     async fn run(&self) -> Result<()> {
         let dest_addr = self.address.unwrap_or_else(my_address);
 
-        deposit(Dest::Address(dest_addr), self.config.client()).await
+        deposit(
+            Dest::Address(dest_addr),
+            self.config.client(),
+            self.config.btc_relayer.clone(),
+        )
+        .await
     }
 }
 
@@ -1354,7 +1386,7 @@ impl InterchainDepositCmd {
             memo: self.memo.clone().try_into().unwrap(),
         });
 
-        deposit(dest, self.config.client()).await
+        deposit(dest, self.config.client(), self.config.btc_relayer.clone()).await
     }
 }
 
@@ -1449,12 +1481,14 @@ pub struct GrpcCmd {
 impl GrpcCmd {
     async fn run(&self) -> Result<()> {
         use orga::ibc::GrpcOpts;
+        std::panic::set_hook(Box::new(|_| {}));
         orga::ibc::start_grpc(
             // TODO: support configuring RPC address
             || nomic::app_client("http://localhost:26657").sub(|app| app.ibc.ctx),
             &GrpcOpts {
                 host: "127.0.0.1".to_string(),
                 port: self.port,
+                chain_id: self.config.chain_id.clone().unwrap(),
             },
         )
         .await;

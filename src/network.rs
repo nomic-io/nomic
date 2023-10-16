@@ -72,6 +72,8 @@ pub struct InnerConfig {
     pub home: Option<String>,
     #[clap(long, global = true)]
     pub node: Option<String>,
+    #[clap(long, global = true)]
+    pub btc_relayer: Vec<String>,
 
     #[clap(global = true)]
     pub tendermint_flags: Vec<String>,
