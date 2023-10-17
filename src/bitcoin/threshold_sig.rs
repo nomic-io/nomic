@@ -6,14 +6,13 @@ use bitcoin::secp256k1::{
     ecdsa, PublicKey, Secp256k1,
 };
 use derive_more::{Deref, From};
-use orga::collections::{Map, Next};
+use orga::collections::Map;
 use orga::encoding::{Decode, Encode};
 use orga::macros::Describe;
-use orga::migrate::Migrate;
+use orga::migrate::{Migrate, MigrateFrom};
 use orga::prelude::FieldCall;
 use orga::query::FieldQuery;
 use orga::state::State;
-use orga::store::Store;
 use orga::{orga, Error, Result};
 use serde::Serialize;
 
@@ -24,49 +23,15 @@ pub struct Signature(
     #[serde(serialize_with = "<[_]>::serialize")] pub [u8; COMPACT_SIGNATURE_SIZE],
 );
 
-#[derive(
-    Encode,
-    Decode,
-    State,
-    FieldQuery,
-    FieldCall,
-    Clone,
-    Debug,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Serialize,
-    Describe,
-)]
+#[orga(skip(Default), version = 1)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Copy)]
 pub struct Pubkey {
+    #[orga(version(V0))]
+    bytes: [u8; PUBLIC_KEY_SIZE - 1],
+
+    #[orga(version(V1))]
     #[serde(serialize_with = "<[_]>::serialize")]
     bytes: [u8; PUBLIC_KEY_SIZE],
-}
-
-impl Migrate for Pubkey {
-    fn migrate(_src: Store, _dest: Store, bytes: &mut &[u8]) -> Result<Self> {
-        Ok(Self::decode(bytes)?)
-    }
-}
-
-impl Next for Pubkey {
-    fn next(&self) -> Option<Self> {
-        let mut output = *self;
-        for (i, value) in self.bytes.iter().enumerate().rev() {
-            match value.next() {
-                Some(new_value) => {
-                    output.bytes[i] = new_value;
-                    return Some(output);
-                }
-                None => {
-                    output.bytes[i] = 0;
-                }
-            }
-        }
-        None
-    }
 }
 
 impl Default for Pubkey {
@@ -78,8 +43,16 @@ impl Default for Pubkey {
 }
 
 impl Pubkey {
-    pub fn new(pubkey: [u8; PUBLIC_KEY_SIZE]) -> Self {
-        Pubkey { bytes: pubkey }
+    pub fn new(pubkey: [u8; PUBLIC_KEY_SIZE]) -> Result<Self> {
+        // Verify bytes are a valid compressed secp256k1 public key
+        secp256k1::PublicKey::from_slice(pubkey.as_slice()).map_err(|err| {
+            Error::App(format!(
+                "Error deserializing public key from slice: {}",
+                err
+            ))
+        })?;
+
+        Ok(Pubkey { bytes: pubkey })
     }
 
     pub fn try_from_slice(bytes: &[u8]) -> Result<Self> {
@@ -90,11 +63,19 @@ impl Pubkey {
         let mut buf = [0; PUBLIC_KEY_SIZE];
         buf.copy_from_slice(bytes);
 
-        Ok(Self::new(buf))
+        Self::new(buf)
     }
 
     pub fn as_slice(&self) -> &[u8] {
         &self.bytes
+    }
+}
+
+impl MigrateFrom<PubkeyV0> for PubkeyV1 {
+    fn migrate_from(value: PubkeyV0) -> Result<Self> {
+        let mut bytes = [0; PUBLIC_KEY_SIZE];
+        bytes[1..].copy_from_slice(value.bytes.as_slice());
+        Ok(PubkeyV1 { bytes })
     }
 }
 
