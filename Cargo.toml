@@ -1,7 +1,7 @@
 [package]
 name = "nomic"
-version = "6.4.0"
-authors = ["The Nomic Team <hello@nomic.io>"]
+version = "7.0.0"
+authors = ["The Turbofish Team <hello@turbofish.org>"]
 edition = "2021"
 default-run = "nomic"
 
@@ -64,7 +64,7 @@ toml = { version = "0.7.2", features = ["parse"] }
 semver = "1.0.18"
 
 [features]
-default = ["full", "feat-ibc", "testnet", "legacy-bin"]
+default = ["full", "feat-ibc", "legacy-bin"]
 full = [
     "bitcoincore-rpc-async",
     "clap",
