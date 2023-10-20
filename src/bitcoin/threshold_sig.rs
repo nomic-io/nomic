@@ -13,6 +13,7 @@ use orga::migrate::{Migrate, MigrateFrom};
 use orga::prelude::FieldCall;
 use orga::query::FieldQuery;
 use orga::state::State;
+use orga::store::Store;
 use orga::{orga, Error, Result};
 use serde::Serialize;
 
@@ -23,15 +24,19 @@ pub struct Signature(
     #[serde(serialize_with = "<[_]>::serialize")] pub [u8; COMPACT_SIGNATURE_SIZE],
 );
 
-#[orga(skip(Default), version = 1)]
+#[orga(skip(Default, Migrate), version = 1)]
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Copy)]
 pub struct Pubkey {
-    #[orga(version(V0))]
-    bytes: [u8; PUBLIC_KEY_SIZE - 1],
-
-    #[orga(version(V1))]
     #[serde(serialize_with = "<[_]>::serialize")]
     bytes: [u8; PUBLIC_KEY_SIZE],
+}
+
+impl Migrate for Pubkey {
+    fn migrate(_src: Store, _dest: Store, bytes: &mut &[u8]) -> Result<Self> {
+        let mut buf = [0; PUBLIC_KEY_SIZE];
+        bytes.read_exact(buf.as_mut())?;
+        Ok(Self { bytes: buf })
+    }
 }
 
 impl Default for Pubkey {
@@ -340,6 +345,7 @@ impl ThresholdSig {
 }
 
 use std::fmt::Debug;
+use std::io::Read;
 impl Debug for ThresholdSig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ThresholdSig")
