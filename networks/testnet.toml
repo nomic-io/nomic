@@ -13,7 +13,7 @@ btc_relayer = [
   "https://relayer.nomic-testnet.mappum.io:8443"
 ]
 
-legacy_version = ">=6.3.1"
+legacy_version = "=6.3"
 
 genesis = """
 {

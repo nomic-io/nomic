@@ -409,7 +409,7 @@ pub async fn relay_op_keys<
                 .get(client_id.clone())?
                 .ok_or_else(|| OrgaError::Ibc("Client not found".to_string()))?
                 .client_state
-                .get(())?
+                .get(Default::default())?
                 .ok_or_else(|| OrgaError::Ibc("Client state not found".to_string()))?
                 .inner
                 .latest_height)
