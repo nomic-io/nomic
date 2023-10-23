@@ -2,6 +2,7 @@ use super::signatory::Signatory;
 use super::SignatorySet;
 use crate::app::Dest;
 use crate::app_client;
+use crate::bitcoin::deposit_index::{Deposit, DepositIndex};
 use crate::bitcoin::{adapter::Adapter, header_queue::WrappedHeader};
 use crate::error::Error;
 use crate::error::Result;
@@ -108,11 +109,12 @@ impl Relayer {
         let scripts = WatchedScriptStore::open(store_path, &self.app_client_addr).await?;
         self.scripts = Some(scripts);
 
-        let (server, mut recv) = self.create_address_server();
+        let index = Arc::new(Mutex::new(DepositIndex::new()));
+        let (server, mut recv) = self.create_address_server(index.clone());
 
         let deposit_relay = async {
             loop {
-                if let Err(e) = self.relay_deposits(&mut recv).await {
+                if let Err(e) = self.relay_deposits(&mut recv, index.clone()).await {
                     error!("Deposit relay error: {}", e);
                 }
 
@@ -124,7 +126,10 @@ impl Relayer {
         Ok(())
     }
 
-    fn create_address_server(&self) -> (impl Future<Output = ()>, Receiver<(Dest, u32)>) {
+    fn create_address_server(
+        &self,
+        index: Arc<Mutex<DepositIndex>>,
+    ) -> (impl Future<Output = ()>, Receiver<(Dest, u32)>) {
         let (send, recv) = tokio::sync::mpsc::channel(1024);
 
         let sigsets = Arc::new(Mutex::new(BTreeMap::new()));
@@ -248,7 +253,11 @@ impl Relayer {
         (server, recv)
     }
 
-    async fn relay_deposits(&mut self, recv: &mut Receiver<(Dest, u32)>) -> Result<!> {
+    async fn relay_deposits(
+        &mut self,
+        recv: &mut Receiver<(Dest, u32)>,
+        index: Arc<Mutex<DepositIndex>>,
+    ) -> Result<!> {
         let mut prev_tip = None;
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
@@ -270,13 +279,17 @@ impl Relayer {
                 .height;
             let num_blocks = (end_height - start_height).max(1100);
 
-            self.scan_for_deposits(num_blocks).await?;
+            self.scan_for_deposits(num_blocks, index.clone()).await?;
 
             prev_tip = Some(tip);
         }
     }
 
-    async fn scan_for_deposits(&mut self, num_blocks: usize) -> Result<BlockHash> {
+    async fn scan_for_deposits(
+        &mut self,
+        num_blocks: usize,
+        index: Arc<Mutex<DepositIndex>>,
+    ) -> Result<BlockHash> {
         let tip = self.sidechain_block_hash().await?;
         let base_height = self
             .btc_client()
@@ -291,7 +304,7 @@ impl Relayer {
             for (tx, matches) in self.relevant_txs(&block) {
                 for output in matches {
                     if let Err(err) = self
-                        .maybe_relay_deposit(tx, height, &block.block_hash(), output)
+                        .maybe_relay_deposit(tx, height, &block.block_hash(), output, index.clone())
                         .await
                     {
                         // TODO: filter out harmless errors (e.g. deposit too small)
@@ -626,6 +639,7 @@ impl Relayer {
         height: u32,
         block_hash: &BlockHash,
         output: OutputMatch,
+        index: Arc<Mutex<DepositIndex>>,
     ) -> Result<()> {
         use bitcoin::hashes::Hash as _;
 
@@ -637,9 +651,28 @@ impl Relayer {
             .query(|app| app.bitcoin.processed_outpoints.contains(outpoint))
             .await?;
 
+        let deposit_address = bitcoin::Address::from_script(
+            &tx.output.get(vout as usize).unwrap().script_pubkey,
+            super::NETWORK,
+        )?;
+
         if contains_outpoint {
+            let mut index = index.lock().await;
+            index.remove_deposit(dest.to_receiver_addr(), deposit_address, txid, vout)?;
             return Ok(());
         }
+
+        let mut index_guard = index.lock().await;
+        index_guard.insert_deposit(
+            dest.to_receiver_addr(),
+            deposit_address.clone(),
+            Deposit::new(
+                txid,
+                vout,
+                tx.output.get(vout as usize).unwrap().value,
+                Some(height.into()),
+            ),
+        );
 
         let proof_bytes = self
             .btc_client()
