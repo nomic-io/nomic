@@ -8,6 +8,7 @@ use crate::error::Error;
 use crate::error::Result;
 use crate::utils::time_now;
 use bitcoin::consensus::{Decodable, Encodable};
+use bitcoin::Txid;
 use bitcoin::{hashes::Hash, Block, BlockHash, Transaction};
 use bitcoincore_rpc_async::{json::GetBlockHeaderResult, Client as BitcoinRpcClient, RpcApi};
 use log::{debug, error, info, warn};
@@ -259,7 +260,11 @@ impl Relayer {
         index: Arc<Mutex<DepositIndex>>,
     ) -> Result<!> {
         let mut prev_tip = None;
+        let mut seen_mempool_txids = HashSet::new();
+
         loop {
+            self.scan_for_mempool_deposits(index.clone(), &mut seen_mempool_txids)
+                .await?;
             tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
             self.insert_announced_addrs(recv).await?;
@@ -315,6 +320,52 @@ impl Relayer {
         }
 
         Ok(tip)
+    }
+
+    async fn scan_for_mempool_deposits(
+        &self,
+        index: Arc<Mutex<DepositIndex>>,
+        seen_mempool_txids: &mut HashSet<Txid>,
+    ) -> Result<()> {
+        let mempool = self.btc_client().await.get_raw_mempool().await?;
+
+        for txid in mempool {
+            if seen_mempool_txids.contains(&txid) {
+                continue;
+            }
+
+            let tx = self
+                .btc_client()
+                .await
+                .get_raw_transaction(&txid, None)
+                .await?;
+            for (vout, output) in tx.output.iter().enumerate() {
+                let mut script_bytes = vec![];
+                output.script_pubkey.consensus_encode(&mut script_bytes)?;
+                let script = ::bitcoin::Script::consensus_decode(&mut script_bytes.as_slice())?;
+
+                if self.scripts.is_none() {
+                    return Ok(());
+                }
+
+                if let Some((dest, _)) = self.scripts.as_ref().unwrap().scripts.get(&script) {
+                    let bitcoin_address = bitcoin::Address::from_script(
+                        &output.script_pubkey.clone(),
+                        super::NETWORK,
+                    )?;
+
+                    let mut index = index.lock().await;
+                    index.insert_deposit(
+                        dest.to_receiver_addr(),
+                        bitcoin_address,
+                        Deposit::new(txid, vout as u32, output.value, None),
+                    )
+                }
+            }
+            seen_mempool_txids.insert(txid);
+        }
+
+        Ok(())
     }
 
     pub async fn start_emergency_disbursal_transaction_relay(&mut self) -> Result<()> {
