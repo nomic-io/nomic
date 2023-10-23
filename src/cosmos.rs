@@ -75,7 +75,13 @@ impl Cosmos {
                     log::debug!("Warning: client not found");
                     continue;
                 };
-            let Some(sigset) = chain.to_sigset(index, &client)? else {
+
+            let sigset_res = chain.to_sigset(index, &client);
+            let Ok(Some(sigset)) = sigset_res else {
+                log::debug!(
+                    "Warning: failed to build sigset ({})",
+                    sigset_res.err().map(|e| e.to_string()).unwrap_or_default(),
+                );
                 continue;
             };
 
