@@ -68,14 +68,14 @@ impl Cosmos {
 
         for entry in self.chains.iter()? {
             let (client_id, chain) = entry?;
-            let client = ibc
+            let Some(client) = ibc
                 .ctx
                 .clients
-                .get(client_id.clone())?
-                .ok_or_else(|| OrgaError::Ibc("Client not found".to_string()))?;
-            let sigset = if let Some(sigset) = chain.to_sigset(index, &client)? {
-                sigset
-            } else {
+                .get(client_id.clone())? else {
+                    log::debug!("Warning: client not found");
+                    continue;
+                };
+            let Some(sigset) = chain.to_sigset(index, &client)? else {
                 continue;
             };
 
