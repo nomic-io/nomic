@@ -18,7 +18,7 @@ use std::future::Future;
 use std::sync::Arc;
 use tokio::join;
 use tokio::sync::mpsc::Receiver;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, MutexGuard};
 use warp::reject;
 use warp::reply::Json;
 
@@ -33,7 +33,7 @@ const HEADER_BATCH_SIZE: usize = 250;
 const THRESHOLD: (u64, u64) = (9, 10);
 
 pub struct Relayer {
-    btc_client: BitcoinRpcClient,
+    btc_client: Arc<Mutex<BitcoinRpcClient>>,
     app_client_addr: String,
 
     scripts: Option<WatchedScriptStore>,
@@ -42,7 +42,7 @@ pub struct Relayer {
 impl Relayer {
     pub fn new(btc_client: BitcoinRpcClient, app_client_addr: String) -> Self {
         Relayer {
-            btc_client,
+            btc_client: Arc::new(Mutex::new(btc_client)),
             app_client_addr,
             scripts: None,
         }
@@ -54,6 +54,10 @@ impl Relayer {
             .await?;
         let hash = BlockHash::from_slice(hash.as_slice())?;
         Ok(hash)
+    }
+
+    async fn btc_client(&self) -> MutexGuard<BitcoinRpcClient> {
+        self.btc_client.lock().await
     }
 
     pub async fn start_header_relay(&mut self) -> Result<()> {
@@ -72,7 +76,7 @@ impl Relayer {
         let mut last_hash = None;
 
         loop {
-            let fullnode_hash = self.btc_client.get_best_block_hash().await?;
+            let fullnode_hash = self.btc_client().await.get_best_block_hash().await?;
             let sidechain_hash = self.sidechain_block_hash().await?;
 
             if fullnode_hash != sidechain_hash {
@@ -83,14 +87,18 @@ impl Relayer {
 
             if last_hash.is_none() || last_hash.is_some_and(|h| h != fullnode_hash) {
                 last_hash = Some(fullnode_hash);
-                let info = self.btc_client.get_block_info(&fullnode_hash).await?;
+                let info = self
+                    .btc_client()
+                    .await
+                    .get_block_info(&fullnode_hash)
+                    .await?;
                 info!(
                     "Sidechain header state is up-to-date:\n\thash={}\n\theight={}",
                     info.hash, info.height
                 );
             }
 
-            self.btc_client.wait_for_new_block(3_000).await?;
+            self.btc_client().await.wait_for_new_block(3_000).await?;
         }
     }
 
@@ -123,6 +131,8 @@ impl Relayer {
 
         // TODO: pass into closures more cleanly
         let app_client_addr: &'static str = self.app_client_addr.clone().leak();
+
+        let btc_client = self.btc_client.clone();
 
         // TODO: configurable listen address
         use bytes::Bytes;
@@ -252,7 +262,12 @@ impl Relayer {
             }
 
             let start_height = self.common_ancestor(tip, prev).await?.height;
-            let end_height = self.btc_client.get_block_header_info(&tip).await?.height;
+            let end_height = self
+                .btc_client()
+                .await
+                .get_block_header_info(&tip)
+                .await?
+                .height;
             let num_blocks = (end_height - start_height).max(1100);
 
             self.scan_for_deposits(num_blocks).await?;
@@ -263,7 +278,12 @@ impl Relayer {
 
     async fn scan_for_deposits(&mut self, num_blocks: usize) -> Result<BlockHash> {
         let tip = self.sidechain_block_hash().await?;
-        let base_height = self.btc_client.get_block_header_info(&tip).await?.height;
+        let base_height = self
+            .btc_client()
+            .await
+            .get_block_header_info(&tip)
+            .await?
+            .height;
         let blocks = self.last_n_blocks(num_blocks, tip).await?;
 
         for (i, block) in blocks.into_iter().enumerate().rev() {
@@ -323,7 +343,12 @@ impl Relayer {
                 let mut tx_bytes = vec![];
                 tx.consensus_encode(&mut tx_bytes)?;
 
-                match self.btc_client.send_raw_transaction(&tx_bytes).await {
+                match self
+                    .btc_client()
+                    .await
+                    .send_raw_transaction(&tx_bytes)
+                    .await
+                {
                     Ok(_) => {
                         info!("Relayed emergency disbursal transaction: {}", tx.txid());
                     }
@@ -376,7 +401,12 @@ impl Relayer {
                 let mut tx_bytes = vec![];
                 tx.consensus_encode(&mut tx_bytes)?;
 
-                match self.btc_client.send_raw_transaction(&tx_bytes).await {
+                match self
+                    .btc_client()
+                    .await
+                    .send_raw_transaction(&tx_bytes)
+                    .await
+                {
                     Ok(_) => {
                         info!("Relayed checkpoint: {}", tx.txid());
                     }
@@ -461,7 +491,8 @@ impl Relayer {
                     continue;
                 }
                 let proof_bytes = self
-                    .btc_client
+                    .btc_client()
+                    .await
                     .get_tx_out_proof(&[unconfirmed_txid], Some(&block_hash))
                     .await?;
                 let proof = Adapter::new(
@@ -490,7 +521,12 @@ impl Relayer {
         num_blocks: usize,
     ) -> Result<Option<(u32, BlockHash)>> {
         let tip = self.sidechain_block_hash().await?;
-        let base_height = self.btc_client.get_block_header_info(&tip).await?.height;
+        let base_height = self
+            .btc_client()
+            .await
+            .get_block_header_info(&tip)
+            .await?
+            .height;
         let blocks = self.last_n_blocks(num_blocks, tip).await?;
 
         for (i, block) in blocks.into_iter().enumerate().rev() {
@@ -532,7 +568,7 @@ impl Relayer {
         let mut hash = bitcoin::BlockHash::from_inner(hash.into_inner());
 
         for _ in 0..n {
-            let block = self.btc_client.get_block(&hash.clone()).await?;
+            let block = self.btc_client().await.get_block(&hash.clone()).await?;
             hash = block.header.prev_blockhash;
 
             let mut block_bytes = vec![];
@@ -606,7 +642,8 @@ impl Relayer {
         }
 
         let proof_bytes = self
-            .btc_client
+            .btc_client()
+            .await
             .get_tx_out_proof(&[tx.txid()], Some(block_hash))
             .await?;
         let proof = ::bitcoin::MerkleBlock::consensus_decode(&mut proof_bytes.as_slice())?.txn;
@@ -661,11 +698,13 @@ impl Relayer {
         sidechain_hash: BlockHash,
     ) -> Result<()> {
         let fullnode_info = self
-            .btc_client
+            .btc_client()
+            .await
             .get_block_header_info(&fullnode_hash)
             .await?;
         let sidechain_info = self
-            .btc_client
+            .btc_client()
+            .await
             .get_block_header_info(&sidechain_hash)
             .await?;
 
@@ -707,18 +746,30 @@ impl Relayer {
     }
 
     async fn get_header_batch(&self, from_hash: BlockHash) -> Result<Vec<WrappedHeader>> {
-        let mut cursor = self.btc_client.get_block_header_info(&from_hash).await?;
+        let mut cursor = self
+            .btc_client()
+            .await
+            .get_block_header_info(&from_hash)
+            .await?;
 
         let mut headers = Vec::with_capacity(HEADER_BATCH_SIZE);
         for _ in 0..HEADER_BATCH_SIZE {
             match cursor.next_block_hash {
                 Some(next_hash) => {
-                    cursor = self.btc_client.get_block_header_info(&next_hash).await?
+                    cursor = self
+                        .btc_client()
+                        .await
+                        .get_block_header_info(&next_hash)
+                        .await?
                 }
                 None => break,
             };
 
-            let header = self.btc_client.get_block_header(&cursor.hash).await?;
+            let header = self
+                .btc_client()
+                .await
+                .get_block_header(&cursor.hash)
+                .await?;
             let mut header_bytes = vec![];
             header.consensus_encode(&mut header_bytes).unwrap();
             let header =
@@ -733,8 +784,8 @@ impl Relayer {
     }
 
     async fn common_ancestor(&self, a: BlockHash, b: BlockHash) -> Result<GetBlockHeaderResult> {
-        let mut a = self.btc_client.get_block_header_info(&a).await?;
-        let mut b = self.btc_client.get_block_header_info(&b).await?;
+        let mut a = self.btc_client().await.get_block_header_info(&a).await?;
+        let mut b = self.btc_client().await.get_block_header_info(&b).await?;
 
         while a != b {
             if a.height > b.height && (b.confirmations - 1) as usize == a.height - b.height {
@@ -743,10 +794,10 @@ impl Relayer {
                 return Ok(a);
             } else if a.height > b.height {
                 let prev = a.previous_block_hash.unwrap();
-                a = self.btc_client.get_block_header_info(&prev).await?;
+                a = self.btc_client().await.get_block_header_info(&prev).await?;
             } else {
                 let prev = b.previous_block_hash.unwrap();
-                b = self.btc_client.get_block_header_info(&prev).await?;
+                b = self.btc_client().await.get_block_header_info(&prev).await?;
             }
         }
 
