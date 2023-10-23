@@ -37,6 +37,8 @@ use txid_set::OutpointSet;
 
 pub mod adapter;
 pub mod checkpoint;
+#[cfg(feature = "full")]
+pub mod deposit_index;
 pub mod header_queue;
 #[cfg(feature = "full")]
 pub mod relayer;
