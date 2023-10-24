@@ -31,20 +31,20 @@ use orga::query::FieldQuery;
 use orga::state::State;
 use orga::store::Store;
 use orga::{Error as OrgaError, Result as OrgaResult};
+use outpoint_set::OutpointSet;
 use serde::Serialize;
 use signatory::SignatorySet;
-use txid_set::OutpointSet;
 
 pub mod adapter;
 pub mod checkpoint;
 pub mod header_queue;
+pub mod outpoint_set;
 #[cfg(feature = "full")]
 pub mod relayer;
 pub mod signatory;
 #[cfg(feature = "full")]
 pub mod signer;
 pub mod threshold_sig;
-pub mod txid_set;
 
 /// The symbol for nBTC, the network's native BTC token.
 #[derive(State, Debug, Clone, Encode, Decode, Default, Migrate, Serialize)]
