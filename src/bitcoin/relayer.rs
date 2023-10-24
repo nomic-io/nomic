@@ -34,6 +34,11 @@ where
 const HEADER_BATCH_SIZE: usize = 250;
 const THRESHOLD: (u64, u64) = (9, 10);
 
+#[derive(Serialize, Deserialize)]
+pub struct DepositsQuery {
+    pub receiver: String,
+}
+
 pub struct Relayer {
     btc_client: Arc<Mutex<BitcoinRpcClient>>,
     app_client_addr: String,
@@ -234,21 +239,54 @@ impl Relayer {
             })
             .with(warp::cors().allow_any_origin());
 
+        let pending_deposits_route = warp::path("pending_deposits")
+            .and(warp::query::<DepositsQuery>())
+            .map(move |query: DepositsQuery| (query, btc_client.clone(), index.clone()))
+            .and_then(
+                async move |(query, btc_client, index): (
+                    DepositsQuery,
+                    Arc<Mutex<BitcoinRpcClient>>,
+                    Arc<Mutex<DepositIndex>>,
+                )| {
+                    let btc_client = btc_client.lock().await;
+                    let tip = btc_client
+                        .get_best_block_hash()
+                        .await
+                        .map_err(|_| reject())?;
+                    let height = btc_client
+                        .get_block_header_info(&tip)
+                        .await
+                        .map_err(|_| reject())?
+                        .height;
+
+                    let index = index.lock().await;
+                    let deposits = index
+                        .get_deposits_by_receiver(query.receiver, height as u64)
+                        .map_err(|_| reject())?;
+
+                    Ok::<_, warp::Rejection>(warp::reply::json(&deposits))
+                },
+            );
+
         let server = warp::serve(
-            warp::any().and(bcast_route).or(sigset_route).with(
-                warp::cors()
-                    .allow_any_origin()
-                    .allow_headers(vec![
-                        "User-Agent",
-                        "Sec-Fetch-Mode",
-                        "Referer",
-                        "Origin",
-                        "Access-Control-Request-Method",
-                        "Access-Control-Request-Headers",
-                        "content-type",
-                    ])
-                    .allow_method("POST"),
-            ),
+            warp::any()
+                .and(bcast_route)
+                .or(sigset_route)
+                .or(pending_deposits_route)
+                .with(
+                    warp::cors()
+                        .allow_any_origin()
+                        .allow_headers(vec![
+                            "User-Agent",
+                            "Sec-Fetch-Mode",
+                            "Referer",
+                            "Origin",
+                            "Access-Control-Request-Method",
+                            "Access-Control-Request-Headers",
+                            "content-type",
+                        ])
+                        .allow_method("POST"),
+                ),
         )
         .run(([0, 0, 0, 0], 8999));
         (server, recv)
