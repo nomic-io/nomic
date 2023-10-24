@@ -1217,6 +1217,7 @@ pub struct SignerCmd {
     /// the trailing 24-hour period
     #[clap(long, default_value_t = 0.1)]
     max_withdrawal_rate: f64,
+
     /// Limits the maximum allowed signatory set change within 24 hours
     ///
     /// The Total Variation Distance between a day-old signatory set and the
@@ -1224,6 +1225,10 @@ pub struct SignerCmd {
     #[clap(long, default_value_t = 0.1)]
     max_sigset_change_rate: f64,
 
+    #[clap(long)]
+    prometheus_addr: Option<std::net::SocketAddr>,
+
+    // TODO: should be a flag
     reset_limits_at_index: Option<u32>,
 }
 
@@ -1244,6 +1249,7 @@ impl SignerCmd {
             self.reset_limits_at_index,
             // TODO: check for custom RPC port, allow config, etc
             || nomic::app_client("http://localhost:26657").with_wallet(wallet()),
+            self.prometheus_addr,
         )?
         .start();
 

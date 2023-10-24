@@ -4,17 +4,46 @@ use crate::bitcoin::threshold_sig::Signature;
 use crate::error::Result;
 use bitcoin::secp256k1::{Message, Secp256k1};
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
+use lazy_static::lazy_static;
 use log::info;
 use orga::client::{AppClient, Wallet};
 use orga::coins::Address;
 use orga::encoding::LengthVec;
 use orga::macros::build_call;
 use orga::tendermint::client::HttpClient;
+use prometheus_exporter::prometheus::{
+    register_gauge, register_int_counter, register_int_gauge, Gauge, IntCounter, IntGauge,
+};
 use rand::Rng;
 use std::fs;
 use std::marker::PhantomData;
+use std::net::SocketAddr;
 use std::path::Path;
 use std::time::SystemTime;
+
+lazy_static! {
+    static ref SIG_COUNTER: IntCounter =
+        register_int_counter!("sigs", "Number of signatures submitted").unwrap();
+    static ref SIG_BATCH_COUNTER: IntCounter =
+        register_int_counter!("sig_batches", "Number of batches of signatures submitted").unwrap();
+    static ref CHECKPOINT_INDEX_GAUGE: IntGauge =
+        register_int_gauge!("checkpoint_index", "Current checkpoint index").unwrap();
+    static ref WITHDRAWAL_RATE_GAUGE: Gauge = register_gauge!(
+        "withdrawal_rate",
+        "Rate of withdrawals from the reserve for the last 24 hours"
+    )
+    .unwrap();
+    static ref SIGSET_CHANGE_RATE_GAUGE: Gauge = register_gauge!(
+        "sigset_change_rate",
+        "Rate of changes to the signatory set for the last 24 hours"
+    )
+    .unwrap();
+    static ref ERROR_COUNTER: IntCounter = register_int_counter!(
+        "errors",
+        "Number of errors encountered. Note that these may be harmless, check logs for more info."
+    )
+    .unwrap();
+}
 
 pub struct Signer<W, F> {
     op_addr: Address,
@@ -23,6 +52,7 @@ pub struct Signer<W, F> {
     max_sigset_change_rate: f64,
     reset_index: Option<u32>,
     app_client: F,
+    exporter_addr: Option<SocketAddr>,
     _phantom: PhantomData<W>,
 }
 
@@ -37,6 +67,7 @@ where
         max_sigset_change_rate: f64,
         reset_index: Option<u32>,
         app_client: F,
+        exporter_addr: Option<SocketAddr>,
     ) -> Result<Self> {
         let path = key_path.as_ref();
         let xpriv = if path.exists() {
@@ -62,7 +93,7 @@ where
 
         let secp = bitcoin::secp256k1::Secp256k1::signing_only();
         let xpub = ExtendedPubKey::from_priv(&secp, &xpriv);
-        dbg!("Signatory xpub:\n{}", xpub);
+        info!("Signatory xpub:\n{}", xpub);
 
         Ok(Self::new(
             op_addr,
@@ -71,6 +102,7 @@ where
             max_sigset_change_rate,
             reset_index,
             app_client,
+            exporter_addr,
         ))
     }
 
@@ -81,6 +113,7 @@ where
         max_sigset_change_rate: f64,
         reset_index: Option<u32>,
         app_client: F,
+        exporter_addr: Option<SocketAddr>,
     ) -> Self
     where
         F: Fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, W>,
@@ -92,11 +125,20 @@ where
             max_sigset_change_rate,
             reset_index,
             app_client,
+            exporter_addr,
             _phantom: PhantomData,
         }
     }
 
     pub async fn start(mut self) -> Result<()> {
+        if let Some(addr) = self.exporter_addr {
+            // Populate change rate gauges
+            let _ = self.check_change_rates().await;
+
+            info!("Starting prometheus exporter on {}", addr);
+            prometheus_exporter::start(addr).unwrap();
+        }
+
         const CHECKPOINT_WINDOW: u32 = 20;
         info!("Starting signer...");
         let secp = Secp256k1::signing_only();
@@ -127,15 +169,17 @@ where
             let signed = match self.try_sign(&xpub, index).await {
                 Ok(signed) => signed,
                 Err(e) => {
+                    ERROR_COUNTER.inc();
                     eprintln!("Signer error: {}", e);
                     false
                 }
             };
 
-            if !signed {
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-            } else {
+            if signed {
                 index += 1;
+                CHECKPOINT_INDEX_GAUGE.set(index as i64);
+            } else {
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             }
         }
     }
@@ -206,6 +250,8 @@ where
             )
             .await?;
 
+        SIG_BATCH_COUNTER.inc();
+        SIG_COUNTER.inc_by(to_sign.len() as u64);
         info!("Submitted signatures");
 
         Ok(false)
@@ -230,6 +276,9 @@ where
 
         let withdrawal_rate = rates.withdrawal as f64 / 10_000.0;
         let sigset_change_rate = rates.sigset_change as f64 / 10_000.0;
+
+        WITHDRAWAL_RATE_GAUGE.set(withdrawal_rate);
+        SIGSET_CHANGE_RATE_GAUGE.set(sigset_change_rate);
 
         if withdrawal_rate > self.max_withdrawal_rate {
             return Err(orga::Error::App(format!(
