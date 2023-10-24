@@ -45,6 +45,9 @@ lazy_static! {
     .unwrap();
 }
 
+/// The signer is responsible for signing checkpoints with a signatory key. It
+/// is run by a signatory in its own process, and constantly watches the state
+/// for new checkpoints to sign.
 pub struct Signer<W, F> {
     op_addr: Address,
     xpriv: ExtendedPrivKey,
@@ -60,6 +63,27 @@ impl<W: Wallet, F> Signer<W, F>
 where
     F: Fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, W>,
 {
+    /// Create a new signer, loading the extended private key from the given
+    /// path (`key_path`) if it exists. If the key does not exist, one will be
+    /// generated and written to the path, then submitted to the chain, becoming
+    /// associated with the submitter's operator address.
+    ///
+    /// **Parameters:**
+    /// - `op_addr`: The operator address of the submitter. Used to check if the
+    ///   operator has already submitted a signatory key.
+    /// - `key_path`: The path to the file containing the extended private key,
+    ///   or where it should be written if it does not yet exist.
+    /// - `max_withdrawal_rate`: The maximum rate at which Bitcoin can be
+    /// withdrawn from the reserve in a 24-hour period, temporarily halting
+    /// signing if the limit is reached.
+    /// - `max_sigset_change_rate`: The maximum rate at which the signatory set
+    /// can change in a 24-hour period, temporarily halting signing if the limit
+    /// is reached.
+    /// - `reset_index`: A checkpoint index at which the rate limits should be
+    /// reset, used to manually override the limits if the signer has checked on
+    /// the pending withdrawals and decided they are legitimate.
+    /// - `app_client`: A function that returns a new app client to be used in
+    ///   querying and submitting calls.
     pub fn load_or_generate<P: AsRef<Path>>(
         op_addr: Address,
         key_path: P,
@@ -106,6 +130,23 @@ where
         ))
     }
 
+    /// Create a new signer with the given parameters.
+    ///
+    /// **Parameters:**
+    /// - `op_addr`: The operator address of the submitter. Used to check if the
+    ///  operator has already submitted a signatory key.
+    /// - `xpriv`: The extended private key to use for signing.
+    /// - `max_withdrawal_rate`: The maximum rate at which Bitcoin can be
+    /// withdrawn from the reserve in a 24-hour period, temporarily halting
+    /// signing if the limit is reached.
+    /// - `max_sigset_change_rate`: The maximum rate at which the signatory set
+    /// can change in a 24-hour period, temporarily halting signing if the limit
+    /// is reached.
+    /// - `reset_index`: A checkpoint index at which the rate limits should be
+    /// reset, used to manually override the limits if the signer has checked on
+    /// the pending withdrawals and decided they are legitimate.
+    /// - `app_client`: A function that returns a new app client to be used in
+    ///  querying and submitting calls.
     pub fn new(
         op_addr: Address,
         xpriv: ExtendedPrivKey,
@@ -130,6 +171,11 @@ where
         }
     }
 
+    /// Start the signer, which will run forever, signing checkpoints as they
+    /// become available.
+    ///
+    /// If the operator has not yet submitted a signatory key, one will be
+    /// generated and saved, then submitted.
     pub async fn start(mut self) -> Result<()> {
         if let Some(addr) = self.exporter_addr {
             // Populate change rate gauges
@@ -184,6 +230,12 @@ where
         }
     }
 
+    /// Check if the operator has already submitted a signatory key. If not,
+    /// submit the given key.
+    ///
+    /// If the operator has already submitted a key, check that it matches the
+    /// given key. If not, return an error (it is not currently possible to
+    /// change the signatory key after submitting one).
     async fn maybe_submit_xpub(&mut self, xpub: &ExtendedPubKey) -> Result<()> {
         let cons_key = (self.app_client)()
             .query(|app| app.staking.consensus_key(self.op_addr))
@@ -202,6 +254,7 @@ where
         }
     }
 
+    /// Submit the given signatory key to the chain.
     async fn submit_xpub(&mut self, xpub: &ExtendedPubKey) -> Result<()> {
         (self.app_client)()
             .call(
@@ -213,10 +266,21 @@ where
         Ok(())
     }
 
+    /// Get a new app client.
     fn client(&self) -> AppClient<InnerApp, InnerApp, HttpClient, Nom, W> {
         (self.app_client)()
     }
 
+    /// Try to sign the checkpoint at the given index.
+    ///
+    /// Returns `Ok(true)` if the signatory has already signed all batches in
+    /// this checkpoint and therefore should move onto to attempting to sign the
+    /// next checkpoint.
+    ///
+    /// Returns `Ok(false)` if the signatory is not done signing the checkpoint,
+    /// and should call `try_sign` for the same index again later (e.g. it is
+    /// still `Building`, or we have not yet submitted signatures for the final
+    /// batch of transactions).
     async fn try_sign(&mut self, xpub: &ExtendedPubKey, index: u32) -> Result<bool> {
         let secp = Secp256k1::signing_only();
 
@@ -257,6 +321,13 @@ where
         Ok(false)
     }
 
+    /// Check the current withdrawal and signatory set change rates, and return
+    /// an error if either is above the configured maximum.
+    ///
+    /// This is a "circuit breaker" security mechanism which prevents large
+    /// amounts of funds from being withdrawn too quickly or the signatory set
+    /// from being changed too quickly, so that the network has time to assess
+    /// and react.
     async fn check_change_rates(&self) -> Result<()> {
         let checkpoint_index = (self.app_client)()
             .query(|app| Ok(app.bitcoin.checkpoints.index()))
@@ -300,6 +371,8 @@ where
     }
 }
 
+/// Sign the given messages with the given extended private key, deriving the
+/// correct private keys for each signature.
 pub fn sign(
     secp: &Secp256k1<bitcoin::secp256k1::SignOnly>,
     xpriv: &ExtendedPrivKey,
