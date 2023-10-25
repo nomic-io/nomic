@@ -20,7 +20,7 @@ use std::future::Future;
 use std::sync::Arc;
 use tokio::join;
 use tokio::sync::mpsc::Receiver;
-use tokio::sync::{Mutex, MutexGuard};
+use tokio::sync::{Mutex, RwLock, RwLockReadGuard};
 use warp::reject;
 use warp::reply::Json;
 
@@ -40,7 +40,7 @@ pub struct DepositsQuery {
 }
 
 pub struct Relayer {
-    btc_client: Arc<Mutex<BitcoinRpcClient>>,
+    btc_client: Arc<RwLock<BitcoinRpcClient>>,
     app_client_addr: String,
 
     scripts: Option<WatchedScriptStore>,
@@ -49,7 +49,7 @@ pub struct Relayer {
 impl Relayer {
     pub fn new(btc_client: BitcoinRpcClient, app_client_addr: String) -> Self {
         Relayer {
-            btc_client: Arc::new(Mutex::new(btc_client)),
+            btc_client: Arc::new(RwLock::new(btc_client)),
             app_client_addr,
             scripts: None,
         }
@@ -63,8 +63,8 @@ impl Relayer {
         Ok(hash)
     }
 
-    async fn btc_client(&self) -> MutexGuard<BitcoinRpcClient> {
-        self.btc_client.lock().await
+    async fn btc_client(&self) -> RwLockReadGuard<BitcoinRpcClient> {
+        self.btc_client.read().await
     }
 
     pub async fn start_header_relay(&mut self) -> Result<()> {
@@ -245,10 +245,10 @@ impl Relayer {
             .and_then(
                 async move |(query, btc_client, index): (
                     DepositsQuery,
-                    Arc<Mutex<BitcoinRpcClient>>,
+                    Arc<RwLock<BitcoinRpcClient>>,
                     Arc<Mutex<DepositIndex>>,
                 )| {
-                    let btc_client = btc_client.lock().await;
+                    let btc_client = btc_client.read().await;
                     let tip = btc_client
                         .get_best_block_hash()
                         .await
