@@ -345,7 +345,6 @@ impl StartCmd {
             let client = self.config.client().with_wallet(wallet());
             std::thread::spawn(move || {
                 rt.block_on(async move {
-                    dbg!();
                     let signal_version = signal_version.clone();
                     let signal_version2 = signal_version.clone();
                     let signal_version3 = signal_version.clone();
