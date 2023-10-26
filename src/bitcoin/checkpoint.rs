@@ -770,6 +770,25 @@ impl Checkpoint {
     pub fn signed(&self) -> Result<bool> {
         Ok(self.signed_batches()? == self.batches.len())
     }
+
+    /// The emergency disbursal transactions for checkpoint.
+    ///
+    /// The first element of the returned vector is the intermediate
+    /// transaction, and the remaining elements are the final transactions.
+    pub fn emergency_disbursal_txs(&self) -> Result<Vec<Adapter<bitcoin::Transaction>>> {
+        let mut txs = vec![];
+
+        let intermediate_tx_batch = self.batches.get(BatchType::IntermediateTx as u64)?.unwrap();
+        let intermediate_tx = intermediate_tx_batch.get(0)?.unwrap();
+        txs.push(Adapter::new(intermediate_tx.to_bitcoin_tx()?));
+
+        let disbursal_batch = self.batches.get(BatchType::Disbursal as u64)?.unwrap();
+        for tx in disbursal_batch.iter()? {
+            txs.push(Adapter::new(tx?.to_bitcoin_tx()?));
+        }
+
+        Ok(txs)
+    }
 }
 
 /// Configuration parameters used in processing checkpoints.
@@ -1204,7 +1223,7 @@ impl<'a> BuildingCheckpointMut<'a> {
 
             // Find the first remaining output of the intermediate tx which
             // matches the amount being spent by this final tx's input.
-            for (i, output) in intermediate_tx_outputs.iter() {
+            for (i, (vout, output)) in intermediate_tx_outputs.iter().enumerate() {
                 if output == &(input.amount) {
                     // Once found, link the final tx's input to the vout index
                     // of the the matching output from the intermediate tx, and
@@ -1212,10 +1231,9 @@ impl<'a> BuildingCheckpointMut<'a> {
 
                     input.prevout = Adapter::new(bitcoin::OutPoint {
                         txid: intermediate_tx_id,
-                        vout: *i as u32,
+                        vout: *vout as u32,
                     });
-                    intermediate_tx_outputs.remove(*i);
-
+                    intermediate_tx_outputs.remove(i);
                     // Deduct the final tx's miner fee from its outputs,
                     // removing any outputs which are too small to pay their
                     // share of the fee.
@@ -1280,20 +1298,15 @@ impl<'a> BuildingCheckpointMut<'a> {
 
             // Create an output for every nBTC account with an associated
             // recovery script.
-            for entry in nbtc_accounts.iter()? {
-                // TODO: iterate over recovery scripts and match against
-                // accounts instead of vice-versa, since iterating over all
-                // accounts means iterating over many irrelevant entries,
-                // whereas all recovery script entries will be relevant.
-                let (address, coins) = entry?;
-                if let Some(dest_script) = recovery_scripts.get(*address)? {
-                    let tx_out = bitcoin::TxOut {
-                        value: u64::from(coins.amount) / 1_000_000,
-                        script_pubkey: dest_script.clone().into_inner(),
-                    };
+            for entry in recovery_scripts.iter()? {
+                let (address, dest_script) = entry?;
+                let balance = nbtc_accounts.balance(*address)?;
+                let tx_out = bitcoin::TxOut {
+                    value: u64::from(balance) / 1_000_000,
+                    script_pubkey: dest_script.clone().into_inner(),
+                };
 
-                    outputs.push(Ok(tx_out));
-                }
+                outputs.push(Ok(tx_out))
             }
 
             // Create an output for every pending nBTC transfer in the checkpoint.
@@ -1743,23 +1756,11 @@ impl CheckpointQueue {
     /// transaction, and the remaining elements are the final transactions.
     #[query]
     pub fn emergency_disbursal_txs(&self) -> Result<Vec<Adapter<bitcoin::Transaction>>> {
-        let mut txs = vec![];
-
         if let Some(completed) = self.completed(1)?.last() {
-            let intermediate_tx_batch = completed
-                .batches
-                .get(BatchType::IntermediateTx as u64)?
-                .unwrap();
-            let Some(intermediate_tx) = intermediate_tx_batch.get(0)? else { return Ok(txs) };
-            txs.push(Adapter::new(intermediate_tx.to_bitcoin_tx()?));
-
-            let disbursal_batch = completed.batches.get(BatchType::Disbursal as u64)?.unwrap();
-            for tx in disbursal_batch.iter()? {
-                txs.push(Adapter::new(tx?.to_bitcoin_tx()?));
-            }
+            completed.emergency_disbursal_txs()
+        } else {
+            Ok(vec![])
         }
-
-        Ok(txs)
     }
 
     /// A reference to the checkpoint in the `Signing` state, if there is one.
@@ -2214,6 +2215,9 @@ pub fn adjust_fee_rate(prev_fee_rate: u64, up: bool, config: &Config) -> u64 {
 
 #[cfg(test)]
 mod test {
+    #[cfg(feature = "full")]
+    use crate::utils::set_time;
+
     use std::{cell::RefCell, rc::Rc};
 
     #[cfg(all(feature = "full"))]
@@ -2450,10 +2454,6 @@ mod test {
             ..Default::default()
         };
 
-        let set_time = |time| {
-            let time = orga::plugins::Time::from_seconds(time);
-            Context::add(time);
-        };
         let maybe_step = |btc_height| {
             queue
                 .borrow_mut()

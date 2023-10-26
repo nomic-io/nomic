@@ -18,7 +18,6 @@ use bitcoin::BlockHeader;
 use bitcoin::Script;
 #[cfg(feature = "full")]
 use bitcoincore_rpc_async::{Auth, Client as BitcoinRpcClient, RpcApi};
-use chrono::{TimeZone, Utc};
 #[cfg(feature = "full")]
 use log::info;
 use orga::client::Wallet;
@@ -151,10 +150,8 @@ pub fn load_consensus_key(dir: &Path) -> Result<[u8; 32]> {
         .map_err(|_| orga::Error::App("invalid consensus key".to_string()))?)
 }
 
-pub fn setup_time_context() {
-    let genesis_time = Utc.with_ymd_and_hms(2022, 10, 5, 0, 0, 0).unwrap();
-    let ctx = Time::from_seconds(genesis_time.timestamp());
-    Context::add(ctx);
+pub fn set_time<T: Into<Time>>(time: T) {
+    Context::add(time.into());
 }
 
 pub fn setup_chain_id_context(chain_id: String) {
@@ -385,6 +382,20 @@ impl Wallet for NomicTestWallet {
 }
 
 impl NomicTestWallet {
+    pub fn new_rand() -> Self {
+        let privkey = SecretKey::new(&mut rand::thread_rng());
+        let address = address_from_privkey(&privkey);
+        let script = address_to_script(address).unwrap();
+        let secret_key = orga::secp256k1::SecretKey::from_slice(&privkey.secret_bytes()).unwrap();
+        let wallet = DerivedKey::from_secret_key(secret_key);
+        Self {
+            privkey,
+            address,
+            script,
+            wallet,
+        }
+    }
+
     pub fn bitcoin_address(&self) -> bitcoin::Address {
         bitcoin::Address::from_script(&self.script, bitcoin::Network::Regtest).unwrap()
     }
@@ -436,20 +447,7 @@ pub fn setup_test_app(
             .unwrap();
 
         let keys: Vec<NomicTestWallet> = (0..num_accounts)
-            .map(|_| {
-                let privkey = SecretKey::new(&mut rand::thread_rng());
-                let address = address_from_privkey(&privkey);
-                let script = address_to_script(address).unwrap();
-                let secret_key =
-                    orga::secp256k1::SecretKey::from_slice(&privkey.secret_bytes()).unwrap();
-                let wallet = DerivedKey::from_secret_key(secret_key);
-                NomicTestWallet {
-                    privkey,
-                    address,
-                    script,
-                    wallet,
-                }
-            })
+            .map(|_| NomicTestWallet::new_rand())
             .collect();
 
         keys.iter().for_each(|key| {

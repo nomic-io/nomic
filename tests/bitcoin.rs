@@ -8,6 +8,8 @@ use bitcoind::bitcoincore_rpc::json::{
 };
 use bitcoind::bitcoincore_rpc::RpcApi;
 use bitcoind::{BitcoinD, Conf};
+use chrono::TimeZone;
+use chrono::Utc;
 use log::info;
 use nomic::app::Dest;
 use nomic::app::{InnerApp, Nom};
@@ -24,7 +26,7 @@ use nomic::orga::Error as OrgaError;
 use nomic::utils::*;
 use nomic::utils::{
     declare_validator, poll_for_active_sigset, poll_for_blocks, populate_bitcoin_block, retry,
-    setup_test_app, setup_test_signer, setup_time_context, test_bitcoin_client, NomicTestWallet,
+    set_time, setup_test_app, setup_test_signer, test_bitcoin_client, NomicTestWallet,
 };
 use orga::abci::Node;
 use orga::client::{
@@ -34,7 +36,7 @@ use orga::client::{
 use orga::coins::{Address, Amount};
 use orga::encoding::Encode;
 use orga::macros::build_call;
-use orga::plugins::{load_privkey, MIN_FEE};
+use orga::plugins::{load_privkey, Time, MIN_FEE};
 use orga::tendermint::client::HttpClient;
 use rand::Rng;
 use reqwest::StatusCode;
@@ -197,7 +199,9 @@ fn client_provider() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, DerivedKe
 async fn bitcoin_test() {
     INIT.call_once(|| {
         pretty_env_logger::init();
-        setup_time_context();
+        let genesis_time = Utc.with_ymd_and_hms(2022, 10, 5, 0, 0, 0).unwrap();
+        let time = Time::from_seconds(genesis_time.timestamp());
+        set_time(time);
     });
 
     let mut conf = Conf::default();
@@ -626,7 +630,9 @@ async fn bitcoin_test() {
 async fn signing_completed_checkpoint_test() {
     INIT.call_once(|| {
         pretty_env_logger::init();
-        setup_time_context();
+        let genesis_time = Utc.with_ymd_and_hms(2022, 10, 5, 0, 0, 0).unwrap();
+        let time = Time::from_seconds(genesis_time.timestamp());
+        set_time(time);
     });
 
     let mut conf = Conf::default();
@@ -869,7 +875,7 @@ async fn signing_completed_checkpoint_test() {
 async fn pending_deposits() {
     INIT.call_once(|| {
         pretty_env_logger::init();
-        setup_time_context();
+        set_time(0);
     });
 
     let mut conf = Conf::default();
