@@ -88,14 +88,24 @@ fn main() {
         let cargo_features =
             std::env::var("NOMIC_LEGACY_FEATURES").unwrap_or(default_features.to_string());
 
-        let res = std::process::Command::new(shell)
-            .env_clear()
-            .env("OUT_DIR", std::env::var("OUT_DIR").unwrap())
-            .env("PATH", std::env::var("PATH").unwrap())
-            .env(
-                "NOMIC_CLEANUP_LEGACY_BUILD",
-                std::env::var("NOMIC_CLEANUP_LEGACY_BUILD").unwrap_or_default(),
-            )
+        let forwarded_envvars = [
+            "OUT_DIR",
+            "PATH",
+            "NOMIC_CLEANUP_LEGACY_BUILD",
+            "ROCKSDB_LIB_DIR",
+            "ROCKSDB_STATIC",
+        ];
+
+        let mut cmd = std::process::Command::new(shell);
+        cmd.env_clear();
+
+        for var in forwarded_envvars {
+            if let Ok(val) = std::env::var(var) {
+                cmd.env(var, val);
+            }
+        }
+
+        let res = cmd
             .env("NOMIC_LEGACY_REV", rev)
             .env("CARGO_FEATURES", cargo_features)
             .args(["build.sh"])
