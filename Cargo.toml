@@ -30,7 +30,7 @@ bitcoin-script = "0.1.1"
 warp = { version = "0.3.2", optional = true }
 derive_more = "0.99.17"
 pretty_env_logger = { git = "https://github.com/seanmonstar/pretty-env-logger", rev = "f9e35b6dbbf06de55222c944c9e1e176ce73b3a7" }
-reqwest = { version = "0.11.16", optional = true }
+reqwest = { version = "0.11.16", optional = true, features = ["json"] }
 rand = { version = "0.8.5", optional = true }
 sha2 = "0.10.6"
 bytes = "1.2.1"
