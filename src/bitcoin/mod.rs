@@ -37,6 +37,8 @@ use signatory::SignatorySet;
 
 pub mod adapter;
 pub mod checkpoint;
+#[cfg(feature = "full")]
+pub mod deposit_index;
 pub mod header_queue;
 pub mod outpoint_set;
 #[cfg(feature = "full")]
