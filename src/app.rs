@@ -1006,6 +1006,15 @@ pub enum Dest {
     Ibc(IbcDest),
 }
 
+impl Dest {
+    pub fn to_receiver_addr(&self) -> String {
+        match self {
+            Dest::Address(addr) => addr.to_string(),
+            Dest::Ibc(dest) => dest.receiver.0.to_string(),
+        }
+    }
+}
+
 use orga::ibc::{IbcMessage, PortChannel, RawIbcTx};
 
 #[derive(Clone, Debug, Encode, Decode, Serialize)]
