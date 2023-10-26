@@ -1233,10 +1233,10 @@ impl<'a> BuildingCheckpointMut<'a> {
                         txid: intermediate_tx_id,
                         vout: *vout as u32,
                     });
+                    intermediate_tx_outputs.remove(i);
                     // Deduct the final tx's miner fee from its outputs,
                     // removing any outputs which are too small to pay their
                     // share of the fee.
-                    intermediate_tx_outputs.remove(i);
                     let tx_size = tx.vsize().map_err(|err| OrgaError::App(err.to_string()))?;
                     let fee = intermediate_tx_fee / intermediate_tx_len + tx_size * fee_rate;
                     tx.deduct_fee(fee)
