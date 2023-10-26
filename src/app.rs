@@ -1192,12 +1192,11 @@ impl RewardTimer {
 }
 
 pub fn in_upgrade_window(now_seconds: i64) -> bool {
-    use chrono::prelude::*;
-    let now = Utc.timestamp_opt(now_seconds, 0).unwrap();
-
     #[cfg(not(feature = "testnet"))]
     {
-        let valid_weekday = now.weekday().num_days_from_monday() == 2; // Wednesday
+        use chrono::prelude::*;
+        let now = Utc.timestamp_opt(now_seconds, 0).unwrap();
+        let valid_weekday = now.weekday().num_days_from_monday() < 5; // Monday - Friday
         let valid_time = now.hour() == 17 && now.minute() < 10; // 17:00 - 17:10 UTC
         valid_weekday && valid_time
     }
@@ -1214,7 +1213,7 @@ mod tests {
     fn upgrade_date() {
         #[cfg(not(feature = "testnet"))]
         {
-            assert!(!in_upgrade_window(1690218300)); // Monday 17:05 UTC
+            assert!(in_upgrade_window(1690218300)); // Monday 17:05 UTC
             assert!(in_upgrade_window(1690391100)); // Wednesday 17:05 UTC
             assert!(!in_upgrade_window(1690392000)); // Wednesday 17:15 UTC
             assert!(!in_upgrade_window(1690736700)); // Sunday 17:05 UTC
