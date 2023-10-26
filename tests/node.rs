@@ -1,4 +1,4 @@
-use chrono::{Utc, TimeZone};
+use chrono::{TimeZone, Utc};
 use log::info;
 use nomic::utils::{poll_for_blocks, set_time, setup_test_app};
 use orga::abci::Node;
