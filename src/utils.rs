@@ -18,7 +18,6 @@ use bitcoin::BlockHeader;
 use bitcoin::Script;
 #[cfg(feature = "full")]
 use bitcoincore_rpc_async::{Auth, Client as BitcoinRpcClient, RpcApi};
-use chrono::{TimeZone, Utc};
 #[cfg(feature = "full")]
 use log::info;
 use orga::client::Wallet;
