@@ -31,6 +31,11 @@ lazy_static! {
     .unwrap();
     static ref CHECKPOINT_INDEX_GAUGE: IntGauge =
         register_int_gauge!("nomic_signer_checkpoint_index", "Current checkpoint index").unwrap();
+    static ref CHECKPOINT_TIMESTAMP_GAUGE: IntGauge = register_int_gauge!(
+        "nomic_signer_checkpoint_timestamp",
+        "The creation time of the newest checkpoint"
+    )
+    .unwrap();
     static ref WITHDRAWAL_RATE_GAUGE: Gauge = register_gauge!(
         "nomic_signer_withdrawal_rate",
         "Rate of withdrawals from the reserve for the last 24 hours"
@@ -226,7 +231,6 @@ where
 
             if signed {
                 index += 1;
-                CHECKPOINT_INDEX_GAUGE.set(index as i64);
             } else {
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             }
@@ -287,10 +291,16 @@ where
     async fn try_sign(&mut self, xpub: &ExtendedPubKey, index: u32) -> Result<bool> {
         let secp = Secp256k1::signing_only();
 
-        let status = self
+        let (status, timestamp) = self
             .client()
-            .query(|app| Ok(app.bitcoin.checkpoints.get(index)?.status))
+            .query(|app| {
+                let cp = app.bitcoin.checkpoints.get(index)?;
+                Ok((cp.status, cp.create_time()))
+            })
             .await?;
+
+        CHECKPOINT_INDEX_GAUGE.set(index as i64);
+        CHECKPOINT_TIMESTAMP_GAUGE.set(timestamp as i64);
 
         if matches!(status, CheckpointStatus::Building) {
             return Ok(false);
