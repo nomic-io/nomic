@@ -493,6 +493,13 @@ pub async fn capacity_limit() -> Result<u64, JsError> {
         .await?)
 }
 
+#[wasm_bindgen(js_name = depositsEnabled)]
+pub async fn deposits_enabled() -> Result<bool, JsError> {
+    Ok(app_client()
+        .query(|app: InnerApp| Ok(!app.bitcoin.checkpoints.last_completed()?.deposits_enabled))
+        .await?)
+}
+
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = getAddress)]
 pub async fn get_address() -> Result<String, JsError> {
