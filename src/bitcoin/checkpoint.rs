@@ -771,6 +771,10 @@ impl Checkpoint {
         Ok(self.signed_batches()? == self.batches.len())
     }
 
+    /// The emergency disbursal transactions for checkpoint.
+    ///
+    /// The first element of the returned vector is the intermediate
+    /// transaction, and the remaining elements are the final transactions.
     pub fn emergency_disbursal_txs(&self) -> Result<Vec<Adapter<bitcoin::Transaction>>> {
         let mut txs = vec![];
 
