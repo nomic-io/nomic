@@ -4,7 +4,7 @@
 #![feature(async_closure)]
 #![feature(never_type)]
 
-use bitcoind::bitcoincore_rpc::{Auth, Client as BtcClient};
+use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
 use nomic::app::Dest;
 #[cfg(feature = "testnet")]
@@ -102,6 +102,8 @@ pub enum Command {
     UpgradeStatus(UpgradeStatusCmd),
     #[cfg(feature = "testnet")]
     RelayOpKeys(RelayOpKeysCmd),
+    SetRecoveryAddress(SetRecoveryAddressCmd),
+    SigningStatus(SigningStatusCmd),
 }
 
 impl Command {
@@ -155,6 +157,8 @@ impl Command {
                 UpgradeStatus(cmd) => cmd.run().await,
                 #[cfg(feature = "testnet")]
                 RelayOpKeys(cmd) => cmd.run().await,
+                SetRecoveryAddress(cmd) => cmd.run().await,
+                SigningStatus(cmd) => cmd.run().await,
             }
         })
     }
@@ -290,7 +294,8 @@ impl StartCmd {
                     .iter()
                     .map(|s| s.as_str())
                     .collect();
-                configure_for_statesync(&home.join("tendermint/config/config.toml"), &servers);
+                configure_for_statesync(&home.join("tendermint/config/config.toml"), &servers)
+                    .await;
             }
         } else if cmd.clone_store.is_some() {
             log::warn!(
@@ -516,33 +521,27 @@ fn legacy_bin(config: &nomic::network::Config) -> Result<Option<PathBuf>> {
 }
 
 async fn relaunch_on_migrate(config: &nomic::network::Config) -> Result<()> {
-    let home = match config.home() {
-        Some(home) => home,
-        None => {
-            log::warn!("Unknown home directory, cannot automatically relaunch on migrate");
-            return Ok(());
-        }
-    };
-
     let mut initial_ver = None;
     loop {
-        if !home.exists() {
-            continue;
-        }
-        let store = MerkStore::open_readonly(home.join("merk"));
-        let store_ver = store.merk().get_aux(b"consensus_version").unwrap();
-        if initial_ver.is_some() {
-            if store_ver != initial_ver {
-                log::info!(
-                    "Node has migrated from version {:?} to version {:?}, exiting",
+        let version: Vec<_> = config
+            .client()
+            .query(|app| Ok(app.upgrade.current_version.get(())?.unwrap().clone()))
+            .await?
+            .into();
+
+        if let Some(initial_ver) = initial_ver {
+            if version != initial_ver {
+                log::warn!(
+                    "Version changed from {:?} to {:?}, exiting",
                     initial_ver,
-                    store_ver
+                    version
                 );
                 std::process::exit(138);
             }
-        } else {
-            initial_ver = store_ver;
         }
+
+        initial_ver = Some(version);
+
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     }
 }
@@ -569,12 +568,11 @@ fn edit_block_time(cfg_path: &PathBuf, timeout_commit: &str) {
     });
 }
 
-fn configure_for_statesync(cfg_path: &PathBuf, rpc_servers: &[&str]) {
+async fn configure_for_statesync(cfg_path: &PathBuf, rpc_servers: &[&str]) {
     log::info!("Getting bootstrap state for Tendermint light client...");
 
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let (height, hash) = rt
-        .block_on(get_bootstrap_state(rpc_servers))
+    let (height, hash) = get_bootstrap_state(rpc_servers)
+        .await
         .expect("Failed to bootstrap state");
     log::info!(
         "Configuring light client at height {} with hash {}",
@@ -888,6 +886,19 @@ impl DeclareCmd {
             min_self_delegation: self.min_self_delegation.into(),
         };
 
+        // declare with nBTC if amount is 0
+        if self.amount == 0 {
+            return Ok(self
+                .config
+                .client()
+                .with_wallet(wallet())
+                .call(
+                    |app| build_call!(app.declare_with_nbtc(declaration.clone())),
+                    |app| build_call!(app.app_noop()),
+                )
+                .await?);
+        }
+
         Ok(self
             .config
             .client()
@@ -1147,8 +1158,9 @@ impl RelayerCmd {
             _ => Auth::None,
         };
 
-        let btc_client =
-            BtcClient::new(&rpc_url, auth).map_err(|e| orga::Error::App(e.to_string()))?;
+        let btc_client = BtcClient::new(rpc_url, auth)
+            .await
+            .map_err(|e| orga::Error::App(e.to_string()))?;
 
         Ok(btc_client)
     }
@@ -1177,9 +1189,20 @@ impl RelayerCmd {
         let mut relayer = create_relayer().await;
         let checkpoint_confs = relayer.start_checkpoint_conf_relay();
 
+        let mut relayer = create_relayer().await;
+        let emdis = relayer.start_emergency_disbursal_transaction_relay();
+
         let relaunch = relaunch_on_migrate(&self.config);
 
-        futures::try_join!(headers, deposits, checkpoints, checkpoint_confs, relaunch).unwrap();
+        futures::try_join!(
+            headers,
+            deposits,
+            checkpoints,
+            checkpoint_confs,
+            emdis,
+            relaunch
+        )
+        .unwrap();
 
         Ok(())
     }
@@ -1192,14 +1215,21 @@ pub struct SignerCmd {
 
     /// Limits the fraction of the total reserve that may be withdrawn within
     /// the trailing 24-hour period
-    #[clap(long, default_value_t = 0.04)]
+    #[clap(long, default_value_t = 0.1)]
     max_withdrawal_rate: f64,
+
     /// Limits the maximum allowed signatory set change within 24 hours
     ///
     /// The Total Variation Distance between a day-old signatory set and the
     /// newly-proposed signatory set may not exceed this value
-    #[clap(long, default_value_t = 0.04)]
+    #[clap(long, default_value_t = 0.1)]
     max_sigset_change_rate: f64,
+
+    #[clap(long)]
+    prometheus_addr: Option<std::net::SocketAddr>,
+
+    // TODO: should be a flag
+    reset_limits_at_index: Option<u32>,
 }
 
 impl SignerCmd {
@@ -1216,8 +1246,10 @@ impl SignerCmd {
             key_path,
             self.max_withdrawal_rate,
             self.max_sigset_change_rate,
+            self.reset_limits_at_index,
             // TODO: check for custom RPC port, allow config, etc
             || nomic::app_client("http://localhost:26657").with_wallet(wallet()),
+            self.prometheus_addr,
         )?
         .start();
 
@@ -1255,28 +1287,49 @@ impl SetSignatoryKeyCmd {
 async fn deposit(
     dest: Dest,
     client: AppClient<InnerApp, InnerApp, HttpClient, Nom, orga::client::wallet::Unsigned>,
+    relayers: Vec<String>,
 ) -> Result<()> {
-    let sigset = client
-        .query(|app| Ok(app.bitcoin.checkpoints.active_sigset()?))
+    if relayers.is_empty() {
+        return Err(nomic::error::Error::Orga(orga::Error::App(format!(
+            "No relayers configured, please specify at least one with --btc-relayer"
+        ))));
+    }
+
+    let (sigset, threshold) = client
+        .query(|app| {
+            Ok((
+                app.bitcoin.checkpoints.active_sigset()?,
+                app.bitcoin.checkpoints.config.sigset_threshold,
+            ))
+        })
         .await?;
-    let script = sigset.output_script(dest.commitment_bytes()?.as_slice())?;
+    let script = sigset.output_script(dest.commitment_bytes()?.as_slice(), threshold)?;
     let btc_addr = bitcoin::Address::from_script(&script, nomic::bitcoin::NETWORK).unwrap();
 
-    let client = reqwest::Client::new();
-    let res = client
-        .post("https://relayer.nomic.io:8443/address")
-        .query(&[
-            ("sigset_index", sigset.index().to_string()),
-            ("deposit_addr", btc_addr.to_string()),
-        ])
-        .body(dest.encode()?)
-        .send()
-        .await
-        .map_err(|err| nomic::error::Error::Orga(orga::Error::App(err.to_string())))?;
-    if res.status() != 200 {
-        return Err(
-            orga::Error::App(format!("Relayer responded with code {}", res.status())).into(),
-        );
+    let mut successes = 0;
+    let required_successes = relayers.len() * 2 / 3 + 1;
+    for relayer in relayers {
+        let client = reqwest::Client::new();
+        let res = client
+            .post(format!("{}/address", relayer))
+            .query(&[
+                ("sigset_index", sigset.index().to_string()),
+                ("deposit_addr", btc_addr.to_string()),
+            ])
+            .body(dest.encode()?)
+            .send()
+            .await
+            .map_err(|err| nomic::error::Error::Orga(orga::Error::App(err.to_string())))?;
+        log::debug!("Relayer response status code: {}", res.status());
+        if res.status() == 200 {
+            successes += 1;
+        }
+    }
+
+    if successes < required_successes {
+        return Err(nomic::error::Error::Orga(orga::Error::App(format!(
+            "Failed to broadcast deposit address to relayers"
+        ))));
     }
 
     println!("Deposit address: {}", btc_addr);
@@ -1297,7 +1350,12 @@ impl DepositCmd {
     async fn run(&self) -> Result<()> {
         let dest_addr = self.address.unwrap_or_else(my_address);
 
-        deposit(Dest::Address(dest_addr), self.config.client()).await
+        deposit(
+            Dest::Address(dest_addr),
+            self.config.client(),
+            self.config.btc_relayer.clone(),
+        )
+        .await
     }
 }
 
@@ -1334,7 +1392,7 @@ impl InterchainDepositCmd {
             memo: self.memo.clone().try_into().unwrap(),
         });
 
-        deposit(dest, self.config.client()).await
+        deposit(dest, self.config.client(), self.config.btc_relayer.clone()).await
     }
 }
 
@@ -1429,12 +1487,14 @@ pub struct GrpcCmd {
 impl GrpcCmd {
     async fn run(&self) -> Result<()> {
         use orga::ibc::GrpcOpts;
+        std::panic::set_hook(Box::new(|_| {}));
         orga::ibc::start_grpc(
             // TODO: support configuring RPC address
             || nomic::app_client("http://localhost:26657").sub(|app| app.ibc.ctx),
             &GrpcOpts {
                 host: "127.0.0.1".to_string(),
                 port: self.port,
+                chain_id: self.config.chain_id.clone().unwrap(),
             },
         )
         .await;
@@ -1499,7 +1559,7 @@ impl ExportCmd {
 
         let store_path = home.join("merk");
         let store = Store::new(orga::store::BackingStore::Merk(orga::store::Shared::new(
-            MerkStore::new(store_path),
+            MerkStore::open_readonly(store_path),
         )));
         let root_bytes = store.get(&[])?.unwrap();
 
@@ -1718,6 +1778,124 @@ impl RelayOpKeysCmd {
         .await?;
 
         log::info!("Finished relaying operator keys");
+
+        Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct SetRecoveryAddressCmd {
+    address: bitcoin::Address,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
+}
+
+impl SetRecoveryAddressCmd {
+    async fn run(&self) -> Result<()> {
+        let script = self.address.script_pubkey();
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
+            .call(
+                |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
+                |app| {
+                    build_call!(app
+                        .bitcoin
+                        .set_recovery_script(nomic::bitcoin::adapter::Adapter::new(script.clone())))
+                },
+            )
+            .await?)
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct SigningStatusCmd {
+    #[clap(flatten)]
+    config: nomic::network::Config,
+}
+
+impl SigningStatusCmd {
+    async fn run(&self) -> Result<()> {
+        use bitcoin::util::bip32::ChildNumber;
+        let home = self.config.home_expect()?;
+
+        let store_path = home.join("merk");
+        let store = Store::new(orga::store::BackingStore::Merk(orga::store::Shared::new(
+            MerkStore::open_readonly(store_path),
+        )));
+        let root_bytes = store.get(&[])?.unwrap();
+
+        let app =
+            orga::plugins::ABCIPlugin::<nomic::app::App>::load(store, &mut root_bytes.as_slice())?;
+
+        let app = app
+            .inner
+            .inner
+            .into_inner()
+            .inner
+            .inner
+            .inner
+            .inner
+            .inner
+            .inner;
+        let Some(signing) = app.bitcoin.checkpoints.signing()? else {
+           println!("No signing checkpoint");
+           return Ok(())
+        };
+        let batch = signing.current_batch()?.unwrap();
+        let mut lowest_index = 0;
+        let mut lowest_frac = 2.0;
+        let tx = batch.front()?.unwrap();
+        for (index, inp) in (tx.input.iter()?).enumerate() {
+            let inp = inp?;
+            let sigs = &inp.signatures;
+            let threshold = sigs.threshold;
+            let signed = sigs.signed;
+            let frac = signed as f64 / threshold as f64;
+            if frac < lowest_frac {
+                lowest_frac = frac;
+                lowest_index = index as u64;
+            }
+        }
+        let res_out = tx.input.get(lowest_index)?.unwrap();
+        let sigs = &res_out.signatures;
+        let sig_keys = &app.bitcoin.signatory_keys;
+        let sigset_index = res_out.sigset_index;
+
+        let secp = bitcoin::secp256k1::Secp256k1::verification_only();
+        let mut missing_cons_keys = vec![];
+        for entry in sig_keys.map().iter()? {
+            use nomic::bitcoin::threshold_sig::Pubkey;
+            let (k, xpub) = entry?;
+
+            let derive_path = [ChildNumber::from_normal_idx(sigset_index)?];
+            let pubkey: Pubkey = xpub.derive_pub(&secp, &derive_path)?.public_key.into();
+            let needs_to_sign = sigs.needs_sig(pubkey)?;
+            if needs_to_sign {
+                missing_cons_keys.push((k, *xpub));
+            }
+        }
+        let all_vals = app.staking.all_validators()?;
+        for val in all_vals {
+            if val.amount_staked == 0 {
+                continue;
+            }
+            let cons_key = app.staking.consensus_key(val.address.into())?;
+            if missing_cons_keys.iter().any(|v| *v.0 == cons_key) {
+                let json: serde_json::Value =
+                    serde_json::from_str(String::from_utf8(val.info.to_vec()).unwrap().as_str())
+                        .unwrap();
+                let name = json.get("moniker").unwrap().to_string();
+                println!("Missing signature from {}", name);
+            }
+        }
+
+        println!(
+            "Checkpoint is at {:.2}% of the minimum required voting power",
+            lowest_frac * 100.0
+        );
 
         Ok(())
     }

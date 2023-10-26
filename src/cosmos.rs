@@ -1,7 +1,7 @@
 use crate::{
     bitcoin::{
         signatory::{derive_pubkey, Signatory, SignatorySet},
-        threshold_sig::Pubkey,
+        threshold_sig::{Pubkey, VersionedPubkey},
         Nbtc, Xpub,
     },
     error::Result,
@@ -44,6 +44,9 @@ use proto::traits::{Message, MessageExt};
 #[cfg(feature = "full")]
 use tendermint_rpc::HttpClient;
 
+pub const MAX_SIGSET_SIZE: usize = 40;
+pub const RECOVERY_THRESHOLD: (u64, u64) = (2, 3);
+
 #[orga]
 pub struct Cosmos {
     pub chains: Map<ClientId, Chain>,
@@ -65,14 +68,20 @@ impl Cosmos {
 
         for entry in self.chains.iter()? {
             let (client_id, chain) = entry?;
-            let client = ibc
+            let Some(client) = ibc
                 .ctx
                 .clients
-                .get(client_id.clone())?
-                .ok_or_else(|| OrgaError::Ibc("Client not found".to_string()))?;
-            let sigset = if let Some(sigset) = chain.to_sigset(index, &client)? {
-                sigset
-            } else {
+                .get(client_id.clone())? else {
+                    log::debug!("Warning: client not found");
+                    continue;
+                };
+
+            let sigset_res = chain.to_sigset(index, &client);
+            let Ok(Some(sigset)) = sigset_res else {
+                log::debug!(
+                    "Warning: failed to build sigset ({})",
+                    sigset_res.err().map(|e| e.to_string()).unwrap_or_default(),
+                );
                 continue;
             };
 
@@ -110,7 +119,7 @@ impl Cosmos {
             }
             outputs.push(bitcoin::TxOut {
                 value: total_usats / 1_000_000,
-                script_pubkey: sigset.output_script(&[0])?,
+                script_pubkey: sigset.output_script(&[0], RECOVERY_THRESHOLD)?,
             })
         }
 
@@ -190,11 +199,14 @@ impl Cosmos {
                 .map_err(|_| OrgaError::App("Invalid public key".to_string()))?
                 .key
                 .as_slice(),
-        )?;
+        )?
+        .into();
 
         let mut chain = self.chains.entry(client_id)?.or_default()?;
-        if chain.op_keys_by_cons.contains_key(cons_key.clone())? {
-            return Err(OrgaError::App("Operator key already relayed".to_string()).into());
+        if let Some(existing_key) = chain.op_keys_by_cons.get(cons_key.clone())? {
+            if *existing_key == op_key {
+                return Err(OrgaError::App("Operator key already relayed".to_string()).into());
+            }
         }
         chain.op_keys_by_cons.insert(cons_key, op_key)?;
 
@@ -323,12 +335,13 @@ impl Proof {
 
 #[orga]
 pub struct Chain {
-    pub op_keys_by_cons: Map<LengthVec<u8, u8>, Pubkey>,
+    pub op_keys_by_cons: Map<LengthVec<u8, u8>, VersionedPubkey>,
 }
 
 #[orga]
 impl Chain {
     pub fn to_sigset(&self, index: u32, client: &Client) -> Result<Option<SignatorySet>> {
+        // vals are already sorted by voting power
         let vals = &client.last_header()?.validator_set;
 
         let mut sigset = SignatorySet {
@@ -337,16 +350,25 @@ impl Chain {
         };
 
         let secp = Secp256k1::new();
-
         for val in vals.validators() {
             sigset.possible_vp += val.power();
 
-            let cons_addr = val.address.as_bytes().to_vec().try_into()?;
-            let op_key = match self.op_keys_by_cons.get(cons_addr)? {
+            let Some(cons_key) = val
+                .pub_key
+                .ed25519().map(|v|v.as_bytes().to_vec()) else {
+                    continue;
+                };
+            let op_key = match self.op_keys_by_cons.get(cons_key.try_into()?)? {
                 None => continue,
                 Some(op_key) => op_key,
             };
-            let op_key = bitcoin::secp256k1::PublicKey::from_slice(op_key.as_slice())?;
+            let op_key = match bitcoin::secp256k1::PublicKey::from_slice(op_key.as_slice()) {
+                Ok(op_key) => op_key,
+                Err(err) => {
+                    log::debug!("Warning: invalid operator key: {}", err);
+                    continue;
+                }
+            };
 
             let xpub = ExtendedPubKey {
                 network: bitcoin::Network::Bitcoin,
@@ -360,11 +382,13 @@ impl Chain {
 
             let sig_key = derive_pubkey(&secp, xpub, index)?;
 
-            sigset.signatories.push(Signatory {
-                voting_power: val.power(),
-                pubkey: sig_key.into(),
-            });
-            sigset.present_vp += val.power();
+            if sigset.signatories.len() < MAX_SIGSET_SIZE {
+                sigset.signatories.push(Signatory {
+                    voting_power: val.power(),
+                    pubkey: sig_key.into(),
+                });
+                sigset.present_vp += val.power();
+            }
         }
 
         Ok(Some(sigset))
@@ -391,7 +415,7 @@ pub async fn relay_op_keys<
                 .get(client_id.clone())?
                 .ok_or_else(|| OrgaError::Ibc("Client not found".to_string()))?
                 .client_state
-                .get(())?
+                .get(Default::default())?
                 .ok_or_else(|| OrgaError::Ibc("Client state not found".to_string()))?
                 .inner
                 .latest_height)
@@ -409,12 +433,11 @@ pub async fn relay_op_keys<
     for validator in res.validators.iter() {
         let client_id = client_id.clone();
         let cons_addr_bytes = validator.address.as_bytes().to_vec();
-        let cons_key = validator
+        let Some(cons_key) = validator
             .pub_key
-            .ed25519()
-            .ok_or_else(|| OrgaError::App("Unexpected pubkey type".to_string()))?
-            .as_bytes()
-            .to_vec();
+            .ed25519().map(|v|v.as_bytes().to_vec()) else  {
+                continue;
+            };
         let already_relayed = (app_client)()
             .query(|app: InnerApp| {
                 Ok(app
@@ -469,7 +492,7 @@ pub async fn relay_op_keys<
             inner: Decode::decode(res.proof.as_ref().unwrap().ops[0].data.as_slice())?,
             outer: Decode::decode(res.proof.as_ref().unwrap().ops[1].data.as_slice())?,
         };
-        (app_client)()
+        if let Err(e) = (app_client)()
             .call(
                 move |app| {
                     build_call!(app.relay_op_key(
@@ -482,8 +505,12 @@ pub async fn relay_op_keys<
                 },
                 |app| build_call!(app.app_noop()),
             )
-            .await?;
-        log::info!("Relayed an operator key");
+            .await
+        {
+            log::warn!("{}", e);
+        } else {
+            log::info!("Relayed an operator key");
+        }
     }
     Ok(())
 }

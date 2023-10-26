@@ -69,7 +69,7 @@ const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhq
 const IBC_FEE_USATS: u64 = 1_000_000;
 const DECLARE_FEE_USATS: u64 = 100_000_000;
 
-#[orga(version = 2)]
+#[orga(version = 3)]
 pub struct InnerApp {
     #[call]
     pub accounts: Accounts<Nom>,
@@ -100,12 +100,13 @@ pub struct InnerApp {
     pub incentives: Incentives,
 
     #[cfg(feature = "testnet")]
+    #[orga(version(V3))]
     pub cosmos: Cosmos,
 }
 
 #[orga]
 impl InnerApp {
-    pub const CONSENSUS_VERSION: u8 = 5;
+    pub const CONSENSUS_VERSION: u8 = 8;
 
     #[cfg(feature = "full")]
     fn configure_faucets(&mut self) -> Result<()> {
@@ -494,7 +495,7 @@ mod abci {
             };
             let offline_signers = self
                 .bitcoin
-                .begin_block_step(external_outputs.into_iter().map(Ok))?;
+                .begin_block_step(external_outputs.into_iter().map(Ok), ctx.hash.clone())?;
             for cons_key in offline_signers {
                 let address = self.staking.address_by_consensus_key(cons_key)?.unwrap();
                 self.staking.punish_downtime(address)?;
@@ -1005,6 +1006,15 @@ pub enum Dest {
     Ibc(IbcDest),
 }
 
+impl Dest {
+    pub fn to_receiver_addr(&self) -> String {
+        match self {
+            Dest::Address(addr) => addr.to_string(),
+            Dest::Ibc(dest) => dest.receiver.0.to_string(),
+        }
+    }
+}
+
 use orga::ibc::{IbcMessage, PortChannel, RawIbcTx};
 
 #[derive(Clone, Debug, Encode, Decode, Serialize)]
@@ -1159,7 +1169,7 @@ impl Describe for Dest {
 }
 
 pub fn ibc_fee(amount: Amount) -> Result<Amount> {
-    let fee_rate: orga::coins::Decimal = "0.015".parse().unwrap();
+    let fee_rate: orga::coins::Decimal = "0.005".parse().unwrap();
     (amount * fee_rate)?.amount()
 }
 

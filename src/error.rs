@@ -12,9 +12,6 @@ pub enum Error {
     BitcoinHash(#[from] bitcoin::hashes::Error),
     #[error("{0}")]
     BitcoinPubkeyHash(String),
-    #[cfg(feature = "full")]
-    #[error(transparent)]
-    BitcoinCoreRpc(#[from] bitcoind::bitcoincore_rpc::Error),
     #[error(transparent)]
     BitcoinLockTime(#[from] bitcoin::locktime::Error),
     #[error(transparent)]
@@ -39,7 +36,7 @@ pub enum Error {
     BitcoinMerkleBlockError,
     #[cfg(feature = "full")]
     #[error(transparent)]
-    BitcoinRpc(#[from] bitcoincore_rpc_async::Error),
+    BitcoinCoreRpcAsync(#[from] bitcoincore_rpc_async::Error),
     #[cfg(feature = "csv")]
     #[error(transparent)]
     Csv(#[from] csv::Error),

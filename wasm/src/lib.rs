@@ -421,10 +421,18 @@ pub async fn gen_deposit_addr(dest_addr: String) -> Result<DepositAddress, JsErr
         .parse()
         .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
-    let sigset = app_client()
-        .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.active_sigset()?))
+    let (sigset, threshold) = app_client()
+        .query(|app: InnerApp| {
+            Ok((
+                app.bitcoin.checkpoints.active_sigset()?,
+                app.bitcoin.checkpoints.config.sigset_threshold,
+            ))
+        })
         .await?;
-    let script = sigset.output_script(Dest::Address(dest_addr).commitment_bytes()?.as_slice())?;
+    let script = sigset.output_script(
+        Dest::Address(dest_addr).commitment_bytes()?.as_slice(),
+        threshold,
+    )?;
     // TODO: get network from somewhere
     // TODO: make test/mainnet option configurable
     let btc_addr = bitcoin::Address::from_script(&script, BITCOIN_NETWORK)?;
@@ -475,6 +483,20 @@ pub async fn latest_checkpoint_hash() -> Result<String, JsError> {
 pub async fn bitcoin_height() -> Result<u32, JsError> {
     Ok(app_client()
         .query(|app: InnerApp| Ok(app.bitcoin.headers.height()?))
+        .await?)
+}
+
+#[wasm_bindgen(js_name = capacityLimit)]
+pub async fn capacity_limit() -> Result<u64, JsError> {
+    Ok(app_client()
+        .query(|app: InnerApp| Ok(app.bitcoin.config.capacity_limit))
+        .await?)
+}
+
+#[wasm_bindgen(js_name = depositsEnabled)]
+pub async fn deposits_enabled() -> Result<bool, JsError> {
+    Ok(app_client()
+        .query(|app: InnerApp| Ok(!app.bitcoin.checkpoints.last_completed()?.deposits_enabled))
         .await?)
 }
 

@@ -21,6 +21,8 @@ const TARGET_SPACING: u32 = 10 * 60;
 const TARGET_TIMESPAN: u32 = RETARGET_INTERVAL * TARGET_SPACING;
 const MAX_TARGET: u32 = 0x1d00ffff;
 
+/// A wrapper around a bitcoin::BlockHeader that implements the core orga
+/// traits, and includes the block's height.
 #[orga(skip(Default))]
 #[derive(Clone, Debug, PartialEq)]
 pub struct WrappedHeader {
@@ -29,10 +31,13 @@ pub struct WrappedHeader {
 }
 
 impl WrappedHeader {
+    /// Create a new WrappedHeader from an Adapter<bitcoin::BlockHeader> and a
+    /// height.
     pub fn new(header: Adapter<BlockHeader>, height: u32) -> Self {
         WrappedHeader { height, header }
     }
 
+    /// Create a new WrappedHeader from a bitcoin::BlockHeader and a height.
     pub fn from_header(header: &BlockHeader, height: u32) -> Self {
         WrappedHeader {
             height,
@@ -40,42 +45,54 @@ impl WrappedHeader {
         }
     }
 
+    /// The timestamp of the block header.
     pub fn time(&self) -> u32 {
         self.header.time
     }
 
+    /// The target - the value the hash must be less than to be valid
+    /// proof-of-work.
     pub fn target(&self) -> Uint256 {
         self.header.target()
     }
 
+    /// The block hash.
     pub fn block_hash(&self) -> BlockHash {
         self.header.block_hash()
     }
 
+    /// The previous block hash.
     pub fn prev_blockhash(&self) -> BlockHash {
         self.header.prev_blockhash
     }
 
+    /// The total estimated number of work (measured in hashes) represented by
+    /// the block header's proof-of-work.
     pub fn work(&self) -> Uint256 {
         self.header.work()
     }
 
+    /// The height of the block header.
     pub fn height(&self) -> u32 {
         self.height
     }
 
+    /// The target, in compact form.
     pub fn bits(&self) -> u32 {
         self.header.bits
     }
 
+    /// Converts a compact target to a Uint256.
     pub fn u256_from_compact(compact: u32) -> Uint256 {
         BlockHeader::u256_from_compact_target(compact)
     }
 
+    /// Converts a Uint256 to a compact target.
     pub fn compact_target_from_u256(target: &Uint256) -> u32 {
         BlockHeader::compact_target_from_u256(target)
     }
 
+    /// Converts a u32 to a Uint256.
     fn u32_to_u256(value: u32) -> Uint256 {
         let bytes = value.to_be_bytes();
         let mut buffer = [0u8; 32];
@@ -84,11 +101,15 @@ impl WrappedHeader {
         Uint256::from_be_bytes(buffer)
     }
 
+    /// Validates the proof-of-work of the block header, returning an error if
+    /// the proof-of-work is invalid.
     fn validate_pow(&self, required_target: &Uint256) -> Result<BlockHash> {
         Ok(self.header.validate_pow(required_target)?)
     }
 }
 
+/// A list of WrappedHeaders.
+// TODO: remove this in favor of e.g. `LengthVec<u8, WrappedHeader>`
 #[derive(Debug)]
 pub struct HeaderList(Vec<WrappedHeader>);
 
@@ -141,6 +162,8 @@ impl FromIterator<WrappedHeader> for HeaderList {
 
 impl Terminated for HeaderList {}
 
+/// A `WrappedHeader`, along with a total estimated amount of work (measured in
+/// hashes) done in the header and previous headers.
 #[orga(skip(Default))]
 #[derive(Clone, Debug)]
 pub struct WorkHeader {
@@ -149,6 +172,7 @@ pub struct WorkHeader {
 }
 
 impl WorkHeader {
+    /// Create a new `WorkHeader`` from a `WrappedHeader` and a `Uint256`.
     pub fn new(header: WrappedHeader, chain_work: Uint256) -> WorkHeader {
         WorkHeader {
             header,
@@ -156,40 +180,67 @@ impl WorkHeader {
         }
     }
 
+    /// The timestamp of the block header.
     pub fn time(&self) -> u32 {
         self.header.time()
     }
 
+    /// The target - the value the hash must be less than to be valid
+    /// proof-of-work.
     pub fn block_hash(&self) -> BlockHash {
         self.header.block_hash()
     }
 
+    /// The estimated amount of work (measured in hashes) done in the header,
+    /// not including work done in any previous headers.
     pub fn work(&self) -> Uint256 {
         self.header.work()
     }
 
+    /// The height of the block header.
     pub fn height(&self) -> u32 {
         self.header.height()
     }
 
+    /// The Merkle root of the block header.
     pub fn merkle_root(&self) -> TxMerkleNode {
         self.header.header.merkle_root
     }
 }
 
+/// Configuration parameters for Bitcoin header processing.
 // TODO: implement trait that returns constants for bitcoin::Network variants
 #[orga(skip(Default))]
 #[derive(Clone, Debug)]
 pub struct Config {
+    /// The maximum number of headers that can be stored in the header queue
+    /// before pruning.
     pub max_length: u64,
+    /// The maximum amount of time (in seconds) that can pass between the
+    /// timestamp of the last header in the header queue and the timestamp of
+    /// the next header to be added.
     pub max_time_increase: u32,
+    /// The height of the trusted header.
     pub trusted_height: u32,
+    /// The interval (in blocks) at which the difficulty target is adjusted.
     pub retarget_interval: u32,
+    /// The target time interval (in seconds) between blocks.
     pub target_spacing: u32,
+    /// The target amount of time (in seconds) that should pass between the
+    /// timestamps of the first and last header in a retargeting period. This
+    /// should be equivalent to `retarget_interval * target_spacing`.
+    // TODO: derive from `retarget_interval` and `target_spacing`
     pub target_timespan: u32,
+    /// The maximum target value.
     pub max_target: u32,
+    /// Whether or not the header queue should retarget difficulty.
     pub retargeting: bool,
+    /// Whether or not the header queue should drop back down to the minimum
+    /// difficulty after a certain amount of time has passed (used in Bitcoin
+    /// testnet).
     pub min_difficulty_blocks: bool,
+    /// The trusted header (the header which populates the queue when it is
+    /// newly created), as encoded bytes.
     pub encoded_trusted_header: LengthVec<u8, u8>,
 }
 
@@ -203,12 +254,6 @@ impl Default for Config {
         }
     }
 }
-
-// impl Describe for Config {
-//     fn describe() -> orga::describe::Descriptor {
-//         orga::describe::Builder::new::<()>().build()
-//     }
-// }
 
 impl Config {
     pub fn mainnet() -> Self {
@@ -278,6 +323,17 @@ impl Config {
     }
 }
 
+/// A queue of Bitcoin block headers, along with the total estimated amount of
+/// work (measured in hashes) done in the headers included in the queue.
+///
+/// The header queue is used to validate headers as they are received from the
+/// Bitcoin network, ensuring each header is associated with a valid
+/// proof-of-work and that the chain of headers is valid.
+///
+/// The queue is able to reorg if a new chain of headers is received that
+/// contains more work than the current chain, however it can not process reorgs
+/// that are deeper than the length of the queue (the length will be at the
+/// configured pruning level based on the `max_length` config parameter).
 #[orga(skip(Default), version = 1)]
 pub struct HeaderQueue {
     pub(crate) deque: Deque<WorkHeader>,
@@ -309,47 +365,21 @@ impl Default for HeaderQueue {
     }
 }
 
-// impl State for HeaderQueue {
-//     fn attach(&mut self, store: Store) -> OrgaResult<()> {
-//         self.deque.attach(store.sub(&[0]))?;
-//         self.current_work.attach(store.sub(&[1]))?;
-
-//         let height = self
-//             .height()
-//             .map_err(|err| orga::Error::App(err.to_string()))?;
-
-//         if height == 0 {
-//             let decoded_adapter: Adapter<BlockHeader> =
-//                 Decode::decode(self.config.encoded_trusted_header.as_slice())?;
-//             let wrapped_header = WrappedHeader::new(decoded_adapter, self.config.trusted_height);
-//             let work_header = WorkHeader::new(wrapped_header.clone(), wrapped_header.work());
-//             self.current_work = Adapter::new(work_header.work());
-//             self.deque.push_front(work_header.into())?;
-//         }
-
-//         Ok(())
-//     }
-
-//     #[inline]
-//     fn flush<W: std::io::Write>(self, out: &mut W) -> OrgaResult<()> {
-//         self.deque.flush(out)?;
-//         self.current_work.flush(out)?;
-
-//         Ok(())
-//     }
-
-//     fn load(store: Store, bytes: &mut &[u8]) -> OrgaResult<Self> {
-//         let mut loader = ::orga::state::Loader::new(store, bytes, 0);
-//         Ok(Self {
-//             deque: loader.load_child()?,
-//             current_work: loader.load_child()?,
-//             config: Config::testnet(),
-//         })
-//     }
-// }
-
 #[orga]
 impl HeaderQueue {
+    /// Verify and add a list of headers to the header queue.
+    ///
+    /// The headers must be consecutive and must bring the chain to a final
+    /// state that has more work than the current chain.
+    ///
+    /// If the headers are valid, they will be added to the header queue. If the
+    /// headers start from a height lower than the current height, the header
+    /// queue will be reorged to the new chain.
+    ///
+    /// If the headers are invalid (e.g. by not including a valid proof-of-work,
+    /// using a difficulty other than what was expected, using invalid
+    /// timestamps, etc.), an error will be returned and the header queue will
+    /// not be modified.
     #[call]
     pub fn add(&mut self, headers: HeaderList) -> Result<()> {
         super::exempt_from_fee()?;
@@ -366,6 +396,19 @@ impl HeaderQueue {
             .map_err(|err| OrgaError::App(err.to_string()).into())
     }
 
+    /// Verify and add an iterator of headers to the header queue.
+    ///
+    /// The headers must be consecutive and must bring the chain to a final
+    /// state that has more work than the current chain.
+    ///
+    /// If the headers are valid, they will be added to the header queue. If the
+    /// headers start from a height lower than the current height, the header
+    /// queue will be reorged to the new chain.
+    ///
+    /// If the headers are invalid (e.g. by not including a valid proof-of-work,
+    /// using a difficulty other than what was expected, using invalid
+    /// timestamps, etc.), an error will be returned and the header queue will
+    /// not be modified.
     pub fn add_into_iter<T>(&mut self, headers: T) -> Result<()>
     where
         T: IntoIterator<Item = WrappedHeader>,
@@ -391,13 +434,13 @@ impl HeaderQueue {
         }
 
         let added_work = self.verify_and_add_headers(&headers)?;
-
         if added_work <= removed_work {
             return Err(Error::Header(
                 "New best chain must include more work than old best chain.".into(),
             ));
         }
 
+        // Prune the header queue if it has grown too large.
         while self.len() > self.config.max_length {
             let header = match self.deque.pop_front()? {
                 Some(inner) => inner,
@@ -413,6 +456,8 @@ impl HeaderQueue {
         Ok(())
     }
 
+    /// Verify and add a list of headers to the header queue, returning the
+    /// amount of additional estimated work added to the header queue.
     fn verify_and_add_headers(&mut self, headers: &[WrappedHeader]) -> Result<Uint256> {
         let first_height = headers
             .first()
@@ -461,6 +506,8 @@ impl HeaderQueue {
         Ok(work)
     }
 
+    /// Calculate the expected next target based on the passed header and the
+    /// previous header.
     fn get_next_target(
         &self,
         header: &WrappedHeader,
@@ -498,6 +545,8 @@ impl HeaderQueue {
         Ok(WrappedHeader::u256_from_compact(current_header.bits()))
     }
 
+    /// Calculate the expected next target based on the passed header and the
+    /// height of the previous retargeting header.
     fn calculate_next_target(
         &self,
         header: &WrappedHeader,
@@ -544,6 +593,8 @@ impl HeaderQueue {
         }
     }
 
+    /// Remove headers from the header queue until the height of the last header
+    /// in the queue is equal to the passed height.
     fn pop_back_to(&mut self, height: u32) -> Result<Uint256> {
         let mut work = Uint256::default();
 
@@ -559,6 +610,7 @@ impl HeaderQueue {
         Ok(work)
     }
 
+    /// Validate the timestamp of the passed header.
     fn validate_time(&self, current_header: &WrappedHeader) -> Result<()> {
         let mut prev_stamps: Vec<u32> = Vec::with_capacity(11);
 
@@ -585,6 +637,8 @@ impl HeaderQueue {
             return Err(Error::Header("Header contains an invalid timestamp".into()));
         }
 
+        // TODO: compare timestamps with max_time_increase over the current
+        // clock time (not the previous header's time)
         // if max(current_header.time(), previous_header.time())
         //     - min(current_header.time(), previous_header.time())
         //     > self.config.max_time_increase
@@ -597,6 +651,7 @@ impl HeaderQueue {
         Ok(())
     }
 
+    /// The height of the last header in the header queue.
     #[query]
     pub fn height(&self) -> Result<u32> {
         match self.deque.back()? {
@@ -605,6 +660,7 @@ impl HeaderQueue {
         }
     }
 
+    /// The hash of the last header in the header queue.
     #[query]
     pub fn hash(&self) -> Result<Vec<u8>> {
         match self.deque.back()? {
@@ -613,16 +669,28 @@ impl HeaderQueue {
         }
     }
 
+    /// The number of headers in the header queue.
     // TODO: remove this attribute, not sure why clippy is complaining when is_empty is defined
     #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> u64 {
         self.deque.len()
     }
 
+    /// Whether or not the header queue is empty.
+    ///
+    /// This will always return `false`, as the header queue is initialized with
+    /// a trusted header.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
+    /// Get a header from the header queue by its height.
+    ///
+    /// If the header queue does not contain a header at the passed height,
+    /// `None` will be returned.
+    ///
+    /// If the passed height is less than the initial height of the header queue,
+    /// an error will be returned.
     #[query]
     pub fn get_by_height(&self, height: u32) -> Result<Option<WorkHeader>> {
         let initial_height = match self.deque.front()? {
@@ -631,6 +699,8 @@ impl HeaderQueue {
         };
 
         if height < initial_height {
+            // TODO: error message is wrong
+            // TODO: shouldn't this just return None?
             return Err(Error::Header(
                 "Passed index is greater than initial height. Referenced header does not exist on the Header Queue".into(),
             ));
@@ -642,11 +712,14 @@ impl HeaderQueue {
         }
     }
 
+    /// The height of the configured trusted header.
     #[query]
     pub fn trusted_height(&self) -> u32 {
         self.config.trusted_height
     }
 
+    /// Clears the header queue and configures it with the passed config,
+    /// adding the trusted header to the queue.
     pub fn configure(&mut self, config: Config) -> OrgaResult<()> {
         if !self.deque.is_empty() {
             while !self.deque.is_empty() {
@@ -669,7 +742,9 @@ impl HeaderQueue {
         Ok(())
     }
 
+    /// The network the header queue is configured for.
     pub fn network(&self) -> bitcoin::Network {
+        // TODO: should be dynamic, from config
         super::NETWORK
     }
 }

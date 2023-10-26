@@ -72,6 +72,8 @@ pub struct InnerConfig {
     pub home: Option<String>,
     #[clap(long, global = true)]
     pub node: Option<String>,
+    #[clap(long, global = true)]
+    pub btc_relayer: Vec<String>,
 
     #[clap(global = true)]
     pub tendermint_flags: Vec<String>,
@@ -195,7 +197,12 @@ impl FromArgMatches for Config {
         }
 
         if let Some(genesis) = self.args.genesis.as_ref() {
-            let genesis: serde_json::Value = genesis.parse().unwrap();
+            let genesis_bytes = if genesis.contains('\n') {
+                genesis.clone()
+            } else {
+                std::fs::read_to_string(genesis)?
+            };
+            let genesis: serde_json::Value = genesis_bytes.parse().unwrap();
             let gensis_cid = genesis["chain_id"].as_str().unwrap();
 
             if let Some(cid) = self.args.chain_id.as_ref() {
