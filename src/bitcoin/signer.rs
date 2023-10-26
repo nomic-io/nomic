@@ -23,23 +23,26 @@ use std::time::SystemTime;
 
 lazy_static! {
     static ref SIG_COUNTER: IntCounter =
-        register_int_counter!("sigs", "Number of signatures submitted").unwrap();
-    static ref SIG_BATCH_COUNTER: IntCounter =
-        register_int_counter!("sig_batches", "Number of batches of signatures submitted").unwrap();
+        register_int_counter!("nomic_signer_sigs", "Number of signatures submitted").unwrap();
+    static ref SIG_BATCH_COUNTER: IntCounter = register_int_counter!(
+        "nomic_signer_sig_batches",
+        "Number of batches of signatures submitted"
+    )
+    .unwrap();
     static ref CHECKPOINT_INDEX_GAUGE: IntGauge =
-        register_int_gauge!("checkpoint_index", "Current checkpoint index").unwrap();
+        register_int_gauge!("nomic_signer_checkpoint_index", "Current checkpoint index").unwrap();
     static ref WITHDRAWAL_RATE_GAUGE: Gauge = register_gauge!(
-        "withdrawal_rate",
+        "nomic_signer_withdrawal_rate",
         "Rate of withdrawals from the reserve for the last 24 hours"
     )
     .unwrap();
     static ref SIGSET_CHANGE_RATE_GAUGE: Gauge = register_gauge!(
-        "sigset_change_rate",
+        "nomic_signer_sigset_change_rate",
         "Rate of changes to the signatory set for the last 24 hours"
     )
     .unwrap();
     static ref ERROR_COUNTER: IntCounter = register_int_counter!(
-        "errors",
+        "nomic_signer_errors",
         "Number of errors encountered. Note that these may be harmless, check logs for more info."
     )
     .unwrap();
