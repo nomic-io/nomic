@@ -23,23 +23,31 @@ use std::time::SystemTime;
 
 lazy_static! {
     static ref SIG_COUNTER: IntCounter =
-        register_int_counter!("sigs", "Number of signatures submitted").unwrap();
-    static ref SIG_BATCH_COUNTER: IntCounter =
-        register_int_counter!("sig_batches", "Number of batches of signatures submitted").unwrap();
+        register_int_counter!("nomic_signer_sigs", "Number of signatures submitted").unwrap();
+    static ref SIG_BATCH_COUNTER: IntCounter = register_int_counter!(
+        "nomic_signer_sig_batches",
+        "Number of batches of signatures submitted"
+    )
+    .unwrap();
     static ref CHECKPOINT_INDEX_GAUGE: IntGauge =
-        register_int_gauge!("checkpoint_index", "Current checkpoint index").unwrap();
+        register_int_gauge!("nomic_signer_checkpoint_index", "Current checkpoint index").unwrap();
+    static ref CHECKPOINT_TIMESTAMP_GAUGE: IntGauge = register_int_gauge!(
+        "nomic_signer_checkpoint_timestamp",
+        "The creation time of the newest checkpoint"
+    )
+    .unwrap();
     static ref WITHDRAWAL_RATE_GAUGE: Gauge = register_gauge!(
-        "withdrawal_rate",
+        "nomic_signer_withdrawal_rate",
         "Rate of withdrawals from the reserve for the last 24 hours"
     )
     .unwrap();
     static ref SIGSET_CHANGE_RATE_GAUGE: Gauge = register_gauge!(
-        "sigset_change_rate",
+        "nomic_signer_sigset_change_rate",
         "Rate of changes to the signatory set for the last 24 hours"
     )
     .unwrap();
     static ref ERROR_COUNTER: IntCounter = register_int_counter!(
-        "errors",
+        "nomic_signer_errors",
         "Number of errors encountered. Note that these may be harmless, check logs for more info."
     )
     .unwrap();
@@ -223,7 +231,6 @@ where
 
             if signed {
                 index += 1;
-                CHECKPOINT_INDEX_GAUGE.set(index as i64);
             } else {
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             }
@@ -284,10 +291,16 @@ where
     async fn try_sign(&mut self, xpub: &ExtendedPubKey, index: u32) -> Result<bool> {
         let secp = Secp256k1::signing_only();
 
-        let status = self
+        let (status, timestamp) = self
             .client()
-            .query(|app| Ok(app.bitcoin.checkpoints.get(index)?.status))
+            .query(|app| {
+                let cp = app.bitcoin.checkpoints.get(index)?;
+                Ok((cp.status, cp.create_time()))
+            })
             .await?;
+
+        CHECKPOINT_INDEX_GAUGE.set(index as i64);
+        CHECKPOINT_TIMESTAMP_GAUGE.set(timestamp as i64);
 
         if matches!(status, CheckpointStatus::Building) {
             return Ok(false);
