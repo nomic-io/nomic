@@ -289,6 +289,7 @@ async fn bitcoin_test() {
                 let wallet = DerivedKey::from_secret_key(privkey);
                 app_client().with_wallet(wallet)
             },
+            None,
         )
         .start();
 
@@ -719,6 +720,7 @@ async fn signing_completed_checkpoint_test() {
                 let wallet = DerivedKey::from_secret_key(privkey);
                 app_client().with_wallet(wallet)
             },
+            None,
         )
         .start();
 
@@ -744,6 +746,7 @@ async fn signing_completed_checkpoint_test() {
                 let wallet = DerivedKey::from_secret_key(privkey);
                 app_client().with_wallet(wallet)
             },
+            None,
         )
         .start()
     };
