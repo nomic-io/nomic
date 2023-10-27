@@ -69,7 +69,7 @@ const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhq
 const IBC_FEE_USATS: u64 = 1_000_000;
 const DECLARE_FEE_USATS: u64 = 100_000_000;
 
-#[orga(version = 3)]
+#[orga(version = 4)]
 pub struct InnerApp {
     #[call]
     pub accounts: Accounts<Nom>,
@@ -100,13 +100,13 @@ pub struct InnerApp {
     pub incentives: Incentives,
 
     #[cfg(feature = "testnet")]
-    #[orga(version(V3))]
+    #[orga(version(V3, V4))]
     pub cosmos: Cosmos,
 }
 
 #[orga]
 impl InnerApp {
-    pub const CONSENSUS_VERSION: u8 = 9;
+    pub const CONSENSUS_VERSION: u8 = 10;
 
     #[cfg(feature = "full")]
     fn configure_faucets(&mut self) -> Result<()> {
