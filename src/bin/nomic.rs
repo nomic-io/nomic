@@ -104,13 +104,25 @@ impl Command {
         let rt = tokio::runtime::Runtime::new().unwrap();
 
         if let Start(_cmd) = self {
-            // return Ok(cmd.run()?);
-        } else if let Some(legacy_bin) = legacy_bin(config)? {
-            let mut legacy_cmd = std::process::Command::new(legacy_bin);
-            legacy_cmd.args(std::env::args().skip(1));
-            log::debug!("Running legacy binary... ({:#?})", legacy_cmd);
-            legacy_cmd.spawn()?.wait()?;
-            return Ok(());
+            log::info!("nomic v{}", env!("CARGO_PKG_VERSION"));
+
+            if let Some(network) = config.network() {
+                log::info!("Configured for network {:?}", network);
+            }
+        } else {
+            log::debug!("nomic v{}", env!("CARGO_PKG_VERSION"));
+
+            if let Some(network) = config.network() {
+                log::debug!("Configured for network {:?}", network);
+            }
+
+            if let Some(legacy_bin) = legacy_bin(config)? {
+                let mut legacy_cmd = std::process::Command::new(legacy_bin);
+                legacy_cmd.args(std::env::args().skip(1));
+                log::debug!("Running legacy binary... ({:#?})", legacy_cmd);
+                legacy_cmd.spawn()?.wait()?;
+                return Ok(());
+            }
         }
 
         rt.block_on(async move {
@@ -1866,8 +1878,6 @@ pub fn main() {
     .filter_level(log::LevelFilter::Info)
     .parse_env("NOMIC_LOG")
     .init();
-
-    log::debug!("nomic v{}", env!("CARGO_PKG_VERSION"));
 
     let backtrace_enabled = std::env::var("RUST_BACKTRACE").is_ok();
 
