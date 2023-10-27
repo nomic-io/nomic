@@ -48,6 +48,7 @@ impl MigrateFrom<InnerAppV2> for InnerAppV3 {
 }
 
 impl MigrateFrom<InnerAppV3> for InnerAppV4 {
+    #[allow(unused_mut)]
     fn migrate_from(mut other: InnerAppV3) -> Result<Self> {
         #[cfg(feature = "testnet")]
         {
