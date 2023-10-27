@@ -32,7 +32,12 @@ where
 }
 
 const HEADER_BATCH_SIZE: usize = 250;
+
+// TODO: get dynamically from sigset
+#[cfg(feature = "testnet")]
 const THRESHOLD: (u64, u64) = (9, 10);
+#[cfg(not(feature = "testnet"))]
+const THRESHOLD: (u64, u64) = (2, 3);
 
 #[derive(Serialize, Deserialize)]
 pub struct DepositsQuery {
