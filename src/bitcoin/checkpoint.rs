@@ -31,6 +31,7 @@ use orga::{
     Error as OrgaError, Result as OrgaResult,
 };
 
+use super::SIGSET_THRESHOLD;
 use orga::{describe::Describe, store::Store};
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
@@ -966,10 +967,7 @@ impl Config {
             target_checkpoint_inclusion: 2,
             min_fee_rate: 2, // relay threshold is 1 sat/vbyte
             max_fee_rate: 200,
-            #[cfg(feature = "testnet")]
-            sigset_threshold: (9, 10),
-            #[cfg(not(feature = "testnet"))]
-            sigset_threshold: (2, 3),
+            sigset_threshold: SIGSET_THRESHOLD,
             emergency_disbursal_min_tx_amt: 1000,
             #[cfg(feature = "testnet")]
             emergency_disbursal_lock_time_interval: 60 * 60 * 24 * 7, // one week
