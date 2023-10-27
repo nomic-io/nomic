@@ -104,7 +104,19 @@ impl Command {
         let rt = tokio::runtime::Runtime::new().unwrap();
 
         if let Start(cmd) = self {
+            log::info!("nomic v{}", env!("CARGO_PKG_VERSION"));
+
+            if let Some(network) = config.network() {
+                log::info!("Configured for network {:?}", network);
+            }
+
             return Ok(cmd.run()?);
+        }
+
+        log::debug!("nomic v{}", env!("CARGO_PKG_VERSION"));
+
+        if let Some(network) = config.network() {
+            log::debug!("Configured for network {:?}", network);
         }
 
         if let Some(legacy_bin) = legacy_bin(config)? {
@@ -1384,8 +1396,6 @@ pub fn main() {
     .filter_level(log::LevelFilter::Info)
     .parse_env("NOMIC_LOG")
     .init();
-
-    log::debug!("nomic v{}", env!("CARGO_PKG_VERSION"));
 
     let backtrace_enabled = std::env::var("RUST_BACKTRACE").is_ok();
 
