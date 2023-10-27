@@ -12,7 +12,7 @@ btc_relayer = [
   "https://relayer.nomic.mappum.io:8443"
 ]
 
-legacy_version = "6.0"
+legacy_version = "6.0.x"
 
 genesis = """
 {
