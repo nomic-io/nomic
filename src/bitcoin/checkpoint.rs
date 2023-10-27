@@ -1888,7 +1888,6 @@ impl CheckpointQueue {
             return Ok(false);
         }
 
-        #[cfg(feature = "testnet")]
         self.prune()?;
 
         if self.index > 0 {
