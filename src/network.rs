@@ -42,6 +42,7 @@ impl FromStr for Network {
     fn from_str(s: &str) -> Result<Self> {
         match s.to_lowercase().as_str() {
             "mainnet" => Ok(Self::Mainnet),
+            "stakenet" => Ok(Self::Mainnet),
             "testnet" => Ok(Self::Testnet),
             "local" => Ok(Self::Local),
             _ => Err(Error::Orga(orga::Error::App(format!(
