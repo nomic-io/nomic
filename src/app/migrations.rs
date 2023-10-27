@@ -55,6 +55,11 @@ impl MigrateFrom<InnerAppV3> for InnerAppV4 {
             other.upgrade.activation_delay_seconds = 60 * 20;
         }
 
+        #[cfg(not(feature = "testnet"))]
+        {
+            other.bitcoin.config.min_confirmations = 5;
+        }
+
         Ok(Self {
             accounts: other.accounts,
             staking: other.staking,
