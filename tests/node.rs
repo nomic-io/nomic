@@ -1,6 +1,8 @@
+use chrono::{TimeZone, Utc};
 use log::info;
-use nomic::utils::{poll_for_blocks, setup_test_app, setup_time_context};
+use nomic::utils::{poll_for_blocks, set_time, setup_test_app};
 use orga::abci::Node;
+use orga::plugins::Time;
 use serial_test::serial;
 use std::sync::Once;
 use std::time::Duration;
@@ -14,7 +16,9 @@ static INIT: Once = Once::new();
 async fn node_shutdown() {
     INIT.call_once(|| {
         pretty_env_logger::init();
-        setup_time_context();
+        let genesis_time = Utc.with_ymd_and_hms(2022, 10, 5, 0, 0, 0).unwrap();
+        let time = Time::from_seconds(genesis_time.timestamp());
+        set_time(time);
     });
 
     for _ in 0..5 {
