@@ -2223,6 +2223,7 @@ impl CheckpointQueue {
         while !disbursal_batch.is_empty() {
             disbursal_batch.pop_back()?;
         }
+        disbursal_batch.signed_txs = 0;
 
         let mut intermediate_batch = checkpoint
             .batches
@@ -2231,6 +2232,7 @@ impl CheckpointQueue {
         while !intermediate_batch.is_empty() {
             intermediate_batch.pop_back()?;
         }
+        intermediate_batch.signed_txs = 0;
 
         let mut checkpoint_batch = checkpoint
             .batches
