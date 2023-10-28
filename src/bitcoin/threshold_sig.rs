@@ -91,10 +91,8 @@ impl Pubkey {
 }
 
 impl MigrateFrom<PubkeyV0> for PubkeyV1 {
-    fn migrate_from(value: PubkeyV0) -> Result<Self> {
-        let mut bytes = [0; PUBLIC_KEY_SIZE];
-        bytes[1..].copy_from_slice(value.bytes.as_slice());
-        Ok(PubkeyV1 { bytes })
+    fn migrate_from(_value: PubkeyV0) -> Result<Self> {
+        unreachable!()
     }
 }
 
