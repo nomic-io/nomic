@@ -452,10 +452,10 @@ mod abci {
     impl BeginBlock for InnerApp {
         fn begin_block(&mut self, ctx: &BeginBlockCtx) -> Result<()> {
             let now = ctx.header.time.as_ref().unwrap().seconds;
-            self.upgrade.step(
-                &vec![Self::CONSENSUS_VERSION].try_into().unwrap(),
-                in_upgrade_window(now),
-            )?;
+            // self.upgrade.step(
+            //     &vec![Self::CONSENSUS_VERSION].try_into().unwrap(),
+            //     in_upgrade_window(now),
+            // )?;
             self.staking.begin_block(ctx)?;
 
             #[cfg(feature = "testnet")]
