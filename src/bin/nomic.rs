@@ -333,7 +333,7 @@ impl StartCmd {
                 false,
                 #[cfg(not(feature = "testnet"))]
                 true,
-                true,
+                false,
             );
         }
         if cmd.skip_init_chain {
