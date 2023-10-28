@@ -78,6 +78,7 @@ impl MigrateFrom<InnerAppV4> for InnerAppV5 {
         #[cfg(feature = "testnet")]
         {
             other.bitcoin.checkpoints.rewind(11445)?;
+            other.staking.repair()?;
         }
 
         Ok(Self {
