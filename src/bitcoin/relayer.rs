@@ -949,6 +949,7 @@ pub struct RawSignatorySet {
     pub miner_fee_rate: f64,
     #[serde(rename = "depositsEnabled")]
     pub deposits_enabled: bool,
+    pub threshold: (u64, u64),
 }
 
 impl RawSignatorySet {
@@ -969,6 +970,11 @@ impl RawSignatorySet {
             bridge_fee_rate,
             miner_fee_rate,
             deposits_enabled,
+            // TODO: get threshold from checkpoint once it is stored in state
+            #[cfg(feature = "testnet")]
+            threshold: (9, 10),
+            #[cfg(not(feature = "testnet"))]
+            threshold: (2, 3),
         }
     }
 }
