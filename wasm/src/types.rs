@@ -9,6 +9,12 @@ pub struct DepositAddress {
 }
 
 #[wasm_bindgen(getter_with_clone)]
+pub struct FeeInfo {
+    pub minerFeeRate: u64,
+    pub bridgeFeeRate: f32,
+}
+
+#[wasm_bindgen(getter_with_clone)]
 pub struct ValidatorQueryInfo {
     pub jailed: bool,
     pub address: String,
