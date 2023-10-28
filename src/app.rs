@@ -1017,7 +1017,7 @@ impl Dest {
 
 use orga::ibc::{IbcMessage, PortChannel, RawIbcTx};
 
-#[derive(Clone, Debug, Encode, Decode, Serialize)]
+#[derive(Clone, Debug, Encode, Decode, Serialize, State)]
 pub struct IbcDest {
     pub source_port: LengthVec<u8, u8>,
     pub source_channel: LengthVec<u8, u8>,
@@ -1027,6 +1027,20 @@ pub struct IbcDest {
     pub sender: EdAdapter<IbcSigner>,
     pub timeout_timestamp: u64,
     pub memo: LengthVec<u8, u8>,
+}
+
+impl Migrate for IbcDest {
+    fn migrate(_src: Store, _dest: Store, bytes: &mut &[u8]) -> Result<Self> {
+        // TODO: substoring
+        Ok(Self {
+            source_port: LengthVec::migrate(Default::default(), Default::default(), bytes)?,
+            source_channel: LengthVec::migrate(Default::default(), Default::default(), bytes)?,
+            receiver: EdAdapter::load(Default::default(), bytes)?,
+            sender: EdAdapter::load(Default::default(), bytes)?,
+            timeout_timestamp: u64::migrate(Default::default(), Default::default(), bytes)?,
+            memo: LengthVec::migrate(Default::default(), Default::default(), bytes)?,
+        })
+    }
 }
 
 impl IbcDest {
@@ -1155,8 +1169,19 @@ impl Query for Dest {
 }
 
 impl Migrate for Dest {
-    fn migrate(src: Store, _dest: Store, bytes: &mut &[u8]) -> Result<Self> {
-        Self::load(src, bytes)
+    fn migrate(src: Store, dest: Store, mut bytes: &mut &[u8]) -> Result<Self> {
+        let variant = u8::decode(&mut bytes)?;
+        match variant {
+            0 => {
+                let addr = Address::migrate(src, dest, bytes)?;
+                Ok(Dest::Address(addr))
+            }
+            1 => {
+                let ibc_dest = IbcDest::migrate(src, dest, bytes)?;
+                Ok(Dest::Ibc(ibc_dest))
+            }
+            _ => Err(Error::App("Invalid version".into())),
+        }
     }
 }
 
