@@ -78,37 +78,6 @@ impl MigrateFrom<InnerAppV4> for InnerAppV5 {
         #[cfg(feature = "testnet")]
         {
             other.bitcoin.checkpoints.rewind(11445)?;
-            assert_eq!(
-                other
-                    .bitcoin
-                    .checkpoints
-                    .building()?
-                    .batches
-                    .get(BatchType::Checkpoint as u64)?
-                    .unwrap()
-                    .front()?
-                    .unwrap()
-                    .input
-                    .front()?
-                    .unwrap()
-                    .script_pubkey
-                    .clone()
-                    .into_inner(),
-                other
-                    .bitcoin
-                    .checkpoints
-                    .get(other.bitcoin.checkpoints.index - 1)?
-                    .batches
-                    .get(BatchType::Checkpoint as u64)?
-                    .unwrap()
-                    .front()?
-                    .unwrap()
-                    .output
-                    .front()?
-                    .unwrap()
-                    .script_pubkey
-                    .clone()
-            );
         }
 
         Ok(Self {

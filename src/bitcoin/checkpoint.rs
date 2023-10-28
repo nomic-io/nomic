@@ -2262,6 +2262,32 @@ impl CheckpointQueue {
         checkpoint.status = CheckpointStatus::Building;
         self.queue.push_back(checkpoint)?;
 
+        assert_eq!(
+            self.building()?
+                .batches
+                .get(BatchType::Checkpoint as u64)?
+                .unwrap()
+                .front()?
+                .unwrap()
+                .input
+                .front()?
+                .unwrap()
+                .script_pubkey
+                .clone()
+                .into_inner(),
+            self.get(self.index - 1)?
+                .batches
+                .get(BatchType::Checkpoint as u64)?
+                .unwrap()
+                .front()?
+                .unwrap()
+                .output
+                .front()?
+                .unwrap()
+                .script_pubkey
+                .clone()
+        );
+
         Ok(())
     }
 }
