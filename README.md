@@ -1,14 +1,18 @@
 <h1 align="center">
-<img src="./logo.svg" width="40%">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./nomic-logo-100.png">
+  <source media="(prefers-color-scheme: light)" srcset="./nomic-logo-100.png">
+  <img alt="Nomic" src="./nomic-logo-100.png">
+</picture>
 </h1>
 
-Nomic Bitcoin Bridge
+Nomic is a blockchain which offers a decentralized, non-custodial Bitcoin bridge. Built on Turbofish’s [Orga](https://github.com/turbofish-org/orga), a custom high-performance blockchain application framework, Nomic uses [IBC](https://www.ibcprotocol.dev/) to securely and efficiently bridge your BTC to [Cosmos](https://cosmos.network/) for use on any IBC-enabled chain.
 
-## Testnet Interchain Upgrade
+## nBTC Interchain Upgrade
 
-This testnet version is the release candidate for the upcoming Stakenet upgrade.
+This upgrade marks the completion of Nomic’s core bridge mechanisms, including its important security features such as the Emergency Disbursal and circuit breakers. It also enables IBC on Nomic, based on Informal System’s [ibc-rs](https://github.com/cosmos/ibc-rs) library, making Nomic one of the first non-Cosmos SDK blockchains to implement IBC in production. You can read more about this upgrade [here](https://blog.nomic.io/nbtc-interchain-upgrade-26fd01fb0929).
 
-## Upgrading existing nodes
+## Upgrading Existing Nodes
 
 If you're upgrading your existing testnet node:
 
@@ -24,9 +28,9 @@ cargo install --locked --path .
 
 3. Restart your node with `nomic start`.
 
-Your node will automatically perform the upgrade on Friday, October 7 at 17:00 UTC.
+Your node will automatically perform the upgrade on Monday, October 30 at 17:00 UTC.
 
-## Node setup guide
+## Node Setup Guide
 
 This guide will walk you through setting up a node for the Nomic testnet.
 
@@ -84,10 +88,7 @@ This will run the Nomic state machine and a Tendermint process. For new nodes th
 First, find your address by running `nomic balance` (for now this must be run on
 the same machine as your active full node).
 
-Ask the Nomic team for some coins in the Discord and include your address.
-
-Once you have received coins, you can declare your node as a validator and
-delegate to yourself with:
+You can declare your node as a validator and delegate to yourself with:
 
 ```
 nomic declare \
@@ -102,6 +103,8 @@ nomic declare \
   <identity> \
   <details>
 ```
+
+If you do not have NOM, you can deposit BTC and set `amount` to 0 for 100 SATS.
 
 **IMPORTANT NOTE:** Carefully double-check all the fields since you will not be
 able to modify the `commission_max` or `commission_max_change` after declaring. If you make a mistake, you will have to
@@ -194,5 +197,4 @@ The relayer will also create a server which listens on port 8999 for clients to 
 
 ---
 
-Thanks for participating in the Nomic Testnet! We'll be updating the network
-often so stay tuned in [Discord](https://discord.gg/jH7U2NRJKn) for updates.
+Copyright © 2023 Nomic DAO Foundation.
