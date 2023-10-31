@@ -28,9 +28,28 @@ use super::threshold_sig::VersionedPubkey;
 use super::ConsensusKey;
 use super::Xpub;
 
+/// The maximum age of a signatory set which can still be deposited into, in
+/// seconds.
+///
+/// Deposits which pay to this signatory set which are relayed after this
+/// interval will be ignored.
 pub const MAX_DEPOSIT_AGE: u64 = 60 * 60 * 24 * 5;
+/// The maximum number of signatories in a signatory set.
+///
+/// Signatory sets will be constructed by iterating over the validator set in
+/// descending order of voting power, skipping any validators which have not
+/// submitted a signatory xpub.
+///
+/// This constant should be chosen to balance the tradeoff between the
+/// decentralization of the signatory set and the size of the resulting script
+/// (affecting fees).
+///
+/// It is expected that future versions of this protocol will use aggregated
+/// signatures, allowing for more signatories to be included without making an
+/// impact on script size and fees.
 pub const MAX_SIGNATORIES: u64 = 20;
 
+/// A signatory in a signatory set, consisting of a public key and voting power.
 #[orga]
 #[derive(Clone, Debug, PartialOrd, PartialEq, Eq, Ord)]
 pub struct Signatory {
@@ -38,6 +57,8 @@ pub struct Signatory {
     pub pubkey: VersionedPubkey,
 }
 
+/// Deterministically derive the public key for a signatory in a signatory set,
+/// based on the current signatory set index.
 pub fn derive_pubkey<T>(secp: &Secp256k1<T>, xpub: Xpub, sigset_index: u32) -> Result<PublicKey>
 where
     T: SecpContext + Verification,
@@ -52,17 +73,40 @@ where
         .public_key)
 }
 
+/// A signatory set is a set of signers who secure a UTXO in the network
+/// reserve.
+///
+/// Bitcoin scripts can be generated from a signatory set, which can be used to
+/// create a UTXO which can be only spent by a threshold of the signatories,
+/// based on voting power.
 #[orga]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SignatorySet {
+    /// The time at which this signatory set was created, in seconds.
+    ///
+    /// This is used to enforce that deposits can not be relayed against old
+    /// signatory sets (see [`MAX_DEPOSIT_AGE`]).
     pub create_time: u64,
+
+    /// The total voting power of the validators participating in this set. If a
+    /// validator has not submitted their signatory xpub, they will not be
+    /// included.
     pub present_vp: u64,
+
+    /// The total voting power of the validator set at the time this signatory
+    /// set was created. This is used to ensure a sufficient quorum of
+    /// validators have submitted a signatory xpub.
     pub possible_vp: u64,
+
+    /// The index of this signatory set.
     pub index: u32,
+
+    /// The signatories in this set, sorted by voting power.
     pub signatories: Vec<Signatory>,
 }
 
 impl SignatorySet {
+    /// Creates a signatory set based on the current validator set.
     #[cfg(feature = "full")]
     pub fn from_validator_ctx(index: u32, sig_keys: &Map<ConsensusKey, Xpub>) -> Result<Self> {
         let time: &mut Time = Context::resolve()
@@ -115,12 +159,16 @@ impl SignatorySet {
         Ok(sigset)
     }
 
+    /// Inserts a signatory into the set. This may cause the signatory set to be
+    /// unsorted.
     #[cfg(feature = "full")]
     fn insert(&mut self, signatory: Signatory) {
         self.present_vp += signatory.voting_power;
         self.signatories.push(signatory);
     }
 
+    /// Sorts the signatories in the set by voting power, and truncates the set
+    /// to the maximum number of signatories.
     #[cfg(feature = "full")]
     fn sort_and_truncate(&mut self) {
         self.signatories.sort_by(|a, b| b.cmp(a));
@@ -132,46 +180,80 @@ impl SignatorySet {
         }
     }
 
+    /// The voting power threshold required to spend outputs secured by this
+    /// signatory set.
     pub fn signature_threshold(&self, (numerator, denominator): (u64, u64)) -> u64 {
         ((self.present_vp as u128) * numerator as u128 / denominator as u128) as u64
     }
 
+    /// The quorum threshold required for the signatory set to be valid.
     pub fn quorum_threshold(&self) -> u64 {
         self.possible_vp / 2
     }
 
+    /// The total amount of voting power of validators participating in the set.
+    /// Validators who have not submitted a signatory xpub are not included.
     pub fn present_vp(&self) -> u64 {
         self.present_vp
     }
 
+    /// The total amount of voting power of the validator set at the time this
+    /// signatory set was created. This is used to ensure a sufficient quorum of
+    /// validators have submitted a signatory xpub.
     pub fn possible_vp(&self) -> u64 {
         self.possible_vp
     }
 
+    /// Whether the signatory set has a sufficient quorum of validators who have
+    /// submitted a signatory xpub.
+    ///
+    /// If this returns `false`, this signatory set should not be used to secure
+    /// a UTXO.
     pub fn has_quorum(&self) -> bool {
         self.present_vp >= self.quorum_threshold()
     }
 
+    /// The number of signatories in the set.
     // TODO: remove this attribute, not sure why clippy is complaining when is_empty is defined
     #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         self.signatories.len()
     }
 
+    /// Whether the set is empty.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
+    /// Builds a Bitcoin script which can be used to spend a UTXO secured by
+    /// this signatory set.
+    ///
+    /// This script is essentially a weighted multisig script, where each
+    /// signatory has a weight equal to their voting power. It is specified in
+    /// the input witness when the UTXO is spent. The output contains a hash of
+    /// this script, since it is a pay-to-witness-script-hash (P2WSH) output.
     pub fn redeem_script(&self, dest: &[u8], threshold: (u64, u64)) -> Result<Script> {
+        // We will truncate voting power values to 23 bits, to reduce the amount
+        // of bytes used in the resulting encoded script. In practice, this
+        // should be enough precision for effective voting power threshold
+        // checking. We use 23 bits since Bitcoin script reserves one bit as the
+        // sign bit, making our resulting integer value use 3 bytes. The value
+        // returned here is the number of bits of precision to remove from our
+        // 64-bit voting power values.
         let truncation = self.get_truncation(23);
 
         let mut iter = self.signatories.iter();
 
-        // first signatory
+        // First signatory
         let signatory = iter.next().ok_or_else(|| {
             OrgaError::App("Cannot create redeem script for empty signatory set".to_string())
         })?;
         let truncated_voting_power = signatory.voting_power >> truncation;
+        // Push the pubkey onto the stack, check the signature against it, and
+        // leave the voting power on the stack if the signature was valid,
+        // otherwise leave 0 (this number will be an accumulator of voting power
+        // which had valid signatures, and will be added to as we check the
+        // remaining signatures).
         let script = script! {
             <signatory.pubkey.as_slice()> OP_CHECKSIG
             OP_IF
@@ -182,9 +264,13 @@ impl SignatorySet {
         };
         let mut bytes = script.into_bytes();
 
-        // all other signatories
+        // All other signatories
         for signatory in iter {
             let truncated_voting_power = signatory.voting_power >> truncation;
+            // Swap to move the current voting power accumulator down the stack
+            // (leaving the next signature at the top of the stack), push the
+            // pubkey onto the stack, check the signature against it, and add to
+            // the voting power accumulator if the signature was valid.
             let script = script! {
                 OP_SWAP
                 <signatory.pubkey.as_slice()> OP_CHECKSIG
@@ -195,46 +281,68 @@ impl SignatorySet {
             bytes.extend(&script.into_bytes());
         }
 
-        // > threshold check
+        // Threshold check
         let truncated_threshold = self.signature_threshold(threshold) >> truncation;
+        // Check that accumulator of voting power which had valid signatures
+        // (now a final sum) is greater than the threshold.
         let script = script! {
             <truncated_threshold as i64> OP_GREATERTHAN
         };
         bytes.extend(&script.into_bytes());
 
-        // depositor data commitment
+        // Depositor data commitment
         let data = &dest.encode()?[..];
+        // Add a commitment of arbitrary data so that deposits can be tied to a
+        // specific destination, then remove it from the stack so that the final
+        // value on the stack is the threshold check result.
         let script = script!(<data> OP_DROP);
         bytes.extend(&script.into_bytes());
 
         Ok(bytes.into())
     }
 
+    /// Hashes the weighted multisig redeem script to create a P2WSH output
+    /// script, which is what is used as the script pubkey in deposit outputs
+    /// and reserve outputs.
     pub fn output_script(&self, dest: &[u8], threshold: (u64, u64)) -> Result<Script> {
         Ok(self.redeem_script(dest, threshold)?.to_v0_p2wsh())
     }
 
+    /// Calculates the number of bits of precision to remove from voting power
+    /// values in order to have a maximum of `target_precision` bits of
+    /// precision.
     fn get_truncation(&self, target_precision: u32) -> u32 {
         let vp_bits = u64::BITS - self.present_vp.leading_zeros();
         vp_bits.saturating_sub(target_precision)
     }
 
+    /// The time at which this signatory set was created, in seconds.
     pub fn create_time(&self) -> u64 {
         self.create_time
     }
 
+    /// The time at which this signatory set will expire, in seconds.
     pub fn deposit_timeout(&self) -> u64 {
         self.create_time + MAX_DEPOSIT_AGE
     }
 
+    /// The index of this signatory set.
     pub fn index(&self) -> u32 {
         self.index
     }
 
+    /// An iterator over the signatories in this set.
     pub fn iter(&self) -> impl Iterator<Item = &Signatory> {
         self.signatories.iter()
     }
 
+    /// The estimated size of a witness containing the redeem script and
+    /// signatures for this signatory set, in virtual bytes.
+    ///
+    /// This represents the worst-case, where there is a signature for each
+    /// signatory. In practice, we could trim this down by removing signatures
+    /// for signatories beyond the threshold, but for fee estimation we err on
+    /// the side of paying too much.
     pub fn est_witness_vsize(&self) -> u64 {
         self.signatories.len() as u64 * 79 + 39
     }

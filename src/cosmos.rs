@@ -1,7 +1,7 @@
 use crate::{
     bitcoin::{
         signatory::{derive_pubkey, Signatory, SignatorySet},
-        threshold_sig::Pubkey,
+        threshold_sig::{Pubkey, VersionedPubkey},
         Nbtc, Xpub,
     },
     error::Result,
@@ -68,14 +68,20 @@ impl Cosmos {
 
         for entry in self.chains.iter()? {
             let (client_id, chain) = entry?;
-            let client = ibc
+            let Some(client) = ibc
                 .ctx
                 .clients
-                .get(client_id.clone())?
-                .ok_or_else(|| OrgaError::Ibc("Client not found".to_string()))?;
-            let sigset = if let Some(sigset) = chain.to_sigset(index, &client)? {
-                sigset
-            } else {
+                .get(client_id.clone())? else {
+                    log::debug!("Warning: client not found");
+                    continue;
+                };
+
+            let sigset_res = chain.to_sigset(index, &client);
+            let Ok(Some(sigset)) = sigset_res else {
+                log::debug!(
+                    "Warning: failed to build sigset ({})",
+                    sigset_res.err().map(|e| e.to_string()).unwrap_or_default(),
+                );
                 continue;
             };
 
@@ -193,7 +199,8 @@ impl Cosmos {
                 .map_err(|_| OrgaError::App("Invalid public key".to_string()))?
                 .key
                 .as_slice(),
-        )?;
+        )?
+        .into();
 
         let mut chain = self.chains.entry(client_id)?.or_default()?;
         if let Some(existing_key) = chain.op_keys_by_cons.get(cons_key.clone())? {
@@ -328,7 +335,7 @@ impl Proof {
 
 #[orga]
 pub struct Chain {
-    pub op_keys_by_cons: Map<LengthVec<u8, u8>, Pubkey>,
+    pub op_keys_by_cons: Map<LengthVec<u8, u8>, VersionedPubkey>,
 }
 
 #[orga]
@@ -406,7 +413,7 @@ pub async fn relay_op_keys<
                 .get(client_id.clone())?
                 .ok_or_else(|| OrgaError::Ibc("Client not found".to_string()))?
                 .client_state
-                .get(())?
+                .get(Default::default())?
                 .ok_or_else(|| OrgaError::Ibc("Client state not found".to_string()))?
                 .inner
                 .latest_height)
