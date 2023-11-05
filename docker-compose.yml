@@ -1,0 +1,13 @@
+services:
+  nomic:
+    tty: true
+    restart: on-failure
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "26657:26657"
+      - "9090:9090"
+      - "1317:1317"
+    volumes:
+      - ./:/workspace
