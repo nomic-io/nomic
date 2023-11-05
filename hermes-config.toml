@@ -1,0 +1,165 @@
+[global]
+log_level = "debug"
+
+[mode.clients]
+enabled = true
+refresh = true
+misbehaviour = true
+
+[mode.connections]
+enabled = false
+
+[mode.channels]
+enabled = false
+
+[mode.packets]
+enabled = true
+clear_interval = 100
+clear_on_start = true
+tx_confirmation = false
+auto_register_counterparty_payee = false
+
+[rest]
+enabled = false
+host = "127.0.0.1"
+port = 3000
+
+[telemetry]
+enabled = false
+host = "127.0.0.1"
+port = 3001
+
+[telemetry.buckets.latency_submitted]
+start = 500
+end = 20000
+buckets = 10
+
+[telemetry.buckets.latency_confirmed]
+start = 1000
+end = 30000
+buckets = 10
+
+[[chains]]
+id = "Oraichain"
+rpc_addr = "https://rpc.orai.io"
+grpc_addr = "http://18.223.242.70:9090"
+event_source = { mode = 'pull' }
+rpc_timeout = "10s"
+account_prefix = "orai"
+key_name = "nomic"
+key_store_type = "Test"
+store_prefix = "ibc"
+default_gas = 100000
+max_gas = 400000
+gas_multiplier = 1.5
+max_msg_num = 30
+max_tx_size = 180000
+gas_price = { price = 0.01, denom = 'orai' }
+clock_drift = "20s"
+max_block_time = "6s"
+ccv_consumer_chain = false
+memo_prefix = ""
+sequential_batch_tx = false
+trusting_period = '10days'
+trust_threshold = { numerator = '1', denominator = '3' }
+
+
+[[chains]]
+id = 'nomic-testnet-4d'
+rpc_addr = 'http://nomic:26657'
+event_source = { mode = 'pull' }
+grpc_addr = 'http://nomic:9090'
+rpc_timeout = '20s'
+account_prefix = 'nomic'
+key_name = 'nomic1'
+key_store_type = "Test"
+store_prefix = 'ibc'
+default_gas = 2000000
+max_gas = 10000000
+gas_price = { price = 0.001, denom = 'unom' }
+clock_drift = '20s'
+trusting_period = '9days'
+max_msg_num = 1
+
+
+[chains.trust_threshold]
+numerator = '1'
+denominator = '3'
+# [chains.packet_filter]
+# policy = 'allow'
+# list = [['transfer', 'channel-0'], ['transfer', 'channel-4']]
+
+
+[[chains]]
+id = "osmo-test-5"
+type = "CosmosSdk"
+rpc_addr = "https://rpc.testnet.osmosis.zone"
+grpc_addr = "https://grpc.testnet.osmosis.zone"
+rpc_timeout = "10s"
+trusted_node = false
+account_prefix = "osmo"
+key_name = "key-osmos"
+key_store_type = "Test"
+store_prefix = "ibc"
+default_gas = 100000
+max_gas = 400000
+gas_multiplier = 1.5
+max_msg_num = 30
+max_tx_size = 180000
+max_grpc_decoding_size = 33554432
+clock_drift = "5s"
+max_block_time = "30s"
+ccv_consumer_chain = false
+memo_prefix = ""
+sequential_batch_tx = false
+
+[chains.event_source]
+mode = "pull"
+interval = '1s'
+
+[chains.trust_threshold]
+numerator = "1"
+denominator = "3"
+
+[chains.gas_price]
+price = 0.025
+denom = "uosmo"
+
+[chains.packet_filter]
+policy = "allow"
+list = [["transfer", "channel-4224"], ["transfer", "channel-4244"]]
+
+[chains.packet_filter.min_fees]
+
+[chains.address_type]
+derivation = "cosmos"
+
+
+# [[chains]]
+# id = "testing"
+# rpc_addr = "http://127.0.0.1:26648"
+# grpc_addr = "http://127.0.0.1:9084"
+# event_source = { mode = 'pull' }
+# rpc_timeout = "10s"
+# account_prefix = "orai"
+# key_name = "key-orai"
+# key_store_type = "Test"
+# store_prefix = "ibc"
+# default_gas = 100000
+# max_gas = 400000
+# gas_multiplier = 1.5
+# max_msg_num = 30
+# max_tx_size = 180000
+# max_grpc_decoding_size = 33554432
+# gas_price = { price = 0.025, denom = 'orai' }
+# clock_drift = "5s"
+# max_block_time = "30s"
+# ccv_consumer_chain = false
+# memo_prefix = ""
+# sequential_batch_tx = false
+# trusted_node = false
+# # trusting_period = '10days'
+# # trust_threshold = { numerator = '1', denominator = '3' }
+# [chains.packet_filter]
+# policy = "allow"
+# list = [["transfer", "channel-0"]]

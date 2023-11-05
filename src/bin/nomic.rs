@@ -1479,6 +1479,9 @@ pub struct GrpcCmd {
     #[clap(default_value_t = 9001)]
     port: u16,
 
+    #[clap(short)]
+    grpc_host: Option<String>,
+
     #[clap(flatten)]
     config: nomic::network::Config,
 }
@@ -1492,7 +1495,7 @@ impl GrpcCmd {
             // TODO: support configuring RPC address
             || nomic::app_client("http://localhost:26657").sub(|app| app.ibc.ctx),
             &GrpcOpts {
-                host: "127.0.0.1".to_string(),
+                host: self.grpc_host.to_owned().unwrap_or("127.0.0.1".to_string()),
                 port: self.port,
                 chain_id: self.config.chain_id.clone().unwrap(),
             },
@@ -1841,8 +1844,8 @@ impl SigningStatusCmd {
             .inner
             .inner;
         let Some(signing) = app.bitcoin.checkpoints.signing()? else {
-           println!("No signing checkpoint");
-           return Ok(())
+            println!("No signing checkpoint");
+            return Ok(());
         };
         let batch = signing.current_batch()?.unwrap();
         let mut lowest_index = 0;

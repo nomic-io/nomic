@@ -131,7 +131,7 @@ For example:
 
 ```bash
 nomic declare \
-  ohFOw5u9LGq1ZRMTYZD1Y/WrFtg7xfyBaEB4lSgfeC8= \
+  8LL6ZVAAHhCf2vlU0+4bJ8OOBLguv8/h7gmV1MX91cc= \
   100000 \
   0.042 \
   0.1 \

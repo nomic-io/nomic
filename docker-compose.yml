@@ -6,8 +6,18 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "26657:26657"
-      - "9090:9090"
-      - "1317:1317"
+      - 26657:26657
+      - 9090:9090
+      - 1317:1317
     volumes:
       - ./:/workspace
+
+  hermes:
+    image: informalsystems/hermes:v1.7.0
+    working_dir: /workspace
+    user: root # use as root to install nano and write to files
+    tty: true
+    entrypoint: tail -f /dev/null
+    volumes:
+      - ./:/workspace
+      - ./hermes-config.toml:/root/.hermes/config.toml
