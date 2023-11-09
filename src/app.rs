@@ -367,6 +367,11 @@ impl InnerApp {
         Ok(())
     }
 
+    // TODO: temporary workaround, will be exposed by client soon
+    pub fn height(&self) -> u64 {
+        self.ibc.ctx.query_height().unwrap()
+    }
+
     #[call]
     pub fn app_noop(&mut self) -> Result<()> {
         Ok(())

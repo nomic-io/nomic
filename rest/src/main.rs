@@ -1,15 +1,16 @@
 #[macro_use]
 extern crate rocket;
 
+use chrono::Utc;
 use nomic::{
-    app::{App, InnerApp, Nom},
+    app::{InnerApp, Nom},
+    bitcoin::Nbtc,
     orga::{
         client::{wallet::Unsigned, AppClient},
-        coins::{Address, Amount, Decimal},
-        plugins::*,
-        query::Query,
+        coins::{Address, Amount, Decimal, DelegationInfo, Symbol, ValidatorQueryInfo},
         tendermint::client::HttpClient,
     },
+    utils::DeclareInfo,
 };
 use rocket::response::status::BadRequest;
 use rocket::serde::json::{json, Value};
@@ -28,12 +29,177 @@ fn app_client() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned> {
     nomic::app_client("http://localhost:26657")
 }
 
+// DONE /cosmos/bank/v1beta1/balances/{address}
+// DONE /cosmos/distribution/v1beta1/delegators/{address}/rewards
+// TODO /cosmos/staking/v1beta1/delegations/{address}
+// DONE /cosmos/staking/v1beta1/validators
+// DONE /cosmos/staking/v1beta1/delegators/{address}/unbonding_delegations
+// /cosmos/staking/v1beta1/validators/{address}
+// /cosmos/gov/v1beta1/proposals
+// /cosmos/gov/v1beta1/proposals/{proposalId}
+// /cosmos/gov/v1beta1/proposals/{proposalId}/votes/{address}
+// /cosmos/gov/v1beta1/proposals/{proposalId}/tally
+// /ibc/apps/transfer/v1/denom_traces/{hash}
+// /ibc/core/channel/v1/channels/{channelId}/ports/{portId}/client_state
+
+#[get("/cosmos/staking/v1beta1/validators")]
+async fn validators() -> Value {
+    let all_validators: Vec<ValidatorQueryInfo> = app_client()
+        .query(|app: InnerApp| app.staking.all_validators())
+        .await
+        .unwrap();
+
+    let mut validators = vec![];
+    for validator in all_validators {
+        let cons_key = app_client()
+            .query(|app: InnerApp| app.staking.consensus_key(validator.address.into()))
+            .await
+            .unwrap(); // TODO: cache
+
+        let status = if validator.unbonding {
+            "BOND_STATUS_UNBONDING"
+        } else if validator.in_active_set {
+            "BOND_STATUS_BONDED"
+        } else {
+            "BOND_STATUS_UNBONDED"
+        };
+
+        let info: DeclareInfo =
+            serde_json::from_str(String::from_utf8(validator.info.to_vec()).unwrap().as_str())
+                .unwrap_or(DeclareInfo {
+                    details: "".to_string(),
+                    identity: "".to_string(),
+                    moniker: "".to_string(),
+                    website: "".to_string(),
+                });
+
+        validators.push(json!(
+           {
+             "operator_address": validator.address,
+             "consensus_pubkey": {
+                 "@type": "/cosmos.crypto.ed25519.PubKey",
+                 "key": cons_key
+             },
+             "jailed": validator.jailed,
+             "status": status,
+             "tokens": validator.amount_staked,
+             "delegator_shares": validator.amount_staked,
+             "description": {
+                 "moniker": info.moniker,
+                 "identity": info.identity,
+                 "website": info.website,
+                 "security_contact": "",
+                 "details": info.details
+             },
+             "unbonding_height": "0", // TODO
+             "unbonding_time": "1970-01-01T00:00:00Z", // TODO
+             "commission": {
+                 "commission_rates": {
+                 "rate": validator.commission.rate,
+                 "max_rate": validator.commission.max,
+                 "max_change_rate": validator.commission.max_change
+                 },
+                 "update_time": "2023-08-04T06:00:00.000000000Z" // TODO
+             },
+             "min_self_delegation": validator.min_self_delegation.to_string()
+        }));
+    }
+
+    json!({
+        "validators": validators,
+        "pagination": {
+            "next_key": null,
+            "total": validators.len().to_string()
+        }
+    })
+}
+
+#[get("/cosmos/staking/v1beta1/validators/<address>")]
+async fn validator(address: &str) -> Value {
+    let address: Address = address.parse().unwrap();
+
+    // TODO: cache
+    let all_validators: Vec<ValidatorQueryInfo> = app_client()
+        .query(|app: InnerApp| app.staking.all_validators())
+        .await
+        .unwrap();
+
+    let mut validators = vec![];
+    for validator in all_validators {
+        if validator.address != address.into() {
+            continue;
+        }
+        let cons_key = app_client()
+            .query(|app: InnerApp| app.staking.consensus_key(validator.address.into()))
+            .await
+            .unwrap();
+
+        let status = if validator.unbonding {
+            "BOND_STATUS_UNBONDING"
+        } else if validator.in_active_set {
+            "BOND_STATUS_BONDED"
+        } else {
+            "BOND_STATUS_UNBONDED"
+        };
+
+        let info: DeclareInfo =
+            serde_json::from_str(String::from_utf8(validator.info.to_vec()).unwrap().as_str())
+                .unwrap_or(DeclareInfo {
+                    details: "".to_string(),
+                    identity: "".to_string(),
+                    moniker: "".to_string(),
+                    website: "".to_string(),
+                });
+
+        validators.push(json!(
+           {
+             "operator_address": validator.address,
+             "consensus_pubkey": {
+                 "@type": "/cosmos.crypto.ed25519.PubKey",
+                 "key": cons_key
+             },
+             "jailed": validator.jailed,
+             "status": status,
+             "tokens": validator.amount_staked,
+             "delegator_shares": validator.amount_staked,
+             "description": {
+                 "moniker": info.moniker,
+                 "identity": info.identity,
+                 "website": info.website,
+                 "security_contact": "",
+                 "details": info.details
+             },
+             "unbonding_height": "0", // TODO
+             "unbonding_time": "1970-01-01T00:00:00Z", // TODO
+             "commission": {
+                 "commission_rates": {
+                 "rate": validator.commission.rate,
+                 "max_rate": validator.commission.max,
+                 "max_change_rate": validator.commission.max_change
+                 },
+                 "update_time": "2023-08-04T06:00:00.000000000Z" // TODO
+             },
+             "min_self_delegation": validator.min_self_delegation.to_string()
+        }));
+    }
+    let validator = validators.first().unwrap();
+
+    json!({
+        "validator": validator,
+    })
+}
+
 #[get("/cosmos/bank/v1beta1/balances/<address>")]
 async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
 
-    let balance: u64 = app_client()
+    let nom_balance: u64 = app_client()
         .query(|app| app.accounts.balance(address))
+        .await
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+        .into();
+    let nbtc_balance: u64 = app_client()
+        .query(|app| app.bitcoin.accounts.balance(address))
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
@@ -42,16 +208,16 @@ async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
         "balances": [
             {
                 "denom": "unom",
-                "amount": balance.to_string(),
+                "amount": nom_balance.to_string(),
             },
             {
-                "denom": "nsat",
-                "amount": balance.to_string(),
+                "denom": "usat",
+                "amount": nbtc_balance.to_string(),
             }
         ],
         "pagination": {
             "next_key": null,
-            "total": "0"
+            "total": "2"
         }
     }))
 }
@@ -90,8 +256,7 @@ async fn auth_accounts(addr_str: &str) -> Result<Value, BadRequest<String>> {
     let mut nonce: u64 = app_client()
         .query_root(|app| app.inner.inner.borrow().inner.inner.inner.nonce(address))
         .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
-        .into();
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
     nonce += 1;
 
     Ok(json!({
@@ -116,7 +281,7 @@ async fn auth_accounts(addr_str: &str) -> Result<Value, BadRequest<String>> {
 async fn auth_accounts2(addr_str: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = addr_str.parse().unwrap();
 
-    let balance: u64 = app_client()
+    let _balance: u64 = app_client()
         .query(|app| app.accounts.balance(address))
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
@@ -125,8 +290,7 @@ async fn auth_accounts2(addr_str: &str) -> Result<Value, BadRequest<String>> {
     let mut nonce: u64 = app_client()
         .query_root(|app| app.inner.inner.borrow().inner.inner.inner.nonce(address))
         .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
-        .into();
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
     nonce += 1;
 
     Ok(json!({
@@ -288,20 +452,21 @@ async fn query(query: &str, height: Option<u32>) -> Result<String, BadRequest<St
 }
 
 #[get("/cosmos/staking/v1beta1/delegations/<address>")]
-async fn staking_delegators_delegations(address: &str) -> Result<Value, BadRequest<String>> {
+async fn staking_delegators_delegations(address: &str) -> Value {
     let address: Address = address.parse().unwrap();
 
     let delegations = app_client()
         .query(|app| app.staking.delegations(address))
         .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+        .unwrap();
 
     let total_staked: u64 = delegations
         .iter()
         .map(|(_, d)| -> u64 { d.staked.into() })
         .sum();
 
-    Ok(json!({ "delegation_responses": [
+    json!({
+    "delegation_responses": [
         {
             "delegation": {
                 "delegator_address": "",
@@ -313,7 +478,7 @@ async fn staking_delegators_delegations(address: &str) -> Result<Value, BadReque
                 "amount": total_staked.to_string(),
             }
           }
-    ], "pagination": { "next_key": null, "total": "0" } }))
+    ], "pagination": { "next_key": null, "total": "0" } })
 }
 
 #[get("/staking/delegators/<address>/delegations")]
@@ -344,8 +509,35 @@ async fn staking_delegators_delegations_2(address: &str) -> Result<Value, BadReq
 }
 
 #[get("/cosmos/staking/v1beta1/delegators/<address>/unbonding_delegations")]
-fn staking_delegators_unbonding_delegations(address: &str) -> Value {
-    json!({ "unbonding_responses": [], "pagination": { "next_key": null, "total": "0" } })
+async fn staking_delegators_unbonding_delegations(address: &str) -> Value {
+    use chrono::{TimeZone, Utc};
+    let address: Address = address.parse().unwrap();
+    let delegations: Vec<(Address, DelegationInfo)> = app_client()
+        .query(|app: InnerApp| app.staking.delegations(address))
+        .await
+        .unwrap();
+
+    let mut unbonds = vec![];
+
+    for (val_address, delegation) in delegations {
+        let mut entries = vec![];
+        for unbond in delegation.unbonding {
+            let t = Utc.timestamp_opt(unbond.start_seconds, 0).unwrap();
+            entries.push(json!({
+                "creation_height": "0", // TODO
+                "completion_time": t, // TODO
+                "initial_balance": "0", // TODO
+                "balance": "0" // TODO
+            }))
+        }
+        unbonds.push(json!({
+            "delegator_address": address,
+            "validator_address": val_address,
+            "entries": entries
+        }))
+    }
+
+    json!({ "unbonding_responses": unbonds, "pagination": { "next_key": null, "total": unbonds.len().to_string() } })
 }
 
 #[get("/staking/delegators/<_address>/unbonding_delegations")]
@@ -358,88 +550,71 @@ fn staking_delegations_2(_address: &str) -> Value {
     json!({ "height": "0", "result": [] })
 }
 
-#[get("/cosmos/distribution/v1beta1/delegators/<_address>/rewards")]
-async fn distribution_delegatrs_rewards(_address: &str) -> Value {
-    // let address = address.parse().unwrap();
+#[get("/cosmos/distribution/v1beta1/delegators/<address>/rewards")]
+async fn distribution_delegators_rewards(address: &str) -> Value {
+    let address: Address = address.parse().unwrap();
+    let delegations: Vec<(Address, DelegationInfo)> = app_client()
+        .query(|app: InnerApp| app.staking.delegations(address))
+        .await
+        .unwrap();
 
-    // type AppQuery = <InnerApp as Query>::Query;
-    // type StakingQuery = <Staking<Nom> as Query>::Query;
+    let mut rewards = vec![];
+    let mut total_nom = 0;
+    let mut total_nbtc = 0;
+    for (validator, delegation) in delegations {
+        let mut reward = vec![];
+        let liquid: u64 = delegation
+            .liquid
+            .iter()
+            .map(|(_, amount)| -> u64 { (*amount).into() })
+            .sum();
+        if liquid == 0 {
+            continue;
+        }
 
-    // let delegations = app_client()
-    //     .query(
-    //         AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![])),
-    //         |state| state.staking.delegations(address),
-    //     )
-    //     .await
-    //     .unwrap();
+        let liquid_nom: u64 = delegation
+            .liquid
+            .iter()
+            .find(|(denom, _)| *denom == Nom::INDEX)
+            .unwrap_or(&(0, 0.into()))
+            .1
+            .into();
+        total_nom += liquid_nom;
+        reward.push(json!({
+            "denom": "unom",
+            "amount": liquid_nom.to_string(),
+        }));
+        let liquid_nbtc: u64 = delegation
+            .liquid
+            .iter()
+            .find(|(denom, _)| *denom == Nbtc::INDEX)
+            .unwrap_or(&(0, 0.into()))
+            .1
+            .into();
+        reward.push(json!({
+            "denom": "usat",
+            "amount": liquid_nbtc.to_string(),
+        }));
+        total_nbtc += liquid_nbtc;
 
-    // let reward = (delegations
-    //     .iter()
-    //     .map(|(_, d)| -> u64 { d.liquid.into() })
-    //     .sum::<u64>())
-    //     .to_string();
-
-    json!({ "height": "0", "result": {
-        "rewards": [
-        //   {
-        //     "validator_address": "cosmosvaloper16xyempempp92x9hyzz9wrgf94r6j9h5f2w4n2l",
-        //     "reward": [
-        //       {
-        //         "denom": "unom",
-        //         "amount": reward
-        //       }
-        //     ]
-        //   }
-        ],
-        "total": [
-        //   {
-        //     "denom": "unom",
-        //     "amount": reward
-        //   }
-        ]
-      } })
-}
-
-#[get("/distribution/delegators/<_address>/rewards")]
-async fn distribution_delegatrs_rewards_2(_address: &str) -> Value {
-    // let address = address.parse().unwrap();
-
-    // type AppQuery = <InnerApp as Query>::Query;
-    // type StakingQuery = <Staking<Nom> as Query>::Query;
-
-    // let delegations = app_client()
-    //     .query(
-    //         AppQuery::FieldStaking(StakingQuery::MethodDelegations(address, vec![])),
-    //         |state| state.staking.delegations(address),
-    //     )
-    //     .await
-    //     .unwrap();
-
-    // let reward = (delegations
-    //     .iter()
-    //     .map(|(_, d)| -> u64 { d.liquid.into() })
-    //     .sum::<u64>())
-    //     .to_string();
-
-    json!({ "height": "0", "result": {
-        "rewards": [
-        //   {
-        //     "validator_address": "cosmosvaloper16xyempempp92x9hyzz9wrgf94r6j9h5f2w4n2l",
-        //     "reward": [
-        //       {
-        //         "denom": "unom",
-        //         "amount": reward
-        //       }
-        //     ]
-        //   }
-        ],
-        "total": [
-        //   {
-        //     "denom": "unom",
-        //     "amount": reward
-        //   }
-        ]
-      } })
+        rewards.push(json!({
+            "validator_address": validator.to_string(),
+            "reward": reward,
+        }));
+    }
+    json!({
+      "rewards": rewards,
+      "total": [
+          {
+              "denom": "unom",
+              "amount": total_nom.to_string(),
+          },
+          {
+              "denom": "usat",
+              "amount": total_nbtc.to_string(),
+          }
+      ]
+    })
 }
 
 #[get("/cosmos/mint/v1beta1/inflation")]
@@ -579,8 +754,7 @@ fn rocket() -> _ {
             // staking_delegators_delegations_2,
             staking_delegators_unbonding_delegations,
             staking_delegators_unbonding_delegations_2,
-            distribution_delegatrs_rewards,
-            distribution_delegatrs_rewards_2,
+            distribution_delegators_rewards,
             staking_delegations_2,
             minting_inflation,
             staking_pool,
