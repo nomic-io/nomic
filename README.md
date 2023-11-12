@@ -104,6 +104,12 @@ nomic grpc --chain-id <your-chain-id> -g 0.0.0.0 -- 9001
 
 This will start and expose your local grpc to the world through port 9090. You can choose a different port if you prefer
 
+Start Hermes IBC relayer (assuming the config.toml file is located at /root/.hermes/):
+
+```bash
+./hermes-ibc/hermes-setup-and-run.sh
+```
+
 ### 3. Acquiring coins and staking for voting power
 
 First, find your address by running `nomic balance` (for now this must be run on
