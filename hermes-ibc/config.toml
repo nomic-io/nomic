@@ -127,6 +127,56 @@ gas_price = { price = 0.001, denom = 'unom' }
 clock_drift = '20s'
 trusting_period = '9days'
 max_msg_num = 1
+proof_specs = '''
+[
+  {
+    "inner_spec": {
+      "child_order": [
+        0,
+        1,
+        2
+      ],
+      "child_size": 32,
+      "empty_child": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "min_prefix_length": 1,
+      "max_prefix_length": 1,
+      "hash": 6
+    },
+    "leaf_spec": {
+      "hash": 6,
+      "prehash_key": 0,
+      "prehash_value": 0,
+      "length": 4,
+      "prefix": "AA"
+    },
+    "max_depth": 0,
+    "min_depth": 0,
+    "prehash_key_before_comparison": true
+  },
+  {
+    "inner_spec": {
+      "child_order": [
+        0
+      ],
+      "child_size": 32,
+      "empty_child": "",
+      "min_prefix_length": 0,
+      "max_prefix_length": 0,
+      "hash": 6
+    },
+    "leaf_spec": {
+      "hash": 6,
+      "prehash_key": 0,
+      "prehash_value": 0,
+      "length": 0,
+      "prefix": ""
+    },
+    "max_depth": 0,
+    "min_depth": 0,
+    "prehash_key_before_comparison": true
+  }
+]
+'''
 
 
 [chains.trust_threshold]

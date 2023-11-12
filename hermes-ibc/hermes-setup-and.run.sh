@@ -15,7 +15,6 @@ hermes keys add --chain $ORAI_CHAIN_ID --key-name $KEY_NAME --mnemonic-file .env
 
 # try to get latest ibc client
 latest_ibc_client=$(hermes --json query clients --host-chain $NOMIC_CHAIN_ID --reference-chain $ORAI_CHAIN_ID | grep result | jq .result[-1])
-echo "latest ibc client: $latest_ibc_client"
 
 if [ "$latest_ibc_client" == "null" ]; then
     hermes create channel --a-chain $NOMIC_CHAIN_ID --new-client-connection --b-chain $ORAI_CHAIN_ID --a-port transfer --b-port transfer --yes
