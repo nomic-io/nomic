@@ -113,7 +113,7 @@ trust_threshold = { numerator = '1', denominator = '3' }
 
 [[chains]]
 id = 'nomic-local-1'
-rpc_addr = 'http://nomic:26657'
+rpc_addr = 'http://nomic:26657' # this is the url for nomic local node running in docker
 event_source = { mode = 'pull' }
 grpc_addr = 'http://nomic:9001'
 rpc_timeout = '20s'
