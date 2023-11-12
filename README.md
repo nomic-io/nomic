@@ -89,10 +89,20 @@ cargo install --locked --path .
 Start your Nomic node:
 
 ```bash
-nomic start
+# the FUNDED_ADDRESS will have lots of test NOM & NBTC to test
+# your-wanted-chain-id is the chain id you want your local network to be. If it does not exist => auto create new, else reuse the existing one
+FUNDED_ADDRESS=<your-nomic-address-for-funding> nomic start --chain-id <your-wanted-chain-id>
 ```
 
 This will run the Nomic state machine and a Tendermint process. For new nodes the statesync process will run automatically to get the node up to speed with the current chain.
+
+Start your GRPC:
+
+```bash
+nomic grpc --chain-id <your-chain-id> -g 0.0.0.0 -- 9001
+```
+
+This will start and expose your local grpc to the world through port 9090. You can choose a different port if you prefer
 
 ### 3. Acquiring coins and staking for voting power
 

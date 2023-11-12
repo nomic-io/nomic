@@ -45,6 +45,7 @@ use orga::upgrade::{Upgrade, UpgradeV0};
 use orga::Error;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
+use std::env;
 use std::fmt::Debug;
 
 mod migrations;
@@ -64,6 +65,8 @@ const DEV_ADDRESS: &str = "nomic14z79y3yrghqx493mwgcj0qd2udy6lm26lmduah";
 const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1d5n325zrf4elfu0heqd59gna5j6xyunhev23cj";
 #[cfg(feature = "full")]
 const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhqd8dcqeq";
+#[cfg(feature = "devnet")]
+const DEFAULT_FUNDED_AMOUNT: u64 = 1_000_000_000_000_000_000;
 
 #[cfg(feature = "testnet")]
 const IBC_FEE_USATS: u64 = 1_000_000;
@@ -376,6 +379,40 @@ impl InnerApp {
     pub fn app_noop_query(&self) -> Result<()> {
         Ok(())
     }
+
+    #[call]
+    pub fn mint_coins_for_funded_address(&mut self) -> Result<String> {
+        #[cfg(feature = "devnet")]
+        {
+            // mint unom and nbtc for a funded address given in the env variable
+            let funded_address =
+                env::var("FUNDED_ADDRESS").map_err(|err| orga::Error::Client(err.to_string()))?;
+            let funded_amount = env::var("FUNDED_AMOUNT").unwrap_or_default();
+
+            let unom_coin: Coin<Nom> = Amount::new(
+                funded_amount
+                    .parse::<u64>()
+                    .unwrap_or(DEFAULT_FUNDED_AMOUNT),
+            )
+            .into();
+            let nbtc_coin: Coin<Nbtc> = Amount::new(
+                funded_amount
+                    .parse::<u64>()
+                    .unwrap_or(DEFAULT_FUNDED_AMOUNT),
+            )
+            .into();
+            // mint new unom coin for funded address
+            self.accounts
+                .deposit(funded_address.parse().unwrap(), unom_coin)?;
+            // add new nbtc coin to the funded address
+            self.credit_transfer(Dest::Address(funded_address.parse().unwrap()), nbtc_coin)?;
+            self.accounts
+                .add_transfer_exception(funded_address.parse().unwrap())?;
+            Ok(funded_address)
+        }
+        #[cfg(not(feature = "devnet"))]
+        Err(orga::Error::Unknown)
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -415,6 +452,7 @@ mod abci {
         abci::{messages, AbciQuery, BeginBlock, EndBlock, InitChain},
         coins::{Give, Take},
         collections::Map,
+        ibc::ibc_rs::core::ics02_client::error::ClientError,
         plugins::{BeginBlockCtx, EndBlockCtx, InitChainCtx},
     };
 
@@ -444,6 +482,9 @@ mod abci {
             self.upgrade
                 .current_version
                 .insert((), vec![Self::CONSENSUS_VERSION].try_into().unwrap())?;
+
+            #[cfg(feature = "devnet")]
+            self.mint_coins_for_funded_address()?;
 
             Ok(())
         }

@@ -42,7 +42,7 @@ buckets = 10
 [[chains]]
 id = "Oraichain"
 rpc_addr = "https://rpc.orai.io"
-grpc_addr = "http://18.223.242.70:9090"
+grpc_addr = "https://grpc.orai.io:9090"
 event_source = { mode = 'pull' }
 rpc_timeout = "10s"
 account_prefix = "orai"
@@ -63,15 +63,62 @@ sequential_batch_tx = false
 trusting_period = '10days'
 trust_threshold = { numerator = '1', denominator = '3' }
 
+# [[chains]]
+# id = "Oraichain-testnet"
+# rpc_addr = "https://testnet-lcd.orai.io"
+# grpc_addr = "https://testnet-grpc.orai.io:9090"
+# event_source = { mode = 'pull' }
+# rpc_timeout = "10s"
+# account_prefix = "orai"
+# key_name = "nomic"
+# key_store_type = "Test"
+# store_prefix = "ibc"
+# default_gas = 100000
+# max_gas = 400000
+# gas_multiplier = 1.5
+# max_msg_num = 30
+# max_tx_size = 180000
+# gas_price = { price = 0.01, denom = 'orai' }
+# clock_drift = "20s"
+# max_block_time = "6s"
+# ccv_consumer_chain = false
+# memo_prefix = ""
+# sequential_batch_tx = false
+# trusting_period = '10days'
+# trust_threshold = { numerator = '1', denominator = '3' }
 
 [[chains]]
-id = 'nomic-testnet-4d'
+id = "testing"
+rpc_addr = "http://192.168.0.17:26657"
+grpc_addr = "http://192.168.0.17:9090"
+event_source = { mode = 'pull' }
+rpc_timeout = "10s"
+account_prefix = "orai"
+key_name = "nomic"
+key_store_type = "Test"
+store_prefix = "ibc"
+default_gas = 100000
+max_gas = 400000
+gas_multiplier = 1.5
+max_msg_num = 30
+max_tx_size = 180000
+gas_price = { price = 0.01, denom = 'orai' }
+clock_drift = "20s"
+max_block_time = "6s"
+ccv_consumer_chain = false
+memo_prefix = ""
+sequential_batch_tx = false
+trusting_period = '7000s'
+trust_threshold = { numerator = '1', denominator = '3' }
+
+[[chains]]
+id = 'nomic-local-1'
 rpc_addr = 'http://nomic:26657'
 event_source = { mode = 'pull' }
-grpc_addr = 'http://nomic:9090'
+grpc_addr = 'http://nomic:9001'
 rpc_timeout = '20s'
 account_prefix = 'nomic'
-key_name = 'nomic1'
+key_name = 'nomic'
 key_store_type = "Test"
 store_prefix = 'ibc'
 default_gas = 2000000
@@ -90,49 +137,49 @@ denominator = '3'
 # list = [['transfer', 'channel-0'], ['transfer', 'channel-4']]
 
 
-[[chains]]
-id = "osmo-test-5"
-type = "CosmosSdk"
-rpc_addr = "https://rpc.testnet.osmosis.zone"
-grpc_addr = "https://grpc.testnet.osmosis.zone"
-rpc_timeout = "10s"
-trusted_node = false
-account_prefix = "osmo"
-key_name = "key-osmos"
-key_store_type = "Test"
-store_prefix = "ibc"
-default_gas = 100000
-max_gas = 400000
-gas_multiplier = 1.5
-max_msg_num = 30
-max_tx_size = 180000
-max_grpc_decoding_size = 33554432
-clock_drift = "5s"
-max_block_time = "30s"
-ccv_consumer_chain = false
-memo_prefix = ""
-sequential_batch_tx = false
+# [[chains]]
+# id = "osmo-test-5"
+# type = "CosmosSdk"
+# rpc_addr = "https://rpc.testnet.osmosis.zone"
+# grpc_addr = "https://grpc.testnet.osmosis.zone"
+# rpc_timeout = "10s"
+# trusted_node = false
+# account_prefix = "osmo"
+# key_name = "key-osmos"
+# key_store_type = "Test"
+# store_prefix = "ibc"
+# default_gas = 100000
+# max_gas = 400000
+# gas_multiplier = 1.5
+# max_msg_num = 30
+# max_tx_size = 180000
+# max_grpc_decoding_size = 33554432
+# clock_drift = "5s"
+# max_block_time = "30s"
+# ccv_consumer_chain = false
+# memo_prefix = ""
+# sequential_batch_tx = false
 
-[chains.event_source]
-mode = "pull"
-interval = '1s'
+# [chains.event_source]
+# mode = "pull"
+# interval = '1s'
 
-[chains.trust_threshold]
-numerator = "1"
-denominator = "3"
+# [chains.trust_threshold]
+# numerator = "1"
+# denominator = "3"
 
-[chains.gas_price]
-price = 0.025
-denom = "uosmo"
+# [chains.gas_price]
+# price = 0.025
+# denom = "uosmo"
 
-[chains.packet_filter]
-policy = "allow"
-list = [["transfer", "channel-4224"], ["transfer", "channel-4244"]]
+# [chains.packet_filter]
+# policy = "allow"
+# list = [["transfer", "channel-4224"], ["transfer", "channel-4244"]]
 
-[chains.packet_filter.min_fees]
+# [chains.packet_filter.min_fees]
 
-[chains.address_type]
-derivation = "cosmos"
+# [chains.address_type]
+# derivation = "cosmos"
 
 
 # [[chains]]

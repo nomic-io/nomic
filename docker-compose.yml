@@ -1,14 +1,14 @@
+version: '3.8'
+
 services:
   nomic:
     tty: true
     restart: on-failure
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: oraichain/foundation-bitcoin-bridge:0.0.1 # docker build -t oraichain/foundation-bitcoin-bridge:0.0.1 .
     ports:
-      - 26657:26657
-      - 9090:9090
-      - 1317:1317
+      - 36657:26657
+      - 9001:9001
+      - 2317:1317
     volumes:
       - ./:/workspace
 
@@ -19,5 +19,5 @@ services:
     tty: true
     entrypoint: tail -f /dev/null
     volumes:
-      - ./:/workspace
-      - ./hermes-config.toml:/root/.hermes/config.toml
+      - ./:/workspace/
+      - ./hermes-ibc/config.toml:/root/.hermes/config.toml
