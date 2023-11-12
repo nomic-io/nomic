@@ -104,7 +104,7 @@ nomic grpc --chain-id <your-chain-id> -g 0.0.0.0 -- 9001
 
 This will start and expose your local grpc to the world through port 9090. You can choose a different port if you prefer
 
-Start Hermes IBC relayer (assuming the config.toml file is located at /root/.hermes/):
+Start Hermes IBC relayer (assuming the config.toml file is located at /root/.hermes/. You can use the example config.toml file located at `hermes-ibc/config.toml`):
 
 ```bash
 ./hermes-ibc/hermes-setup-and-run.sh
