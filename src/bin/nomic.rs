@@ -1191,6 +1191,9 @@ impl RelayerCmd {
 
 #[derive(Parser, Debug)]
 pub struct SignerCmd {
+    // TODO: should be a flag
+    reset_limits_at_index: Option<u32>,
+
     #[clap(flatten)]
     config: nomic::network::Config,
 
@@ -1209,8 +1212,10 @@ pub struct SignerCmd {
     #[clap(long)]
     prometheus_addr: Option<std::net::SocketAddr>,
 
-    // TODO: should be a flag
-    reset_limits_at_index: Option<u32>,
+    #[clap(long)]
+    primary_key_path: Option<PathBuf>,
+    #[clap(long)]
+    additional_key_paths: Option<Vec<PathBuf>>,
 }
 
 impl SignerCmd {
@@ -1220,11 +1225,13 @@ impl SignerCmd {
             std::fs::create_dir(&signer_dir_path)?;
         }
 
-        let key_path = signer_dir_path.join("xpriv");
+        let default_key_path = signer_dir_path.join("xpriv");
 
         let signer = Signer::load_or_generate(
             my_address(),
-            key_path,
+            default_key_path,
+            self.primary_key_path.clone(),
+            self.additional_key_paths.clone().unwrap_or_default(),
             self.max_withdrawal_rate,
             self.max_sigset_change_rate,
             self.reset_limits_at_index,
