@@ -393,9 +393,6 @@ impl Bitcoin {
     /// Called by validators to store their signatory public key, which will be
     /// used for their signing of Bitcoin transactions.
     ///
-    /// Currently, validators may only set their signatory key once - key
-    /// rotation is not yet supported.
-    ///
     /// This call must be signed by an operator key associated with an account
     /// which has declared a validator.
     #[call]

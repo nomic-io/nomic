@@ -300,8 +300,7 @@ where
     /// submit the given key.
     ///
     /// If the operator has already submitted a key, check that it matches the
-    /// given key. If not, return an error (it is not currently possible to
-    /// change the signatory key after submitting one).
+    /// given key. If not, return an error.
     async fn maybe_submit_xpub(&mut self, xpub: &ExtendedPubKey) -> Result<()> {
         let cons_key = (self.app_client)()
             .query(|app| app.staking.consensus_key(self.op_addr))
