@@ -186,6 +186,8 @@ where
     Signer::load_or_generate(
         address_from_privkey(&load_privkey(home.as_ref()).unwrap()),
         key_path,
+        None,
+        Vec::default(),
         0.1,
         1.0,
         None,
