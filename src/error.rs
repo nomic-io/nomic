@@ -56,6 +56,8 @@ pub enum Error {
     Ed(#[from] ed::Error),
     #[error("{0}")]
     Relayer(String),
+    #[error("{0}")]
+    Signer(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error("Warp Rejection")]

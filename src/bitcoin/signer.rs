@@ -1,7 +1,7 @@
 use crate::app::{InnerApp, Nom};
 use crate::bitcoin::checkpoint::CheckpointStatus;
 use crate::bitcoin::threshold_sig::Signature;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use bitcoin::secp256k1::{Message, Secp256k1};
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use lazy_static::lazy_static;
@@ -58,7 +58,8 @@ lazy_static! {
 /// for new checkpoints to sign.
 pub struct Signer<W, F> {
     op_addr: Address,
-    xpriv: ExtendedPrivKey,
+    primary_xpriv: ExtendedPrivKey,
+    additional_xprivs: Vec<ExtendedPrivKey>,
     max_withdrawal_rate: f64,
     max_sigset_change_rate: f64,
     reset_index: Option<u32>,
@@ -71,6 +72,29 @@ impl<W: Wallet, F> Signer<W, F>
 where
     F: Fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, W>,
 {
+    pub fn load_key<P: AsRef<Path> + Clone>(path: P) -> Result<ExtendedPrivKey> {
+        let bytes = fs::read(path.clone())?;
+        let text = String::from_utf8(bytes).unwrap();
+
+        text.trim().parse().map_err(|_| {
+            Error::Signer(format!(
+                "Unable to parse key at {}",
+                path.as_ref().display()
+            ))
+        })
+    }
+
+    pub fn generate_key() -> Result<ExtendedPrivKey> {
+        let seed: [u8; 32] = rand::thread_rng().gen();
+
+        let network = if super::NETWORK == bitcoin::Network::Regtest {
+            bitcoin::Network::Testnet
+        } else {
+            super::NETWORK
+        };
+
+        Ok(ExtendedPrivKey::new_master(network, seed.as_slice())?)
+    }
     /// Create a new signer, loading the extended private key from the given
     /// path (`key_path`) if it exists. If the key does not exist, one will be
     /// generated and written to the path, then submitted to the chain, becoming
@@ -92,32 +116,52 @@ where
     /// the pending withdrawals and decided they are legitimate.
     /// - `app_client`: A function that returns a new app client to be used in
     ///   querying and submitting calls.
-    pub fn load_or_generate<P: AsRef<Path>>(
+    pub fn load_or_generate<P: AsRef<Path> + Clone>(
         op_addr: Address,
-        key_path: P,
+        default_key_path: P,
+        primary_key_path: Option<P>,
+        additional_key_paths: Vec<P>,
         max_withdrawal_rate: f64,
         max_sigset_change_rate: f64,
         reset_index: Option<u32>,
         app_client: F,
         exporter_addr: Option<SocketAddr>,
     ) -> Result<Self> {
-        let path = key_path.as_ref();
+        if primary_key_path
+            .clone()
+            .is_some_and(|path| !path.as_ref().exists())
+        {
+            return Err(Error::Signer(format!(
+                "Primary key path {} not found",
+                primary_key_path.unwrap().as_ref().display()
+            )));
+        }
+
+        let additional_xprivs =
+            additional_key_paths
+                .iter()
+                .try_fold(Vec::new(), |mut acc, path| {
+                    if path.as_ref().exists() {
+                        let xpriv = Self::load_key(path)?;
+                        acc.push(xpriv);
+                        Ok(acc)
+                    } else {
+                        Err(Error::Signer(format!(
+                            "Additional key path {} not found",
+                            path.as_ref().display()
+                        )))
+                    }
+                })?;
+
+        let path = primary_key_path.unwrap_or(default_key_path);
+        let path = path.as_ref();
+
         let xpriv = if path.exists() {
             info!("Loading signatory key from {}", path.display());
-            let bytes = fs::read(path)?;
-            let text = String::from_utf8(bytes).unwrap();
-            text.trim().parse()?
+            Self::load_key(path)?
         } else {
             info!("Generating signatory key at {}", path.display());
-            let seed: [u8; 32] = rand::thread_rng().gen();
-
-            let network = if super::NETWORK == bitcoin::Network::Regtest {
-                bitcoin::Network::Testnet
-            } else {
-                super::NETWORK
-            };
-            let xpriv = ExtendedPrivKey::new_master(network, seed.as_slice())?;
-
+            let xpriv = Self::generate_key()?;
             fs::write(path, xpriv.to_string().as_bytes())?;
 
             xpriv
@@ -130,6 +174,7 @@ where
         Ok(Self::new(
             op_addr,
             xpriv,
+            additional_xprivs,
             max_withdrawal_rate,
             max_sigset_change_rate,
             reset_index,
@@ -157,7 +202,8 @@ where
     ///  querying and submitting calls.
     pub fn new(
         op_addr: Address,
-        xpriv: ExtendedPrivKey,
+        primary_xpriv: ExtendedPrivKey,
+        additional_xprivs: Vec<ExtendedPrivKey>,
         max_withdrawal_rate: f64,
         max_sigset_change_rate: f64,
         reset_index: Option<u32>,
@@ -169,7 +215,8 @@ where
     {
         Signer {
             op_addr,
-            xpriv,
+            primary_xpriv,
+            additional_xprivs,
             max_withdrawal_rate,
             max_sigset_change_rate,
             reset_index,
@@ -196,7 +243,17 @@ where
         const CHECKPOINT_WINDOW: u32 = 20;
         info!("Starting signer...");
         let secp = Secp256k1::signing_only();
-        let xpub = ExtendedPubKey::from_priv(&secp, &self.xpriv);
+
+        let primary_xpriv = vec![self.primary_xpriv.clone()];
+        let additional_xprivs = self.additional_xprivs.clone();
+        let key_pairs = primary_xpriv
+            .iter()
+            .chain(additional_xprivs.iter())
+            .map(|xpriv| {
+                let xpub = ExtendedPubKey::from_priv(&secp, xpriv);
+                (xpub, xpriv)
+            })
+            .collect::<Vec<_>>();
 
         let mut index = (self.app_client)()
             .query(|app| {
@@ -218,21 +275,23 @@ where
         }
 
         loop {
-            self.maybe_submit_xpub(&xpub).await?;
+            self.maybe_submit_xpub(&key_pairs[0].0).await?;
 
-            let signed = match self.try_sign(&xpub, index).await {
-                Ok(signed) => signed,
-                Err(e) => {
-                    ERROR_COUNTER.inc();
-                    eprintln!("Signer error: {}", e);
-                    false
+            for (xpub, xpriv) in key_pairs.iter() {
+                let signed = match self.try_sign(xpub, xpriv, index).await {
+                    Ok(signed) => signed,
+                    Err(e) => {
+                        ERROR_COUNTER.inc();
+                        eprintln!("Signer error: {}", e);
+                        false
+                    }
+                };
+
+                if signed {
+                    index += 1;
+                } else {
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                 }
-            };
-
-            if signed {
-                index += 1;
-            } else {
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             }
         }
     }
@@ -288,7 +347,12 @@ where
     /// and should call `try_sign` for the same index again later (e.g. it is
     /// still `Building`, or we have not yet submitted signatures for the final
     /// batch of transactions).
-    async fn try_sign(&mut self, xpub: &ExtendedPubKey, index: u32) -> Result<bool> {
+    async fn try_sign(
+        &mut self,
+        xpub: &ExtendedPubKey,
+        xpriv: &ExtendedPrivKey,
+        index: u32,
+    ) -> Result<bool> {
         let secp = Secp256k1::signing_only();
 
         let (status, timestamp) = self
@@ -318,7 +382,7 @@ where
         self.check_change_rates().await?;
         info!("Signing checkpoint ({} inputs)...", to_sign.len());
 
-        let sigs = sign(&secp, &self.xpriv, &to_sign)?;
+        let sigs = sign(&secp, &xpriv, &to_sign)?;
 
         (self.app_client)()
             .call(
