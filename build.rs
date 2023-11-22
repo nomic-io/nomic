@@ -83,7 +83,7 @@ fn main() {
         #[cfg(feature = "testnet")]
         let default_features = "full,feat-ibc,testnet";
         #[cfg(not(feature = "testnet"))]
-        let default_features = "full";
+        let default_features = "full,feat-ibc";
 
         let cargo_features =
             std::env::var("NOMIC_LEGACY_FEATURES").unwrap_or(default_features.to_string());

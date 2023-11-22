@@ -31,6 +31,7 @@ use orga::{
     Error as OrgaError, Result as OrgaResult,
 };
 
+use super::SIGSET_THRESHOLD;
 use orga::{describe::Describe, store::Store};
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
@@ -779,7 +780,9 @@ impl Checkpoint {
         let mut txs = vec![];
 
         let intermediate_tx_batch = self.batches.get(BatchType::IntermediateTx as u64)?.unwrap();
-        let intermediate_tx = intermediate_tx_batch.get(0)?.unwrap();
+        let Some(intermediate_tx) = intermediate_tx_batch.get(0)? else {
+            return Ok(txs);
+        };
         txs.push(Adapter::new(intermediate_tx.to_bitcoin_tx()?));
 
         let disbursal_batch = self.batches.get(BatchType::Disbursal as u64)?.unwrap();
@@ -966,7 +969,7 @@ impl Config {
             target_checkpoint_inclusion: 2,
             min_fee_rate: 2, // relay threshold is 1 sat/vbyte
             max_fee_rate: 200,
-            sigset_threshold: (9, 10),
+            sigset_threshold: SIGSET_THRESHOLD,
             emergency_disbursal_min_tx_amt: 1000,
             #[cfg(feature = "testnet")]
             emergency_disbursal_lock_time_interval: 60 * 60 * 24 * 7, // one week
@@ -1888,7 +1891,6 @@ impl CheckpointQueue {
             return Ok(false);
         }
 
-        #[cfg(feature = "testnet")]
         self.prune()?;
 
         if self.index > 0 {
