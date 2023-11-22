@@ -59,8 +59,7 @@ lazy_static! {
 /// for new checkpoints to sign.
 pub struct Signer<W, F> {
     op_addr: Address,
-    primary_xpriv: ExtendedPrivKey,
-    additional_xprivs: Vec<ExtendedPrivKey>,
+    xprivs: Vec<ExtendedPrivKey>,
     max_withdrawal_rate: f64,
     max_sigset_change_rate: f64,
     reset_index: Option<u32>,
@@ -94,65 +93,38 @@ where
     /// the pending withdrawals and decided they are legitimate.
     /// - `app_client`: A function that returns a new app client to be used in
     ///   querying and submitting calls.
-    pub fn load_or_generate<P: AsRef<Path> + Clone>(
+    pub fn load_xprivs<P: AsRef<Path> + Clone>(
         op_addr: Address,
-        default_key_path: P,
-        primary_key_path: Option<P>,
-        additional_key_paths: Vec<P>,
+        default_xpriv_path: P,
+        xpriv_paths: Vec<P>,
         max_withdrawal_rate: f64,
         max_sigset_change_rate: f64,
         reset_index: Option<u32>,
         app_client: F,
         exporter_addr: Option<SocketAddr>,
     ) -> Result<Self> {
-        if primary_key_path
-            .clone()
-            .is_some_and(|path| !path.as_ref().exists())
-        {
-            return Err(Error::Signer(format!(
-                "Primary key path {} not found",
-                primary_key_path.unwrap().as_ref().display()
-            )));
-        }
-
-        let additional_xprivs =
-            additional_key_paths
-                .iter()
-                .try_fold(Vec::new(), |mut acc, path| {
-                    if path.as_ref().exists() {
-                        let xpriv = Self::load_key(path)?;
-                        acc.push(xpriv);
-                        Ok(acc)
-                    } else {
-                        Err(Error::Signer(format!(
-                            "Additional key path {} not found",
-                            path.as_ref().display()
-                        )))
-                    }
-                })?;
-
-        let path = primary_key_path.unwrap_or(default_key_path);
-        let path = path.as_ref();
-
-        let xpriv = if path.exists() {
-            info!("Loading signatory key from {}", path.display());
-            Self::load_key(path)?
+        let xpriv_paths = if xpriv_paths.is_empty() {
+            vec![default_xpriv_path]
         } else {
-            info!("Generating signatory key at {}", path.display());
-            let xpriv = Self::generate_key()?;
-            fs::write(path, xpriv.to_string().as_bytes())?;
-
-            xpriv
+            xpriv_paths
         };
 
-        let secp = bitcoin::secp256k1::Secp256k1::signing_only();
-        let xpub = ExtendedPubKey::from_priv(&secp, &xpriv);
-        info!("Signatory xpub:\n{}", xpub);
+        let xprivs = xpriv_paths.iter().try_fold(Vec::new(), |mut acc, path| {
+            if path.as_ref().exists() {
+                let xpriv = load_bitcoin_key(path)?;
+                acc.push(xpriv);
+                Ok(acc)
+            } else {
+                Err(Error::Signer(format!(
+                    "Key path {} not found",
+                    path.as_ref().display()
+                )))
+            }
+        })?;
 
         Ok(Self::new(
             op_addr,
-            xpriv,
-            additional_xprivs,
+            xprivs,
             max_withdrawal_rate,
             max_sigset_change_rate,
             reset_index,
@@ -180,8 +152,7 @@ where
     ///  querying and submitting calls.
     pub fn new(
         op_addr: Address,
-        primary_xpriv: ExtendedPrivKey,
-        additional_xprivs: Vec<ExtendedPrivKey>,
+        xprivs: Vec<ExtendedPrivKey>,
         max_withdrawal_rate: f64,
         max_sigset_change_rate: f64,
         reset_index: Option<u32>,
@@ -193,8 +164,7 @@ where
     {
         Signer {
             op_addr,
-            primary_xpriv,
-            additional_xprivs,
+            xprivs,
             max_withdrawal_rate,
             max_sigset_change_rate,
             reset_index,
@@ -222,16 +192,29 @@ where
         info!("Starting signer...");
         let secp = Secp256k1::signing_only();
 
-        let primary_xpriv = vec![self.primary_xpriv.clone()];
-        let additional_xprivs = self.additional_xprivs.clone();
-        let key_pairs = primary_xpriv
-            .iter()
-            .chain(additional_xprivs.iter())
-            .map(|xpriv| {
-                let xpub = ExtendedPubKey::from_priv(&secp, xpriv);
-                (xpub, xpriv)
-            })
-            .collect::<Vec<_>>();
+        let cons_key = (self.app_client)()
+            .query(|app| app.staking.consensus_key(self.op_addr))
+            .await?;
+        let onchain_xpub = (self.app_client)()
+            .query(|app| Ok(app.bitcoin.signatory_keys.get(cons_key)?))
+            .await?
+            .ok_or(Error::Signer("No signatory key found on chain".to_string()))?;
+
+        let xprivs = self.xprivs.clone();
+        let (xpub_submitted, key_pairs) =
+            xprivs
+                .iter()
+                .fold((false, Vec::default()), |mut acc, xpriv| {
+                    let xpub = ExtendedPubKey::from_priv(&secp, xpriv);
+                    acc.0 |= xpub == *onchain_xpub;
+                    acc.1.push((xpub, xpriv));
+                    acc
+                });
+        if !xpub_submitted {
+            return Err(Error::Signer(
+                "On chain signatory key not provided".to_string(),
+            ));
+        }
 
         let mut index = (self.app_client)()
             .query(|app| {
@@ -253,8 +236,6 @@ where
         }
 
         loop {
-            self.maybe_submit_xpub(&key_pairs[0].0).await?;
-
             for (xpub, xpriv) in key_pairs.iter() {
                 let signed = match self.try_sign(xpub, xpriv, index).await {
                     Ok(signed) => signed,
@@ -272,41 +253,6 @@ where
                 }
             }
         }
-    }
-
-    /// Check if the operator has already submitted a signatory key. If not,
-    /// submit the given key.
-    ///
-    /// If the operator has already submitted a key, check that it matches the
-    /// given key. If not, return an error.
-    async fn maybe_submit_xpub(&mut self, xpub: &ExtendedPubKey) -> Result<()> {
-        let cons_key = (self.app_client)()
-            .query(|app| app.staking.consensus_key(self.op_addr))
-            .await?;
-        let onchain_xpub = (self.app_client)()
-            .query(|app| Ok(app.bitcoin.signatory_keys.get(cons_key)?))
-            .await?;
-
-        match onchain_xpub {
-            None => self.submit_xpub(xpub).await,
-            Some(onchain_xpub) if onchain_xpub.inner() != xpub => Err(orga::Error::App(
-                "Local xpub does not match xpub found on chain".to_string(),
-            )
-            .into()),
-            Some(_) => Ok(()),
-        }
-    }
-
-    /// Submit the given signatory key to the chain.
-    async fn submit_xpub(&mut self, xpub: &ExtendedPubKey) -> Result<()> {
-        (self.app_client)()
-            .call(
-                move |app| build_call!(app.bitcoin.set_signatory_key(xpub.into())),
-                |app| build_call!(app.app_noop()),
-            )
-            .await?;
-        info!("Submitted signatory key.");
-        Ok(())
     }
 
     /// Get a new app client.
@@ -359,7 +305,7 @@ where
         self.check_change_rates().await?;
         info!("Signing checkpoint ({} inputs)...", to_sign.len());
 
-        let sigs = sign(&secp, &xpriv, &to_sign)?;
+        let sigs = sign(&secp, xpriv, &to_sign)?;
 
         (self.app_client)()
             .call(
