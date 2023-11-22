@@ -220,6 +220,14 @@ async fn bitcoin_test() {
 
     let node_path = path.clone();
     let signer_path = path.clone();
+    let xpriv = generate_bitcoin_key(bitcoin::Network::Regtest).unwrap();
+    fs::create_dir_all(signer_path.join("signer")).unwrap();
+    fs::write(
+        signer_path.join("signer/xpriv"),
+        xpriv.to_string().as_bytes(),
+    )
+    .unwrap();
+    let xpub = ExtendedPubKey::from_priv(&secp256k1::Secp256k1::new(), &xpriv);
     let header_relayer_path = path.clone();
 
     std::env::set_var("NOMIC_HOME_DIR", &path);
@@ -239,7 +247,7 @@ async fn bitcoin_test() {
     let funded_accounts = setup_test_app(&path, 4, Some(headers_config), None, None);
 
     let node = Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"), Default::default());
-    let node_child = node.await.run().await.unwrap();
+    let _node_child = node.await.run().await.unwrap();
 
     let rpc_addr = "http://localhost:26657".to_string();
 
@@ -280,16 +288,18 @@ async fn bitcoin_test() {
         Err::<(), Error>(Error::Test("Signer shutdown initiated".to_string()))
     };
 
+    let slashable_signer_xpriv = generate_bitcoin_key(bitcoin::Network::Regtest).unwrap();
+    let slashable_signer_xpub = ExtendedPubKey::from_priv(
+        &secp256k1::Secp256k1::new(),
+        &slashable_signer_xpriv.clone(),
+    );
     let slashable_signer = async {
         tokio::time::sleep(Duration::from_secs(15)).await;
-        let seed: [u8; 32] = rand::thread_rng().gen();
-        let xpriv = ExtendedPrivKey::new_master(bitcoin::Network::Testnet, seed.as_slice())?;
         let privkey_bytes = funded_accounts[2].privkey.secret_bytes();
         let privkey = orga::secp256k1::SecretKey::from_slice(&privkey_bytes).unwrap();
         let signer = Signer::new(
             address_from_privkey(&funded_accounts[2].privkey),
-            xpriv,
-            Vec::default(),
+            vec![slashable_signer_xpriv],
             0.1,
             1.0,
             None,
@@ -314,9 +324,26 @@ async fn bitcoin_test() {
         declare_validator(consensus_key, nomic_wallet, 100_000)
             .await
             .unwrap();
+        app_client()
+            .with_wallet(DerivedKey::from_secret_key(val_priv_key))
+            .call(
+                |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
+                |app| build_call!(app.bitcoin.set_signatory_key(xpub.into())),
+            )
+            .await?;
+
+        let privkey_bytes = funded_accounts[2].privkey.secret_bytes();
+        let privkey = orga::secp256k1::SecretKey::from_slice(&privkey_bytes).unwrap();
         declare_validator([0; 32], funded_accounts[2].wallet.clone(), 4_000)
             .await
             .unwrap();
+        app_client()
+            .with_wallet(DerivedKey::from_secret_key(privkey))
+            .call(
+                |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
+                |app| build_call!(app.bitcoin.set_signatory_key(slashable_signer_xpub.into())),
+            )
+            .await?;
 
         let wallet = retry(|| bitcoind.create_wallet("nomic-integration-test"), 10).unwrap();
         let wallet_address = wallet.get_new_address(None, None).unwrap();
@@ -652,6 +679,14 @@ async fn signing_completed_checkpoint_test() {
 
     let node_path = path.clone();
     let signer_path = path.clone();
+    let xpriv = generate_bitcoin_key(bitcoin::Network::Regtest).unwrap();
+    fs::create_dir_all(signer_path.join("signer")).unwrap();
+    fs::write(
+        signer_path.join("signer/xpriv"),
+        xpriv.to_string().as_bytes(),
+    )
+    .unwrap();
+    let xpub = ExtendedPubKey::from_priv(&secp256k1::Secp256k1::new(), &xpriv);
     let header_relayer_path = path.clone();
 
     std::env::set_var("NOMIC_HOME_DIR", &path);
@@ -712,18 +747,18 @@ async fn signing_completed_checkpoint_test() {
         Err::<(), Error>(Error::Test("Signer shutdown initiated".to_string()))
     };
 
-    let seed: [u8; 32] = rand::thread_rng().gen();
+    let slashable_xpriv_seed: [u8; 32] = rand::thread_rng().gen();
 
     let slashable_signer = async {
         tokio::time::sleep(Duration::from_secs(15)).await;
         let xpriv =
-            ExtendedPrivKey::new_master(bitcoin::Network::Testnet, seed.as_slice()).unwrap();
+            ExtendedPrivKey::new_master(bitcoin::Network::Testnet, slashable_xpriv_seed.as_slice())
+                .unwrap();
         let privkey_bytes = funded_accounts[2].privkey.secret_bytes();
         let privkey = orga::secp256k1::SecretKey::from_slice(&privkey_bytes).unwrap();
         let signer = Signer::new(
             address_from_privkey(&funded_accounts[2].privkey),
-            xpriv,
-            Vec::default(),
+            vec![xpriv],
             0.1,
             1.0,
             None,
@@ -744,13 +779,13 @@ async fn signing_completed_checkpoint_test() {
     let slashable_signer_2 = {
         tokio::time::sleep(Duration::from_secs(15)).await;
         let xpriv =
-            ExtendedPrivKey::new_master(bitcoin::Network::Testnet, seed.as_slice()).unwrap();
+            ExtendedPrivKey::new_master(bitcoin::Network::Testnet, slashable_xpriv_seed.as_slice())
+                .unwrap();
         let privkey_bytes = funded_accounts[2].privkey.secret_bytes();
         let privkey = orga::secp256k1::SecretKey::from_slice(&privkey_bytes).unwrap();
         Signer::new(
             address_from_privkey(&funded_accounts[2].privkey),
-            xpriv,
-            Vec::default(),
+            vec![xpriv],
             0.1,
             1.0,
             None,
@@ -770,9 +805,30 @@ async fn signing_completed_checkpoint_test() {
         declare_validator(consensus_key, nomic_wallet, 100_000)
             .await
             .unwrap();
+        app_client()
+            .with_wallet(DerivedKey::from_secret_key(val_priv_key))
+            .call(
+                |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
+                |app| build_call!(app.bitcoin.set_signatory_key(xpub.into())),
+            )
+            .await?;
+
+        let xpriv =
+            ExtendedPrivKey::new_master(bitcoin::Network::Testnet, slashable_xpriv_seed.as_slice())
+                .unwrap();
+        let xpub = ExtendedPubKey::from_priv(&secp256k1::Secp256k1::new(), &xpriv);
+        let privkey_bytes = funded_accounts[2].privkey.secret_bytes();
+        let privkey = orga::secp256k1::SecretKey::from_slice(&privkey_bytes).unwrap();
         declare_validator([0; 32], funded_accounts[2].wallet.clone(), 4_000)
             .await
             .unwrap();
+        app_client()
+            .with_wallet(DerivedKey::from_secret_key(privkey))
+            .call(
+                |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
+                |app| build_call!(app.bitcoin.set_signatory_key(xpub.into())),
+            )
+            .await?;
 
         let wallet = retry(|| bitcoind.create_wallet("nomic-integration-test"), 10).unwrap();
         let wallet_address = wallet.get_new_address(None, None).unwrap();
@@ -897,6 +953,14 @@ async fn pending_deposits() {
 
     let node_path = path.clone();
     let signer_path = path.clone();
+    let xpriv = generate_bitcoin_key(bitcoin::Network::Regtest).unwrap();
+    fs::create_dir_all(signer_path.join("signer")).unwrap();
+    fs::write(
+        signer_path.join("signer/xpriv"),
+        xpriv.to_string().as_bytes(),
+    )
+    .unwrap();
+    let xpub = ExtendedPubKey::from_priv(&secp256k1::Secp256k1::new(), &xpriv);
     let header_relayer_path = path.clone();
 
     std::env::set_var("NOMIC_HOME_DIR", &path);
@@ -950,7 +1014,7 @@ async fn pending_deposits() {
     let disbursal = relayer.start_emergency_disbursal_transaction_relay();
 
     let signer = async {
-        tokio::time::sleep(Duration::from_secs(10)).await;
+        tokio::time::sleep(Duration::from_secs(15)).await;
         setup_test_signer(&signer_path, client_provider)
             .start()
             .await
@@ -963,6 +1027,13 @@ async fn pending_deposits() {
         declare_validator(consensus_key, nomic_wallet, 100_000)
             .await
             .unwrap();
+        app_client()
+            .with_wallet(DerivedKey::from_secret_key(val_priv_key))
+            .call(
+                |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
+                |app| build_call!(app.bitcoin.set_signatory_key(xpub.into())),
+            )
+            .await?;
 
         let wallet = retry(|| bitcoind.create_wallet("nomic-integration-test"), 10).unwrap();
         let wallet_address = wallet.get_new_address(None, None).unwrap();
@@ -1161,8 +1232,7 @@ async fn signer_key_updating() {
 
         let signer = Signer::new(
             Address::from_pubkey(pubkey.serialize()),
-            xpriv,
-            Vec::default(),
+            vec![xpriv],
             0.1,
             1.0,
             None,
@@ -1184,6 +1254,13 @@ async fn signer_key_updating() {
         declare_validator(consensus_key, nomic_wallet, 100_000)
             .await
             .unwrap();
+        app_client()
+            .with_wallet(DerivedKey::from_secret_key(val_priv_key))
+            .call(
+                |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
+                |app| build_call!(app.bitcoin.set_signatory_key(xpub.into())),
+            )
+            .await?;
 
         let wallet = retry(|| bitcoind.create_wallet("nomic-integration-test"), 10).unwrap();
         let wallet_address = wallet.get_new_address(None, None).unwrap();
@@ -1294,8 +1371,7 @@ async fn signer_key_updating() {
 
             Signer::new(
                 Address::from_pubkey(tm_pubkey.serialize()),
-                new_xpriv,
-                vec![xpriv],
+                vec![new_xpriv, xpriv],
                 0.1,
                 1.0,
                 None,

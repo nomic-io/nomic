@@ -210,10 +210,9 @@ where
     }
 
     let key_path = signer_dir_path.join("xpriv");
-    Signer::load_or_generate(
+    Signer::load_xprivs(
         address_from_privkey(&load_privkey(home.as_ref()).unwrap()),
         key_path,
-        None,
         Vec::default(),
         0.1,
         1.0,

@@ -394,53 +394,26 @@ pub fn sign(
         .try_into()?)
 }
 
+#[cfg(test)]
 mod test {
-    use bitcoin::secp256k1::SecretKey;
-    use orga::client::wallet::{SimpleWallet, Unsigned};
-    use orga::cosmrs::bip32::ExtendedPrivateKey;
-
     use super::*;
     use crate::app_client;
-    use crate::utils::load_privkey;
+    use crate::utils::generate_bitcoin_key;
+    use std::fs;
 
     #[test]
-    fn signer_populate_default_path() {
+    fn signer_default_path() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let signer = Signer::load_or_generate(
-            Address::default(),
-            temp_dir.path().join("xpriv-default"),
-            None,
-            Vec::default(),
-            1.0,
-            1.0,
-            None,
-            || app_client("http://localhost:26657"),
-            None,
-        );
-        assert!(signer.is_ok());
-
-        Signer::<Unsigned, fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned>>::load_key(temp_dir.path().join("xpriv-default"))
-            .unwrap();
-    }
-
-    #[test]
-    fn signer_read_default_path() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let xpriv = Signer::<
-            Unsigned,
-            fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned>,
-        >::generate_key()
-        .unwrap();
+        let xpriv = generate_bitcoin_key(bitcoin::Network::Testnet).unwrap();
         fs::write(
             temp_dir.path().join("xpriv-default"),
             xpriv.to_string().as_bytes(),
         )
         .unwrap();
 
-        let signer = Signer::load_or_generate(
+        let signer = Signer::load_xprivs(
             Address::default(),
             temp_dir.path().join("xpriv-default"),
-            None,
             Vec::default(),
             1.0,
             1.0,
@@ -450,28 +423,23 @@ mod test {
         )
         .unwrap();
 
-        assert!(signer.primary_xpriv == xpriv);
+        assert!(signer.xprivs.get(0).unwrap() == &xpriv);
     }
 
     #[test]
     fn signer_primary_path() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let xpriv = Signer::<
-            Unsigned,
-            fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned>,
-        >::generate_key()
-        .unwrap();
+        let xpriv = generate_bitcoin_key(bitcoin::Network::Testnet).unwrap();
         fs::write(
             temp_dir.path().join("xpriv-primary"),
             xpriv.to_string().as_bytes(),
         )
         .unwrap();
 
-        let signer = Signer::load_or_generate(
+        let signer = Signer::load_xprivs(
             Address::default(),
             temp_dir.path().join("xpriv-default"),
-            Some(temp_dir.path().join("xpriv-primary")),
-            Vec::default(),
+            vec![temp_dir.path().join("xpriv-primary")],
             1.0,
             1.0,
             None,
@@ -479,19 +447,18 @@ mod test {
             None,
         )
         .unwrap();
-
-        assert!(signer.primary_xpriv == xpriv);
+        assert!(signer.xprivs.len() == 1);
+        assert!(signer.xprivs.get(0).unwrap() == &xpriv);
     }
 
     #[test]
     #[should_panic]
     fn signer_provided_primary_path_non_existent() {
         let temp_dir = tempfile::tempdir().unwrap();
-        Signer::load_or_generate(
+        Signer::load_xprivs(
             Address::default(),
             temp_dir.path().join("xpriv-default"),
-            Some(temp_dir.path().join("xpriv-primary")),
-            Vec::default(),
+            vec![temp_dir.path().join("xpriv-primary")],
             1.0,
             1.0,
             None,
@@ -508,20 +475,15 @@ mod test {
         let mut xprivs = Vec::new();
         for i in 0..10 {
             let path = temp_dir.path().join(format!("xpriv-additional-{}", i));
-            let xpriv = Signer::<
-                Unsigned,
-                fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned>,
-            >::generate_key()
-            .unwrap();
+            let xpriv = generate_bitcoin_key(bitcoin::Network::Testnet).unwrap();
             fs::write(path.clone(), xpriv.to_string().as_bytes()).unwrap();
             xpriv_paths.push(path);
             xprivs.push(xpriv);
         }
 
-        let signer = Signer::load_or_generate(
+        let signer = Signer::load_xprivs(
             Address::default(),
             temp_dir.path().join("xpriv-default"),
-            None,
             xpriv_paths,
             1.0,
             1.0,
@@ -531,12 +493,8 @@ mod test {
         )
         .unwrap();
 
-        signer
-            .additional_xprivs
-            .iter()
-            .enumerate()
-            .for_each(|(i, xpriv)| {
-                assert!(xpriv == &xprivs[i]);
-            });
+        signer.xprivs.iter().enumerate().for_each(|(i, xpriv)| {
+            assert!(xpriv == &xprivs[i]);
+        });
     }
 }
