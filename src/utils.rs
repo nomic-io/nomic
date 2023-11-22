@@ -13,6 +13,7 @@ use crate::bitcoin::Config as BitcoinConfig;
 use crate::error::{Error, Result};
 use bitcoin::hashes::hex::ToHex;
 use bitcoin::secp256k1::{self, rand, SecretKey};
+use bitcoin::util::bip32::ExtendedPrivKey;
 #[cfg(feature = "full")]
 use bitcoin::BlockHeader;
 use bitcoin::Script;
@@ -38,8 +39,10 @@ use orga::store::{Shared, Store};
 use orga::tendermint::client::HttpClient;
 use orga::Result as OrgaResult;
 use orga::{client::wallet::DerivedKey, macros::build_call};
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::fs;
 #[cfg(feature = "full")]
 use std::path::Path;
 use std::path::PathBuf;
@@ -120,6 +123,30 @@ pub fn make_std_tx(
         serde_json::to_value(sign_doc.memo).unwrap(),
     );
     map
+}
+
+pub fn generate_bitcoin_key(network: bitcoin::Network) -> Result<ExtendedPrivKey> {
+    let seed: [u8; 32] = rand::thread_rng().gen();
+
+    let network = if network == bitcoin::Network::Regtest {
+        bitcoin::Network::Testnet
+    } else {
+        network
+    };
+
+    Ok(ExtendedPrivKey::new_master(network, seed.as_slice())?)
+}
+
+pub fn load_bitcoin_key<P: AsRef<Path> + Clone>(path: P) -> Result<ExtendedPrivKey> {
+    let bytes = fs::read(path.clone())?;
+    let text = String::from_utf8(bytes).unwrap();
+
+    text.trim().parse().map_err(|_| {
+        Error::Signer(format!(
+            "Unable to parse key at {}",
+            path.as_ref().display()
+        ))
+    })
 }
 
 pub fn load_privkey(dir: &Path) -> Result<SecretKey> {

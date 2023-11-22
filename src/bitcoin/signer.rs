@@ -2,6 +2,7 @@ use crate::app::{InnerApp, Nom};
 use crate::bitcoin::checkpoint::CheckpointStatus;
 use crate::bitcoin::threshold_sig::Signature;
 use crate::error::{Error, Result};
+use crate::utils::load_bitcoin_key;
 use bitcoin::secp256k1::{Message, Secp256k1};
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use lazy_static::lazy_static;
@@ -72,29 +73,6 @@ impl<W: Wallet, F> Signer<W, F>
 where
     F: Fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, W>,
 {
-    pub fn load_key<P: AsRef<Path> + Clone>(path: P) -> Result<ExtendedPrivKey> {
-        let bytes = fs::read(path.clone())?;
-        let text = String::from_utf8(bytes).unwrap();
-
-        text.trim().parse().map_err(|_| {
-            Error::Signer(format!(
-                "Unable to parse key at {}",
-                path.as_ref().display()
-            ))
-        })
-    }
-
-    pub fn generate_key() -> Result<ExtendedPrivKey> {
-        let seed: [u8; 32] = rand::thread_rng().gen();
-
-        let network = if super::NETWORK == bitcoin::Network::Regtest {
-            bitcoin::Network::Testnet
-        } else {
-            super::NETWORK
-        };
-
-        Ok(ExtendedPrivKey::new_master(network, seed.as_slice())?)
-    }
     /// Create a new signer, loading the extended private key from the given
     /// path (`key_path`) if it exists. If the key does not exist, one will be
     /// generated and written to the path, then submitted to the chain, becoming
