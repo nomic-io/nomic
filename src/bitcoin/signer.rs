@@ -15,8 +15,6 @@ use orga::tendermint::client::HttpClient;
 use prometheus_exporter::prometheus::{
     register_gauge, register_int_counter, register_int_gauge, Gauge, IntCounter, IntGauge,
 };
-use rand::Rng;
-use std::fs;
 use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::path::Path;
@@ -93,6 +91,7 @@ where
     /// the pending withdrawals and decided they are legitimate.
     /// - `app_client`: A function that returns a new app client to be used in
     ///   querying and submitting calls.
+    #[allow(clippy::too_many_arguments)]
     pub fn load_xprivs<P: AsRef<Path> + Clone>(
         op_addr: Address,
         default_xpriv_path: P,

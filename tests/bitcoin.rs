@@ -15,7 +15,7 @@ use nomic::app::Dest;
 use nomic::app::{InnerApp, Nom};
 use nomic::bitcoin::adapter::Adapter;
 use nomic::bitcoin::checkpoint::CheckpointStatus;
-use nomic::bitcoin::deposit_index::{Deposit, DepositInfo};
+use nomic::bitcoin::deposit_index::DepositInfo;
 use nomic::bitcoin::header_queue::Config as HeaderQueueConfig;
 use nomic::bitcoin::relayer::DepositAddress;
 use nomic::bitcoin::relayer::Relayer;
@@ -23,7 +23,6 @@ use nomic::bitcoin::signer::Signer;
 use nomic::bitcoin::threshold_sig::VersionedPubkey;
 use nomic::bitcoin::Config as BitcoinConfig;
 use nomic::error::{Error, Result};
-use nomic::orga::Error as OrgaError;
 use nomic::utils::*;
 use nomic::utils::{
     declare_validator, poll_for_active_sigset, poll_for_blocks, populate_bitcoin_block, retry,
@@ -45,7 +44,6 @@ use serial_test::serial;
 use std::collections::HashMap;
 use std::fs;
 use std::str::FromStr;
-use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Once;
 use std::time::Duration;
 use tempfile::tempdir;

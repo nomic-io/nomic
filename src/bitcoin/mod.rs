@@ -1,6 +1,3 @@
-use std::collections::HashMap;
-use std::ops::Deref;
-
 use self::checkpoint::Input;
 use self::threshold_sig::Signature;
 use crate::app::Dest;
@@ -34,6 +31,8 @@ use orga::{Error as OrgaError, Result as OrgaResult};
 use outpoint_set::OutpointSet;
 use serde::Serialize;
 use signatory::SignatorySet;
+use std::collections::HashMap;
+use std::ops::Deref;
 
 pub mod adapter;
 pub mod checkpoint;
@@ -416,6 +415,7 @@ impl Bitcoin {
                     "Signer does not have a consensus key".to_string(),
                 ))
             })?;
+
             let regtest_mode = self.network() == bitcoin::Network::Regtest
                 && _signatory_key.network == bitcoin::Network::Testnet;
 
@@ -1089,7 +1089,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc};
+    use std::{cell::RefCell, fs, rc::Rc};
 
     use bitcoin::{
         secp256k1::Secp256k1, util::bip32::ExtendedPrivKey, BlockHash, BlockHeader, OutPoint,
