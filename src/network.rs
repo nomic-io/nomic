@@ -165,7 +165,7 @@ impl FromArgMatches for Config {
     ) -> std::result::Result<(), clap::Error> {
         self.args.update_from_arg_matches(matches)?;
 
-        if let Some(network) = self.network() {
+        if let Some(network) = self.args.network {
             let mut net_config = network.config();
             let arg_config = &self.args;
 
