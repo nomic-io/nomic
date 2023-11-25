@@ -66,7 +66,7 @@ toml = { version = "0.7.2", features = ["parse"] }
 semver = "1.0.18"
 
 [features]
-default = ["full", "feat-ibc"]
+default = ["full", "feat-ibc", "testnet", "faucet-test"]
 full = [
     "bitcoincore-rpc-async",
     "clap",
@@ -84,21 +84,8 @@ full = [
 ]
 feat-ibc = ["orga/feat-ibc"]
 testnet = []
-devnet = [
-    "bitcoincore-rpc-async",
-    "clap",
-    "tokio",
-    "orga/merk-full",
-    "orga/abci",
-    "orga/state-sync",
-    "csv",
-    "warp",
-    "rand",
-    "reqwest",
-    "tendermint-rpc",
-    "cosmos-sdk-proto",
-    "home",
-]
+faucet-test=[]
+devnet = []
 
 legacy-bin = []
 
