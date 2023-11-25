@@ -7,9 +7,9 @@ use crate::{
     error::Result,
 };
 
-#[cfg(feature = "testnet")]
+#[cfg(feature = "full")]
 use crate::app::{InnerApp, Nom};
-#[cfg(feature = "testnet")]
+#[cfg(feature = "full")]
 use orga::{
     client::{AppClient, Wallet},
     macros::build_call,
@@ -40,7 +40,6 @@ use orga::{
     orga, Error as OrgaError,
 };
 use proto::traits::{Message, MessageExt};
-#[cfg(feature = "testnet")]
 #[cfg(feature = "full")]
 use tendermint_rpc::HttpClient;
 
@@ -393,7 +392,6 @@ impl Chain {
     }
 }
 
-#[cfg(feature = "testnet")]
 #[cfg(feature = "full")]
 pub async fn relay_op_keys<
     W: Wallet,

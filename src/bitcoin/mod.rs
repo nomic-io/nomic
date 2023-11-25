@@ -63,6 +63,12 @@ pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Testnet;
 #[cfg(all(feature = "devnet", feature = "testnet"))]
 pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Regtest;
 
+// TODO: move to config
+#[cfg(feature = "testnet")]
+pub const SIGSET_THRESHOLD: (u64, u64) = (9, 10);
+#[cfg(not(feature = "testnet"))]
+pub const SIGSET_THRESHOLD: (u64, u64) = (2, 3);
+
 /// The configuration parameters for the Bitcoin module.
 #[orga(skip(Default), version = 3)]
 pub struct Config {

@@ -1853,7 +1853,7 @@ dependencies = [
 [[package]]
 name = "ibc"
 version = "0.44.1"
-source = "git+https://github.com/oraichain/ibc-rs?rev=b7c1f92d5f8dd20c1f675adae2d9a256826c2197#b7c1f92d5f8dd20c1f675adae2d9a256826c2197"
+source = "git+https://github.com/nomic-io/ibc-rs?rev=91de3c673c59ed0a4344272dee6dd822d1355d59#91de3c673c59ed0a4344272dee6dd822d1355d59"
 dependencies = [
  "borsh 0.9.3",
  "bytes",
@@ -1882,7 +1882,7 @@ dependencies = [
 [[package]]
 name = "ibc-derive"
 version = "0.3.0"
-source = "git+https://github.com/oraichain/ibc-rs?rev=b7c1f92d5f8dd20c1f675adae2d9a256826c2197#b7c1f92d5f8dd20c1f675adae2d9a256826c2197"
+source = "git+https://github.com/nomic-io/ibc-rs?rev=91de3c673c59ed0a4344272dee6dd822d1355d59#91de3c673c59ed0a4344272dee6dd822d1355d59"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -2365,7 +2365,7 @@ dependencies = [
 
 [[package]]
 name = "nomic"
-version = "6.6.1"
+version = "7.0.0"
 dependencies = [
  "base64 0.13.1",
  "bech32",
@@ -2544,7 +2544,7 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.3.1"
-source = "git+https://github.com/oraichain/orga.git?rev=7f1e432e37ece7e3593cf200bdc40ae6cb3bcbe3#7f1e432e37ece7e3593cf200bdc40ae6cb3bcbe3"
+source = "git+https://github.com/nomic-io/orga.git?rev=eef75df69fcb8ee0eb788feae376d7edec36ac6f#eef75df69fcb8ee0eb788feae376d7edec36ac6f"
 dependencies = [
  "abci2",
  "async-trait",
@@ -2605,7 +2605,7 @@ dependencies = [
 [[package]]
 name = "orga-macros"
 version = "0.3.1"
-source = "git+https://github.com/oraichain/orga.git?rev=7f1e432e37ece7e3593cf200bdc40ae6cb3bcbe3#7f1e432e37ece7e3593cf200bdc40ae6cb3bcbe3"
+source = "git+https://github.com/nomic-io/orga.git?rev=eef75df69fcb8ee0eb788feae376d7edec36ac6f#eef75df69fcb8ee0eb788feae376d7edec36ac6f"
 dependencies = [
  "darling",
  "heck 0.3.3",

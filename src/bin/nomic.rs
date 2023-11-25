@@ -7,7 +7,6 @@
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
 use nomic::app::Dest;
-#[cfg(feature = "testnet")]
 use nomic::app::IbcDest;
 use nomic::app::InnerApp;
 use nomic::app::Nom;
@@ -17,7 +16,6 @@ use nomic::error::Result;
 use orga::abci::Node;
 use orga::client::wallet::{SimpleWallet, Wallet};
 use orga::coins::{Address, Commission, Decimal, Declaration, Symbol};
-#[cfg(feature = "testnet")]
 use orga::ibc::ibc_rs::core::{
     ics24_host::identifier::{ChannelId, PortId},
     timestamp::Timestamp,
@@ -87,20 +85,14 @@ pub enum Command {
     Signer(SignerCmd),
     SetSignatoryKey(SetSignatoryKeyCmd),
     Deposit(DepositCmd),
-    #[cfg(feature = "testnet")]
     InterchainDeposit(InterchainDepositCmd),
     Withdraw(WithdrawCmd),
-    // #[cfg(feature = "testnet")]
     // IbcDepositNbtc(IbcDepositNbtcCmd),
-    #[cfg(feature = "testnet")]
     IbcWithdrawNbtc(IbcWithdrawNbtcCmd),
-    #[cfg(feature = "testnet")]
     Grpc(GrpcCmd),
-    #[cfg(feature = "testnet")]
     IbcTransfer(IbcTransferCmd),
     Export(ExportCmd),
     UpgradeStatus(UpgradeStatusCmd),
-    #[cfg(feature = "testnet")]
     RelayOpKeys(RelayOpKeysCmd),
     SetRecoveryAddress(SetRecoveryAddressCmd),
     SigningStatus(SigningStatusCmd),
@@ -112,13 +104,25 @@ impl Command {
         let rt = tokio::runtime::Runtime::new().unwrap();
 
         if let Start(_cmd) = self {
-            // return Ok(cmd.run()?);
-        } else if let Some(legacy_bin) = legacy_bin(config)? {
-            let mut legacy_cmd = std::process::Command::new(legacy_bin);
-            legacy_cmd.args(std::env::args().skip(1));
-            log::debug!("Running legacy binary... ({:#?})", legacy_cmd);
-            legacy_cmd.spawn()?.wait()?;
-            return Ok(());
+            log::info!("nomic v{}", env!("CARGO_PKG_VERSION"));
+
+            if let Some(network) = config.network() {
+                log::info!("Configured for network {:?}", network);
+            }
+        } else {
+            log::debug!("nomic v{}", env!("CARGO_PKG_VERSION"));
+
+            if let Some(network) = config.network() {
+                log::debug!("Configured for network {:?}", network);
+            }
+
+            if let Some(legacy_bin) = legacy_bin(config)? {
+                let mut legacy_cmd = std::process::Command::new(legacy_bin);
+                legacy_cmd.args(std::env::args().skip(1));
+                log::debug!("Running legacy binary... ({:#?})", legacy_cmd);
+                legacy_cmd.spawn()?.wait()?;
+                return Ok(());
+            }
         }
 
         rt.block_on(async move {
@@ -142,20 +146,14 @@ impl Command {
                 Signer(cmd) => cmd.run().await,
                 SetSignatoryKey(cmd) => cmd.run().await,
                 Deposit(cmd) => cmd.run().await,
-                #[cfg(feature = "testnet")]
                 InterchainDeposit(cmd) => cmd.run().await,
                 Withdraw(cmd) => cmd.run().await,
-                // #[cfg(feature = "testnet")]
                 // IbcDepositNbtc(cmd) => cmd.run().await,
-                #[cfg(feature = "testnet")]
                 IbcWithdrawNbtc(cmd) => cmd.run().await,
-                #[cfg(feature = "testnet")]
                 Grpc(cmd) => cmd.run().await,
-                #[cfg(feature = "testnet")]
                 IbcTransfer(cmd) => cmd.run().await,
                 Export(cmd) => cmd.run().await,
                 UpgradeStatus(cmd) => cmd.run().await,
-                #[cfg(feature = "testnet")]
                 RelayOpKeys(cmd) => cmd.run().await,
                 SetRecoveryAddress(cmd) => cmd.run().await,
                 SigningStatus(cmd) => cmd.run().await,
@@ -210,16 +208,9 @@ impl StartCmd {
                 legacy_cmd.env("ORGA_STOP_HEIGHT", upgrade_height.to_string());
             }
 
-            #[cfg(feature = "testnet")]
-            {
-                let version_hex = hex::encode([InnerApp::CONSENSUS_VERSION]);
-                legacy_cmd.args(["start", "--signal-version", &version_hex]);
-                legacy_cmd.args(std::env::args().skip(2).collect::<Vec<_>>());
-            }
-            #[cfg(not(feature = "testnet"))]
-            {
-                legacy_cmd.args(["start", "--state-sync"]);
-            }
+            let version_hex = hex::encode([InnerApp::CONSENSUS_VERSION]);
+            legacy_cmd.args(["start", "--signal-version", &version_hex]);
+            legacy_cmd.args(std::env::args().skip(2).collect::<Vec<_>>());
 
             log::info!("Starting legacy node... ({:#?})", legacy_cmd);
             let res = legacy_cmd.spawn()?.wait()?;
@@ -327,14 +318,7 @@ impl StartCmd {
             std::fs::write(home.join("tendermint/config/genesis.json"), genesis_bytes)?;
         }
         if cmd.migrate || should_migrate {
-            node = node.migrate(
-                vec![InnerApp::CONSENSUS_VERSION],
-                #[cfg(feature = "testnet")]
-                false,
-                #[cfg(not(feature = "testnet"))]
-                true,
-                true,
-            );
+            node = node.migrate(vec![InnerApp::CONSENSUS_VERSION], false, true);
         }
         if cmd.skip_init_chain {
             node = node.skip_init_chain();
@@ -713,11 +697,8 @@ impl BalanceCmd {
             .await?;
         println!("{} NBTC", balance);
 
-        #[cfg(feature = "testnet")]
-        {
-            let balance = client.query(|app| app.escrowed_nbtc(address)).await?;
-            println!("{} IBC-escrowed NBTC", balance);
-        }
+        let balance = client.query(|app| app.escrowed_nbtc(address)).await?;
+        println!("{} IBC-escrowed NBTC", balance);
 
         Ok(())
     }
@@ -1359,7 +1340,6 @@ impl DepositCmd {
     }
 }
 
-#[cfg(feature = "testnet")]
 #[derive(Parser, Debug)]
 pub struct InterchainDepositCmd {
     address: String,
@@ -1370,9 +1350,7 @@ pub struct InterchainDepositCmd {
     config: nomic::network::Config,
 }
 
-#[cfg(feature = "testnet")]
 const ONE_DAY_NS: u64 = 86400 * 1_000_000_000;
-#[cfg(feature = "testnet")]
 impl InterchainDepositCmd {
     async fn run(&self) -> Result<()> {
         use orga::encoding::Adapter;
@@ -1424,7 +1402,6 @@ impl WithdrawCmd {
     }
 }
 
-// #[cfg(feature = "testnet")]
 // #[derive(Parser, Debug)]
 // pub struct IbcTransferNbtcCmd {
 //     to: Address,
@@ -1434,7 +1411,6 @@ impl WithdrawCmd {
 //     config: nomic::network::Config,
 // }
 
-// #[cfg(feature = "testnet")]
 // impl IbcTransferNbtcCmd {
 //     async fn run(&self) -> Result<()> {
 //         Ok(self
@@ -1449,7 +1425,6 @@ impl WithdrawCmd {
 //     }
 // }
 
-#[cfg(feature = "testnet")]
 #[derive(Parser, Debug)]
 pub struct IbcWithdrawNbtcCmd {
     amount: u64,
@@ -1458,7 +1433,6 @@ pub struct IbcWithdrawNbtcCmd {
     config: nomic::network::Config,
 }
 
-#[cfg(feature = "testnet")]
 impl IbcWithdrawNbtcCmd {
     async fn run(&self) -> Result<()> {
         Ok(self
@@ -1473,7 +1447,6 @@ impl IbcWithdrawNbtcCmd {
     }
 }
 
-#[cfg(feature = "testnet")]
 #[derive(Parser, Debug)]
 pub struct GrpcCmd {
     #[clap(default_value_t = 9001)]
@@ -1486,7 +1459,6 @@ pub struct GrpcCmd {
     config: nomic::network::Config,
 }
 
-#[cfg(feature = "testnet")]
 impl GrpcCmd {
     async fn run(&self) -> Result<()> {
         use orga::ibc::GrpcOpts;
@@ -1506,7 +1478,6 @@ impl GrpcCmd {
     }
 }
 
-#[cfg(feature = "testnet")]
 #[derive(Parser, Debug)]
 pub struct IbcTransferCmd {
     receiver: String,
@@ -1519,7 +1490,6 @@ pub struct IbcTransferCmd {
     config: nomic::network::Config,
 }
 
-#[cfg(feature = "testnet")]
 impl IbcTransferCmd {
     async fn run(&self) -> Result<()> {
         use orga::encoding::Adapter as EdAdapter;
@@ -1759,14 +1729,12 @@ impl UpgradeStatusCmd {
     }
 }
 
-#[cfg(feature = "testnet")]
 #[derive(Parser, Debug)]
 pub struct RelayOpKeysCmd {
     client_id: String,
     rpc_url: String,
 }
 
-#[cfg(feature = "testnet")]
 impl RelayOpKeysCmd {
     async fn run(&self) -> Result<()> {
         use nomic::cosmos::relay_op_keys;
@@ -1913,8 +1881,6 @@ pub fn main() {
     .filter_level(log::LevelFilter::Info)
     .parse_env("NOMIC_LOG")
     .init();
-
-    log::debug!("nomic v{}", env!("CARGO_PKG_VERSION"));
 
     let backtrace_enabled = std::env::var("RUST_BACKTRACE").is_ok();
 

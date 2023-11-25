@@ -1,13 +1,13 @@
 [package]
 name = "nomic"
-version = "6.6.1"
-authors = ["The Nomic Team <hello@nomic.io>"]
+version = "7.0.0"
+authors = ["The Turbofish Team <hello@turbofish.org>"]
 edition = "2021"
 default-run = "nomic"
 
 [dependencies]
 bitcoin = { version = "0.29.2", features = ["serde", "rand"] }
-orga = { git = "https://github.com/oraichain/orga.git", rev = "7f1e432e37ece7e3593cf200bdc40ae6cb3bcbe3", features = [
+orga = { git = "https://github.com/nomic-io/orga.git", rev = "eef75df69fcb8ee0eb788feae376d7edec36ac6f", features = [
     "merk-verify",
 ] }
 thiserror = "1.0.30"
@@ -66,7 +66,7 @@ toml = { version = "0.7.2", features = ["parse"] }
 semver = "1.0.18"
 
 [features]
-default = ["full", "feat-ibc", "testnet", "devnet"]
+default = ["full", "feat-ibc", "legacy-bin"]
 full = [
     "bitcoincore-rpc-async",
     "clap",
