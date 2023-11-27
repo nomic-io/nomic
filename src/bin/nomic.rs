@@ -16,6 +16,7 @@ use nomic::bitcoin::Nbtc;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
 use nomic::utils::load_bitcoin_key;
+use nomic::utils::load_or_generate;
 use orga::abci::Node;
 use orga::client::wallet::{SimpleWallet, Wallet};
 use orga::coins::{Address, Commission, Decimal, Declaration, Symbol};
@@ -1252,6 +1253,7 @@ impl SignerCmd {
 #[derive(Parser, Debug)]
 pub struct SetSignatoryKeyCmd {
     xpriv_path: Option<PathBuf>,
+    generate: bool,
 
     #[clap(flatten)]
     config: nomic::network::Config,
@@ -1263,7 +1265,13 @@ impl SetSignatoryKeyCmd {
             .xpriv_path
             .clone()
             .unwrap_or_else(|| self.config.home_expect().unwrap().join("signer/xpriv"));
-        let xpriv = load_bitcoin_key(xpriv_path)?;
+
+        let xpriv = if self.generate {
+            load_or_generate(xpriv_path, nomic::bitcoin::NETWORK)?
+        } else {
+            load_bitcoin_key(xpriv_path)?
+        };
+
         let xpub = ExtendedPubKey::from_priv(&secp256k1::Secp256k1::new(), &xpriv);
 
         self.config

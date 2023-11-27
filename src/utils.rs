@@ -21,6 +21,7 @@ use bitcoin::Script;
 use bitcoincore_rpc_async::{Auth, Client as BitcoinRpcClient, RpcApi};
 #[cfg(feature = "full")]
 use log::info;
+use log::warn;
 use orga::client::Wallet;
 use orga::coins::staking::{Commission, Declaration};
 use orga::coins::{Address, Coin, Decimal};
@@ -147,6 +148,20 @@ pub fn load_bitcoin_key<P: AsRef<Path> + Clone>(path: P) -> Result<ExtendedPrivK
             path.as_ref().display()
         ))
     })
+}
+
+pub fn load_or_generate(path: PathBuf, network: bitcoin::Network) -> Result<ExtendedPrivKey> {
+    if path.exists() {
+        warn!("Bitcoin key already exists at {}", path.display());
+        info!("Loading key from {}", path.display());
+        load_bitcoin_key(path)
+    } else {
+        let key = generate_bitcoin_key(network)?;
+        fs::write(path.clone(), key.to_string())?;
+        info!("Generated bitcoin key at {}", path.display());
+        warn!("This is your signer key. Back it up!");
+        Ok(key)
+    }
 }
 
 pub fn load_privkey(dir: &Path) -> Result<SecretKey> {
