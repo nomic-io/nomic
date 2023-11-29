@@ -13,6 +13,7 @@ use nomic::app::Nom;
 use nomic::bitcoin::Nbtc;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
+use nomic::utils::write_orga_private_key_from_mnemonic;
 use orga::abci::Node;
 use orga::client::wallet::{SimpleWallet, Wallet};
 use orga::coins::{Address, Commission, Decimal, Declaration, Symbol};
@@ -678,12 +679,20 @@ impl SendNbtcCmd {
 pub struct BalanceCmd {
     address: Option<Address>,
 
+    #[clap(long, global = true)]
+    mnemonic_file: Option<String>,
+
     #[clap(flatten)]
     config: nomic::network::Config,
 }
 
 impl BalanceCmd {
     async fn run(&self) -> Result<()> {
+        if let Some(file_path) = &self.mnemonic_file {
+            let mnemonic = std::fs::read_to_string(file_path).unwrap();
+            write_orga_private_key_from_mnemonic(mnemonic);
+        }
+
         let address = self.address.unwrap_or_else(my_address);
         println!("address: {}", address);
 

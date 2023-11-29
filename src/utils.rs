@@ -48,6 +48,11 @@ use std::str::FromStr;
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use bip39::{Language, Mnemonic, Seed};
+use bitcoin::util::bip32::{ExtendedPubKey, ExtendedPrivKey, IntoDerivationPath, DerivationPath};
+use bitcoin::network::constants::Network;
+use secp256k1::Secp256k1;
+
 const DEFAULT_RPC: &str = "http://localhost:26657";
 
 pub fn retry<F, T, E>(f: F, max_retries: u32) -> std::result::Result<T, E>
@@ -489,4 +494,34 @@ pub fn start_rest() -> Result<Child> {
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn()?)
+}
+
+pub fn write_orga_private_key_from_mnemonic(mnemonic: String) {
+    let hd_path = "m/44'/118'/0'/0/0".into_derivation_path().unwrap();
+
+    let mnemonic_reference: &str = &mnemonic;
+
+    let mnemonic = Mnemonic::from_phrase(mnemonic_reference, Language::English).unwrap();
+
+    let seed = Seed::new(&mnemonic, ""); //128 hex chars = 512 bits
+    let seed_bytes: &[u8] = seed.as_bytes();
+
+    let (_prk, _) = get_extended_keypair(&seed_bytes, hd_path);
+
+    let path = home::home_dir().unwrap().join(".orga-wallet").join("privkey");
+    std::fs::write(&path, _prk.to_priv().to_bytes()).unwrap();
+}
+
+
+fn get_extended_keypair(
+    seed: &[u8],
+    hd_path: DerivationPath,
+) -> (ExtendedPrivKey, ExtendedPubKey) {
+    let secp = Secp256k1::new();
+    let pk = ExtendedPrivKey::new_master(Network::Bitcoin, seed)
+            .unwrap()
+            .derive_priv(&secp, &hd_path)
+            .unwrap();
+    let pubk = ExtendedPubKey::from_private(&secp, &pk);
+    (pk, pubk)
 }
