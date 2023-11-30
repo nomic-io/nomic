@@ -13,6 +13,7 @@ use nomic::app::Nom;
 use nomic::bitcoin::Nbtc;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
+use nomic::utils::wallet_path;
 use nomic::utils::write_orga_private_key_from_mnemonic;
 use orga::abci::Node;
 use orga::client::wallet::{SimpleWallet, Wallet};
@@ -44,8 +45,7 @@ const BANNER: &str = r#"
 "#;
 
 fn wallet() -> SimpleWallet {
-    let path = home::home_dir().unwrap().join(".orga-wallet");
-    SimpleWallet::open(path).unwrap()
+    SimpleWallet::open(wallet_path()).unwrap()
 }
 
 fn my_address() -> Address {
@@ -688,9 +688,10 @@ pub struct BalanceCmd {
 
 impl BalanceCmd {
     async fn run(&self) -> Result<()> {
-        if let Some(file_path) = &self.mnemonic_file {
-            let mnemonic = std::fs::read_to_string(file_path).unwrap();
-            write_orga_private_key_from_mnemonic(mnemonic);
+        if let Some(file_path) = self.mnemonic_file.as_ref() {
+            let mnemonic = std::fs::read_to_string(file_path)
+                .expect(&format!("Can not read file {file_path}"));
+            write_orga_private_key_from_mnemonic(&mnemonic);
         }
 
         let address = self.address.unwrap_or_else(my_address);
