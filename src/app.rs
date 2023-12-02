@@ -373,6 +373,18 @@ impl InnerApp {
             // mint new unom coin for funded address
             self.accounts
                 .deposit(funded_address.parse().unwrap(), unom_coin)?;
+
+
+            let nbtc_coin: Coin<Nbtc> = Amount::new(
+                funded_amount
+                    .parse::<u64>()
+                    .unwrap_or(DEFAULT_FUNDED_AMOUNT),
+            )
+            .into();
+            // add new nbtc coin to the funded address
+            self.credit_transfer(Dest::Address(funded_address.parse().unwrap()), nbtc_coin)?;
+            self.accounts
+                .add_transfer_exception(funded_address.parse().unwrap())?;
             Ok(funded_address)
         }
         #[cfg(not(feature = "faucet-test"))]
