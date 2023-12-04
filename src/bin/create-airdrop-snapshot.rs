@@ -1,6 +1,7 @@
 #![feature(hash_extract_if)]
 
 use clap::Parser;
+use orga::coins::BECH32_PREFIX;
 use std::collections::HashMap;
 
 #[derive(Parser, Debug)]
@@ -185,5 +186,5 @@ fn decode_addr(addr: &str) -> Vec<u8> {
 fn encode_addr(data: Vec<u8>) -> String {
     use bech32::ToBase32;
     let data = data.to_base32();
-    bech32::encode("nomic", data, bech32::Variant::Bech32).unwrap()
+    bech32::encode(BECH32_PREFIX, data, bech32::Variant::Bech32).unwrap()
 }
