@@ -46,7 +46,7 @@
 //     for result in reader.records() {
 //         let mut record = result.unwrap();
 //         let addr = record.get(0).unwrap();
-//         if addr.len() != 43 {
+//         if addr.len() != 39 + orga::coins::BECH32_PREFIX {
 //             continue;
 //         }
 //         let airdrop_account = app

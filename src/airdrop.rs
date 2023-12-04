@@ -206,7 +206,7 @@ impl Airdrop {
             .filter_map(|row| {
                 let row = row.unwrap();
 
-                if row[0].len() != 43 {
+                if row[0].len() != 39 + orga::coins::BECH32_PREFIX.len() {
                     return None;
                 }
                 let addr: Address = row[0].parse().unwrap();
@@ -358,7 +358,6 @@ mod test {
         acct.airdrop2.claimable
     }
 
-    #[cfg(not(feature = "testnet"))]
     #[test]
     fn airdrop_allocation_no_testnet() {
         let mut airdrop = Airdrop::default();
