@@ -54,6 +54,8 @@ use bitcoin::util::bip32::{ExtendedPrivKey, IntoDerivationPath};
 use secp256k1::Secp256k1;
 
 const DEFAULT_RPC: &str = "http://localhost:26657";
+pub const MAIN_NATIVE_TOKEN_DENOM: &str = "uoraibtc";
+pub const BTC_NATIVE_TOKEN_DENOM: &str = "BTC_NATIVE_TOKEN_DENOM";
 
 pub fn wallet_path() -> PathBuf {
     home::home_dir().unwrap().join(".orga-wallet")
@@ -97,7 +99,7 @@ pub fn generate_sign_doc(chain_id: String, msg: sdk::Msg, nonce: u64) -> sdk::Si
         fee: sdk::Fee {
             amount: vec![sdk::Coin {
                 amount: "0".to_string(),
-                denom: "unom".to_string(),
+                denom: MAIN_NATIVE_TOKEN_DENOM.to_string(),
             }],
             gas: MIN_FEE.to_string(),
         },

@@ -10,6 +10,7 @@ use nomic::{
         query::Query,
         tendermint::client::HttpClient,
     },
+    utils::MAIN_NATIVE_TOKEN_DENOM,
 };
 use rocket::response::status::BadRequest;
 use rocket::serde::json::{json, Value};
@@ -41,7 +42,7 @@ async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
     Ok(json!({
         "balances": [
             {
-                "denom": "unom",
+                "denom": MAIN_NATIVE_TOKEN_DENOM,
                 "amount": balance.to_string(),
             },
             {
@@ -70,7 +71,7 @@ async fn bank_balances_2(address: &str) -> Result<Value, BadRequest<String>> {
         "height": "0",
         "result": [
             {
-                "denom": "unom",
+                "denom": MAIN_NATIVE_TOKEN_DENOM,
                 "amount": balance.to_string(),
             }
         ]
@@ -102,7 +103,7 @@ async fn auth_accounts(addr_str: &str) -> Result<Value, BadRequest<String>> {
                 "address": addr_str,
                 "coins": [
                     {
-                        "denom": "unom",
+                        "denom": MAIN_NATIVE_TOKEN_DENOM,
                         "amount": balance.to_string(),
                     }
                 ],
@@ -309,7 +310,7 @@ async fn staking_delegators_delegations(address: &str) -> Result<Value, BadReque
                 "shares": "0"
             },
             "balance": {
-                "denom": "unom",
+                "denom": MAIN_NATIVE_TOKEN_DENOM,
                 "amount": total_staked.to_string(),
             }
           }
@@ -385,7 +386,7 @@ async fn distribution_delegatrs_rewards(_address: &str) -> Value {
         //     "validator_address": "cosmosvaloper16xyempempp92x9hyzz9wrgf94r6j9h5f2w4n2l",
         //     "reward": [
         //       {
-        //         "denom": "unom",
+        //         "denom": MAIN_NATIVE_TOKEN_DENOM,
         //         "amount": reward
         //       }
         //     ]
@@ -393,7 +394,7 @@ async fn distribution_delegatrs_rewards(_address: &str) -> Value {
         ],
         "total": [
         //   {
-        //     "denom": "unom",
+        //     "denom": MAIN_NATIVE_TOKEN_DENOM,
         //     "amount": reward
         //   }
         ]
@@ -427,7 +428,7 @@ async fn distribution_delegatrs_rewards_2(_address: &str) -> Value {
         //     "validator_address": "cosmosvaloper16xyempempp92x9hyzz9wrgf94r6j9h5f2w4n2l",
         //     "reward": [
         //       {
-        //         "denom": "unom",
+        //         "denom": MAIN_NATIVE_TOKEN_DENOM,
         //         "amount": reward
         //       }
         //     ]
@@ -435,7 +436,7 @@ async fn distribution_delegatrs_rewards_2(_address: &str) -> Value {
         ],
         "total": [
         //   {
-        //     "denom": "unom",
+        //     "denom": MAIN_NATIVE_TOKEN_DENOM,
         //     "amount": reward
         //   }
         ]
@@ -495,11 +496,11 @@ fn staking_pool() -> Value {
     })
 }
 
-#[get("/cosmos/bank/v1beta1/supply/unom")]
+#[get("/cosmos/bank/v1beta1/supply/uoraibtc")]
 fn bank_supply_unom() -> Value {
     json!({
         "amount": {
-            "denom": "unom",
+            "denom": MAIN_NATIVE_TOKEN_DENOM,
             "amount": "1"
         }
     })

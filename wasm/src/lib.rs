@@ -296,7 +296,7 @@ pub async fn get_recovery_address(address: String) -> Result<String, JsError> {
 pub async fn delegate(from_addr: String, to_addr: String, amount: u64) -> Result<String, JsError> {
     let mut amount_obj = serde_json::Map::new();
     amount_obj.insert("amount".to_string(), amount.to_string().into());
-    amount_obj.insert("denom".to_string(), "unom".into());
+    amount_obj.insert("denom".to_string(), MAIN_NATIVE_TOKEN_DENOM.into());
 
     let mut value = serde_json::Map::new();
     value.insert("delegator_address".to_string(), from_addr.clone().into());
@@ -317,7 +317,7 @@ pub async fn delegate(from_addr: String, to_addr: String, amount: u64) -> Result
 pub async fn unbond(address: String, val_addr: String, amount: u64) -> Result<String, JsError> {
     let mut amount_obj = serde_json::Map::new();
     amount_obj.insert("amount".to_string(), amount.to_string().into());
-    amount_obj.insert("denom".to_string(), "unom".into());
+    amount_obj.insert("denom".to_string(), MAIN_NATIVE_TOKEN_DENOM.into());
 
     let mut value = serde_json::Map::new();
     value.insert("delegator_address".to_string(), address.clone().into());
@@ -346,7 +346,7 @@ pub async fn redelegate(
 ) -> Result<String, JsError> {
     let mut amount_obj = serde_json::Map::new();
     amount_obj.insert("amount".to_string(), amount.to_string().into());
-    amount_obj.insert("denom".to_string(), "unom".into());
+    amount_obj.insert("denom".to_string(), MAIN_NATIVE_TOKEN_DENOM.into());
 
     let mut value = serde_json::Map::new();
     value.insert("delegator_address".to_string(), address.clone().into());
@@ -682,7 +682,7 @@ async fn gen_call_bytes(address: String, msg: sdk::Msg) -> Result<String, JsErro
         fee: sdk::Fee {
             amount: vec![sdk::Coin {
                 amount: "0".to_string(),
-                denom: "unom".to_string(),
+                denom: MAIN_NATIVE_TOKEN_DENOM.to_string(),
             }],
             gas: MIN_FEE.to_string(),
         },

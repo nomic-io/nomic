@@ -53,7 +53,7 @@ pub mod threshold_sig;
 pub struct Nbtc(());
 impl Symbol for Nbtc {
     const INDEX: u8 = 21;
-    const NAME: &'static str = "usat";
+    const NAME: &'static str = "BTC_NATIVE_TOKEN_DENOM";
 }
 
 #[cfg(all(not(feature = "testnet"), not(feature = "devnet")))]

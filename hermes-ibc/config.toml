@@ -123,7 +123,7 @@ key_store_type = "Test"
 store_prefix = 'ibc'
 default_gas = 2000000
 max_gas = 10000000
-gas_price = { price = 0.001, denom = 'unom' }
+gas_price = { price = 0.001, denom = 'uoraibtc' }
 clock_drift = '20s'
 trusting_period = '9days'
 max_msg_num = 1

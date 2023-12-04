@@ -6,10 +6,7 @@ RUN rustup default nightly
 WORKDIR /workspace
 
 COPY src/ /workspace/src
-COPY build.rs /workspace/
-COPY Cargo.lock /workspace/
-COPY Cargo.toml /workspace/
-COPY rust-toolchain.toml /workspace/
+COPY build.rs Cargo.lock Cargo.toml rust-toolchain.toml /workspace/
 COPY wasm/ /workspace/wasm
 COPY rest/ /workspace/rest
 COPY networks/ /workspace/networks

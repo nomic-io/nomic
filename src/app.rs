@@ -9,6 +9,7 @@ use crate::bitcoin::{Bitcoin, Nbtc};
 use crate::cosmos::{Chain, Cosmos, Proof};
 
 use crate::incentives::Incentives;
+use crate::utils::MAIN_NATIVE_TOKEN_DENOM;
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::{Script, Transaction, TxOut};
 use orga::coins::{
@@ -57,7 +58,7 @@ pub type App = DefaultPlugins<Nom, InnerApp>;
 pub struct Nom(());
 impl Symbol for Nom {
     const INDEX: u8 = 69;
-    const NAME: &'static str = "unom";
+    const NAME: &'static str = MAIN_NATIVE_TOKEN_DENOM;
 }
 #[cfg(feature = "full")]
 const DEV_ADDRESS: &str = "nomic14z79y3yrghqx493mwgcj0qd2udy6lm26lmduah";
@@ -303,7 +304,7 @@ impl InnerApp {
         let incoming_transfers = self.ibc.deliver(messages)?;
 
         for transfer in incoming_transfers {
-            if transfer.denom.to_string() != "usat" {
+            if transfer.denom.to_string() != "BTC_NATIVE_TOKEN_DENOM" {
                 continue;
             }
             let memo: NbtcMemo = transfer.memo.parse().unwrap_or_default();
@@ -358,7 +359,7 @@ impl InnerApp {
     pub fn mint_coins_for_funded_address(&mut self) -> Result<String> {
         #[cfg(feature = "faucet-test")]
         {
-            // mint unom and nbtc for a funded address given in the env variable
+            // mint uoraibtc and nbtc for a funded address given in the env variable
             let funded_address =
                 env::var("FUNDED_ADDRESS").map_err(|err| orga::Error::Client(err.to_string()))?;
             let funded_amount = env::var("FUNDED_AMOUNT").unwrap_or_default();
@@ -370,10 +371,9 @@ impl InnerApp {
             )
             .into();
 
-            // mint new unom coin for funded address
+            // mint new uoraibtc coin for funded address
             self.accounts
                 .deposit(funded_address.parse().unwrap(), unom_coin)?;
-
 
             let nbtc_coin: Coin<Nbtc> = Amount::new(
                 funded_amount
@@ -592,7 +592,7 @@ impl ConvertSdkTx for InnerApp {
                     }
 
                     match msg.amount[0].denom.to_string().as_str() {
-                        "unom" => {
+                        MAIN_NATIVE_TOKEN_DENOM => {
                             let amount: u64 = msg.amount[0].amount.to_string().parse().unwrap();
 
                             let payer = build_call!(self.accounts.take_as_funding(MIN_FEE.into()));
@@ -600,7 +600,7 @@ impl ConvertSdkTx for InnerApp {
 
                             return Ok(PaidCall { payer, paid });
                         }
-                        "usat" => {
+                        "BTC_NATIVE_TOKEN_DENOM" => {
                             let amount: u64 = msg.amount[0].amount.to_string().parse().unwrap();
 
                             let payer = build_call!(self.bitcoin.transfer(to, amount.into()));
@@ -664,8 +664,9 @@ impl ConvertSdkTx for InnerApp {
                         }
 
                         match msg.amount[0].denom.as_str() {
-                            "unom" => {
-                                let amount = get_amount(msg.amount.first(), "unom")?;
+                            MAIN_NATIVE_TOKEN_DENOM => {
+                                let amount =
+                                    get_amount(msg.amount.first(), MAIN_NATIVE_TOKEN_DENOM)?;
 
                                 let payer =
                                     build_call!(self.accounts.take_as_funding(MIN_FEE.into()));
@@ -673,8 +674,9 @@ impl ConvertSdkTx for InnerApp {
 
                                 Ok(PaidCall { payer, paid })
                             }
-                            "usat" => {
-                                let amount = get_amount(msg.amount.first(), "usat")?;
+                            "BTC_NATIVE_TOKEN_DENOM" => {
+                                let amount =
+                                    get_amount(msg.amount.first(), "BTC_NATIVE_TOKEN_DENOM")?;
 
                                 let payer = build_call!(self.bitcoin.transfer(to, amount));
                                 let paid = build_call!(self.app_noop());
@@ -704,7 +706,8 @@ impl ConvertSdkTx for InnerApp {
                             .validator_address
                             .parse()
                             .map_err(|e: bech32::Error| Error::App(e.to_string()))?;
-                        let amount: u64 = get_amount(msg.amount.as_ref(), "unom")?.into();
+                        let amount: u64 =
+                            get_amount(msg.amount.as_ref(), MAIN_NATIVE_TOKEN_DENOM)?.into();
 
                         let funding_amt = MIN_FEE + amount;
                         let payer = build_call!(self.accounts.take_as_funding(funding_amt.into()));
@@ -738,7 +741,7 @@ impl ConvertSdkTx for InnerApp {
                             .parse()
                             .map_err(|e: bech32::Error| Error::App(e.to_string()))?;
 
-                        let amount = get_amount(msg.amount.as_ref(), "unom")?;
+                        let amount = get_amount(msg.amount.as_ref(), MAIN_NATIVE_TOKEN_DENOM)?;
 
                         let funding_amt = MIN_FEE;
                         let payer = build_call!(self.accounts.take_as_funding(funding_amt.into()));
@@ -771,7 +774,7 @@ impl ConvertSdkTx for InnerApp {
                             .validator_address
                             .parse()
                             .map_err(|e: bech32::Error| Error::App(e.to_string()))?;
-                        let amount = get_amount(msg.amount.as_ref(), "unom")?;
+                        let amount = get_amount(msg.amount.as_ref(), MAIN_NATIVE_TOKEN_DENOM)?;
 
                         let funding_amt = MIN_FEE;
                         let payer = build_call!(self.accounts.take_as_funding(funding_amt.into()));
@@ -876,7 +879,7 @@ impl ConvertSdkTx for InnerApp {
                             .map_err(|_| Error::Ibc("Invalid port".into()))?;
 
                         let denom = msg.denom.as_str();
-                        if denom != "usat" {
+                        if denom != "BTC_NATIVE_TOKEN_DENOM" {
                             return Err(Error::App("Unsupported denom for IBC transfer".into()));
                         }
 
