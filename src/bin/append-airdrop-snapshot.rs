@@ -46,7 +46,7 @@
 //     for result in reader.records() {
 //         let mut record = result.unwrap();
 //         let addr = record.get(0).unwrap();
-//         if addr.len() != 44 {
+//         if addr.len() != 43 {
 //             continue;
 //         }
 //         let airdrop_account = app

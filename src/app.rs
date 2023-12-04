@@ -61,11 +61,11 @@ impl Symbol for Nom {
     const NAME: &'static str = MAIN_NATIVE_TOKEN_DENOM;
 }
 #[cfg(feature = "full")]
-const DEV_ADDRESS: &str = "nomic14z79y3yrghqx493mwgcj0qd2udy6lm26lmduah";
+const DEV_ADDRESS: &str = "orai14z79y3yrghqx493mwgcj0qd2udy6lm26ssg90w";
 #[cfg(feature = "full")]
-const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1d5n325zrf4elfu0heqd59gna5j6xyunhev23cj";
+const STRATEGIC_RESERVE_ADDRESS: &str = "orai1d5n325zrf4elfu0heqd59gna5j6xyunhk80g2t";
 #[cfg(feature = "full")]
-const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhqd8dcqeq";
+const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "orai1fd9mxxt84lw3jdcsmjh6jy8m6luafhqdgxaete";
 #[cfg(feature = "faucet-test")]
 const DEFAULT_FUNDED_AMOUNT: u64 = 1_000_000_000_000_000_000;
 

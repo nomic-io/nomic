@@ -113,7 +113,6 @@ impl Airdrop {
     #[cfg(feature = "full")]
     pub fn init_from_airdrop2_csv(&mut self, data: &[u8]) -> Result<()> {
         log::info!("Initializing balances from airdrop 2 snapshot...");
-
         let recipients = Self::get_recipients_from_csv(data);
         let len = recipients[0].1.len();
         let mut totals = vec![0u64; len];
@@ -207,7 +206,7 @@ impl Airdrop {
             .filter_map(|row| {
                 let row = row.unwrap();
 
-                if row[0].len() != 44 {
+                if row[0].len() != 43 {
                     return None;
                 }
                 let addr: Address = row[0].parse().unwrap();
@@ -364,12 +363,12 @@ mod test {
     fn airdrop_allocation_no_testnet() {
         let mut airdrop = Airdrop::default();
         let csv = "address,evmos_9000-1_staked,evmos_9000-1_count,kaiyo-1_staked,kaiyo-1_count,cosmoshub-4_staked,cosmoshub-4_count,juno-1_staked,juno-1_count,osmosis-1_staked,osmosis-1_count,btc_deposit_claimed,btc_withdraw_claimed,ibc_transfer_claimed
-nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x,1,1,1,1,1,1,1,1,1,1,true,true,true".as_bytes();
+orai100000aeu2lh0jrrnmn2npc88typ25u7t7kcr8l,1,1,1,1,1,1,1,1,1,1,true,true,true".as_bytes();
 
         airdrop.init_from_airdrop2_csv(csv).unwrap();
 
         let account = airdrop
-            .get_mut(Address::from_str("nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x").unwrap())
+            .get_mut(Address::from_str("orai100000aeu2lh0jrrnmn2npc88typ25u7t7kcr8l").unwrap())
             .unwrap()
             .unwrap();
         let airdrop2_total = account.airdrop2.total();
@@ -382,12 +381,12 @@ nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x,1,1,1,1,1,1,1,1,1,1,true,true,true"
     fn airdrop_allocation() {
         let mut airdrop = Airdrop::default();
         let csv = "address,evmos_9000-1_staked,evmos_9000-1_count,kaiyo-1_staked,kaiyo-1_count,cosmoshub-4_staked,cosmoshub-4_count,juno-1_staked,juno-1_count,osmosis-1_staked,osmosis-1_count,btc_deposit_claimed,btc_withdraw_claimed,ibc_transfer_claimed
-nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x,1,1,1,1,1,1,1,1,1,1,true,true,true".as_bytes();
+orai100000aeu2lh0jrrnmn2npc88typ25u7t7kcr8l,1,1,1,1,1,1,1,1,1,1,true,true,true".as_bytes();
 
         airdrop.init_from_airdrop2_csv(csv).unwrap();
 
         let account = airdrop
-            .get_mut(Address::from_str("nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x").unwrap())
+            .get_mut(Address::from_str("orai100000aeu2lh0jrrnmn2npc88typ25u7t7kcr8l").unwrap())
             .unwrap()
             .unwrap();
         let airdrop2_total = amount_airdropped(&*account);
@@ -400,13 +399,13 @@ nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x,1,1,1,1,1,1,1,1,1,1,true,true,true"
     fn airdrop_allocation_multiple() {
         let mut airdrop = Airdrop::default();
         let csv = "address,evmos_9000-1_staked,evmos_9000-1_count,kaiyo-1_staked,kaiyo-1_count,cosmoshub-4_staked,cosmoshub-4_count,juno-1_staked,juno-1_count,osmosis-1_staked,osmosis-1_count,btc_deposit_claimed,btc_withdraw_claimed,ibc_transfer_claimed
-nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x,1,1,1,1,1,1,1,1,1,1,true,true,true
-nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs,1,1,1,1,1,1,1,1,1,1,true,true,true".as_bytes();
+orai100000aeu2lh0jrrnmn2npc88typ25u7t7kcr8l,1,1,1,1,1,1,1,1,1,1,true,true,true
+orai10005vr6w230rer02rgwsvmhh0vdpk9hvfaf7sf,1,1,1,1,1,1,1,1,1,1,true,true,true".as_bytes();
 
         airdrop.init_from_airdrop2_csv(csv).unwrap();
 
         let account = airdrop
-            .get_mut(Address::from_str("nomic100000aeu2lh0jrrnmn2npc88typ25u7t3aa64x").unwrap())
+            .get_mut(Address::from_str("orai100000aeu2lh0jrrnmn2npc88typ25u7t7kcr8l").unwrap())
             .unwrap()
             .unwrap();
         let airdrop2_total = amount_airdropped(&*account);
@@ -420,7 +419,7 @@ nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs,1,1,1,1,1,1,1,1,1,1,true,true,true"
         assert_approx_eq(airdrop2_total, expected);
 
         let account = airdrop
-            .get_mut(Address::from_str("nomic10005vr6w230rer02rgwsvmhh0vdpk9hvxkv8zs").unwrap())
+            .get_mut(Address::from_str("orai10005vr6w230rer02rgwsvmhh0vdpk9hvfaf7sf").unwrap())
             .unwrap()
             .unwrap();
         let airdrop2_total = amount_airdropped(&*account);
