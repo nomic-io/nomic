@@ -6,6 +6,7 @@ use self::threshold_sig::Signature;
 use crate::app::Dest;
 use crate::bitcoin::checkpoint::BatchType;
 use crate::error::{Error, Result};
+use crate::utils::BTC_NATIVE_TOKEN_DENOM;
 use adapter::Adapter;
 use bitcoin::hashes::Hash;
 use bitcoin::util::bip32::ChildNumber;
@@ -53,7 +54,7 @@ pub mod threshold_sig;
 pub struct Nbtc(());
 impl Symbol for Nbtc {
     const INDEX: u8 = 21;
-    const NAME: &'static str = "BTC_NATIVE_TOKEN_DENOM";
+    const NAME: &'static str = BTC_NATIVE_TOKEN_DENOM;
 }
 
 #[cfg(all(not(feature = "testnet"), not(feature = "devnet")))]

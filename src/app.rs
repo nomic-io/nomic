@@ -9,7 +9,7 @@ use crate::bitcoin::{Bitcoin, Nbtc};
 use crate::cosmos::{Chain, Cosmos, Proof};
 
 use crate::incentives::Incentives;
-use crate::utils::MAIN_NATIVE_TOKEN_DENOM;
+use crate::utils::{BTC_NATIVE_TOKEN_DENOM, MAIN_NATIVE_TOKEN_DENOM};
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::{Script, Transaction, TxOut};
 use orga::coins::{
@@ -304,7 +304,7 @@ impl InnerApp {
         let incoming_transfers = self.ibc.deliver(messages)?;
 
         for transfer in incoming_transfers {
-            if transfer.denom.to_string() != "BTC_NATIVE_TOKEN_DENOM" {
+            if transfer.denom.to_string() != BTC_NATIVE_TOKEN_DENOM {
                 continue;
             }
             let memo: NbtcMemo = transfer.memo.parse().unwrap_or_default();
@@ -600,7 +600,7 @@ impl ConvertSdkTx for InnerApp {
 
                             return Ok(PaidCall { payer, paid });
                         }
-                        "BTC_NATIVE_TOKEN_DENOM" => {
+                        BTC_NATIVE_TOKEN_DENOM => {
                             let amount: u64 = msg.amount[0].amount.to_string().parse().unwrap();
 
                             let payer = build_call!(self.bitcoin.transfer(to, amount.into()));
@@ -674,9 +674,9 @@ impl ConvertSdkTx for InnerApp {
 
                                 Ok(PaidCall { payer, paid })
                             }
-                            "BTC_NATIVE_TOKEN_DENOM" => {
+                            BTC_NATIVE_TOKEN_DENOM => {
                                 let amount =
-                                    get_amount(msg.amount.first(), "BTC_NATIVE_TOKEN_DENOM")?;
+                                    get_amount(msg.amount.first(), BTC_NATIVE_TOKEN_DENOM)?;
 
                                 let payer = build_call!(self.bitcoin.transfer(to, amount));
                                 let paid = build_call!(self.app_noop());
@@ -879,7 +879,7 @@ impl ConvertSdkTx for InnerApp {
                             .map_err(|_| Error::Ibc("Invalid port".into()))?;
 
                         let denom = msg.denom.as_str();
-                        if denom != "BTC_NATIVE_TOKEN_DENOM" {
+                        if denom != BTC_NATIVE_TOKEN_DENOM {
                             return Err(Error::App("Unsupported denom for IBC transfer".into()));
                         }
 
