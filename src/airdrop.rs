@@ -113,7 +113,6 @@ impl Airdrop {
     #[cfg(feature = "full")]
     pub fn init_from_airdrop2_csv(&mut self, data: &[u8]) -> Result<()> {
         log::info!("Initializing balances from airdrop 2 snapshot...");
-
         let recipients = Self::get_recipients_from_csv(data);
         let len = recipients[0].1.len();
         let mut totals = vec![0u64; len];
@@ -207,7 +206,7 @@ impl Airdrop {
             .filter_map(|row| {
                 let row = row.unwrap();
 
-                if row[0].len() != 44 {
+                if row[0].len() != 43 {
                     return None;
                 }
                 let addr: Address = row[0].parse().unwrap();
