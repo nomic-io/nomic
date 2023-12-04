@@ -363,12 +363,12 @@ mod test {
     fn airdrop_allocation_no_testnet() {
         let mut airdrop = Airdrop::default();
         let csv = "address,evmos_9000-1_staked,evmos_9000-1_count,kaiyo-1_staked,kaiyo-1_count,cosmoshub-4_staked,cosmoshub-4_count,juno-1_staked,juno-1_count,osmosis-1_staked,osmosis-1_count,btc_deposit_claimed,btc_withdraw_claimed,ibc_transfer_claimed
-orai100000aeu2lh0jrrnmn2npc88typ25u7t7kcr8l,1,1,1,1,1,1,1,1,1,1,true,true,true".as_bytes();
+oraibtc1yw6jvdzhcqexctt0ntq92r79l44euc6pmna3ej,1,1,1,1,1,1,1,1,1,1,true,true,true".as_bytes();
 
         airdrop.init_from_airdrop2_csv(csv).unwrap();
 
         let account = airdrop
-            .get_mut(Address::from_str("orai100000aeu2lh0jrrnmn2npc88typ25u7t7kcr8l").unwrap())
+            .get_mut(Address::from_str("oraibtc1yw6jvdzhcqexctt0ntq92r79l44euc6pmna3ej").unwrap())
             .unwrap()
             .unwrap();
         let airdrop2_total = account.airdrop2.total();
@@ -381,12 +381,12 @@ orai100000aeu2lh0jrrnmn2npc88typ25u7t7kcr8l,1,1,1,1,1,1,1,1,1,1,true,true,true".
     fn airdrop_allocation() {
         let mut airdrop = Airdrop::default();
         let csv = "address,evmos_9000-1_staked,evmos_9000-1_count,kaiyo-1_staked,kaiyo-1_count,cosmoshub-4_staked,cosmoshub-4_count,juno-1_staked,juno-1_count,osmosis-1_staked,osmosis-1_count,btc_deposit_claimed,btc_withdraw_claimed,ibc_transfer_claimed
-orai100000aeu2lh0jrrnmn2npc88typ25u7t7kcr8l,1,1,1,1,1,1,1,1,1,1,true,true,true".as_bytes();
+oraibtc1yw6jvdzhcqexctt0ntq92r79l44euc6pmna3ej,1,1,1,1,1,1,1,1,1,1,true,true,true".as_bytes();
 
         airdrop.init_from_airdrop2_csv(csv).unwrap();
 
         let account = airdrop
-            .get_mut(Address::from_str("orai100000aeu2lh0jrrnmn2npc88typ25u7t7kcr8l").unwrap())
+            .get_mut(Address::from_str("oraibtc1yw6jvdzhcqexctt0ntq92r79l44euc6pmna3ej").unwrap())
             .unwrap()
             .unwrap();
         let airdrop2_total = amount_airdropped(&*account);
@@ -399,13 +399,13 @@ orai100000aeu2lh0jrrnmn2npc88typ25u7t7kcr8l,1,1,1,1,1,1,1,1,1,1,true,true,true".
     fn airdrop_allocation_multiple() {
         let mut airdrop = Airdrop::default();
         let csv = "address,evmos_9000-1_staked,evmos_9000-1_count,kaiyo-1_staked,kaiyo-1_count,cosmoshub-4_staked,cosmoshub-4_count,juno-1_staked,juno-1_count,osmosis-1_staked,osmosis-1_count,btc_deposit_claimed,btc_withdraw_claimed,ibc_transfer_claimed
-orai100000aeu2lh0jrrnmn2npc88typ25u7t7kcr8l,1,1,1,1,1,1,1,1,1,1,true,true,true
+oraibtc1yw6jvdzhcqexctt0ntq92r79l44euc6pmna3ej,1,1,1,1,1,1,1,1,1,1,true,true,true
 orai10005vr6w230rer02rgwsvmhh0vdpk9hvfaf7sf,1,1,1,1,1,1,1,1,1,1,true,true,true".as_bytes();
 
         airdrop.init_from_airdrop2_csv(csv).unwrap();
 
         let account = airdrop
-            .get_mut(Address::from_str("orai100000aeu2lh0jrrnmn2npc88typ25u7t7kcr8l").unwrap())
+            .get_mut(Address::from_str("oraibtc1yw6jvdzhcqexctt0ntq92r79l44euc6pmna3ej").unwrap())
             .unwrap()
             .unwrap();
         let airdrop2_total = amount_airdropped(&*account);
