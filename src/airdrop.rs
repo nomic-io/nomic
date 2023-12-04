@@ -358,7 +358,7 @@ mod test {
         acct.airdrop2.claimable
     }
 
-    #[cfg(feature = "testnet")]
+    #[cfg(not(feature = "testnet"))]
     #[test]
     fn airdrop_allocation_no_testnet() {
         let mut airdrop = Airdrop::default();
