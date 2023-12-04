@@ -2225,15 +2225,15 @@ mod test {
     #[cfg(all(feature = "full"))]
     use bitcoin::{
         secp256k1::Secp256k1,
-        util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey},
-        OutPoint, PubkeyHash, Script, Txid,
+        util::bip32::{ExtendedPrivKey, ExtendedPubKey},
+        OutPoint, Script, Txid,
     };
     use orga::{collections::EntryMap, context::Context};
-    #[cfg(all(feature = "full"))]
-    use rand::Rng;
+    // #[cfg(all(feature = "full"))]
+    // use rand::Rng;
 
-    #[cfg(all(feature = "full"))]
-    use crate::bitcoin::{signatory::Signatory, threshold_sig::Share};
+    // #[cfg(all(feature = "full"))]
+    // use crate::bitcoin::{signatory::Signatory, threshold_sig::Share};
 
     use super::*;
 
@@ -2445,7 +2445,7 @@ mod test {
         let xpub = ExtendedPubKey::from_priv(&secp, &xpriv);
 
         let mut sig_keys = Map::new();
-        sig_keys.insert([0; 32], Xpub::new(xpub));
+        sig_keys.insert([0; 32], Xpub::new(xpub)).unwrap();
 
         let queue = Rc::new(RefCell::new(CheckpointQueue::default()));
         queue.borrow_mut().config = Config {
@@ -2475,7 +2475,7 @@ mod test {
                 .unwrap();
         };
         let push_deposit = || {
-            let mut input = Input::new(
+            let input = Input::new(
                 OutPoint {
                     txid: Txid::from_slice(&[0; 32]).unwrap(),
                     vout: 0,
@@ -2515,7 +2515,7 @@ mod test {
                 sign_batch(btc_height);
             }
         };
-        let confirm_cp = |index, btc_height| {
+        let confirm_cp = |index, _btc_height| {
             let mut queue = queue.borrow_mut();
             queue.confirmed_index = Some(index);
         };
@@ -2651,7 +2651,7 @@ mod test {
         let xpub = ExtendedPubKey::from_priv(&secp, &xpriv);
 
         let mut sig_keys = Map::new();
-        sig_keys.insert([0; 32], Xpub::new(xpub));
+        sig_keys.insert([0; 32], Xpub::new(xpub)).unwrap();
 
         let queue = Rc::new(RefCell::new(CheckpointQueue::default()));
         queue.borrow_mut().config = Config {
@@ -2686,7 +2686,7 @@ mod test {
                 .unwrap();
         };
         let push_deposit = || {
-            let mut input = Input::new(
+            let input = Input::new(
                 OutPoint {
                     txid: Txid::from_slice(&[0; 32]).unwrap(),
                     vout: 0,
@@ -2726,7 +2726,7 @@ mod test {
                 sign_batch(btc_height);
             }
         };
-        let confirm_cp = |index, btc_height| {
+        let confirm_cp = |index, _btc_height| {
             let mut queue = queue.borrow_mut();
             queue.confirmed_index = Some(index);
         };
