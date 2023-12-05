@@ -55,7 +55,7 @@ use secp256k1::Secp256k1;
 
 const DEFAULT_RPC: &str = "http://localhost:26657";
 pub const MAIN_NATIVE_TOKEN_DENOM: &str = "uoraibtc";
-pub const BTC_NATIVE_TOKEN_DENOM: &str = "usat";
+pub const BTC_NATIVE_TOKEN_DENOM: &str = "uobtc";
 
 pub fn wallet_path() -> PathBuf {
     home::home_dir().unwrap().join(".orga-wallet")
