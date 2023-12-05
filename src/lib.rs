@@ -27,6 +27,8 @@ pub mod network;
 #[cfg(feature = "full")]
 pub mod utils;
 
+pub mod constants;
+
 #[cfg(feature = "full")]
 pub fn app_client(
     addr: &str,

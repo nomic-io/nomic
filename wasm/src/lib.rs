@@ -12,6 +12,7 @@ use std::str::FromStr;
 use js_sys::{Array, Uint8Array};
 use nomic::app::{App, Dest, InnerApp, Nom};
 use nomic::bitcoin::{Nbtc, NETWORK as BITCOIN_NETWORK};
+use nomic::constants::MAIN_NATIVE_TOKEN_DENOM;
 use nomic::orga::client::wallet::Unsigned;
 use nomic::orga::client::AppClient;
 use nomic::orga::coins::Address;

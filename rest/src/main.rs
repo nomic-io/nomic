@@ -3,6 +3,7 @@ extern crate rocket;
 
 use nomic::{
     app::{App, InnerApp, Nom},
+    constants::MAIN_NATIVE_TOKEN_DENOM,
     orga::{
         client::{wallet::Unsigned, AppClient},
         coins::{Address, Amount, Decimal},
@@ -10,7 +11,6 @@ use nomic::{
         query::Query,
         tendermint::client::HttpClient,
     },
-    utils::MAIN_NATIVE_TOKEN_DENOM,
 };
 use rocket::response::status::BadRequest;
 use rocket::serde::json::{json, Value};

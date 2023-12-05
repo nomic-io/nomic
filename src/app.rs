@@ -8,8 +8,8 @@ use crate::bitcoin::adapter::Adapter;
 use crate::bitcoin::{Bitcoin, Nbtc};
 use crate::cosmos::{Chain, Cosmos, Proof};
 
+use crate::constants::{BTC_NATIVE_TOKEN_DENOM, MAIN_NATIVE_TOKEN_DENOM};
 use crate::incentives::Incentives;
-use crate::utils::{BTC_NATIVE_TOKEN_DENOM, MAIN_NATIVE_TOKEN_DENOM};
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::{Script, Transaction, TxOut};
 use orga::coins::{

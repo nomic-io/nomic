@@ -10,6 +10,7 @@ use crate::bitcoin::header_queue::Config as HeaderQueueConfig;
 #[cfg(feature = "full")]
 use crate::bitcoin::signer::Signer;
 use crate::bitcoin::Config as BitcoinConfig;
+use crate::constants::MAIN_NATIVE_TOKEN_DENOM;
 use crate::error::{Error, Result};
 use bitcoin::hashes::hex::ToHex;
 use bitcoin::secp256k1::{self, rand, SecretKey};
@@ -54,8 +55,6 @@ use bitcoin::util::bip32::{ExtendedPrivKey, IntoDerivationPath};
 use secp256k1::Secp256k1;
 
 const DEFAULT_RPC: &str = "http://localhost:26657";
-pub const MAIN_NATIVE_TOKEN_DENOM: &str = "uoraibtc";
-pub const BTC_NATIVE_TOKEN_DENOM: &str = "usat";
 
 pub fn wallet_path() -> PathBuf {
     home::home_dir().unwrap().join(".orga-wallet")
