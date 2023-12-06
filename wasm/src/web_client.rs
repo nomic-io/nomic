@@ -19,11 +19,14 @@ use web_sys::{Request, RequestInit, RequestMode, Response};
 #[derive(Default)]
 pub struct WebClient {
     height: Mutex<Option<u32>>,
+    rest_server: String,
 }
 
 impl WebClient {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(url: String) -> Self {
+        let mut client = Self::default();
+        client.rest_server = url;
+        client
     }
 }
 
@@ -31,71 +34,6 @@ impl<T: App + Call + Query + State + Default> Transport<ABCIPlugin<T>> for WebCl
     async fn call(&self, _call: <ABCIPlugin<T> as Call>::Call) -> Result<()> {
         todo!()
         // TODO: shouldn't need to deal with ABCIPlugin at this level
-        // let call = match call {
-        //     ABCICall::DeliverTx(call) => call,
-        //     _ => return Err(Error::Client("Unexpected call type".into())),
-        // };
-        // let call_bytes = call.encode()?;
-        // let tx = base64::encode(&call_bytes);
-        // // let res = block_on(self.client.broadcast_tx_commit(call_bytes))?;
-
-        // let window = match web_sys::window() {
-        //     Some(window) => window,
-        //     None => return Err(Error::App("Window not found".to_string())),
-        // };
-
-        // let storage = window
-        //     .local_storage()
-        //     .map_err(|_| Error::App("Could not get local storage".into()))?
-        //     .unwrap();
-        // let rest_server = storage
-        //     .get("nomic/rest_server")
-        //     .map_err(|_| Error::App("Could not load from local storage".into()))?
-        //     .unwrap();
-
-        // let url = format!("{}/txs", rest_server);
-
-        // // let request = Request::new_with_str_and_init(&url, &opts)
-        // //     .map_err(|e| Error::App(format!("{:?}", e)))?;
-
-        // // let resp_value = JsFuture::from(window.fetch_with_request(&request))
-        // //     .await
-        // //     .map_err(|e| Error::App(format!("{:?}", e)))?;
-
-        // // let res: Response = resp_value
-        // //     .dyn_into()
-        // //     .map_err(|e| Error::App(format!("{:?}", e)))?;
-        // // let res = JsFuture::from(
-        // //     res.array_buffer()
-        // //         .map_err(|e| Error::App(format!("{:?}", e)))?,
-        // // )
-        // // .await
-        // // .map_err(|e| Error::App(format!("{:?}", e)))?;
-        // let client = reqwest_wasm::blocking::Client::new();
-        // let res = client
-        //     .post(url)
-        //     .body(tx)
-        //     .send()
-        //     .map_err(|e| Error::App(format!("{:?}", e)))?
-        //     .text()
-        //     .map_err(|e| Error::App(format!("{:?}", e)))?;
-        // // let res = js_sys::Uint8Array::new(&res).to_vec();
-        // // let res = String::from_utf8(res).map_err(|e| Error::App(format!("{:?}", e)))?;
-
-        // #[cfg(feature = "logging")]
-        // web_sys::console::log_1(&format!("response: {}", &res).into());
-
-        // self.last_res
-        //     .lock()
-        //     .map_err(|e| Error::App(format!("{:?}", e)))?
-        //     .replace(res);
-
-        // // if let tendermint::abci::Code::Err(code) = res.check_tx.code {
-        // //     let msg = format!("code {}: {}", code, res.check_tx.log);
-        // //     return Err(Error::Call(msg));
-        // // }
-
-        // Ok(())
     }
 
     async fn query(&self, query: T::Query) -> Result<Store> {
@@ -108,19 +46,10 @@ impl<T: App + Call + Query + State + Default> Transport<ABCIPlugin<T>> for WebCl
             None => return Err(Error::App("Window not found".to_string())),
         };
 
-        let storage = window
-            .local_storage()
-            .map_err(|_| Error::App("Could not get local storage".into()))?
-            .unwrap();
-        let rest_server = storage
-            .get("nomic/rest_server")
-            .map_err(|_| Error::App("Could not load from local storage".into()))?
-            .unwrap();
-
         let mut opts = RequestInit::new();
         opts.method("GET");
         opts.mode(RequestMode::Cors);
-        let mut url = format!("{}/query/{}", rest_server, query);
+        let mut url = format!("{}/query/{}", self.rest_server, query);
         if let Some(height) = maybe_height {
             url.push_str(&format!("?height={}", height));
         }
