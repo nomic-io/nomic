@@ -27,8 +27,11 @@ use wasm_bindgen_futures::JsFuture;
 use web_client::WebClient;
 use web_sys::{Request, RequestInit, RequestMode, Response};
 
+#[cfg(test)]
+mod tests;
+
 #[wasm_bindgen(start)]
-pub fn main() -> std::result::Result<(), JsValue> {
+pub fn main_js() -> std::result::Result<(), JsValue> {
     console_error_panic_hook::set_once();
     Ok(())
 }

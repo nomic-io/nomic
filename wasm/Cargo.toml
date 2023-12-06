@@ -12,7 +12,14 @@ lto = true
 
 [dependencies]
 wasm-bindgen = "0.2.78"
-nomic = { path = "..", default-features = false, features = ["feat-ibc", "csv", "rand", "clap", "testnet", "csv"] }
+nomic = { path = "..", default-features = false, features = [
+  "feat-ibc",
+  "csv",
+  "rand",
+  "clap",
+  "testnet",
+  "csv",
+] }
 async-trait = "0.1.52"
 wasm-bindgen-futures = "0.4.28"
 console_error_panic_hook = "0.1.7"
@@ -22,7 +29,7 @@ hex = "0.4.3"
 serde_json = "1.0.79"
 bitcoin = { version = "0.29.2", features = ["serde"] }
 urlencoding = "2.1.2"
-reqwest-wasm = {version = "=0.11.16", features = ["blocking"] }
+reqwest-wasm = { version = "=0.11.16", features = ["blocking"] }
 futures-lite = "1.13.0"
 
 [dependencies.web-sys]
@@ -40,6 +47,8 @@ features = [
   'RequestMode',
   'Response',
   'Location',
-  'XmlHttpRequest'
+  'XmlHttpRequest',
 ]
 
+[dev-dependencies]
+wasm-bindgen-test = "0.3.0"
