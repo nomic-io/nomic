@@ -60,12 +60,6 @@ impl Symbol for Nom {
     const INDEX: u8 = 69;
     const NAME: &'static str = MAIN_NATIVE_TOKEN_DENOM;
 }
-#[cfg(feature = "full")]
-const DEV_ADDRESS: &str = "oraibtc1yw6jvdzhcqexctt0ntq92r79l44euc6pmna3ej";
-#[cfg(feature = "full")]
-const STRATEGIC_RESERVE_ADDRESS: &str = "oraibtc1yw6jvdzhcqexctt0ntq92r79l44euc6pmna3ej";
-#[cfg(feature = "full")]
-const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "oraibtc1yw6jvdzhcqexctt0ntq92r79l44euc6pmna3ej";
 #[cfg(feature = "faucet-test")]
 const DEFAULT_FUNDED_AMOUNT: u64 = 1_000_000_000_000_000_000;
 
@@ -444,15 +438,8 @@ mod abci {
             self.staking.slash_fraction_double_sign = (Amount::new(1) / Amount::new(20))?;
             self.staking.min_self_delegation_min = 0;
 
-            let sr_address = STRATEGIC_RESERVE_ADDRESS.parse().unwrap();
-
             self.accounts.allow_transfers(true);
             self.bitcoin.accounts.allow_transfers(true);
-
-            self.accounts.add_transfer_exception(sr_address)?;
-
-            let vb_address = VALIDATOR_BOOTSTRAP_ADDRESS.parse().unwrap();
-            self.accounts.add_transfer_exception(vb_address)?;
 
             self.configure_faucets()?;
 
@@ -483,10 +470,6 @@ mod abci {
                 let reward = self.staking_rewards.mint()?;
                 self.staking.give(reward)?;
             }
-
-            let dev_reward = self.dev_rewards.mint()?;
-            let dev_address = DEV_ADDRESS.parse().unwrap();
-            self.accounts.deposit(dev_address, dev_reward)?;
 
             let cp_reward = self.community_pool_rewards.mint()?;
             self.community_pool.give(cp_reward)?;
