@@ -1,4 +1,3 @@
-wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 use wasm_bindgen_test::*;
 
 use crate::OraiBtc;
@@ -10,7 +9,8 @@ async fn test_get_balance() {
     let ret = app
         .balance("oraibtc1ehmhqcn8erf3dgavrca69zgp4rtxj5kqzpga4j".to_string())
         .await
-        .ok();
+        .ok()
+        .unwrap();
 
-    web_sys::console::log_1(&ret.into());
+    println!("{}", ret);
 }

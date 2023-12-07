@@ -8,11 +8,10 @@
       import init, { OraiBtc } from './pkg/nomic_wasm.js';
 
       async function run() {
-        const obj = await init();
+        await init();
         const app = new OraiBtc('https://oraibtc.lcd.orai.io', 'OraiBtcSubnet');
-        window.oraiBtc = app;
-        console.log(await app.nbtcBalance('oraibtc1ehmhqcn8erf3dgavrca69zgp4rtxj5kqzpga4j'));
-        console.log(await app.bitcoinHeight());
+        const { address } = await app.generateDepositAddress('oraibtc1ehmhqcn8erf3dgavrca69zgp4rtxj5kqzpga4j');
+        console.log(address);
       }
 
       run();

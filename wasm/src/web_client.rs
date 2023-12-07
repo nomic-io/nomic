@@ -1,3 +1,4 @@
+use js_sys::{Object, Promise};
 use nomic::orga::abci::App;
 use nomic::orga::call::Call;
 use nomic::orga::client::Transport;
@@ -11,10 +12,20 @@ use nomic::orga::store::{BackingStore, Shared};
 use nomic::orga::{Error, Result};
 use std::convert::TryInto;
 use std::sync::Mutex;
+use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
 use web_sys::{Request, RequestInit, RequestMode, Response};
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(extends=Object, js_name=Object, typescript_type="Object")]
+    pub type Global;
+
+    #[wasm_bindgen (method, structural, js_class="Object", js_name=fetch)]
+    pub fn js_fetch(this: &Global, input: &Request) -> Promise;
+}
 
 #[derive(Default)]
 pub struct WebClient {
@@ -41,11 +52,6 @@ impl<T: App + Call + Query + State + Default> Transport<ABCIPlugin<T>> for WebCl
         let query = hex::encode(query_bytes);
         let maybe_height: Option<u32> = self.height.lock().unwrap().map(Into::into);
 
-        let window = match web_sys::window() {
-            Some(window) => window,
-            None => return Err(Error::App("Window not found".to_string())),
-        };
-
         let mut opts = RequestInit::new();
         opts.method("GET");
         opts.mode(RequestMode::Cors);
@@ -57,7 +63,12 @@ impl<T: App + Call + Query + State + Default> Transport<ABCIPlugin<T>> for WebCl
         let request = Request::new_with_str_and_init(&url, &opts)
             .map_err(|e| Error::App(format!("{:?}", e)))?;
 
-        let resp_value = JsFuture::from(window.fetch_with_request(&request))
+        let global = match js_sys::global().dyn_into::<Global>() {
+            Ok(global) => global,
+            Err(_) => return Err(Error::App("Object class not found".to_string())),
+        };
+
+        let resp_value = JsFuture::from(global.js_fetch(&request))
             .await
             .map_err(|e| Error::App(format!("{:?}", e)))?;
 

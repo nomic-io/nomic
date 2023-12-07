@@ -7,6 +7,7 @@ mod web_client;
 
 use crate::error::Error;
 use crate::types::*;
+use crate::web_client::Global;
 use js_sys::{Array, Uint8Array};
 use nomic::app::{Dest, InnerApp, Nom};
 use nomic::bitcoin::{Nbtc, NETWORK as BITCOIN_NETWORK};
@@ -40,8 +41,8 @@ pub struct OraiBtc {
 #[wasm_bindgen]
 impl OraiBtc {
     #[wasm_bindgen(constructor)]
-    pub fn new(url: &str, chain_id: &str) -> OraiBtc {
-        OraiBtc {
+    pub fn new(url: &str, chain_id: &str) -> Self {
+        Self {
             client: AppClient::new(WebClient::new(url.to_string()), Unsigned),
             chain_id: chain_id.to_string(),
         }
@@ -50,16 +51,6 @@ impl OraiBtc {
     //bytes
     pub async fn transfer(&self, _to_addr: String, _amount: u64) -> Result<JsValue, JsError> {
         todo!()
-        // let address = to_addr
-        //     .parse()
-        //     .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
-
-        // client
-        //     .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
-        //     .accounts
-        //     .transfer(address, amount.into())
-        //     .await?;
-        // Ok(client.last_res()?)
     }
 
     pub async fn balance(&self, addr: String) -> Result<u64, JsError> {
@@ -72,7 +63,8 @@ impl OraiBtc {
             .into())
     }
 
-    #[wasm_bindgen(js_name = nomRewardBalance)]
+    #[allow(non_snake_case)]
+    #[wasm_bindgen(js_name=nomRewardBalance)]
     pub async fn nom_reward_balance(&self, addr: String) -> Result<u64, JsError> {
         let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
@@ -94,7 +86,8 @@ impl OraiBtc {
             .sum::<u64>())
     }
 
-    #[wasm_bindgen(js_name = nbtcRewardBalance)]
+    #[allow(non_snake_case)]
+    #[wasm_bindgen(js_name=nbtcRewardBalance)]
     pub async fn nbtc_reward_balance(&self, addr: String) -> Result<u64, JsError> {
         let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
@@ -153,7 +146,8 @@ impl OraiBtc {
             .collect())
     }
 
-    #[wasm_bindgen(js_name = allValidators)]
+    #[allow(non_snake_case)]
+    #[wasm_bindgen(js_name=allValidators)]
     pub async fn all_validators(&self) -> Result<Array, JsError> {
         let validators = self
             .client
@@ -191,7 +185,8 @@ impl OraiBtc {
         .await
     }
 
-    #[wasm_bindgen(js_name = claimAirdrop1)]
+    #[allow(non_snake_case)]
+    #[wasm_bindgen(js_name=claimAirdrop1)]
     pub async fn claim_airdrop1(&self, address: String) -> Result<String, JsError> {
         let address = address
             .parse()
@@ -206,7 +201,8 @@ impl OraiBtc {
         .await
     }
 
-    #[wasm_bindgen(js_name = claimAirdrop2)]
+    #[allow(non_snake_case)]
+    #[wasm_bindgen(js_name=claimAirdrop2)]
     pub async fn claim_airdrop2(&self, address: String) -> Result<String, JsError> {
         let address = address
             .parse()
@@ -221,7 +217,8 @@ impl OraiBtc {
         .await
     }
 
-    #[wasm_bindgen(js_name = claimTestnetParticipationAirdrop)]
+    #[allow(non_snake_case)]
+    #[wasm_bindgen(js_name=claimTestnetParticipationAirdrop)]
     pub async fn claim_testnet_participation_airdrop(
         &self,
         address: String,
@@ -239,7 +236,8 @@ impl OraiBtc {
         .await
     }
 
-    #[wasm_bindgen(js_name = claimTestnetParticipationIncentives)]
+    #[allow(non_snake_case)]
+    #[wasm_bindgen(js_name=claimTestnetParticipationIncentives)]
     pub async fn claim_testnet_participation_incentives(
         &self,
         address: String,
@@ -257,7 +255,8 @@ impl OraiBtc {
         .await
     }
 
-    #[wasm_bindgen(js_name = claimIncomingIbcBtc)]
+    #[allow(non_snake_case)]
+    #[wasm_bindgen(js_name=claimIncomingIbcBtc)]
     pub async fn claim_incoming_ibc_btc(&self, address: String) -> Result<String, JsError> {
         let address = address
             .parse()
@@ -272,7 +271,8 @@ impl OraiBtc {
         .await
     }
 
-    #[wasm_bindgen(js_name = setRecoveryAddress)]
+    #[allow(non_snake_case)]
+    #[wasm_bindgen(js_name=setRecoveryAddress)]
     pub async fn set_recovery_address(
         &self,
         address: String,
@@ -291,7 +291,8 @@ impl OraiBtc {
         .await
     }
 
-    #[wasm_bindgen(js_name = getRecoveryAddress)]
+    #[allow(non_snake_case)]
+    #[wasm_bindgen(js_name=getRecoveryAddress)]
     pub async fn get_recovery_address(&self, address: String) -> Result<String, JsError> {
         let address = address
             .parse()
@@ -393,7 +394,8 @@ impl OraiBtc {
         .await
     }
 
-    #[wasm_bindgen(js_name = airdropBalances)]
+    #[allow(non_snake_case)]
+    #[wasm_bindgen(js_name=airdropBalances)]
     pub async fn airdrop_balances(&self, addr: String) -> Result<Airdrop, JsError> {
         let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
@@ -411,7 +413,8 @@ impl OraiBtc {
         }
     }
 
-    #[wasm_bindgen(js_name = incentiveBalances)]
+    #[allow(non_snake_case)]
+    #[wasm_bindgen(js_name=incentiveBalances)]
     pub async fn incentive_balances(&self, addr: String) -> Result<Incentives, JsError> {
         let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
@@ -437,7 +440,8 @@ impl OraiBtc {
         Ok(nonce)
     }
 
-    #[wasm_bindgen(js_name = generateDepositAddress)]
+    #[allow(non_snake_case)]
+    #[wasm_bindgen(js_name=generateDepositAddress)]
     pub async fn gen_deposit_addr(&self, dest_addr: String) -> Result<DepositAddress, JsError> {
         let dest_addr = dest_addr
             .parse()
@@ -467,7 +471,8 @@ impl OraiBtc {
         })
     }
 
-    #[wasm_bindgen(js_name = nbtcBalance)]
+    #[allow(non_snake_case)]
+    #[wasm_bindgen(js_name=nbtcBalance)]
     pub async fn nbtc_balance(&self, addr: String) -> Result<u64, JsError> {
         let addr = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
         let balance = self
@@ -479,7 +484,8 @@ impl OraiBtc {
         Ok(balance)
     }
 
-    #[wasm_bindgen(js_name = incomingIbcNbtcBalance)]
+    #[allow(non_snake_case)]
+    #[wasm_bindgen(js_name=incomingIbcNbtcBalance)]
     pub async fn incoming_ibc_nbtc_balance(&self, addr: String) -> Result<u64, JsError> {
         let address: Address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
@@ -490,7 +496,8 @@ impl OraiBtc {
         Ok(balance.into())
     }
 
-    #[wasm_bindgen(js_name = valueLocked)]
+    #[allow(non_snake_case)]
+    #[wasm_bindgen(js_name=valueLocked)]
     pub async fn value_locked(&self) -> Result<u64, JsError> {
         Ok(self
             .client
@@ -498,7 +505,8 @@ impl OraiBtc {
             .await?)
     }
 
-    #[wasm_bindgen(js_name = latestCheckpointHash)]
+    #[allow(non_snake_case)]
+    #[wasm_bindgen(js_name=latestCheckpointHash)]
     pub async fn latest_checkpoint_hash(&self) -> Result<String, JsError> {
         let last_checkpoint_id = self
             .client
@@ -508,7 +516,8 @@ impl OraiBtc {
         Ok(last_checkpoint_id.to_string())
     }
 
-    #[wasm_bindgen(js_name = bitcoinHeight)]
+    #[allow(non_snake_case)]
+    #[wasm_bindgen(js_name=bitcoinHeight)]
     pub async fn bitcoin_height(&self) -> Result<u32, JsError> {
         Ok(self
             .client
@@ -516,7 +525,8 @@ impl OraiBtc {
             .await?)
     }
 
-    #[wasm_bindgen(js_name = capacityLimit)]
+    #[allow(non_snake_case)]
+    #[wasm_bindgen(js_name=capacityLimit)]
     pub async fn capacity_limit(&self) -> Result<u64, JsError> {
         Ok(self
             .client
@@ -524,7 +534,8 @@ impl OraiBtc {
             .await?)
     }
 
-    #[wasm_bindgen(js_name = depositsEnabled)]
+    #[allow(non_snake_case)]
+    #[wasm_bindgen(js_name=depositsEnabled)]
     pub async fn deposits_enabled(&self) -> Result<bool, JsError> {
         Ok(self
             .client
@@ -532,15 +543,17 @@ impl OraiBtc {
             .await?)
     }
 
+    #[allow(non_snake_case)]
     #[cfg(target_arch = "wasm32")]
-    #[wasm_bindgen(js_name = getAddress)]
+    #[wasm_bindgen(js_name=getAddress)]
     pub async fn get_address(&self) -> Result<String, JsError> {
         todo!()
         // let signer = nomic::orga::plugins::keplr::Signer;
         // Ok(signer.address().await)
     }
 
-    #[wasm_bindgen(js_name = broadcastDepositAddress)]
+    #[allow(non_snake_case)]
+    #[wasm_bindgen(js_name=broadcastDepositAddress)]
     pub async fn broadcast_deposit_addr(
         &self,
         dest_addr: String,
@@ -554,9 +567,9 @@ impl OraiBtc {
 
         let commitment = Dest::Address(dest_addr);
 
-        let window = match web_sys::window() {
-            Some(window) => window,
-            None => return Err(Error::Wasm("Window not found".to_string()).into()),
+        let global = match js_sys::global().dyn_into::<Global>() {
+            Ok(global) => global,
+            Err(_) => return Err(Error::Wasm("Object class not found".to_string()).into()),
         };
 
         for relayer in relayers.iter() {
@@ -579,13 +592,14 @@ impl OraiBtc {
             let request = Request::new_with_str_and_init(&url, &opts)
                 .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
-            let resp_value: JsValue = JsFuture::from(window.fetch_with_request(&request))
+            let resp_value = JsFuture::from(global.js_fetch(&request))
                 .await
                 .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
             let res: Response = resp_value
                 .dyn_into()
                 .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+
             let status = res.status();
             if status != 200 {
                 return Err(Error::Relayer(format!(
@@ -631,7 +645,8 @@ impl OraiBtc {
         .await
     }
 
-    #[wasm_bindgen(js_name = joinRewardAccounts)]
+    #[allow(non_snake_case)]
+    #[wasm_bindgen(js_name=joinRewardAccounts)]
     pub async fn join_reward_accounts(
         &self,
         source_address: String,
@@ -657,7 +672,8 @@ impl OraiBtc {
         .await
     }
 
-    #[wasm_bindgen(js_name = ibcTransferOut)]
+    #[allow(non_snake_case)]
+    #[wasm_bindgen(js_name=ibcTransferOut)]
     pub async fn ibc_transfer_out(
         &self,
         amount: u64,
@@ -690,7 +706,8 @@ impl OraiBtc {
         .await
     }
 
-    #[wasm_bindgen(js_name = convertEthAddress)]
+    #[allow(non_snake_case)]
+    #[wasm_bindgen(js_name=convertEthAddress)]
     pub fn convert_eth_address(&self, str: String) -> Result<String, JsError> {
         if !str.starts_with("0x") {
             return Err(JsError::new("Address must start with 0x"));
