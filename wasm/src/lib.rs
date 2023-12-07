@@ -78,7 +78,7 @@ impl OraiBtc {
 
         let delegations = self
             .client
-            .query(|app| app.staking.delegations(address))
+            .query(|app: InnerApp| app.staking.delegations(address))
             .await?;
 
         Ok(delegations
@@ -100,7 +100,7 @@ impl OraiBtc {
 
         let delegations = self
             .client
-            .query(|app| app.staking.delegations(address))
+            .query(|app: InnerApp| app.staking.delegations(address))
             .await?;
 
         Ok(delegations
@@ -121,7 +121,7 @@ impl OraiBtc {
 
         let delegations = self
             .client
-            .query(|app| app.staking.delegations(address))
+            .query(|app: InnerApp| app.staking.delegations(address))
             .await?;
         Ok(delegations
             .iter()
@@ -157,7 +157,7 @@ impl OraiBtc {
     pub async fn all_validators(&self) -> Result<Array, JsError> {
         let validators = self
             .client
-            .query(|app| app.staking.all_validators())
+            .query(|app: InnerApp| app.staking.all_validators())
             .await?;
         Ok(validators
             .iter()
@@ -298,7 +298,7 @@ impl OraiBtc {
             .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
         Ok(self
             .client
-            .query(|app| {
+            .query(|app: InnerApp| {
                 Ok(match app.bitcoin.recovery_scripts.get(address)? {
                     Some(script) => bitcoin::Address::from_script(&script, BITCOIN_NETWORK)
                         .map_err(|e| OrgaError::App(format!("{:?}", e)))?
@@ -397,7 +397,11 @@ impl OraiBtc {
     pub async fn airdrop_balances(&self, addr: String) -> Result<Airdrop, JsError> {
         let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
-        if let Some(account) = self.client.query(|app| app.airdrop.get(address)).await? {
+        if let Some(account) = self
+            .client
+            .query(|app: InnerApp| app.airdrop.get(address))
+            .await?
+        {
             Ok(Airdrop {
                 airdrop1: parse_part(account.airdrop1),
                 airdrop2: parse_part(account.airdrop2),
@@ -413,7 +417,7 @@ impl OraiBtc {
 
         if let Some(account) = self
             .client
-            .query(|app| Ok(app.incentives.get(address)?))
+            .query(|app: InnerApp| Ok(app.incentives.get(address)?))
             .await?
         {
             Ok(Incentives {
@@ -468,7 +472,7 @@ impl OraiBtc {
         let addr = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
         let balance = self
             .client
-            .query(|app| app.bitcoin.accounts.balance(addr))
+            .query(|app: InnerApp| app.bitcoin.accounts.balance(addr))
             .await?
             .into();
 
@@ -479,7 +483,10 @@ impl OraiBtc {
     pub async fn incoming_ibc_nbtc_balance(&self, addr: String) -> Result<u64, JsError> {
         let address: Address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
-        let balance = self.client.query(|app| app.escrowed_nbtc(address)).await?;
+        let balance = self
+            .client
+            .query(|app: InnerApp| app.escrowed_nbtc(address))
+            .await?;
         Ok(balance.into())
     }
 
