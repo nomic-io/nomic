@@ -65,6 +65,12 @@ Install required dependencies (ubuntu):
 sudo apt install build-essential libssl-dev pkg-config clang
 ```
 
+Install required dependencies (macOS):
+
+```bash
+brew install llvm
+```
+
 For systems running fedora:
 
 ```bash
