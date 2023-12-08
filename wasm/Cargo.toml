@@ -19,7 +19,6 @@ nomic = { path = "..", default-features = false, features = [
   "clap",
   "testnet",
   "csv",
-  "full"
 ] }
 async-trait = "0.1.52"
 wasm-bindgen-futures = "0.4.28"
