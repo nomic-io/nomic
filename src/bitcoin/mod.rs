@@ -117,8 +117,11 @@ pub struct Config {
     /// The maximum amount of BTC that can be held in the network, in satoshis.
     #[orga(version(V2, V3, V4))]
     pub capacity_limit: u64,
+
     #[orga(version(V4))]
     pub fee_pool_target_balance: u64,
+    #[orga(version(V4))]
+    pub fee_pool_reward_split: (u64, u64),
 }
 
 impl MigrateFrom<ConfigV0> for ConfigV1 {
@@ -193,6 +196,7 @@ impl MigrateFrom<ConfigV3> for ConfigV4 {
             min_checkpoint_confirmations: value.min_checkpoint_confirmations,
             capacity_limit: value.capacity_limit,
             fee_pool_target_balance: Config::default().fee_pool_target_balance,
+            fee_pool_reward_split: Config::default().fee_pool_reward_split,
         })
     }
 }
@@ -218,6 +222,7 @@ impl Config {
             #[cfg(not(feature = "testnet"))]
             capacity_limit: 21 * 100_000_000, // 21 BTC
             fee_pool_target_balance: 10_000_000, // 0.1 BTC
+            fee_pool_reward_split: (1, 10),
         }
     }
 
@@ -1034,7 +1039,15 @@ impl Bitcoin {
     pub fn give_fee(&mut self, coin: Coin<Nbtc>) -> Result<()> {
         if self.fee_pool < self.config.fee_pool_target_balance as i64 {
             let amount: u64 = coin.amount.into();
-            self.fee_pool += amount as i64;
+            coin.burn();
+
+            let reward_amount = (amount as u128 * self.config.fee_pool_reward_split.0 as u128
+                / self.config.fee_pool_reward_split.1 as u128)
+                as u64;
+            let fee_amount = amount - reward_amount;
+
+            self.reward_pool.give(Coin::mint(reward_amount))?;
+            self.fee_pool += fee_amount as i64;
         } else {
             self.reward_pool.give(coin)?;
         }
