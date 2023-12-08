@@ -792,6 +792,25 @@ impl Checkpoint {
 
         Ok(txs)
     }
+
+    pub fn checkpoint_tx_miner_fees(&self) -> Result<u64> {
+        let mut fees = 0;
+
+        let batch = self.batches.get(BatchType::Checkpoint as u64)?.unwrap();
+        let tx = batch.get(0)?.unwrap();
+
+        for input in tx.input.iter()? {
+            let input = input?;
+            fees += input.amount;
+        }
+
+        for output in tx.output.iter()? {
+            let output = output?;
+            fees -= output.value;
+        }
+
+        Ok(fees)
+    }
 }
 
 /// Configuration parameters used in processing checkpoints.
@@ -1453,6 +1472,7 @@ impl<'a> BuildingCheckpointMut<'a> {
         recovery_scripts: &Map<orga::coins::Address, Adapter<bitcoin::Script>>,
         external_outputs: impl Iterator<Item = Result<bitcoin::TxOut>>,
         timestamping_commitment: Vec<u8>,
+        additional_fees: u64,
         config: &Config,
     ) -> Result<BuildingAdvanceRes> {
         self.0.status = CheckpointStatus::Signing;
@@ -1524,7 +1544,7 @@ impl<'a> BuildingCheckpointMut<'a> {
                 .fold(Ok(0), |sum: Result<u64>, input| {
                     Ok(sum? + input?.est_witness_vsize)
                 })?;
-        let fee = est_vsize * fee_rate;
+        let fee = est_vsize * fee_rate + additional_fees;
         let reserve_value = in_amount
             .checked_sub(out_amount + fee)
             .ok_or_else(|| OrgaError::App("Insufficient funds to cover fees".to_string()))?;
@@ -1894,16 +1914,33 @@ impl CheckpointQueue {
         self.prune()?;
 
         if self.index > 0 {
+            let (unconf_fees, unconf_vbytes) = self
+                .unconfirmed()?
+                .iter()
+                .map(|cp| {
+                    Ok((
+                        cp.checkpoint_tx_miner_fees()?,
+                        cp.checkpoint_tx()?.vsize() as u64,
+                    ))
+                })
+                .try_fold((0, 0), |(fees, vbytes), result: Result<_>| {
+                    let (fee, vbyte) = result?;
+                    Ok::<_, Error>((fees + fee, vbytes + vbyte))
+                })?;
+
             let config = self.config();
             let second = self.get_mut(self.index - 1)?;
             let sigset = second.sigset.clone();
             let prev_fee_rate = second.fee_rate;
+            let additional_fees = unconf_fees.saturating_sub(unconf_vbytes * prev_fee_rate);
+
             let (reserve_outpoint, reserve_value, excess_inputs, excess_outputs) =
                 BuildingCheckpointMut(second).advance(
                     nbtc_accounts,
                     recovery_scripts,
                     external_outputs,
                     timestamping_commitment,
+                    additional_fees,
                     &config,
                 )?;
 
@@ -2199,6 +2236,23 @@ impl CheckpointQueue {
         let signing_offset = has_signing as u32;
 
         Ok(Some(self.index - num_unconf - signing_offset))
+    }
+
+    pub fn unconfirmed(&self) -> Result<Vec<Ref<'_, Checkpoint>>> {
+        let first_unconf_index = self.first_unconfirmed_index()?;
+        if let Some(index) = first_unconf_index {
+            let mut out = vec![];
+            for i in index..=self.index {
+                let cp = self.get(i)?;
+                if !matches!(cp.status, CheckpointStatus::Complete) {
+                    break;
+                }
+                out.push(cp);
+            }
+            Ok(out)
+        } else {
+            Ok(vec![])
+        }
     }
 }
 
