@@ -1,4 +1,3 @@
-use js_sys::{Object, Promise};
 use nomic::orga::abci::App;
 use nomic::orga::call::Call;
 use nomic::orga::client::Transport;
@@ -12,20 +11,12 @@ use nomic::orga::store::{BackingStore, Shared};
 use nomic::orga::{Error, Result};
 use std::convert::TryInto;
 use std::sync::Mutex;
-use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
 use web_sys::{Request, RequestInit, RequestMode, Response};
 
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(extends=Object, js_name=Object, typescript_type="Object")]
-    pub type Global;
-
-    #[wasm_bindgen (method, structural, js_class="Object", js_name=fetch)]
-    pub fn js_fetch(this: &Global, input: &Request) -> Promise;
-}
+use crate::global::Global;
 
 #[derive(Default)]
 pub struct WebClient {

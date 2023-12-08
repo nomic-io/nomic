@@ -2,12 +2,13 @@
 #![feature(async_fn_in_trait)]
 
 mod error;
+mod global;
 mod types;
 mod web_client;
 
 use crate::error::Error;
+use crate::global::Global;
 use crate::types::*;
-use crate::web_client::Global;
 use js_sys::{Array, Uint8Array};
 use nomic::app::{Dest, InnerApp, Nom};
 use nomic::bitcoin::{Nbtc, NETWORK as BITCOIN_NETWORK};
@@ -46,11 +47,6 @@ impl OraiBtc {
             client: AppClient::new(WebClient::new(url.to_string()), Unsigned),
             chain_id: chain_id.to_string(),
         }
-    }
-
-    //bytes
-    pub async fn transfer(&self, _to_addr: String, _amount: u64) -> Result<JsValue, JsError> {
-        todo!()
     }
 
     pub async fn balance(&self, addr: String) -> Result<u64, JsError> {
@@ -541,15 +537,6 @@ impl OraiBtc {
             .client
             .query(|app: InnerApp| Ok(!app.bitcoin.checkpoints.last_completed()?.deposits_enabled))
             .await?)
-    }
-
-    #[allow(non_snake_case)]
-    #[cfg(target_arch = "wasm32")]
-    #[wasm_bindgen(js_name=getAddress)]
-    pub async fn get_address(&self) -> Result<String, JsError> {
-        todo!()
-        // let signer = nomic::orga::plugins::keplr::Signer;
-        // Ok(signer.address().await)
     }
 
     #[allow(non_snake_case)]
