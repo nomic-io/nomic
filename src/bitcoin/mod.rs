@@ -70,7 +70,7 @@ pub const SIGSET_THRESHOLD: (u64, u64) = (9, 10);
 pub const SIGSET_THRESHOLD: (u64, u64) = (2, 3);
 
 /// The configuration parameters for the Bitcoin module.
-#[orga(skip(Default), version = 3)]
+#[orga(skip(Default), version = 4)]
 pub struct Config {
     /// The minimum number of checkpoints that must be produced before
     /// withdrawals are enabled.
@@ -106,17 +106,19 @@ pub struct Config {
     /// If a signer does not submit signatures for this many consecutive
     /// checkpoints, they are considered offline and are removed from the
     /// signatory set (jailed) and slashed.
-    #[orga(version(V1, V2, V3))]
+    #[orga(version(V1, V2, V3, V4))]
     pub max_offline_checkpoints: u32,
     /// The minimum number of confirmations a checkpoint must have on the
     /// Bitcoin network before it is considered confirmed. Note that in the
     /// current implementation, the actual number of confirmations required is
     /// `min_checkpoint_confirmations + 1`.
-    #[orga(version(V2, V3))]
+    #[orga(version(V2, V3, V4))]
     pub min_checkpoint_confirmations: u32,
     /// The maximum amount of BTC that can be held in the network, in satoshis.
-    #[orga(version(V2, V3))]
+    #[orga(version(V2, V3, V4))]
     pub capacity_limit: u64,
+    #[orga(version(V4))]
+    pub fee_pool_target_balance: u64,
 }
 
 impl MigrateFrom<ConfigV0> for ConfigV1 {
@@ -171,7 +173,26 @@ impl MigrateFrom<ConfigV2> for ConfigV3 {
             units_per_sat: value.units_per_sat,
             max_offline_checkpoints: value.max_offline_checkpoints,
             min_checkpoint_confirmations: 0,
-            capacity_limit: Self::default().capacity_limit,
+            capacity_limit: ConfigV4::default().capacity_limit,
+        })
+    }
+}
+
+impl MigrateFrom<ConfigV3> for ConfigV4 {
+    fn migrate_from(value: ConfigV3) -> OrgaResult<Self> {
+        Ok(Self {
+            min_withdrawal_checkpoints: value.min_withdrawal_checkpoints,
+            min_deposit_amount: value.min_deposit_amount,
+            min_withdrawal_amount: value.min_withdrawal_amount,
+            max_withdrawal_amount: value.max_withdrawal_amount,
+            max_withdrawal_script_length: value.max_withdrawal_script_length,
+            transfer_fee: value.transfer_fee,
+            min_confirmations: value.min_confirmations,
+            units_per_sat: value.units_per_sat,
+            max_offline_checkpoints: value.max_offline_checkpoints,
+            min_checkpoint_confirmations: value.min_checkpoint_confirmations,
+            capacity_limit: value.capacity_limit,
+            fee_pool_target_balance: Config::default().fee_pool_target_balance,
         })
     }
 }
@@ -196,6 +217,7 @@ impl Config {
             capacity_limit: 100 * 100_000_000, // 100 BTC
             #[cfg(not(feature = "testnet"))]
             capacity_limit: 21 * 100_000_000, // 21 BTC
+            fee_pool_target_balance: 10_000_000, // 0.1 BTC
         }
     }
 
@@ -231,7 +253,7 @@ pub fn calc_deposit_fee(amount: u64) -> u64 {
 /// blockchain headers, relay deposit transactions, maintain nBTC accounts, and
 /// coordinate the checkpointing process to manage the BTC reserve on the
 /// Bitcoin blockchain.
-#[orga(version = 1)]
+#[orga(version = 2)]
 pub struct Bitcoin {
     /// A light client of the Bitcoin blockchain, keeping track of the headers
     /// of the highest-work chain.
@@ -260,6 +282,10 @@ pub struct Bitcoin {
     /// A pool of BTC where bridge fees are collected.
     pub(crate) reward_pool: Coin<Nbtc>,
 
+    // TODO: turn into Coin<Nbtc>
+    #[orga(version(V2))]
+    pub(crate) fee_pool: i64,
+
     /// The recovery scripts for nBTC account holders, which are users' desired
     /// destinations for BTC to be paid out to in the emergency disbursal
     /// process if the network is halted.
@@ -272,6 +298,22 @@ pub struct Bitcoin {
 impl MigrateFrom<BitcoinV0> for BitcoinV1 {
     fn migrate_from(_value: BitcoinV0) -> OrgaResult<Self> {
         unreachable!()
+    }
+}
+
+impl MigrateFrom<BitcoinV1> for BitcoinV2 {
+    fn migrate_from(value: BitcoinV1) -> OrgaResult<Self> {
+        Ok(Self {
+            headers: value.headers,
+            processed_outpoints: value.processed_outpoints,
+            checkpoints: value.checkpoints,
+            accounts: value.accounts,
+            signatory_keys: value.signatory_keys,
+            reward_pool: value.reward_pool,
+            fee_pool: 0,
+            recovery_scripts: value.recovery_scripts,
+            config: value.config,
+        })
     }
 }
 
@@ -987,6 +1029,17 @@ impl Bitcoin {
             dests.push((dest, coins));
         }
         Ok(dests)
+    }
+
+    pub fn give_fee(&mut self, coin: Coin<Nbtc>) -> Result<()> {
+        if self.fee_pool < self.config.fee_pool_target_balance as i64 {
+            let amount: u64 = coin.amount.into();
+            self.fee_pool += amount as i64;
+        } else {
+            self.reward_pool.give(coin)?;
+        }
+
+        Ok(())
     }
 }
 
