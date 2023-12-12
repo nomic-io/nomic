@@ -215,7 +215,7 @@ function handleError(f, args) {
         wasm.__wbindgen_exn_store(addHeapObject(e));
     }
 }
-function __wbg_adapter_51(arg0, arg1, arg2, arg3) {
+function __wbg_adapter_53(arg0, arg1, arg2, arg3) {
     wasm.wasm_bindgen__convert__closures__invoke2_mut__h755fea732ceba39a(arg0, arg1, addHeapObject(arg2), addHeapObject(arg3));
 }
 
@@ -717,26 +717,16 @@ export class OraiBtc {
     /**
     * @param {string} url
     * @param {string} chain_id
+    * @param {any} bitcoin_network
     */
-    constructor(url, chain_id) {
+    constructor(url, chain_id, bitcoin_network) {
         const ptr0 = passStringToWasm0(url, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passStringToWasm0(chain_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.oraibtc_new(ptr0, len0, ptr1, len1);
+        const ret = wasm.oraibtc_new(ptr0, len0, ptr1, len1, addHeapObject(bitcoin_network));
         this.__wbg_ptr = ret >>> 0;
         return this;
-    }
-    /**
-    * @param {string} _to_addr
-    * @param {bigint} _amount
-    * @returns {Promise<any>}
-    */
-    transfer(_to_addr, _amount) {
-        const ptr0 = passStringToWasm0(_to_addr, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.oraibtc_transfer(this.__wbg_ptr, ptr0, len0, _amount);
-        return takeObject(ret);
     }
     /**
     * @param {string} addr
@@ -944,13 +934,23 @@ export class OraiBtc {
         return takeObject(ret);
     }
     /**
-    * @param {string} dest_addr
+    * @param {string} receiver
+    * @param {string | undefined} [channel]
+    * @param {string | undefined} [sender]
+    * @param {string | undefined} [memo]
+    * @param {number | undefined} [timeoutSeconds]
     * @returns {Promise<DepositAddress>}
     */
-    generateDepositAddress(dest_addr) {
-        const ptr0 = passStringToWasm0(dest_addr, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    generateDepositAddress(receiver, channel, sender, memo, timeoutSeconds) {
+        const ptr0 = passStringToWasm0(receiver, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.oraibtc_generateDepositAddress(this.__wbg_ptr, ptr0, len0);
+        var ptr1 = isLikeNone(channel) ? 0 : passStringToWasm0(channel, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len1 = WASM_VECTOR_LEN;
+        var ptr2 = isLikeNone(sender) ? 0 : passStringToWasm0(sender, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len2 = WASM_VECTOR_LEN;
+        var ptr3 = isLikeNone(memo) ? 0 : passStringToWasm0(memo, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len3 = WASM_VECTOR_LEN;
+        const ret = wasm.oraibtc_generateDepositAddress(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, !isLikeNone(timeoutSeconds), isLikeNone(timeoutSeconds) ? 0 : timeoutSeconds);
         return takeObject(ret);
     }
     /**
@@ -1009,18 +1009,11 @@ export class OraiBtc {
         return takeObject(ret);
     }
     /**
-    * @returns {Promise<string>}
-    */
-    getAddress() {
-        const ret = wasm.oraibtc_getAddress(this.__wbg_ptr);
-        return takeObject(ret);
-    }
-    /**
     * @param {string} dest_addr
     * @param {number} sigset_index
     * @param {Array<any>} relayers
     * @param {string} deposit_addr
-    * @returns {Promise<void>}
+    * @returns {Promise<string>}
     */
     broadcastDepositAddress(dest_addr, sigset_index, relayers, deposit_addr) {
         const ptr0 = passStringToWasm0(dest_addr, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
@@ -1430,41 +1423,37 @@ function __wbg_get_imports() {
     imports.wbg.__wbindgen_object_drop_ref = function(arg0) {
         takeObject(arg0);
     };
-    imports.wbg.__wbg_incentives_new = function(arg0) {
-        const ret = Incentives.__wrap(arg0);
+    imports.wbg.__wbg_airdrop_new = function(arg0) {
+        const ret = Airdrop.__wrap(arg0);
         return addHeapObject(ret);
     };
     imports.wbg.__wbindgen_bigint_from_u64 = function(arg0) {
         const ret = BigInt.asUintN(64, arg0);
         return addHeapObject(ret);
     };
+    imports.wbg.__wbg_incentives_new = function(arg0) {
+        const ret = Incentives.__wrap(arg0);
+        return addHeapObject(ret);
+    };
     imports.wbg.__wbg_new_ffc6d4d085022169 = function() {
         const ret = new Array();
         return addHeapObject(ret);
     };
-    imports.wbg.__wbg_coin_new = function(arg0) {
-        const ret = Coin.__wrap(arg0);
-        return addHeapObject(ret);
-    };
-    imports.wbg.__wbg_unbondinfo_new = function(arg0) {
-        const ret = UnbondInfo.__wrap(arg0);
-        return addHeapObject(ret);
-    };
-    imports.wbg.__wbg_delegation_new = function(arg0) {
-        const ret = Delegation.__wrap(arg0);
+    imports.wbg.__wbg_validatorqueryinfo_new = function(arg0) {
+        const ret = ValidatorQueryInfo.__wrap(arg0);
         return addHeapObject(ret);
     };
     imports.wbg.__wbg_push_901f3914205d44de = function(arg0, arg1) {
         const ret = getObject(arg0).push(getObject(arg1));
         return ret;
     };
-    imports.wbg.__wbg_airdrop_new = function(arg0) {
-        const ret = Airdrop.__wrap(arg0);
+    imports.wbg.__wbindgen_number_new = function(arg0) {
+        const ret = arg0;
         return addHeapObject(ret);
     };
-    imports.wbg.__wbg_validatorqueryinfo_new = function(arg0) {
-        const ret = ValidatorQueryInfo.__wrap(arg0);
-        return addHeapObject(ret);
+    imports.wbg.__wbg_now_096aa89623f72d50 = function() {
+        const ret = Date.now();
+        return ret;
     };
     imports.wbg.__wbindgen_error_new = function(arg0, arg1) {
         const ret = new Error(getStringFromWasm0(arg0, arg1));
@@ -1472,10 +1461,6 @@ function __wbg_get_imports() {
     };
     imports.wbg.__wbg_depositaddress_new = function(arg0) {
         const ret = DepositAddress.__wrap(arg0);
-        return addHeapObject(ret);
-    };
-    imports.wbg.__wbindgen_number_new = function(arg0) {
-        const ret = arg0;
         return addHeapObject(ret);
     };
     imports.wbg.__wbindgen_object_clone_ref = function(arg0) {
@@ -1496,10 +1481,6 @@ function __wbg_get_imports() {
         const ret = getObject(arg0).length;
         return ret;
     };
-    imports.wbg.__wbg_new_8f67e318f15d7254 = function(arg0) {
-        const ret = new Uint8Array(getObject(arg0));
-        return addHeapObject(ret);
-    };
     imports.wbg.__wbg_get_f01601b5a68d10e3 = function(arg0, arg1) {
         const ret = getObject(arg0)[arg1 >>> 0];
         return addHeapObject(ret);
@@ -1511,6 +1492,10 @@ function __wbg_get_imports() {
         var len1 = WASM_VECTOR_LEN;
         getInt32Memory0()[arg0 / 4 + 1] = len1;
         getInt32Memory0()[arg0 / 4 + 0] = ptr1;
+    };
+    imports.wbg.__wbg_new_8f67e318f15d7254 = function(arg0) {
+        const ret = new Uint8Array(getObject(arg0));
+        return addHeapObject(ret);
     };
     imports.wbg.__wbg_new_9fb8d994e1c0aaac = function() {
         const ret = new Object();
@@ -1558,6 +1543,18 @@ function __wbg_get_imports() {
         const ret = getObject(arg0).arrayBuffer();
         return addHeapObject(ret);
     }, arguments) };
+    imports.wbg.__wbg_coin_new = function(arg0) {
+        const ret = Coin.__wrap(arg0);
+        return addHeapObject(ret);
+    };
+    imports.wbg.__wbg_unbondinfo_new = function(arg0) {
+        const ret = UnbondInfo.__wrap(arg0);
+        return addHeapObject(ret);
+    };
+    imports.wbg.__wbg_delegation_new = function(arg0) {
+        const ret = Delegation.__wrap(arg0);
+        return addHeapObject(ret);
+    };
     imports.wbg.__wbg_new_abda76e883ba8a5f = function() {
         const ret = new Error();
         return addHeapObject(ret);
@@ -1615,15 +1612,6 @@ function __wbg_get_imports() {
     imports.wbg.__wbg_set_2357bf09366ee480 = function(arg0, arg1, arg2) {
         getObject(arg0).set(getObject(arg1), arg2 >>> 0);
     };
-    imports.wbg.__wbindgen_cb_drop = function(arg0) {
-        const obj = takeObject(arg0).original;
-        if (obj.cnt-- == 1) {
-            obj.a = 0;
-            return true;
-        }
-        const ret = false;
-        return ret;
-    };
     imports.wbg.__wbindgen_debug_string = function(arg0, arg1) {
         const ret = debugString(getObject(arg1));
         const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
@@ -1638,7 +1626,7 @@ function __wbg_get_imports() {
                 const a = state0.a;
                 state0.a = 0;
                 try {
-                    return __wbg_adapter_51(a, state0.b, arg0, arg1);
+                    return __wbg_adapter_53(a, state0.b, arg0, arg1);
                 } finally {
                     state0.a = a;
                 }
@@ -1648,6 +1636,15 @@ function __wbg_get_imports() {
         } finally {
             state0.a = state0.b = 0;
         }
+    };
+    imports.wbg.__wbindgen_cb_drop = function(arg0) {
+        const obj = takeObject(arg0).original;
+        if (obj.cnt-- == 1) {
+            obj.a = 0;
+            return true;
+        }
+        const ret = false;
+        return ret;
     };
     imports.wbg.__wbindgen_throw = function(arg0, arg1) {
         throw new Error(getStringFromWasm0(arg0, arg1));
@@ -1675,7 +1672,7 @@ function __wbg_get_imports() {
         const ret = Promise.resolve(getObject(arg0));
         return addHeapObject(ret);
     };
-    imports.wbg.__wbindgen_closure_wrapper2597 = function(arg0, arg1, arg2) {
+    imports.wbg.__wbindgen_closure_wrapper2592 = function(arg0, arg1, arg2) {
         const ret = makeMutClosure(arg0, arg1, 383, __wbg_adapter_28);
         return addHeapObject(ret);
     };

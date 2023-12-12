@@ -6,18 +6,21 @@ mod global;
 mod types;
 mod web_client;
 
+use std::convert::TryInto;
+
 use crate::error::Error;
 use crate::global::Global;
 use crate::types::*;
+use bitcoin::Network;
 use js_sys::{Array, Uint8Array};
-use nomic::app::{Dest, InnerApp, Nom};
-use nomic::bitcoin::{Nbtc, NETWORK as BITCOIN_NETWORK};
+use nomic::app::{Dest, IbcDest, InnerApp, Nom};
+use nomic::bitcoin::Nbtc;
 use nomic::constants::MAIN_NATIVE_TOKEN_DENOM;
 use nomic::orga::client::wallet::Unsigned;
 use nomic::orga::client::AppClient;
 use nomic::orga::coins::Address;
 use nomic::orga::coins::Symbol;
-use nomic::orga::encoding::Encode;
+use nomic::orga::encoding::{Adapter, Encode};
 use nomic::orga::plugins::sdk_compat::sdk;
 use nomic::orga::plugins::MIN_FEE;
 use nomic::orga::Error as OrgaError;
@@ -27,6 +30,8 @@ use wasm_bindgen_futures::JsFuture;
 use web_client::WebClient;
 use web_sys::{Request, RequestInit, RequestMode, Response};
 
+const ONE_DAY_MS: u64 = 86_400_000;
+
 #[wasm_bindgen(start)]
 pub fn main_js() -> std::result::Result<(), JsValue> {
     console_error_panic_hook::set_once();
@@ -34,18 +39,39 @@ pub fn main_js() -> std::result::Result<(), JsValue> {
 }
 
 #[wasm_bindgen]
+#[derive(Copy, Clone, Debug)]
+pub enum NetWorkEnum {
+    /// Classic Bitcoin
+    Bitcoin = "bitcoin",
+    /// Bitcoin's testnet
+    Testnet = "testnet",
+    /// Bitcoin's signet
+    Signet = "signet",
+    /// Bitcoin's regtest
+    Regtest = "regtest",
+}
+
+#[allow(non_snake_case)]
+#[wasm_bindgen]
 pub struct OraiBtc {
     client: AppClient<InnerApp, InnerApp, WebClient, Nom, Unsigned>,
     chain_id: String,
+    network: Network,
 }
 
 #[wasm_bindgen]
 impl OraiBtc {
     #[wasm_bindgen(constructor)]
-    pub fn new(url: &str, chain_id: &str) -> Self {
+    pub fn new(url: &str, chain_id: &str, bitcoin_network: NetWorkEnum) -> Self {
         Self {
             client: AppClient::new(WebClient::new(url.to_string()), Unsigned),
             chain_id: chain_id.to_string(),
+            network: match bitcoin_network {
+                NetWorkEnum::Bitcoin => Network::Bitcoin,
+                NetWorkEnum::Signet => Network::Signet,
+                NetWorkEnum::Regtest => Network::Regtest,
+                _ => Network::Testnet,
+            },
         }
     }
 
@@ -297,7 +323,7 @@ impl OraiBtc {
             .client
             .query(|app: InnerApp| {
                 Ok(match app.bitcoin.recovery_scripts.get(address)? {
-                    Some(script) => bitcoin::Address::from_script(&script, BITCOIN_NETWORK)
+                    Some(script) => bitcoin::Address::from_script(&script, self.network)
                         .map_err(|e| OrgaError::App(format!("{:?}", e)))?
                         .to_string(),
                     None => "".to_string(),
@@ -438,11 +464,14 @@ impl OraiBtc {
 
     #[allow(non_snake_case)]
     #[wasm_bindgen(js_name=generateDepositAddress)]
-    pub async fn gen_deposit_addr(&self, dest_addr: String) -> Result<DepositAddress, JsError> {
-        let dest_addr = dest_addr
-            .parse()
-            .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
-
+    pub async fn gen_deposit_addr(
+        &self,
+        receiver: String,
+        channel: Option<String>,
+        sender: Option<String>,
+        memo: Option<String>,
+        timeoutSeconds: Option<u32>,
+    ) -> Result<DepositAddress, JsError> {
         let (sigset, threshold) = self
             .client
             .query(|app: InnerApp| {
@@ -452,13 +481,43 @@ impl OraiBtc {
                 ))
             })
             .await?;
-        let script = sigset.output_script(
-            Dest::Address(dest_addr).commitment_bytes()?.as_slice(),
-            threshold,
-        )?;
-        // TODO: get network from somewhere
-        // TODO: make test/mainnet option configurable
-        let btc_addr = bitcoin::Address::from_script(&script, BITCOIN_NETWORK)?;
+
+        let dest = if let Some(channel) = channel {
+            let mut timeout_timestamp_ms = js_sys::Date::now() as u64;
+            if let Some(timeout) = timeoutSeconds {
+                timeout_timestamp_ms += (timeout as u64) * 1_000;
+            } else {
+                timeout_timestamp_ms += ONE_DAY_MS * 5 - timeout_timestamp_ms % 3_600_000;
+            }
+
+            let timeout_timestamp = timeout_timestamp_ms * 1_000_000;
+
+            let memo = memo.unwrap_or_default();
+            if memo.len() > 255 {
+                return Err(JsError::new("Memo must be less than 256 characters"));
+            }
+
+            let sender = sender.unwrap_or_default();
+
+            Dest::Ibc(IbcDest {
+                source_port: "transfer".to_string().try_into()?,
+                source_channel: channel.try_into()?,
+                sender: Adapter(sender.into()),
+                receiver: Adapter(receiver.into()),
+                timeout_timestamp,
+                memo: memo.try_into()?,
+            })
+        } else {
+            Dest::Address(
+                receiver
+                    .parse()
+                    .map_err(|e| Error::Wasm(format!("{:?}", e)))?,
+            )
+        };
+
+        let script = sigset.output_script(dest.commitment_bytes()?.as_slice(), threshold)?;
+
+        let btc_addr = bitcoin::Address::from_script(&script, self.network)?;
 
         Ok(DepositAddress {
             address: btc_addr.to_string(),
@@ -547,7 +606,7 @@ impl OraiBtc {
         sigset_index: u32,
         relayers: js_sys::Array,
         deposit_addr: String,
-    ) -> Result<(), JsError> {
+    ) -> Result<String, JsError> {
         let dest_addr = dest_addr
             .parse()
             .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
@@ -558,7 +617,7 @@ impl OraiBtc {
             Ok(global) => global,
             Err(_) => return Err(Error::Wasm("Object class not found".to_string()).into()),
         };
-
+        let mut results = vec![];
         for relayer in relayers.iter() {
             let relayer = match relayer.as_string() {
                 Some(relayer) => relayer,
@@ -602,11 +661,9 @@ impl OraiBtc {
                 .await
                 .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
             let res = js_sys::Uint8Array::new(&res).to_vec();
-            let _res = String::from_utf8(res)?;
-
-            // web_sys::console::log_1(&format!("response: {}", &res).into());
+            results.push(String::from_utf8(res)?);
         }
-        Ok(())
+        Ok(results.join("\n"))
     }
 
     pub async fn withdraw(

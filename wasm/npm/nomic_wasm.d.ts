@@ -107,14 +107,9 @@ export class OraiBtc {
 /**
 * @param {string} url
 * @param {string} chain_id
+* @param {any} bitcoin_network
 */
-  constructor(url: string, chain_id: string);
-/**
-* @param {string} _to_addr
-* @param {bigint} _amount
-* @returns {Promise<any>}
-*/
-  transfer(_to_addr: string, _amount: bigint): Promise<any>;
+  constructor(url: string, chain_id: string, bitcoin_network: any);
 /**
 * @param {string} addr
 * @returns {Promise<bigint>}
@@ -218,10 +213,14 @@ export class OraiBtc {
 */
   nonce(addr: string): Promise<bigint>;
 /**
-* @param {string} dest_addr
+* @param {string} receiver
+* @param {string | undefined} [channel]
+* @param {string | undefined} [sender]
+* @param {string | undefined} [memo]
+* @param {number | undefined} [timeoutSeconds]
 * @returns {Promise<DepositAddress>}
 */
-  generateDepositAddress(dest_addr: string): Promise<DepositAddress>;
+  generateDepositAddress(receiver: string, channel?: string, sender?: string, memo?: string, timeoutSeconds?: number): Promise<DepositAddress>;
 /**
 * @param {string} addr
 * @returns {Promise<bigint>}
@@ -253,17 +252,13 @@ export class OraiBtc {
 */
   depositsEnabled(): Promise<boolean>;
 /**
-* @returns {Promise<string>}
-*/
-  getAddress(): Promise<string>;
-/**
 * @param {string} dest_addr
 * @param {number} sigset_index
 * @param {Array<any>} relayers
 * @param {string} deposit_addr
-* @returns {Promise<void>}
+* @returns {Promise<string>}
 */
-  broadcastDepositAddress(dest_addr: string, sigset_index: number, relayers: Array<any>, deposit_addr: string): Promise<void>;
+  broadcastDepositAddress(dest_addr: string, sigset_index: number, relayers: Array<any>, deposit_addr: string): Promise<string>;
 /**
 * @param {string} address
 * @param {string} dest_addr
@@ -389,8 +384,7 @@ export interface InitOutput {
   readonly airdrop_claimedTotal: (a: number) => number;
   readonly main_js: () => void;
   readonly __wbg_oraibtc_free: (a: number) => void;
-  readonly oraibtc_new: (a: number, b: number, c: number, d: number) => number;
-  readonly oraibtc_transfer: (a: number, b: number, c: number, d: number) => number;
+  readonly oraibtc_new: (a: number, b: number, c: number, d: number, e: number) => number;
   readonly oraibtc_balance: (a: number, b: number, c: number) => number;
   readonly oraibtc_nomRewardBalance: (a: number, b: number, c: number) => number;
   readonly oraibtc_nbtcRewardBalance: (a: number, b: number, c: number) => number;
@@ -410,7 +404,7 @@ export interface InitOutput {
   readonly oraibtc_airdropBalances: (a: number, b: number, c: number) => number;
   readonly oraibtc_incentiveBalances: (a: number, b: number, c: number) => number;
   readonly oraibtc_nonce: (a: number, b: number, c: number) => number;
-  readonly oraibtc_generateDepositAddress: (a: number, b: number, c: number) => number;
+  readonly oraibtc_generateDepositAddress: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
   readonly oraibtc_nbtcBalance: (a: number, b: number, c: number) => number;
   readonly oraibtc_incomingIbcNbtcBalance: (a: number, b: number, c: number) => number;
   readonly oraibtc_valueLocked: (a: number) => number;
@@ -418,7 +412,6 @@ export interface InitOutput {
   readonly oraibtc_bitcoinHeight: (a: number) => number;
   readonly oraibtc_capacityLimit: (a: number) => number;
   readonly oraibtc_depositsEnabled: (a: number) => number;
-  readonly oraibtc_getAddress: (a: number) => number;
   readonly oraibtc_broadcastDepositAddress: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
   readonly oraibtc_withdraw: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
   readonly oraibtc_joinRewardAccounts: (a: number, b: number, c: number, d: number, e: number) => number;
