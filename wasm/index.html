@@ -5,12 +5,12 @@
 
   <body>
     <script type="module">
-      import init, { OraiBtc } from './pkg/nomic_wasm.js';
+      import init, { OraiBtc } from './npm/nomic_wasm.js';
 
       async function run() {
         await init();
-        const app = new OraiBtc('https://oraibtc.lcd.orai.io', 'OraiBtcSubnet');
-        const { address } = await app.generateDepositAddress('oraibtc1ehmhqcn8erf3dgavrca69zgp4rtxj5kqzpga4j');
+        const app = new OraiBtc('https://oraibtc.lcd.orai.io', 'OraiBtcSubnet', 'testnet');
+        const { address } = await app.generateDepositAddress('orai12zyu8w93h0q2lcnt50g3fn0w3yqnhy4fvawaqz', 'channel-0', 'oraibtc1ehmhqcn8erf3dgavrca69zgp4rtxj5kqzpga4j');
         console.log(address);
       }
 

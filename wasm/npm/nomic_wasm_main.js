@@ -1711,7 +1711,7 @@ module.exports.__wbindgen_closure_wrapper2592 = function(arg0, arg1, arg2) {
     return addHeapObject(ret);
 };
 
-const path = require('path').join(__dirname, 'nomic_wasm_bg.wasm');
+const path = require('path').join(__dirname, 'nomic_wasm_bg_main.wasm');
 const bytes = require('fs').readFileSync(path);
 
 const wasmModule = new WebAssembly.Module(bytes);
