@@ -40,6 +40,7 @@ end = 30000
 buckets = 10
 
 [[chains]]
+trusted_node = true
 id = "Oraichain"
 rpc_addr = "https://rpc.orai.io"
 grpc_addr = "https://grpc.orai.io:9090"
@@ -88,6 +89,7 @@ trust_threshold = { numerator = '1', denominator = '3' }
 # trust_threshold = { numerator = '1', denominator = '3' }
 
 [[chains]]
+trusted_node = true
 id = "testing"
 rpc_addr = "http://192.168.0.17:26657"
 grpc_addr = "http://192.168.0.17:9090"
@@ -112,6 +114,7 @@ trusting_period = '7000s'
 trust_threshold = { numerator = '1', denominator = '3' }
 
 [[chains]]
+trusted_node = true
 id = 'nomic-local-1'
 rpc_addr = 'http://nomic:26657' # this is the url for nomic local node running in docker
 event_source = { mode = 'pull' }
