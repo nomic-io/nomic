@@ -87,10 +87,9 @@ impl<T: App + Call + Query + State + Default> Transport<ABCIPlugin<T>> for WebCl
         let mut height = self.height.lock().unwrap();
         if let Some(height) = height.as_ref() {
             if *height != res_height {
-                return Err(Error::App(format!(
-                    "Height mismatch: expected {}, got {}",
-                    height, res_height
-                )));
+                web_sys::console::warn_1(
+                    &format!("Height mismatch: expected {}, got {}", height, res_height).into(),
+                );
             }
         }
         height.replace(res_height);

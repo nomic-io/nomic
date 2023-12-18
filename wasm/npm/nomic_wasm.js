@@ -1555,6 +1555,9 @@ function __wbg_get_imports() {
         const ret = Delegation.__wrap(arg0);
         return addHeapObject(ret);
     };
+    imports.wbg.__wbg_warn_f260f49434e45e62 = function(arg0) {
+        console.warn(getObject(arg0));
+    };
     imports.wbg.__wbg_new_abda76e883ba8a5f = function() {
         const ret = new Error();
         return addHeapObject(ret);
@@ -1672,7 +1675,7 @@ function __wbg_get_imports() {
         const ret = Promise.resolve(getObject(arg0));
         return addHeapObject(ret);
     };
-    imports.wbg.__wbindgen_closure_wrapper2592 = function(arg0, arg1, arg2) {
+    imports.wbg.__wbindgen_closure_wrapper2593 = function(arg0, arg1, arg2) {
         const ret = makeMutClosure(arg0, arg1, 383, __wbg_adapter_28);
         return addHeapObject(ret);
     };
