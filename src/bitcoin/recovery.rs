@@ -9,7 +9,7 @@ use crate::{
     app::Dest,
     error::{Error, Result},
 };
-use bitcoin::{OutPoint, Script, Transaction, TxOut};
+use bitcoin::{OutPoint, Transaction, TxOut};
 use orga::{collections::Deque, encoding::LengthVec, orga};
 
 #[orga(skip(Default))]
@@ -67,7 +67,7 @@ impl RecoveryTxs {
             .output_script(args.dest.commitment_bytes()?.as_slice(), args.threshold)?;
         let output = TxOut {
             value: expired_output.value,
-            script_pubkey: script_pubkey.clone(),
+            script_pubkey,
         };
 
         let mut tx = BitcoinTx::default();
