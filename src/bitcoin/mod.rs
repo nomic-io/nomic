@@ -555,10 +555,6 @@ impl Bitcoin {
         let checkpoint = self.checkpoints.get(sigset_index)?;
         let sigset = checkpoint.sigset.clone();
 
-        if now > sigset.deposit_timeout() {
-            return Err(OrgaError::App("Deposit timeout has expired".to_string()))?;
-        }
-
         let dest_bytes = dest.commitment_bytes()?;
         let expected_script =
             sigset.output_script(&dest_bytes, self.checkpoints.config.sigset_threshold)?;
@@ -566,6 +562,35 @@ impl Bitcoin {
             return Err(OrgaError::App(
                 "Output script does not match signature set".to_string(),
             ))?;
+        }
+        let outpoint = (btc_tx.txid().into_inner(), btc_vout);
+        if self.processed_outpoints.contains(outpoint)? {
+            return Err(OrgaError::App(
+                "Output has already been relayed".to_string(),
+            ))?;
+        }
+        self.processed_outpoints
+            .insert(outpoint, sigset.deposit_timeout())?;
+
+        if !checkpoint.deposits_enabled {
+            return Err(OrgaError::App(
+                "Deposits are disabled for the given checkpoint".to_string(),
+            ))?;
+        }
+
+        if now > sigset.deposit_timeout() {
+            self.recovery_txs.create_recovery_tx(RecoveryTxInput {
+                expired_tx: btc_tx.into_inner(),
+                vout: btc_vout,
+                old_sigset: &sigset,
+                new_sigset: &self.checkpoints.building()?.sigset,
+                dest,
+                fee_rate: self.checkpoints.building()?.fee_rate,
+                //TODO: Hold checkpoint config on state
+                threshold: self.checkpoints.config.sigset_threshold,
+            })?;
+
+            return Ok(());
         }
 
         let prevout = bitcoin::OutPoint {
@@ -580,27 +605,12 @@ impl Bitcoin {
             self.checkpoints.config.sigset_threshold,
         )?;
         let input_size = input.est_vsize();
-
         let fee = input_size * checkpoint.fee_rate;
         let value = output.value.checked_sub(fee).ok_or_else(|| {
             OrgaError::App("Deposit amount is too small to pay its spending fee".to_string())
         })? * self.config.units_per_sat;
 
-        let outpoint = (btc_tx.txid().into_inner(), btc_vout);
-        if self.processed_outpoints.contains(outpoint)? {
-            return Err(OrgaError::App(
-                "Output has already been relayed".to_string(),
-            ))?;
-        }
-        self.processed_outpoints
-            .insert(outpoint, sigset.deposit_timeout())?;
-
         let mut building_mut = self.checkpoints.building_mut()?;
-        if !building_mut.deposits_enabled {
-            return Err(OrgaError::App(
-                "Deposits are disabled for the given checkpoint".to_string(),
-            ))?;
-        }
         let mut building_checkpoint_batch = building_mut
             .batches
             .get_mut(BatchType::Checkpoint as u64)?
