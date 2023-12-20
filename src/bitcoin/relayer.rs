@@ -575,8 +575,9 @@ impl Relayer {
                     Err(err) => Err(err)?,
                 }
 
+                let script_pubkey = signed_tx.tx.output[0].script_pubkey.clone();
                 let deposit_addr =
-                    bitcoin::Address::from_script(&signed_tx.script_pubkey, super::NETWORK)?;
+                    bitcoin::Address::from_script(&script_pubkey, super::NETWORK)?;
                 let url = format!("{}/address", "http://localhost:8999",);
                 let client = reqwest::Client::new();
                 let res = client

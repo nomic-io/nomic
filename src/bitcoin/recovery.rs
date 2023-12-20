@@ -18,7 +18,6 @@ pub struct RecoveryTx {
     old_sigset_index: u32,
     new_sigset_index: u32,
     dest: Dest,
-    script_pubkey: Adapter<Script>,
 }
 
 #[orga(skip(Default))]
@@ -26,7 +25,6 @@ pub struct SignedRecoveryTx {
     pub tx: Adapter<Transaction>,
     pub sigset_index: u32,
     pub dest: Dest,
-    pub script_pubkey: Adapter<Script>,
 }
 
 #[orga]
@@ -85,7 +83,6 @@ impl RecoveryTxs {
             old_sigset_index: args.old_sigset.index,
             new_sigset_index: args.new_sigset.index,
             dest: args.dest,
-            script_pubkey: Adapter::new(script_pubkey),
         })?;
 
         Ok(())
@@ -177,7 +174,6 @@ impl RecoveryTxs {
                     tx: Adapter::new(tx.tx.to_bitcoin_tx()?),
                     sigset_index: tx.new_sigset_index,
                     dest: tx.dest.clone(),
-                    script_pubkey: tx.script_pubkey.clone(),
                 });
             }
         }
