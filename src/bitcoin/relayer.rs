@@ -552,7 +552,6 @@ impl Relayer {
                 .query(|app| Ok(app.bitcoin.recovery_txs.signed()?))
                 .await?;
             for signed_tx in recovery_txs.iter() {
-                info!("In signed tx loop");
                 if relayed.contains(&signed_tx.tx.txid()) {
                     continue;
                 }
