@@ -436,11 +436,13 @@ pub async fn gen_deposit_addr(dest_addr: String) -> Result<DepositAddress, JsErr
     // TODO: get network from somewhere
     // TODO: make test/mainnet option configurable
     let btc_addr = bitcoin::Address::from_script(&script, BITCOIN_NETWORK)?;
-
+    let max_deposit_age = app_client()
+        .query(|app: InnerApp| Ok(app.bitcoin.config.max_deposit_age))
+        .await?;
     Ok(DepositAddress {
         address: btc_addr.to_string(),
         sigset_index: sigset.index(),
-        expiration: sigset.deposit_timeout() * 1000,
+        expiration: (sigset.create_time() + max_deposit_age) * 1000,
     })
 }
 
