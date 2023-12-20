@@ -1187,7 +1187,13 @@ mod tests {
         let relayer_client = test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await;
 
         btc_client.generate_to_address(25, &address).await.unwrap();
-        let relayer = Relayer::new(relayer_client, "http://localhost:26657".to_string());
+        let path = tempfile::tempdir().unwrap();
+        let rpc_addr = "http://localhost:26657";
+        let script_store = Arc::new(Mutex::new(
+            WatchedScriptStore::open(path, rpc_addr).await.unwrap(),
+        ));
+        let relayer =
+            Relayer::new(relayer_client, rpc_addr.to_string(), Some(script_store)).unwrap();
 
         let block_hash = btc_client.get_block_hash(30).await.unwrap();
         let headers = relayer.get_header_batch(block_hash).await.unwrap();
@@ -1218,7 +1224,13 @@ mod tests {
         let relayer_client = test_bitcoin_client(rpc_url, cookie_file).await;
 
         btc_client.generate_to_address(7, &address).await.unwrap();
-        let relayer = Relayer::new(relayer_client, "http://localhost:26657".to_string());
+        let path = tempfile::tempdir().unwrap();
+        let rpc_addr = "http://localhost:26657";
+        let script_store = Arc::new(Mutex::new(
+            WatchedScriptStore::open(path, rpc_addr).await.unwrap(),
+        ));
+        let relayer =
+            Relayer::new(relayer_client, rpc_addr.to_string(), Some(script_store)).unwrap();
         let block_hash = btc_client.get_block_hash(30).await.unwrap();
         let headers = relayer.get_header_batch(block_hash).await.unwrap();
 

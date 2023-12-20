@@ -17,8 +17,8 @@ use nomic::bitcoin::adapter::Adapter;
 use nomic::bitcoin::checkpoint::CheckpointStatus;
 use nomic::bitcoin::deposit_index::{Deposit, DepositInfo};
 use nomic::bitcoin::header_queue::Config as HeaderQueueConfig;
-use nomic::bitcoin::relayer::DepositAddress;
 use nomic::bitcoin::relayer::Relayer;
+use nomic::bitcoin::relayer::{DepositAddress, WatchedScriptStore};
 use nomic::bitcoin::signer::Signer;
 use nomic::bitcoin::Config as BitcoinConfig;
 use nomic::error::{Error, Result};
@@ -44,10 +44,10 @@ use serial_test::serial;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::mpsc::{Receiver, Sender};
-use std::sync::Once;
+use std::sync::{Arc, Once};
 use std::time::Duration;
 use tempfile::tempdir;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex};
 
 static INIT: Once = Once::new();
 
@@ -241,28 +241,41 @@ async fn bitcoin_test() {
 
     let rpc_addr = "http://localhost:26657".to_string();
 
+    let script_store = Arc::new(Mutex::new(
+        WatchedScriptStore::open(path.clone(), &rpc_addr.clone())
+            .await
+            .unwrap(),
+    ));
     let mut relayer = Relayer::new(
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
         rpc_addr.clone(),
-    );
+        None,
+    )
+    .unwrap();
     let headers = relayer.start_header_relay();
 
     let relayer = Relayer::new(
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
         rpc_addr.clone(),
-    );
-    let deposits = relayer.start_deposit_relay(&header_relayer_path);
+        Some(script_store),
+    )
+    .unwrap();
+    let deposits = relayer.start_deposit_relay();
 
     let mut relayer = Relayer::new(
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
         rpc_addr.clone(),
-    );
+        None,
+    )
+    .unwrap();
     let checkpoints = relayer.start_checkpoint_relay();
 
     let mut relayer = Relayer::new(
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
         rpc_addr.clone(),
-    );
+        None,
+    )
+    .unwrap();
     let disbursal = relayer.start_emergency_disbursal_transaction_relay();
 
     let signer = async {
@@ -678,22 +691,33 @@ async fn signing_completed_checkpoint_test() {
 
     let rpc_addr = "http://localhost:26657".to_string();
 
+    let script_store = Arc::new(Mutex::new(
+        WatchedScriptStore::open(path.clone(), &rpc_addr.clone())
+            .await
+            .unwrap(),
+    ));
     let mut relayer = Relayer::new(
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
         rpc_addr.clone(),
-    );
+        None,
+    )
+    .unwrap();
     let headers = relayer.start_header_relay();
 
     let relayer = Relayer::new(
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
         rpc_addr.clone(),
-    );
-    let deposits = relayer.start_deposit_relay(&header_relayer_path);
+        Some(script_store),
+    )
+    .unwrap();
+    let deposits = relayer.start_deposit_relay();
 
     let mut relayer = Relayer::new(
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
         rpc_addr.clone(),
-    );
+        None,
+    )
+    .unwrap();
     let checkpoints = relayer.start_checkpoint_relay();
 
     let signer = async {
@@ -919,29 +943,42 @@ async fn pending_deposits() {
     let node_child = node.await.run().await.unwrap();
 
     let rpc_addr = "http://localhost:26657".to_string();
+    let script_store = Arc::new(Mutex::new(
+        WatchedScriptStore::open(path.clone(), &rpc_addr.clone())
+            .await
+            .unwrap(),
+    ));
 
     let mut relayer = Relayer::new(
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
         rpc_addr.clone(),
-    );
+        None,
+    )
+    .unwrap();
     let headers = relayer.start_header_relay();
 
     let relayer = Relayer::new(
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
         rpc_addr.clone(),
-    );
-    let deposits = relayer.start_deposit_relay(&header_relayer_path);
+        Some(script_store),
+    )
+    .unwrap();
+    let deposits = relayer.start_deposit_relay();
 
     let mut relayer = Relayer::new(
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
         rpc_addr.clone(),
-    );
+        None,
+    )
+    .unwrap();
     let checkpoints = relayer.start_checkpoint_relay();
 
     let mut relayer = Relayer::new(
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
         rpc_addr.clone(),
-    );
+        None,
+    )
+    .unwrap();
     let disbursal = relayer.start_emergency_disbursal_transaction_relay();
 
     let signer = async {
