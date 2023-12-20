@@ -4,6 +4,7 @@ use crate::bitcoin::threshold_sig::Signature;
 use crate::error::Result;
 use bitcoin::secp256k1::{Message, Secp256k1};
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
+use futures::try_join;
 use lazy_static::lazy_static;
 use log::info;
 use orga::client::{AppClient, Wallet};
@@ -179,12 +180,24 @@ where
         }
     }
 
-    /// Start the signer, which will run forever, signing checkpoints as they
+    pub async fn start(mut self) -> Result<()> {
+        let secp = Secp256k1::signing_only();
+        let xpub = ExtendedPubKey::from_priv(&secp, &self.xpriv);
+        self.maybe_submit_xpub(&xpub).await?;
+
+        let checkpoint_signing = self.start_checkpoint_signing();
+        let recovery_signing = self.start_recovery_signing();
+        try_join!(checkpoint_signing, recovery_signing)?;
+
+        Ok(())
+    }
+
+    /// Start the checkpoint signer, which will run forever, signing checkpoints as they
     /// become available.
     ///
     /// If the operator has not yet submitted a signatory key, one will be
     /// generated and saved, then submitted.
-    pub async fn start(mut self) -> Result<()> {
+    pub async fn start_checkpoint_signing(&self) -> Result<()> {
         if let Some(addr) = self.exporter_addr {
             // Populate change rate gauges
             let _ = self.check_change_rates().await;
@@ -194,7 +207,7 @@ where
         }
 
         const CHECKPOINT_WINDOW: u32 = 20;
-        info!("Starting signer...");
+        info!("Starting checkpoint signer...");
         let secp = Secp256k1::signing_only();
         let xpub = ExtendedPubKey::from_priv(&secp, &self.xpriv);
 
@@ -218,13 +231,11 @@ where
         }
 
         loop {
-            self.maybe_submit_xpub(&xpub).await?;
-
-            let signed = match self.try_sign(&xpub, index).await {
+            let signed = match self.try_sign_checkpoint(&xpub, index).await {
                 Ok(signed) => signed,
                 Err(e) => {
                     ERROR_COUNTER.inc();
-                    eprintln!("Signer error: {}", e);
+                    eprintln!("Checkpoint signer error: {}", e);
                     false
                 }
             };
@@ -234,6 +245,24 @@ where
             } else {
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             }
+        }
+    }
+
+    pub async fn start_recovery_signing(&self) -> Result<()> {
+        info!("Starting recovery transaction signer...");
+        let secp = Secp256k1::signing_only();
+        let xpub = ExtendedPubKey::from_priv(&secp, &self.xpriv);
+
+        loop {
+            match self.try_sign_recovery_txs(&xpub).await {
+                Ok(signed) => signed,
+                Err(e) => {
+                    ERROR_COUNTER.inc();
+                    eprintln!("Recovery tx signer error: {}", e);
+                }
+            }
+
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         }
     }
 
@@ -288,7 +317,7 @@ where
     /// and should call `try_sign` for the same index again later (e.g. it is
     /// still `Building`, or we have not yet submitted signatures for the final
     /// batch of transactions).
-    async fn try_sign(&mut self, xpub: &ExtendedPubKey, index: u32) -> Result<bool> {
+    async fn try_sign_checkpoint(&self, xpub: &ExtendedPubKey, index: u32) -> Result<bool> {
         let secp = Secp256k1::signing_only();
 
         let (status, timestamp) = self
@@ -332,6 +361,30 @@ where
         info!("Submitted signatures");
 
         Ok(false)
+    }
+
+    async fn try_sign_recovery_txs(&self, xpub: &ExtendedPubKey) -> Result<()> {
+        let secp = Secp256k1::signing_only();
+
+        let to_sign = self
+            .client()
+            .query(|app| Ok(app.bitcoin.recovery_txs.to_sign(xpub.into())?))
+            .await?;
+
+        if to_sign.is_empty() {
+            return Ok(());
+        }
+
+        let sigs = sign(&secp, &self.xpriv, &to_sign)?;
+
+        (self.app_client)()
+            .call(
+                move |app| build_call!(app.bitcoin.recovery_txs.sign(xpub.into(), sigs.clone())),
+                |app| build_call!(app.app_noop()),
+            )
+            .await?;
+
+        Ok(())
     }
 
     /// Check the current withdrawal and signatory set change rates, and return
