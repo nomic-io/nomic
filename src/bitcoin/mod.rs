@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 
 use self::checkpoint::Input;
+use self::recovery::{RecoveryTxInput, RecoveryTxs};
 use self::threshold_sig::Signature;
 use crate::app::Dest;
 use crate::bitcoin::checkpoint::BatchType;
@@ -41,6 +42,7 @@ pub mod checkpoint;
 pub mod deposit_index;
 pub mod header_queue;
 pub mod outpoint_set;
+pub mod recovery;
 #[cfg(feature = "full")]
 pub mod relayer;
 pub mod signatory;
@@ -231,7 +233,7 @@ pub fn calc_deposit_fee(amount: u64) -> u64 {
 /// blockchain headers, relay deposit transactions, maintain nBTC accounts, and
 /// coordinate the checkpointing process to manage the BTC reserve on the
 /// Bitcoin blockchain.
-#[orga(version = 1)]
+#[orga(version = 2)]
 pub struct Bitcoin {
     /// A light client of the Bitcoin blockchain, keeping track of the headers
     /// of the highest-work chain.
@@ -267,6 +269,10 @@ pub struct Bitcoin {
 
     /// The configuration parameters for the Bitcoin module.
     pub config: Config,
+
+    #[orga(version(V2))]
+    #[call]
+    pub recovery_txs: RecoveryTxs,
 }
 
 impl MigrateFrom<BitcoinV0> for BitcoinV1 {
@@ -275,6 +281,21 @@ impl MigrateFrom<BitcoinV0> for BitcoinV1 {
     }
 }
 
+impl MigrateFrom<BitcoinV1> for BitcoinV2 {
+    fn migrate_from(value: BitcoinV1) -> OrgaResult<Self> {
+        Ok(Self {
+            headers: value.headers,
+            processed_outpoints: value.processed_outpoints,
+            checkpoints: value.checkpoints,
+            accounts: value.accounts,
+            signatory_keys: value.signatory_keys,
+            reward_pool: value.reward_pool,
+            recovery_scripts: value.recovery_scripts,
+            config: value.config,
+            recovery_txs: RecoveryTxs::new(),
+        })
+    }
+}
 /// A Tendermint/CometBFT public key.
 pub type ConsensusKey = [u8; 32];
 
