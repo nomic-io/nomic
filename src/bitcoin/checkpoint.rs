@@ -290,7 +290,7 @@ impl BitcoinTx {
     /// populates the input's signing state with it. This should be used when a
     /// transaction is finalized and its structure will not change, and
     /// coordination of signing will begin.
-    fn populate_input_sig_message(&mut self, input_index: usize) -> Result<()> {
+    pub fn populate_input_sig_message(&mut self, input_index: usize) -> Result<()> {
         let bitcoin_tx = self.to_bitcoin_tx()?;
         let mut sc = bitcoin::util::sighash::SighashCache::new(&bitcoin_tx);
         let mut input = self
