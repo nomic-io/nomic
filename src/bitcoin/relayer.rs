@@ -7,6 +7,7 @@ use crate::bitcoin::deposit_index::{Deposit, DepositIndex};
 use crate::bitcoin::{adapter::Adapter, header_queue::WrappedHeader};
 use crate::error::Error;
 use crate::error::Result;
+use crate::orga::encoding::Encode;
 use crate::utils::time_now;
 use bitcoin::consensus::{Decodable, Encodable};
 use bitcoin::Txid;
@@ -15,6 +16,7 @@ use bitcoincore_rpc_async::{json::GetBlockHeaderResult, Client as BitcoinRpcClie
 use log::{debug, error, info, warn};
 use orga::encoding::Decode;
 use orga::macros::build_call;
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::future::Future;
@@ -527,6 +529,85 @@ impl Relayer {
         }
     }
 
+    pub async fn start_recovery_tx_relay<P: AsRef<Path>>(&mut self, store_path: P) -> Result<()> {
+        info!("Starting recovery tx relay...");
+
+        let scripts = WatchedScriptStore::open(store_path, &self.app_client_addr).await?;
+        self.scripts = Some(scripts);
+
+        loop {
+            if let Err(e) = self.relay_recovery_txs().await {
+                error!("Recovery tx relay error: {}", e);
+            }
+
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        }
+    }
+
+    async fn relay_recovery_txs(&mut self) -> Result<()> {
+        let mut relayed = HashSet::new();
+
+        loop {
+            let recovery_txs = app_client(&self.app_client_addr)
+                .query(|app| Ok(app.bitcoin.recovery_txs.signed()?))
+                .await?;
+            for signed_tx in recovery_txs.iter() {
+                info!("In signed tx loop");
+                if relayed.contains(&signed_tx.tx.txid()) {
+                    continue;
+                }
+
+                let mut tx_bytes = vec![];
+                signed_tx.tx.consensus_encode(&mut tx_bytes)?;
+                match self
+                    .btc_client()
+                    .await
+                    .send_raw_transaction(&tx_bytes)
+                    .await
+                {
+                    Ok(_) => {
+                        info!("Broadcast recovery tx: {}", signed_tx.tx.txid());
+                    }
+                    Err(err) if err.to_string().contains("bad-txns-inputs-missingorspent") => {}
+                    Err(err)
+                        if err
+                            .to_string()
+                            .contains("Transaction already in block chain") => {}
+                    Err(err) => Err(err)?,
+                }
+
+                let deposit_addr =
+                    bitcoin::Address::from_script(&signed_tx.script_pubkey, super::NETWORK)?;
+                let url = format!("{}/address", "http://localhost:8999",);
+                let client = reqwest::Client::new();
+                let res = client
+                    .post(url)
+                    .query(&[
+                        ("sigset_index", &signed_tx.sigset_index.to_string()),
+                        ("deposit_addr", &deposit_addr.to_string()),
+                    ])
+                    .body(signed_tx.dest.encode()?)
+                    .send()
+                    .await
+                    .unwrap();
+
+                match res.status() {
+                    StatusCode::OK => {
+                        relayed.insert(signed_tx.tx.txid());
+                    }
+                    _ => {
+                        return Err(Error::Relayer(format!(
+                            "Relayer response returned with error code: {}",
+                            res.status()
+                        )))
+                    }
+                }
+            }
+
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        }
+    }
+
     pub async fn start_checkpoint_conf_relay(&mut self) -> Result<()> {
         info!("Starting checkpoint confirmation relay...");
 
@@ -659,7 +740,15 @@ impl Relayer {
             self.scripts.as_mut().unwrap().insert(addr, &sigset)?;
         }
 
-        self.scripts.as_mut().unwrap().scripts.remove_expired()?;
+        let max_age = app_client(&self.app_client_addr)
+            .query(|app| Ok(app.bitcoin.checkpoints.config.max_age))
+            .await?;
+
+        self.scripts
+            .as_mut()
+            .unwrap()
+            .scripts
+            .remove_expired(max_age)?;
 
         Ok(())
     }
@@ -1041,11 +1130,11 @@ impl WatchedScripts {
         Ok(true)
     }
 
-    pub fn remove_expired(&mut self) -> Result<()> {
+    pub fn remove_expired(&mut self, max_age: u64) -> Result<()> {
         let now = time_now();
 
         for (_, (sigset, dests)) in self.sigsets.iter() {
-            if now < sigset.deposit_timeout() {
+            if now < sigset.create_time() + max_age {
                 break;
             }
 
@@ -1138,8 +1227,11 @@ impl WatchedScriptStore {
 
             scripts.insert(dest, sigset)?;
         }
+        let max_age = app_client(app_client_addr)
+            .query(|app| Ok(app.bitcoin.checkpoints.config.max_age))
+            .await?;
 
-        scripts.remove_expired()?;
+        scripts.remove_expired(max_age)?;
 
         info!("Loaded {} deposit addresses", scripts.len());
 
