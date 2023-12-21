@@ -1,4 +1,4 @@
-use super::SignatorySet;
+use super::{SignatorySet, SIGSET_THRESHOLD};
 use bitcoin::blockdata::transaction::EcdsaSighashType;
 use bitcoin::secp256k1::{
     self,
@@ -258,7 +258,8 @@ impl ThresholdSig {
         }
 
         // TODO: get threshold ratio from somewhere else
-        ts.threshold = ((total_vp as u128) * 9 / 10) as u64;
+        ts.threshold =
+            ((total_vp as u128) * SIGSET_THRESHOLD.0 as u128 / SIGSET_THRESHOLD.1 as u128) as u64;
 
         Ok(ts)
     }
@@ -281,7 +282,8 @@ impl ThresholdSig {
         }
 
         // TODO: get threshold ratio from somewhere else
-        ts.threshold = ((total_vp as u128) * 9 / 10) as u64;
+        ts.threshold =
+            ((total_vp as u128) * SIGSET_THRESHOLD.0 as u128 / SIGSET_THRESHOLD.1 as u128) as u64;
         ts.len = len;
 
         Ok(ts)

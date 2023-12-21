@@ -1,5 +1,6 @@
 use super::signatory::Signatory;
 use super::SignatorySet;
+use super::SIGSET_THRESHOLD;
 use crate::app::Dest;
 use crate::app_client;
 use crate::bitcoin::deposit_index::{Deposit, DepositIndex};
@@ -32,7 +33,6 @@ where
 }
 
 const HEADER_BATCH_SIZE: usize = 250;
-const THRESHOLD: (u64, u64) = (9, 10);
 
 #[derive(Serialize, Deserialize)]
 pub struct DepositsQuery {
@@ -190,7 +190,7 @@ impl Relayer {
                         &sigset
                             .output_script(
                                 dest.commitment_bytes().map_err(|_| reject())?.as_slice(),
-                                THRESHOLD,
+                                SIGSET_THRESHOLD,
                             )
                             .map_err(warp::reject::custom)?,
                         super::NETWORK,
@@ -949,6 +949,7 @@ pub struct RawSignatorySet {
     pub miner_fee_rate: f64,
     #[serde(rename = "depositsEnabled")]
     pub deposits_enabled: bool,
+    pub threshold: (u64, u64),
 }
 
 impl RawSignatorySet {
@@ -969,6 +970,11 @@ impl RawSignatorySet {
             bridge_fee_rate,
             miner_fee_rate,
             deposits_enabled,
+            // TODO: get threshold from checkpoint once it is stored in state
+            #[cfg(feature = "testnet")]
+            threshold: (9, 10),
+            #[cfg(not(feature = "testnet"))]
+            threshold: (2, 3),
         }
     }
 }
@@ -1018,7 +1024,7 @@ impl WatchedScripts {
     }
 
     pub fn insert(&mut self, dest: Dest, sigset: &SignatorySet) -> Result<bool> {
-        let script = self.derive_script(&dest, sigset, THRESHOLD)?;
+        let script = self.derive_script(&dest, sigset, SIGSET_THRESHOLD)?;
 
         if self.scripts.contains_key(&script) {
             return Ok(false);
@@ -1044,7 +1050,7 @@ impl WatchedScripts {
             }
 
             for dest in dests {
-                let script = self.derive_script(dest, sigset, THRESHOLD)?; // TODO: get threshold from state
+                let script = self.derive_script(dest, sigset, SIGSET_THRESHOLD)?; // TODO: get threshold from state
                 self.scripts.remove(&script);
             }
         }
