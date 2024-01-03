@@ -6,6 +6,7 @@
 
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
+use nomic::airdrop::Account;
 use nomic::app::Dest;
 use nomic::app::IbcDest;
 use nomic::app::InnerApp;
@@ -17,6 +18,8 @@ use nomic::utils::wallet_path;
 use nomic::utils::write_orga_private_key_from_mnemonic;
 use orga::abci::Node;
 use orga::client::wallet::{SimpleWallet, Wallet};
+use orga::coins::DelegationInfo;
+use orga::coins::ValidatorQueryInfo;
 use orga::coins::{Address, Commission, Decimal, Declaration, Symbol};
 use orga::ibc::ibc_rs::core::{
     ics24_host::identifier::{ChannelId, PortId},
@@ -72,6 +75,7 @@ pub enum Command {
     SendNbtc(SendNbtcCmd),
     Balance(BalanceCmd),
     Delegations(DelegationsCmd),
+    UnbondingPeriod(UnbondingPeriodCmd),
     Validators(ValidatorsCmd),
     Delegate(DelegateCmd),
     Declare(DeclareCmd),
@@ -135,6 +139,7 @@ impl Command {
                 Delegate(cmd) => cmd.run().await,
                 Declare(cmd) => cmd.run().await,
                 Delegations(cmd) => cmd.run().await,
+                UnbondingPeriod(cmd) => cmd.run().await,
                 Validators(cmd) => cmd.run().await,
                 Unbond(cmd) => cmd.run().await,
                 Redelegate(cmd) => cmd.run().await,
@@ -510,7 +515,7 @@ async fn relaunch_on_migrate(config: &nomic::network::Config) -> Result<()> {
     loop {
         let version: Vec<_> = config
             .client()
-            .query(|app| Ok(app.upgrade.current_version.get(())?.unwrap().clone()))
+            .query(|app: InnerApp| Ok(app.upgrade.current_version.get(())?.unwrap().clone()))
             .await?
             .into();
 
@@ -723,10 +728,10 @@ pub struct DelegationsCmd {
 impl DelegationsCmd {
     async fn run(&self) -> Result<()> {
         let address = my_address();
-        let delegations = self
+        let delegations: Vec<(Address, DelegationInfo)> = self
             .config
             .client()
-            .query(|app| app.staking.delegations(address))
+            .query(|app: InnerApp| app.staking.delegations(address))
             .await?;
 
         println!(
@@ -768,6 +773,25 @@ impl DelegationsCmd {
 }
 
 #[derive(Parser, Debug)]
+pub struct UnbondingPeriodCmd {
+    #[clap(flatten)]
+    config: nomic::network::Config,
+}
+
+impl UnbondingPeriodCmd {
+    async fn run(&self) -> Result<()> {
+        let unbonding_seconds = self
+            .config
+            .client()
+            .query(|app: InnerApp| Ok(app.staking.unbonding_seconds))
+            .await?;
+
+        println!("unbonding period: {}", unbonding_seconds);
+        Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
 pub struct ValidatorsCmd {
     #[clap(flatten)]
     config: nomic::network::Config,
@@ -775,10 +799,10 @@ pub struct ValidatorsCmd {
 
 impl ValidatorsCmd {
     async fn run(&self) -> Result<()> {
-        let mut validators = self
+        let mut validators: Vec<ValidatorQueryInfo> = self
             .config
             .client()
-            .query(|app| app.staking.all_validators())
+            .query(|app: InnerApp| app.staking.all_validators())
             .await?;
 
         validators.sort_by(|a, b| b.amount_staked.cmp(&a.amount_staked));
@@ -895,8 +919,10 @@ impl DeclareCmd {
             .client()
             .with_wallet(wallet())
             .call(
-                |app| build_call!(app.accounts.take_as_funding((self.amount + MIN_FEE).into())),
-                |app| build_call!(app.staking.declare_self(declaration.clone())),
+                |app: &InnerApp| {
+                    build_call!(app.accounts.take_as_funding((self.amount + MIN_FEE).into()))
+                },
+                |app: &InnerApp| build_call!(app.staking.declare_self(declaration.clone())),
             )
             .await?)
     }
@@ -1055,7 +1081,7 @@ impl AirdropCmd {
         let client = self.config.client();
 
         let addr = self.address.unwrap_or_else(my_address);
-        let acct = match client.query(|app| app.airdrop.get(addr)).await? {
+        let acct = match client.query(|app: InnerApp| app.airdrop.get(addr)).await? {
             None => {
                 println!("Address is not eligible for airdrop");
                 return Ok(());
@@ -1082,7 +1108,7 @@ impl ClaimAirdropCmd {
         let client = self.config.client();
 
         let addr = self.address.unwrap_or_else(my_address);
-        let acct = match client.query(|app| app.airdrop.get(addr)).await? {
+        let acct: Account = match client.query(|app: InnerApp| app.airdrop.get(addr)).await? {
             None => {
                 println!("Address is not eligible for airdrop");
                 return Ok(());
@@ -1097,8 +1123,8 @@ impl ClaimAirdropCmd {
                 .client()
                 .with_wallet(wallet())
                 .call(
-                    |app| build_call!(app.airdrop.claim_airdrop1()),
-                    |app| build_call!(app.accounts.give_from_funding_all()),
+                    |app: &InnerApp| build_call!(app.airdrop.claim_airdrop1()),
+                    |app: &InnerApp| build_call!(app.accounts.give_from_funding_all()),
                 )
                 .await?;
             println!("Claimed airdrop 1 ({} uNOM)", acct.airdrop1.claimable);
@@ -1287,7 +1313,7 @@ async fn deposit(
     }
 
     let (sigset, threshold) = client
-        .query(|app| {
+        .query(|app: InnerApp| {
             Ok((
                 app.bitcoin.checkpoints.active_sigset()?,
                 app.bitcoin.checkpoints.config.sigset_threshold,
@@ -1563,7 +1589,6 @@ pub struct UpgradeStatusCmd {
 
 impl UpgradeStatusCmd {
     async fn run(&self) -> Result<()> {
-        use orga::coins::staking::ValidatorQueryInfo;
         use orga::coins::VersionedAddress;
         use std::collections::{HashMap, HashSet};
         let client = self.config.client();

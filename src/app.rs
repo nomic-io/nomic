@@ -421,7 +421,7 @@ impl FromStr for NbtcMemo {
 mod abci {
     use orga::{
         abci::{messages, AbciQuery, BeginBlock, EndBlock, InitChain},
-        coins::{Give, Take},
+        coins::{Give, Take, UNBONDING_SECONDS},
         collections::Map,
         ibc::ibc_rs::core::ics02_client::error::ClientError,
         plugins::{BeginBlockCtx, EndBlockCtx, InitChainCtx},
@@ -437,6 +437,7 @@ mod abci {
             self.staking.slash_fraction_downtime = (Amount::new(1) / Amount::new(1000))?;
             self.staking.slash_fraction_double_sign = (Amount::new(1) / Amount::new(20))?;
             self.staking.min_self_delegation_min = 0;
+            self.staking.unbonding_seconds = UNBONDING_SECONDS;
 
             self.accounts.allow_transfers(true);
             self.bitcoin.accounts.allow_transfers(true);
