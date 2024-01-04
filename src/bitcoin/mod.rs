@@ -189,7 +189,7 @@ impl Config {
             #[cfg(feature = "testnet")]
             min_confirmations: 0,
             #[cfg(not(feature = "testnet"))]
-            min_confirmations: 5,
+            min_confirmations: 1,
             units_per_sat: 1_000_000,
             max_offline_checkpoints: 20,
             min_checkpoint_confirmations: 0,
