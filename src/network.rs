@@ -20,6 +20,7 @@ use std::{
 pub enum Network {
     Mainnet,
     Testnet,
+    Local,
 }
 
 impl Network {
@@ -27,6 +28,7 @@ impl Network {
         let toml_src = match self {
             Self::Mainnet => include_str!("../networks/stakenet.toml"),
             Self::Testnet => include_str!("../networks/testnet.toml"),
+            Self::Local => return InnerConfig::default(),
         };
 
         let mut config: InnerConfig = toml::from_str(toml_src).unwrap();
@@ -43,10 +45,13 @@ impl Network {
 
 impl FromStr for Network {
     type Err = Error;
+
     fn from_str(s: &str) -> Result<Self> {
         match s.to_lowercase().as_str() {
             "mainnet" => Ok(Self::Mainnet),
+            "stakenet" => Ok(Self::Mainnet),
             "testnet" => Ok(Self::Testnet),
+            "local" => Ok(Self::Local),
             _ => Err(Error::Orga(orga::Error::App(format!(
                 "Invalid network: {s}"
             )))),
@@ -96,8 +101,14 @@ impl Config {
 
     #[cfg(feature = "full")]
     pub fn home_expect(&self) -> Result<PathBuf> {
-        self.home()
-            .ok_or_else(|| orga::Error::App("Cannot get home directory. Please specify either --network, --home, or --chain-id.".to_string()).into())
+        self.home().ok_or_else(|| {
+            // Don't show "--network" in error message if it was specified (e.g. `--network local`)
+            if self.args.network.is_some() {
+                orga::Error::App("Cannot get home directory. Please specify either --home, --chain-id, or --genesis.".to_string())
+            } else {
+                orga::Error::App("Cannot get home directory. Please specify either --network, --home, --chain-id, or --genesis.".to_string())
+            }.into()
+        })
     }
 
     pub fn is_empty(&self) -> bool {
@@ -110,6 +121,17 @@ impl Config {
     pub fn client(&self) -> AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned> {
         let node = self.args.node.as_ref().unwrap();
         crate::app_client(node)
+    }
+
+    pub fn network(&self) -> Option<Network> {
+        match self.args.network {
+            Some(Network::Local) => None,
+            Some(network) => Some(network),
+            #[cfg(feature = "testnet")]
+            None => Some(Network::Testnet),
+            #[cfg(not(feature = "testnet"))]
+            None => Some(Network::Mainnet),
+        }
     }
 }
 
@@ -143,20 +165,7 @@ impl FromArgMatches for Config {
     ) -> std::result::Result<(), clap::Error> {
         self.args.update_from_arg_matches(matches)?;
 
-        if self.is_empty() {
-            self.args.network = match env!("GIT_BRANCH") {
-                "main" => Some(Network::Mainnet),
-                "testnet" => Some(Network::Testnet),
-                _ => None,
-            };
-            if let Some(network) = self.args.network {
-                log::debug!("Using default network: {:?}", network);
-            } else {
-                log::debug!("Built on branch with no default network.");
-            }
-        }
-
-        if let Some(network) = self.args.network {
+        if let Some(network) = self.network() {
             let mut net_config = network.config();
             let arg_config = &self.args;
 

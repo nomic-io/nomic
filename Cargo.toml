@@ -1,13 +1,13 @@
 [package]
 name = "nomic"
-version = "6.4.2"
-authors = ["The Nomic Team <hello@nomic.io>"]
+version = "7.0.0"
+authors = ["The Turbofish Team <hello@turbofish.org>"]
 edition = "2021"
 default-run = "nomic"
 
 [dependencies]
 bitcoin = { version = "0.29.2", features = ["serde", "rand"] }
-orga = { git = "https://github.com/nomic-io/orga.git", rev = "973b51d6bdf181096521050dfbdf32c80f9ceda3", features = [
+orga = { git = "https://github.com/nomic-io/orga.git", rev = "eef75df69fcb8ee0eb788feae376d7edec36ac6f", features = [
     "merk-verify",
 ] }
 thiserror = "1.0.30"
@@ -30,7 +30,7 @@ bitcoin-script = "0.1.1"
 warp = { version = "0.3.2", optional = true }
 derive_more = "0.99.17"
 pretty_env_logger = { git = "https://github.com/seanmonstar/pretty-env-logger", rev = "f9e35b6dbbf06de55222c944c9e1e176ce73b3a7" }
-reqwest = { version = "0.11.16", optional = true }
+reqwest = { version = "0.11.16", optional = true, features = ["json"] }
 rand = { version = "0.8.5", optional = true }
 sha2 = "0.10.6"
 bytes = "1.2.1"
@@ -45,6 +45,8 @@ home = { version = "0.5.5", optional = true }
 semver = "1.0.18"
 ics23 = "0.10.2"
 cosmos-sdk-proto = {version = "0.19.0", optional = true }
+prometheus_exporter = "0.8.5"
+lazy_static = "1.4.0"
 
 [dev-dependencies]
 bitcoind = { version = "0.27.0", features = ["22_0"] }
@@ -64,7 +66,7 @@ toml = { version = "0.7.2", features = ["parse"] }
 semver = "1.0.18"
 
 [features]
-default = ["full", "feat-ibc", "testnet"]
+default = ["full", "feat-ibc", "legacy-bin"]
 full = [
     "bitcoincore-rpc-async",
     "clap",
