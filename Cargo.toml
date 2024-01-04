@@ -85,11 +85,6 @@ full = [
     "home",
 ]
 feat-ibc = ["orga/feat-ibc"]
-testnet = []
-faucet-test = []
-devnet = []
-
-legacy-bin = []
 
 [profile.release]
 overflow-checks = true
@@ -102,14 +97,6 @@ name = "store-diff"
 
 [[bin]]
 name = "create-checkpoint"
-
-[[bin]]
-name = "create-airdrop-snapshot"
-required-features = ["csv"]
-
-[[bin]]
-name = "append-airdrop-snapshot"
-required-features = ["testnet"]
 
 [[test]]
 name = "bitcoin"

@@ -97,7 +97,10 @@ Start your Nomic node:
 ```bash
 # the FUNDED_ADDRESS will have lots of test NOM & NBTC to test
 # your-wanted-chain-id is the chain id you want your local network to be. If it does not exist => auto create new, else reuse the existing one
-FUNDED_ADDRESS=<your-nomic-address-for-funding> nomic start --chain-id <your-wanted-chain-id>
+FUNDED_ADDRESS=<your-nomic-address-for-funding> FUNDED_ORAIBTC_AMOUNT=<amount> FUNDED_USAT_AMOUNT=<amount> nomic start --chain-id <your-wanted-chain-id>
+
+# eg:
+FUNDED_ADDRESS=oraibtc1ehmhqcn8erf3dgavrca69zgp4rtxj5kqzpga4j nomic start --chain-id oraibtc-subnet-1
 ```
 
 This will run the Nomic state machine and a Tendermint process. For new nodes the statesync process will run automatically to get the node up to speed with the current chain.

@@ -423,6 +423,9 @@ impl Bitcoin {
             let regtest_mode = self.network() == bitcoin::Network::Regtest
                 && _signatory_key.network == bitcoin::Network::Testnet;
 
+            println!("network: {:?}", self.network());
+            println!("signatory key network: {:?}", _signatory_key.network);
+
             if !regtest_mode && _signatory_key.network != self.network() {
                 return Err(Error::Orga(orga::Error::App(
                     "Signatory key network does not match network".to_string(),
@@ -1197,8 +1200,8 @@ mod tests {
 
         let secp = Secp256k1::new();
         let xpriv = vec![
-            ExtendedPrivKey::new_master(bitcoin::Network::Testnet, &[0]).unwrap(),
-            ExtendedPrivKey::new_master(bitcoin::Network::Testnet, &[1]).unwrap(),
+            ExtendedPrivKey::new_master(bitcoin::Network::Bitcoin, &[0]).unwrap(),
+            ExtendedPrivKey::new_master(bitcoin::Network::Bitcoin, &[1]).unwrap(),
         ];
         let xpub = vec![
             ExtendedPubKey::from_priv(&secp, &xpriv[0]),

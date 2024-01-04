@@ -16,12 +16,10 @@ use orga::{
 pub use orga;
 pub use thiserror;
 
-pub mod airdrop;
 pub mod app;
 pub mod bitcoin;
 pub mod cosmos;
 pub mod error;
-pub mod incentives;
 #[cfg(feature = "full")]
 pub mod network;
 #[cfg(feature = "full")]
