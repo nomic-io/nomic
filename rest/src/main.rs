@@ -75,7 +75,7 @@ async fn validators() -> Value {
 
         validators.push(json!(
            {
-             "operator_address": validator.address,
+             "operator_address": validator.address.to_string(),
              "consensus_pubkey": {
                  "@type": "/cosmos.crypto.ed25519.PubKey",
                  "key": cons_key
@@ -153,7 +153,7 @@ async fn validator(address: &str) -> Value {
 
         validators.push(json!(
            {
-             "operator_address": validator.address,
+             "operator_address": validator.address.to_string(),
              "consensus_pubkey": {
                  "@type": "/cosmos.crypto.ed25519.PubKey",
                  "key": cons_key
@@ -763,6 +763,8 @@ fn rocket() -> _ {
             ibc_apps_transfer_params,
             ibc_applications_transfer_params,
             bank_supply_unom,
+            validators,
+            validator,
         ],
     )
 }
