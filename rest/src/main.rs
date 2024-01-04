@@ -82,8 +82,8 @@ async fn validators() -> Value {
              },
              "jailed": validator.jailed,
              "status": status,
-             "tokens": validator.amount_staked,
-             "delegator_shares": validator.amount_staked,
+             "tokens": validator.amount_staked.to_string(),
+             "delegator_shares": validator.amount_staked.to_string(),
              "description": {
                  "moniker": info.moniker,
                  "identity": info.identity,
@@ -160,8 +160,8 @@ async fn validator(address: &str) -> Value {
              },
              "jailed": validator.jailed,
              "status": status,
-             "tokens": validator.amount_staked,
-             "delegator_shares": validator.amount_staked,
+             "tokens": validator.amount_staked.to_string(),
+             "delegator_shares": validator.amount_staked.to_string(),
              "description": {
                  "moniker": info.moniker,
                  "identity": info.identity,
