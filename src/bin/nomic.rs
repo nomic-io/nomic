@@ -6,7 +6,6 @@
 
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
-use nomic::airdrop::Account;
 use nomic::app::Dest;
 use nomic::app::IbcDest;
 use nomic::app::InnerApp;
@@ -84,8 +83,6 @@ pub enum Command {
     Unjail(UnjailCmd),
     Edit(EditCmd),
     Claim(ClaimCmd),
-    Airdrop(AirdropCmd),
-    ClaimAirdrop(ClaimAirdropCmd),
     Relayer(RelayerCmd),
     Signer(SignerCmd),
     SetSignatoryKey(SetSignatoryKeyCmd),
@@ -146,8 +143,6 @@ impl Command {
                 Unjail(cmd) => cmd.run().await,
                 Edit(cmd) => cmd.run().await,
                 Claim(cmd) => cmd.run().await,
-                ClaimAirdrop(cmd) => cmd.run().await,
-                Airdrop(cmd) => cmd.run().await,
                 Relayer(cmd) => cmd.run().await,
                 Signer(cmd) => cmd.run().await,
                 SetSignatoryKey(cmd) => cmd.run().await,
@@ -1065,90 +1060,6 @@ impl ClaimCmd {
                 |app| build_call!(app.deposit_rewards()),
             )
             .await?)
-    }
-}
-
-#[derive(Parser, Debug)]
-pub struct AirdropCmd {
-    address: Option<Address>,
-
-    #[clap(flatten)]
-    config: nomic::network::Config,
-}
-
-impl AirdropCmd {
-    async fn run(&self) -> Result<()> {
-        let client = self.config.client();
-
-        let addr = self.address.unwrap_or_else(my_address);
-        let acct = match client.query(|app: InnerApp| app.airdrop.get(addr)).await? {
-            None => {
-                println!("Address is not eligible for airdrop");
-                return Ok(());
-            }
-            Some(acct) => acct,
-        };
-
-        println!("{:#?}", acct);
-
-        Ok(())
-    }
-}
-
-#[derive(Parser, Debug)]
-pub struct ClaimAirdropCmd {
-    address: Option<Address>,
-
-    #[clap(flatten)]
-    config: nomic::network::Config,
-}
-
-impl ClaimAirdropCmd {
-    async fn run(&self) -> Result<()> {
-        let client = self.config.client();
-
-        let addr = self.address.unwrap_or_else(my_address);
-        let acct: Account = match client.query(|app: InnerApp| app.airdrop.get(addr)).await? {
-            None => {
-                println!("Address is not eligible for airdrop");
-                return Ok(());
-            }
-            Some(acct) => acct,
-        };
-
-        let mut claimed = false;
-
-        if acct.airdrop1.claimable > 0 {
-            self.config
-                .client()
-                .with_wallet(wallet())
-                .call(
-                    |app: &InnerApp| build_call!(app.airdrop.claim_airdrop1()),
-                    |app: &InnerApp| build_call!(app.accounts.give_from_funding_all()),
-                )
-                .await?;
-            println!("Claimed airdrop 1 ({} uNOM)", acct.airdrop1.claimable);
-            claimed = true;
-        }
-
-        if acct.airdrop2.claimable > 0 {
-            self.config
-                .client()
-                .with_wallet(wallet())
-                .call(
-                    |app| build_call!(app.airdrop.claim_airdrop2()),
-                    |app| build_call!(app.accounts.give_from_funding_all()),
-                )
-                .await?;
-            println!("Claimed airdrop 2 ({} uNOM)", acct.airdrop2.claimable);
-            claimed = true;
-        }
-
-        if !claimed {
-            println!("No claimable airdrops");
-        }
-
-        Ok(())
     }
 }
 

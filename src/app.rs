@@ -3,13 +3,11 @@
 #![allow(unused_variables)]
 #![allow(unused_imports)]
 
-use crate::airdrop::Airdrop;
 use crate::bitcoin::adapter::Adapter;
 use crate::bitcoin::{Bitcoin, Nbtc};
 use crate::cosmos::{Chain, Cosmos, Proof};
 
 use crate::constants::{BTC_NATIVE_TOKEN_DENOM, MAIN_NATIVE_TOKEN_DENOM};
-use crate::incentives::Incentives;
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::{Script, Transaction, TxOut};
 use orga::coins::{
@@ -60,11 +58,11 @@ impl Symbol for Nom {
     const INDEX: u8 = 69;
     const NAME: &'static str = MAIN_NATIVE_TOKEN_DENOM;
 }
-#[cfg(feature = "faucet-test")]
-const DEFAULT_FUNDED_AMOUNT: u64 = 1_000_000_000_000_000_000;
-
 const IBC_FEE_USATS: u64 = 1_000_000;
 const DECLARE_FEE_USATS: u64 = 100_000_000;
+
+const INITIAL_SUPPLY_ORAIBTC: u64 = 1_000_000_000_000; // 1 millions oraibtc
+const INITIAL_SUPPLY_USATS_FOR_RELAYER: u64 = 1_000_000_000_000; // 1 millions usats
 
 #[orga(version = 4)]
 pub struct InnerApp {
@@ -72,16 +70,11 @@ pub struct InnerApp {
     pub accounts: Accounts<Nom>,
     #[call]
     pub staking: Staking<Nom>,
-    #[call]
-    pub airdrop: Airdrop,
 
     community_pool: Coin<Nom>,
-    incentive_pool: Coin<Nom>,
 
     staking_rewards: Faucet<Nom>,
-    dev_rewards: Faucet<Nom>,
     community_pool_rewards: Faucet<Nom>,
-    incentive_pool_rewards: Faucet<Nom>,
 
     #[call]
     pub bitcoin: Bitcoin,
@@ -97,9 +90,6 @@ pub struct InnerApp {
 
     pub upgrade: Upgrade,
 
-    #[call]
-    pub incentives: Incentives,
-
     #[cfg(feature = "testnet")]
     pub cosmos: Cosmos,
     #[cfg(not(feature = "testnet"))]
@@ -110,52 +100,6 @@ pub struct InnerApp {
 #[orga]
 impl InnerApp {
     pub const CONSENSUS_VERSION: u8 = 10;
-
-    #[cfg(feature = "full")]
-    fn configure_faucets(&mut self) -> Result<()> {
-        let day = 60 * 60 * 24;
-        let year = Duration::from_secs(60 * 60 * 24 * 365);
-        let two_thirds = (Amount::new(2) / Amount::new(3))?;
-
-        let genesis_time = self
-            .context::<Time>()
-            .ok_or_else(|| Error::App("No Time context available".into()))?
-            .seconds;
-
-        self.staking_rewards.configure(FaucetOptions {
-            num_periods: 9,
-            period_length: year,
-            total_coins: 49_875_000_000_000.into(),
-            period_decay: two_thirds,
-            start_seconds: genesis_time + day,
-        })?;
-
-        self.dev_rewards.configure(FaucetOptions {
-            num_periods: 9,
-            period_length: year,
-            total_coins: 49_875_000_000_000.into(),
-            period_decay: two_thirds,
-            start_seconds: genesis_time + day,
-        })?;
-
-        self.community_pool_rewards.configure(FaucetOptions {
-            num_periods: 9,
-            period_length: year,
-            total_coins: 9_975_000_000_000.into(),
-            period_decay: two_thirds,
-            start_seconds: genesis_time + day,
-        })?;
-
-        self.incentive_pool_rewards.configure(FaucetOptions {
-            num_periods: 9,
-            period_length: year,
-            total_coins: 89_775_000_000_000.into(),
-            period_decay: two_thirds,
-            start_seconds: genesis_time + day,
-        })?;
-
-        Ok(())
-    }
 
     #[call]
     pub fn deposit_rewards(&mut self) -> Result<()> {
@@ -273,10 +217,6 @@ impl InnerApp {
     #[call]
     fn join_accounts(&mut self, dest_addr: Address) -> Result<()> {
         disable_fee();
-
-        self.airdrop.join_accounts(dest_addr)?;
-        self.incentives.join_accounts(dest_addr)?;
-
         Ok(())
     }
 
@@ -350,18 +290,22 @@ impl InnerApp {
     }
 
     #[call]
-    pub fn mint_coins_for_funded_address(&mut self) -> Result<String> {
-        #[cfg(feature = "faucet-test")]
+    pub fn mint_initial_supply(&mut self) -> Result<String> {
         {
             // mint uoraibtc and nbtc for a funded address given in the env variable
-            let funded_address =
-                env::var("FUNDED_ADDRESS").map_err(|err| orga::Error::Client(err.to_string()))?;
-            let funded_amount = env::var("FUNDED_AMOUNT").unwrap_or_default();
+            let funded_address = env::var("FUNDED_ADDRESS").map_err(|err| {
+                orga::Error::Client(format!(
+                    "Get funded address with error: {}",
+                    err.to_string()
+                ))
+            })?;
+            let funded_oraibtc_amount = env::var("FUNDED_ORAIBTC_AMOUNT").unwrap_or_default();
+            let funded_usat_amount = env::var("FUNDED_USAT_AMOUNT").unwrap_or_default();
 
             let unom_coin: Coin<Nom> = Amount::new(
-                funded_amount
+                funded_oraibtc_amount
                     .parse::<u64>()
-                    .unwrap_or(DEFAULT_FUNDED_AMOUNT),
+                    .unwrap_or(INITIAL_SUPPLY_ORAIBTC),
             )
             .into();
 
@@ -370,9 +314,9 @@ impl InnerApp {
                 .deposit(funded_address.parse().unwrap(), unom_coin)?;
 
             let nbtc_coin: Coin<Nbtc> = Amount::new(
-                funded_amount
+                funded_usat_amount
                     .parse::<u64>()
-                    .unwrap_or(DEFAULT_FUNDED_AMOUNT),
+                    .unwrap_or(INITIAL_SUPPLY_USATS_FOR_RELAYER),
             )
             .into();
             // add new nbtc coin to the funded address
@@ -381,9 +325,28 @@ impl InnerApp {
                 .add_transfer_exception(funded_address.parse().unwrap())?;
             Ok(funded_address)
         }
-        #[cfg(not(feature = "faucet-test"))]
-        Err(orga::Error::Unknown)
+        // #[cfg(not(feature = "faucet-test"))]
+        // Err(orga::Error::Unknown)
     }
+
+    // #[call]
+    // pub fn mint_initial_supply(&mut self) -> Result<String> {
+    //     let unom_coin: Coin<Nom> = Amount::new(INITIAL_SUPPLY_ORAIBTC).into();
+
+    //     // mint new uoraibtc coin for funded address
+    //     self.accounts
+    //         .deposit(GOVERNANCE_ADDRESS.parse().unwrap(), unom_coin)?;
+
+    //     let nbtc_coin: Coin<Nbtc> = Amount::new(INITIAL_SUPPLY_USATS_FOR_RELAYER).into();
+    //     // add new nbtc coin to the funded address
+    //     self.credit_transfer(
+    //         Dest::Address(GOVERNANCE_ADDRESS.parse().unwrap()),
+    //         nbtc_coin,
+    //     )?;
+    //     self.accounts
+    //         .add_transfer_exception(GOVERNANCE_ADDRESS.parse().unwrap())?;
+    //     Ok(GOVERNANCE_ADDRESS.to_string())
+    // }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -431,7 +394,7 @@ mod abci {
 
     impl InitChain for InnerApp {
         fn init_chain(&mut self, _ctx: &InitChainCtx) -> Result<()> {
-            self.staking.max_validators = 30;
+            self.staking.max_validators = 100;
             self.staking.max_offline_blocks = 20_000;
             self.staking.downtime_jail_seconds = 60 * 30; // 30 minutes
             self.staking.slash_fraction_downtime = (Amount::new(1) / Amount::new(1000))?;
@@ -442,15 +405,11 @@ mod abci {
             self.accounts.allow_transfers(true);
             self.bitcoin.accounts.allow_transfers(true);
 
-            self.configure_faucets()?;
-
             self.upgrade
                 .current_version
                 .insert((), vec![Self::CONSENSUS_VERSION].try_into().unwrap())?;
 
-            #[cfg(feature = "faucet-test")]
-            self.mint_coins_for_funded_address()?;
-
+            self.mint_initial_supply()?;
             Ok(())
         }
     }
@@ -466,17 +425,11 @@ mod abci {
 
             self.ibc.begin_block(ctx)?;
 
-            let has_stake = self.staking.staked()? > 0;
-            if has_stake {
-                let reward = self.staking_rewards.mint()?;
-                self.staking.give(reward)?;
-            }
-
-            let cp_reward = self.community_pool_rewards.mint()?;
-            self.community_pool.give(cp_reward)?;
-
-            let ip_reward = self.incentive_pool_rewards.mint()?;
-            self.incentive_pool.give(ip_reward)?;
+            // let has_stake = self.staking.staked()? > 0;
+            // if has_stake {
+            //     let reward = self.staking_rewards.mint()?;
+            //     self.staking.give(reward)?;
+            // }
 
             let pending_nbtc_transfers = self.bitcoin.take_pending()?;
             for (dest, coins) in pending_nbtc_transfers {
@@ -497,13 +450,13 @@ mod abci {
                 self.staking.punish_downtime(address)?;
             }
 
-            let has_nbtc_rewards = self.bitcoin.reward_pool.amount > 0;
-            if self.reward_timer.tick(now) && has_stake && has_nbtc_rewards {
-                let reward_rate = (Amount::new(1) / Amount::new(2377))?; // ~0.00042069
-                let reward_amount = (self.bitcoin.reward_pool.amount * reward_rate)?.amount()?;
-                let reward = self.bitcoin.reward_pool.take(reward_amount)?;
-                self.staking.give(reward)?;
-            }
+            // let has_nbtc_rewards = self.bitcoin.reward_pool.amount > 0;
+            // if self.reward_timer.tick(now) && has_stake && has_nbtc_rewards {
+            //     let reward_rate = (Amount::new(1) / Amount::new(2377))?; // ~0.00042069
+            //     let reward_amount = (self.bitcoin.reward_pool.amount * reward_rate)?.amount()?;
+            //     let reward = self.bitcoin.reward_pool.take(reward_amount)?;
+            //     self.staking.give(reward)?;
+            // }
 
             Ok(())
         }
@@ -782,36 +735,6 @@ impl ConvertSdkTx for InnerApp {
                         Ok(PaidCall { payer, paid })
                     }
 
-                    "nomic/MsgClaimAirdrop1" => {
-                        let msg = msg
-                            .value
-                            .as_object()
-                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
-                        if !msg.is_empty() {
-                            return Err(Error::App("Message should be empty".to_string()));
-                        }
-
-                        let payer = build_call!(self.airdrop.claim_airdrop1());
-                        let paid = build_call!(self.accounts.give_from_funding_all());
-
-                        Ok(PaidCall { payer, paid })
-                    }
-
-                    "nomic/MsgClaimAirdrop2" => {
-                        let msg = msg
-                            .value
-                            .as_object()
-                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
-                        if !msg.is_empty() {
-                            return Err(Error::App("Message should be empty".to_string()));
-                        }
-
-                        let payer = build_call!(self.airdrop.claim_airdrop2());
-                        let paid = build_call!(self.accounts.give_from_funding_all());
-
-                        Ok(PaidCall { payer, paid })
-                    }
-
                     "nomic/MsgWithdraw" => {
                         let msg: MsgWithdraw = serde_json::value::from_value(msg.value.clone())
                             .map_err(|e| Error::App(e.to_string()))?;
@@ -914,21 +837,6 @@ impl ConvertSdkTx for InnerApp {
 
                         let payer = build_call!(self.join_accounts(dest_addr));
                         let paid = build_call!(self.app_noop());
-
-                        Ok(PaidCall { payer, paid })
-                    }
-
-                    "nomic/MsgClaimTestnetParticipationIncentives" => {
-                        let msg = msg
-                            .value
-                            .as_object()
-                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
-                        if !msg.is_empty() {
-                            return Err(Error::App("Message should be empty".to_string()));
-                        }
-                        let payer =
-                            build_call!(self.incentives.claim_testnet_participation_incentives());
-                        let paid = build_call!(self.accounts.give_from_funding_all());
 
                         Ok(PaidCall { payer, paid })
                     }

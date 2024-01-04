@@ -1,5 +1,4 @@
 #![feature(async_closure)]
-#![feature(async_fn_in_trait)]
 
 mod error;
 mod global;
@@ -259,25 +258,6 @@ impl OraiBtc {
     }
 
     #[allow(non_snake_case)]
-    #[wasm_bindgen(js_name=claimTestnetParticipationIncentives)]
-    pub async fn claim_testnet_participation_incentives(
-        &self,
-        address: String,
-    ) -> Result<String, JsError> {
-        let address = address
-            .parse()
-            .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
-        self.gen_call_bytes(
-            address,
-            sdk::Msg {
-                type_: "nomic/MsgClaimTestnetParticipationIncentives".to_string(),
-                value: serde_json::Map::new().into(),
-            },
-        )
-        .await
-    }
-
-    #[allow(non_snake_case)]
     #[wasm_bindgen(js_name=claimIncomingIbcBtc)]
     pub async fn claim_incoming_ibc_btc(&self, address: String) -> Result<String, JsError> {
         let address = address
@@ -414,43 +394,6 @@ impl OraiBtc {
             },
         )
         .await
-    }
-
-    #[allow(non_snake_case)]
-    #[wasm_bindgen(js_name=airdropBalances)]
-    pub async fn airdrop_balances(&self, addr: String) -> Result<Airdrop, JsError> {
-        let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
-
-        if let Some(account) = self
-            .client
-            .query(|app: InnerApp| app.airdrop.get(address))
-            .await?
-        {
-            Ok(Airdrop {
-                airdrop1: parse_part(account.airdrop1),
-                airdrop2: parse_part(account.airdrop2),
-            })
-        } else {
-            Ok(Airdrop::default())
-        }
-    }
-
-    #[allow(non_snake_case)]
-    #[wasm_bindgen(js_name=incentiveBalances)]
-    pub async fn incentive_balances(&self, addr: String) -> Result<Incentives, JsError> {
-        let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
-
-        if let Some(account) = self
-            .client
-            .query(|app: InnerApp| Ok(app.incentives.get(address)?))
-            .await?
-        {
-            Ok(Incentives {
-                testnet_participation: parse_part(account.testnet_participation),
-            })
-        } else {
-            Ok(Incentives::default())
-        }
     }
 
     pub async fn nonce(&self, addr: String) -> Result<u64, JsError> {
@@ -804,15 +747,6 @@ impl OraiBtc {
     //     use nomic::orga::describe::Describe;
     //     nomic::app::App::describe()
     // }
-}
-
-fn parse_part(part: nomic::airdrop::Part) -> RewardDetails {
-    RewardDetails {
-        locked: part.locked,
-        claimed: part.claimed,
-        claimable: part.claimable,
-        amount: part.claimed + part.claimable + part.locked,
-    }
 }
 
 #[cfg(test)]

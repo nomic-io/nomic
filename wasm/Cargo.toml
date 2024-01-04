@@ -17,7 +17,6 @@ nomic = { path = "..", default-features = false, features = [
   "csv",
   "rand",
   "clap",
-  "testnet",
   "csv",
 ] }
 async-trait = "0.1.52"
