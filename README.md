@@ -223,8 +223,14 @@ The relayer will also create a server which listens on port 8999 for clients to 
 Thanks for participating in the Nomic Testnet! We'll be updating the network
 often so stay tuned in [Discord](https://discord.gg/jH7U2NRJKn) for updates.
 
+### 6. How to run lcd server
+For running lcd server, you only need to change directory to rest folder. Then run the command below:
+```
+// make sure to change home directory to rest by: cd rest
+cargo run
+```
 
-### 6. Running a validator node
+### 7. Running a validator node
 Firstly, you have to copy the genesis file of your main node.
 ```
 nano {home_directory}/genesis.json
