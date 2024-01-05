@@ -222,3 +222,112 @@ The relayer will also create a server which listens on port 8999 for clients to 
 
 Thanks for participating in the Nomic Testnet! We'll be updating the network
 often so stay tuned in [Discord](https://discord.gg/jH7U2NRJKn) for updates.
+
+### 6. How to run lcd server
+For running lcd server, you only need to change directory to rest folder. Then run the command below:
+```
+// make sure to change home directory to rest by: cd rest
+cargo run
+```
+
+### 7. Running a validator node
+Firstly, you have to copy the genesis file of your main node.
+```
+nano {home_directory}/genesis.json
+
+// Paste the content of genesis file to genesis.json, remember to make the validators field to []
+eg:
+{
+  "app_hash": "",
+  "chain_id": "oraibtc-subnet-1",
+  "consensus_params": {
+    "block": {
+      "max_bytes": "22020096",
+      "max_gas": "-1",
+      "time_iota_ms": "1000"
+    },
+    "evidence": {
+      "max_age_duration": "172800000000000",
+      "max_age_num_blocks": "100000",
+      "max_bytes": "1048576"
+    },
+    "validator": {
+      "pub_key_types": [
+        "ed25519"
+      ]
+    },
+    "version": {}
+  },
+  "genesis_time": "2024-01-05T04:30:01.70325218Z",
+  "initial_height": "0",
+  "validators": []
+}
+```
+
+Secondly, you have to get the node_id from rpc of main node. Assume main_node_url is ip address, all port are public, the full steps for running validator node are below:
+```
+curl {main_node_url}:26657/status
+
+eg:
+{
+  "jsonrpc": "2.0",
+  "id": -1,
+  "result": {
+    "node_info": {
+      "protocol_version": {
+        "p2p": "8",
+        "block": "11",
+        "app": "0"
+      },
+      "id": "c1ed727e36b0d7452c03513a87f77dc4766e2b38", // node_id
+      "listen_addr": "tcp://0.0.0.0:26656",
+      "network": "oraibtc-subnet-1",
+      "version": "0.34.26",
+      "channels": "40202122233038606100",
+      "moniker": "oraibtc-test-mainnet",
+      "other": {
+        "tx_index": "on",
+        "rpc_address": "tcp://0.0.0.0:26657"
+      }
+    },
+    "sync_info": {
+      "latest_block_hash": "0DFF9A1251E33F425543DEAB1795F4CB2878A3F60B36F3F280E28CDEAF979545",
+      "latest_app_hash": "CFE5FC014798559E5BFED0414B83324B1F7D15A6CB7ACFA83493FDBF7AD85383",
+      "latest_block_height": "10760",
+      "latest_block_time": "2024-01-05T14:23:05.981270195Z",
+      "earliest_block_hash": "D15DBF99D61C6A5515FBF28254079DED94C80B350F8C15D2D6A36A192B65AD54",
+      "earliest_app_hash": "",
+      "earliest_block_height": "1",
+      "earliest_block_time": "2024-01-05T04:30:01.70325218Z",
+      "catching_up": false
+    },
+    "validator_info": {
+      "address": "C50A1D024DBBA97B40EF53AE4511C2D5F593EAC9",
+      "pub_key": {
+        "type": "tendermint/PubKeyEd25519",
+        "value": "PFGMB8wARZ5BRmO/8CmtY8em/G9LVix/4h5B9NwKlaY=" // This is validator key will
+         use for nomic declare
+      },
+      "voting_power": "1000000000"
+    }
+  }
+}
+
+Example of running full validator node:
+nomic start \
+  --genesis {home_directory}/genesis.json \
+  --state-sync-rpc {main_node_url}:26657 \
+  --state-sync-rpc {main_node_url}:26657 \
+  -- --p2p-peers c1ed727e36b0d7452c03513a87f77dc4766e2b38@{main_node_url}:26656
+
+nomic grpc \
+  -g 0.0.0.0 \
+  --chain-id oraibtc-subnet-1
+
+nomic signer \
+  --chain-id oraibtc-subnet-1
+
+nomic relayer  \
+  --rpc-port=18332 --rpc-user=satoshi --rpc-pass=nakamoto \
+  --chain-id oraibtc-subnet-1
+```
