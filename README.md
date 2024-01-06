@@ -230,9 +230,9 @@ For running lcd server, you only need to change directory to rest folder. Then r
 cargo run
 ```
 
-### 7. Running a validator node
-Firstly, you have to copy the genesis file of your main node.
-```
+### 7. Running a validator node syncing with seed node
+Firstly, you have to copy the genesis file of your seed node.
+```bash
 nano {home_directory}/genesis.json
 
 // Paste the content of genesis file to genesis.json, remember to make the validators field to []
@@ -264,9 +264,9 @@ eg:
 }
 ```
 
-Secondly, you have to get the node_id from rpc of main node. Assume main_node_url is ip address, all port are public, the full steps for running validator node are below:
-```
-curl {main_node_url}:26657/status
+Secondly, you have to get the node_id from rpc of seed node. Assume seed_node_url is ip address, all port are public, the full steps for running validator node are below:
+```bash
+curl {seed_node_url}:26657/status
 
 eg:
 {
@@ -316,9 +316,21 @@ eg:
 Example of running full validator node:
 nomic start \
   --genesis {home_directory}/genesis.json \
-  --state-sync-rpc {main_node_url}:26657 \
-  --state-sync-rpc {main_node_url}:26657 \
-  -- --p2p-peers c1ed727e36b0d7452c03513a87f77dc4766e2b38@{main_node_url}:26656
+  --state-sync-rpc {seed_node_url}:26657 \
+  --state-sync-rpc {seed_node_url}:26657 \
+  -- --p2p-peers c1ed727e36b0d7452c03513a87f77dc4766e2b38@{seed_node_url}:26656
+
+nomic declare \
+  PFGMB8wARZ5BRmO/8CmtY8em/G9LVix/4h5B9NwKlaY= \
+  1000000 \
+  0.042 \
+  0.1 \
+  0.01 \
+  1000000 \
+  "Sample Moniker" \
+  "perfogic@gmail.com" \
+  ALKSDHNLKASD \ // random string
+  "Please delegate to me"
 
 nomic grpc \
   -g 0.0.0.0 \
