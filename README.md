@@ -80,8 +80,8 @@ sudo dnf install clang openssl-devel && sudo dnf group install "C Development To
 Clone the github folder and switch to the correct folder:
 
 ```bash
-git clone https://github.com/nomic-io/nomic.git && cd nomic
-git checkout testnet
+git clone https://github.com/oraichain/bitcoin-bridge.git && cd bitcoin-bridge
+git checkout {latest_release}
 ```
 
 Build and install, adding a `nomic` command to your PATH:
@@ -97,10 +97,10 @@ Start your Nomic node:
 ```bash
 # the FUNDED_ADDRESS will have lots of test NOM & NBTC to test
 # your-wanted-chain-id is the chain id you want your local network to be. If it does not exist => auto create new, else reuse the existing one
-FUNDED_ADDRESS=<your-nomic-address-for-funding> FUNDED_ORAIBTC_AMOUNT=<amount> FUNDED_USAT_AMOUNT=<amount> nomic start --chain-id <your-wanted-chain-id>
+FUNDED_ADDRESS=<your-nomic-address-for-funding> FUNDED_ORAIBTC_AMOUNT=<your-oraibtc-for-funding> FUNDED_USAT_AMOUNT=<your-usat-for-funding> FUNDED_ORAIBTC_AMOUNT=<amount> FUNDED_USAT_AMOUNT=<amount> nomic start --chain-id <your-wanted-chain-id>
 
 # eg:
-FUNDED_ADDRESS=oraibtc1ehmhqcn8erf3dgavrca69zgp4rtxj5kqzpga4j nomic start --chain-id oraibtc-subnet-1
+FUNDED_ADDRESS=oraibtc1ehmhqcn8erf3dgavrca69zgp4rtxj5kqzpga4j FUNDED_ORAIBTC_AMOUNT=1000000000000 FUNDED_USAT_AMOUNT=0 nomic start --chain-id oraibtc-subnet-1
 ```
 
 This will run the Nomic state machine and a Tendermint process. For new nodes the statesync process will run automatically to get the node up to speed with the current chain.
@@ -211,7 +211,11 @@ bitcoind -rpcuser=satoshi -rpcpassword=nakamoto
 #### ii. Run the relayer process
 
 ```bash
+// testnet
 nomic relayer --rpc-port=18332 --rpc-user=satoshi --rpc-pass=nakamoto
+
+// mainnet
+nomic relayer --rpc-port=8332 --rpc-user=satoshi --rpc-pass=nakamoto
 ```
 
 Leave this running - the relayer will constantly scan the Bitcoin and Nomic chains and broadcast relevant data.
