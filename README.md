@@ -97,7 +97,16 @@ Start your Nomic node:
 ```bash
 # the FUNDED_ADDRESS will have lots of test NOM & NBTC to test
 # your-wanted-chain-id is the chain id you want your local network to be. If it does not exist => auto create new, else reuse the existing one
+
+# the env variables will only apply to the first node of the network when the chain initializes => the below command is only for the first node.
 FUNDED_ADDRESS=<your-nomic-address-for-funding> FUNDED_ORAIBTC_AMOUNT=<your-oraibtc-for-funding> FUNDED_USAT_AMOUNT=<your-usat-for-funding> FUNDED_ORAIBTC_AMOUNT=<amount> FUNDED_USAT_AMOUNT=<amount> nomic start --chain-id <your-wanted-chain-id>
+
+# Run the below command to join the network as a full node
+nomic start \
+  --genesis /root/.oraibtc-mainnet-1/tendermint/config/genesis.json \
+  --state-sync-rpc http://<other-node-ip>:26657 \
+  --tendermint-logs \
+  -- --p2p.seeds <other-node-id>@<other-node-ip>:26656
 
 # eg:
 FUNDED_ADDRESS=oraibtc1ehmhqcn8erf3dgavrca69zgp4rtxj5kqzpga4j FUNDED_ORAIBTC_AMOUNT=1000000000000 FUNDED_USAT_AMOUNT=0 nomic start --chain-id oraibtc-subnet-1
@@ -228,14 +237,18 @@ Thanks for participating in the Nomic Testnet! We'll be updating the network
 often so stay tuned in [Discord](https://discord.gg/jH7U2NRJKn) for updates.
 
 ### 6. How to run lcd server
+
 For running lcd server, you only need to change directory to rest folder. Then run the command below:
+
 ```
 // make sure to change home directory to rest by: cd rest
 cargo run
 ```
 
 ### 7. Running a validator node syncing with seed node
+
 Firstly, you have to copy the genesis file of your seed node.
+
 ```bash
 nano {home_directory}/genesis.json
 
@@ -269,6 +282,7 @@ eg:
 ```
 
 Secondly, you have to get the node_id from rpc of seed node. Assume seed_node_url is ip address, all port are public, the full steps for running validator node are below:
+
 ```bash
 curl {seed_node_url}:26657/status
 
