@@ -15,6 +15,7 @@ use orga::coins::{
 };
 use orga::context::GetContext;
 use orga::cosmrs::bank::MsgSend;
+use orga::cosmrs::tendermint::crypto::Sha256;
 use orga::describe::{Describe, Descriptor};
 use orga::encoding::{Decode, Encode, LengthVec};
 use orga::ibc::ibc_rs::applications::transfer::Memo;
@@ -985,7 +986,7 @@ impl IbcDest {
 
 impl Dest {
     pub fn commitment_bytes(&self) -> Result<Vec<u8>> {
-        use sha2::{Digest, Sha256};
+        use sha2::Sha256;
         use Dest::*;
         let bytes = match self {
             Address(addr) => addr.bytes().into(),

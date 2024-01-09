@@ -1,6 +1,6 @@
 [package]
 name = "nomic-rest"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -10,7 +10,6 @@ rocket = { version = "0.5.0-rc.1", features = ["json", "tls"] }
 nomic = { path = "..", default-features = false, features = [
     "full",
     "feat-ibc",
-    "testnet",
 ] }
 hex = "0.4.3"
 tendermint-rpc = { version = "=0.23.7", features = ["http-client"] }
