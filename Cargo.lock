@@ -2387,7 +2387,7 @@ dependencies = [
 
 [[package]]
 name = "nomic"
-version = "7.0.1"
+version = "7.0.2"
 dependencies = [
  "base64 0.13.1",
  "bech32",
