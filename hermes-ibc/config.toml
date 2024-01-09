@@ -7,16 +7,16 @@ refresh = true
 misbehaviour = true
 
 [mode.connections]
-enabled = false
+enabled = true
 
 [mode.channels]
-enabled = false
+enabled = true
 
 [mode.packets]
 enabled = true
-clear_interval = 100
+clear_interval = 0
 clear_on_start = true
-tx_confirmation = false
+tx_confirmation = true
 auto_register_counterparty_payee = false
 
 [rest]
@@ -40,95 +40,47 @@ end = 30000
 buckets = 10
 
 [[chains]]
-trusted_node = true
 id = "Oraichain"
-rpc_addr = "https://rpc.orai.io"
-grpc_addr = "https://grpc.orai.io:9090"
+rpc_addr = "http://3.134.19.98:26657"
+grpc_addr = "http://3.134.19.98:9090"
 event_source = { mode = 'pull' }
 rpc_timeout = "10s"
 account_prefix = "orai"
-key_name = "nomic"
+key_name = "key-orai"
 key_store_type = "Test"
 store_prefix = "ibc"
 default_gas = 100000
-max_gas = 400000
+max_gas = 40000000
 gas_multiplier = 1.5
 max_msg_num = 30
 max_tx_size = 180000
-gas_price = { price = 0.01, denom = 'orai' }
-clock_drift = "20s"
-max_block_time = "6s"
+max_grpc_decoding_size = 33554432
+gas_price = { price = 0.025, denom = 'orai' }
+clock_drift = "5s"
+max_block_time = "30s"
 ccv_consumer_chain = false
 memo_prefix = ""
 sequential_batch_tx = false
-trusting_period = '10days'
+trusting_period = '5days'
 trust_threshold = { numerator = '1', denominator = '3' }
-
-# [[chains]]
-# id = "Oraichain-testnet"
-# rpc_addr = "https://testnet-lcd.orai.io"
-# grpc_addr = "https://testnet-grpc.orai.io:9090"
-# event_source = { mode = 'pull' }
-# rpc_timeout = "10s"
-# account_prefix = "orai"
-# key_name = "nomic"
-# key_store_type = "Test"
-# store_prefix = "ibc"
-# default_gas = 100000
-# max_gas = 400000
-# gas_multiplier = 1.5
-# max_msg_num = 30
-# max_tx_size = 180000
-# gas_price = { price = 0.01, denom = 'orai' }
-# clock_drift = "20s"
-# max_block_time = "6s"
-# ccv_consumer_chain = false
-# memo_prefix = ""
-# sequential_batch_tx = false
-# trusting_period = '10days'
-# trust_threshold = { numerator = '1', denominator = '3' }
+[chains.packet_filter]
+policy = "allow"
+list = [["transfer", "channel-170"]]
 
 [[chains]]
-trusted_node = true
-id = "testing"
-rpc_addr = "http://192.168.0.17:26657"
-grpc_addr = "http://192.168.0.17:9090"
+id = 'oraibtc-subnet-1'
+rpc_addr = 'https://oraibtc.rpc.orai.io:443'
 event_source = { mode = 'pull' }
-rpc_timeout = "10s"
-account_prefix = "orai"
-key_name = "nomic"
-key_store_type = "Test"
-store_prefix = "ibc"
-default_gas = 100000
-max_gas = 400000
-gas_multiplier = 1.5
-max_msg_num = 30
-max_tx_size = 180000
-gas_price = { price = 0.01, denom = 'orai' }
-clock_drift = "20s"
-max_block_time = "6s"
-ccv_consumer_chain = false
-memo_prefix = ""
-sequential_batch_tx = false
-trusting_period = '7000s'
-trust_threshold = { numerator = '1', denominator = '3' }
-
-[[chains]]
-trusted_node = true
-id = 'nomic-local-1'
-rpc_addr = 'http://nomic:26657' # this is the url for nomic local node running in docker
-event_source = { mode = 'pull' }
-grpc_addr = 'http://nomic:9001'
-rpc_timeout = '20s'
-account_prefix = 'nomic'
-key_name = 'nomic'
-key_store_type = "Test"
+grpc_addr = 'http://34.68.27.95:9001'
+rpc_timeout = '10s'
+account_prefix = 'oraibtc'
+key_name = 'key-oraibtc'
 store_prefix = 'ibc'
 default_gas = 2000000
-max_gas = 10000000
-gas_price = { price = 0.001, denom = 'uoraibtc' }
-clock_drift = '20s'
-trusting_period = '9days'
+max_gas = 100000000
+gas_price = { price = 0.001, denom = 'usat' }
+clock_drift = '10s'
+trusting_period = '5days'
 max_msg_num = 1
 proof_specs = '''
 [
@@ -153,8 +105,7 @@ proof_specs = '''
       "prefix": "AA"
     },
     "max_depth": 0,
-    "min_depth": 0,
-    "prehash_key_before_comparison": true
+    "min_depth": 0
   },
   {
     "inner_spec": {
@@ -175,91 +126,16 @@ proof_specs = '''
       "prefix": ""
     },
     "max_depth": 0,
-    "min_depth": 0,
-    "prehash_key_before_comparison": true
+    "min_depth": 0
   }
 ]
 '''
 
-
 [chains.trust_threshold]
 numerator = '1'
 denominator = '3'
-# [chains.packet_filter]
-# policy = 'allow'
-# list = [['transfer', 'channel-0'], ['transfer', 'channel-4']]
-
-
-# [[chains]]
-# id = "osmo-test-5"
-# type = "CosmosSdk"
-# rpc_addr = "https://rpc.testnet.osmosis.zone"
-# grpc_addr = "https://grpc.testnet.osmosis.zone"
-# rpc_timeout = "10s"
-# trusted_node = false
-# account_prefix = "osmo"
-# key_name = "key-osmos"
-# key_store_type = "Test"
-# store_prefix = "ibc"
-# default_gas = 100000
-# max_gas = 400000
-# gas_multiplier = 1.5
-# max_msg_num = 30
-# max_tx_size = 180000
-# max_grpc_decoding_size = 33554432
-# clock_drift = "5s"
-# max_block_time = "30s"
-# ccv_consumer_chain = false
-# memo_prefix = ""
-# sequential_batch_tx = false
-
-# [chains.event_source]
-# mode = "pull"
-# interval = '1s'
-
-# [chains.trust_threshold]
-# numerator = "1"
-# denominator = "3"
-
-# [chains.gas_price]
-# price = 0.025
-# denom = "uosmo"
-
-# [chains.packet_filter]
-# policy = "allow"
-# list = [["transfer", "channel-4224"], ["transfer", "channel-4244"]]
-
-# [chains.packet_filter.min_fees]
-
-# [chains.address_type]
-# derivation = "cosmos"
-
-
-# [[chains]]
-# id = "testing"
-# rpc_addr = "http://127.0.0.1:26648"
-# grpc_addr = "http://127.0.0.1:9084"
-# event_source = { mode = 'pull' }
-# rpc_timeout = "10s"
-# account_prefix = "orai"
-# key_name = "key-orai"
-# key_store_type = "Test"
-# store_prefix = "ibc"
-# default_gas = 100000
-# max_gas = 400000
-# gas_multiplier = 1.5
-# max_msg_num = 30
-# max_tx_size = 180000
-# max_grpc_decoding_size = 33554432
-# gas_price = { price = 0.025, denom = 'orai' }
-# clock_drift = "5s"
-# max_block_time = "30s"
-# ccv_consumer_chain = false
-# memo_prefix = ""
-# sequential_batch_tx = false
-# trusted_node = false
-# # trusting_period = '10days'
-# # trust_threshold = { numerator = '1', denominator = '3' }
-# [chains.packet_filter]
-# policy = "allow"
-# list = [["transfer", "channel-0"]]
+[chains.packet_filter]
+policy = 'allow'
+list = [
+   ['transfer', 'channel-1']
+]
