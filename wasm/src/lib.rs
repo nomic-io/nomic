@@ -207,57 +207,6 @@ impl OraiBtc {
     }
 
     #[allow(non_snake_case)]
-    #[wasm_bindgen(js_name=claimAirdrop1)]
-    pub async fn claim_airdrop1(&self, address: String) -> Result<String, JsError> {
-        let address = address
-            .parse()
-            .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
-        self.gen_call_bytes(
-            address,
-            sdk::Msg {
-                type_: "nomic/MsgClaimAirdrop1".to_string(),
-                value: serde_json::Map::new().into(),
-            },
-        )
-        .await
-    }
-
-    #[allow(non_snake_case)]
-    #[wasm_bindgen(js_name=claimAirdrop2)]
-    pub async fn claim_airdrop2(&self, address: String) -> Result<String, JsError> {
-        let address = address
-            .parse()
-            .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
-        self.gen_call_bytes(
-            address,
-            sdk::Msg {
-                type_: "nomic/MsgClaimAirdrop2".to_string(),
-                value: serde_json::Map::new().into(),
-            },
-        )
-        .await
-    }
-
-    #[allow(non_snake_case)]
-    #[wasm_bindgen(js_name=claimTestnetParticipationAirdrop)]
-    pub async fn claim_testnet_participation_airdrop(
-        &self,
-        address: String,
-    ) -> Result<String, JsError> {
-        let address = address
-            .parse()
-            .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
-        self.gen_call_bytes(
-            address,
-            sdk::Msg {
-                type_: "nomic/MsgClaimTestnetParticipationAirdrop".to_string(),
-                value: serde_json::Map::new().into(),
-            },
-        )
-        .await
-    }
-
-    #[allow(non_snake_case)]
     #[wasm_bindgen(js_name=claimIncomingIbcBtc)]
     pub async fn claim_incoming_ibc_btc(&self, address: String) -> Result<String, JsError> {
         let address = address

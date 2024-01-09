@@ -1,6 +1,6 @@
 [package]
 name = "nomic-wasm"
-version = "0.6.2"
+version = "1.0.0"
 authors = ["The wasm-bindgen Developers"]
 edition = "2018"
 
