@@ -72,6 +72,7 @@ pub struct Signer<W, F> {
     xprivs: Vec<ExtendedPrivKey>,
     max_withdrawal_rate: f64,
     max_sigset_change_rate: f64,
+    min_checkpoint_seconds: u64,
     reset_index: Option<u32>,
     app_client: F,
     exporter_addr: Option<SocketAddr>,
@@ -82,6 +83,7 @@ impl<W: Wallet, F> Signer<W, F>
 where
     F: Fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, W>,
 {
+    #![allow(clippy::too_many_arguments)]
     /// Create a new signer, loading the extended private key from the given
     /// path (`key_path`) if it exists. If the key does not exist, one will be
     /// generated and written to the path, then submitted to the chain, becoming
@@ -98,6 +100,8 @@ where
     /// - `max_sigset_change_rate`: The maximum rate at which the signatory set
     /// can change in a 24-hour period, temporarily halting signing if the limit
     /// is reached.
+    /// - `min_checkpoint_seconds`: The minimum amount of time that must pass
+    /// before this signer will contribute its signature.
     /// - `reset_index`: A checkpoint index at which the rate limits should be
     /// reset, used to manually override the limits if the signer has checked on
     /// the pending withdrawals and decided they are legitimate.
@@ -110,6 +114,7 @@ where
         xpriv_paths: Vec<P>,
         max_withdrawal_rate: f64,
         max_sigset_change_rate: f64,
+        min_checkpoint_seconds: u64,
         reset_index: Option<u32>,
         app_client: F,
         exporter_addr: Option<SocketAddr>,
@@ -134,6 +139,7 @@ where
             xprivs,
             max_withdrawal_rate,
             max_sigset_change_rate,
+            min_checkpoint_seconds,
             reset_index,
             app_client,
             exporter_addr,
@@ -152,6 +158,8 @@ where
     /// - `max_sigset_change_rate`: The maximum rate at which the signatory set
     /// can change in a 24-hour period, temporarily halting signing if the limit
     /// is reached.
+    /// - `min_checkpoint_seconds`: The minimum amount of time that must pass
+    /// before this signer will contribute its signature.
     /// - `reset_index`: A checkpoint index at which the rate limits should be
     /// reset, used to manually override the limits if the signer has checked on
     /// the pending withdrawals and decided they are legitimate.
@@ -162,6 +170,7 @@ where
         xprivs: Vec<ExtendedPrivKey>,
         max_withdrawal_rate: f64,
         max_sigset_change_rate: f64,
+        min_checkpoint_seconds: u64,
         reset_index: Option<u32>,
         app_client: F,
         exporter_addr: Option<SocketAddr>,
@@ -174,6 +183,7 @@ where
             xprivs,
             max_withdrawal_rate,
             max_sigset_change_rate,
+            min_checkpoint_seconds,
             reset_index,
             app_client,
             exporter_addr,
@@ -345,6 +355,20 @@ where
         }
 
         self.check_change_rates().await?;
+        let now_seconds = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        if timestamp + self.min_checkpoint_seconds > now_seconds
+            && matches!(status, CheckpointStatus::Signing)
+        {
+            info!(
+                "Checkpoint is too recent, waiting {} seconds",
+                (timestamp + self.min_checkpoint_seconds) - now_seconds
+            );
+            return Ok(false);
+        }
+
         info!("Signing checkpoint ({} inputs)...", to_sign.len());
 
         let sigs = sign(&secp, xpriv, &to_sign)?;
