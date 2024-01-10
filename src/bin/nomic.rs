@@ -1225,6 +1225,11 @@ pub struct SignerCmd {
     #[clap(long, default_value_t = 0.1)]
     max_sigset_change_rate: f64,
 
+    /// Sets the minimum time since the last checkpoint before a new checkpoint
+    /// will be signed.
+    #[clap(long, default_value_t = 120)]
+    min_checkpoint_minutes: u64,
+
     #[clap(long)]
     prometheus_addr: Option<std::net::SocketAddr>,
 
@@ -1246,6 +1251,7 @@ impl SignerCmd {
             key_path,
             self.max_withdrawal_rate,
             self.max_sigset_change_rate,
+            self.min_checkpoint_minutes * 60,
             self.reset_limits_at_index,
             // TODO: check for custom RPC port, allow config, etc
             || nomic::app_client("http://localhost:26657").with_wallet(wallet()),
