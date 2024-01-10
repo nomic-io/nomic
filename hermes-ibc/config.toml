@@ -41,27 +41,25 @@ buckets = 10
 
 [[chains]]
 id = "Oraichain"
-rpc_addr = "http://3.134.19.98:26657"
-grpc_addr = "http://3.134.19.98:9090"
+rpc_addr = "https://rpc.orai.io"
+grpc_addr = "https://grpc.orai.io"
 event_source = { mode = 'pull' }
-rpc_timeout = "10s"
+rpc_timeout = "20s"
 account_prefix = "orai"
 key_name = "key-orai"
-key_store_type = "Test"
 store_prefix = "ibc"
-default_gas = 100000
-max_gas = 40000000
+max_gas = 100000000
 gas_multiplier = 1.5
 max_msg_num = 30
 max_tx_size = 180000
 max_grpc_decoding_size = 33554432
-gas_price = { price = 0.025, denom = 'orai' }
-clock_drift = "5s"
+gas_price = { price = 0.001, denom = 'orai' }
+clock_drift = "20s"
 max_block_time = "30s"
 ccv_consumer_chain = false
 memo_prefix = ""
 sequential_batch_tx = false
-trusting_period = '5days'
+trusting_period = '9days'
 trust_threshold = { numerator = '1', denominator = '3' }
 [chains.packet_filter]
 policy = "allow"
@@ -76,12 +74,11 @@ rpc_timeout = '10s'
 account_prefix = 'oraibtc'
 key_name = 'key-oraibtc'
 store_prefix = 'ibc'
-default_gas = 2000000
 max_gas = 100000000
-gas_price = { price = 0.001, denom = 'usat' }
+gas_price = { price = 0, denom = 'usat' }
 clock_drift = '10s'
-trusting_period = '5days'
-max_msg_num = 1
+trusting_period = '9days'
+max_msg_num = 30
 proof_specs = '''
 [
   {
@@ -136,6 +133,4 @@ numerator = '1'
 denominator = '3'
 [chains.packet_filter]
 policy = 'allow'
-list = [
-   ['transfer', 'channel-1']
-]
+list = [['transfer', 'channel-1']]
