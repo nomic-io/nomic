@@ -4,7 +4,7 @@
 
 NOMIC_CHAIN_ID=${NOMIC_CHAIN_ID:-nomic-local-1}
 ORAI_CHAIN_ID=${ORAI_CHAIN_ID:-testing}
-KEY_NAME=${KEY_NAME:-nomic}
+KEY_NAME=${KEY_NAME:-relayer}
 
 # install jq so we can parse the json string when checking ibc connection
 apt install jq

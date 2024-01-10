@@ -59,8 +59,8 @@ impl Symbol for Nom {
     const INDEX: u8 = 69;
     const NAME: &'static str = MAIN_NATIVE_TOKEN_DENOM;
 }
-const IBC_FEE_USATS: u64 = 1_000_000;
-const DECLARE_FEE_USATS: u64 = 100_000_000;
+const IBC_FEE_USATS: u64 = 0;
+const DECLARE_FEE_USATS: u64 = 0;
 
 const INITIAL_SUPPLY_ORAIBTC: u64 = 1_000_000_000_000; // 1 millions oraibtc
 const INITIAL_SUPPLY_USATS_FOR_RELAYER: u64 = 1_000_000_000_000; // 1 millions usats
