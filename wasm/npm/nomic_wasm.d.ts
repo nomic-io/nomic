@@ -5,25 +5,6 @@
 export function main_js(): void;
 /**
 */
-export class Airdrop {
-  free(): void;
-/**
-* @returns {bigint}
-*/
-  total(): bigint;
-/**
-* @returns {bigint}
-*/
-  claimedTotal(): bigint;
-/**
-*/
-  airdrop1: RewardDetails;
-/**
-*/
-  airdrop2: RewardDetails;
-}
-/**
-*/
 export class Coin {
   free(): void;
 /**
@@ -63,22 +44,6 @@ export class DepositAddress {
 /**
 */
   sigsetIndex: number;
-}
-/**
-*/
-export class Incentives {
-  free(): void;
-/**
-* @returns {bigint}
-*/
-  total(): bigint;
-/**
-* @returns {bigint}
-*/
-  claimedTotal(): bigint;
-/**
-*/
-  testnetParticipation: RewardDetails;
 }
 /**
 */
@@ -143,26 +108,6 @@ export class OraiBtc {
 * @param {string} address
 * @returns {Promise<string>}
 */
-  claimAirdrop1(address: string): Promise<string>;
-/**
-* @param {string} address
-* @returns {Promise<string>}
-*/
-  claimAirdrop2(address: string): Promise<string>;
-/**
-* @param {string} address
-* @returns {Promise<string>}
-*/
-  claimTestnetParticipationAirdrop(address: string): Promise<string>;
-/**
-* @param {string} address
-* @returns {Promise<string>}
-*/
-  claimTestnetParticipationIncentives(address: string): Promise<string>;
-/**
-* @param {string} address
-* @returns {Promise<string>}
-*/
   claimIncomingIbcBtc(address: string): Promise<string>;
 /**
 * @param {string} address
@@ -197,16 +142,6 @@ export class OraiBtc {
 * @returns {Promise<string>}
 */
   redelegate(address: string, src_addr: string, dst_addr: string, amount: bigint): Promise<string>;
-/**
-* @param {string} addr
-* @returns {Promise<Airdrop>}
-*/
-  airdropBalances(addr: string): Promise<Airdrop>;
-/**
-* @param {string} addr
-* @returns {Promise<Incentives>}
-*/
-  incentiveBalances(addr: string): Promise<Incentives>;
 /**
 * @param {string} addr
 * @returns {Promise<bigint>}
@@ -369,19 +304,13 @@ export interface InitOutput {
   readonly __wbg_set_coin_denom: (a: number, b: number) => void;
   readonly __wbg_get_coin_amount: (a: number) => number;
   readonly __wbg_set_coin_amount: (a: number, b: number) => void;
+  readonly __wbg_rewarddetails_free: (a: number) => void;
   readonly __wbg_get_rewarddetails_claimed: (a: number) => number;
   readonly __wbg_set_rewarddetails_claimed: (a: number, b: number) => void;
   readonly __wbg_get_rewarddetails_claimable: (a: number) => number;
   readonly __wbg_set_rewarddetails_claimable: (a: number, b: number) => void;
   readonly __wbg_get_rewarddetails_amount: (a: number) => number;
   readonly __wbg_set_rewarddetails_amount: (a: number, b: number) => void;
-  readonly __wbg_airdrop_free: (a: number) => void;
-  readonly __wbg_get_airdrop_airdrop1: (a: number) => number;
-  readonly __wbg_set_airdrop_airdrop1: (a: number, b: number) => void;
-  readonly __wbg_get_airdrop_airdrop2: (a: number) => number;
-  readonly __wbg_set_airdrop_airdrop2: (a: number, b: number) => void;
-  readonly airdrop_total: (a: number) => number;
-  readonly airdrop_claimedTotal: (a: number) => number;
   readonly main_js: () => void;
   readonly __wbg_oraibtc_free: (a: number) => void;
   readonly oraibtc_new: (a: number, b: number, c: number, d: number, e: number) => number;
@@ -391,18 +320,12 @@ export interface InitOutput {
   readonly oraibtc_delegations: (a: number, b: number, c: number) => number;
   readonly oraibtc_allValidators: (a: number) => number;
   readonly oraibtc_claim: (a: number, b: number, c: number) => number;
-  readonly oraibtc_claimAirdrop1: (a: number, b: number, c: number) => number;
-  readonly oraibtc_claimAirdrop2: (a: number, b: number, c: number) => number;
-  readonly oraibtc_claimTestnetParticipationAirdrop: (a: number, b: number, c: number) => number;
-  readonly oraibtc_claimTestnetParticipationIncentives: (a: number, b: number, c: number) => number;
   readonly oraibtc_claimIncomingIbcBtc: (a: number, b: number, c: number) => number;
   readonly oraibtc_setRecoveryAddress: (a: number, b: number, c: number, d: number, e: number) => number;
   readonly oraibtc_getRecoveryAddress: (a: number, b: number, c: number) => number;
   readonly oraibtc_delegate: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
   readonly oraibtc_unbond: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
   readonly oraibtc_redelegate: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => number;
-  readonly oraibtc_airdropBalances: (a: number, b: number, c: number) => number;
-  readonly oraibtc_incentiveBalances: (a: number, b: number, c: number) => number;
   readonly oraibtc_nonce: (a: number, b: number, c: number) => number;
   readonly oraibtc_generateDepositAddress: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
   readonly oraibtc_nbtcBalance: (a: number, b: number, c: number) => number;
@@ -445,15 +368,9 @@ export interface InitOutput {
   readonly __wbg_get_delegation_staked: (a: number) => number;
   readonly __wbg_get_rewarddetails_locked: (a: number) => number;
   readonly __wbg_get_unbondinfo_amount: (a: number) => number;
-  readonly incentives_total: (a: number) => number;
-  readonly incentives_claimedTotal: (a: number) => number;
   readonly __wbg_get_validatorqueryinfo_address: (a: number, b: number) => void;
   readonly __wbg_get_depositaddress_address: (a: number, b: number) => void;
-  readonly __wbg_get_incentives_testnetParticipation: (a: number) => number;
-  readonly __wbg_set_incentives_testnetParticipation: (a: number, b: number) => void;
   readonly __wbg_unbondinfo_free: (a: number) => void;
-  readonly __wbg_rewarddetails_free: (a: number) => void;
-  readonly __wbg_incentives_free: (a: number) => void;
   readonly __wbindgen_malloc: (a: number, b: number) => number;
   readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
   readonly __wbindgen_export_2: WebAssembly.Table;

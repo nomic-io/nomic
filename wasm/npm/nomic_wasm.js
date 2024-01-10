@@ -248,87 +248,12 @@ function passArrayJsValueToWasm0(array, malloc) {
     WASM_VECTOR_LEN = array.length;
     return ptr;
 }
-
-function _assertClass(instance, klass) {
-    if (!(instance instanceof klass)) {
-        throw new Error(`expected instance of ${klass.name}`);
-    }
-    return instance.ptr;
-}
 /**
 */
 export function main_js() {
     wasm.main_js();
 }
 
-/**
-*/
-export class Airdrop {
-
-    static __wrap(ptr) {
-        ptr = ptr >>> 0;
-        const obj = Object.create(Airdrop.prototype);
-        obj.__wbg_ptr = ptr;
-
-        return obj;
-    }
-
-    __destroy_into_raw() {
-        const ptr = this.__wbg_ptr;
-        this.__wbg_ptr = 0;
-
-        return ptr;
-    }
-
-    free() {
-        const ptr = this.__destroy_into_raw();
-        wasm.__wbg_airdrop_free(ptr);
-    }
-    /**
-    * @returns {RewardDetails}
-    */
-    get airdrop1() {
-        const ret = wasm.__wbg_get_airdrop_airdrop1(this.__wbg_ptr);
-        return RewardDetails.__wrap(ret);
-    }
-    /**
-    * @param {RewardDetails} arg0
-    */
-    set airdrop1(arg0) {
-        _assertClass(arg0, RewardDetails);
-        var ptr0 = arg0.__destroy_into_raw();
-        wasm.__wbg_set_airdrop_airdrop1(this.__wbg_ptr, ptr0);
-    }
-    /**
-    * @returns {RewardDetails}
-    */
-    get airdrop2() {
-        const ret = wasm.__wbg_get_airdrop_airdrop2(this.__wbg_ptr);
-        return RewardDetails.__wrap(ret);
-    }
-    /**
-    * @param {RewardDetails} arg0
-    */
-    set airdrop2(arg0) {
-        _assertClass(arg0, RewardDetails);
-        var ptr0 = arg0.__destroy_into_raw();
-        wasm.__wbg_set_airdrop_airdrop2(this.__wbg_ptr, ptr0);
-    }
-    /**
-    * @returns {bigint}
-    */
-    total() {
-        const ret = wasm.airdrop_total(this.__wbg_ptr);
-        return BigInt.asUintN(64, ret);
-    }
-    /**
-    * @returns {bigint}
-    */
-    claimedTotal() {
-        const ret = wasm.airdrop_claimedTotal(this.__wbg_ptr);
-        return BigInt.asUintN(64, ret);
-    }
-}
 /**
 */
 export class Coin {
@@ -570,59 +495,6 @@ export class DepositAddress {
 }
 /**
 */
-export class Incentives {
-
-    static __wrap(ptr) {
-        ptr = ptr >>> 0;
-        const obj = Object.create(Incentives.prototype);
-        obj.__wbg_ptr = ptr;
-
-        return obj;
-    }
-
-    __destroy_into_raw() {
-        const ptr = this.__wbg_ptr;
-        this.__wbg_ptr = 0;
-
-        return ptr;
-    }
-
-    free() {
-        const ptr = this.__destroy_into_raw();
-        wasm.__wbg_incentives_free(ptr);
-    }
-    /**
-    * @returns {RewardDetails}
-    */
-    get testnetParticipation() {
-        const ret = wasm.__wbg_get_airdrop_airdrop1(this.__wbg_ptr);
-        return RewardDetails.__wrap(ret);
-    }
-    /**
-    * @param {RewardDetails} arg0
-    */
-    set testnetParticipation(arg0) {
-        _assertClass(arg0, RewardDetails);
-        var ptr0 = arg0.__destroy_into_raw();
-        wasm.__wbg_set_airdrop_airdrop1(this.__wbg_ptr, ptr0);
-    }
-    /**
-    * @returns {bigint}
-    */
-    total() {
-        const ret = wasm.__wbg_get_rewarddetails_amount(this.__wbg_ptr);
-        return BigInt.asUintN(64, ret);
-    }
-    /**
-    * @returns {bigint}
-    */
-    claimedTotal() {
-        const ret = wasm.__wbg_get_rewarddetails_claimed(this.__wbg_ptr);
-        return BigInt.asUintN(64, ret);
-    }
-}
-/**
-*/
 export class JsIter {
 
     __destroy_into_raw() {
@@ -789,46 +661,6 @@ export class OraiBtc {
     * @param {string} address
     * @returns {Promise<string>}
     */
-    claimAirdrop1(address) {
-        const ptr0 = passStringToWasm0(address, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.oraibtc_claimAirdrop1(this.__wbg_ptr, ptr0, len0);
-        return takeObject(ret);
-    }
-    /**
-    * @param {string} address
-    * @returns {Promise<string>}
-    */
-    claimAirdrop2(address) {
-        const ptr0 = passStringToWasm0(address, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.oraibtc_claimAirdrop2(this.__wbg_ptr, ptr0, len0);
-        return takeObject(ret);
-    }
-    /**
-    * @param {string} address
-    * @returns {Promise<string>}
-    */
-    claimTestnetParticipationAirdrop(address) {
-        const ptr0 = passStringToWasm0(address, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.oraibtc_claimTestnetParticipationAirdrop(this.__wbg_ptr, ptr0, len0);
-        return takeObject(ret);
-    }
-    /**
-    * @param {string} address
-    * @returns {Promise<string>}
-    */
-    claimTestnetParticipationIncentives(address) {
-        const ptr0 = passStringToWasm0(address, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.oraibtc_claimTestnetParticipationIncentives(this.__wbg_ptr, ptr0, len0);
-        return takeObject(ret);
-    }
-    /**
-    * @param {string} address
-    * @returns {Promise<string>}
-    */
     claimIncomingIbcBtc(address) {
         const ptr0 = passStringToWasm0(address, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
@@ -901,26 +733,6 @@ export class OraiBtc {
         const ptr2 = passStringToWasm0(dst_addr, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len2 = WASM_VECTOR_LEN;
         const ret = wasm.oraibtc_redelegate(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, amount);
-        return takeObject(ret);
-    }
-    /**
-    * @param {string} addr
-    * @returns {Promise<Airdrop>}
-    */
-    airdropBalances(addr) {
-        const ptr0 = passStringToWasm0(addr, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.oraibtc_airdropBalances(this.__wbg_ptr, ptr0, len0);
-        return takeObject(ret);
-    }
-    /**
-    * @param {string} addr
-    * @returns {Promise<Incentives>}
-    */
-    incentiveBalances(addr) {
-        const ptr0 = passStringToWasm0(addr, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.oraibtc_incentiveBalances(this.__wbg_ptr, ptr0, len0);
         return takeObject(ret);
     }
     /**
@@ -1110,14 +922,6 @@ export class OraiBtc {
 /**
 */
 export class RewardDetails {
-
-    static __wrap(ptr) {
-        ptr = ptr >>> 0;
-        const obj = Object.create(RewardDetails.prototype);
-        obj.__wbg_ptr = ptr;
-
-        return obj;
-    }
 
     __destroy_into_raw() {
         const ptr = this.__wbg_ptr;
@@ -1423,51 +1227,15 @@ function __wbg_get_imports() {
     imports.wbg.__wbindgen_object_drop_ref = function(arg0) {
         takeObject(arg0);
     };
-    imports.wbg.__wbg_airdrop_new = function(arg0) {
-        const ret = Airdrop.__wrap(arg0);
-        return addHeapObject(ret);
-    };
     imports.wbg.__wbindgen_bigint_from_u64 = function(arg0) {
         const ret = BigInt.asUintN(64, arg0);
-        return addHeapObject(ret);
-    };
-    imports.wbg.__wbg_incentives_new = function(arg0) {
-        const ret = Incentives.__wrap(arg0);
-        return addHeapObject(ret);
-    };
-    imports.wbg.__wbg_new_ffc6d4d085022169 = function() {
-        const ret = new Array();
-        return addHeapObject(ret);
-    };
-    imports.wbg.__wbg_validatorqueryinfo_new = function(arg0) {
-        const ret = ValidatorQueryInfo.__wrap(arg0);
-        return addHeapObject(ret);
-    };
-    imports.wbg.__wbg_push_901f3914205d44de = function(arg0, arg1) {
-        const ret = getObject(arg0).push(getObject(arg1));
-        return ret;
-    };
-    imports.wbg.__wbindgen_number_new = function(arg0) {
-        const ret = arg0;
-        return addHeapObject(ret);
-    };
-    imports.wbg.__wbg_now_096aa89623f72d50 = function() {
-        const ret = Date.now();
-        return ret;
-    };
-    imports.wbg.__wbindgen_error_new = function(arg0, arg1) {
-        const ret = new Error(getStringFromWasm0(arg0, arg1));
-        return addHeapObject(ret);
-    };
-    imports.wbg.__wbg_depositaddress_new = function(arg0) {
-        const ret = DepositAddress.__wrap(arg0);
         return addHeapObject(ret);
     };
     imports.wbg.__wbindgen_object_clone_ref = function(arg0) {
         const ret = getObject(arg0);
         return addHeapObject(ret);
     };
-    imports.wbg.__wbg_instanceof_Global_236a638e076d7167 = function(arg0) {
+    imports.wbg.__wbg_instanceof_Global_4c5b7cbcd1080fb9 = function(arg0) {
         let result;
         try {
             result = getObject(arg0) instanceof Object;
@@ -1497,6 +1265,10 @@ function __wbg_get_imports() {
         const ret = new Uint8Array(getObject(arg0));
         return addHeapObject(ret);
     };
+    imports.wbg.__wbindgen_error_new = function(arg0, arg1) {
+        const ret = new Error(getStringFromWasm0(arg0, arg1));
+        return addHeapObject(ret);
+    };
     imports.wbg.__wbg_new_9fb8d994e1c0aaac = function() {
         const ret = new Object();
         return addHeapObject(ret);
@@ -1521,7 +1293,7 @@ function __wbg_get_imports() {
         const ret = new Request(getStringFromWasm0(arg0, arg1), getObject(arg2));
         return addHeapObject(ret);
     }, arguments) };
-    imports.wbg.__wbg_fetch_ec03fc26cb994017 = function(arg0, arg1) {
+    imports.wbg.__wbg_fetch_fe4459f1e684f0c9 = function(arg0, arg1) {
         const ret = getObject(arg0).fetch(getObject(arg1));
         return addHeapObject(ret);
     };
@@ -1543,6 +1315,22 @@ function __wbg_get_imports() {
         const ret = getObject(arg0).arrayBuffer();
         return addHeapObject(ret);
     }, arguments) };
+    imports.wbg.__wbindgen_number_new = function(arg0) {
+        const ret = arg0;
+        return addHeapObject(ret);
+    };
+    imports.wbg.__wbg_now_096aa89623f72d50 = function() {
+        const ret = Date.now();
+        return ret;
+    };
+    imports.wbg.__wbg_depositaddress_new = function(arg0) {
+        const ret = DepositAddress.__wrap(arg0);
+        return addHeapObject(ret);
+    };
+    imports.wbg.__wbg_new_ffc6d4d085022169 = function() {
+        const ret = new Array();
+        return addHeapObject(ret);
+    };
     imports.wbg.__wbg_coin_new = function(arg0) {
         const ret = Coin.__wrap(arg0);
         return addHeapObject(ret);
@@ -1553,6 +1341,14 @@ function __wbg_get_imports() {
     };
     imports.wbg.__wbg_delegation_new = function(arg0) {
         const ret = Delegation.__wrap(arg0);
+        return addHeapObject(ret);
+    };
+    imports.wbg.__wbg_push_901f3914205d44de = function(arg0, arg1) {
+        const ret = getObject(arg0).push(getObject(arg1));
+        return ret;
+    };
+    imports.wbg.__wbg_validatorqueryinfo_new = function(arg0) {
+        const ret = ValidatorQueryInfo.__wrap(arg0);
         return addHeapObject(ret);
     };
     imports.wbg.__wbg_warn_f260f49434e45e62 = function(arg0) {
@@ -1615,13 +1411,6 @@ function __wbg_get_imports() {
     imports.wbg.__wbg_set_2357bf09366ee480 = function(arg0, arg1, arg2) {
         getObject(arg0).set(getObject(arg1), arg2 >>> 0);
     };
-    imports.wbg.__wbindgen_debug_string = function(arg0, arg1) {
-        const ret = debugString(getObject(arg1));
-        const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len1 = WASM_VECTOR_LEN;
-        getInt32Memory0()[arg0 / 4 + 1] = len1;
-        getInt32Memory0()[arg0 / 4 + 0] = ptr1;
-    };
     imports.wbg.__wbg_new_60f57089c7563e81 = function(arg0, arg1) {
         try {
             var state0 = {a: arg0, b: arg1};
@@ -1649,6 +1438,13 @@ function __wbg_get_imports() {
         const ret = false;
         return ret;
     };
+    imports.wbg.__wbindgen_debug_string = function(arg0, arg1) {
+        const ret = debugString(getObject(arg1));
+        const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        getInt32Memory0()[arg0 / 4 + 1] = len1;
+        getInt32Memory0()[arg0 / 4 + 0] = ptr1;
+    };
     imports.wbg.__wbindgen_throw = function(arg0, arg1) {
         throw new Error(getStringFromWasm0(arg0, arg1));
     };
@@ -1675,8 +1471,8 @@ function __wbg_get_imports() {
         const ret = Promise.resolve(getObject(arg0));
         return addHeapObject(ret);
     };
-    imports.wbg.__wbindgen_closure_wrapper2593 = function(arg0, arg1, arg2) {
-        const ret = makeMutClosure(arg0, arg1, 383, __wbg_adapter_28);
+    imports.wbg.__wbindgen_closure_wrapper2519 = function(arg0, arg1, arg2) {
+        const ret = makeMutClosure(arg0, arg1, 376, __wbg_adapter_28);
         return addHeapObject(ret);
     };
 

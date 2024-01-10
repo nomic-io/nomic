@@ -1,4 +1,4 @@
-#![feature(async_closure)]
+#![feature(async_closure, async_fn_in_trait)]
 
 mod error;
 mod global;
