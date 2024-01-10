@@ -1225,8 +1225,11 @@ pub struct SignerCmd {
     #[clap(long, default_value_t = 0.1)]
     max_sigset_change_rate: f64,
 
-    /// Sets the minimum time since the last checkpoint before a new checkpoint
-    /// will be signed.
+    /// The minimum age of a checkpoint before the signer will contribute its
+    /// signature. This setting can be used to change the rate at which the
+    /// network produces checkpoints (higher values cause less frequent checkpoints).
+    ///
+    /// Signatures will always be contributed to previously completed checkpoints.
     #[clap(long, default_value_t = 120)]
     min_checkpoint_minutes: u64,
 
