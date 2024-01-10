@@ -12,6 +12,8 @@ use nomic::app::InnerApp;
 use nomic::app::Nom;
 use nomic::bitcoin::Nbtc;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
+use nomic::constants::BTC_NATIVE_TOKEN_DENOM;
+use nomic::constants::MAIN_NATIVE_TOKEN_DENOM;
 use nomic::error::Result;
 use nomic::utils::wallet_path;
 use nomic::utils::write_orga_private_key_from_mnemonic;
@@ -700,12 +702,12 @@ impl BalanceCmd {
         let client = self.config.client();
 
         let balance = client.query(|app| app.accounts.balance(address)).await?;
-        println!("{} NOM", balance);
+        println!("{} {}", balance, MAIN_NATIVE_TOKEN_DENOM);
 
         let balance = client
             .query(|app| app.bitcoin.accounts.balance(address))
             .await?;
-        println!("{} NBTC", balance);
+        println!("{} {}", balance, BTC_NATIVE_TOKEN_DENOM);
 
         let balance = client.query(|app| app.escrowed_nbtc(address)).await?;
         println!("{} IBC-escrowed NBTC", balance);
@@ -759,7 +761,7 @@ impl DelegationsCmd {
                 .1;
 
             println!(
-                "- {validator}: staked={staked} NOM, liquid={liquid_nom} NOM,{liquid_nbtc} NBTC",
+                "- {validator}: staked={staked} {MAIN_NATIVE_TOKEN_DENOM}, liquid={liquid_nom} {MAIN_NATIVE_TOKEN_DENOM},{liquid_nbtc} {BTC_NATIVE_TOKEN_DENOM}",
             );
         }
 
