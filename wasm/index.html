@@ -9,7 +9,7 @@
 
       async function run() {
         await init();
-        const app = new OraiBtc('https://oraibtc.lcd.orai.io', 'OraiBtcSubnet', 'testnet');
+        const app = new OraiBtc('https://btc.lcd.orai.io', 'oraibtc-mainnet-1', 'mainnet');
         const { address } = await app.generateDepositAddress('orai12zyu8w93h0q2lcnt50g3fn0w3yqnhy4fvawaqz', 'channel-0', 'oraibtc1ehmhqcn8erf3dgavrca69zgp4rtxj5kqzpga4j');
         console.log(address);
       }
