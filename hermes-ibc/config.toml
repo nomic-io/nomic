@@ -41,7 +41,7 @@ buckets = 10
 
 [[chains]]
 id = "Oraichain"
-rpc_addr = "https://rpc.orai.io"
+rpc_addr = "https://rpc.orai.io:443"
 grpc_addr = "https://grpc.orai.io"
 event_source = { mode = 'pull' }
 rpc_timeout = "20s"
