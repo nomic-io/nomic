@@ -325,19 +325,19 @@ where
             return Ok(matches!(status, CheckpointStatus::Complete));
         }
 
-        self.check_change_rates().await?;
-        let now_seconds = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        if timestamp + self.min_checkpoint_seconds > now_seconds
-            && matches!(status, CheckpointStatus::Signing)
-        {
-            info!(
-                "Checkpoint is too recent, waiting {} seconds",
-                (timestamp + self.min_checkpoint_seconds) - now_seconds
-            );
-            return Ok(false);
+        if matches!(status, CheckpointStatus::Signing) {
+            self.check_change_rates().await?;
+            let now_seconds = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            if timestamp + self.min_checkpoint_seconds > now_seconds {
+                info!(
+                    "Checkpoint is too recent, waiting {} seconds",
+                    (timestamp + self.min_checkpoint_seconds) - now_seconds
+                );
+                return Ok(false);
+            }
         }
 
         info!("Signing checkpoint ({} inputs)...", to_sign.len());
