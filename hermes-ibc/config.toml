@@ -46,7 +46,7 @@ grpc_addr = "https://grpc.orai.io"
 event_source = { mode = 'pull' }
 rpc_timeout = "20s"
 account_prefix = "orai"
-key_name = "key-orai"
+key_name = "relayer"
 store_prefix = "ibc"
 max_gas = 100000000
 gas_multiplier = 1.5
@@ -72,7 +72,7 @@ event_source = { mode = 'pull' }
 grpc_addr = 'http://34.68.27.95:9001'
 rpc_timeout = '10s'
 account_prefix = 'oraibtc'
-key_name = 'key-oraibtc'
+key_name = 'relayer'
 store_prefix = 'ibc'
 max_gas = 100000000
 gas_price = { price = 0, denom = 'usat' }
