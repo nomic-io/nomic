@@ -3,7 +3,7 @@
   "collaborators": [
     "The wasm-bindgen Developers"
   ],
-  "version": "1.0.2",
+  "version": "1.0.3",
   "files": [
     "nomic_wasm_bg.wasm",
     "nomic_wasm_bg_main.wasm",
