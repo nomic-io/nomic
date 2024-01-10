@@ -86,6 +86,9 @@ full = [
 ]
 feat-ibc = ["orga/feat-ibc"]
 testnet = []
+faucet-test = []
+devnet = []
+legacy-bin = []
 
 [profile.release]
 overflow-checks = true
