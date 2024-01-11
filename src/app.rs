@@ -497,9 +497,11 @@ impl ConvertSdkTx for InnerApp {
                     ));
                 }
 
-                let msg = &tx.body.messages[0];
+                let mut tx_data = tx.body.messages[0].clone();
+                let msg = &mut tx_data;
                 if msg.type_url.as_str() == "cosmos-sdk/MsgSend" {
                     use orga::cosmrs::tx::Msg;
+                    msg.type_url = "/cosmos.bank.v1beta1.MsgSend".to_string();
                     let msg =
                         MsgSend::from_any(msg).map_err(|_| Error::App("Invalid MsgSend".into()))?;
 
