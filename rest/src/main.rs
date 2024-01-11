@@ -6,7 +6,7 @@ use nomic::{
     constants::MAIN_NATIVE_TOKEN_DENOM,
     orga::{
         client::{wallet::Unsigned, AppClient},
-        coins::{Address, Amount, Decimal},
+        coins::{Address, Amount, Decimal, DelegationInfo, ValidatorQueryInfo},
         plugins::*,
         query::Query,
         tendermint::client::HttpClient,
@@ -34,7 +34,7 @@ async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
 
     let balance: u64 = app_client()
-        .query(|app| app.accounts.balance(address))
+        .query(|app: InnerApp| app.accounts.balance(address))
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
@@ -62,7 +62,7 @@ async fn bank_balances_2(address: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
 
     let balance: u64 = app_client()
-        .query(|app| app.accounts.balance(address))
+        .query(|app: InnerApp| app.accounts.balance(address))
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
@@ -83,7 +83,7 @@ async fn auth_accounts(addr_str: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = addr_str.parse().unwrap();
 
     let balance: u64 = app_client()
-        .query(|app| app.accounts.balance(address))
+        .query(|app: InnerApp| app.accounts.balance(address))
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
@@ -118,7 +118,7 @@ async fn auth_accounts2(addr_str: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = addr_str.parse().unwrap();
 
     let balance: u64 = app_client()
-        .query(|app| app.accounts.balance(address))
+        .query(|app: InnerApp| app.accounts.balance(address))
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
@@ -292,8 +292,8 @@ async fn query(query: &str, height: Option<u32>) -> Result<String, BadRequest<St
 async fn staking_delegators_delegations(address: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
 
-    let delegations = app_client()
-        .query(|app| app.staking.delegations(address))
+    let delegations: Vec<(Address, DelegationInfo)> = app_client()
+        .query(|app: InnerApp| app.staking.delegations(address))
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
@@ -321,8 +321,8 @@ async fn staking_delegators_delegations(address: &str) -> Result<Value, BadReque
 async fn staking_delegators_delegations_2(address: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
 
-    let delegations = app_client()
-        .query(|app| app.staking.delegations(address))
+    let delegations: Vec<(Address, DelegationInfo)> = app_client()
+        .query(|app: InnerApp| app.staking.delegations(address))
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
@@ -445,8 +445,8 @@ async fn distribution_delegatrs_rewards_2(_address: &str) -> Value {
 
 #[get("/cosmos/mint/v1beta1/inflation")]
 async fn minting_inflation() -> Result<Value, BadRequest<String>> {
-    let validators = app_client()
-        .query(|app| app.staking.all_validators())
+    let validators: Vec<ValidatorQueryInfo> = app_client()
+        .query(|app: InnerApp| app.staking.all_validators())
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
@@ -465,8 +465,8 @@ async fn minting_inflation() -> Result<Value, BadRequest<String>> {
 
 #[get("/minting/inflation")]
 async fn minting_inflation_2() -> Result<Value, BadRequest<String>> {
-    let validators = app_client()
-        .query(|app| app.staking.all_validators())
+    let validators: Vec<ValidatorQueryInfo> = app_client()
+        .query(|app: InnerApp| app.staking.all_validators())
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 

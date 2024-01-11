@@ -10,7 +10,6 @@ use crate::bitcoin::header_queue::Config as HeaderQueueConfig;
 #[cfg(feature = "full")]
 use crate::bitcoin::signer::Signer;
 use crate::bitcoin::Config as BitcoinConfig;
-use crate::constants::MAIN_NATIVE_TOKEN_DENOM;
 use crate::error::{Error, Result};
 use bitcoin::hashes::hex::ToHex;
 use bitcoin::secp256k1::{self, rand, SecretKey};
@@ -91,22 +90,22 @@ pub fn sleep(seconds: u64) {
     std::thread::sleep(duration);
 }
 
-pub fn generate_sign_doc(chain_id: String, msg: sdk::Msg, nonce: u64) -> sdk::SignDoc {
-    sdk::SignDoc {
-        account_number: "0".to_string(),
-        chain_id,
-        fee: sdk::Fee {
-            amount: vec![sdk::Coin {
-                amount: "0".to_string(),
-                denom: MAIN_NATIVE_TOKEN_DENOM.to_string(),
-            }],
-            gas: MIN_FEE.to_string(),
-        },
-        memo: "".to_string(),
-        msgs: vec![msg],
-        sequence: (nonce + 1).to_string(),
-    }
-}
+// pub fn generate_sign_doc(chain_id: String, msg: sdk::Msg, nonce: u64) -> sdk::SignDoc {
+//     sdk::SignDoc {
+//         account_number: "0".to_string(),
+//         chain_id,
+//         fee: sdk::Fee {
+//             amount: vec![sdk::Coin {
+//                 amount: "0".to_string(),
+//                 denom: MAIN_NATIVE_TOKEN_DENOM.to_string(),
+//             }],
+//             gas: MIN_FEE.to_string(),
+//         },
+//         memo: "".to_string(),
+//         msgs: vec![msg],
+//         sequence: (nonce + 1).to_string(),
+//     }
+// }
 
 pub fn make_std_tx(
     sign_doc: sdk::SignDoc,
