@@ -262,6 +262,32 @@ impl OraiBtc {
     }
 
     //bytes
+    pub async fn transfer(
+        &self,
+        from_addr: String,
+        to_addr: String,
+        amount: u64,
+    ) -> Result<String, JsError> {
+        let mut amount_obj = serde_json::Map::new();
+        amount_obj.insert("amount".to_string(), amount.to_string().into());
+        amount_obj.insert("denom".to_string(), MAIN_NATIVE_TOKEN_DENOM.into());
+
+        let mut value = serde_json::Map::new();
+        value.insert("from_address".to_string(), from_addr.clone().into());
+        value.insert("to_address".to_string(), to_addr.into());
+        value.insert("amount".to_string(), amount_obj.into());
+
+        self.gen_call_bytes(
+            from_addr,
+            sdk::Msg {
+                type_: "cosmos-sdk/MsgSend".to_string(),
+                value: value.into(),
+            },
+        )
+        .await
+    }
+
+    //bytes
     pub async fn delegate(
         &self,
         from_addr: String,

@@ -126,6 +126,13 @@ export class OraiBtc {
 * @param {bigint} amount
 * @returns {Promise<string>}
 */
+  transfer(from_addr: string, to_addr: string, amount: bigint): Promise<string>;
+/**
+* @param {string} from_addr
+* @param {string} to_addr
+* @param {bigint} amount
+* @returns {Promise<string>}
+*/
   delegate(from_addr: string, to_addr: string, amount: bigint): Promise<string>;
 /**
 * @param {string} address
@@ -323,6 +330,7 @@ export interface InitOutput {
   readonly oraibtc_claimIncomingIbcBtc: (a: number, b: number, c: number) => number;
   readonly oraibtc_setRecoveryAddress: (a: number, b: number, c: number, d: number, e: number) => number;
   readonly oraibtc_getRecoveryAddress: (a: number, b: number, c: number) => number;
+  readonly oraibtc_transfer: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
   readonly oraibtc_delegate: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
   readonly oraibtc_unbond: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
   readonly oraibtc_redelegate: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => number;

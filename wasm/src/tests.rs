@@ -5,8 +5,8 @@ use crate::{NetWorkEnum, OraiBtc};
 #[wasm_bindgen_test]
 async fn test_get_balance() {
     let app = OraiBtc::new(
-        "https://oraibtc.lcd.orai.io",
-        "OraiBtcSubnet",
+        "https://btc.lcd.orai.io",
+        "oraibtc-mainnet-1",
         NetWorkEnum::Bitcoin,
     );
 
@@ -22,5 +22,23 @@ async fn test_get_balance() {
         .ok()
         .unwrap();
 
-    println!("{:?}", ret.address);
+    console_log!("{:?}", ret.address);
+}
+
+async fn test_get_msgs() {
+    let app = OraiBtc::new(
+        "https://btc.lcd.orai.io",
+        "oraibtc-mainnet-1",
+        NetWorkEnum::Bitcoin,
+    );
+    let ret = app
+        .transfer(
+            "oraibtc1ehmhqcn8erf3dgavrca69zgp4rtxj5kqzpga4j".to_string(),
+            "oraib1ur2vsjrjarygawpdwtqteaazfchvw4fgdayn0e".to_string(),
+            1000000,
+        )
+        .await
+        .ok()
+        .unwrap();
+    console_log!("{:?}", ret);
 }

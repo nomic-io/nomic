@@ -3,24 +3,6 @@ imports['__wbindgen_placeholder__'] = module.exports;
 let wasm;
 const { TextDecoder, TextEncoder } = require(`util`);
 
-let cachedTextDecoder = new TextDecoder('utf-8', { ignoreBOM: true, fatal: true });
-
-cachedTextDecoder.decode();
-
-let cachedUint8Memory0 = null;
-
-function getUint8Memory0() {
-    if (cachedUint8Memory0 === null || cachedUint8Memory0.byteLength === 0) {
-        cachedUint8Memory0 = new Uint8Array(wasm.memory.buffer);
-    }
-    return cachedUint8Memory0;
-}
-
-function getStringFromWasm0(ptr, len) {
-    ptr = ptr >>> 0;
-    return cachedTextDecoder.decode(getUint8Memory0().subarray(ptr, ptr + len));
-}
-
 const heap = new Array(128).fill(undefined);
 
 heap.push(undefined, null, true, false);
@@ -48,6 +30,24 @@ function takeObject(idx) {
     const ret = getObject(idx);
     dropObject(idx);
     return ret;
+}
+
+let cachedTextDecoder = new TextDecoder('utf-8', { ignoreBOM: true, fatal: true });
+
+cachedTextDecoder.decode();
+
+let cachedUint8Memory0 = null;
+
+function getUint8Memory0() {
+    if (cachedUint8Memory0 === null || cachedUint8Memory0.byteLength === 0) {
+        cachedUint8Memory0 = new Uint8Array(wasm.memory.buffer);
+    }
+    return cachedUint8Memory0;
+}
+
+function getStringFromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return cachedTextDecoder.decode(getUint8Memory0().subarray(ptr, ptr + len));
 }
 
 let WASM_VECTOR_LEN = 0;
@@ -704,6 +704,20 @@ class OraiBtc {
     * @param {bigint} amount
     * @returns {Promise<string>}
     */
+    transfer(from_addr, to_addr, amount) {
+        const ptr0 = passStringToWasm0(from_addr, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(to_addr, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.oraibtc_transfer(this.__wbg_ptr, ptr0, len0, ptr1, len1, amount);
+        return takeObject(ret);
+    }
+    /**
+    * @param {string} from_addr
+    * @param {string} to_addr
+    * @param {bigint} amount
+    * @returns {Promise<string>}
+    */
     delegate(from_addr, to_addr, amount) {
         const ptr0 = passStringToWasm0(from_addr, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
@@ -1194,8 +1208,8 @@ class ValidatorQueryInfo {
 }
 module.exports.ValidatorQueryInfo = ValidatorQueryInfo;
 
-module.exports.__wbindgen_string_new = function(arg0, arg1) {
-    const ret = getStringFromWasm0(arg0, arg1);
+module.exports.__wbindgen_bigint_from_u64 = function(arg0) {
+    const ret = BigInt.asUintN(64, arg0);
     return addHeapObject(ret);
 };
 
@@ -1208,8 +1222,23 @@ module.exports.__wbindgen_object_drop_ref = function(arg0) {
     takeObject(arg0);
 };
 
-module.exports.__wbindgen_bigint_from_u64 = function(arg0) {
-    const ret = BigInt.asUintN(64, arg0);
+module.exports.__wbindgen_string_new = function(arg0, arg1) {
+    const ret = getStringFromWasm0(arg0, arg1);
+    return addHeapObject(ret);
+};
+
+module.exports.__wbg_now_096aa89623f72d50 = function() {
+    const ret = Date.now();
+    return ret;
+};
+
+module.exports.__wbindgen_error_new = function(arg0, arg1) {
+    const ret = new Error(getStringFromWasm0(arg0, arg1));
+    return addHeapObject(ret);
+};
+
+module.exports.__wbg_depositaddress_new = function(arg0) {
+    const ret = DepositAddress.__wrap(arg0);
     return addHeapObject(ret);
 };
 
@@ -1250,11 +1279,6 @@ module.exports.__wbindgen_string_get = function(arg0, arg1) {
 
 module.exports.__wbg_new_8f67e318f15d7254 = function(arg0) {
     const ret = new Uint8Array(getObject(arg0));
-    return addHeapObject(ret);
-};
-
-module.exports.__wbindgen_error_new = function(arg0, arg1) {
-    const ret = new Error(getStringFromWasm0(arg0, arg1));
     return addHeapObject(ret);
 };
 
@@ -1314,21 +1338,6 @@ module.exports.__wbg_arrayBuffer_5b2688e3dd873fed = function() { return handleEr
     return addHeapObject(ret);
 }, arguments) };
 
-module.exports.__wbindgen_number_new = function(arg0) {
-    const ret = arg0;
-    return addHeapObject(ret);
-};
-
-module.exports.__wbg_now_096aa89623f72d50 = function() {
-    const ret = Date.now();
-    return ret;
-};
-
-module.exports.__wbg_depositaddress_new = function(arg0) {
-    const ret = DepositAddress.__wrap(arg0);
-    return addHeapObject(ret);
-};
-
 module.exports.__wbg_new_ffc6d4d085022169 = function() {
     const ret = new Array();
     return addHeapObject(ret);
@@ -1352,6 +1361,11 @@ module.exports.__wbg_delegation_new = function(arg0) {
 module.exports.__wbg_push_901f3914205d44de = function(arg0, arg1) {
     const ret = getObject(arg0).push(getObject(arg1));
     return ret;
+};
+
+module.exports.__wbindgen_number_new = function(arg0) {
+    const ret = arg0;
+    return addHeapObject(ret);
 };
 
 module.exports.__wbg_validatorqueryinfo_new = function(arg0) {
@@ -1502,7 +1516,7 @@ module.exports.__wbg_resolve_6e1c6553a82f85b7 = function(arg0) {
     return addHeapObject(ret);
 };
 
-module.exports.__wbindgen_closure_wrapper2519 = function(arg0, arg1, arg2) {
+module.exports.__wbindgen_closure_wrapper2515 = function(arg0, arg1, arg2) {
     const ret = makeMutClosure(arg0, arg1, 376, __wbg_adapter_28);
     return addHeapObject(ret);
 };
