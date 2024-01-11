@@ -25,6 +25,7 @@ async fn test_get_balance() {
     console_log!("{:?}", ret.address);
 }
 
+#[wasm_bindgen_test]
 async fn test_get_msgs() {
     let app = OraiBtc::new(
         "https://btc.lcd.orai.io",

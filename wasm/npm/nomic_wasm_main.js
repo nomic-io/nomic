@@ -1465,6 +1465,14 @@ module.exports.__wbg_new_60f57089c7563e81 = function(arg0, arg1) {
     }
 };
 
+module.exports.__wbindgen_debug_string = function(arg0, arg1) {
+    const ret = debugString(getObject(arg1));
+    const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    getInt32Memory0()[arg0 / 4 + 1] = len1;
+    getInt32Memory0()[arg0 / 4 + 0] = ptr1;
+};
+
 module.exports.__wbindgen_cb_drop = function(arg0) {
     const obj = takeObject(arg0).original;
     if (obj.cnt-- == 1) {
@@ -1473,14 +1481,6 @@ module.exports.__wbindgen_cb_drop = function(arg0) {
     }
     const ret = false;
     return ret;
-};
-
-module.exports.__wbindgen_debug_string = function(arg0, arg1) {
-    const ret = debugString(getObject(arg1));
-    const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len1 = WASM_VECTOR_LEN;
-    getInt32Memory0()[arg0 / 4 + 1] = len1;
-    getInt32Memory0()[arg0 / 4 + 0] = ptr1;
 };
 
 module.exports.__wbindgen_throw = function(arg0, arg1) {
@@ -1516,7 +1516,7 @@ module.exports.__wbg_resolve_6e1c6553a82f85b7 = function(arg0) {
     return addHeapObject(ret);
 };
 
-module.exports.__wbindgen_closure_wrapper2515 = function(arg0, arg1, arg2) {
+module.exports.__wbindgen_closure_wrapper2516 = function(arg0, arg1, arg2) {
     const ret = makeMutClosure(arg0, arg1, 376, __wbg_adapter_28);
     return addHeapObject(ret);
 };

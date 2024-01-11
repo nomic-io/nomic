@@ -275,7 +275,10 @@ impl OraiBtc {
         let mut value = serde_json::Map::new();
         value.insert("from_address".to_string(), from_addr.clone().into());
         value.insert("to_address".to_string(), to_addr.into());
-        value.insert("amount".to_string(), amount_obj.into());
+        value.insert(
+            "amount".to_string(),
+            serde_json::Value::Array(vec![amount_obj.into()]),
+        );
 
         self.gen_call_bytes(
             from_addr,
