@@ -2,13 +2,12 @@
 extern crate rocket;
 
 use nomic::{
-    app::{App, InnerApp, Nom},
+    app::{InnerApp, Nom},
+    bitcoin::Nbtc,
     constants::MAIN_NATIVE_TOKEN_DENOM,
     orga::{
         client::{wallet::Unsigned, AppClient},
-        coins::{Address, Amount, Decimal, DelegationInfo, ValidatorQueryInfo},
-        plugins::*,
-        query::Query,
+        coins::{Address, Amount, Decimal, DelegationInfo, Symbol, ValidatorQueryInfo},
         tendermint::client::HttpClient,
     },
 };
@@ -25,31 +24,48 @@ lazy_static::lazy_static! {
     static ref QUERY_CACHE: Arc<RwLock<HashMap<String, (u64, String)>>> = Arc::new(RwLock::new(HashMap::new()));
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct Balance {
+    pub denom: String,
+    pub amount: String,
+}
+
 fn app_client() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned> {
     nomic::app_client("http://localhost:26657")
 }
 
-#[get("/cosmos/bank/v1beta1/balances/<address>")]
-async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
+async fn query_balances(address: &str) -> Result<Vec<Balance>, BadRequest<String>> {
     let address: Address = address.parse().unwrap();
+    let mut balances: Vec<Balance> = vec![];
 
     let balance: u64 = app_client()
         .query(|app: InnerApp| app.accounts.balance(address))
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
         .into();
+    balances.push(Balance {
+        denom: Nom::NAME.to_string(),
+        amount: balance.to_string(),
+    });
+
+    let balance: u64 = app_client()
+        .query(|app: InnerApp| app.bitcoin.accounts.balance(address))
+        .await
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+        .into();
+    balances.push(Balance {
+        denom: Nbtc::NAME.to_string(),
+        amount: balance.to_string(),
+    });
+    Ok(balances)
+}
+
+#[get("/cosmos/bank/v1beta1/balances/<address>")]
+async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
+    let balances: Vec<Balance> = query_balances(address).await?;
 
     Ok(json!({
-        "balances": [
-            {
-                "denom": MAIN_NATIVE_TOKEN_DENOM,
-                "amount": balance.to_string(),
-            },
-            {
-                "denom": "nsat",
-                "amount": balance.to_string(),
-            }
-        ],
+        "balances": balances,
         "pagination": {
             "next_key": null,
             "total": "0"
@@ -59,22 +75,14 @@ async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
 
 #[get("/bank/balances/<address>")]
 async fn bank_balances_2(address: &str) -> Result<Value, BadRequest<String>> {
-    let address: Address = address.parse().unwrap();
-
-    let balance: u64 = app_client()
-        .query(|app: InnerApp| app.accounts.balance(address))
-        .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
-        .into();
+    let balances: Vec<Balance> = query_balances(address).await?;
 
     Ok(json!({
-        "height": "0",
-        "result": [
-            {
-                "denom": MAIN_NATIVE_TOKEN_DENOM,
-                "amount": balance.to_string(),
-            }
-        ]
+        "balances": balances,
+        "pagination": {
+            "next_key": null,
+            "total": "0"
+        }
     }))
 }
 
@@ -82,11 +90,7 @@ async fn bank_balances_2(address: &str) -> Result<Value, BadRequest<String>> {
 async fn auth_accounts(addr_str: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = addr_str.parse().unwrap();
 
-    let balance: u64 = app_client()
-        .query(|app: InnerApp| app.accounts.balance(address))
-        .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
-        .into();
+    let balances: Vec<Balance> = query_balances(addr_str).await?;
 
     let mut nonce: u64 = app_client()
         .query_root(|app| app.inner.inner.borrow().inner.inner.inner.nonce(address))
@@ -101,12 +105,7 @@ async fn auth_accounts(addr_str: &str) -> Result<Value, BadRequest<String>> {
             "type": "cosmos-sdk/BaseAccount",
             "value": {
                 "address": addr_str,
-                "coins": [
-                    {
-                        "denom": MAIN_NATIVE_TOKEN_DENOM,
-                        "amount": balance.to_string(),
-                    }
-                ],
+                "coins": balances,
                 "sequence": nonce.to_string()
             }
         }
@@ -116,12 +115,7 @@ async fn auth_accounts(addr_str: &str) -> Result<Value, BadRequest<String>> {
 #[get("/cosmos/auth/v1beta1/accounts/<addr_str>")]
 async fn auth_accounts2(addr_str: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = addr_str.parse().unwrap();
-
-    let balance: u64 = app_client()
-        .query(|app: InnerApp| app.accounts.balance(address))
-        .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
-        .into();
+    let client = tm::HttpClient::new("http://localhost:26657").unwrap();
 
     let mut nonce: u64 = app_client()
         .query_root(|app| app.inner.inner.borrow().inner.inner.inner.nonce(address))
@@ -222,12 +216,12 @@ async fn txs2(tx: &str) -> Result<Value, BadRequest<String>> {
     };
 
     Ok(json!({
-        "height": "0",
+        "height": res.height,
         "txhash": res.hash,
         "codespace": tx_response.codespace,
         "code": tx_response.code,
-        "data": "",
-        "raw_log": "[]",
+        "data": tx_response.data,
+        "raw_log": tx_response.log,
         "logs": [ tx_response.log ],
         "info": tx_response.info,
         "gas_wanted": tx_response.gas_wanted,
@@ -483,9 +477,42 @@ async fn minting_inflation_2() -> Result<Value, BadRequest<String>> {
     Ok(json!({ "height": "0", "result": apr.to_string() }))
 }
 
+async fn get_total_balances(denom: &str) -> Result<u64, BadRequest<String>> {
+    let total_balances: u64;
+    if denom.eq(Nom::NAME) {
+        total_balances = app_client()
+            .query(|app: InnerApp| {
+                let mut total: u64 = 0;
+                let acc_iter = app.accounts.iter()?;
+                for acc in acc_iter {
+                    let balance: u64 = acc?.1.amount.into();
+                    total += balance;
+                }
+                Ok(total)
+            })
+            .await
+            .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+    } else {
+        total_balances = app_client()
+            .query(|app: InnerApp| {
+                let mut total: u64 = 0;
+                let acc_iter = app.bitcoin.accounts.iter()?;
+                for acc in acc_iter {
+                    let balance: u64 = acc?.1.amount.into();
+                    total += balance;
+                }
+                Ok(total)
+            })
+            .await
+            .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+    };
+    Ok(total_balances)
+}
+
 #[get("/bank/total/<denom>")]
-fn bank_total(denom: &str) -> Value {
-    json!({ "height": "0", "result": "0" })
+async fn bank_total(denom: &str) -> Result<Value, BadRequest<String>> {
+    let total_balances: u64 = get_total_balances(denom).await?;
+    Ok(json!({ "height": "0", "result":  total_balances.to_string()}))
 }
 
 #[get("/cosmos/staking/v1beta1/pool")]
@@ -496,14 +523,15 @@ fn staking_pool() -> Value {
     })
 }
 
-#[get("/cosmos/bank/v1beta1/supply/uoraibtc")]
-fn bank_supply_unom() -> Value {
-    json!({
+#[get("/cosmos/bank/v1beta1/supply/<denom>")]
+async fn bank_supply_unom(denom: &str) -> Result<Value, BadRequest<String>> {
+    let total_balances: u64 = get_total_balances(denom).await?;
+    Ok(json!({
         "amount": {
-            "denom": MAIN_NATIVE_TOKEN_DENOM,
-            "amount": "1"
+            "denom": denom,
+            "amount": total_balances.to_string()
         }
-    })
+    }))
 }
 
 #[get("/staking/pool")]

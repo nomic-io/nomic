@@ -59,7 +59,7 @@ fn app_client() -> AppClient<InnerApp, InnerApp, orga::tendermint::client::HttpC
 async fn generate_deposit_address(address: &Address) -> Result<DepositAddress> {
     info!("Generating deposit address for {}...", address);
     let (sigset, threshold) = app_client()
-        .query(|app| {
+        .query(|app: InnerApp| {
             Ok((
                 app.bitcoin.checkpoints.active_sigset()?,
                 app.bitcoin.checkpoints.config.sigset_threshold,
@@ -117,8 +117,8 @@ async fn set_recovery_address(nomic_account: NomicTestWallet) -> Result<()> {
     app_client()
         .with_wallet(nomic_account.wallet)
         .call(
-            move |app| build_call!(app.accounts.take_as_funding((MIN_FEE).into())),
-            move |app| {
+            move |app: InnerApp| build_call!(app.accounts.take_as_funding((MIN_FEE).into())),
+            move |app: InnerApp| {
                 build_call!(app
                     .bitcoin
                     .set_recovery_script(Adapter::new(nomic_account.script.clone())))
