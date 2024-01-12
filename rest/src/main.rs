@@ -115,7 +115,6 @@ async fn auth_accounts(addr_str: &str) -> Result<Value, BadRequest<String>> {
 #[get("/cosmos/auth/v1beta1/accounts/<addr_str>")]
 async fn auth_accounts2(addr_str: &str) -> Result<Value, BadRequest<String>> {
     let address: Address = addr_str.parse().unwrap();
-    let client = tm::HttpClient::new("http://localhost:26657").unwrap();
 
     let mut nonce: u64 = app_client()
         .query_root(|app| app.inner.inner.borrow().inner.inner.inner.nonce(address))
@@ -130,7 +129,7 @@ async fn auth_accounts2(addr_str: &str) -> Result<Value, BadRequest<String>> {
           "address": addr_str,
           "pub_key": {
             "@type": "/cosmos.crypto.secp256k1.PubKey",
-            "key": "Atl2HeBoLMorGAUPTH0hXk2Sx72reuw8x2V1puqwV+jN"
+            "key": ""
           },
           "account_number": "0",
           "sequence": nonce.to_string()
