@@ -41,15 +41,15 @@ impl<T: App + Call + Query + State + Default> Transport<ABCIPlugin<T>> for WebCl
     async fn query(&self, query: T::Query) -> Result<Store> {
         let query_bytes = query.encode()?;
         let query = hex::encode(query_bytes);
-        let maybe_height: Option<u32> = self.height.lock().unwrap().map(Into::into);
+        // let maybe_height: Option<u32> = self.height.lock().unwrap().map(Into::into);
 
         let mut opts = RequestInit::new();
         opts.method("GET");
         opts.mode(RequestMode::Cors);
-        let mut url = format!("{}/query/{}", self.rest_server, query);
-        if let Some(height) = maybe_height {
-            url.push_str(&format!("?height={}", height));
-        }
+        let url = format!("{}/query/{}", self.rest_server, query);
+        // if let Some(height) = maybe_height {
+        //     url.push_str(&format!("?height={}", height));
+        // }
 
         let request = Request::new_with_str_and_init(&url, &opts)
             .map_err(|e| Error::App(format!("{:?}", e)))?;
