@@ -10,6 +10,7 @@ use nomic::app::Dest;
 use nomic::app::IbcDest;
 use nomic::app::InnerApp;
 use nomic::app::Nom;
+use nomic::bitcoin::Config;
 use nomic::bitcoin::Nbtc;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::constants::BTC_NATIVE_TOKEN_DENOM;
@@ -32,6 +33,7 @@ use orga::plugins::MIN_FEE;
 use orga::prelude::*;
 use orga::{client::AppClient, tendermint::client::HttpClient};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::convert::TryInto;
 use std::fs::Permissions;
 use std::os::unix::fs::PermissionsExt;
@@ -100,6 +102,7 @@ pub enum Command {
     RelayOpKeys(RelayOpKeysCmd),
     SetRecoveryAddress(SetRecoveryAddressCmd),
     SigningStatus(SigningStatusCmd),
+    BitcoinConfig(BitcoinConfigCmd),
 }
 
 impl Command {
@@ -160,6 +163,7 @@ impl Command {
                 RelayOpKeys(cmd) => cmd.run().await,
                 SetRecoveryAddress(cmd) => cmd.run().await,
                 SigningStatus(cmd) => cmd.run().await,
+                BitcoinConfig(cmd) => cmd.run().await,
             }
         })
     }
@@ -701,11 +705,13 @@ impl BalanceCmd {
 
         let client = self.config.client();
 
-        let balance = client.query(|app| app.accounts.balance(address)).await?;
+        let balance = client
+            .query(|app: InnerApp| app.accounts.balance(address))
+            .await?;
         println!("{} {}", balance, MAIN_NATIVE_TOKEN_DENOM);
 
         let balance = client
-            .query(|app| app.bitcoin.accounts.balance(address))
+            .query(|app: InnerApp| app.bitcoin.accounts.balance(address))
             .await?;
         println!("{} {}", balance, BTC_NATIVE_TOKEN_DENOM);
 
@@ -1815,6 +1821,23 @@ impl SigningStatusCmd {
             "Checkpoint is at {:.2}% of the minimum required voting power",
             lowest_frac * 100.0
         );
+
+        Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct BitcoinConfigCmd {
+    #[clap(flatten)]
+    config: nomic::network::Config,
+}
+
+impl BitcoinConfigCmd {
+    async fn run(&self) -> Result<()> {
+        let client = self.config.client();
+        let config: Config = client.query(|app: InnerApp| Ok(app.bitcoin.config)).await?;
+        let value = json!(config);
+        println!("{}", value);
 
         Ok(())
     }
