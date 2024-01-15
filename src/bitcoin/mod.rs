@@ -71,7 +71,7 @@ pub const SIGSET_THRESHOLD: (u64, u64) = (9, 10);
 pub const SIGSET_THRESHOLD: (u64, u64) = (2, 3);
 
 /// The configuration parameters for the Bitcoin module.
-#[orga(skip(Default), version = 3)]
+#[orga(skip(Default), version = 4)]
 pub struct Config {
     /// The minimum number of checkpoints that must be produced before
     /// withdrawals are enabled.
@@ -107,16 +107,16 @@ pub struct Config {
     /// If a signer does not submit signatures for this many consecutive
     /// checkpoints, they are considered offline and are removed from the
     /// signatory set (jailed) and slashed.
-    #[orga(version(V1, V2, V3))]
+    #[orga(version(V1, V2, V3, V4))]
     pub max_offline_checkpoints: u32,
     /// The minimum number of confirmations a checkpoint must have on the
     /// Bitcoin network before it is considered confirmed. Note that in the
     /// current implementation, the actual number of confirmations required is
     /// `min_checkpoint_confirmations + 1`.
-    #[orga(version(V2, V3))]
+    #[orga(version(V2, V3, V4))]
     pub min_checkpoint_confirmations: u32,
     /// The maximum amount of BTC that can be held in the network, in satoshis.
-    #[orga(version(V2, V3))]
+    #[orga(version(V2, V3, V4))]
     pub capacity_limit: u64,
 }
 
@@ -159,6 +159,26 @@ impl MigrateFrom<ConfigV1> for ConfigV2 {
 
 impl MigrateFrom<ConfigV2> for ConfigV3 {
     fn migrate_from(value: ConfigV2) -> OrgaResult<Self> {
+        // Migrating to set min_checkpoint_confirmations to 0 and testnet
+        // capacity limit to 100 BTC
+        Ok(Self {
+            min_withdrawal_checkpoints: value.min_withdrawal_checkpoints,
+            min_deposit_amount: value.min_deposit_amount,
+            min_withdrawal_amount: value.min_withdrawal_amount,
+            max_withdrawal_amount: value.max_withdrawal_amount,
+            max_withdrawal_script_length: value.max_withdrawal_script_length,
+            transfer_fee: value.transfer_fee,
+            min_confirmations: value.min_confirmations,
+            units_per_sat: value.units_per_sat,
+            max_offline_checkpoints: value.max_offline_checkpoints,
+            min_checkpoint_confirmations: 0,
+            capacity_limit: Config::bitcoin().capacity_limit,
+        })
+    }
+}
+
+impl MigrateFrom<ConfigV3> for ConfigV4 {
+    fn migrate_from(value: ConfigV3) -> OrgaResult<Self> {
         // Migrating to set min_checkpoint_confirmations to 0 and testnet
         // capacity limit to 100 BTC
         Ok(Self {
