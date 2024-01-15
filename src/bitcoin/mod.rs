@@ -81,8 +81,6 @@ pub struct Config {
     pub min_deposit_amount: u64,
     /// The minimum amount of BTC a withdrawal must withdraw, in satoshis.
     pub min_withdrawal_amount: u64,
-    /// TODO: remove this, not used
-    pub max_withdrawal_amount: u64,
     /// The maximum length of a withdrawal output script, in bytes.
     pub max_withdrawal_script_length: u64,
     /// The fee charged for an nBTC transfer, in micro-satoshis.
@@ -126,7 +124,6 @@ impl MigrateFrom<ConfigV0> for ConfigV1 {
             min_withdrawal_checkpoints: value.min_withdrawal_checkpoints,
             min_deposit_amount: value.min_deposit_amount,
             min_withdrawal_amount: value.min_withdrawal_amount,
-            max_withdrawal_amount: value.max_withdrawal_amount,
             max_withdrawal_script_length: value.max_withdrawal_script_length,
             transfer_fee: value.transfer_fee,
             min_confirmations: value.min_confirmations,
@@ -145,7 +142,6 @@ impl MigrateFrom<ConfigV1> for ConfigV2 {
             min_withdrawal_checkpoints: value.min_withdrawal_checkpoints,
             min_deposit_amount: value.min_deposit_amount,
             min_withdrawal_amount: value.min_withdrawal_amount,
-            max_withdrawal_amount: value.max_withdrawal_amount,
             max_withdrawal_script_length: value.max_withdrawal_script_length,
             transfer_fee: value.transfer_fee,
             min_confirmations: value.min_confirmations,
@@ -165,7 +161,6 @@ impl MigrateFrom<ConfigV2> for ConfigV3 {
             min_withdrawal_checkpoints: value.min_withdrawal_checkpoints,
             min_deposit_amount: value.min_deposit_amount,
             min_withdrawal_amount: value.min_withdrawal_amount,
-            max_withdrawal_amount: value.max_withdrawal_amount,
             max_withdrawal_script_length: value.max_withdrawal_script_length,
             transfer_fee: value.transfer_fee,
             min_confirmations: value.min_confirmations,
@@ -181,9 +176,8 @@ impl Config {
     fn bitcoin() -> Self {
         Self {
             min_withdrawal_checkpoints: 4,
-            min_deposit_amount: 600,
+            min_deposit_amount: 1,
             min_withdrawal_amount: 600,
-            max_withdrawal_amount: 64,
             max_withdrawal_script_length: 64,
             transfer_fee: 1_000_000,
             #[cfg(feature = "testnet")]
@@ -196,7 +190,7 @@ impl Config {
             #[cfg(feature = "testnet")]
             capacity_limit: 100 * 100_000_000, // 100 BTC
             #[cfg(not(feature = "testnet"))]
-            capacity_limit: 21 * 100_000_000, // 21 BTC
+            capacity_limit: 19 * 100_000_000, // 19 BTC
         }
     }
 
