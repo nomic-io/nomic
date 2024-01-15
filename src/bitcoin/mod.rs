@@ -196,7 +196,7 @@ impl Config {
             #[cfg(feature = "testnet")]
             capacity_limit: 100 * 100_000_000, // 100 BTC
             #[cfg(not(feature = "testnet"))]
-            capacity_limit: 21 * 100_000_000, // 21 BTC
+            capacity_limit: 19 * 100_000_000, // 21 BTC
         }
     }
 
