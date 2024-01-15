@@ -78,7 +78,7 @@ async fn validators() -> Value {
              "operator_address": validator.address.to_string(),
              "consensus_pubkey": {
                  "@type": "/cosmos.crypto.ed25519.PubKey",
-                 "key": cons_key
+                 "key": base64::encode(cons_key)
              },
              "jailed": validator.jailed,
              "status": status,
@@ -156,7 +156,7 @@ async fn validator(address: &str) -> Value {
              "operator_address": validator.address.to_string(),
              "consensus_pubkey": {
                  "@type": "/cosmos.crypto.ed25519.PubKey",
-                 "key": cons_key
+                 "key": base64::encode(cons_key)
              },
              "jailed": validator.jailed,
              "status": status,
