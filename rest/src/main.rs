@@ -617,6 +617,54 @@ async fn distribution_delegators_rewards(address: &str) -> Value {
     })
 }
 
+#[get("/cosmos/distribution/v1beta1/delegators/<address>/rewards/<validator_address>")]
+async fn distribution_delegators_rewards_for_validator(address: &str, validator_address: &str) -> Value {
+    let address: Address = address.parse().unwrap();
+    let validator_address: Address = validator_address.parse().unwrap();
+
+    let delegations: Vec<(Address, DelegationInfo)> = app_client()
+        .query(|app: InnerApp| app.staking.delegations(address))
+        .await
+        .unwrap();
+
+    let delegation: &DelegationInfo = delegations.iter().
+        find(|(validator, _delegation)| *validator == validator_address).
+        map(|(_validator, delegation)| delegation).
+        unwrap();
+
+    let mut rewards = vec![];
+
+    let liquid_nom: u64 = delegation
+        .liquid
+        .iter()
+        .find(|(denom, _)| *denom == Nom::INDEX)
+        .unwrap_or(&(0, 0.into()))
+        .1
+        .into();
+
+    rewards.push(json!({
+        "denom": "unom",
+        "amount": liquid_nom.to_string(),
+    }));
+
+    let liquid_nbtc: u64 = delegation
+        .liquid
+        .iter()
+        .find(|(denom, _)| *denom == Nbtc::INDEX)
+        .unwrap_or(&(0, 0.into()))
+        .1
+        .into();
+
+    rewards.push(json!({
+        "denom": "usat",
+        "amount": liquid_nbtc.to_string(),
+    }));
+
+    json!({
+      "rewards": rewards
+    })
+}
+
 #[get("/cosmos/mint/v1beta1/inflation")]
 async fn minting_inflation() -> Result<Value, BadRequest<String>> {
     let validators = app_client()
@@ -755,6 +803,7 @@ fn rocket() -> _ {
             staking_delegators_unbonding_delegations,
             staking_delegators_unbonding_delegations_2,
             distribution_delegators_rewards,
+            distribution_delegators_rewards_for_validator,
             staking_delegations_2,
             minting_inflation,
             staking_pool,
