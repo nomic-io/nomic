@@ -7,7 +7,7 @@ use crate::bitcoin::adapter::Adapter;
 use crate::bitcoin::{Bitcoin, Nbtc};
 use crate::cosmos::{Chain, Cosmos, Proof};
 
-use crate::constants::{BTC_NATIVE_TOKEN_DENOM, MAIN_NATIVE_TOKEN_DENOM};
+use crate::constants::{BTC_NATIVE_TOKEN_DENOM, IBC_FEE, MAIN_NATIVE_TOKEN_DENOM};
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::{Script, Transaction, TxOut};
 use orga::coins::{
@@ -100,7 +100,7 @@ pub struct InnerApp {
 
 #[orga]
 impl InnerApp {
-    pub const CONSENSUS_VERSION: u8 = 10;
+    pub const CONSENSUS_VERSION: u8 = 11;
 
     #[call]
     pub fn deposit_rewards(&mut self) -> Result<()> {
@@ -1058,7 +1058,7 @@ impl Describe for Dest {
 }
 
 pub fn ibc_fee(amount: Amount) -> Result<Amount> {
-    let fee_rate: orga::coins::Decimal = "0.005".parse().unwrap();
+    let fee_rate: orga::coins::Decimal = IBC_FEE.to_string().parse().unwrap();
     (amount * fee_rate)?.amount()
 }
 

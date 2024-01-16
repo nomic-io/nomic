@@ -5,6 +5,7 @@ use crate::app::Dest;
 use crate::app_client;
 use crate::bitcoin::deposit_index::{Deposit, DepositIndex};
 use crate::bitcoin::{adapter::Adapter, header_queue::WrappedHeader};
+use crate::constants::BRIDGE_FEE_RATE;
 use crate::error::Error;
 use crate::error::Result;
 use crate::utils::time_now;
@@ -226,7 +227,7 @@ impl Relayer {
                         let deposits_enabled = building.deposits_enabled;
                         let sigset = RawSignatorySet::new(
                             app.bitcoin.checkpoints.active_sigset()?,
-                            0.015,
+                            BRIDGE_FEE_RATE,
                             est_miner_fee as f64 / 100_000_000.0,
                             deposits_enabled,
                         );

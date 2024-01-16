@@ -15,7 +15,7 @@ use bitcoin::Script;
 use bitcoin::{util::merkleblock::PartialMerkleTree, Transaction};
 use checkpoint::CheckpointQueue;
 use header_queue::HeaderQueue;
-use orga::coins::{Accounts, Address, Amount, Coin, Give, Symbol, Take};
+use orga::coins::{Accounts, Address, Amount, Coin, Give, Symbol};
 use orga::collections::Map;
 use orga::collections::{Deque, Next};
 use orga::context::{Context, GetContext};
@@ -23,9 +23,9 @@ use orga::describe::Describe;
 use orga::encoding::{Decode, Encode, LengthVec, Terminated};
 use orga::migrate::{Migrate, MigrateFrom};
 use orga::orga;
+use orga::plugins::Paid;
 #[cfg(feature = "full")]
 use orga::plugins::Validators;
-use orga::plugins::{Paid, ValidatorEntry};
 use orga::plugins::{Signer, Time};
 use orga::prelude::FieldCall;
 use orga::query::FieldQuery;
@@ -611,9 +611,9 @@ impl Bitcoin {
         let mut checkpoint_tx = building_checkpoint_batch.get_mut(0)?.unwrap();
         checkpoint_tx.input.push_back(input)?;
 
-        let mut minted_nbtc = Nbtc::mint(value);
-        let deposit_fee = minted_nbtc.take(calc_deposit_fee(value))?;
-        self.reward_pool.give(deposit_fee)?;
+        let minted_nbtc = Nbtc::mint(value);
+        // let deposit_fee = minted_nbtc.take(calc_deposit_fee(value))?;
+        // self.reward_pool.give(deposit_fee)?;
 
         self.checkpoints
             .building_mut()?
@@ -942,6 +942,8 @@ impl Bitcoin {
     /// from the validator set and slashing their stake.
     #[cfg(feature = "full")]
     fn offline_signers(&mut self) -> Result<Vec<ConsensusKey>> {
+        use orga::plugins::ValidatorEntry;
+
         let mut validators = self
             .context::<Validators>()
             .ok_or_else(|| OrgaError::App("No validator context found".to_string()))?
@@ -1356,7 +1358,7 @@ mod tests {
         push_withdrawal();
         maybe_step();
         let change_rates = btc.borrow().change_rates(3000, 5100, 0)?;
-        assert_eq!(change_rates.withdrawal, 8649);
+        assert_eq!(change_rates.withdrawal, 8648);
         assert_eq!(change_rates.sigset_change, 4090);
         assert_eq!(btc.borrow().checkpoints.signing()?.unwrap().sigset.index, 5);
         let change_rates = btc.borrow().change_rates(3000, 5100, 5)?;

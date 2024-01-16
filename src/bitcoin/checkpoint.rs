@@ -6,10 +6,14 @@ use super::{
     threshold_sig::{Signature, ThresholdSig},
     Xpub,
 };
-use crate::error::{Error, Result};
 use crate::{
     app::Dest,
     bitcoin::{signatory::derive_pubkey, Nbtc},
+    constants::{FEE_RATE, MAX_FEE_RATE, MIN_FEE_RATE},
+};
+use crate::{
+    constants::DEFAULT_FEE_RATE,
+    error::{Error, Result},
 };
 use bitcoin::hashes::Hash;
 use bitcoin::{blockdata::transaction::EcdsaSighashType, Sequence, Transaction, TxIn, TxOut};
@@ -432,9 +436,6 @@ impl Batch {
     }
 }
 
-/// The default fee rate to be used to pay miner fees, in satoshis per virtual byte.
-pub const DEFAULT_FEE_RATE: u64 = 10;
-
 /// `Checkpoint` is the main structure which coordinates the network's
 /// management of funds on the Bitcoin blockchain.
 ///
@@ -458,7 +459,7 @@ pub const DEFAULT_FEE_RATE: u64 = 10;
 /// "intermediate emergency disbursal transaction" (in the second batch of the
 /// `batches` deque), and one or more "final emergency disbursal transactions"
 /// (in the first batch of the `batches` deque).
-#[orga(skip(Default), version = 3)]
+#[orga(skip(Default), version = 4)]
 #[derive(Debug)]
 pub struct Checkpoint {
     /// The status of the checkpoint, either `Building`, `Signing`, or
@@ -478,7 +479,7 @@ pub struct Checkpoint {
     /// disbursal.
     ///
     /// These transfers can be initiated by a simple nBTC send or by a deposit.
-    #[orga(version(V2, V3))]
+    #[orga(version(V2, V3, V4))]
     pub pending: Map<Dest, Coin<Nbtc>>,
 
     /// The fee rate to use when calculating the miner fee for the transactions
@@ -489,20 +490,20 @@ pub struct Checkpoint {
     /// faster than the target confirmation speed (implying the network is
     /// paying too low of a fee), and being decreased if checkpoints are
     /// confirmed faster than the target confirmation speed.
-    #[orga(version(V3))]
+    #[orga(version(V3, V4))]
     pub fee_rate: u64,
 
     /// The height of the Bitcoin block at which the checkpoint was fully signed
     /// and ready to be broadcast to the Bitcoin network, used by the fee
     /// adjustment algorithm to determine if the checkpoint was confirmed too
     /// fast or too slow.
-    #[orga(version(V3))]
+    #[orga(version(V3, V4))]
     pub signed_at_btc_height: Option<u32>,
 
     /// Whether or not to honor relayed deposits made against this signatory
     /// set. This can be used, for example, to enforce a cap on deposits into
     /// the system.
-    #[orga(version(V3))]
+    #[orga(version(V3, V4))]
     pub deposits_enabled: bool,
 
     /// The signatory set associated with the checkpoint. Note that deposits to
@@ -538,6 +539,20 @@ impl MigrateFrom<CheckpointV2> for CheckpointV3 {
             signed_at_btc_height: None,
             sigset: value.sigset,
             deposits_enabled: true,
+        })
+    }
+}
+
+impl MigrateFrom<CheckpointV3> for CheckpointV4 {
+    fn migrate_from(value: CheckpointV3) -> OrgaResult<Self> {
+        Ok(Self {
+            status: value.status,
+            batches: value.batches,
+            pending: value.pending,
+            fee_rate: FEE_RATE,
+            signed_at_btc_height: value.signed_at_btc_height,
+            sigset: value.sigset,
+            deposits_enabled: value.deposits_enabled,
         })
     }
 }
@@ -795,7 +810,7 @@ impl Checkpoint {
 }
 
 /// Configuration parameters used in processing checkpoints.
-#[orga(skip(Default), version = 2)]
+#[orga(skip(Default), version = 3)]
 #[derive(Clone)]
 pub struct Config {
     /// The minimum amount of time between the creation of checkpoints, in
@@ -854,34 +869,34 @@ pub struct Config {
     /// will be adjusted up if the checkpoint transaction is not confirmed
     /// within the target number of blocks, and will be adjusted down if the
     /// checkpoint transaction faster than the target.
-    #[orga(version(V1, V2))]
+    #[orga(version(V1, V2, V3))]
     pub target_checkpoint_inclusion: u32,
 
     /// The lower bound to use when adjusting the fee rate of the checkpoint
     /// transaction, in satoshis per virtual byte.
-    #[orga(version(V1, V2))]
+    #[orga(version(V1, V2, V3))]
     pub min_fee_rate: u64,
 
     /// The upper bound to use when adjusting the fee rate of the checkpoint
     /// transaction, in satoshis per virtual byte.
-    #[orga(version(V1, V2))]
+    #[orga(version(V1, V2, V3))]
     pub max_fee_rate: u64,
 
     /// The threshold of signatures required to spend reserve scripts, as a
     /// ratio represented by a tuple, `(numerator, denominator)`.
     ///
     /// For example, `(9, 10)` means the threshold is 90% of the signatory set.
-    #[orga(version(V1, V2))]
+    #[orga(version(V1, V2, V3))]
     pub sigset_threshold: (u64, u64),
 
     /// The minimum amount of nBTC an account must hold to be eligible for an
     /// output in the emergency disbursal.
-    #[orga(version(V1, V2))]
+    #[orga(version(V1, V2, V3))]
     pub emergency_disbursal_min_tx_amt: u64,
 
     /// The amount of time between the creation of a checkpoint and when the
     /// associated emergency disbursal transactions can be spent, in seconds.
-    #[orga(version(V1, V2))]
+    #[orga(version(V1, V2, V3))]
     pub emergency_disbursal_lock_time_interval: u32,
 
     /// The maximum size of a final emergency disbursal transaction, in virtual
@@ -889,7 +904,7 @@ pub struct Config {
     ///
     /// The outputs to be included in final emergency disbursal transactions
     /// will be distributed across multiple transactions around this size.
-    #[orga(version(V1, V2))]
+    #[orga(version(V1, V2, V3))]
     pub emergency_disbursal_max_tx_size: u64,
 
     /// The maximum number of unconfirmed checkpoints before the network will
@@ -905,7 +920,7 @@ pub struct Config {
     /// This will also stop the fee rate from being adjusted too high if the
     /// issue is simply with relayers failing to report the confirmation of the
     /// checkpoint transactions.
-    #[orga(version(V2))]
+    #[orga(version(V2, V3))]
     pub max_unconfirmed_checkpoints: u32,
 }
 
@@ -917,14 +932,14 @@ impl MigrateFrom<ConfigV0> for ConfigV1 {
             max_inputs: value.max_inputs,
             max_outputs: value.max_outputs,
             max_age: value.max_age,
-            target_checkpoint_inclusion: ConfigV2::default().target_checkpoint_inclusion,
-            min_fee_rate: ConfigV2::default().min_fee_rate,
-            max_fee_rate: ConfigV2::default().max_fee_rate,
-            sigset_threshold: ConfigV2::default().sigset_threshold,
-            emergency_disbursal_min_tx_amt: ConfigV2::default().emergency_disbursal_min_tx_amt,
-            emergency_disbursal_lock_time_interval: ConfigV2::default()
+            target_checkpoint_inclusion: ConfigV3::default().target_checkpoint_inclusion,
+            min_fee_rate: ConfigV3::default().min_fee_rate,
+            max_fee_rate: ConfigV3::default().max_fee_rate,
+            sigset_threshold: ConfigV3::default().sigset_threshold,
+            emergency_disbursal_min_tx_amt: ConfigV3::default().emergency_disbursal_min_tx_amt,
+            emergency_disbursal_lock_time_interval: ConfigV3::default()
                 .emergency_disbursal_lock_time_interval,
-            emergency_disbursal_max_tx_size: ConfigV2::default().emergency_disbursal_max_tx_size,
+            emergency_disbursal_max_tx_size: ConfigV3::default().emergency_disbursal_max_tx_size,
         })
     }
 }
@@ -944,7 +959,27 @@ impl MigrateFrom<ConfigV1> for ConfigV2 {
             emergency_disbursal_min_tx_amt: value.emergency_disbursal_min_tx_amt,
             emergency_disbursal_lock_time_interval: value.emergency_disbursal_lock_time_interval,
             emergency_disbursal_max_tx_size: value.emergency_disbursal_max_tx_size,
-            ..Default::default()
+            max_unconfirmed_checkpoints: Config::default().max_unconfirmed_checkpoints,
+        })
+    }
+}
+
+impl MigrateFrom<ConfigV2> for ConfigV3 {
+    fn migrate_from(value: ConfigV2) -> OrgaResult<Self> {
+        Ok(Self {
+            min_checkpoint_interval: value.min_checkpoint_interval,
+            max_checkpoint_interval: value.max_checkpoint_interval,
+            max_inputs: value.max_inputs,
+            max_outputs: value.max_outputs,
+            max_age: value.max_age,
+            target_checkpoint_inclusion: value.target_checkpoint_inclusion,
+            min_fee_rate: MIN_FEE_RATE,
+            max_fee_rate: MAX_FEE_RATE,
+            sigset_threshold: value.sigset_threshold,
+            emergency_disbursal_min_tx_amt: value.emergency_disbursal_min_tx_amt,
+            emergency_disbursal_lock_time_interval: value.emergency_disbursal_lock_time_interval,
+            emergency_disbursal_max_tx_size: value.emergency_disbursal_max_tx_size,
+            max_unconfirmed_checkpoints: value.max_unconfirmed_checkpoints,
         })
     }
 }
@@ -967,8 +1002,8 @@ impl Config {
             max_outputs: 200,
             max_age: 60 * 60 * 24 * 7 * 3,
             target_checkpoint_inclusion: 2,
-            min_fee_rate: 2, // relay threshold is 1 sat/vbyte
-            max_fee_rate: 200,
+            min_fee_rate: MIN_FEE_RATE, // relay threshold is 1 sat/vbyte
+            max_fee_rate: MAX_FEE_RATE,
             sigset_threshold: SIGSET_THRESHOLD,
             emergency_disbursal_min_tx_amt: 1000,
             #[cfg(feature = "testnet")]
@@ -2205,18 +2240,20 @@ impl CheckpointQueue {
 /// Takes a previous fee rate and returns a new fee rate, adjusted up or down by
 /// 25%. The new fee rate is capped at the maximum and minimum fee rates
 /// specified in the given config.
-pub fn adjust_fee_rate(prev_fee_rate: u64, up: bool, config: &Config) -> u64 {
-    if up {
-        (prev_fee_rate * 5 / 4).max(prev_fee_rate + 1)
-    } else {
-        (prev_fee_rate * 3 / 4).min(prev_fee_rate - 1)
-    }
-    .min(config.max_fee_rate)
-    .max(config.min_fee_rate)
+pub fn adjust_fee_rate(_prev_fee_rate: u64, _up: bool, _config: &Config) -> u64 {
+    // if up {
+    //     (prev_fee_rate * 5 / 4).max(prev_fee_rate + 1)
+    // } else {
+    //     (prev_fee_rate * 3 / 4).min(prev_fee_rate - 1)
+    // }
+    // .min(config.max_fee_rate)
+    // .max(config.min_fee_rate)
+    0
 }
 
 #[cfg(test)]
 mod test {
+    use crate::constants::FEE_RATE;
     #[cfg(feature = "full")]
     use crate::utils::set_time;
 
@@ -2415,13 +2452,14 @@ mod test {
     #[test]
     fn adjust_fee_rate() {
         let config = Config::default();
-        assert_eq!(super::adjust_fee_rate(100, true, &config), 125);
-        assert_eq!(super::adjust_fee_rate(100, false, &config), 75);
-        assert_eq!(super::adjust_fee_rate(2, true, &config), 3);
-        assert_eq!(super::adjust_fee_rate(0, true, &config), 2);
-        assert_eq!(super::adjust_fee_rate(2, false, &config), 2);
-        assert_eq!(super::adjust_fee_rate(200, true, &config), 200);
-        assert_eq!(super::adjust_fee_rate(300, true, &config), 200);
+        assert_eq!(super::adjust_fee_rate(100, true, &config), 0);
+        // assert_eq!(super::adjust_fee_rate(100, true, &config), 125);
+        // assert_eq!(super::adjust_fee_rate(100, false, &config), 75);
+        // assert_eq!(super::adjust_fee_rate(2, true, &config), 3);
+        // assert_eq!(super::adjust_fee_rate(0, true, &config), 2);
+        // assert_eq!(super::adjust_fee_rate(2, false, &config), 2);
+        // assert_eq!(super::adjust_fee_rate(200, true, &config), 200);
+        // assert_eq!(super::adjust_fee_rate(300, true, &config), 200);
     }
 
     #[cfg(feature = "full")]
@@ -2532,14 +2570,14 @@ mod test {
         maybe_step(10);
 
         assert_eq!(queue.borrow().len().unwrap(), 1);
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 10);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, FEE_RATE);
 
         set_time(1_000);
         maybe_step(10);
 
         assert_eq!(queue.borrow().len().unwrap(), 2);
         assert!(queue.borrow().last_completed_index().is_err());
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 10);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, FEE_RATE);
 
         sign_cp(11);
 
@@ -2561,7 +2599,7 @@ mod test {
         sign_cp(11);
 
         assert_eq!(queue.borrow().len().unwrap(), 3);
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 10);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, FEE_RATE);
 
         set_time(3_000);
         push_deposit();
@@ -2569,7 +2607,7 @@ mod test {
         sign_cp(11);
 
         assert_eq!(queue.borrow().len().unwrap(), 4);
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 10);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, FEE_RATE);
 
         set_time(4_000);
         push_deposit();
@@ -2577,7 +2615,7 @@ mod test {
         sign_cp(12);
 
         assert_eq!(queue.borrow().len().unwrap(), 5);
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 10);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, FEE_RATE);
 
         set_time(5_000);
         push_deposit();
@@ -2585,7 +2623,7 @@ mod test {
         sign_cp(13);
 
         assert_eq!(queue.borrow().len().unwrap(), 6);
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 12);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, FEE_RATE);
 
         set_time(6_000);
         push_deposit();
@@ -2593,7 +2631,7 @@ mod test {
         sign_cp(13);
 
         assert_eq!(queue.borrow().len().unwrap(), 7);
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 12);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, FEE_RATE);
 
         set_time(7_000);
         push_deposit();
@@ -2601,7 +2639,7 @@ mod test {
         sign_cp(14);
 
         assert_eq!(queue.borrow().len().unwrap(), 8);
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 15);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, FEE_RATE);
 
         confirm_cp(5, 14);
         set_time(8_000);
@@ -2610,7 +2648,7 @@ mod test {
         sign_cp(15);
 
         assert_eq!(queue.borrow().len().unwrap(), 9);
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 15);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, FEE_RATE);
 
         confirm_cp(7, 15);
         set_time(9_000);
@@ -2619,7 +2657,7 @@ mod test {
         sign_cp(16);
 
         assert_eq!(queue.borrow().len().unwrap(), 10);
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 11);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, FEE_RATE);
 
         set_time(10_000);
         push_deposit();
@@ -2627,7 +2665,7 @@ mod test {
         sign_cp(17);
 
         assert_eq!(queue.borrow().len().unwrap(), 11);
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 11);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, FEE_RATE);
     }
 
     #[cfg(feature = "full")]

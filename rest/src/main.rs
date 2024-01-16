@@ -3,7 +3,10 @@ extern crate rocket;
 
 use nomic::{
     app::{InnerApp, Nom},
-    bitcoin::Nbtc,
+    bitcoin::{
+        checkpoint::{CheckpointQueue, Config as CheckpointConfig},
+        Config, Nbtc,
+    },
     constants::MAIN_NATIVE_TOKEN_DENOM,
     orga::{
         client::{wallet::Unsigned, AppClient},
@@ -13,8 +16,8 @@ use nomic::{
 };
 use rocket::response::status::BadRequest;
 use rocket::serde::json::{json, Value};
-use std::collections::HashMap;
 use std::sync::Arc;
+use std::{collections::HashMap, ops::Deref};
 use tokio::sync::RwLock;
 
 use tendermint_rpc as tm;
@@ -337,6 +340,48 @@ async fn staking_delegators_delegations_2(address: &str) -> Result<Value, BadReq
     ] }))
 }
 
+#[get("/bitcoin/config")]
+async fn bitcoin_config() -> Result<Value, BadRequest<String>> {
+    let config: Config = app_client()
+        .query(|app: InnerApp| Ok(app.bitcoin.config))
+        .await
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+
+    Ok(json!(config))
+}
+
+#[get("/bitcoin/checkpoint/config")]
+async fn bitcoin_checkpoint_config() -> Result<Value, BadRequest<String>> {
+    let config: CheckpointConfig = app_client()
+        .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.config))
+        .await
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+
+    Ok(json!(config))
+}
+
+#[get("/bitcoin/checkpoint")]
+async fn bitcoin_latest_checkpoint() -> Result<Value, BadRequest<String>> {
+    let checkpoint_queue: CheckpointQueue = app_client()
+        .query(|app: InnerApp| Ok(app.bitcoin.checkpoints))
+        .await
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+
+    let index = checkpoint_queue.index;
+    let list_checkpoints = checkpoint_queue.all().unwrap();
+    if list_checkpoints.len() == 0 {
+        return Ok(json!({}));
+    }
+    let current_checkpoint_ref = list_checkpoints.last().unwrap();
+    let current_checkpoint = &current_checkpoint_ref.1;
+    Ok(json!({
+        "index": index,
+        "confirmed_index": checkpoint_queue.confirmed_index,
+        "current_fee_rate": current_checkpoint.fee_rate,
+        "status": current_checkpoint.status
+    }))
+}
+
 #[get("/cosmos/staking/v1beta1/delegators/<address>/unbonding_delegations")]
 fn staking_delegators_unbonding_delegations(address: &str) -> Value {
     json!({ "unbonding_responses": [], "pagination": { "next_key": null, "total": "0" } })
@@ -617,6 +662,9 @@ fn rocket() -> _ {
             ibc_apps_transfer_params,
             ibc_applications_transfer_params,
             bank_supply_unom,
+            bitcoin_config,
+            bitcoin_checkpoint_config,
+            bitcoin_latest_checkpoint
         ],
     )
 }
