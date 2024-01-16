@@ -1,7 +1,6 @@
 #[macro_use]
 extern crate rocket;
 
-use chrono::Utc;
 use nomic::{
     app::{InnerApp, Nom},
     bitcoin::Nbtc,
@@ -799,13 +798,14 @@ fn rocket() -> _ {
             txs2,
             query,
             staking_delegators_delegations,
-            // staking_delegators_delegations_2,
+            staking_delegators_delegations_2,
             staking_delegators_unbonding_delegations,
             staking_delegators_unbonding_delegations_2,
             distribution_delegators_rewards,
             distribution_delegators_rewards_for_validator,
             staking_delegations_2,
             minting_inflation,
+            minting_inflation_2,
             staking_pool,
             staking_pool_2,
             bank_total,
