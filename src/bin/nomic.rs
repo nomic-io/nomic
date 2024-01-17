@@ -805,7 +805,7 @@ impl ValidatorsCmd {
         let mut validators: Vec<ValidatorQueryInfo> = self
             .config
             .client()
-            .query(|app: InnerApp| app.staking.all_validators())
+            .query(|app: InnerApp| app.staking.validators())
             .await?;
 
         validators.sort_by(|a, b| b.amount_staked.cmp(&a.amount_staked));
@@ -1579,13 +1579,13 @@ impl UpgradeStatusCmd {
             return Ok(());
         }
 
-        let all_validators: Vec<ValidatorQueryInfo> = client
-            .query(|app: InnerApp| app.staking.all_validators())
+        let validators: Vec<ValidatorQueryInfo> = client
+            .query(|app: InnerApp| app.staking.validators())
             .await?;
 
         let mut validator_names: HashMap<orga::coins::VersionedAddress, (String, u64)> =
             HashMap::new();
-        all_validators
+        validators
             .into_iter()
             .filter(|v| v.in_active_set)
             .for_each(|v| {
@@ -1802,7 +1802,7 @@ impl SigningStatusCmd {
                 missing_cons_keys.push((k, *xpub));
             }
         }
-        let all_vals = app.staking.all_validators()?;
+        let all_vals = app.staking.validators()?;
         for val in all_vals {
             if val.amount_staked == 0 {
                 continue;

@@ -10,14 +10,14 @@ use nomic::{
     constants::MAIN_NATIVE_TOKEN_DENOM,
     orga::{
         client::{wallet::Unsigned, AppClient},
-        coins::{Address, Amount, Decimal, DelegationInfo, Symbol, ValidatorQueryInfo},
+        coins::{Address, Amount, Decimal, DelegationInfo, Staking, Symbol, ValidatorQueryInfo},
         tendermint::client::HttpClient,
     },
 };
 use rocket::response::status::BadRequest;
 use rocket::serde::json::{json, Value};
+use std::collections::HashMap;
 use std::sync::Arc;
-use std::{collections::HashMap, ops::Deref};
 use tokio::sync::RwLock;
 
 use tendermint_rpc as tm;
@@ -484,7 +484,7 @@ async fn distribution_delegatrs_rewards_2(_address: &str) -> Value {
 #[get("/cosmos/mint/v1beta1/inflation")]
 async fn minting_inflation() -> Result<Value, BadRequest<String>> {
     let validators: Vec<ValidatorQueryInfo> = app_client()
-        .query(|app: InnerApp| app.staking.all_validators())
+        .query(|app: InnerApp| app.staking.validators())
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
@@ -504,7 +504,7 @@ async fn minting_inflation() -> Result<Value, BadRequest<String>> {
 #[get("/minting/inflation")]
 async fn minting_inflation_2() -> Result<Value, BadRequest<String>> {
     let validators: Vec<ValidatorQueryInfo> = app_client()
-        .query(|app: InnerApp| app.staking.all_validators())
+        .query(|app: InnerApp| app.staking.validators())
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
@@ -572,6 +572,32 @@ async fn staking_pool() -> Result<Value, BadRequest<String>> {
         "pool": {
             "bonded_tokens": staked.to_string(),
             "not_bonded_tokens": not_bonded.to_string()
+        }
+    }))
+}
+
+#[get("/cosmos/staking/v1beta1/validators")]
+async fn validators() -> Result<Value, BadRequest<String>> {
+    let validators: Vec<ValidatorQueryInfo> = app_client()
+        .query(|app: InnerApp| app.staking.validators())
+        .await
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+    Ok(json!(validators))
+}
+
+#[get("/cosmos/staking/v1beta1/params")]
+async fn staking_params() -> Result<Value, BadRequest<String>> {
+    let staking: Staking<Nom> = app_client()
+        .query(|app: InnerApp| Ok(app.staking))
+        .await
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+    Ok(json!({
+        "params": {
+            "unbonding_time": staking.unbonding_seconds,
+            "max_validators": staking.max_validators,
+            "max_entries": 7, // FIXME: nomic does not have this value,
+            "historical_entries": 1000, // FIXME: nomic does not have this value,
+            "bond_denom": Nom::NAME,
         }
     }))
 }
@@ -673,7 +699,9 @@ fn rocket() -> _ {
             bank_supply_unom,
             bitcoin_config,
             bitcoin_checkpoint_config,
-            bitcoin_latest_checkpoint
+            bitcoin_latest_checkpoint,
+            staking_params,
+            validators
         ],
     )
 }

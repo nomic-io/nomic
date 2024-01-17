@@ -169,10 +169,10 @@ impl OraiBtc {
 
     #[allow(non_snake_case)]
     #[wasm_bindgen(js_name=allValidators)]
-    pub async fn all_validators(&self) -> Result<Array, JsError> {
+    pub async fn validators(&self) -> Result<Array, JsError> {
         let validators = self
             .client
-            .query(|app: InnerApp| app.staking.all_validators())
+            .query(|app: InnerApp| app.staking.validators())
             .await?;
         Ok(validators
             .iter()
