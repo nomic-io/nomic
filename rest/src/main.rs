@@ -569,8 +569,10 @@ async fn staking_pool() -> Result<Value, BadRequest<String>> {
     let staked_u64: u64 = staked.into();
     let not_bonded = total_balances - staked_u64;
     Ok(json!({
-        "bonded_tokens": staked.to_string(),
-        "not_bonded_tokens": not_bonded.to_string()
+        "pool": {
+            "bonded_tokens": staked.to_string(),
+            "not_bonded_tokens": not_bonded.to_string()
+        }
     }))
 }
 
