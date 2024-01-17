@@ -560,11 +560,18 @@ async fn bank_total(denom: &str) -> Result<Value, BadRequest<String>> {
 }
 
 #[get("/cosmos/staking/v1beta1/pool")]
-fn staking_pool() -> Value {
-    json!({
-        "bonded_tokens": "0",
-        "not_bonded_tokens": "0"
-    })
+async fn staking_pool() -> Result<Value, BadRequest<String>> {
+    let staked: Amount = app_client()
+        .query(|app: InnerApp| app.staking.staked())
+        .await
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+    let total_balances: u64 = get_total_balances(Nom::NAME).await?;
+    let staked_u64: u64 = staked.into();
+    let not_bonded = total_balances - staked_u64;
+    Ok(json!({
+        "bonded_tokens": staked.to_string(),
+        "not_bonded_tokens": not_bonded.to_string()
+    }))
 }
 
 #[get("/cosmos/bank/v1beta1/supply/<denom>")]
