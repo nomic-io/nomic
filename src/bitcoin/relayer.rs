@@ -2,6 +2,7 @@ use super::signatory::Signatory;
 use super::SignatorySet;
 use super::SIGSET_THRESHOLD;
 use crate::app::Dest;
+use crate::app::InnerApp;
 use crate::app_client;
 use crate::bitcoin::deposit_index::{Deposit, DepositIndex};
 use crate::bitcoin::{adapter::Adapter, header_queue::WrappedHeader};
@@ -58,7 +59,7 @@ impl Relayer {
 
     async fn sidechain_block_hash(&self) -> Result<BlockHash> {
         let hash = app_client(&self.app_client_addr)
-            .query(|app| Ok(app.bitcoin.headers.hash()?))
+            .query(|app: InnerApp| Ok(app.bitcoin.headers.hash()?))
             .await?;
         let hash = BlockHash::from_slice(hash.as_slice())?;
         Ok(hash)
@@ -171,7 +172,7 @@ impl Relayer {
                         Some(sigset) => sigset,
                         None => {
                             app_client(app_client_addr)
-                                .query(|app| {
+                                .query(|app: InnerApp| {
                                     let cp = app.bitcoin.checkpoints.get(query.sigset_index)?;
                                     if !cp.deposits_enabled {
                                         return Err(orga::Error::App(
@@ -485,16 +486,16 @@ impl Relayer {
     }
 
     async fn relay_checkpoints(&mut self) -> Result<()> {
-        let last_checkpoint = app_client(&self.app_client_addr)
-            .query(|app| Ok(app.bitcoin.checkpoints.last_completed_tx()?))
+        let last_checkpoint: Adapter<bitcoin::Transaction> = app_client(&self.app_client_addr)
+            .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.last_completed_tx()?))
             .await?;
         info!("Last checkpoint tx: {}", last_checkpoint.txid());
 
         let mut relayed = HashSet::new();
 
         loop {
-            let txs = app_client(&self.app_client_addr)
-                .query(|app| Ok(app.bitcoin.checkpoints.completed_txs(1_000)?))
+            let txs: Vec<Adapter<bitcoin::Transaction>> = app_client(&self.app_client_addr)
+                .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.completed_txs(1_000)?))
                 .await?;
             for tx in txs {
                 if relayed.contains(&tx.txid()) {
@@ -544,7 +545,7 @@ impl Relayer {
         loop {
             let (confirmed_index, unconf_index, last_completed_index) =
                 match app_client(&self.app_client_addr)
-                    .query(|app| {
+                    .query(|app: InnerApp| {
                         let checkpoints = &app.bitcoin.checkpoints;
                         Ok((
                             checkpoints.confirmed_index,
@@ -578,14 +579,15 @@ impl Relayer {
                 }
             }
 
-            let (tx, btc_height, min_confs) = app_client(&self.app_client_addr)
-                .query(|app| {
-                    let cp = app.bitcoin.checkpoints.get(unconf_index)?;
-                    let btc_height = app.bitcoin.headers.height()?;
-                    let min_confs = app.bitcoin.config.min_checkpoint_confirmations;
-                    Ok((cp.checkpoint_tx()?, btc_height, min_confs))
-                })
-                .await?;
+            let (tx, btc_height, min_confs): (Adapter<bitcoin::Transaction>, u32, u32) =
+                app_client(&self.app_client_addr)
+                    .query(|app: InnerApp| {
+                        let cp = app.bitcoin.checkpoints.get(unconf_index)?;
+                        let btc_height = app.bitcoin.headers.height()?;
+                        let min_confs = app.bitcoin.config.min_checkpoint_confirmations;
+                        Ok((cp.checkpoint_tx()?, btc_height, min_confs))
+                    })
+                    .await?;
             let unconfirmed_txid = tx.txid();
 
             let maybe_conf = self.scan_for_txid(unconfirmed_txid, 100).await?;
