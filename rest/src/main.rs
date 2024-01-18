@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate rocket;
 
+use chrono::{Utc, TimeZone};
 use nomic::{
     app::{InnerApp, Nom},
     bitcoin::Nbtc,
@@ -468,25 +469,26 @@ async fn staking_delegators_delegations(address: &str) -> Value {
         .await
         .unwrap();
 
-    let total_staked: u64 = delegations
-        .iter()
-        .map(|(_, d)| -> u64 { d.staked.into() })
-        .sum();
+    let mut entries = vec![];
 
-    json!({
-    "delegation_responses": [
-        {
+    for (validator_address, delegation) in delegations {
+        entries.push(json!({
             "delegation": {
-                "delegator_address": "",
-                "validator_address": "",
-                "shares": "0"
+                "delegator_address": address.to_string(),
+                "validator_address": validator_address.to_string(),
+                "shares": delegation.staked.to_string(),
             },
             "balance": {
                 "denom": "unom",
-                "amount": total_staked.to_string(),
-            }
-          }
-    ], "pagination": { "next_key": null, "total": "0" } })
+                "amount": delegation.staked.to_string(),
+            },
+        }))
+    }
+
+    json!({
+        "delegation_responses": entries,
+        "pagination": { "next_key": null, "total": entries.len().to_string() }
+    })
 }
 
 #[get("/staking/delegators/<address>/delegations")]
@@ -534,8 +536,8 @@ async fn staking_delegators_unbonding_delegations(address: &str) -> Value {
             entries.push(json!({
                 "creation_height": "0", // TODO
                 "completion_time": t, // TODO
-                "initial_balance": "0", // TODO
-                "balance": "0" // TODO
+                "initial_balance": unbond.amount.to_string(),
+                "balance": unbond.amount.to_string()
             }))
         }
         unbonds.push(json!({
@@ -551,6 +553,106 @@ async fn staking_delegators_unbonding_delegations(address: &str) -> Value {
 #[get("/staking/delegators/<_address>/unbonding_delegations")]
 fn staking_delegators_unbonding_delegations_2(_address: &str) -> Value {
     json!({ "height": "0", "result": [] })
+}
+
+#[get("/cosmos/staking/v1beta1/validators/<address>/delegations")]
+async fn staking_validators_delegations(address: &str) -> Value {
+    let validator_address: Address = address.parse().unwrap();
+    let delegations: Vec<(Address, DelegationInfo)> = app_client()
+        .query(|app: InnerApp| app.staking.validator_delegations(validator_address))
+        .await
+        .unwrap();
+
+    let mut entries = vec![];
+
+    for (delegator_address, delegation) in delegations {
+        entries.push(json!({
+            "delegation": {
+                "delegator_address": delegator_address.to_string(),
+                "validator_address": validator_address.to_string(),
+                "shares": delegation.staked.to_string(),
+            },
+            "balance": {
+                "denom": "unom",
+                "amount": delegation.staked.to_string(),
+            },
+        }))
+    }
+
+    json!({
+        "delegation_responses": entries,
+        "pagination": { "next_key": null, "total": entries.len().to_string() }
+    })
+}
+
+#[get("/cosmos/staking/v1beta1/validators/<validator_address>/delegations/<delegator_address>")]
+async fn staking_validator_single_delegation(validator_address: &str, delegator_address: &str) -> Value {
+    let delegator_address: Address = delegator_address.parse().unwrap();
+    let validator_address: Address = validator_address.parse().unwrap();
+
+    let delegations: Vec<(Address, DelegationInfo)> = app_client()
+        .query(|app: InnerApp| app.staking.delegations(delegator_address))
+        .await
+        .unwrap();
+
+    let delegation: &DelegationInfo = delegations.iter().
+        find(|(validator, _delegation)| *validator == validator_address).
+        map(|(_validator, delegation)| delegation).
+        unwrap();
+
+    json!({
+        "delegation_response": {
+            "delegation": {
+                "delegator_address": delegator_address,
+                "validator_address": validator_address,
+                "shares": delegation.staked.to_string(),
+            },
+            "balance": {
+                "denom": "unom",
+                "amount": delegation.staked.to_string(),
+            }
+          }
+    })
+}
+
+
+
+#[get("/cosmos/staking/v1beta1/validators/<address>/unbonding_delegations")]
+async fn staking_validators_unbonding_delegations(address: &str) -> Value {
+    let validator_address: Address = address.parse().unwrap();
+    let delegations: Vec<(Address, DelegationInfo)> = app_client()
+        .query(|app: InnerApp| app.staking.validator_delegations(validator_address))
+        .await
+        .unwrap();
+
+    let mut unbonds = vec![];
+
+    for (delegator_address, delegation) in delegations {
+        if delegation.unbonding.len() == 0 {
+            continue;
+        }
+
+        let mut entries = vec![];
+        for unbond in delegation.unbonding {
+            let t = Utc.timestamp_opt(unbond.start_seconds, 0).unwrap();
+            entries.push(json!({
+                "creation_height": "0", // TODO
+                "completion_time": t, // TODO
+                "initial_balance": unbond.amount.to_string(),
+                "balance": unbond.amount.to_string()
+            }))
+        }
+        unbonds.push(json!({
+            "delegator_address": delegator_address,
+            "validator_address": validator_address,
+            "entries": entries
+        }))
+    }
+
+    json!({
+        "unbonding_responses": unbonds,
+        "pagination": { "next_key": null, "total": unbonds.len().to_string()
+    } })
 }
 
 #[get("/cosmos/distribution/v1beta1/delegators/<address>/rewards")]
@@ -1040,6 +1142,9 @@ fn rocket() -> _ {
             staking_delegators_delegations_2,
             staking_delegators_unbonding_delegations,
             staking_delegators_unbonding_delegations_2,
+            staking_validators_delegations,
+            staking_validators_unbonding_delegations,
+            staking_validator_single_delegation,
             distribution_delegators_rewards,
             distribution_delegators_rewards_for_validator,
             minting_inflation,
