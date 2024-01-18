@@ -7,7 +7,10 @@ use crate::bitcoin::adapter::Adapter;
 use crate::bitcoin::{Bitcoin, Nbtc};
 use crate::cosmos::{Chain, Cosmos, Proof};
 
-use crate::constants::{BTC_NATIVE_TOKEN_DENOM, IBC_FEE, MAIN_NATIVE_TOKEN_DENOM};
+use crate::constants::{
+    BTC_NATIVE_TOKEN_DENOM, DECLARE_FEE_USATS, IBC_FEE, IBC_FEE_USATS, INITIAL_SUPPLY_ORAIBTC,
+    INITIAL_SUPPLY_USATS_FOR_RELAYER, MAIN_NATIVE_TOKEN_DENOM,
+};
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::{Script, Transaction, TxOut};
 use orga::coins::{
@@ -59,11 +62,6 @@ impl Symbol for Nom {
     const INDEX: u8 = 69;
     const NAME: &'static str = MAIN_NATIVE_TOKEN_DENOM;
 }
-const IBC_FEE_USATS: u64 = 0;
-const DECLARE_FEE_USATS: u64 = 0;
-
-const INITIAL_SUPPLY_ORAIBTC: u64 = 1_000_000_000_000; // 1 millions oraibtc
-const INITIAL_SUPPLY_USATS_FOR_RELAYER: u64 = 1_000_000_000_000; // 1 millions usats
 
 #[orga(version = 4)]
 pub struct InnerApp {
