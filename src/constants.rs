@@ -5,4 +5,4 @@ pub const MAX_FEE_RATE: u64 = 200; // in satoshis per vbytes
 pub const IBC_FEE: u64 = 0;
 /// The default fee rate to be used to pay miner fees, in satoshis per virtual byte.
 pub const DEFAULT_FEE_RATE: u64 = 10;
-pub const BRIDGE_FEE_RATE: f64 = 0.0;
+pub const BRIDGE_FEE_RATE: f64 = 0.015;
