@@ -218,9 +218,33 @@ impl Relayer {
                 },
             );
 
+        let sigset_with_index_route = warp::path("sigset")
+            .and(warp::query::<Sigset>())
+            .and_then(async move |query: Sigset| {
+                let sigset: RawSignatorySet = app_client(app_client_addr)
+                    .query(|app: crate::app::InnerApp| {
+                        let building = app.bitcoin.checkpoints.get(query.sigset_index)?;
+                        let est_miner_fee = building.fee_rate
+                            * app.bitcoin.checkpoints.active_sigset()?.est_witness_vsize();
+                        let deposits_enabled = building.deposits_enabled;
+                        let sigset = RawSignatorySet::new(
+                            app.bitcoin.checkpoints.active_sigset()?,
+                            BRIDGE_FEE_RATE,
+                            est_miner_fee as f64 / 100_000_000.0,
+                            deposits_enabled,
+                        );
+                        Ok(sigset)
+                    })
+                    .await
+                    .map_err(|_| reject())?;
+
+                Ok::<_, warp::Rejection>(warp::reply::json(&sigset))
+            })
+            .with(warp::cors().allow_any_origin());
+
         let sigset_route = warp::path("sigset")
             .and_then(move || async {
-                let sigset = app_client(app_client_addr)
+                let sigset: RawSignatorySet = app_client(app_client_addr)
                     .query(|app: crate::app::InnerApp| {
                         let building = app.bitcoin.checkpoints.building()?;
                         let est_miner_fee = building.fee_rate
@@ -275,6 +299,7 @@ impl Relayer {
                 .and(bcast_route)
                 .or(sigset_route)
                 .or(pending_deposits_route)
+                .or(sigset_with_index_route)
                 .with(
                     warp::cors()
                         .allow_any_origin()
@@ -428,7 +453,7 @@ impl Relayer {
         let mut relayed = HashSet::new();
         loop {
             let disbursal_txs = app_client(&self.app_client_addr)
-                .query(|app| Ok(app.bitcoin.checkpoints.emergency_disbursal_txs()?))
+                .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.emergency_disbursal_txs()?))
                 .await?;
 
             for tx in disbursal_txs.iter() {
@@ -606,14 +631,14 @@ impl Relayer {
 
                 app_client(&self.app_client_addr)
                     .call(
-                        |app| {
+                        |app: &InnerApp| {
                             build_call!(app.bitcoin.relay_checkpoint(
                                 height,
                                 proof.clone(),
                                 unconf_index
                             ))
                         },
-                        |app| build_call!(app.app_noop()),
+                        |app: &InnerApp| build_call!(app.app_noop()),
                     )
                     .await?;
             }
@@ -649,7 +674,9 @@ impl Relayer {
     async fn insert_announced_addrs(&mut self, recv: &mut Receiver<(Dest, u32)>) -> Result<()> {
         while let Ok((addr, sigset_index)) = recv.try_recv() {
             let sigset_res = app_client(&self.app_client_addr)
-                .query(|app| Ok(app.bitcoin.checkpoints.get(sigset_index)?.sigset.clone()))
+                .query(|app: InnerApp| {
+                    Ok(app.bitcoin.checkpoints.get(sigset_index)?.sigset.clone())
+                })
                 .await;
             let sigset = match sigset_res {
                 Ok(sigset) => sigset,
@@ -740,7 +767,7 @@ impl Relayer {
         let dest = output.dest.clone();
         let vout = output.vout;
         let contains_outpoint = app_client(&self.app_client_addr)
-            .query(|app| app.bitcoin.processed_outpoints.contains(outpoint))
+            .query(|app: InnerApp| app.bitcoin.processed_outpoints.contains(outpoint))
             .await?;
 
         let deposit_address = bitcoin::Address::from_script(
@@ -782,7 +809,7 @@ impl Relayer {
 
             let res = app_client(&self.app_client_addr)
                 .call(
-                    move |app| {
+                    move |app: &InnerApp| {
                         build_call!(app.relay_deposit(
                             tx,
                             height,
@@ -792,7 +819,7 @@ impl Relayer {
                             output.dest
                         ))
                     },
-                    |app| build_call!(app.app_noop()),
+                    |app: &InnerApp| build_call!(app.app_noop()),
                 )
                 .await;
 
@@ -849,14 +876,16 @@ impl Relayer {
         );
         app_client(&self.app_client_addr)
             .call(
-                |app| build_call!(app.bitcoin.headers.add(batch.clone().into_iter().collect())),
-                |app| build_call!(app.app_noop()),
+                |app: &InnerApp| {
+                    build_call!(app.bitcoin.headers.add(batch.clone().into_iter().collect()))
+                },
+                |app: &InnerApp| build_call!(app.app_noop()),
             )
             .await?;
         let res = app_client(&self.app_client_addr)
             .call(
-                move |app| build_call!(app.bitcoin.headers.add(batch.clone().into())),
-                |app| build_call!(app.app_noop()),
+                move |app: &InnerApp| build_call!(app.bitcoin.headers.add(batch.clone().into())),
+                |app: &InnerApp| build_call!(app.app_noop()),
             )
             .await;
 
@@ -934,6 +963,11 @@ impl Relayer {
 pub struct DepositAddress {
     pub sigset_index: u32,
     pub deposit_addr: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Sigset {
+    pub sigset_index: u32,
 }
 
 pub struct OutputMatch {
@@ -1116,7 +1150,7 @@ impl WatchedScriptStore {
 
         let mut sigsets = BTreeMap::new();
         app_client(app_client_addr)
-            .query(|app| {
+            .query(|app: InnerApp| {
                 for (index, checkpoint) in app.bitcoin.checkpoints.all()? {
                     sigsets.insert(index, checkpoint.sigset.clone());
                 }

@@ -104,4 +104,4 @@ name = "create-checkpoint"
 
 [[test]]
 name = "bitcoin"
-required-features = ["devnet"]
+required-features = ["devnet", "testnet"]

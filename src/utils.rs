@@ -259,7 +259,7 @@ pub async fn poll_for_blocks() {
     info!("Scanning for blocks...");
     loop {
         match app_client(DEFAULT_RPC)
-            .query(|app| app.app_noop_query())
+            .query(|app: InnerApp| app.app_noop_query())
             .await
         {
             Ok(_) => {
@@ -276,7 +276,7 @@ pub async fn poll_for_active_sigset() {
     info!("Polling for active sigset...");
     loop {
         match app_client(DEFAULT_RPC)
-            .query(|app| Ok(app.bitcoin.checkpoints.active_sigset()?))
+            .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.active_sigset()?))
             .await
         {
             Ok(_) => break,
@@ -289,7 +289,7 @@ pub async fn poll_for_signatory_key(consensus_key: [u8; 32]) {
     info!("Scanning for signatory key...");
     loop {
         match app_client(DEFAULT_RPC)
-            .query(|app| Ok(app.bitcoin.signatory_keys.get(consensus_key)?))
+            .query(|app: InnerApp| Ok(app.bitcoin.signatory_keys.get(consensus_key)?))
             .await
         {
             Ok(Some(_)) => break,
@@ -303,7 +303,7 @@ pub async fn poll_for_signing_checkpoint() {
 
     loop {
         let has_signing = app_client(DEFAULT_RPC)
-            .query(|app| Ok(app.bitcoin.checkpoints.signing()?.is_some()))
+            .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.signing()?.is_some()))
             .await
             .unwrap();
         if has_signing {
@@ -316,13 +316,13 @@ pub async fn poll_for_signing_checkpoint() {
 pub async fn poll_for_completed_checkpoint(num_checkpoints: u32) {
     info!("Scanning for signed checkpoints...");
     let mut checkpoint_len = app_client(DEFAULT_RPC)
-        .query(|app| Ok(app.bitcoin.checkpoints.completed(1_000)?.len()))
+        .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.completed(1_000)?.len()))
         .await
         .unwrap();
 
     while checkpoint_len < num_checkpoints as usize {
         checkpoint_len = app_client(DEFAULT_RPC)
-            .query(|app| Ok(app.bitcoin.checkpoints.completed(1_000)?.len()))
+            .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.completed(1_000)?.len()))
             .await
             .unwrap();
         tokio::time::sleep(Duration::from_secs(1)).await;
@@ -333,7 +333,7 @@ pub async fn poll_for_bitcoin_header(height: u32) -> Result<()> {
     info!("Scanning for bitcoin header {}...", height);
     loop {
         let current_height = app_client(DEFAULT_RPC)
-            .query(|app| Ok(app.bitcoin.headers.height()?))
+            .query(|app: InnerApp| Ok(app.bitcoin.headers.height()?))
             .await?;
         if current_height >= height {
             info!("Found bitcoin header {}", height);
