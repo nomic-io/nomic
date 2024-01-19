@@ -512,5 +512,5 @@ pub fn write_orga_private_key_from_mnemonic(phrase: &str) {
 
     let path = wallet_path().join("privkey");
 
-    std::fs::write(&path, pk.to_priv().to_bytes()).unwrap();
+    std::fs::write(path, pk.to_priv().to_bytes()).unwrap();
 }

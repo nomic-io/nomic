@@ -281,8 +281,20 @@ impl StartCmd {
 
             edit_block_time(&config_path, "3s");
 
+            log::info!(
+                "config node: {:?}",
+                cmd.config
+                    .node
+                    .clone()
+                    .unwrap_or("tcp://0.0.0.0:26657".to_string())
+            );
             configure_node(&config_path, |cfg| {
-                cfg["rpc"]["laddr"] = toml_edit::value("tcp://0.0.0.0:26657");
+                cfg["rpc"]["laddr"] = toml_edit::value(
+                    cmd.config
+                        .node
+                        .clone()
+                        .unwrap_or("tcp://0.0.0.0:26657".to_string()),
+                );
             });
 
             if !cmd.config.state_sync_rpc.is_empty() {
