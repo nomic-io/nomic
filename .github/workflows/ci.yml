@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [master, develop]
+    branches: [master, develop, test/ci]
   pull_request:
     branches: [master, develop]
 
@@ -63,7 +63,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --verbose --all-features
+          args: --verbose --features full,feat-ibc,testnet,faucet-test,devnet
 
   test-bitcoin:
     runs-on: ubuntu-latest
@@ -90,7 +90,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --verbose --all-features bitcoin -- --ignored
+          args: --verbose --features full,feat-ibc,testnet,faucet-test,devnet bitcoin -- --ignored
 
   check-rest:
     runs-on: ubuntu-latest

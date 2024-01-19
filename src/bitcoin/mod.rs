@@ -5,7 +5,7 @@ use self::checkpoint::Input;
 use self::threshold_sig::Signature;
 use crate::app::Dest;
 use crate::bitcoin::checkpoint::BatchType;
-use crate::constants::{BTC_NATIVE_TOKEN_DENOM, MIN_DEPOSIT_AMOUNT, MIN_WITHDRAWAL_AMOUNT};
+use crate::constants::{BTC_NATIVE_TOKEN_DENOM, MIN_DEPOSIT_AMOUNT, MIN_WITHDRAWAL_AMOUNT, TRANSFER_FEE};
 use crate::error::{Error, Result};
 use adapter::Adapter;
 use bitcoin::hashes::Hash;
@@ -207,7 +207,7 @@ impl MigrateFrom<ConfigV4> for ConfigV5 {
             min_withdrawal_amount: Config::default().min_withdrawal_amount,
             max_withdrawal_amount: value.max_withdrawal_amount,
             max_withdrawal_script_length: value.max_withdrawal_script_length,
-            transfer_fee: value.transfer_fee,
+            transfer_fee: Config::default().transfer_fee,
             min_confirmations: value.min_confirmations,
             units_per_sat: value.units_per_sat,
             max_offline_checkpoints: value.max_offline_checkpoints,
@@ -231,7 +231,7 @@ impl Config {
             min_withdrawal_amount: 600,
             max_withdrawal_amount: 64,
             max_withdrawal_script_length: 64,
-            transfer_fee: 1_000_000,
+            transfer_fee: TRANSFER_FEE,
             #[cfg(feature = "testnet")]
             min_confirmations: 0,
             #[cfg(not(feature = "testnet"))]
@@ -1248,8 +1248,8 @@ mod tests {
 
         let secp = Secp256k1::new();
         let xpriv = vec![
-            ExtendedPrivKey::new_master(bitcoin::Network::Bitcoin, &[0]).unwrap(),
-            ExtendedPrivKey::new_master(bitcoin::Network::Bitcoin, &[1]).unwrap(),
+            ExtendedPrivKey::new_master(bitcoin::Network::Testnet, &[0]).unwrap(),
+            ExtendedPrivKey::new_master(bitcoin::Network::Testnet, &[1]).unwrap(),
         ];
         let xpub = vec![
             ExtendedPubKey::from_priv(&secp, &xpriv[0]),
