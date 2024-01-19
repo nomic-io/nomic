@@ -41,8 +41,8 @@ fn app_client() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned> {
 // /ibc/apps/transfer/v1/denom_traces/{hash}
 // /ibc/core/channel/v1/channels/{channelId}/ports/{portId}/client_state
 
-#[get("/cosmos/staking/v1beta1/validators")]
-async fn validators() -> Value {
+#[get("/cosmos/staking/v1beta1/validators?<status>")]
+async fn validators(status: Option<String>) -> Value {
     let all_validators: Vec<ValidatorQueryInfo> = app_client()
         .query(|app: InnerApp| app.staking.all_validators())
         .await
@@ -55,13 +55,17 @@ async fn validators() -> Value {
             .await
             .unwrap(); // TODO: cache
 
-        let status = if validator.unbonding {
+        let validator_status = if validator.unbonding {
             "BOND_STATUS_UNBONDING"
         } else if validator.in_active_set {
             "BOND_STATUS_BONDED"
         } else {
             "BOND_STATUS_UNBONDED"
         };
+
+        if !status.is_none() && status != Some(validator_status.to_owned()) {
+            continue;
+        }
 
         let info: DeclareInfo =
             serde_json::from_str(String::from_utf8(validator.info.to_vec()).unwrap().as_str())
@@ -80,7 +84,7 @@ async fn validators() -> Value {
                  "key": base64::encode(cons_key)
              },
              "jailed": validator.jailed,
-             "status": status,
+             "status": validator_status,
              "tokens": validator.amount_staked.to_string(),
              "delegator_shares": validator.amount_staked.to_string(),
              "description": {
