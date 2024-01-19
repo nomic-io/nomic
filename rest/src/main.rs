@@ -833,6 +833,18 @@ async fn latest_block() -> Value {
     json!(res)
 }
 
+#[get("/cosmos/base/tendermint/v1beta1/blocks/<height>")]
+async fn block(height: u32) -> Value {
+    let client = tm::HttpClient::new(app_host()).unwrap();
+
+    let res = client
+        .block(tendermint::block::Height::from(height))
+        .await
+        .unwrap();
+
+    json!(res)
+}
+
 #[get("/cosmos/distribution/v1beta1/community_pool")]
 async fn community_pool() -> Value {
     let community_pool = app_client()
@@ -907,6 +919,7 @@ fn rocket() -> _ {
             staking_params,
             slashing_params
             latest_block,
+            block,
             community_pool,
         ],
     )
