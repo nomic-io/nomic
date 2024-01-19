@@ -22,6 +22,10 @@ csv = { version = "1.1.6", optional = true }
 bech32 = { version = "0.9.1" }
 futures = "0.3.21"
 toml_edit = "0.13.4"
+ibc-proto = { version = "0.32.1", default-features = false, features = [
+    "std",
+    "borsh",
+], optional = true }
 tendermint-rpc = { version = "=0.32.0", features = [
     "http-client",
 ], optional = true }
@@ -80,6 +84,7 @@ full = [
     "warp",
     "rand",
     "reqwest",
+    "ibc-proto",
     "tendermint-rpc",
     "cosmos-sdk-proto",
     "home",

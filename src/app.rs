@@ -20,7 +20,6 @@ use orga::describe::{Describe, Descriptor};
 use orga::encoding::{Decode, Encode, LengthVec};
 use orga::ibc::ibc_rs::applications::transfer::Memo;
 use std::str::FromStr;
-use std::time::Duration;
 
 use orga::ibc::ibc_rs::applications::transfer::context::TokenTransferExecutionContext;
 use orga::ibc::ibc_rs::applications::transfer::msgs::transfer::MsgTransfer;
@@ -383,13 +382,52 @@ impl FromStr for NbtcMemo {
 
 #[cfg(feature = "full")]
 mod abci {
+    use bytes::Bytes;
     use cosmos_sdk_proto::{
         cosmos::{
-            bank::v1beta1::{QueryTotalSupplyRequest, QueryTotalSupplyResponse},
-            base::v1beta1::Coin,
+            bank::v1beta1::{
+                query_server::{Query as BankQuery, QueryServer as BankQueryServer},
+                QueryAllBalancesRequest, QueryAllBalancesResponse, QueryBalanceRequest,
+                QueryBalanceResponse, QueryDenomMetadataRequest, QueryDenomMetadataResponse,
+                QueryDenomOwnersRequest, QueryDenomOwnersResponse, QueryDenomsMetadataRequest,
+                QueryDenomsMetadataResponse, QueryParamsRequest, QueryParamsResponse,
+                QuerySpendableBalancesRequest, QuerySpendableBalancesResponse,
+                QuerySupplyOfRequest, QuerySupplyOfResponse, QueryTotalSupplyRequest,
+                QueryTotalSupplyResponse,
+            },
+            base::{tendermint::v1beta1::Validator, v1beta1::Coin},
+            staking::v1beta1::{
+                query_server::{Query as StakingQuery, QueryServer as StakingQueryServer},
+                Params, QueryDelegationRequest, QueryDelegationResponse,
+                QueryDelegatorDelegationsRequest, QueryDelegatorDelegationsResponse,
+                QueryDelegatorUnbondingDelegationsRequest,
+                QueryDelegatorUnbondingDelegationsResponse, QueryDelegatorValidatorRequest,
+                QueryDelegatorValidatorResponse, QueryDelegatorValidatorsRequest,
+                QueryDelegatorValidatorsResponse, QueryHistoricalInfoRequest,
+                QueryHistoricalInfoResponse, QueryParamsRequest as StakingQueryParamsRequest,
+                QueryParamsResponse as StakingQueryParamsResponse, QueryPoolRequest,
+                QueryPoolResponse, QueryRedelegationsRequest, QueryRedelegationsResponse,
+                QueryUnbondingDelegationRequest, QueryUnbondingDelegationResponse,
+                QueryValidatorDelegationsRequest, QueryValidatorDelegationsResponse,
+                QueryValidatorRequest, QueryValidatorResponse,
+                QueryValidatorUnbondingDelegationsRequest,
+                QueryValidatorUnbondingDelegationsResponse, QueryValidatorsRequest,
+                QueryValidatorsResponse,
+            },
         },
+        tendermint::google::protobuf::Duration,
         traits::Message,
     };
+
+    use ibc_proto::ibc::core::connection::v1::{
+        query_server::{Query as ConnectionQuery, QueryServer as ConnectionQueryServer},
+        QueryClientConnectionsRequest, QueryClientConnectionsResponse,
+        QueryConnectionClientStateRequest, QueryConnectionClientStateResponse,
+        QueryConnectionConsensusStateRequest, QueryConnectionConsensusStateResponse,
+        QueryConnectionRequest, QueryConnectionResponse, QueryConnectionsRequest,
+        QueryConnectionsResponse,
+    };
+
     use orga::{
         abci::{
             messages::{self, ResponseQuery},
@@ -483,9 +521,28 @@ mod abci {
         fn abci_query(&self, req: &messages::RequestQuery) -> Result<messages::ResponseQuery> {
             let res_value;
             match req.path.as_str() {
+                "/cosmos.bank.v1beta1.Query/SupplyOf" => {
+                    let request = QuerySupplyOfRequest::decode(req.data.clone()).unwrap();
+
+                    let amount = Some(Coin {
+                        amount: INITIAL_SUPPLY_ORAIBTC.to_string(),
+                        denom: request.denom,
+                    });
+
+                    let response = QuerySupplyOfResponse { amount };
+                    res_value = response.encode_to_vec().into();
+                }
+                "/cosmos.slashing.v1beta1.Query/Params"
+                | "/cosmos.gov.v1beta1.Query/Proposals"
+                | "/cosmos.distribution.v1beta1.Query/Params"
+                | "/cosmos.gov.v1beta1.Query/Params"
+                | "/cosmos.distribution.v1beta1.Query/CommunityPool" => {
+                    // let request = QueryProposalsRequest::decode(req.data.clone()).unwrap();
+                    res_value = Bytes::default();
+                }
                 "/cosmos.bank.v1beta1.Query/TotalSupply" => {
                     let request = QueryTotalSupplyRequest::decode(req.data.clone()).unwrap();
-                    let data = req.data.to_vec();
+                    // let data = req.data.to_vec();
 
                     // let path: Path = String::from_utf8(data.clone())
                     //     .map_err(|_| Error::Ibc("Invalid query data encoding".to_string()))?
@@ -507,7 +564,38 @@ mod abci {
 
                     res_value = response.encode_to_vec().into();
                 }
-                _ => return self.ibc.abci_query(req),
+                "/cosmos.staking.v1beta1.Query/Validators" => {
+                    let request = QueryValidatorsRequest::decode(req.data.clone()).unwrap();
+
+                    let response = QueryValidatorsResponse {
+                        validators: vec![],
+                        pagination: None,
+                    };
+                    res_value = response.encode_to_vec().into();
+                }
+                "/cosmos.staking.v1beta1.Query/Params" => {
+                    let request = StakingQueryParamsRequest::decode(req.data.clone()).unwrap();
+                    let params = Some(Params {
+                        unbonding_time: None,
+                        historical_entries: 20,
+                        ..Params::default()
+                    });
+                    let response = StakingQueryParamsResponse { params };
+                    res_value = response.encode_to_vec().into();
+                }
+                "/ibc.core.connection.v1.Query/Connections" => {
+                    let connections = self.ibc.ctx.query_all_connections()?;
+                    let response = QueryConnectionsResponse {
+                        connections,
+                        pagination: None,
+                        height: None,
+                    };
+                    res_value = response.encode_to_vec().into();
+                }
+                _ => {
+                    return Err(Error::ABCI(format!("Invalid query path: {}", req.path)));
+                    // return self.ibc.abci_query(req);
+                }
             }
 
             Ok(ResponseQuery {
