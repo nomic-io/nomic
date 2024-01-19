@@ -815,6 +815,24 @@ async fn slashing_params() -> Value {
             "slash_fraction_double_sign": slash_fraction_double_sign.to_string(),
             "slash_fraction_downtime": slash_fraction_downtime.to_string()
         }
+    }
+
+#[get("/cosmos/base/tendermint/v1beta1/blocks/latest")]
+async fn latest_block() -> Value {
+    let client = tm::HttpClient::new("http://127.0.0.1:26657").unwrap();
+
+    let res = client
+        .latest_block()
+        .await
+        .unwrap();
+
+    json!(res)
+}
+
+#[get("/cosmos/distribution/v1beta1/community_pool")]
+fn community_pool() -> Value {
+    json!({
+        "pool": []
     })
 }
 
@@ -874,6 +892,7 @@ fn rocket() -> _ {
             validator,
             staking_params,
             slashing_params
+            latest_block,
         ],
     )
 }
