@@ -481,35 +481,39 @@ mod abci {
 
     impl AbciQuery for InnerApp {
         fn abci_query(&self, req: &messages::RequestQuery) -> Result<messages::ResponseQuery> {
-            // self.ibc.abci_query(request)
-            let request = QueryTotalSupplyRequest::decode(req.data.clone()).unwrap();
-            if req.path != "/cosmos.bank.v1beta1.Query/TotalSupply" {
-                return Err(Error::ABCI("Invalid query path".to_string()));
-            }
-            let data = req.data.to_vec();
+            let res_value;
+            match req.path.as_str() {
+                "/cosmos.bank.v1beta1.Query/TotalSupply" => {
+                    let request = QueryTotalSupplyRequest::decode(req.data.clone()).unwrap();
+                    let data = req.data.to_vec();
 
-            // let path: Path = String::from_utf8(data.clone())
-            //     .map_err(|_| Error::Ibc("Invalid query data encoding".to_string()))?
-            //     .parse()
-            //     .map_err(|_| Error::Ibc("Invalid query data".to_string()))?;
-            let mut total: u64 = 0;
-            let acc_iter = self.accounts.iter()?;
-            for acc in acc_iter {
-                let balance: u64 = acc?.1.amount.into();
-                total += balance;
+                    // let path: Path = String::from_utf8(data.clone())
+                    //     .map_err(|_| Error::Ibc("Invalid query data encoding".to_string()))?
+                    //     .parse()
+                    //     .map_err(|_| Error::Ibc("Invalid query data".to_string()))?;
+                    let mut total: u64 = 0;
+                    let acc_iter = self.accounts.iter()?;
+                    for acc in acc_iter {
+                        let balance: u64 = acc?.1.amount.into();
+                        total += balance;
+                    }
+                    let response = QueryTotalSupplyResponse {
+                        supply: vec![Coin {
+                            amount: total.to_string(),
+                            denom: Nom::NAME.to_string(),
+                        }],
+                        pagination: None,
+                    };
+
+                    res_value = response.encode_to_vec().into();
+                }
+                _ => return self.ibc.abci_query(req),
             }
-            let response = QueryTotalSupplyResponse {
-                supply: vec![Coin {
-                    amount: total.to_string(),
-                    denom: Nom::NAME.to_string(),
-                }],
-                pagination: None,
-            };
 
             Ok(ResponseQuery {
                 code: 0,
                 key: req.path.encode_to_vec().into(),
-                value: response.encode_to_vec().into(),
+                value: res_value,
                 proof_ops: None,
                 height: req.height,
                 ..Default::default()
