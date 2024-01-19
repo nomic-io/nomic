@@ -5,7 +5,9 @@ use self::checkpoint::Input;
 use self::threshold_sig::Signature;
 use crate::app::Dest;
 use crate::bitcoin::checkpoint::BatchType;
-use crate::constants::{BTC_NATIVE_TOKEN_DENOM, MIN_DEPOSIT_AMOUNT, MIN_WITHDRAWAL_AMOUNT, TRANSFER_FEE};
+use crate::constants::{
+    BTC_NATIVE_TOKEN_DENOM, MIN_DEPOSIT_AMOUNT, MIN_WITHDRAWAL_AMOUNT, TRANSFER_FEE,
+};
 use crate::error::{Error, Result};
 use adapter::Adapter;
 use bitcoin::hashes::Hash;
