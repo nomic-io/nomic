@@ -244,6 +244,13 @@ impl StartCmd {
         };
         let config_path = home.join("tendermint/config/config.toml");
         let chain_id = cmd.config.chain_id.as_deref();
+
+        if let Some(node) = self.config.node.clone() {
+            configure_node(&config_path, |cfg| {
+                cfg["rpc"]["laddr"] = toml_edit::value(&node);
+            });
+        }
+
         if !has_node {
             log::info!("Initializing node at {}...", home.display());
 
@@ -280,22 +287,6 @@ impl StartCmd {
             }
 
             edit_block_time(&config_path, "3s");
-
-            log::info!(
-                "config node: {:?}",
-                cmd.config
-                    .node
-                    .clone()
-                    .unwrap_or("tcp://0.0.0.0:26657".to_string())
-            );
-            configure_node(&config_path, |cfg| {
-                cfg["rpc"]["laddr"] = toml_edit::value(
-                    cmd.config
-                        .node
-                        .clone()
-                        .unwrap_or("tcp://0.0.0.0:26657".to_string()),
-                );
-            });
 
             if !cmd.config.state_sync_rpc.is_empty() {
                 let servers: Vec<_> = cmd
