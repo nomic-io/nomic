@@ -51,7 +51,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use bip39::{Language, Mnemonic, Seed};
 use bitcoin::network::constants::Network;
 use bitcoin::util::bip32::{ExtendedPrivKey, IntoDerivationPath};
-use secp256k1::Secp256k1;
 
 const DEFAULT_RPC: &str = "http://localhost:26657";
 
@@ -503,7 +502,7 @@ pub fn start_rest() -> Result<Child> {
 pub fn write_orga_private_key_from_mnemonic(phrase: &str) {
     let hd_path = "m/44'/118'/0'/0/0".into_derivation_path().unwrap();
     let mnemonic = Mnemonic::from_phrase(phrase, Language::English).unwrap();
-    let secp = Secp256k1::new();
+    let secp = secp256k1::Secp256k1::new();
 
     // 128 hex chars = 512 bits
     let pk = ExtendedPrivKey::new_master(Network::Bitcoin, Seed::new(&mnemonic, "").as_bytes())

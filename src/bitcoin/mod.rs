@@ -223,14 +223,8 @@ impl Config {
     fn bitcoin() -> Self {
         Self {
             min_withdrawal_checkpoints: 4,
-            #[cfg(not(feature = "testnet"))]
             min_deposit_amount: MIN_DEPOSIT_AMOUNT,
-            #[cfg(not(feature = "testnet"))]
             min_withdrawal_amount: MIN_WITHDRAWAL_AMOUNT,
-            #[cfg(feature = "testnet")]
-            min_deposit_amount: 600,
-            #[cfg(feature = "testnet")]
-            min_withdrawal_amount: 600,
             max_withdrawal_amount: 64,
             max_withdrawal_script_length: 64,
             transfer_fee: TRANSFER_FEE,
