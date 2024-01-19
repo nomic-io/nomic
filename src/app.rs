@@ -383,11 +383,21 @@ impl FromStr for NbtcMemo {
 
 #[cfg(feature = "full")]
 mod abci {
+    use cosmos_sdk_proto::{
+        cosmos::{
+            bank::v1beta1::{QueryTotalSupplyRequest, QueryTotalSupplyResponse},
+            base::v1beta1::Coin,
+        },
+        traits::Message,
+    };
     use orga::{
-        abci::{messages, AbciQuery, BeginBlock, EndBlock, InitChain},
+        abci::{
+            messages::{self, ResponseQuery},
+            AbciQuery, BeginBlock, EndBlock, InitChain,
+        },
         coins::{Give, Take, UNBONDING_SECONDS},
         collections::Map,
-        ibc::ibc_rs::core::ics02_client::error::ClientError,
+        ibc::ibc_rs::core::{ics02_client::error::ClientError, ics24_host::path::Path},
         plugins::{BeginBlockCtx, EndBlockCtx, InitChainCtx},
     };
 
@@ -470,8 +480,40 @@ mod abci {
     }
 
     impl AbciQuery for InnerApp {
-        fn abci_query(&self, request: &messages::RequestQuery) -> Result<messages::ResponseQuery> {
-            self.ibc.abci_query(request)
+        fn abci_query(&self, req: &messages::RequestQuery) -> Result<messages::ResponseQuery> {
+            // self.ibc.abci_query(request)
+            let request = QueryTotalSupplyRequest::decode(req.data.clone()).unwrap();
+            if req.path != "/cosmos.bank.v1beta1.Query/TotalSupply" {
+                return Err(Error::ABCI("Invalid query path".to_string()));
+            }
+            let data = req.data.to_vec();
+
+            // let path: Path = String::from_utf8(data.clone())
+            //     .map_err(|_| Error::Ibc("Invalid query data encoding".to_string()))?
+            //     .parse()
+            //     .map_err(|_| Error::Ibc("Invalid query data".to_string()))?;
+            let mut total: u64 = 0;
+            let acc_iter = self.accounts.iter()?;
+            for acc in acc_iter {
+                let balance: u64 = acc?.1.amount.into();
+                total += balance;
+            }
+            let response = QueryTotalSupplyResponse {
+                supply: vec![Coin {
+                    amount: total.to_string(),
+                    denom: Nom::NAME.to_string(),
+                }],
+                pagination: None,
+            };
+
+            Ok(ResponseQuery {
+                code: 0,
+                key: req.path.encode_to_vec().into(),
+                value: response.encode_to_vec().into(),
+                proof_ops: None,
+                height: req.height,
+                ..Default::default()
+            })
         }
     }
 }
