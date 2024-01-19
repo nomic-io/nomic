@@ -24,8 +24,12 @@ lazy_static::lazy_static! {
     static ref QUERY_CACHE: Arc<RwLock<HashMap<String, (u64, String)>>> = Arc::new(RwLock::new(HashMap::new()));
 }
 
+fn app_host() -> &str {
+    "http://localhost:26657"
+}
+
 fn app_client() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned> {
-    nomic::app_client("http://localhost:26657")
+    nomic::app_client(app_host())
 }
 
 // DONE /cosmos/bank/v1beta1/balances/{address}
@@ -321,7 +325,7 @@ struct TxRequest {
 async fn txs(tx: &str) -> Result<Value, BadRequest<String>> {
     dbg!(tx);
 
-    let client = tm::HttpClient::new("http://localhost:26657").unwrap();
+    let client = tm::HttpClient::new(app_host()).unwrap();
 
     let tx_bytes = if let Some('{') = tx.chars().next() {
         let tx: TxRequest = serde_json::from_str(tx).unwrap();
@@ -367,7 +371,7 @@ struct TxRequest2 {
 async fn txs2(tx: &str) -> Result<Value, BadRequest<String>> {
     dbg!(tx);
 
-    let client = tm::HttpClient::new("http://localhost:26657").unwrap();
+    let client = tm::HttpClient::new(app_host()).unwrap();
 
     let tx_bytes = if let Some('{') = tx.chars().next() {
         let tx: TxRequest2 = serde_json::from_str(tx).unwrap();
@@ -427,7 +431,7 @@ async fn query(query: &str, height: Option<u32>) -> Result<String, BadRequest<St
     //     }
     // }
 
-    let client = tm::HttpClient::new("http://localhost:26657").unwrap();
+    let client = tm::HttpClient::new(app_host()).unwrap();
 
     let query_bytes = hex::decode(query).map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
@@ -819,7 +823,7 @@ async fn slashing_params() -> Value {
 
 #[get("/cosmos/base/tendermint/v1beta1/blocks/latest")]
 async fn latest_block() -> Value {
-    let client = tm::HttpClient::new("http://127.0.0.1:26657").unwrap();
+    let client = tm::HttpClient::new(app_host()).unwrap();
 
     let res = client
         .latest_block()
