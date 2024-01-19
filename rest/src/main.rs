@@ -709,10 +709,29 @@ fn bank_total(denom: &str) -> Value {
 }
 
 #[get("/cosmos/staking/v1beta1/pool")]
-fn staking_pool() -> Value {
+async fn staking_pool() -> Value {
+    let validators = app_client()
+        .query(|app| app.staking.all_validators())
+        .await
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+
+    let total_bonded: u64 = validators
+        .iter()
+        .filter(|v| v.in_active_set)
+        .map(|v| -> u64 { v.amount_staked.into() })
+        .sum();
+
+    let total_not_bonded: u64 = validators
+        .iter()
+        .filter(|v| !v.in_active_set)
+        .map(|v| -> u64 { v.amount_staked.into() })
+        .sum();
+
     json!({
-        "bonded_tokens": "0",
-        "not_bonded_tokens": "0"
+        "pool": {
+            "bonded_tokens": total_bonded.to_string(),
+            "not_bonded_tokens": total_not_bonded.to_string()
+        }
     })
 }
 
