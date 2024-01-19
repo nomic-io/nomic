@@ -754,6 +754,47 @@ fn ibc_applications_transfer_params() -> Value {
     })
 }
 
+#[get("/cosmos/staking/v1beta1/params")]
+async fn staking_params() -> Value {
+    let (unbonding_seconds, max_validators) = app_client()
+        .query(|app| Ok((app.staking.unbonding_seconds, app.staking.max_validators)))
+        .await
+        .unwrap();
+
+    json!({
+        "params": {
+            "unbonding_time": unbonding_seconds.to_string() + "s",
+            "max_validators": max_validators,
+            "max_entries": 7,
+            "historical_entries": 10000,
+            "bond_denom": "unom"
+        }
+    })
+}
+
+#[get("/cosmos/slashing/v1beta1/params")]
+async fn slashing_params() -> Value {
+    let (max_offline_blocks, slash_fraction_double_sign, slash_fraction_downtime, downtime_jail_seconds) = app_client()
+        .query(|app| Ok((
+            app.staking.max_offline_blocks,
+            app.staking.slash_fraction_double_sign,
+            app.staking.slash_fraction_downtime,
+            app.staking.downtime_jail_seconds,
+        )))
+        .await
+        .unwrap();
+
+    json!({
+        "params": {
+            "signed_blocks_window": max_offline_blocks.to_string(),
+            "min_signed_per_window": "0.0",
+            "downtime_jail_duration": downtime_jail_seconds.to_string() + "s",
+            "slash_fraction_double_sign": slash_fraction_double_sign.to_string(),
+            "slash_fraction_downtime": slash_fraction_downtime.to_string()
+        }
+    })
+}
+
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::Header;
 use rocket::{Request, Response};
@@ -808,6 +849,8 @@ fn rocket() -> _ {
             bank_supply_unom,
             validators,
             validator,
+            staking_params,
+            slashing_params
         ],
     )
 }
