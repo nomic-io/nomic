@@ -834,9 +834,19 @@ async fn latest_block() -> Value {
 }
 
 #[get("/cosmos/distribution/v1beta1/community_pool")]
-fn community_pool() -> Value {
+async fn community_pool() -> Value {
+    let community_pool = app_client()
+        .query(|app| Ok(app.community_pool.amount))
+        .await
+        .unwrap();
+
     json!({
-        "pool": []
+        "pool": [
+            {
+                "denom": "unom",
+                "amount": community_pool.to_string()
+            }
+        ]
     })
 }
 
@@ -897,6 +907,7 @@ fn rocket() -> _ {
             staking_params,
             slashing_params
             latest_block,
+            community_pool,
         ],
     )
 }
