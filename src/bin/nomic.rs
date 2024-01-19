@@ -1196,7 +1196,16 @@ impl SignerCmd {
             self.max_sigset_change_rate,
             self.reset_limits_at_index,
             // TODO: check for custom RPC port, allow config, etc
-            || nomic::app_client("http://localhost:26657").with_wallet(wallet()),
+            || {
+                nomic::app_client(
+                    self.config
+                        .node
+                        .clone()
+                        .unwrap_or("http://localhost:26657".to_string())
+                        .as_str(),
+                )
+                .with_wallet(wallet())
+            },
             self.prometheus_addr,
         )?
         .start();
