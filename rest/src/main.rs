@@ -24,7 +24,7 @@ lazy_static::lazy_static! {
     static ref QUERY_CACHE: Arc<RwLock<HashMap<String, (u64, String)>>> = Arc::new(RwLock::new(HashMap::new()));
 }
 
-fn app_host() -> &str {
+fn app_host() -> &'static str {
     "http://localhost:26657"
 }
 
@@ -717,7 +717,7 @@ async fn staking_pool() -> Value {
     let validators = app_client()
         .query(|app| app.staking.all_validators())
         .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+        .unwrap();
 
     let total_bonded: u64 = validators
         .iter()
