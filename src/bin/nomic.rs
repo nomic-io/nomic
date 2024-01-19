@@ -246,9 +246,11 @@ impl StartCmd {
         let chain_id = cmd.config.chain_id.as_deref();
 
         if let Some(node) = self.config.node.clone() {
-            configure_node(&config_path, |cfg| {
-                cfg["rpc"]["laddr"] = toml_edit::value(&node);
-            });
+            if has_node {
+                configure_node(&config_path, |cfg| {
+                    cfg["rpc"]["laddr"] = toml_edit::value(&node);
+                });
+            }
         }
 
         if !has_node {
@@ -285,6 +287,15 @@ impl StartCmd {
                 log::info!("Copying node key from {}", node_key.display());
                 std::fs::copy(node_key, home.join("tendermint/config/node_key.json")).unwrap();
             }
+
+            configure_node(&config_path, |cfg| {
+                cfg["rpc"]["laddr"] = toml_edit::value(
+                    &cmd.config
+                        .node
+                        .clone()
+                        .unwrap_or("tcp://0.0.0.0:26657".to_string()),
+                );
+            });
 
             edit_block_time(&config_path, "3s");
 
