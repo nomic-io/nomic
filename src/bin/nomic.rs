@@ -312,7 +312,8 @@ impl StartCmd {
         }
 
         log::info!("Starting node at {}...", home.display());
-        let mut node = Node::<nomic::app::App>::new(&home, chain_id, Default::default()).await;
+        let mut node: Node<_> =
+            Node::<nomic::app::App>::new(&home, chain_id, Default::default()).await;
 
         if cmd.unsafe_reset {
             node = node.reset().await;
