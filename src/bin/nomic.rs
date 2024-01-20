@@ -245,14 +245,6 @@ impl StartCmd {
         let config_path = home.join("tendermint/config/config.toml");
         let chain_id = cmd.config.chain_id.as_deref();
 
-        if let Some(node) = self.config.node.clone() {
-            if has_node {
-                configure_node(&config_path, |cfg| {
-                    cfg["rpc"]["laddr"] = toml_edit::value(&node);
-                });
-            }
-        }
-
         if !has_node {
             log::info!("Initializing node at {}...", home.display());
 
@@ -289,12 +281,7 @@ impl StartCmd {
             }
 
             configure_node(&config_path, |cfg| {
-                cfg["rpc"]["laddr"] = toml_edit::value(
-                    &cmd.config
-                        .node
-                        .clone()
-                        .unwrap_or("tcp://0.0.0.0:26657".to_string()),
-                );
+                cfg["rpc"]["laddr"] = toml_edit::value("tcp://0.0.0.0:26657");
             });
 
             edit_block_time(&config_path, "3s");
@@ -1198,16 +1185,7 @@ impl SignerCmd {
             self.max_sigset_change_rate,
             self.reset_limits_at_index,
             // TODO: check for custom RPC port, allow config, etc
-            || {
-                nomic::app_client(
-                    self.config
-                        .node
-                        .clone()
-                        .unwrap_or("http://localhost:26657".to_string())
-                        .as_str(),
-                )
-                .with_wallet(wallet())
-            },
+            || nomic::app_client("http://localhost:26657").with_wallet(wallet()),
             self.prometheus_addr,
         )?
         .start();
