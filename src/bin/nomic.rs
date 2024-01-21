@@ -1078,6 +1078,9 @@ pub struct RelayerCmd {
     #[clap(short = 'p', long, default_value_t = 8332)]
     rpc_port: u16,
 
+    #[clap(short = 'h', long)]
+    rpc_host: Option<String>,
+
     #[clap(short = 'u', long)]
     rpc_user: Option<String>,
 
@@ -1090,7 +1093,11 @@ pub struct RelayerCmd {
 
 impl RelayerCmd {
     async fn btc_client(&self) -> Result<BtcClient> {
-        let rpc_url = format!("http://localhost:{}", self.rpc_port);
+        let rpc_url = format!(
+            "http://{}:{}",
+            self.rpc_host.clone().unwrap_or("localhost".to_string()),
+            self.rpc_port
+        );
         let auth = match (self.rpc_user.clone(), self.rpc_pass.clone()) {
             (Some(user), Some(pass)) => Auth::UserPass(user, pass),
             _ => Auth::None,
