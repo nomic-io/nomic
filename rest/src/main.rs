@@ -845,6 +845,35 @@ async fn block(height: u32) -> Value {
     json!(res)
 }
 
+#[get("/cosmos/base/tendermint/v1beta1/validatorsets/latest")]
+async fn latest_validator_set() -> Value {
+    let client = tm::HttpClient::new(app_host()).unwrap();
+
+    let block = client
+        .latest_block()
+        .await
+        .unwrap();
+
+    let res = client
+        .validators(block.block.header.height, tendermint_rpc::Paging::Default)
+        .await
+        .unwrap();
+
+    json!(res)
+}
+
+#[get("/cosmos/base/tendermint/v1beta1/validatorsets/<height>")]
+async fn validator_set(height: u32) -> Value {
+    let client = tm::HttpClient::new(app_host()).unwrap();
+
+    let res = client
+        .validators(height, tendermint_rpc::Paging::Default)
+        .await
+        .unwrap();
+
+    json!(res)
+}
+
 #[get("/cosmos/distribution/v1beta1/community_pool")]
 async fn community_pool() -> Value {
     let community_pool = app_client()
@@ -920,6 +949,8 @@ fn rocket() -> _ {
             slashing_params
             latest_block,
             block,
+            latest_validator_set,
+            validator_set,
             community_pool,
         ],
     )
