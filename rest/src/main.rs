@@ -891,6 +891,17 @@ async fn community_pool() -> Value {
     })
 }
 
+#[get("/cosmos/gov/v1beta1/proposals")]
+fn proposals() -> Value {
+    json!({
+        "proposals": [],
+        "pagination": {
+            "next_key": null,
+            "total": 0
+        }
+    })
+}
+
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::Header;
 use rocket::{Request, Response};
@@ -952,6 +963,7 @@ fn rocket() -> _ {
             latest_validator_set,
             validator_set,
             community_pool,
+            proposals,
         ],
     )
 }
