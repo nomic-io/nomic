@@ -329,24 +329,24 @@ impl InnerApp {
         // Err(orga::Error::Unknown)
     }
 
-    // #[call]
-    // pub fn mint_initial_supply(&mut self) -> Result<String> {
-    //     let unom_coin: Coin<Nom> = Amount::new(INITIAL_SUPPLY_ORAIBTC).into();
-
-    //     // mint new uoraibtc coin for funded address
-    //     self.accounts
-    //         .deposit(GOVERNANCE_ADDRESS.parse().unwrap(), unom_coin)?;
-
-    //     let nbtc_coin: Coin<Nbtc> = Amount::new(INITIAL_SUPPLY_USATS_FOR_RELAYER).into();
-    //     // add new nbtc coin to the funded address
-    //     self.credit_transfer(
-    //         Dest::Address(GOVERNANCE_ADDRESS.parse().unwrap()),
-    //         nbtc_coin,
-    //     )?;
-    //     self.accounts
-    //         .add_transfer_exception(GOVERNANCE_ADDRESS.parse().unwrap())?;
-    //     Ok(GOVERNANCE_ADDRESS.to_string())
-    // }
+    #[query]
+    pub fn get_total_balances(&self, denom: String) -> Result<u64> {
+        let mut total_balances: u64;
+        if denom.eq(Nom::NAME) {
+            let acc_iter = self.accounts.iter()?;
+            for acc in acc_iter {
+                let balance: u64 = acc?.1.amount.into();
+                total_balances += balance;
+            }
+        } else {
+            let acc_iter = self.bitcoin.accounts.iter()?;
+            for acc in acc_iter {
+                let balance: u64 = acc?.1.amount.into();
+                total_balances += balance;
+            }
+        };
+        Ok(total_balances)
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -524,8 +524,9 @@ mod abci {
                 "/cosmos.bank.v1beta1.Query/SupplyOf" => {
                     let request = QuerySupplyOfRequest::decode(req.data.clone()).unwrap();
 
+                    let balance = self.get_total_balances(request.denom)?;
                     let amount = Some(Coin {
-                        amount: INITIAL_SUPPLY_ORAIBTC.to_string(),
+                        amount: balance.to_string(),
                         denom: request.denom,
                     });
 
@@ -542,23 +543,19 @@ mod abci {
                 }
                 "/cosmos.bank.v1beta1.Query/TotalSupply" => {
                     let request = QueryTotalSupplyRequest::decode(req.data.clone()).unwrap();
-                    // let data = req.data.to_vec();
-
-                    // let path: Path = String::from_utf8(data.clone())
-                    //     .map_err(|_| Error::Ibc("Invalid query data encoding".to_string()))?
-                    //     .parse()
-                    //     .map_err(|_| Error::Ibc("Invalid query data".to_string()))?;
-                    let mut total: u64 = 0;
-                    let acc_iter = self.accounts.iter()?;
-                    for acc in acc_iter {
-                        let balance: u64 = acc?.1.amount.into();
-                        total += balance;
-                    }
+                    let balance_oraibtc = self.get_total_balances(Nom::NAME.to_string())?;
+                    let balance_usats = self.get_total_balances(Nbtc::NAME.to_string())?;
                     let response = QueryTotalSupplyResponse {
-                        supply: vec![Coin {
-                            amount: total.to_string(),
-                            denom: Nom::NAME.to_string(),
-                        }],
+                        supply: vec![
+                            Coin {
+                                amount: balance_oraibtc.to_string(),
+                                denom: Nom::NAME.to_string(),
+                            },
+                            Coin {
+                                amount: balance_usats.to_string(),
+                                denom: Nbtc::NAME.to_string(),
+                            },
+                        ],
                         pagination: None,
                     };
 
@@ -600,7 +597,7 @@ mod abci {
 
             Ok(ResponseQuery {
                 code: 0,
-                key: req.path.encode_to_vec().into(),
+                key: req.path.encode_to_vec().into(), // FIXME: use valid path of abci query like in ibc/service
                 value: res_value,
                 proof_ops: None,
                 height: req.height,

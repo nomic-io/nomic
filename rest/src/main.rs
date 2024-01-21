@@ -476,41 +476,12 @@ async fn minting_inflation_2() -> Result<Value, BadRequest<String>> {
     Ok(json!({ "height": "0", "result": apr.to_string() }))
 }
 
-async fn get_total_balances(denom: &str) -> Result<u64, BadRequest<String>> {
-    let total_balances: u64;
-    if denom.eq(Nom::NAME) {
-        total_balances = app_client()
-            .query(|app: InnerApp| {
-                let mut total: u64 = 0;
-                let acc_iter = app.accounts.iter()?;
-                for acc in acc_iter {
-                    let balance: u64 = acc?.1.amount.into();
-                    total += balance;
-                }
-                Ok(total)
-            })
-            .await
-            .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
-    } else {
-        total_balances = app_client()
-            .query(|app: InnerApp| {
-                let mut total: u64 = 0;
-                let acc_iter = app.bitcoin.accounts.iter()?;
-                for acc in acc_iter {
-                    let balance: u64 = acc?.1.amount.into();
-                    total += balance;
-                }
-                Ok(total)
-            })
-            .await
-            .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
-    };
-    Ok(total_balances)
-}
-
 #[get("/bank/total/<denom>")]
 async fn bank_total(denom: &str) -> Result<Value, BadRequest<String>> {
-    let total_balances: u64 = get_total_balances(denom).await?;
+    let total_balances: u64 = app_client()
+        .query(|app: InnerApp| app.get_total_balances(denom.to_string()))
+        .await
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
     Ok(json!({ "height": "0", "result":  total_balances.to_string()}))
 }
 
@@ -524,7 +495,10 @@ fn staking_pool() -> Value {
 
 #[get("/cosmos/bank/v1beta1/supply/<denom>")]
 async fn bank_supply_unom(denom: &str) -> Result<Value, BadRequest<String>> {
-    let total_balances: u64 = get_total_balances(denom).await?;
+    let total_balances: u64 = app_client()
+        .query(|app: InnerApp| app.get_total_balances(denom.to_string()))
+        .await
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
     Ok(json!({
         "amount": {
             "denom": denom,

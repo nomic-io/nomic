@@ -2347,6 +2347,7 @@ dependencies = [
  "futures",
  "hex",
  "home",
+ "ibc-proto",
  "ics23",
  "js-sys",
  "lazy_static",
