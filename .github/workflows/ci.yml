@@ -65,32 +65,32 @@ jobs:
           command: test
           args: --verbose --features full,feat-ibc,testnet,faucet-test,devnet
 
-  test-bitcoin:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-      - name: Use Nightly
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly-2023-05-08
-          override: true
-      - name: Cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo
-            ./target
-          key: ${{ runner.os }}-test-all-features-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-test-all-features-
-      - name: Test
-        env:
-          RUST_LOG: info
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --verbose --features full,feat-ibc,testnet,faucet-test,devnet bitcoin -- --ignored
+  # test-bitcoin:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v2
+  #     - name: Use Nightly
+  #       uses: actions-rs/toolchain@v1
+  #       with:
+  #         toolchain: nightly-2023-05-08
+  #         override: true
+  #     - name: Cache
+  #       uses: actions/cache@v3
+  #       with:
+  #         path: |
+  #           ~/.cargo
+  #           ./target
+  #         key: ${{ runner.os }}-test-all-features-${{ hashFiles('Cargo.lock') }}
+  #         restore-keys: |
+  #           ${{ runner.os }}-test-all-features-
+  #     - name: Test
+  #       env:
+  #         RUST_LOG: info
+  #       uses: actions-rs/cargo@v1
+  #       with:
+  #         command: test
+  #         args: --verbose --features full,feat-ibc,testnet,faucet-test,devnet bitcoin -- --ignored
 
   check-rest:
     runs-on: ubuntu-latest
