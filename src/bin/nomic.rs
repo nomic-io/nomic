@@ -1078,7 +1078,7 @@ pub struct RelayerCmd {
     #[clap(short = 'p', long, default_value_t = 8332)]
     rpc_port: u16,
 
-    #[clap(short = 'h', long)]
+    #[clap(short = 'H', long)]
     rpc_host: Option<String>,
 
     #[clap(short = 'u', long)]
