@@ -7,7 +7,10 @@ use crate::bitcoin::adapter::Adapter;
 use crate::bitcoin::{Bitcoin, Nbtc};
 use crate::cosmos::{Chain, Cosmos, Proof};
 
-use crate::constants::{BTC_NATIVE_TOKEN_DENOM, MAIN_NATIVE_TOKEN_DENOM};
+use crate::constants::{
+    BTC_NATIVE_TOKEN_DENOM, DECLARE_FEE_USATS, IBC_FEE, IBC_FEE_USATS, INITIAL_SUPPLY_ORAIBTC,
+    INITIAL_SUPPLY_USATS_FOR_RELAYER, MAIN_NATIVE_TOKEN_DENOM,
+};
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::{Script, Transaction, TxOut};
 use orga::coins::{
@@ -58,11 +61,6 @@ impl Symbol for Nom {
     const INDEX: u8 = 69;
     const NAME: &'static str = MAIN_NATIVE_TOKEN_DENOM;
 }
-const IBC_FEE_USATS: u64 = 0;
-const DECLARE_FEE_USATS: u64 = 0;
-
-const INITIAL_SUPPLY_ORAIBTC: u64 = 1_000_000_000_000; // 1 millions oraibtc
-const INITIAL_SUPPLY_USATS_FOR_RELAYER: u64 = 1_000_000_000_000; // 1 millions usats
 
 #[orga(version = 4)]
 pub struct InnerApp {
@@ -99,7 +97,7 @@ pub struct InnerApp {
 
 #[orga]
 impl InnerApp {
-    pub const CONSENSUS_VERSION: u8 = 10;
+    pub const CONSENSUS_VERSION: u8 = 11;
 
     #[call]
     pub fn deposit_rewards(&mut self) -> Result<()> {
@@ -443,7 +441,7 @@ mod abci {
 
     impl InitChain for InnerApp {
         fn init_chain(&mut self, _ctx: &InitChainCtx) -> Result<()> {
-            self.staking.max_validators = 100;
+            self.staking.max_validators = 30;
             self.staking.max_offline_blocks = 20_000;
             self.staking.downtime_jail_seconds = 60 * 30; // 30 minutes
             self.staking.slash_fraction_downtime = (Amount::new(1) / Amount::new(1000))?;
@@ -1189,7 +1187,7 @@ impl Describe for Dest {
 }
 
 pub fn ibc_fee(amount: Amount) -> Result<Amount> {
-    let fee_rate: orga::coins::Decimal = "0.005".parse().unwrap();
+    let fee_rate: orga::coins::Decimal = IBC_FEE.to_string().parse().unwrap();
     (amount * fee_rate)?.amount()
 }
 

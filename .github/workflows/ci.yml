@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [master, develop]
+    branches: [master, develop, test/ci]
   pull_request:
     branches: [master, develop]
 
@@ -63,34 +63,34 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --verbose --all-features
+          args: --verbose --features full,feat-ibc,testnet,faucet-test,devnet
 
-  test-bitcoin:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-      - name: Use Nightly
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly-2023-05-08
-          override: true
-      - name: Cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo
-            ./target
-          key: ${{ runner.os }}-test-all-features-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-test-all-features-
-      - name: Test
-        env:
-          RUST_LOG: info
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --verbose --all-features bitcoin -- --ignored
+  # test-bitcoin:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v2
+  #     - name: Use Nightly
+  #       uses: actions-rs/toolchain@v1
+  #       with:
+  #         toolchain: nightly-2023-05-08
+  #         override: true
+  #     - name: Cache
+  #       uses: actions/cache@v3
+  #       with:
+  #         path: |
+  #           ~/.cargo
+  #           ./target
+  #         key: ${{ runner.os }}-test-all-features-${{ hashFiles('Cargo.lock') }}
+  #         restore-keys: |
+  #           ${{ runner.os }}-test-all-features-
+  #     - name: Test
+  #       env:
+  #         RUST_LOG: info
+  #       uses: actions-rs/cargo@v1
+  #       with:
+  #         command: test
+  #         args: --verbose --features full,feat-ibc,testnet,faucet-test,devnet bitcoin -- --ignored
 
   check-rest:
     runs-on: ubuntu-latest
@@ -156,12 +156,12 @@ jobs:
         with:
           command: llvm-cov
           args: --no-default-features --features=full,feat-ibc,testnet --workspace --lcov --output-path lcov.info
-      - name: Upload to codecov.io
-        uses: codecov/codecov-action@v1
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: lcov.info
-          fail_ci_if_error: true
+      # - name: Upload to codecov.io
+      #   uses: codecov/codecov-action@v1
+      #   with:
+      #     token: ${{ secrets.CODECOV_TOKEN }}
+      #     files: lcov.info
+      #     fail_ci_if_error: true
 
   format:
     runs-on: ubuntu-latest

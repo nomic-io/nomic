@@ -6,10 +6,14 @@ use super::{
     threshold_sig::{Signature, ThresholdSig},
     Xpub,
 };
-use crate::error::{Error, Result};
 use crate::{
     app::Dest,
     bitcoin::{signatory::derive_pubkey, Nbtc},
+    constants::{MAX_FEE_RATE, MIN_FEE_RATE},
+};
+use crate::{
+    constants::DEFAULT_FEE_RATE,
+    error::{Error, Result},
 };
 use bitcoin::hashes::Hash;
 use bitcoin::{blockdata::transaction::EcdsaSighashType, Sequence, Transaction, TxIn, TxOut};
@@ -431,9 +435,6 @@ impl Batch {
         self.signed_txs as u64 == self.batch.len()
     }
 }
-
-/// The default fee rate to be used to pay miner fees, in satoshis per virtual byte.
-pub const DEFAULT_FEE_RATE: u64 = 10;
 
 /// `Checkpoint` is the main structure which coordinates the network's
 /// management of funds on the Bitcoin blockchain.
@@ -967,8 +968,8 @@ impl Config {
             max_outputs: 200,
             max_age: 60 * 60 * 24 * 7 * 3,
             target_checkpoint_inclusion: 2,
-            min_fee_rate: 2, // relay threshold is 1 sat/vbyte
-            max_fee_rate: 200,
+            min_fee_rate: MIN_FEE_RATE, // relay threshold is 1 sat/vbyte
+            max_fee_rate: MAX_FEE_RATE,
             sigset_threshold: SIGSET_THRESHOLD,
             emergency_disbursal_min_tx_amt: 1000,
             #[cfg(feature = "testnet")]

@@ -117,8 +117,8 @@ async fn set_recovery_address(nomic_account: NomicTestWallet) -> Result<()> {
     app_client()
         .with_wallet(nomic_account.wallet)
         .call(
-            move |app: InnerApp| build_call!(app.accounts.take_as_funding((MIN_FEE).into())),
-            move |app: InnerApp| {
+            move |app| build_call!(app.accounts.take_as_funding((MIN_FEE).into())),
+            move |app| {
                 build_call!(app
                     .bitcoin
                     .set_recovery_script(Adapter::new(nomic_account.script.clone())))
@@ -360,7 +360,7 @@ async fn bitcoin_test() {
         poll_for_bitcoin_header(1120).await.unwrap();
 
         let balance = app_client()
-            .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
+            .query(|app: InnerApp| app.bitcoin.accounts.balance(funded_accounts[0].address))
             .await
             .unwrap();
         assert_eq!(balance, Amount::from(0));
@@ -377,7 +377,7 @@ async fn bitcoin_test() {
         .unwrap();
 
         let balance = app_client()
-            .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
+            .query(|app: InnerApp| app.bitcoin.accounts.balance(funded_accounts[0].address))
             .await
             .unwrap();
         assert_eq!(balance, Amount::from(0));
@@ -391,13 +391,13 @@ async fn bitcoin_test() {
         poll_for_signing_checkpoint().await;
 
         let balance = app_client()
-            .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
+            .query(|app: InnerApp| app.bitcoin.accounts.balance(funded_accounts[0].address))
             .await
             .unwrap();
         assert_eq!(balance, Amount::from(0));
 
         let confirmed_index = app_client()
-            .query(|app| Ok(app.bitcoin.checkpoints.confirmed_index))
+            .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.confirmed_index))
             .await
             .unwrap();
         assert_eq!(confirmed_index, None);
@@ -407,7 +407,7 @@ async fn bitcoin_test() {
         tx.send(Some(())).await.unwrap();
 
         let balance = app_client()
-            .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
+            .query(|app: InnerApp| app.bitcoin.accounts.balance(funded_accounts[0].address))
             .await
             .unwrap();
         assert_eq!(balance, Amount::from(989998435800000));
@@ -436,7 +436,7 @@ async fn bitcoin_test() {
         poll_for_completed_checkpoint(2).await;
 
         let balance = app_client()
-            .query(|app| app.bitcoin.accounts.balance(funded_accounts[1].address))
+            .query(|app: InnerApp| app.bitcoin.accounts.balance(funded_accounts[1].address))
             .await
             .unwrap();
 
@@ -459,10 +459,10 @@ async fn bitcoin_test() {
         poll_for_completed_checkpoint(3).await;
 
         let signer_jailed = app_client()
-            .query(|app| {
+            .query(|app: InnerApp| {
                 Ok(app
                     .staking
-                    .all_validators()?
+                    .validators()?
                     .iter()
                     .any(|val| val.address == funded_accounts[2].address.into() && val.jailed))
             })
@@ -471,7 +471,7 @@ async fn bitcoin_test() {
         assert!(signer_jailed);
 
         let balance = app_client()
-            .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
+            .query(|app: InnerApp| app.bitcoin.accounts.balance(funded_accounts[0].address))
             .await
             .unwrap();
         assert_eq!(balance, Amount::from(989991435800000));
@@ -540,7 +540,7 @@ async fn bitcoin_test() {
         for (i, account) in funded_accounts[0..1].iter().enumerate() {
             let dump_address = wallet.get_new_address(None, None).unwrap();
             let disbursal_txs = app_client()
-                .query(|app| Ok(app.bitcoin.checkpoints.emergency_disbursal_txs()?))
+                .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.emergency_disbursal_txs()?))
                 .await
                 .unwrap();
 
@@ -972,7 +972,7 @@ async fn pending_deposits() {
         poll_for_bitcoin_header(1120).await.unwrap();
 
         let balance = app_client()
-            .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
+            .query(|app: InnerApp| app.bitcoin.accounts.balance(funded_accounts[0].address))
             .await
             .unwrap();
         assert_eq!(balance, Amount::from(0));
@@ -989,7 +989,7 @@ async fn pending_deposits() {
         .unwrap();
 
         let balance = app_client()
-            .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
+            .query(|app: InnerApp| app.bitcoin.accounts.balance(funded_accounts[0].address))
             .await
             .unwrap();
         assert_eq!(balance, Amount::from(0));

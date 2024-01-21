@@ -5,7 +5,9 @@ use self::checkpoint::Input;
 use self::threshold_sig::Signature;
 use crate::app::Dest;
 use crate::bitcoin::checkpoint::BatchType;
-use crate::constants::BTC_NATIVE_TOKEN_DENOM;
+use crate::constants::{
+    BTC_NATIVE_TOKEN_DENOM, MIN_DEPOSIT_AMOUNT, MIN_WITHDRAWAL_AMOUNT, TRANSFER_FEE,
+};
 use crate::error::{Error, Result};
 use adapter::Adapter;
 use bitcoin::hashes::Hash;
@@ -15,7 +17,7 @@ use bitcoin::Script;
 use bitcoin::{util::merkleblock::PartialMerkleTree, Transaction};
 use checkpoint::CheckpointQueue;
 use header_queue::HeaderQueue;
-use orga::coins::{Accounts, Address, Amount, Coin, Give, Symbol, Take};
+use orga::coins::{Accounts, Address, Amount, Coin, Give, Symbol};
 use orga::collections::Map;
 use orga::collections::{Deque, Next};
 use orga::context::{Context, GetContext};
@@ -23,9 +25,9 @@ use orga::describe::Describe;
 use orga::encoding::{Decode, Encode, LengthVec, Terminated};
 use orga::migrate::{Migrate, MigrateFrom};
 use orga::orga;
+use orga::plugins::Paid;
 #[cfg(feature = "full")]
 use orga::plugins::Validators;
-use orga::plugins::{Paid, ValidatorEntry};
 use orga::plugins::{Signer, Time};
 use orga::prelude::FieldCall;
 use orga::query::FieldQuery;
@@ -71,7 +73,7 @@ pub const SIGSET_THRESHOLD: (u64, u64) = (9, 10);
 pub const SIGSET_THRESHOLD: (u64, u64) = (2, 3);
 
 /// The configuration parameters for the Bitcoin module.
-#[orga(skip(Default), version = 4)]
+#[orga(skip(Default), version = 5)]
 pub struct Config {
     /// The minimum number of checkpoints that must be produced before
     /// withdrawals are enabled.
@@ -107,16 +109,16 @@ pub struct Config {
     /// If a signer does not submit signatures for this many consecutive
     /// checkpoints, they are considered offline and are removed from the
     /// signatory set (jailed) and slashed.
-    #[orga(version(V1, V2, V3, V4))]
+    #[orga(version(V1, V2, V3, V4, V5))]
     pub max_offline_checkpoints: u32,
     /// The minimum number of confirmations a checkpoint must have on the
     /// Bitcoin network before it is considered confirmed. Note that in the
     /// current implementation, the actual number of confirmations required is
     /// `min_checkpoint_confirmations + 1`.
-    #[orga(version(V2, V3, V4))]
+    #[orga(version(V2, V3, V4, V5))]
     pub min_checkpoint_confirmations: u32,
     /// The maximum amount of BTC that can be held in the network, in satoshis.
-    #[orga(version(V2, V3, V4))]
+    #[orga(version(V2, V3, V4, V5))]
     pub capacity_limit: u64,
 }
 
@@ -192,7 +194,27 @@ impl MigrateFrom<ConfigV3> for ConfigV4 {
             units_per_sat: value.units_per_sat,
             max_offline_checkpoints: value.max_offline_checkpoints,
             min_checkpoint_confirmations: 0,
-            capacity_limit: Self::default().capacity_limit,
+            capacity_limit: Config::default().capacity_limit,
+        })
+    }
+}
+
+impl MigrateFrom<ConfigV4> for ConfigV5 {
+    fn migrate_from(value: ConfigV4) -> OrgaResult<Self> {
+        // Migrating to set min_checkpoint_confirmations to 0 and testnet
+        // capacity limit to 100 BTC
+        Ok(Self {
+            min_withdrawal_checkpoints: value.min_withdrawal_checkpoints,
+            min_deposit_amount: Config::default().min_deposit_amount,
+            min_withdrawal_amount: Config::default().min_withdrawal_amount,
+            max_withdrawal_amount: value.max_withdrawal_amount,
+            max_withdrawal_script_length: value.max_withdrawal_script_length,
+            transfer_fee: Config::default().transfer_fee,
+            min_confirmations: value.min_confirmations,
+            units_per_sat: value.units_per_sat,
+            max_offline_checkpoints: value.max_offline_checkpoints,
+            min_checkpoint_confirmations: value.min_checkpoint_confirmations,
+            capacity_limit: value.capacity_limit,
         })
     }
 }
@@ -201,11 +223,11 @@ impl Config {
     fn bitcoin() -> Self {
         Self {
             min_withdrawal_checkpoints: 4,
-            min_deposit_amount: 600,
-            min_withdrawal_amount: 600,
+            min_deposit_amount: MIN_DEPOSIT_AMOUNT,
+            min_withdrawal_amount: MIN_WITHDRAWAL_AMOUNT,
             max_withdrawal_amount: 64,
             max_withdrawal_script_length: 64,
-            transfer_fee: 1_000_000,
+            transfer_fee: TRANSFER_FEE,
             #[cfg(feature = "testnet")]
             min_confirmations: 0,
             #[cfg(not(feature = "testnet"))]
@@ -611,9 +633,9 @@ impl Bitcoin {
         let mut checkpoint_tx = building_checkpoint_batch.get_mut(0)?.unwrap();
         checkpoint_tx.input.push_back(input)?;
 
-        let mut minted_nbtc = Nbtc::mint(value);
-        let deposit_fee = minted_nbtc.take(calc_deposit_fee(value))?;
-        self.reward_pool.give(deposit_fee)?;
+        let minted_nbtc = Nbtc::mint(value);
+        // let deposit_fee = minted_nbtc.take(calc_deposit_fee(value))?;
+        // self.reward_pool.give(deposit_fee)?;
 
         self.checkpoints
             .building_mut()?
@@ -942,6 +964,8 @@ impl Bitcoin {
     /// from the validator set and slashing their stake.
     #[cfg(feature = "full")]
     fn offline_signers(&mut self) -> Result<Vec<ConsensusKey>> {
+        use orga::plugins::ValidatorEntry;
+
         let mut validators = self
             .context::<Validators>()
             .ok_or_else(|| OrgaError::App("No validator context found".to_string()))?
@@ -1220,8 +1244,8 @@ mod tests {
 
         let secp = Secp256k1::new();
         let xpriv = vec![
-            ExtendedPrivKey::new_master(bitcoin::Network::Bitcoin, &[0]).unwrap(),
-            ExtendedPrivKey::new_master(bitcoin::Network::Bitcoin, &[1]).unwrap(),
+            ExtendedPrivKey::new_master(bitcoin::Network::Testnet, &[0]).unwrap(),
+            ExtendedPrivKey::new_master(bitcoin::Network::Testnet, &[1]).unwrap(),
         ];
         let xpub = vec![
             ExtendedPubKey::from_priv(&secp, &xpriv[0]),

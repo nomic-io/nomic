@@ -244,6 +244,7 @@ impl StartCmd {
         };
         let config_path = home.join("tendermint/config/config.toml");
         let chain_id = cmd.config.chain_id.as_deref();
+
         if !has_node {
             log::info!("Initializing node at {}...", home.display());
 
@@ -279,11 +280,11 @@ impl StartCmd {
                 std::fs::copy(node_key, home.join("tendermint/config/node_key.json")).unwrap();
             }
 
-            edit_block_time(&config_path, "3s");
-
             configure_node(&config_path, |cfg| {
                 cfg["rpc"]["laddr"] = toml_edit::value("tcp://0.0.0.0:26657");
             });
+
+            edit_block_time(&config_path, "3s");
 
             if !cmd.config.state_sync_rpc.is_empty() {
                 let servers: Vec<_> = cmd
@@ -311,7 +312,8 @@ impl StartCmd {
         }
 
         log::info!("Starting node at {}...", home.display());
-        let mut node = Node::<nomic::app::App>::new(&home, chain_id, Default::default()).await;
+        let mut node: Node<_> =
+            Node::<nomic::app::App>::new(&home, chain_id, Default::default()).await;
 
         if cmd.unsafe_reset {
             node = node.reset().await;
@@ -805,7 +807,7 @@ impl ValidatorsCmd {
         let mut validators: Vec<ValidatorQueryInfo> = self
             .config
             .client()
-            .query(|app: InnerApp| app.staking.all_validators())
+            .query(|app: InnerApp| app.staking.validators())
             .await?;
 
         validators.sort_by(|a, b| b.amount_staked.cmp(&a.amount_staked));
@@ -1076,6 +1078,9 @@ pub struct RelayerCmd {
     #[clap(short = 'p', long, default_value_t = 8332)]
     rpc_port: u16,
 
+    #[clap(short = 'H', long)]
+    rpc_host: Option<String>,
+
     #[clap(short = 'u', long)]
     rpc_user: Option<String>,
 
@@ -1088,7 +1093,11 @@ pub struct RelayerCmd {
 
 impl RelayerCmd {
     async fn btc_client(&self) -> Result<BtcClient> {
-        let rpc_url = format!("http://localhost:{}", self.rpc_port);
+        let rpc_url = format!(
+            "http://{}:{}",
+            self.rpc_host.clone().unwrap_or("localhost".to_string()),
+            self.rpc_port
+        );
         let auth = match (self.rpc_user.clone(), self.rpc_pass.clone()) {
             (Some(user), Some(pass)) => Auth::UserPass(user, pass),
             _ => Auth::None,
@@ -1579,13 +1588,13 @@ impl UpgradeStatusCmd {
             return Ok(());
         }
 
-        let all_validators: Vec<ValidatorQueryInfo> = client
-            .query(|app: InnerApp| app.staking.all_validators())
+        let validators: Vec<ValidatorQueryInfo> = client
+            .query(|app: InnerApp| app.staking.validators())
             .await?;
 
         let mut validator_names: HashMap<orga::coins::VersionedAddress, (String, u64)> =
             HashMap::new();
-        all_validators
+        validators
             .into_iter()
             .filter(|v| v.in_active_set)
             .for_each(|v| {
@@ -1802,7 +1811,7 @@ impl SigningStatusCmd {
                 missing_cons_keys.push((k, *xpub));
             }
         }
-        let all_vals = app.staking.all_validators()?;
+        let all_vals = app.staking.validators()?;
         for val in all_vals {
             if val.amount_staked == 0 {
                 continue;
