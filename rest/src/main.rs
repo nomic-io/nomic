@@ -524,7 +524,7 @@ async fn minting_inflation_2() -> Result<Value, BadRequest<String>> {
 #[get("/bank/total/<denom>")]
 async fn bank_total(denom: &str) -> Result<Value, BadRequest<String>> {
     let total_balances: u64 = app_client()
-        .query(|app: InnerApp| app.get_total_balances(denom.to_string()))
+        .query(|app: InnerApp| app.get_total_balances(denom))
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
     Ok(json!({ "height": "0", "result":  total_balances.to_string()}))
@@ -536,7 +536,10 @@ async fn staking_pool() -> Result<Value, BadRequest<String>> {
         .query(|app: InnerApp| app.staking.staked())
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
-    let total_balances: u64 = get_total_balances(Nom::NAME).await?;
+    let total_balances: u64 = app_client()
+        .query(|app: InnerApp| app.get_total_balances(Nom::NAME))
+        .await
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
     let staked_u64: u64 = staked.into();
     let not_bonded = total_balances - staked_u64;
     Ok(json!({
@@ -576,7 +579,7 @@ async fn staking_params() -> Result<Value, BadRequest<String>> {
 #[get("/cosmos/bank/v1beta1/supply/<denom>")]
 async fn bank_supply_unom(denom: &str) -> Result<Value, BadRequest<String>> {
     let total_balances: u64 = app_client()
-        .query(|app: InnerApp| app.get_total_balances(denom.to_string()))
+        .query(|app: InnerApp| app.get_total_balances(denom))
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
     Ok(json!({

@@ -327,21 +327,25 @@ impl InnerApp {
         // Err(orga::Error::Unknown)
     }
 
-    #[query]
-    pub fn get_total_balances(&self, denom: String) -> Result<u64> {
-        let mut total_balances: u64;
+    pub fn get_total_balances(&self, denom: &str) -> Result<u64> {
+        let mut total_balances: u64 = 0;
         if denom.eq(Nom::NAME) {
             let acc_iter = self.accounts.iter()?;
             for acc in acc_iter {
                 let balance: u64 = acc?.1.amount.into();
                 total_balances += balance;
             }
-        } else {
+        } else if denom.eq(Nbtc::NAME) {
             let acc_iter = self.bitcoin.accounts.iter()?;
             for acc in acc_iter {
                 let balance: u64 = acc?.1.amount.into();
                 total_balances += balance;
             }
+        } else {
+            return Err(Error::App(format!(
+                "Cannot find balances of the {} denom",
+                denom
+            )));
         };
         Ok(total_balances)
     }
@@ -521,15 +525,19 @@ mod abci {
             match req.path.as_str() {
                 "/cosmos.bank.v1beta1.Query/SupplyOf" => {
                     let request = QuerySupplyOfRequest::decode(req.data.clone()).unwrap();
+                    let balance = self.get_total_balances(&request.denom);
+                    if let Some(balance) = balance.ok() {
+                        let amount = Some(Coin {
+                            amount: balance.to_string(),
+                            denom: request.denom,
+                        });
 
-                    let balance = self.get_total_balances(request.denom)?;
-                    let amount = Some(Coin {
-                        amount: balance.to_string(),
-                        denom: request.denom,
-                    });
-
-                    let response = QuerySupplyOfResponse { amount };
-                    res_value = response.encode_to_vec().into();
+                        let response = QuerySupplyOfResponse { amount };
+                        res_value = response.encode_to_vec().into();
+                    } else {
+                        let response = QuerySupplyOfResponse { amount: None };
+                        res_value = response.encode_to_vec().into();
+                    }
                 }
                 "/cosmos.slashing.v1beta1.Query/Params"
                 | "/cosmos.gov.v1beta1.Query/Proposals"
@@ -541,8 +549,8 @@ mod abci {
                 }
                 "/cosmos.bank.v1beta1.Query/TotalSupply" => {
                     let request = QueryTotalSupplyRequest::decode(req.data.clone()).unwrap();
-                    let balance_oraibtc = self.get_total_balances(Nom::NAME.to_string())?;
-                    let balance_usats = self.get_total_balances(Nbtc::NAME.to_string())?;
+                    let balance_oraibtc = self.get_total_balances(Nom::NAME)?;
+                    let balance_usats = self.get_total_balances(Nbtc::NAME)?;
                     let response = QueryTotalSupplyResponse {
                         supply: vec![
                             Coin {
@@ -1225,7 +1233,145 @@ pub fn in_upgrade_window(now_seconds: i64) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use bytes::Bytes;
+    use cosmos_sdk_proto::{
+        cosmos::{
+            bank::v1beta1::{
+                QuerySupplyOfRequest, QuerySupplyOfResponse, QueryTotalSupplyRequest,
+                QueryTotalSupplyResponse,
+            },
+            base::v1beta1::Coin,
+        },
+        traits::Message,
+    };
+    use orga::{
+        abci::{messages::RequestQuery, AbciQuery, InitChain},
+        client::{wallet::Unsigned, AppClient},
+        plugins::InitChainCtx,
+        tendermint::client::HttpClient,
+    };
+
     use super::*;
+
+    fn inner_app() -> InnerApp {
+        let mut innner_app = InnerApp::default();
+        let ctx = InitChainCtx {
+            time: None,
+            chain_id: "test-chain".to_string(),
+            validators: vec![],
+            app_state_bytes: vec![],
+            initial_height: 0i64,
+        };
+        env::set_var(
+            "FUNDED_ADDRESS",
+            "oraibtc1ehmhqcn8erf3dgavrca69zgp4rtxj5kqzpga4j",
+        );
+        innner_app.init_chain(&ctx).unwrap();
+        innner_app
+    }
+
+    #[test]
+    fn test_init_inner_app() {
+        let app = inner_app();
+        assert_eq!(app.staking.max_validators, 30);
+        let init_balance: u64 = app
+            .accounts
+            .balance(Address::from_str("oraibtc1ehmhqcn8erf3dgavrca69zgp4rtxj5kqzpga4j").unwrap())
+            .unwrap()
+            .into();
+        assert_eq!(init_balance, INITIAL_SUPPLY_ORAIBTC);
+    }
+
+    #[test]
+    fn test_abci_query_total_supply() {
+        let app = inner_app();
+        let encoded_query = QueryTotalSupplyRequest { pagination: None }.encode_to_vec();
+        let data_bytes: Bytes = Bytes::copy_from_slice(encoded_query.as_slice());
+        let request = RequestQuery {
+            path: "/cosmos.bank.v1beta1.Query/TotalSupply".to_string(),
+            data: data_bytes,
+            height: 0,
+            prove: false,
+        };
+        let total_supply = app.abci_query(&request).unwrap();
+        let query_response = QueryTotalSupplyResponse::decode(total_supply.value).unwrap();
+        assert_eq!(query_response.supply.len(), 2);
+        assert_eq!(query_response.supply[0].denom, Nom::NAME);
+        assert_eq!(
+            query_response.supply[0].amount,
+            INITIAL_SUPPLY_ORAIBTC.to_string()
+        );
+        assert_eq!(query_response.supply[1].denom, Nbtc::NAME);
+        assert_eq!(
+            query_response.supply[1].amount,
+            INITIAL_SUPPLY_USATS_FOR_RELAYER.to_string()
+        );
+    }
+
+    #[test]
+    fn test_abci_query_supply_of() {
+        let app = inner_app();
+
+        // case 1: not found denom case
+        let encoded_query = QuerySupplyOfRequest {
+            denom: "foobar".to_string(),
+        }
+        .encode_to_vec();
+        let data_bytes: Bytes = Bytes::copy_from_slice(encoded_query.as_slice());
+        let request = RequestQuery {
+            path: "/cosmos.bank.v1beta1.Query/SupplyOf".to_string(),
+            data: data_bytes,
+            height: 0,
+            prove: false,
+        };
+        let supply_of = app.abci_query(&request).unwrap();
+        let query_response = QuerySupplyOfResponse::decode(supply_of.value).unwrap();
+        assert_eq!(query_response.amount, None);
+
+        // case 2: uoraibtc case
+        let encoded_query = QuerySupplyOfRequest {
+            denom: Nom::NAME.to_string(),
+        }
+        .encode_to_vec();
+        let data_bytes: Bytes = Bytes::copy_from_slice(encoded_query.as_slice());
+        let request = RequestQuery {
+            path: "/cosmos.bank.v1beta1.Query/SupplyOf".to_string(),
+            data: data_bytes,
+            height: 0,
+            prove: false,
+        };
+        let supply_of = app.abci_query(&request).unwrap();
+        let query_response = QuerySupplyOfResponse::decode(supply_of.value).unwrap();
+        assert_eq!(
+            query_response.amount,
+            Some(Coin {
+                amount: INITIAL_SUPPLY_ORAIBTC.to_string(),
+                denom: Nom::NAME.to_string()
+            })
+        );
+
+        // case 3: usat case
+        let encoded_query = QuerySupplyOfRequest {
+            denom: Nbtc::NAME.to_string(),
+        }
+        .encode_to_vec();
+        let data_bytes: Bytes = Bytes::copy_from_slice(encoded_query.as_slice());
+        let request = RequestQuery {
+            path: "/cosmos.bank.v1beta1.Query/SupplyOf".to_string(),
+            data: data_bytes,
+            height: 0,
+            prove: false,
+        };
+        let supply_of = app.abci_query(&request).unwrap();
+        let query_response = QuerySupplyOfResponse::decode(supply_of.value).unwrap();
+        assert_eq!(
+            query_response.amount,
+            Some(Coin {
+                amount: INITIAL_SUPPLY_USATS_FOR_RELAYER.to_string(),
+                denom: Nbtc::NAME.to_string()
+            })
+        );
+    }
 
     #[test]
     fn upgrade_date() {
