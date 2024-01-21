@@ -855,7 +855,7 @@ async fn latest_validator_set() -> Value {
         .unwrap();
 
     let res = client
-        .validators(block.block.header.height, tendermint_rpc::Paging::Default)
+        .validators(block.block.header.height, tendermint_rpc::Paging::All)
         .await
         .unwrap();
 
@@ -867,7 +867,7 @@ async fn validator_set(height: u32) -> Value {
     let client = tm::HttpClient::new(app_host()).unwrap();
 
     let res = client
-        .validators(height, tendermint_rpc::Paging::Default)
+        .validators(height, tendermint_rpc::Paging::All)
         .await
         .unwrap();
 
