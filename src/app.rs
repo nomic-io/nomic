@@ -397,7 +397,11 @@ mod abci {
                 QuerySupplyOfRequest, QuerySupplyOfResponse, QueryTotalSupplyRequest,
                 QueryTotalSupplyResponse,
             },
-            base::{tendermint::v1beta1::Validator, v1beta1::Coin},
+            base::{
+                tendermint::v1beta1::Validator,
+                v1beta1::{Coin, DecCoin},
+            },
+            distribution::v1beta1::{QueryCommunityPoolRequest, QueryCommunityPoolResponse},
             staking::v1beta1::{
                 query_server::{Query as StakingQuery, QueryServer as StakingQueryServer},
                 Params, Pool, QueryDelegationRequest, QueryDelegationResponse,
@@ -547,8 +551,14 @@ mod abci {
                 | "/cosmos.distribution.v1beta1.Query/Params"
                 | "/cosmos.gov.v1beta1.Query/Params"
                 | "/cosmos.distribution.v1beta1.Query/CommunityPool" => {
-                    // let request = QueryProposalsRequest::decode(req.data.clone()).unwrap();
-                    res_value = Bytes::default();
+                    let request = QueryCommunityPoolRequest::decode(req.data.clone()).unwrap();
+                    let response = QueryCommunityPoolResponse {
+                        pool: vec![DecCoin {
+                            denom: Nom::NAME.to_string(),
+                            amount: self.community_pool.amount.to_string(),
+                        }],
+                    };
+                    res_value = response.encode_to_vec().into();
                 }
                 "/cosmos.bank.v1beta1.Query/TotalSupply" => {
                     let request = QueryTotalSupplyRequest::decode(req.data.clone()).unwrap();
@@ -1262,6 +1272,7 @@ mod tests {
                 QueryTotalSupplyResponse,
             },
             base::v1beta1::Coin,
+            distribution::v1beta1::{QueryCommunityPoolRequest, QueryCommunityPoolResponse},
             staking::v1beta1::{
                 QueryParamsRequest as StakingQueryParamsRequest,
                 QueryParamsResponse as StakingQueryParamsResponse, QueryPoolRequest,
@@ -1439,8 +1450,30 @@ mod tests {
         let response = app.abci_query(&request).unwrap();
         let query_response = QueryPoolResponse::decode(response.value).unwrap();
         let res = query_response.pool.unwrap();
-        assert_eq!(res.bonded_tokens, String::from("0"));
-        assert_eq!(res.not_bonded_tokens, INITIAL_SUPPLY_ORAIBTC.to_string());
+        assert_eq!(res.bonded_tokens, app.staking.staked().unwrap().to_string());
+        assert_eq!(
+            res.not_bonded_tokens,
+            app.get_total_balances(Nom::NAME).unwrap().to_string()
+        );
+    }
+
+    #[test]
+    fn test_abci_query_community_pool() {
+        let app = inner_app();
+        let encoded_query = QueryCommunityPoolRequest {}.encode_to_vec();
+        let data_bytes: Bytes = Bytes::copy_from_slice(encoded_query.as_slice());
+        let request = RequestQuery {
+            path: "/cosmos.distribution.v1beta1.Query/CommunityPool".to_string(),
+            data: data_bytes,
+            height: 0,
+            prove: false,
+        };
+        let response = app.abci_query(&request).unwrap();
+        let query_response = QueryCommunityPoolResponse::decode(response.value).unwrap();
+        let res = query_response.pool;
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].denom, Nom::NAME.to_string());
+        assert_eq!(res[0].amount, app.community_pool.amount.to_string());
     }
 
     #[test]
