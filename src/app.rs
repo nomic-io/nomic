@@ -549,8 +549,10 @@ mod abci {
                 "/cosmos.slashing.v1beta1.Query/Params"
                 | "/cosmos.gov.v1beta1.Query/Proposals"
                 | "/cosmos.distribution.v1beta1.Query/Params"
-                | "/cosmos.gov.v1beta1.Query/Params"
-                | "/cosmos.distribution.v1beta1.Query/CommunityPool" => {
+                | "/cosmos.gov.v1beta1.Query/Params" => {
+                    res_value = Bytes::default();
+                }
+                "/cosmos.distribution.v1beta1.Query/CommunityPool" => {
                     let request = QueryCommunityPoolRequest::decode(req.data.clone()).unwrap();
                     let response = QueryCommunityPoolResponse {
                         pool: vec![DecCoin {
