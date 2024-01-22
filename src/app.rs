@@ -400,7 +400,7 @@ mod abci {
             base::{tendermint::v1beta1::Validator, v1beta1::Coin},
             staking::v1beta1::{
                 query_server::{Query as StakingQuery, QueryServer as StakingQueryServer},
-                Params, QueryDelegationRequest, QueryDelegationResponse,
+                Params, Pool, QueryDelegationRequest, QueryDelegationResponse,
                 QueryDelegatorDelegationsRequest, QueryDelegatorDelegationsResponse,
                 QueryDelegatorUnbondingDelegationsRequest,
                 QueryDelegatorUnbondingDelegationsResponse, QueryDelegatorValidatorRequest,
@@ -591,6 +591,20 @@ mod abci {
                         ..Params::default()
                     });
                     let response = StakingQueryParamsResponse { params };
+                    res_value = response.encode_to_vec().into();
+                }
+                "/cosmos.staking.v1beta1.Query/Pool" => {
+                    let request = QueryPoolRequest::decode(req.data.clone()).unwrap();
+                    let staked: Amount = self.staking.staked()?;
+                    let total_balances = self.get_total_balances(Nom::NAME)?;
+                    let staked_u64: u64 = staked.into();
+                    let not_bonded = total_balances - staked_u64;
+                    let response = QueryPoolResponse {
+                        pool: Some(Pool {
+                            bonded_tokens: staked.to_string(),
+                            not_bonded_tokens: not_bonded.to_string(),
+                        }),
+                    };
                     res_value = response.encode_to_vec().into();
                 }
                 "/ibc.core.connection.v1.Query/Connections" => {
@@ -1250,7 +1264,8 @@ mod tests {
             base::v1beta1::Coin,
             staking::v1beta1::{
                 QueryParamsRequest as StakingQueryParamsRequest,
-                QueryParamsResponse as StakingQueryParamsResponse,
+                QueryParamsResponse as StakingQueryParamsResponse, QueryPoolRequest,
+                QueryPoolResponse,
             },
         },
         traits::Message,
@@ -1408,6 +1423,24 @@ mod tests {
             params.unbonding_time.unwrap().seconds,
             UNBONDING_SECONDS as i64,
         );
+    }
+
+    #[test]
+    fn test_abci_query_staking_pool() {
+        let app = inner_app();
+        let encoded_query = QueryPoolRequest {}.encode_to_vec();
+        let data_bytes: Bytes = Bytes::copy_from_slice(encoded_query.as_slice());
+        let request = RequestQuery {
+            path: "/cosmos.staking.v1beta1.Query/Pool".to_string(),
+            data: data_bytes,
+            height: 0,
+            prove: false,
+        };
+        let response = app.abci_query(&request).unwrap();
+        let query_response = QueryPoolResponse::decode(response.value).unwrap();
+        let res = query_response.pool.unwrap();
+        assert_eq!(res.bonded_tokens, String::from("0"));
+        assert_eq!(res.not_bonded_tokens, INITIAL_SUPPLY_ORAIBTC.to_string());
     }
 
     #[test]
