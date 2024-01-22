@@ -17,6 +17,7 @@ env:
 jobs:
   test-base:
     runs-on: ubuntu-latest
+    timeout-minutes: 9
     steps:
       - name: Checkout
         uses: actions/checkout@v2

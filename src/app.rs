@@ -534,7 +534,7 @@ mod abci {
                 "/cosmos.bank.v1beta1.Query/SupplyOf" => {
                     let request = QuerySupplyOfRequest::decode(req.data.clone()).unwrap();
                     let balance = self.get_total_balances(&request.denom);
-                    if let Some(balance) = balance.ok() {
+                    if let Ok(balance) = balance {
                         let amount = Some(Coin {
                             amount: balance.to_string(),
                             denom: request.denom,
