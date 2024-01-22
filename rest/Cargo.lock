@@ -2381,8 +2381,8 @@ name = "nomic-rest"
 version = "0.1.3"
 dependencies = [
  "base64 0.13.1",
- "chrono",
  "bitcoin",
+ "chrono",
  "hex",
  "lazy_static",
  "nomic",

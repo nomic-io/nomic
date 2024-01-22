@@ -79,7 +79,7 @@ async fn query_balances(address: &str) -> Result<Vec<Balance>, BadRequest<String
 // /ibc/core/channel/v1/channels/{channelId}/ports/{portId}/client_state
 
 #[get("/cosmos/staking/v1beta1/validators")]
-async fn validators() -> Value {
+async fn get_validators() -> Value {
     let all_validators: Vec<ValidatorQueryInfo> = app_client()
         .query(|app: InnerApp| app.staking.all_validators())
         .await
@@ -151,7 +151,7 @@ async fn validators() -> Value {
 }
 
 #[get("/cosmos/staking/v1beta1/validators/<address>")]
-async fn validator(address: &str) -> Value {
+async fn get_validator(address: &str) -> Value {
     let address: Address = address.parse().unwrap();
 
     // TODO: cache
@@ -774,15 +774,6 @@ async fn staking_pool() -> Result<Value, BadRequest<String>> {
     }))
 }
 
-#[get("/cosmos/staking/v1beta1/validators")]
-async fn validators() -> Result<Value, BadRequest<String>> {
-    let validators: Vec<ValidatorQueryInfo> = app_client()
-        .query(|app: InnerApp| app.staking.all_validators())
-        .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
-    Ok(json!(validators))
-}
-
 #[get("/cosmos/staking/v1beta1/params")]
 async fn staking_params() -> Result<Value, BadRequest<String>> {
     let staking: Staking<Nom> = app_client()
@@ -934,8 +925,8 @@ fn rocket() -> _ {
             bitcoin_checkpoint_config,
             bitcoin_latest_checkpoint,
             staking_params,
-            validators,
-            validator
+            get_validators,
+            get_validator,
             get_bitcoin_recovery_address
         ],
     )
