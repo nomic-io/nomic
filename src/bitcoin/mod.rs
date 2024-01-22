@@ -1242,17 +1242,17 @@ mod tests {
             Context::add(time);
         };
 
+        let btc = Rc::new(RefCell::new(Bitcoin::default()));
         let secp = Secp256k1::new();
+        let network = btc.borrow().network();
         let xpriv = vec![
-            ExtendedPrivKey::new_master(bitcoin::Network::Bitcoin, &[0]).unwrap(),
-            ExtendedPrivKey::new_master(bitcoin::Network::Bitcoin, &[1]).unwrap(),
+            ExtendedPrivKey::new_master(network, &[0]).unwrap(),
+            ExtendedPrivKey::new_master(network, &[1]).unwrap(),
         ];
         let xpub = vec![
             ExtendedPubKey::from_priv(&secp, &xpriv[0]),
             ExtendedPubKey::from_priv(&secp, &xpriv[1]),
         ];
-
-        let btc = Rc::new(RefCell::new(Bitcoin::default()));
 
         let push_deposit = || {
             let input = Input::new(

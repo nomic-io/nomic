@@ -396,11 +396,32 @@ mod abci {
                 QuerySpendableBalancesRequest, QuerySpendableBalancesResponse,
                 QuerySupplyOfRequest, QuerySupplyOfResponse, QueryTotalSupplyRequest,
                 QueryTotalSupplyResponse,
-            }, base::{
-                query::v1beta1::PageResponse, tendermint::v1beta1::Validator, v1beta1::{Coin, DecCoin}
-            }, distribution::v1beta1::{QueryCommunityPoolRequest, QueryCommunityPoolResponse}, staking::v1beta1::{
-                query_server::{Query as StakingQuery, QueryServer as StakingQueryServer}, Delegation, DelegationResponse, Params, Pool, QueryDelegationRequest, QueryDelegationResponse, QueryDelegatorDelegationsRequest, QueryDelegatorDelegationsResponse, QueryDelegatorUnbondingDelegationsRequest, QueryDelegatorUnbondingDelegationsResponse, QueryDelegatorValidatorRequest, QueryDelegatorValidatorResponse, QueryDelegatorValidatorsRequest, QueryDelegatorValidatorsResponse, QueryHistoricalInfoRequest, QueryHistoricalInfoResponse, QueryParamsRequest as StakingQueryParamsRequest, QueryParamsResponse as StakingQueryParamsResponse, QueryPoolRequest, QueryPoolResponse, QueryRedelegationsRequest, QueryRedelegationsResponse, QueryUnbondingDelegationRequest, QueryUnbondingDelegationResponse, QueryValidatorDelegationsRequest, QueryValidatorDelegationsResponse, QueryValidatorRequest, QueryValidatorResponse, QueryValidatorUnbondingDelegationsRequest, QueryValidatorUnbondingDelegationsResponse, QueryValidatorsRequest, QueryValidatorsResponse
-            }, tx::v1beta1::GetTxRequest
+            },
+            base::{
+                query::v1beta1::PageResponse,
+                tendermint::v1beta1::Validator,
+                v1beta1::{Coin, DecCoin},
+            },
+            distribution::v1beta1::{QueryCommunityPoolRequest, QueryCommunityPoolResponse},
+            staking::v1beta1::{
+                query_server::{Query as StakingQuery, QueryServer as StakingQueryServer},
+                Delegation, DelegationResponse, Params, Pool, QueryDelegationRequest,
+                QueryDelegationResponse, QueryDelegatorDelegationsRequest,
+                QueryDelegatorDelegationsResponse, QueryDelegatorUnbondingDelegationsRequest,
+                QueryDelegatorUnbondingDelegationsResponse, QueryDelegatorValidatorRequest,
+                QueryDelegatorValidatorResponse, QueryDelegatorValidatorsRequest,
+                QueryDelegatorValidatorsResponse, QueryHistoricalInfoRequest,
+                QueryHistoricalInfoResponse, QueryParamsRequest as StakingQueryParamsRequest,
+                QueryParamsResponse as StakingQueryParamsResponse, QueryPoolRequest,
+                QueryPoolResponse, QueryRedelegationsRequest, QueryRedelegationsResponse,
+                QueryUnbondingDelegationRequest, QueryUnbondingDelegationResponse,
+                QueryValidatorDelegationsRequest, QueryValidatorDelegationsResponse,
+                QueryValidatorRequest, QueryValidatorResponse,
+                QueryValidatorUnbondingDelegationsRequest,
+                QueryValidatorUnbondingDelegationsResponse, QueryValidatorsRequest,
+                QueryValidatorsResponse,
+            },
+            tx::v1beta1::GetTxRequest,
         },
         tendermint::google::protobuf::Duration as TendermintDuration,
         traits::Message,
@@ -514,7 +535,7 @@ mod abci {
                 "/cosmos.bank.v1beta1.Query/SupplyOf" => {
                     let request = QuerySupplyOfRequest::decode(req.data.clone()).unwrap();
                     let balance = self.get_total_balances(&request.denom);
-                    if let Some(balance) = balance.ok() {
+                    if let Ok(balance) = balance {
                         let amount = Some(Coin {
                             amount: balance.to_string(),
                             denom: request.denom,
@@ -564,66 +585,64 @@ mod abci {
                     res_value = response.encode_to_vec().into();
                 }
                 "/cosmos.staking.v1beta1.Query/DelegatorDelegations" => {
-                    let request = QueryDelegatorDelegationsRequest::decode(req.data.clone()).unwrap();
+                    let request =
+                        QueryDelegatorDelegationsRequest::decode(req.data.clone()).unwrap();
                     let address = Address::from_str(&request.delegator_addr).unwrap();
                     let delegations = self.staking.delegations(address).unwrap();
 
-                    let delegation_responses = delegations.iter()
-                        .map(|(validator_address, d)| {                            
-                            DelegationResponse { 
-                                delegation: Some (Delegation{
-                                    delegator_address: "".to_string(),
-                                    validator_address: validator_address.to_string(),
-                                    shares: "".to_string(),
-                                }),
-                                balance: Some(Coin{
-                                    amount:d.staked.to_string(),
-                                    denom:Nom::NAME.to_string()
-                                }),                            
-                            }
-                        }).collect();
-                        
+                    let delegation_responses = delegations
+                        .iter()
+                        .map(|(validator_address, d)| DelegationResponse {
+                            delegation: Some(Delegation {
+                                delegator_address: "".to_string(),
+                                validator_address: validator_address.to_string(),
+                                shares: "".to_string(),
+                            }),
+                            balance: Some(Coin {
+                                amount: d.staked.to_string(),
+                                denom: Nom::NAME.to_string(),
+                            }),
+                        })
+                        .collect();
 
                     let response = QueryDelegatorDelegationsResponse {
                         delegation_responses,
                         pagination: None,
                     };
                     res_value = response.encode_to_vec().into();
-
-                },
+                }
                 "/cosmos.staking.v1beta1.Query/ValidatorDelegations" => {
-                    let request = QueryValidatorDelegationsRequest::decode(req.data.clone()).unwrap();
+                    let request =
+                        QueryValidatorDelegationsRequest::decode(req.data.clone()).unwrap();
                     let address = Address::from_str(&request.validator_addr).unwrap();
-                    let delegations =self.staking.delegations(address).unwrap();
+                    let delegations = self.staking.delegations(address).unwrap();
 
-        
-                    let delegation_responses: Vec<DelegationResponse> = delegations.iter()
-                    .map(|(validator_address, d)| {                            
-                        DelegationResponse { 
-                            delegation: Some (Delegation{
+                    let delegation_responses: Vec<DelegationResponse> = delegations
+                        .iter()
+                        .map(|(validator_address, d)| DelegationResponse {
+                            delegation: Some(Delegation {
                                 delegator_address: "".to_string(),
                                 validator_address: validator_address.to_string(),
                                 shares: "".to_string(),
                             }),
-                            balance: Some(Coin{
-                                amount:d.staked.to_string(),
-                                denom:Nom::NAME.to_string()
-                            }),                            
-                        }
-                    }).collect();
-                    
+                            balance: Some(Coin {
+                                amount: d.staked.to_string(),
+                                denom: Nom::NAME.to_string(),
+                            }),
+                        })
+                        .collect();
+
                     let total = delegation_responses.len() as u64;
 
                     let response = QueryValidatorDelegationsResponse {
                         delegation_responses,
-                        pagination: Some(PageResponse{
-                            next_key:vec![],
+                        pagination: Some(PageResponse {
+                            next_key: vec![],
                             total,
                         }),
                     };
                     res_value = response.encode_to_vec().into();
-                    
-                },
+                }
                 "/cosmos.tx.v1beta1.Service/GetTx" => {
                     let request = GetTxRequest::decode(req.data.clone()).unwrap();
                     res_value = Bytes::default();
@@ -659,43 +678,43 @@ mod abci {
                             website: "".to_string(),
                         });
 
-                        validators.push(cosmos_sdk_proto::cosmos::staking::v1beta1::Validator{                           
-                             operator_address: validator.address.to_string(),
-                             consensus_pubkey: Some(Any{
-                                 type_url: "/cosmos.crypto.ed25519.PubKey".to_string(),
-                                 value: cons_key.to_vec()
+                        validators.push(cosmos_sdk_proto::cosmos::staking::v1beta1::Validator{
+                            operator_address: validator.address.to_string(),
+                            consensus_pubkey: Some(Any{
+                                type_url: "/cosmos.crypto.ed25519.PubKey".to_string(),
+                                value: cons_key.to_vec()
                              }),
-                             jailed: validator.jailed,
-                             status: status.into(),
-                             tokens: validator.amount_staked.to_string(),
-                             delegator_shares: validator.amount_staked.to_string(),
-                             description: Some(cosmos_sdk_proto::cosmos::staking::v1beta1::Description{
-                                 moniker: info.moniker,
-                                 identity: info.identity,
-                                 website: info.website,
-                                 security_contact: "".to_string(),
-                                 details: info.details
-                             }),
-                             unbonding_height:  0, // TODO
-                             unbonding_time: None, // TODO
-                             commission: Some(cosmos_sdk_proto::cosmos::staking::v1beta1::Commission{
-                                 commission_rates: Some(cosmos_sdk_proto::cosmos::staking::v1beta1::CommissionRates{
-                                    rate: validator.commission.rate.to_string(),
-                                    max_rate: validator.commission.max.to_string(),
-                                    max_change_rate: validator.commission.max_change.to_string()
-                                 }),
-                                 update_time:None // TODO
-                             }),
-                             min_self_delegation: validator.min_self_delegation.to_string()
+                            jailed: validator.jailed,
+                            status: status.into(),
+                            tokens: validator.amount_staked.to_string(),
+                            delegator_shares: validator.amount_staked.to_string(),
+                            description: Some(cosmos_sdk_proto::cosmos::staking::v1beta1::Description{
+                                moniker: info.moniker,
+                                identity: info.identity,
+                                website: info.website,
+                                security_contact: "".to_string(),
+                                details: info.details,
+                            }),
+                            unbonding_height:  0, // TODO
+                            unbonding_time: None, // TODO
+                            commission: Some(cosmos_sdk_proto::cosmos::staking::v1beta1::Commission{
+                                commission_rates: Some(cosmos_sdk_proto::cosmos::staking::v1beta1::CommissionRates{
+                                rate: validator.commission.rate.to_string(),
+                                max_rate: validator.commission.max.to_string(),
+                                max_change_rate: validator.commission.max_change.to_string()
+                                }),
+                                update_time:None // TODO
+                            }),
+                            min_self_delegation: validator.min_self_delegation.to_string()
                         });
                     }
 
-                    let total= validators.len() as u64;
+                    let total = validators.len() as u64;
 
                     let response = QueryValidatorsResponse {
                         validators,
-                        pagination: Some(PageResponse{
-                            next_key:vec![],
+                        pagination: Some(PageResponse {
+                            next_key: vec![],
                             total,
                         }),
                     };
