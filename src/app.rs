@@ -594,6 +594,40 @@ mod abci {
                     res_value = response.encode_to_vec().into();
 
                 },
+                "/cosmos.staking.v1beta1.Query/ValidatorDelegations" => {
+                    let request = QueryValidatorDelegationsRequest::decode(req.data.clone()).unwrap();
+                    let address = Address::from_str(&request.validator_addr).unwrap();
+                    let delegations =self.staking.delegations(address).unwrap();
+
+        
+                    let delegation_responses: Vec<DelegationResponse> = delegations.iter()
+                    .map(|(validator_address, d)| {                            
+                        DelegationResponse { 
+                            delegation: Some (Delegation{
+                                delegator_address: "".to_string(),
+                                validator_address: validator_address.to_string(),
+                                shares: "".to_string(),
+                            }),
+                            balance: Some(Coin{
+                                amount:d.staked.to_string(),
+                                denom:Nom::NAME.to_string()
+                            }),                            
+                        }
+                    }).collect();
+                    
+                    let total = delegation_responses.len() as u64;
+
+                    let response = QueryValidatorDelegationsResponse {
+                        delegation_responses,
+                        pagination: Some(PageResponse{
+                            next_key:vec![],
+                            total,
+                        }),
+                    };
+                    res_value = response.encode_to_vec().into();
+                    
+                },
+                
                 "/cosmos.staking.v1beta1.Query/Validators" => {
                     let request = QueryValidatorsRequest::decode(req.data.clone()).unwrap();
 
