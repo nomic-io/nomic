@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate rocket;
 
+use bitcoin::Address as BitcoinAddress;
 use nomic::{
     app::{InnerApp, Nom},
     bitcoin::{
@@ -16,8 +17,8 @@ use nomic::{
 };
 use rocket::response::status::BadRequest;
 use rocket::serde::json::{json, Value};
-use std::collections::HashMap;
 use std::sync::Arc;
+use std::{collections::HashMap, str::FromStr};
 use tokio::sync::RwLock;
 
 use tendermint_rpc as tm;
@@ -622,6 +623,38 @@ fn ibc_applications_transfer_params() -> Value {
     })
 }
 
+#[get("/bitcoin/recovery_address/<address>?<network>")]
+async fn get_bitcoin_recovery_address(
+    address: String,
+    network: String,
+) -> Result<Value, BadRequest<String>> {
+    let netw = match network.as_str() {
+        "bitcoin" => bitcoin::Network::Bitcoin,
+        "regtest" => bitcoin::Network::Regtest,
+        "testnet" => bitcoin::Network::Testnet,
+        "signet" => bitcoin::Network::Signet,
+        _ => bitcoin::Network::Bitcoin,
+    };
+    let recovery_address: String = app_client()
+        .query(|app: InnerApp| {
+            Ok(
+                match app
+                    .bitcoin
+                    .recovery_scripts
+                    .get(Address::from_str(&address).unwrap())?
+                {
+                    Some(script) => BitcoinAddress::from_script(&script, netw)
+                        .unwrap()
+                        .to_string(),
+                    None => "".to_string(),
+                },
+            )
+        })
+        .await
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+    Ok(json!(recovery_address.to_string()))
+}
+
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::Header;
 use rocket::{Request, Response};
@@ -678,7 +711,8 @@ fn rocket() -> _ {
             bitcoin_checkpoint_config,
             bitcoin_latest_checkpoint,
             staking_params,
-            validators
+            validators,
+            get_bitcoin_recovery_address
         ],
     )
 }
