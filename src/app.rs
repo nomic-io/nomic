@@ -396,14 +396,11 @@ mod abci {
                 QuerySpendableBalancesRequest, QuerySpendableBalancesResponse,
                 QuerySupplyOfRequest, QuerySupplyOfResponse, QueryTotalSupplyRequest,
                 QueryTotalSupplyResponse,
-            },
-            base::{
+            }, base::{
                 query::v1beta1::PageResponse, tendermint::v1beta1::Validator, v1beta1::{Coin, DecCoin}
-            },
-            distribution::v1beta1::{QueryCommunityPoolRequest, QueryCommunityPoolResponse},
-            staking::v1beta1::{
+            }, distribution::v1beta1::{QueryCommunityPoolRequest, QueryCommunityPoolResponse}, staking::v1beta1::{
                 query_server::{Query as StakingQuery, QueryServer as StakingQueryServer}, Delegation, DelegationResponse, Params, Pool, QueryDelegationRequest, QueryDelegationResponse, QueryDelegatorDelegationsRequest, QueryDelegatorDelegationsResponse, QueryDelegatorUnbondingDelegationsRequest, QueryDelegatorUnbondingDelegationsResponse, QueryDelegatorValidatorRequest, QueryDelegatorValidatorResponse, QueryDelegatorValidatorsRequest, QueryDelegatorValidatorsResponse, QueryHistoricalInfoRequest, QueryHistoricalInfoResponse, QueryParamsRequest as StakingQueryParamsRequest, QueryParamsResponse as StakingQueryParamsResponse, QueryPoolRequest, QueryPoolResponse, QueryRedelegationsRequest, QueryRedelegationsResponse, QueryUnbondingDelegationRequest, QueryUnbondingDelegationResponse, QueryValidatorDelegationsRequest, QueryValidatorDelegationsResponse, QueryValidatorRequest, QueryValidatorResponse, QueryValidatorUnbondingDelegationsRequest, QueryValidatorUnbondingDelegationsResponse, QueryValidatorsRequest, QueryValidatorsResponse
-            },
+            }, tx::v1beta1::GetTxRequest
         },
         tendermint::google::protobuf::Duration as TendermintDuration,
         traits::Message,
@@ -627,7 +624,10 @@ mod abci {
                     res_value = response.encode_to_vec().into();
                     
                 },
-                
+                "/cosmos.tx.v1beta1.Service/GetTx" => {
+                    let request = GetTxRequest::decode(req.data.clone()).unwrap();
+                    res_value = Bytes::default();
+                }
                 "/cosmos.staking.v1beta1.Query/Validators" => {
                     let request = QueryValidatorsRequest::decode(req.data.clone()).unwrap();
 

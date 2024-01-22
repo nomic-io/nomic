@@ -627,6 +627,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-targets",
 ]
@@ -2380,6 +2381,7 @@ name = "nomic-rest"
 version = "0.1.3"
 dependencies = [
  "base64 0.13.1",
+ "chrono",
  "hex",
  "lazy_static",
  "nomic",
