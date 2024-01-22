@@ -484,7 +484,7 @@ async fn distribution_delegatrs_rewards_2(_address: &str) -> Value {
 #[get("/cosmos/mint/v1beta1/inflation")]
 async fn minting_inflation() -> Result<Value, BadRequest<String>> {
     let validators: Vec<ValidatorQueryInfo> = app_client()
-        .query(|app: InnerApp| app.staking.validators())
+        .query(|app: InnerApp| app.staking.all_validators())
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
@@ -504,7 +504,7 @@ async fn minting_inflation() -> Result<Value, BadRequest<String>> {
 #[get("/minting/inflation")]
 async fn minting_inflation_2() -> Result<Value, BadRequest<String>> {
     let validators: Vec<ValidatorQueryInfo> = app_client()
-        .query(|app: InnerApp| app.staking.validators())
+        .query(|app: InnerApp| app.staking.all_validators())
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
@@ -553,7 +553,7 @@ async fn staking_pool() -> Result<Value, BadRequest<String>> {
 #[get("/cosmos/staking/v1beta1/validators")]
 async fn validators() -> Result<Value, BadRequest<String>> {
     let validators: Vec<ValidatorQueryInfo> = app_client()
-        .query(|app: InnerApp| app.staking.validators())
+        .query(|app: InnerApp| app.staking.all_validators())
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
     Ok(json!(validators))

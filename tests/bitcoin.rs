@@ -462,7 +462,7 @@ async fn bitcoin_test() {
             .query(|app: InnerApp| {
                 Ok(app
                     .staking
-                    .validators()?
+                    .all_validators()?
                     .iter()
                     .any(|val| val.address == funded_accounts[2].address.into() && val.jailed))
             })

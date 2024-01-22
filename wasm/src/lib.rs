@@ -172,7 +172,7 @@ impl OraiBtc {
     pub async fn validators(&self) -> Result<Array, JsError> {
         let validators = self
             .client
-            .query(|app: InnerApp| app.staking.validators())
+            .query(|app: InnerApp| app.staking.all_validators())
             .await?;
         Ok(validators
             .iter()
