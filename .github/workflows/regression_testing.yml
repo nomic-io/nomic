@@ -1,9 +1,6 @@
 name: regression_testing
 
 on:
-  push:
-    branches:
-      - test/ci
   pull_request:
     branches:
       - develop
