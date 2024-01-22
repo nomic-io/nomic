@@ -627,6 +627,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-targets",
 ]
@@ -2330,7 +2331,7 @@ dependencies = [
 
 [[package]]
 name = "nomic"
-version = "7.0.7"
+version = "7.0.8"
 dependencies = [
  "base64 0.13.1",
  "bech32",
@@ -2347,6 +2348,7 @@ dependencies = [
  "futures",
  "hex",
  "home",
+ "ibc-proto",
  "ics23",
  "js-sys",
  "lazy_static",
@@ -2354,6 +2356,7 @@ dependencies = [
  "orga",
  "pretty_env_logger",
  "prometheus_exporter",
+ "prost-types 0.11.9",
  "rand 0.8.5",
  "reqwest",
  "secp256k1 0.20.3",
@@ -2375,9 +2378,11 @@ dependencies = [
 
 [[package]]
 name = "nomic-rest"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "base64 0.13.1",
+ "chrono",
+ "bitcoin",
  "hex",
  "lazy_static",
  "nomic",
@@ -2539,7 +2544,7 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.3.1"
-source = "git+https://github.com/oraichain/orga.git?rev=e97030554dc6acb1093bfa24689de973f7914758#e97030554dc6acb1093bfa24689de973f7914758"
+source = "git+https://github.com/oraichain/orga.git?rev=6ccd52d#6ccd52d4a0db4b260402bd287f2abf586bdf818d"
 dependencies = [
  "abci2",
  "async-trait",
@@ -2600,7 +2605,7 @@ dependencies = [
 [[package]]
 name = "orga-macros"
 version = "0.3.1"
-source = "git+https://github.com/oraichain/orga.git?rev=e97030554dc6acb1093bfa24689de973f7914758#e97030554dc6acb1093bfa24689de973f7914758"
+source = "git+https://github.com/oraichain/orga.git?rev=6ccd52d#6ccd52d4a0db4b260402bd287f2abf586bdf818d"
 dependencies = [
  "darling",
  "heck 0.3.3",

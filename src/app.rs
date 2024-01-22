@@ -7,7 +7,10 @@ use crate::bitcoin::adapter::Adapter;
 use crate::bitcoin::{Bitcoin, Nbtc};
 use crate::cosmos::{Chain, Cosmos, Proof};
 
-use crate::constants::{BTC_NATIVE_TOKEN_DENOM, MAIN_NATIVE_TOKEN_DENOM};
+use crate::constants::{
+    BTC_NATIVE_TOKEN_DENOM, DECLARE_FEE_USATS, IBC_FEE, IBC_FEE_USATS, INITIAL_SUPPLY_ORAIBTC,
+    INITIAL_SUPPLY_USATS_FOR_RELAYER, MAIN_NATIVE_TOKEN_DENOM,
+};
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::{Script, Transaction, TxOut};
 use orga::coins::{
@@ -20,7 +23,6 @@ use orga::describe::{Describe, Descriptor};
 use orga::encoding::{Decode, Encode, LengthVec};
 use orga::ibc::ibc_rs::applications::transfer::Memo;
 use std::str::FromStr;
-use std::time::Duration;
 
 use orga::ibc::ibc_rs::applications::transfer::context::TokenTransferExecutionContext;
 use orga::ibc::ibc_rs::applications::transfer::msgs::transfer::MsgTransfer;
@@ -59,11 +61,6 @@ impl Symbol for Nom {
     const INDEX: u8 = 69;
     const NAME: &'static str = MAIN_NATIVE_TOKEN_DENOM;
 }
-const IBC_FEE_USATS: u64 = 0;
-const DECLARE_FEE_USATS: u64 = 0;
-
-const INITIAL_SUPPLY_ORAIBTC: u64 = 1_000_000_000_000; // 1 millions oraibtc
-const INITIAL_SUPPLY_USATS_FOR_RELAYER: u64 = 1_000_000_000_000; // 1 millions usats
 
 #[orga(version = 4)]
 pub struct InnerApp {
@@ -100,7 +97,7 @@ pub struct InnerApp {
 
 #[orga]
 impl InnerApp {
-    pub const CONSENSUS_VERSION: u8 = 10;
+    pub const CONSENSUS_VERSION: u8 = 11;
 
     #[call]
     pub fn deposit_rewards(&mut self) -> Result<()> {
@@ -330,24 +327,28 @@ impl InnerApp {
         // Err(orga::Error::Unknown)
     }
 
-    // #[call]
-    // pub fn mint_initial_supply(&mut self) -> Result<String> {
-    //     let unom_coin: Coin<Nom> = Amount::new(INITIAL_SUPPLY_ORAIBTC).into();
-
-    //     // mint new uoraibtc coin for funded address
-    //     self.accounts
-    //         .deposit(GOVERNANCE_ADDRESS.parse().unwrap(), unom_coin)?;
-
-    //     let nbtc_coin: Coin<Nbtc> = Amount::new(INITIAL_SUPPLY_USATS_FOR_RELAYER).into();
-    //     // add new nbtc coin to the funded address
-    //     self.credit_transfer(
-    //         Dest::Address(GOVERNANCE_ADDRESS.parse().unwrap()),
-    //         nbtc_coin,
-    //     )?;
-    //     self.accounts
-    //         .add_transfer_exception(GOVERNANCE_ADDRESS.parse().unwrap())?;
-    //     Ok(GOVERNANCE_ADDRESS.to_string())
-    // }
+    pub fn get_total_balances(&self, denom: &str) -> Result<u64> {
+        let mut total_balances: u64 = 0;
+        if denom.eq(Nom::NAME) {
+            let acc_iter = self.accounts.iter()?;
+            for acc in acc_iter {
+                let balance: u64 = acc?.1.amount.into();
+                total_balances += balance;
+            }
+        } else if denom.eq(Nbtc::NAME) {
+            let acc_iter = self.bitcoin.accounts.iter()?;
+            for acc in acc_iter {
+                let balance: u64 = acc?.1.amount.into();
+                total_balances += balance;
+            }
+        } else {
+            return Err(Error::App(format!(
+                "Cannot find balances of the {} denom",
+                denom
+            )));
+        };
+        Ok(total_balances)
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -383,19 +384,77 @@ impl FromStr for NbtcMemo {
 
 #[cfg(feature = "full")]
 mod abci {
+    use bytes::Bytes;
+    use cosmos_sdk_proto::{
+        cosmos::{
+            bank::v1beta1::{
+                query_server::{Query as BankQuery, QueryServer as BankQueryServer},
+                QueryAllBalancesRequest, QueryAllBalancesResponse, QueryBalanceRequest,
+                QueryBalanceResponse, QueryDenomMetadataRequest, QueryDenomMetadataResponse,
+                QueryDenomOwnersRequest, QueryDenomOwnersResponse, QueryDenomsMetadataRequest,
+                QueryDenomsMetadataResponse, QueryParamsRequest, QueryParamsResponse,
+                QuerySpendableBalancesRequest, QuerySpendableBalancesResponse,
+                QuerySupplyOfRequest, QuerySupplyOfResponse, QueryTotalSupplyRequest,
+                QueryTotalSupplyResponse,
+            },
+            base::{
+                query::v1beta1::PageResponse,
+                tendermint::v1beta1::Validator,
+                v1beta1::{Coin, DecCoin},
+            },
+            distribution::v1beta1::{QueryCommunityPoolRequest, QueryCommunityPoolResponse},
+            staking::v1beta1::{
+                query_server::{Query as StakingQuery, QueryServer as StakingQueryServer},
+                Delegation, DelegationResponse, Params, Pool, QueryDelegationRequest,
+                QueryDelegationResponse, QueryDelegatorDelegationsRequest,
+                QueryDelegatorDelegationsResponse, QueryDelegatorUnbondingDelegationsRequest,
+                QueryDelegatorUnbondingDelegationsResponse, QueryDelegatorValidatorRequest,
+                QueryDelegatorValidatorResponse, QueryDelegatorValidatorsRequest,
+                QueryDelegatorValidatorsResponse, QueryHistoricalInfoRequest,
+                QueryHistoricalInfoResponse, QueryParamsRequest as StakingQueryParamsRequest,
+                QueryParamsResponse as StakingQueryParamsResponse, QueryPoolRequest,
+                QueryPoolResponse, QueryRedelegationsRequest, QueryRedelegationsResponse,
+                QueryUnbondingDelegationRequest, QueryUnbondingDelegationResponse,
+                QueryValidatorDelegationsRequest, QueryValidatorDelegationsResponse,
+                QueryValidatorRequest, QueryValidatorResponse,
+                QueryValidatorUnbondingDelegationsRequest,
+                QueryValidatorUnbondingDelegationsResponse, QueryValidatorsRequest,
+                QueryValidatorsResponse,
+            },
+            tx::v1beta1::GetTxRequest,
+        },
+        tendermint::google::protobuf::Duration as TendermintDuration,
+        traits::Message,
+    };
+
+    use ibc_proto::ibc::core::connection::v1::{
+        query_server::{Query as ConnectionQuery, QueryServer as ConnectionQueryServer},
+        QueryClientConnectionsRequest, QueryClientConnectionsResponse,
+        QueryConnectionClientStateRequest, QueryConnectionClientStateResponse,
+        QueryConnectionConsensusStateRequest, QueryConnectionConsensusStateResponse,
+        QueryConnectionRequest, QueryConnectionResponse, QueryConnectionsRequest,
+        QueryConnectionsResponse,
+    };
+
     use orga::{
-        abci::{messages, AbciQuery, BeginBlock, EndBlock, InitChain},
-        coins::{Give, Take, UNBONDING_SECONDS},
+        abci::{
+            messages::{self, ResponseQuery},
+            AbciQuery, BeginBlock, EndBlock, InitChain,
+        },
+        coins::{Give, Take, ValidatorQueryInfo, UNBONDING_SECONDS},
         collections::Map,
-        ibc::ibc_rs::core::ics02_client::error::ClientError,
+        ibc::ibc_rs::core::{ics02_client::error::ClientError, ics24_host::path::Path},
         plugins::{BeginBlockCtx, EndBlockCtx, InitChainCtx},
     };
+    use prost_types::{Any, Duration};
+
+    use crate::{constants::MAX_VALIDATORS, utils::DeclareInfo};
 
     use super::*;
 
     impl InitChain for InnerApp {
         fn init_chain(&mut self, _ctx: &InitChainCtx) -> Result<()> {
-            self.staking.max_validators = 100;
+            self.staking.max_validators = MAX_VALIDATORS;
             self.staking.max_offline_blocks = 20_000;
             self.staking.downtime_jail_seconds = 60 * 30; // 30 minutes
             self.staking.slash_fraction_downtime = (Amount::new(1) / Amount::new(1000))?;
@@ -470,8 +529,248 @@ mod abci {
     }
 
     impl AbciQuery for InnerApp {
-        fn abci_query(&self, request: &messages::RequestQuery) -> Result<messages::ResponseQuery> {
-            self.ibc.abci_query(request)
+        fn abci_query(&self, req: &messages::RequestQuery) -> Result<messages::ResponseQuery> {
+            let res_value;
+            match req.path.as_str() {
+                "/cosmos.bank.v1beta1.Query/SupplyOf" => {
+                    let request = QuerySupplyOfRequest::decode(req.data.clone()).unwrap();
+                    let balance = self.get_total_balances(&request.denom);
+                    if let Ok(balance) = balance {
+                        let amount = Some(Coin {
+                            amount: balance.to_string(),
+                            denom: request.denom,
+                        });
+
+                        let response = QuerySupplyOfResponse { amount };
+                        res_value = response.encode_to_vec().into();
+                    } else {
+                        let response = QuerySupplyOfResponse { amount: None };
+                        res_value = response.encode_to_vec().into();
+                    }
+                }
+                "/cosmos.slashing.v1beta1.Query/Params"
+                | "/cosmos.gov.v1beta1.Query/Proposals"
+                | "/cosmos.distribution.v1beta1.Query/Params"
+                | "/cosmos.gov.v1beta1.Query/Params" => {
+                    res_value = Bytes::default();
+                }
+                "/cosmos.distribution.v1beta1.Query/CommunityPool" => {
+                    let request = QueryCommunityPoolRequest::decode(req.data.clone()).unwrap();
+                    let response = QueryCommunityPoolResponse {
+                        pool: vec![DecCoin {
+                            denom: Nom::NAME.to_string(),
+                            amount: self.community_pool.amount.to_string(),
+                        }],
+                    };
+                    res_value = response.encode_to_vec().into();
+                }
+                "/cosmos.bank.v1beta1.Query/TotalSupply" => {
+                    let request = QueryTotalSupplyRequest::decode(req.data.clone()).unwrap();
+                    let balance_oraibtc = self.get_total_balances(Nom::NAME)?;
+                    let balance_usats = self.get_total_balances(Nbtc::NAME)?;
+                    let response = QueryTotalSupplyResponse {
+                        supply: vec![
+                            Coin {
+                                amount: balance_oraibtc.to_string(),
+                                denom: Nom::NAME.to_string(),
+                            },
+                            Coin {
+                                amount: balance_usats.to_string(),
+                                denom: Nbtc::NAME.to_string(),
+                            },
+                        ],
+                        pagination: None,
+                    };
+
+                    res_value = response.encode_to_vec().into();
+                }
+                "/cosmos.staking.v1beta1.Query/DelegatorDelegations" => {
+                    let request =
+                        QueryDelegatorDelegationsRequest::decode(req.data.clone()).unwrap();
+                    let address = Address::from_str(&request.delegator_addr).unwrap();
+                    let delegations = self.staking.delegations(address).unwrap();
+
+                    let delegation_responses = delegations
+                        .iter()
+                        .map(|(validator_address, d)| DelegationResponse {
+                            delegation: Some(Delegation {
+                                delegator_address: "".to_string(),
+                                validator_address: validator_address.to_string(),
+                                shares: "".to_string(),
+                            }),
+                            balance: Some(Coin {
+                                amount: d.staked.to_string(),
+                                denom: Nom::NAME.to_string(),
+                            }),
+                        })
+                        .collect();
+
+                    let response = QueryDelegatorDelegationsResponse {
+                        delegation_responses,
+                        pagination: None,
+                    };
+                    res_value = response.encode_to_vec().into();
+                }
+                "/cosmos.staking.v1beta1.Query/ValidatorDelegations" => {
+                    let request =
+                        QueryValidatorDelegationsRequest::decode(req.data.clone()).unwrap();
+                    let address = Address::from_str(&request.validator_addr).unwrap();
+                    let delegations = self.staking.delegations(address).unwrap();
+
+                    let delegation_responses: Vec<DelegationResponse> = delegations
+                        .iter()
+                        .map(|(validator_address, d)| DelegationResponse {
+                            delegation: Some(Delegation {
+                                delegator_address: "".to_string(),
+                                validator_address: validator_address.to_string(),
+                                shares: "".to_string(),
+                            }),
+                            balance: Some(Coin {
+                                amount: d.staked.to_string(),
+                                denom: Nom::NAME.to_string(),
+                            }),
+                        })
+                        .collect();
+
+                    let total = delegation_responses.len() as u64;
+
+                    let response = QueryValidatorDelegationsResponse {
+                        delegation_responses,
+                        pagination: Some(PageResponse {
+                            next_key: vec![],
+                            total,
+                        }),
+                    };
+                    res_value = response.encode_to_vec().into();
+                }
+                "/cosmos.tx.v1beta1.Service/GetTx" => {
+                    let request = GetTxRequest::decode(req.data.clone()).unwrap();
+                    res_value = Bytes::default();
+                }
+                "/cosmos.staking.v1beta1.Query/Validators" => {
+                    let request = QueryValidatorsRequest::decode(req.data.clone()).unwrap();
+
+                    let all_validators: Vec<ValidatorQueryInfo> =
+                        self.staking.all_validators().unwrap();
+
+                    let mut validators = vec![];
+                    for validator in all_validators {
+                        let cons_key = self
+                            .staking
+                            .consensus_key(validator.address.into())
+                            .unwrap(); // TODO: cache
+
+                        let status = if validator.unbonding {
+                            cosmos_sdk_proto::cosmos::staking::v1beta1::BondStatus::Unbonding
+                        } else if validator.in_active_set {
+                            cosmos_sdk_proto::cosmos::staking::v1beta1::BondStatus::Bonded
+                        } else {
+                            cosmos_sdk_proto::cosmos::staking::v1beta1::BondStatus::Unbonded
+                        };
+
+                        let info: DeclareInfo = serde_json::from_str(
+                            String::from_utf8(validator.info.to_vec()).unwrap().as_str(),
+                        )
+                        .unwrap_or(DeclareInfo {
+                            details: "".to_string(),
+                            identity: "".to_string(),
+                            moniker: "".to_string(),
+                            website: "".to_string(),
+                        });
+
+                        validators.push(cosmos_sdk_proto::cosmos::staking::v1beta1::Validator{
+                            operator_address: validator.address.to_string(),
+                            consensus_pubkey: Some(Any{
+                                type_url: "/cosmos.crypto.ed25519.PubKey".to_string(),
+                                value: cons_key.to_vec()
+                             }),
+                            jailed: validator.jailed,
+                            status: status.into(),
+                            tokens: validator.amount_staked.to_string(),
+                            delegator_shares: validator.amount_staked.to_string(),
+                            description: Some(cosmos_sdk_proto::cosmos::staking::v1beta1::Description{
+                                moniker: info.moniker,
+                                identity: info.identity,
+                                website: info.website,
+                                security_contact: "".to_string(),
+                                details: info.details,
+                            }),
+                            unbonding_height:  0, // TODO
+                            unbonding_time: None, // TODO
+                            commission: Some(cosmos_sdk_proto::cosmos::staking::v1beta1::Commission{
+                                commission_rates: Some(cosmos_sdk_proto::cosmos::staking::v1beta1::CommissionRates{
+                                rate: validator.commission.rate.to_string(),
+                                max_rate: validator.commission.max.to_string(),
+                                max_change_rate: validator.commission.max_change.to_string()
+                                }),
+                                update_time:None // TODO
+                            }),
+                            min_self_delegation: validator.min_self_delegation.to_string()
+                        });
+                    }
+
+                    let total = validators.len() as u64;
+
+                    let response = QueryValidatorsResponse {
+                        validators,
+                        pagination: Some(PageResponse {
+                            next_key: vec![],
+                            total,
+                        }),
+                    };
+                    res_value = response.encode_to_vec().into();
+                }
+                "/cosmos.staking.v1beta1.Query/Params" => {
+                    let request = StakingQueryParamsRequest::decode(req.data.clone()).unwrap();
+                    let params = Some(Params {
+                        unbonding_time: Some(Duration {
+                            seconds: self.staking.unbonding_seconds as i64,
+                            nanos: 0i32,
+                        }),
+                        max_validators: self.staking.max_validators as u32,
+                        bond_denom: Nom::NAME.to_string(),
+                        ..Params::default()
+                    });
+                    let response = StakingQueryParamsResponse { params };
+                    res_value = response.encode_to_vec().into();
+                }
+                "/cosmos.staking.v1beta1.Query/Pool" => {
+                    let request = QueryPoolRequest::decode(req.data.clone()).unwrap();
+                    let staked: Amount = self.staking.staked()?;
+                    let total_balances = self.get_total_balances(Nom::NAME)?;
+                    let staked_u64: u64 = staked.into();
+                    let not_bonded = total_balances - staked_u64;
+                    let response = QueryPoolResponse {
+                        pool: Some(Pool {
+                            bonded_tokens: staked.to_string(),
+                            not_bonded_tokens: not_bonded.to_string(),
+                        }),
+                    };
+                    res_value = response.encode_to_vec().into();
+                }
+                "/ibc.core.connection.v1.Query/Connections" => {
+                    let connections = self.ibc.ctx.query_all_connections()?;
+                    let response = QueryConnectionsResponse {
+                        connections,
+                        pagination: None,
+                        height: None,
+                    };
+                    res_value = response.encode_to_vec().into();
+                }
+                _ => {
+                    return Err(Error::ABCI(format!("Invalid query path: {}", req.path)));
+                    // return self.ibc.abci_query(req);
+                }
+            }
+
+            Ok(ResponseQuery {
+                code: 0,
+                key: req.path.encode_to_vec().into(), // FIXME: use valid path of abci query like in ibc/service
+                value: res_value,
+                proof_ops: None,
+                height: req.height,
+                ..Default::default()
+            })
         }
     }
 }
@@ -1058,7 +1357,7 @@ impl Describe for Dest {
 }
 
 pub fn ibc_fee(amount: Amount) -> Result<Amount> {
-    let fee_rate: orga::coins::Decimal = "0.005".parse().unwrap();
+    let fee_rate: orga::coins::Decimal = IBC_FEE.to_string().parse().unwrap();
     (amount * fee_rate)?.amount()
 }
 
@@ -1096,7 +1395,217 @@ pub fn in_upgrade_window(now_seconds: i64) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use bytes::Bytes;
+    use cosmos_sdk_proto::{
+        cosmos::{
+            bank::v1beta1::{
+                QuerySupplyOfRequest, QuerySupplyOfResponse, QueryTotalSupplyRequest,
+                QueryTotalSupplyResponse,
+            },
+            base::v1beta1::Coin,
+            distribution::v1beta1::{QueryCommunityPoolRequest, QueryCommunityPoolResponse},
+            staking::v1beta1::{
+                QueryParamsRequest as StakingQueryParamsRequest,
+                QueryParamsResponse as StakingQueryParamsResponse, QueryPoolRequest,
+                QueryPoolResponse,
+            },
+        },
+        traits::Message,
+    };
+    use orga::{
+        abci::{messages::RequestQuery, AbciQuery, InitChain},
+        client::{wallet::Unsigned, AppClient},
+        coins::UNBONDING_SECONDS,
+        plugins::InitChainCtx,
+        tendermint::client::HttpClient,
+    };
+    use prost_types::Duration;
+
+    use crate::constants::MAX_VALIDATORS;
+
     use super::*;
+
+    fn inner_app() -> InnerApp {
+        let mut innner_app = InnerApp::default();
+        let ctx = InitChainCtx {
+            time: None,
+            chain_id: "test-chain".to_string(),
+            validators: vec![],
+            app_state_bytes: vec![],
+            initial_height: 0i64,
+        };
+        env::set_var(
+            "FUNDED_ADDRESS",
+            "oraibtc1ehmhqcn8erf3dgavrca69zgp4rtxj5kqzpga4j",
+        );
+        innner_app.init_chain(&ctx).unwrap();
+        innner_app
+    }
+
+    #[test]
+    fn test_init_inner_app() {
+        let app = inner_app();
+        assert_eq!(app.staking.max_validators, MAX_VALIDATORS);
+        let init_balance: u64 = app
+            .accounts
+            .balance(Address::from_str("oraibtc1ehmhqcn8erf3dgavrca69zgp4rtxj5kqzpga4j").unwrap())
+            .unwrap()
+            .into();
+        assert_eq!(init_balance, INITIAL_SUPPLY_ORAIBTC);
+    }
+
+    #[test]
+    fn test_abci_query_total_supply() {
+        let app = inner_app();
+        let encoded_query = QueryTotalSupplyRequest { pagination: None }.encode_to_vec();
+        let data_bytes: Bytes = Bytes::copy_from_slice(encoded_query.as_slice());
+        let request = RequestQuery {
+            path: "/cosmos.bank.v1beta1.Query/TotalSupply".to_string(),
+            data: data_bytes,
+            height: 0,
+            prove: false,
+        };
+        let total_supply = app.abci_query(&request).unwrap();
+        let query_response = QueryTotalSupplyResponse::decode(total_supply.value).unwrap();
+        assert_eq!(query_response.supply.len(), 2);
+        assert_eq!(query_response.supply[0].denom, Nom::NAME);
+        assert_eq!(
+            query_response.supply[0].amount,
+            INITIAL_SUPPLY_ORAIBTC.to_string()
+        );
+        assert_eq!(query_response.supply[1].denom, Nbtc::NAME);
+        assert_eq!(
+            query_response.supply[1].amount,
+            INITIAL_SUPPLY_USATS_FOR_RELAYER.to_string()
+        );
+    }
+
+    #[test]
+    fn test_abci_query_supply_of() {
+        let app = inner_app();
+
+        // case 1: not found denom case
+        let encoded_query = QuerySupplyOfRequest {
+            denom: "foobar".to_string(),
+        }
+        .encode_to_vec();
+        let data_bytes: Bytes = Bytes::copy_from_slice(encoded_query.as_slice());
+        let request = RequestQuery {
+            path: "/cosmos.bank.v1beta1.Query/SupplyOf".to_string(),
+            data: data_bytes,
+            height: 0,
+            prove: false,
+        };
+        let supply_of = app.abci_query(&request).unwrap();
+        let query_response = QuerySupplyOfResponse::decode(supply_of.value).unwrap();
+        assert_eq!(query_response.amount, None);
+
+        // case 2: uoraibtc case
+        let encoded_query = QuerySupplyOfRequest {
+            denom: Nom::NAME.to_string(),
+        }
+        .encode_to_vec();
+        let data_bytes: Bytes = Bytes::copy_from_slice(encoded_query.as_slice());
+        let request = RequestQuery {
+            path: "/cosmos.bank.v1beta1.Query/SupplyOf".to_string(),
+            data: data_bytes,
+            height: 0,
+            prove: false,
+        };
+        let supply_of = app.abci_query(&request).unwrap();
+        let query_response = QuerySupplyOfResponse::decode(supply_of.value).unwrap();
+        assert_eq!(
+            query_response.amount,
+            Some(Coin {
+                amount: INITIAL_SUPPLY_ORAIBTC.to_string(),
+                denom: Nom::NAME.to_string()
+            })
+        );
+
+        // case 3: usat case
+        let encoded_query = QuerySupplyOfRequest {
+            denom: Nbtc::NAME.to_string(),
+        }
+        .encode_to_vec();
+        let data_bytes: Bytes = Bytes::copy_from_slice(encoded_query.as_slice());
+        let request = RequestQuery {
+            path: "/cosmos.bank.v1beta1.Query/SupplyOf".to_string(),
+            data: data_bytes,
+            height: 0,
+            prove: false,
+        };
+        let supply_of = app.abci_query(&request).unwrap();
+        let query_response = QuerySupplyOfResponse::decode(supply_of.value).unwrap();
+        assert_eq!(
+            query_response.amount,
+            Some(Coin {
+                amount: INITIAL_SUPPLY_USATS_FOR_RELAYER.to_string(),
+                denom: Nbtc::NAME.to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn test_abci_query_staking_params() {
+        let app = inner_app();
+        let encoded_query = StakingQueryParamsRequest {}.encode_to_vec();
+        let data_bytes: Bytes = Bytes::copy_from_slice(encoded_query.as_slice());
+        let request = RequestQuery {
+            path: "/cosmos.staking.v1beta1.Query/Params".to_string(),
+            data: data_bytes,
+            height: 0,
+            prove: false,
+        };
+        let response = app.abci_query(&request).unwrap();
+        let query_response = StakingQueryParamsResponse::decode(response.value).unwrap();
+        let params = query_response.params.unwrap();
+        assert_eq!(params.bond_denom, Nom::NAME.to_string());
+        assert_eq!(params.max_validators, MAX_VALIDATORS as u32,);
+        assert_eq!(
+            params.unbonding_time.unwrap().seconds,
+            UNBONDING_SECONDS as i64,
+        );
+    }
+
+    #[test]
+    fn test_abci_query_staking_pool() {
+        let app = inner_app();
+        let encoded_query = QueryPoolRequest {}.encode_to_vec();
+        let data_bytes: Bytes = Bytes::copy_from_slice(encoded_query.as_slice());
+        let request = RequestQuery {
+            path: "/cosmos.staking.v1beta1.Query/Pool".to_string(),
+            data: data_bytes,
+            height: 0,
+            prove: false,
+        };
+        let response = app.abci_query(&request).unwrap();
+        let query_response = QueryPoolResponse::decode(response.value).unwrap();
+        let res = query_response.pool.unwrap();
+        assert_eq!(res.bonded_tokens, app.staking.staked().unwrap().to_string());
+        assert_eq!(
+            res.not_bonded_tokens,
+            app.get_total_balances(Nom::NAME).unwrap().to_string()
+        );
+    }
+
+    #[test]
+    fn test_abci_query_community_pool() {
+        let app = inner_app();
+        let encoded_query = QueryCommunityPoolRequest {}.encode_to_vec();
+        let data_bytes: Bytes = Bytes::copy_from_slice(encoded_query.as_slice());
+        let request = RequestQuery {
+            path: "/cosmos.distribution.v1beta1.Query/CommunityPool".to_string(),
+            data: data_bytes,
+            height: 0,
+            prove: false,
+        };
+        let response = app.abci_query(&request).unwrap();
+        let query_response = QueryCommunityPoolResponse::decode(response.value).unwrap();
+        let res = query_response.pool;
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].denom, Nom::NAME.to_string());
+        assert_eq!(res[0].amount, app.community_pool.amount.to_string());
+    }
 
     #[test]
     fn upgrade_date() {
