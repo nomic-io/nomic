@@ -439,14 +439,14 @@ mod abci {
             messages::{self, ResponseQuery},
             AbciQuery, BeginBlock, EndBlock, InitChain,
         },
-        coins::{Give, Take, UNBONDING_SECONDS},
+        coins::{Give, Take, ValidatorQueryInfo, UNBONDING_SECONDS},
         collections::Map,
         ibc::ibc_rs::core::{ics02_client::error::ClientError, ics24_host::path::Path},
         plugins::{BeginBlockCtx, EndBlockCtx, InitChainCtx},
     };
-    use prost_types::Duration;
+    use prost_types::{Any, Duration};
 
-    use crate::constants::MAX_VALIDATORS;
+    use crate::{constants::MAX_VALIDATORS, utils::DeclareInfo};
 
     use super::*;
 
@@ -585,8 +585,67 @@ mod abci {
                 "/cosmos.staking.v1beta1.Query/Validators" => {
                     let request = QueryValidatorsRequest::decode(req.data.clone()).unwrap();
 
+                    let all_validators: Vec<ValidatorQueryInfo> =
+                        self.staking.all_validators().unwrap();
+
+                    let mut validators = vec![];
+                    for validator in all_validators {
+                        let cons_key = self
+                            .staking
+                            .consensus_key(validator.address.into())
+                            .unwrap(); // TODO: cache
+
+                        let status = if validator.unbonding {
+                            cosmos_sdk_proto::cosmos::staking::v1beta1::BondStatus::Unbonding
+                        } else if validator.in_active_set {
+                            cosmos_sdk_proto::cosmos::staking::v1beta1::BondStatus::Bonded
+                        } else {
+                            cosmos_sdk_proto::cosmos::staking::v1beta1::BondStatus::Unbonded
+                        };
+
+                        let info: DeclareInfo = serde_json::from_str(
+                            String::from_utf8(validator.info.to_vec()).unwrap().as_str(),
+                        )
+                        .unwrap_or(DeclareInfo {
+                            details: "".to_string(),
+                            identity: "".to_string(),
+                            moniker: "".to_string(),
+                            website: "".to_string(),
+                        });
+
+                        validators.push(cosmos_sdk_proto::cosmos::staking::v1beta1::Validator{                           
+                             operator_address: validator.address.to_string(),
+                             consensus_pubkey: Some(Any{
+                                 type_url: "/cosmos.crypto.ed25519.PubKey".to_string(),
+                                 value: cons_key.to_vec()
+                             }),
+                             jailed: validator.jailed,
+                             status: status.into(),
+                             tokens: validator.amount_staked.to_string(),
+                             delegator_shares: validator.amount_staked.to_string(),
+                             description: Some(cosmos_sdk_proto::cosmos::staking::v1beta1::Description{
+                                 moniker: info.moniker,
+                                 identity: info.identity,
+                                 website: info.website,
+                                 security_contact: "".to_string(),
+                                 details: info.details
+                             }),
+                             unbonding_height:  0, // TODO
+                             unbonding_time: None, // TODO
+                             commission: Some(cosmos_sdk_proto::cosmos::staking::v1beta1::Commission{
+                                 commission_rates: Some(cosmos_sdk_proto::cosmos::staking::v1beta1::CommissionRates{
+                                    rate: validator.commission.rate.to_string(),
+                                    max_rate: validator.commission.max.to_string(),
+                                    max_change_rate: validator.commission.max_change.to_string()
+                                 }),
+                                 update_time:None // TODO
+                             }),
+                             min_self_delegation: validator.min_self_delegation.to_string()
+                        });
+                    }
+
                     let response = QueryValidatorsResponse {
-                        validators: vec![],
+                        validators,
                         pagination: None,
                     };
                     res_value = response.encode_to_vec().into();
