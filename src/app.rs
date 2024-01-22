@@ -398,27 +398,11 @@ mod abci {
                 QueryTotalSupplyResponse,
             },
             base::{
-                tendermint::v1beta1::Validator,
-                v1beta1::{Coin, DecCoin},
+                query::v1beta1::PageResponse, tendermint::v1beta1::Validator, v1beta1::{Coin, DecCoin}
             },
             distribution::v1beta1::{QueryCommunityPoolRequest, QueryCommunityPoolResponse},
             staking::v1beta1::{
-                query_server::{Query as StakingQuery, QueryServer as StakingQueryServer},
-                Params, Pool, QueryDelegationRequest, QueryDelegationResponse,
-                QueryDelegatorDelegationsRequest, QueryDelegatorDelegationsResponse,
-                QueryDelegatorUnbondingDelegationsRequest,
-                QueryDelegatorUnbondingDelegationsResponse, QueryDelegatorValidatorRequest,
-                QueryDelegatorValidatorResponse, QueryDelegatorValidatorsRequest,
-                QueryDelegatorValidatorsResponse, QueryHistoricalInfoRequest,
-                QueryHistoricalInfoResponse, QueryParamsRequest as StakingQueryParamsRequest,
-                QueryParamsResponse as StakingQueryParamsResponse, QueryPoolRequest,
-                QueryPoolResponse, QueryRedelegationsRequest, QueryRedelegationsResponse,
-                QueryUnbondingDelegationRequest, QueryUnbondingDelegationResponse,
-                QueryValidatorDelegationsRequest, QueryValidatorDelegationsResponse,
-                QueryValidatorRequest, QueryValidatorResponse,
-                QueryValidatorUnbondingDelegationsRequest,
-                QueryValidatorUnbondingDelegationsResponse, QueryValidatorsRequest,
-                QueryValidatorsResponse,
+                query_server::{Query as StakingQuery, QueryServer as StakingQueryServer}, Delegation, DelegationResponse, Params, Pool, QueryDelegationRequest, QueryDelegationResponse, QueryDelegatorDelegationsRequest, QueryDelegatorDelegationsResponse, QueryDelegatorUnbondingDelegationsRequest, QueryDelegatorUnbondingDelegationsResponse, QueryDelegatorValidatorRequest, QueryDelegatorValidatorResponse, QueryDelegatorValidatorsRequest, QueryDelegatorValidatorsResponse, QueryHistoricalInfoRequest, QueryHistoricalInfoResponse, QueryParamsRequest as StakingQueryParamsRequest, QueryParamsResponse as StakingQueryParamsResponse, QueryPoolRequest, QueryPoolResponse, QueryRedelegationsRequest, QueryRedelegationsResponse, QueryUnbondingDelegationRequest, QueryUnbondingDelegationResponse, QueryValidatorDelegationsRequest, QueryValidatorDelegationsResponse, QueryValidatorRequest, QueryValidatorResponse, QueryValidatorUnbondingDelegationsRequest, QueryValidatorUnbondingDelegationsResponse, QueryValidatorsRequest, QueryValidatorsResponse
             },
         },
         tendermint::google::protobuf::Duration as TendermintDuration,
@@ -582,6 +566,34 @@ mod abci {
 
                     res_value = response.encode_to_vec().into();
                 }
+                "/cosmos.staking.v1beta1.Query/DelegatorDelegations" => {
+                    let request = QueryDelegatorDelegationsRequest::decode(req.data.clone()).unwrap();
+                    let address = Address::from_str(&request.delegator_addr).unwrap();
+                    let delegations = self.staking.delegations(address).unwrap();
+
+                    let delegation_responses = delegations.iter()
+                        .map(|(validator_address, d)| {                            
+                            DelegationResponse { 
+                                delegation: Some (Delegation{
+                                    delegator_address: "".to_string(),
+                                    validator_address: validator_address.to_string(),
+                                    shares: "".to_string(),
+                                }),
+                                balance: Some(Coin{
+                                    amount:d.staked.to_string(),
+                                    denom:Nom::NAME.to_string()
+                                }),                            
+                            }
+                        }).collect();
+                        
+
+                    let response = QueryDelegatorDelegationsResponse {
+                        delegation_responses,
+                        pagination: None,
+                    };
+                    res_value = response.encode_to_vec().into();
+
+                },
                 "/cosmos.staking.v1beta1.Query/Validators" => {
                     let request = QueryValidatorsRequest::decode(req.data.clone()).unwrap();
 
@@ -644,9 +656,14 @@ mod abci {
                         });
                     }
 
+                    let total= validators.len() as u64;
+
                     let response = QueryValidatorsResponse {
                         validators,
-                        pagination: None,
+                        pagination: Some(PageResponse{
+                            next_key:vec![],
+                            total,
+                        }),
                     };
                     res_value = response.encode_to_vec().into();
                 }
