@@ -417,7 +417,7 @@ mod abci {
                 QueryValidatorsResponse,
             },
         },
-        tendermint::google::protobuf::Duration,
+        tendermint::google::protobuf::Duration as TendermintDuration,
         traits::Message,
     };
 
@@ -440,12 +440,15 @@ mod abci {
         ibc::ibc_rs::core::{ics02_client::error::ClientError, ics24_host::path::Path},
         plugins::{BeginBlockCtx, EndBlockCtx, InitChainCtx},
     };
+    use prost_types::Duration;
+
+    use crate::constants::MAX_VALIDATORS;
 
     use super::*;
 
     impl InitChain for InnerApp {
         fn init_chain(&mut self, _ctx: &InitChainCtx) -> Result<()> {
-            self.staking.max_validators = 30;
+            self.staking.max_validators = MAX_VALIDATORS;
             self.staking.max_offline_blocks = 20_000;
             self.staking.downtime_jail_seconds = 60 * 30; // 30 minutes
             self.staking.slash_fraction_downtime = (Amount::new(1) / Amount::new(1000))?;
@@ -579,8 +582,12 @@ mod abci {
                 "/cosmos.staking.v1beta1.Query/Params" => {
                     let request = StakingQueryParamsRequest::decode(req.data.clone()).unwrap();
                     let params = Some(Params {
-                        unbonding_time: None,
-                        historical_entries: 20,
+                        unbonding_time: Some(Duration {
+                            seconds: self.staking.unbonding_seconds as i64,
+                            nanos: 0i32,
+                        }),
+                        max_validators: self.staking.max_validators as u32,
+                        bond_denom: Nom::NAME.to_string(),
                         ..Params::default()
                     });
                     let response = StakingQueryParamsResponse { params };
@@ -1241,15 +1248,23 @@ mod tests {
                 QueryTotalSupplyResponse,
             },
             base::v1beta1::Coin,
+            staking::v1beta1::{
+                QueryParamsRequest as StakingQueryParamsRequest,
+                QueryParamsResponse as StakingQueryParamsResponse,
+            },
         },
         traits::Message,
     };
     use orga::{
         abci::{messages::RequestQuery, AbciQuery, InitChain},
         client::{wallet::Unsigned, AppClient},
+        coins::UNBONDING_SECONDS,
         plugins::InitChainCtx,
         tendermint::client::HttpClient,
     };
+    use prost_types::Duration;
+
+    use crate::constants::MAX_VALIDATORS;
 
     use super::*;
 
@@ -1273,7 +1288,7 @@ mod tests {
     #[test]
     fn test_init_inner_app() {
         let app = inner_app();
-        assert_eq!(app.staking.max_validators, 30);
+        assert_eq!(app.staking.max_validators, MAX_VALIDATORS);
         let init_balance: u64 = app
             .accounts
             .balance(Address::from_str("oraibtc1ehmhqcn8erf3dgavrca69zgp4rtxj5kqzpga4j").unwrap())
@@ -1370,6 +1385,28 @@ mod tests {
                 amount: INITIAL_SUPPLY_USATS_FOR_RELAYER.to_string(),
                 denom: Nbtc::NAME.to_string()
             })
+        );
+    }
+
+    #[test]
+    fn test_abci_query_staking_params() {
+        let app = inner_app();
+        let encoded_query = StakingQueryParamsRequest {}.encode_to_vec();
+        let data_bytes: Bytes = Bytes::copy_from_slice(encoded_query.as_slice());
+        let request = RequestQuery {
+            path: "/cosmos.staking.v1beta1.Query/Params".to_string(),
+            data: data_bytes,
+            height: 0,
+            prove: false,
+        };
+        let response = app.abci_query(&request).unwrap();
+        let query_response = StakingQueryParamsResponse::decode(response.value).unwrap();
+        let params = query_response.params.unwrap();
+        assert_eq!(params.bond_denom, Nom::NAME.to_string());
+        assert_eq!(params.max_validators, MAX_VALIDATORS as u32,);
+        assert_eq!(
+            params.unbonding_time.unwrap().seconds,
+            UNBONDING_SECONDS as i64,
         );
     }
 

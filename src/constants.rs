@@ -17,3 +17,5 @@ pub const INITIAL_SUPPLY_USATS_FOR_RELAYER: u64 = 1_000_000_000_000; // 1 millio
 
 pub const MIN_DEPOSIT_AMOUNT: u64 = 600; // in satoshis
 pub const MIN_WITHDRAWAL_AMOUNT: u64 = 600; // in satoshis
+
+pub const MAX_VALIDATORS: u64 = 30;
