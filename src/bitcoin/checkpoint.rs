@@ -1518,21 +1518,18 @@ impl<'a> BuildingCheckpointMut<'a> {
 
         // Deduct the outgoing amount and calculated fee amount from the reserve
         // input amount, to set the resulting reserve output value.
-        let est_vsize = checkpoint_tx.vsize()?
-            + checkpoint_tx
-                .input
-                .iter()?
-                .fold(Ok(0), |sum: Result<u64>, input| {
-                    Ok(sum? + input?.est_witness_vsize)
-                })?;
+        let vsize = checkpoint_tx.vsize()?;
+        let checkpoint_tx_witness_size = checkpoint_tx
+            .input
+            .iter()?
+            .fold(Ok(0), |sum: Result<u64>, input| {
+                Ok(sum? + input?.est_witness_vsize)
+            })?;
+        let est_vsize = vsize + checkpoint_tx_witness_size;
         let fee = est_vsize * fee_rate;
-        let reserve_value = in_amount.checked_sub(out_amount + fee).ok_or_else(|| {
-            OrgaError::App(format!(
-                "Insufficient funds to cover fees with in amount: {}, and out amount: {} + est_vsize: {}, fee rate: {}",
-                in_amount,
-                out_amount,  est_vsize, fee_rate,
-            ))
-        })?;
+        let reserve_value = in_amount.checked_sub(out_amount + fee).unwrap_or_default();
+        log::error!(
+            "Insufficient funds to cover fees with in amount: {}, and out amount: {}, vsize: {}, total input witness size: {}, fee rate: {}", in_amount, out_amount, vsize, checkpoint_tx_witness_size, fee_rate);
         let mut reserve_out = checkpoint_tx.output.get_mut(0)?.unwrap();
         reserve_out.value = reserve_value;
 
