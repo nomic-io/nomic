@@ -118,8 +118,10 @@ impl InnerApp {
         let mut coins = self.bitcoin.accounts.withdraw(signer, amount)?;
 
         let fee = ibc_fee(amount)?;
-        let fee = coins.take(fee)?;
-        self.bitcoin.reward_pool.give(fee)?;
+        if fee.to_string().ne("0") {
+            let fee = coins.take(fee)?;
+            self.bitcoin.reward_pool.give(fee)?;
+        }
 
         let building = &mut self.bitcoin.checkpoints.building_mut()?;
         let dest = Dest::Ibc(dest);
@@ -1227,8 +1229,10 @@ impl IbcDest {
         use orga::ibc::ibc_rs::applications::transfer::msgs::transfer::MsgTransfer;
 
         let fee_amount = ibc_fee(coins.amount)?;
-        let fee = coins.take(fee_amount)?;
-        bitcoin.reward_pool.give(fee)?;
+        if fee_amount.to_string().ne("0") {
+            let fee = coins.take(fee_amount)?;
+            bitcoin.reward_pool.give(fee)?;
+        }
         let nbtc_amount = coins.amount;
 
         ibc.transfer_mut()
