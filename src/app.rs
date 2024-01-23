@@ -118,10 +118,8 @@ impl InnerApp {
         let mut coins = self.bitcoin.accounts.withdraw(signer, amount)?;
 
         let fee = ibc_fee(amount)?;
-        if fee.to_string().ne("0") {
-            let fee = coins.take(fee)?;
-            self.bitcoin.reward_pool.give(fee)?;
-        }
+        let fee = coins.take(fee)?;
+        self.bitcoin.reward_pool.give(fee)?;
 
         let building = &mut self.bitcoin.checkpoints.building_mut()?;
         let dest = Dest::Ibc(dest);
@@ -1229,10 +1227,8 @@ impl IbcDest {
         use orga::ibc::ibc_rs::applications::transfer::msgs::transfer::MsgTransfer;
 
         let fee_amount = ibc_fee(coins.amount)?;
-        if fee_amount.to_string().ne("0") {
-            let fee = coins.take(fee_amount)?;
-            bitcoin.reward_pool.give(fee)?;
-        }
+        let fee = coins.take(fee_amount)?;
+        bitcoin.reward_pool.give(fee)?;
         let nbtc_amount = coins.amount;
 
         ibc.transfer_mut()
@@ -1361,7 +1357,7 @@ impl Describe for Dest {
 }
 
 pub fn ibc_fee(amount: Amount) -> Result<Amount> {
-    let fee_rate: orga::coins::Decimal = "0.005".to_string().parse().unwrap();
+    let fee_rate: orga::coins::Decimal = IBC_FEE.to_string().parse().unwrap();
     (amount * fee_rate)?.amount()
 }
 

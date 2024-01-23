@@ -610,6 +610,12 @@ impl Bitcoin {
         let value = output.value.checked_sub(fee).ok_or_else(|| {
             OrgaError::App("Deposit amount is too small to pay its spending fee".to_string())
         })? * self.config.units_per_sat;
+        log::info!(
+            "relay deposit with output value: {}, input size: {}, checkpoint fee rate: {}",
+            output.value,
+            input_size,
+            checkpoint.fee_rate
+        );
 
         let outpoint = (btc_tx.txid().into_inner(), btc_vout);
         if self.processed_outpoints.contains(outpoint)? {
