@@ -748,15 +748,15 @@ mod abci {
                     };
                     res_value = response.encode_to_vec().into();
                 }
-                "/ibc.core.connection.v1.Query/Connections" => {
-                    let connections = self.ibc.ctx.query_all_connections()?;
-                    let response = QueryConnectionsResponse {
-                        connections,
-                        pagination: None,
-                        height: None,
-                    };
-                    res_value = response.encode_to_vec().into();
-                }
+                // "/ibc.core.connection.v1.Query/Connections" => {
+                //     let connections = self.ibc.ctx.query_all_connections()?;
+                //     let response = QueryConnectionsResponse {
+                //         connections,
+                //         pagination: None,
+                //         height: None,
+                //     };
+                //     res_value = response.encode_to_vec().into();
+                // }
                 _ => {
                     // return Err(Error::ABCI(format!("Invalid query path: {}", req.path)));
                     return self.ibc.abci_query(req);

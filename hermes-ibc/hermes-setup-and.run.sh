@@ -17,7 +17,7 @@ hermes keys add --chain $ORAI_CHAIN_ID --key-name $KEY_NAME --mnemonic-file .env
 latest_ibc_client=$(hermes --json query clients --host-chain $NOMIC_CHAIN_ID --reference-chain $ORAI_CHAIN_ID | grep result | jq .result[-1])
 
 if [ "$latest_ibc_client" == "null" ]; then
-    hermes create channel --a-chain $NOMIC_CHAIN_ID --new-client-connection --b-chain $ORAI_CHAIN_ID --a-port transfer --b-port transfer --yes
+    hermes create channel --a-chain $NOMIC_CHAIN_ID --new-client-connection --b-chain $ORAI_CHAIN_ID --a-port transfer --b-port wasm.orai195269awwnt5m6c843q6w7hp8rt0k7syfu9de4h0wz384slshuzps8y7ccm --yes
 else
     latest_connection=$(hermes --json query connections --chain $NOMIC_CHAIN_ID --counterparty-chain $ORAI_CHAIN_ID | grep result | jq .result[-1])
     # if empty connection then we create new connection and channel
@@ -33,7 +33,7 @@ else
         # need to trim double quotes before calling the above command
         echo "Creating new channels ..."
         trimmed_latest_connection="${latest_connection//\"}"
-        hermes create channel --a-chain $NOMIC_CHAIN_ID --a-connection $trimmed_latest_connection --a-port transfer --b-port transfer --yes
+        hermes create channel --a-chain $NOMIC_CHAIN_ID --a-connection $trimmed_latest_connection --a-port transfer --b-port wasm.orai195269awwnt5m6c843q6w7hp8rt0k7syfu9de4h0wz384slshuzps8y7ccm --yes
     else
         echo "already having a connection, verifying if there are channels..."
         has_channel=$(hermes --json query connections --chain $NOMIC_CHAIN_ID --counterparty-chain $ORAI_CHAIN_ID | grep result | jq .result[-1])
@@ -42,7 +42,7 @@ else
             # need to trim double quotes before calling the above command
             echo "Creating new channels ..."
             trimmed_latest_connection="${latest_connection//\"}"
-            hermes create channel --a-chain $NOMIC_CHAIN_ID --a-connection $trimmed_latest_connection --a-port transfer --b-port transfer --yes
+            hermes create channel --a-chain $NOMIC_CHAIN_ID --a-connection $trimmed_latest_connection --a-port transfer --b-port wasm.orai195269awwnt5m6c843q6w7hp8rt0k7syfu9de4h0wz384slshuzps8y7ccm --yes
         else
             echo "Already have at least a channel. Ready to start hermes..."
         fi
