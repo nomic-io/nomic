@@ -1357,7 +1357,7 @@ impl Describe for Dest {
 }
 
 pub fn ibc_fee(amount: Amount) -> Result<Amount> {
-    let fee_rate: orga::coins::Decimal = IBC_FEE.to_string().parse().unwrap();
+    let fee_rate: orga::coins::Decimal = "0.005".to_string().parse().unwrap();
     (amount * fee_rate)?.amount()
 }
 
