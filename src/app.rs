@@ -460,7 +460,7 @@ mod abci {
             self.staking.slash_fraction_downtime = (Amount::new(1) / Amount::new(1000))?;
             self.staking.slash_fraction_double_sign = (Amount::new(1) / Amount::new(20))?;
             self.staking.min_self_delegation_min = 0;
-            self.staking.unbonding_seconds = UNBONDING_SECONDS;
+            self.staking.unbonding_seconds = 60 * 60 * 24 * 14;
 
             self.accounts.allow_transfers(true);
             self.bitcoin.accounts.allow_transfers(true);
