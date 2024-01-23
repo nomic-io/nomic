@@ -611,7 +611,14 @@ impl Bitcoin {
             OrgaError::App("Deposit amount is too small to pay its spending fee".to_string())
         })? * self.config.units_per_sat;
         log::info!(
-            "relay deposit with output value: {}, input size: {}, checkpoint fee rate: {}",
+            "Relay deposit with output value: {}, input size: {}, checkpoint fee rate: {}",
+            output.value,
+            input_size,
+            checkpoint.fee_rate
+        );
+
+        println!(
+            "Relay deposit with output value: {}, input size: {}, checkpoint fee rate: {}",
             output.value,
             input_size,
             checkpoint.fee_rate
