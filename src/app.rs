@@ -668,6 +668,10 @@ mod abci {
                             cosmos_sdk_proto::cosmos::staking::v1beta1::BondStatus::Unbonded
                         };
 
+                        if status.as_str_name() != request.status {
+                            continue;
+                        }
+
                         let info: DeclareInfo = serde_json::from_str(
                             String::from_utf8(validator.info.to_vec()).unwrap().as_str(),
                         )
