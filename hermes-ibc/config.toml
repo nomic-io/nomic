@@ -42,7 +42,7 @@ buckets = 10
 [[chains]]
 id = "Oraichain"
 rpc_addr = "https://rpc.orai.io:443"
-grpc_addr = "https://grpc.orai.io"
+grpc_addr = "http://grpc.orai.io:9090"
 event_source = { mode = 'pull' }
 rpc_timeout = "20s"
 account_prefix = "orai"
@@ -61,22 +61,22 @@ memo_prefix = ""
 sequential_batch_tx = false
 trusting_period = '9days'
 trust_threshold = { numerator = '1', denominator = '3' }
-[chains.packet_filter]
-policy = "allow"
-list = [["transfer", "channel-170"]]
+# [chains.packet_filter]
+# policy = "allow"
+# list = [["transfer", "channel-170"],["transfer", "channel-174"]]
 
 [[chains]]
-id = 'oraibtc-subnet-1'
-rpc_addr = 'https://oraibtc.rpc.orai.io:443'
+id = 'oraibtc-testnet-2'
+rpc_addr = 'http://localhost:26657'
 event_source = { mode = 'pull' }
-grpc_addr = 'http://34.68.27.95:9001'
-rpc_timeout = '10s'
+grpc_addr = 'http://localhost:9001'
+rpc_timeout = '20s'
 account_prefix = 'oraibtc'
 key_name = 'relayer'
 store_prefix = 'ibc'
 max_gas = 100000000
-gas_price = { price = 0, denom = 'usat' }
-clock_drift = '10s'
+gas_price = { price = 0, denom = 'uoraibtc' }
+clock_drift = '20s'
 trusting_period = '9days'
 max_msg_num = 30
 proof_specs = '''
@@ -131,6 +131,6 @@ proof_specs = '''
 [chains.trust_threshold]
 numerator = '1'
 denominator = '3'
-[chains.packet_filter]
-policy = 'allow'
-list = [['transfer', 'channel-1']]
+#[chains.packet_filter]
+#policy = 'allow'
+#list = [['transfer', 'channel-1']]

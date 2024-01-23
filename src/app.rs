@@ -758,8 +758,8 @@ mod abci {
                     res_value = response.encode_to_vec().into();
                 }
                 _ => {
-                    return Err(Error::ABCI(format!("Invalid query path: {}", req.path)));
-                    // return self.ibc.abci_query(req);
+                    // return Err(Error::ABCI(format!("Invalid query path: {}", req.path)));
+                    return self.ibc.abci_query(req);
                 }
             }
 
