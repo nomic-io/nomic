@@ -34,7 +34,7 @@ where
     warp::reply::json(&val)
 }
 
-const HEADER_BATCH_SIZE: usize = 250;
+const HEADER_BATCH_SIZE: usize = 1000;
 
 #[derive(Serialize, Deserialize)]
 pub struct DepositsQuery {

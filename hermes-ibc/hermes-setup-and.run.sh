@@ -17,7 +17,7 @@ hermes keys add --chain $ORAI_CHAIN_ID --key-name $KEY_NAME --mnemonic-file .env
 latest_ibc_client=$(hermes --json query clients --host-chain $NOMIC_CHAIN_ID --reference-chain $ORAI_CHAIN_ID | grep result | jq .result[-1])
 
 if [ "$latest_ibc_client" == "null" ]; then
-    hermes create channel --a-chain $NOMIC_CHAIN_ID --new-client-connection --b-chain $ORAI_CHAIN_ID --a-port transfer --b-port wasm.orai195269awwnt5m6c843q6w7hp8rt0k7syfu9de4h0wz384slshuzps8y7ccm --yes
+    hermes create channel --a-chain oraibtc-testnet-2 --new-client-connection --b-chain Oraichain --a-port transfer --b-port wasm.orai195269awwnt5m6c843q6w7hp8rt0k7syfu9de4h0wz384slshuzps8y7ccm --yes
 else
     latest_connection=$(hermes --json query connections --chain $NOMIC_CHAIN_ID --counterparty-chain $ORAI_CHAIN_ID | grep result | jq .result[-1])
     # if empty connection then we create new connection and channel

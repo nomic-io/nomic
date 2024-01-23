@@ -1,5 +1,5 @@
 [global]
-log_level = "debug"
+log_level = "info"
 
 [mode.clients]
 enabled = true
@@ -41,8 +41,8 @@ buckets = 10
 
 [[chains]]
 id = "Oraichain"
-rpc_addr = "https://rpc.orai.io:443"
-grpc_addr = "http://grpc.orai.io:9090"
+rpc_addr = "http://3.134.19.98:26657"
+grpc_addr = "http://18.116.209.76:9090"
 event_source = { mode = 'pull' }
 rpc_timeout = "20s"
 account_prefix = "orai"
@@ -134,3 +134,56 @@ denominator = '3'
 #[chains.packet_filter]
 #policy = 'allow'
 #list = [['transfer', 'channel-1']]
+
+# SUCCESS Channel {
+#     ordering: Unordered,
+#     a_side: ChannelSide {
+#         chain: BaseChainHandle {
+#             chain_id: ChainId {
+#                 id: "oraibtc-testnet-2",
+#                 version: 2,
+#             },
+#             runtime_sender: Sender { .. },
+#         },
+#         client_id: ClientId(
+#             "07-tendermint-0",
+#         ),
+#         connection_id: ConnectionId(
+#             "connection-0",
+#         ),
+#         port_id: PortId(
+#             "transfer",
+#         ),
+#         channel_id: Some(
+#             ChannelId(
+#                 "channel-0",
+#             ),
+#         ),
+#         version: None,
+#     },
+#     b_side: ChannelSide {
+#         chain: BaseChainHandle {
+#             chain_id: ChainId {
+#                 id: "Oraichain",
+#                 version: 0,
+#             },
+#             runtime_sender: Sender { .. },
+#         },
+#         client_id: ClientId(
+#             "07-tendermint-150",
+#         ),
+#         connection_id: ConnectionId(
+#             "connection-114",
+#         ),
+#         port_id: PortId(
+#             "wasm.orai195269awwnt5m6c843q6w7hp8rt0k7syfu9de4h0wz384slshuzps8y7ccm",
+#         ),
+#         channel_id: Some(
+#             ChannelId(
+#                 "channel-184",
+#             ),
+#         ),
+#         version: None,
+#     },
+#     connection_delay: 0ns,
+# }
