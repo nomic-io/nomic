@@ -9,6 +9,7 @@ default-run = "nomic"
 bitcoin = { version = "0.29.2", features = ["serde", "rand"] }
 orga = { git = "https://github.com/oraichain/orga.git", rev = "6ccd52d", features = [
     "merk-verify",
+    "abci"
 ] }
 thiserror = "1.0.30"
 ed = { git = "https://github.com/nomic-io/ed", rev = "9c0e206ffdb59dacb90f083e004e8080713e6ad8" }

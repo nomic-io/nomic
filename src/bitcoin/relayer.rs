@@ -836,9 +836,12 @@ impl Relayer {
             };
         }
 
+        let fee_rate: u64 = app_client(&self.app_client_addr)
+            .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.get(output.sigset_index)?.fee_rate))
+            .await?;
         info!(
-            "Relayed deposit: {} sats, {:?}",
-            tx.output[vout as usize].value, dest
+            "Relayed deposit: {} sats, {:?}, fee rate: {}",
+            tx.output[vout as usize].value, dest, fee_rate
         );
 
         Ok(())

@@ -11,10 +11,12 @@ use crate::constants::{
     BTC_NATIVE_TOKEN_DENOM, DECLARE_FEE_USATS, IBC_FEE, IBC_FEE_USATS, INITIAL_SUPPLY_ORAIBTC,
     INITIAL_SUPPLY_USATS_FOR_RELAYER, MAIN_NATIVE_TOKEN_DENOM,
 };
+use crate::utils::DeclareInfo;
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::{Script, Transaction, TxOut};
 use orga::coins::{
     Accounts, Address, Amount, Coin, Faucet, FaucetOptions, Give, Staking, Symbol, Take,
+    ValidatorQueryInfo,
 };
 use orga::context::GetContext;
 use orga::cosmrs::bank::MsgSend;
@@ -22,6 +24,7 @@ use orga::cosmrs::tendermint::crypto::Sha256;
 use orga::describe::{Describe, Descriptor};
 use orga::encoding::{Decode, Encode, LengthVec};
 use orga::ibc::ibc_rs::applications::transfer::Memo;
+use prost_types::Any;
 use std::str::FromStr;
 
 use orga::ibc::ibc_rs::applications::transfer::context::TokenTransferExecutionContext;
@@ -349,6 +352,65 @@ impl InnerApp {
         };
         Ok(total_balances)
     }
+
+    fn parse_validator(
+        &self,
+        validator: &ValidatorQueryInfo,
+    ) -> cosmos_sdk_proto::cosmos::staking::v1beta1::Validator {
+        let cons_key = self
+            .staking
+            .consensus_key(validator.address.into())
+            .unwrap(); // TODO: cache
+
+        let status = if validator.unbonding {
+            cosmos_sdk_proto::cosmos::staking::v1beta1::BondStatus::Unbonding
+        } else if validator.in_active_set {
+            cosmos_sdk_proto::cosmos::staking::v1beta1::BondStatus::Bonded
+        } else {
+            cosmos_sdk_proto::cosmos::staking::v1beta1::BondStatus::Unbonded
+        };
+
+        let info: DeclareInfo =
+            serde_json::from_str(String::from_utf8(validator.info.to_vec()).unwrap().as_str())
+                .unwrap_or(DeclareInfo {
+                    details: "".to_string(),
+                    identity: "".to_string(),
+                    moniker: "".to_string(),
+                    website: "".to_string(),
+                });
+
+        cosmos_sdk_proto::cosmos::staking::v1beta1::Validator {
+            operator_address: validator.address.to_string(),
+            consensus_pubkey: Some(Any {
+                type_url: "/cosmos.crypto.ed25519.PubKey".to_string(),
+                value: cons_key.to_vec(),
+            }),
+            jailed: validator.jailed,
+            status: status.into(),
+            tokens: validator.amount_staked.to_string(),
+            delegator_shares: validator.amount_staked.to_string(),
+            description: Some(cosmos_sdk_proto::cosmos::staking::v1beta1::Description {
+                moniker: info.moniker,
+                identity: info.identity,
+                website: info.website,
+                security_contact: "".to_string(),
+                details: info.details,
+            }),
+            unbonding_height: 0,  // TODO
+            unbonding_time: None, // TODO
+            commission: Some(cosmos_sdk_proto::cosmos::staking::v1beta1::Commission {
+                commission_rates: Some(
+                    cosmos_sdk_proto::cosmos::staking::v1beta1::CommissionRates {
+                        rate: validator.commission.rate.to_string(),
+                        max_rate: validator.commission.max.to_string(),
+                        max_change_rate: validator.commission.max_change.to_string(),
+                    },
+                ),
+                update_time: None, // TODO
+            }),
+            min_self_delegation: validator.min_self_delegation.to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -402,10 +464,14 @@ mod abci {
                 tendermint::v1beta1::Validator,
                 v1beta1::{Coin, DecCoin},
             },
-            distribution::v1beta1::{QueryCommunityPoolRequest, QueryCommunityPoolResponse},
+            distribution::v1beta1::{
+                QueryCommunityPoolRequest, QueryCommunityPoolResponse,
+                QueryValidatorCommissionRequest, QueryValidatorCommissionResponse,
+                QueryValidatorOutstandingRewardsRequest, QueryValidatorOutstandingRewardsResponse,
+            },
             staking::v1beta1::{
                 query_server::{Query as StakingQuery, QueryServer as StakingQueryServer},
-                Delegation, DelegationResponse, Params, Pool, QueryDelegationRequest,
+                BondStatus, Delegation, DelegationResponse, Params, Pool, QueryDelegationRequest,
                 QueryDelegationResponse, QueryDelegatorDelegationsRequest,
                 QueryDelegatorDelegationsResponse, QueryDelegatorUnbondingDelegationsRequest,
                 QueryDelegatorUnbondingDelegationsResponse, QueryDelegatorValidatorRequest,
@@ -460,7 +526,7 @@ mod abci {
             self.staking.slash_fraction_downtime = (Amount::new(1) / Amount::new(1000))?;
             self.staking.slash_fraction_double_sign = (Amount::new(1) / Amount::new(20))?;
             self.staking.min_self_delegation_min = 0;
-            self.staking.unbonding_seconds = UNBONDING_SECONDS;
+            self.staking.unbonding_seconds = 60 * 60 * 24 * 14;
 
             self.accounts.allow_transfers(true);
             self.bitcoin.accounts.allow_transfers(true);
@@ -553,6 +619,46 @@ mod abci {
                 | "/cosmos.distribution.v1beta1.Query/Params"
                 | "/cosmos.gov.v1beta1.Query/Params" => {
                     res_value = Bytes::default();
+                }
+                "/cosmos.distribution.v1beta1.Query/ValidatorOutstandingRewards" => {
+                    let request =
+                        QueryValidatorOutstandingRewardsRequest::decode(req.data.clone()).unwrap();
+
+                    let response = QueryValidatorOutstandingRewardsResponse { rewards: None };
+                    res_value = response.encode_to_vec().into();
+                }
+                "/cosmos.staking.v1beta1.Query/Delegation" => {
+                    let request = QueryDelegationRequest::decode(req.data.clone()).unwrap();
+
+                    let delegation = self
+                        .staking
+                        .delegations(request.delegator_addr.parse().unwrap())
+                        .unwrap();
+
+                    let response = QueryDelegationResponse {
+                        delegation_response: None,
+                    };
+                    res_value = response.encode_to_vec().into();
+                }
+                "/cosmos.staking.v1beta1.Query/Validator" => {
+                    let request = QueryValidatorRequest::decode(req.data.clone()).unwrap();
+                    let validator = self
+                        .staking
+                        .all_validators()
+                        .unwrap()
+                        .iter()
+                        .find(|v| v.address.to_string() == request.validator_addr)
+                        .map(|validator| self.parse_validator(validator));
+
+                    let response = QueryValidatorResponse { validator: None };
+                    res_value = response.encode_to_vec().into();
+                }
+                "/cosmos.distribution.v1beta1.Query/ValidatorCommission" => {
+                    let request =
+                        QueryValidatorCommissionRequest::decode(req.data.clone()).unwrap();
+
+                    let response = QueryValidatorCommissionResponse { commission: None };
+                    res_value = response.encode_to_vec().into();
                 }
                 "/cosmos.distribution.v1beta1.Query/CommunityPool" => {
                     let request = QueryCommunityPoolRequest::decode(req.data.clone()).unwrap();
@@ -655,58 +761,16 @@ mod abci {
 
                     let mut validators = vec![];
                     for validator in all_validators {
-                        let cons_key = self
-                            .staking
-                            .consensus_key(validator.address.into())
-                            .unwrap(); // TODO: cache
+                        let proto_validator = self.parse_validator(&validator);
 
-                        let status = if validator.unbonding {
-                            cosmos_sdk_proto::cosmos::staking::v1beta1::BondStatus::Unbonding
-                        } else if validator.in_active_set {
-                            cosmos_sdk_proto::cosmos::staking::v1beta1::BondStatus::Bonded
-                        } else {
-                            cosmos_sdk_proto::cosmos::staking::v1beta1::BondStatus::Unbonded
-                        };
-
-                        let info: DeclareInfo = serde_json::from_str(
-                            String::from_utf8(validator.info.to_vec()).unwrap().as_str(),
-                        )
-                        .unwrap_or(DeclareInfo {
-                            details: "".to_string(),
-                            identity: "".to_string(),
-                            moniker: "".to_string(),
-                            website: "".to_string(),
-                        });
-
-                        validators.push(cosmos_sdk_proto::cosmos::staking::v1beta1::Validator{
-                            operator_address: validator.address.to_string(),
-                            consensus_pubkey: Some(Any{
-                                type_url: "/cosmos.crypto.ed25519.PubKey".to_string(),
-                                value: cons_key.to_vec()
-                             }),
-                            jailed: validator.jailed,
-                            status: status.into(),
-                            tokens: validator.amount_staked.to_string(),
-                            delegator_shares: validator.amount_staked.to_string(),
-                            description: Some(cosmos_sdk_proto::cosmos::staking::v1beta1::Description{
-                                moniker: info.moniker,
-                                identity: info.identity,
-                                website: info.website,
-                                security_contact: "".to_string(),
-                                details: info.details,
-                            }),
-                            unbonding_height:  0, // TODO
-                            unbonding_time: None, // TODO
-                            commission: Some(cosmos_sdk_proto::cosmos::staking::v1beta1::Commission{
-                                commission_rates: Some(cosmos_sdk_proto::cosmos::staking::v1beta1::CommissionRates{
-                                rate: validator.commission.rate.to_string(),
-                                max_rate: validator.commission.max.to_string(),
-                                max_change_rate: validator.commission.max_change.to_string()
-                                }),
-                                update_time:None // TODO
-                            }),
-                            min_self_delegation: validator.min_self_delegation.to_string()
-                        });
+                        if BondStatus::from_i32(proto_validator.status)
+                            .unwrap()
+                            .as_str_name()
+                            != request.status
+                        {
+                            continue;
+                        }
+                        validators.push(proto_validator);
                     }
 
                     let total = validators.len() as u64;
@@ -748,18 +812,18 @@ mod abci {
                     };
                     res_value = response.encode_to_vec().into();
                 }
-                "/ibc.core.connection.v1.Query/Connections" => {
-                    let connections = self.ibc.ctx.query_all_connections()?;
-                    let response = QueryConnectionsResponse {
-                        connections,
-                        pagination: None,
-                        height: None,
-                    };
-                    res_value = response.encode_to_vec().into();
-                }
+                // "/ibc.core.connection.v1.Query/Connections" => {
+                //     let connections = self.ibc.ctx.query_all_connections()?;
+                //     let response = QueryConnectionsResponse {
+                //         connections,
+                //         pagination: None,
+                //         height: None,
+                //     };
+                //     res_value = response.encode_to_vec().into();
+                // }
                 _ => {
-                    return Err(Error::ABCI(format!("Invalid query path: {}", req.path)));
-                    // return self.ibc.abci_query(req);
+                    // return Err(Error::ABCI(format!("Invalid query path: {}", req.path)));
+                    return self.ibc.abci_query(req);
                 }
             }
 

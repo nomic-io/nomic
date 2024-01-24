@@ -549,6 +549,88 @@ async fn bitcoin_latest_checkpoint() -> Result<Value, BadRequest<String>> {
     }))
 }
 
+#[get("/bitcoin/checkpoint/current_checkpoint_size")]
+async fn bitcoin_checkpoint_size() -> Result<Value, BadRequest<String>> {
+    let config: usize = app_client()
+        .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.building()?.checkpoint_tx()?.vsize()))
+        .await
+        .map_err(|e| BadRequest(Some(format!("error: {:?}", e))))?;
+
+    let total_inputs: usize = app_client()
+        .query(|app: InnerApp| {
+            Ok(app
+                .bitcoin
+                .checkpoints
+                .building()?
+                .checkpoint_tx()?
+                .input
+                .len())
+        })
+        .await
+        .map_err(|e| BadRequest(Some(format!("error: {:?}", e))))?;
+    Ok(json!({
+        "checkpoint_vsize": config,
+        "total_input_size": total_inputs,
+    }))
+}
+
+#[get("/bitcoin/checkpoint/last_checkpoint_size")]
+async fn bitcoin_last_checkpoint_size() -> Result<Value, BadRequest<String>> {
+    let config: usize = app_client()
+        .query(|app: InnerApp| {
+            Ok(app
+                .bitcoin
+                .checkpoints
+                .last_completed()?
+                .checkpoint_tx()?
+                .vsize())
+        })
+        .await
+        .map_err(|e| BadRequest(Some(format!("error: {:?}", e))))?;
+
+    let total_inputs: usize = app_client()
+        .query(|app: InnerApp| {
+            Ok(app
+                .bitcoin
+                .checkpoints
+                .last_completed()?
+                .checkpoint_tx()?
+                .input
+                .len())
+        })
+        .await
+        .map_err(|e| BadRequest(Some(format!("error: {:?}", e))))?;
+    Ok(json!({
+        "checkpoint_vsize": config,
+        "total_input_size": total_inputs,
+    }))
+}
+
+#[get("/bitcoin/checkpoint/checkpoint_size?<index>")]
+async fn bitcoin_checkpoint_size_with_index(index: u32) -> Result<Value, BadRequest<String>> {
+    let config: usize = app_client()
+        .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.get(index)?.checkpoint_tx()?.vsize()))
+        .await
+        .map_err(|e| BadRequest(Some(format!("error: {:?}", e))))?;
+
+    let total_inputs: usize = app_client()
+        .query(|app: InnerApp| {
+            Ok(app
+                .bitcoin
+                .checkpoints
+                .get(index)?
+                .checkpoint_tx()?
+                .input
+                .len())
+        })
+        .await
+        .map_err(|e| BadRequest(Some(format!("error: {:?}", e))))?;
+    Ok(json!({
+        "checkpoint_vsize": config,
+        "total_input_size": total_inputs,
+    }))
+}
+
 #[get("/cosmos/staking/v1beta1/delegators/<address>/unbonding_delegations")]
 async fn staking_delegators_unbonding_delegations(address: &str) -> Value {
     use chrono::{TimeZone, Utc};
@@ -927,7 +1009,10 @@ fn rocket() -> _ {
             staking_params,
             get_validators,
             get_validator,
-            get_bitcoin_recovery_address
+            get_bitcoin_recovery_address,
+            bitcoin_checkpoint_size,
+            bitcoin_last_checkpoint_size,
+            bitcoin_checkpoint_size_with_index
         ],
     )
 }

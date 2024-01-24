@@ -164,17 +164,7 @@ declare a new validator instead.
 For example:
 
 ```bash
-nomic declare \
-  8LL6ZVAAHhCf2vlU0+4bJ8OOBLguv8/h7gmV1MX91cc= \
-  100000 \
-  0.042 \
-  0.1 \
-  0.01 \
-  100000 \
-  "Foo's Validator" \
-  "https://foovalidator.com" \
-  37AA68F6AA20B7A8 \
-  "Please delegate to me!"
+nomic declare "1e1oIYAQkOcNP504VKFVtrqWx6bdaORShxC4s4st3Mo=" 100000 0.042 0.1 0.01 100000 "Foo's Validator" "https://foovalidator.com" 37AA68F6AA20B7A8 "Please delegate to me!" --chain-id oraibtc-testnet-2
 ```
 
 ### 4. Run your Bitcoin signer
