@@ -1528,8 +1528,10 @@ impl<'a> BuildingCheckpointMut<'a> {
         let est_vsize = vsize + checkpoint_tx_witness_size;
         let fee = est_vsize * fee_rate;
         let reserve_value = in_amount.checked_sub(out_amount + fee).unwrap_or_default();
-        log::error!(
-            "Insufficient funds to cover fees with in amount: {}, and out amount: {}, vsize: {}, total input witness size: {}, fee rate: {}", in_amount, out_amount, vsize, checkpoint_tx_witness_size, fee_rate);
+        if reserve_value == 0 {
+            log::error!(
+                "Insufficient funds to cover fees with in amount: {}, and out amount: {}, vsize: {}, total input witness size: {}, fee rate: {}", in_amount, out_amount, vsize, checkpoint_tx_witness_size, fee_rate);
+        }
         let mut reserve_out = checkpoint_tx.output.get_mut(0)?.unwrap();
         reserve_out.value = reserve_value;
 
