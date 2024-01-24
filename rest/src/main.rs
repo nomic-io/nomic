@@ -5,7 +5,7 @@ use bitcoin::Address as BitcoinAddress;
 use nomic::{
     app::{InnerApp, Nom},
     bitcoin::{
-        checkpoint::{BatchType, CheckpointQueue, Config as CheckpointConfig},
+        checkpoint::{CheckpointQueue, Config as CheckpointConfig},
         Config, Nbtc,
     },
     constants::MAIN_NATIVE_TOKEN_DENOM,
