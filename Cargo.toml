@@ -1,6 +1,6 @@
 [package]
 name = "nomic"
-version = "7.0.8"
+version = "7.0.9"
 authors = ["The Turbofish Team <hello@turbofish.org>"]
 edition = "2021"
 default-run = "nomic"
