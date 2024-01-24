@@ -41,8 +41,8 @@ buckets = 10
 
 [[chains]]
 id = "Oraichain"
-rpc_addr = "http://3.134.19.98:26657"
-grpc_addr = "http://18.116.209.76:9090"
+rpc_addr = "https://rpc.orai.io:443"
+grpc_addr = "http://grpc.orai.io:9090"
 event_source = { mode = 'pull' }
 rpc_timeout = "20s"
 account_prefix = "orai"
