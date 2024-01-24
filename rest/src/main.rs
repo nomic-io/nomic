@@ -556,29 +556,8 @@ async fn bitcoin_checkpoint_size() -> Result<Value, BadRequest<String>> {
         .await
         .map_err(|e| BadRequest(Some(format!("error: {:?}", e))))?;
 
-    let checkpoint_witness_size: u64 = app_client()
-        .query(|app: InnerApp| {
-            Ok(app
-                .bitcoin
-                .checkpoints
-                .building()?
-                .batches
-                .get(BatchType::Checkpoint as u64)?
-                .unwrap()
-                .get(0)?
-                .unwrap()
-                .input
-                .iter()?
-                .fold(Ok(0), |sum: nomic::error::Result<u64>, input| {
-                    Ok(sum? + input?.est_witness_vsize)
-                })?)
-        })
-        .await
-        .map_err(|e| BadRequest(Some(format!("error: {:?}", e))))
-        .unwrap_or(0);
     Ok(json!({
-        "checkpoint_vsize": config,
-        "checkpoint_witness_size": checkpoint_witness_size,
+        "checkpoint_vsize": config
     }))
 }
 
@@ -596,29 +575,8 @@ async fn bitcoin_last_checkpoint_size() -> Result<Value, BadRequest<String>> {
         .await
         .map_err(|e| BadRequest(Some(format!("error: {:?}", e))))?;
 
-    let checkpoint_witness_size: u64 = app_client()
-        .query(|app: InnerApp| {
-            Ok(app
-                .bitcoin
-                .checkpoints
-                .last_completed()?
-                .batches
-                .get(BatchType::Checkpoint as u64)?
-                .unwrap()
-                .get(0)?
-                .unwrap()
-                .input
-                .iter()?
-                .fold(Ok(0), |sum: nomic::error::Result<u64>, input| {
-                    Ok(sum? + input?.est_witness_vsize)
-                })?)
-        })
-        .await
-        .map_err(|e| BadRequest(Some(format!("error: {:?}", e))))
-        .unwrap_or(0);
     Ok(json!({
-        "checkpoint_vsize": config,
-        "checkpoint_witness_size": checkpoint_witness_size,
+        "checkpoint_vsize": config
     }))
 }
 
@@ -629,29 +587,8 @@ async fn bitcoin_checkpoint_size_with_index(index: u32) -> Result<Value, BadRequ
         .await
         .map_err(|e| BadRequest(Some(format!("error: {:?}", e))))?;
 
-    let checkpoint_witness_size: u64 = app_client()
-        .query(|app: InnerApp| {
-            Ok(app
-                .bitcoin
-                .checkpoints
-                .get(index)?
-                .batches
-                .get(BatchType::Checkpoint as u64)?
-                .unwrap()
-                .get(0)?
-                .unwrap()
-                .input
-                .iter()?
-                .fold(Ok(0), |sum: nomic::error::Result<u64>, input| {
-                    Ok(sum? + input?.est_witness_vsize)
-                })?)
-        })
-        .await
-        .map_err(|e| BadRequest(Some(format!("error: {:?}", e))))
-        .unwrap_or(0);
     Ok(json!({
-        "checkpoint_vsize": config,
-        "checkpoint_witness_size": checkpoint_witness_size,
+        "checkpoint_vsize": config
     }))
 }
 
