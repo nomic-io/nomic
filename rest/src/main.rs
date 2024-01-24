@@ -556,8 +556,21 @@ async fn bitcoin_checkpoint_size() -> Result<Value, BadRequest<String>> {
         .await
         .map_err(|e| BadRequest(Some(format!("error: {:?}", e))))?;
 
+    let total_inputs: usize = app_client()
+        .query(|app: InnerApp| {
+            Ok(app
+                .bitcoin
+                .checkpoints
+                .building()?
+                .checkpoint_tx()?
+                .input
+                .len())
+        })
+        .await
+        .map_err(|e| BadRequest(Some(format!("error: {:?}", e))))?;
     Ok(json!({
-        "checkpoint_vsize": config
+        "checkpoint_vsize": config,
+        "total_input_size": total_inputs,
     }))
 }
 
@@ -575,8 +588,21 @@ async fn bitcoin_last_checkpoint_size() -> Result<Value, BadRequest<String>> {
         .await
         .map_err(|e| BadRequest(Some(format!("error: {:?}", e))))?;
 
+    let total_inputs: usize = app_client()
+        .query(|app: InnerApp| {
+            Ok(app
+                .bitcoin
+                .checkpoints
+                .last_completed()?
+                .checkpoint_tx()?
+                .input
+                .len())
+        })
+        .await
+        .map_err(|e| BadRequest(Some(format!("error: {:?}", e))))?;
     Ok(json!({
-        "checkpoint_vsize": config
+        "checkpoint_vsize": config,
+        "total_input_size": total_inputs,
     }))
 }
 
@@ -587,8 +613,21 @@ async fn bitcoin_checkpoint_size_with_index(index: u32) -> Result<Value, BadRequ
         .await
         .map_err(|e| BadRequest(Some(format!("error: {:?}", e))))?;
 
+    let total_inputs: usize = app_client()
+        .query(|app: InnerApp| {
+            Ok(app
+                .bitcoin
+                .checkpoints
+                .get(index)?
+                .checkpoint_tx()?
+                .input
+                .len())
+        })
+        .await
+        .map_err(|e| BadRequest(Some(format!("error: {:?}", e))))?;
     Ok(json!({
-        "checkpoint_vsize": config
+        "checkpoint_vsize": config,
+        "total_input_size": total_inputs,
     }))
 }
 
