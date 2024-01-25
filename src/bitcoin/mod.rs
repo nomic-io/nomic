@@ -1061,6 +1061,16 @@ impl Bitcoin {
 
         Ok(())
     }
+
+    #[call]
+    pub fn give_to_fee_pool(&mut self, amount: Amount) -> Result<()> {
+        let taken_coins = self
+            .context::<Paid>()
+            .ok_or_else(|| orga::Error::Coins("No Paid context found".into()))?
+            .take(amount)?;
+
+        self.give_fee(taken_coins)
+    }
 }
 
 /// The current rates of change of the reserve output and signatory set, in
