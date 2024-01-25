@@ -951,6 +951,15 @@ async fn get_bitcoin_recovery_address(
     Ok(json!(recovery_address.to_string()))
 }
 
+#[get("/bitcoin/script_pubkey/<address>")]
+async fn get_script_pubkey(address: String) -> Result<Value, BadRequest<String>> {
+    let bitcoin_address: bitcoin::Address = address.parse().unwrap();
+    let script_pubkey = bitcoin_address.script_pubkey();
+    let script_pubkey_bytes = script_pubkey.as_bytes();
+    let base64_script_pubkey = base64::encode(script_pubkey_bytes);
+    Ok(json!(base64_script_pubkey))
+}
+
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::Header;
 use rocket::{Request, Response};
@@ -1012,7 +1021,8 @@ fn rocket() -> _ {
             get_bitcoin_recovery_address,
             bitcoin_checkpoint_size,
             bitcoin_last_checkpoint_size,
-            bitcoin_checkpoint_size_with_index
+            bitcoin_checkpoint_size_with_index,
+            get_script_pubkey
         ],
     )
 }
