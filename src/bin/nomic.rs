@@ -1733,7 +1733,7 @@ impl SetRecoveryAddressCmd {
             .client()
             .with_wallet(wallet())
             .call(
-                |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
+                |app| build_call!(app.app_noop()),
                 |app| {
                     build_call!(app
                         .bitcoin

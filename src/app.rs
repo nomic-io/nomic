@@ -1187,23 +1187,23 @@ impl ConvertSdkTx for InnerApp {
                         Ok(PaidCall { payer, paid })
                     }
 
-                    "nomic/MsgJoinRewardAccounts" => {
-                        let msg = msg
-                            .value
-                            .as_object()
-                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
+                    // "nomic/MsgJoinRewardAccounts" => {
+                    //     let msg = msg
+                    //         .value
+                    //         .as_object()
+                    //         .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
 
-                        let dest_addr: Address = msg["dest_address"]
-                            .as_str()
-                            .ok_or_else(|| Error::App("Invalid destination address".to_string()))?
-                            .parse()
-                            .map_err(|_| Error::App("Invalid destination address".to_string()))?;
+                    //     let dest_addr: Address = msg["dest_address"]
+                    //         .as_str()
+                    //         .ok_or_else(|| Error::App("Invalid destination address".to_string()))?
+                    //         .parse()
+                    //         .map_err(|_| Error::App("Invalid destination address".to_string()))?;
 
-                        let payer = build_call!(self.join_accounts(dest_addr));
-                        let paid = build_call!(self.app_noop());
+                    //     let payer = build_call!(self.join_accounts(dest_addr));
+                    //     let paid = build_call!(self.app_noop());
 
-                        Ok(PaidCall { payer, paid })
-                    }
+                    //     Ok(PaidCall { payer, paid })
+                    // }
 
                     "nomic/MsgSetRecoveryAddress" => {
                         let msg = msg
