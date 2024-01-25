@@ -400,11 +400,29 @@ impl ThresholdSig {
         let mut entries: Vec<_> = self.sigs.iter()?.collect::<Result<_>>()?;
         // Sort ascending by voting power, opposite order of public keys in the
         // script
-        entries.sort_by(|a, b| (a.1.power, &a.0).cmp(&(b.1.power, &b.0)));
+        entries.sort_by(|a, b| (b.1.power, &b.0).cmp(&(a.1.power, &a.0)));
+
+        let mut last = entries.len();
+        let mut signed_power = 0;
+        for (i, (_, share)) in entries.iter().enumerate() {
+            if share.sig.is_some() {
+                signed_power += share.power;
+            }
+            if signed_power > self.threshold {
+                last = i;
+                break;
+            }
+        }
 
         entries
             .into_iter()
-            .map(|(_, share)| {
+            .enumerate()
+            .rev()
+            .map(|(i, (_, share))| {
+                if i > last {
+                    return Ok(vec![]);
+                }
+
                 share.sig.map_or(Ok(vec![]), |sig| {
                     let sig = ecdsa::Signature::from_compact(sig.as_slice())?;
                     let mut v = sig.serialize_der().to_vec();
