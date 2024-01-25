@@ -1157,10 +1157,11 @@ pub struct BuildingCheckpointMut<'a>(ChildMut<'a, u64, Checkpoint>);
 
 /// The data returned by the `advance()` method of `BuildingCheckpointMut`.
 type BuildingAdvanceRes = (
-    bitcoin::OutPoint,
-    u64,
-    Vec<ReadOnly<Input>>,
-    Vec<ReadOnly<Output>>,
+    bitcoin::OutPoint,     // reserve outpoint
+    u64,                   // reserve size (sats)
+    u64,                   // fees paid (sats)
+    Vec<ReadOnly<Input>>,  // excess inputs
+    Vec<ReadOnly<Output>>, // excess outputs
 );
 
 impl<'a> BuildingCheckpointMut<'a> {
@@ -1616,6 +1617,7 @@ impl<'a> BuildingCheckpointMut<'a> {
         Ok((
             reserve_outpoint,
             reserve_value,
+            fee,
             excess_inputs,
             excess_outputs,
         ))
@@ -1933,6 +1935,7 @@ impl CheckpointQueue {
         btc_height: u32,
         should_allow_deposits: bool,
         timestamping_commitment: Vec<u8>,
+        fee_pool: &mut i64,
     ) -> Result<bool> {
         if !self.should_push(sig_keys)? {
             return Ok(false);
@@ -1965,7 +1968,7 @@ impl CheckpointQueue {
             let prev_fee_rate = second.fee_rate;
             let additional_fees = unconf_fees.saturating_sub(unconf_vbytes * prev_fee_rate);
 
-            let (reserve_outpoint, reserve_value, excess_inputs, excess_outputs) =
+            let (reserve_outpoint, reserve_value, fees_paid, excess_inputs, excess_outputs) =
                 BuildingCheckpointMut(second).advance(
                     nbtc_accounts,
                     recovery_scripts,
@@ -1974,6 +1977,7 @@ impl CheckpointQueue {
                     additional_fees,
                     &config,
                 )?;
+            *fee_pool -= fees_paid as i64;
 
             // Adjust the fee rate for the next checkpoint based on whether past
             // checkpoints have been confirmed in greater or less than the
@@ -2133,6 +2137,8 @@ impl CheckpointQueue {
         if !sigset.has_quorum() {
             return Ok(false);
         }
+
+        // TODO: Do not push if fee pool does not have enough funds.
 
         // Otherwise, push a new checkpoint.
         Ok(true)

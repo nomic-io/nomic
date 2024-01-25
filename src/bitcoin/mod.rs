@@ -612,6 +612,7 @@ impl Bitcoin {
         let value = output.value.checked_sub(fee).ok_or_else(|| {
             OrgaError::App("Deposit amount is too small to pay its spending fee".to_string())
         })? * self.config.units_per_sat;
+        self.fee_pool += (fee * self.config.units_per_sat) as i64;
 
         let outpoint = (btc_tx.txid().into_inner(), btc_vout);
         if self.processed_outpoints.contains(outpoint)? {
@@ -637,7 +638,7 @@ impl Bitcoin {
 
         let mut minted_nbtc = Nbtc::mint(value);
         let deposit_fee = minted_nbtc.take(calc_deposit_fee(value))?;
-        self.reward_pool.give(deposit_fee)?;
+        self.give_fee(deposit_fee)?;
 
         self.checkpoints
             .building_mut()?
@@ -752,6 +753,7 @@ impl Bitcoin {
             }
             Some(value) => value,
         };
+        self.fee_pool += (fee * self.config.units_per_sat) as i64;
 
         if bitcoin::Amount::from_sat(value) <= script_pubkey.dust_value() {
             return Err(OrgaError::App(
@@ -797,7 +799,7 @@ impl Bitcoin {
         let transfer_fee = self
             .accounts
             .withdraw(signer, self.config.transfer_fee.into())?;
-        self.reward_pool.give(transfer_fee)?;
+        self.give_fee(transfer_fee)?;
 
         let dest = Dest::Address(to);
         let coins = self.accounts.withdraw(signer, amount)?;
@@ -950,6 +952,7 @@ impl Bitcoin {
                 self.headers.height()?,
                 !reached_capacity_limit,
                 timestamping_commitment,
+                &mut self.fee_pool,
             )
             .map_err(|err| OrgaError::App(err.to_string()))?;
 
