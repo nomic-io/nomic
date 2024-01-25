@@ -607,7 +607,8 @@ impl Bitcoin {
         )?;
         let input_size = input.est_vsize();
 
-        let fee = input_size * checkpoint.fee_rate;
+        let fee =
+            input_size * checkpoint.fee_rate * self.checkpoints.config.user_fee_factor / 10_000;
         let value = output.value.checked_sub(fee).ok_or_else(|| {
             OrgaError::App("Deposit amount is too small to pay its spending fee".to_string())
         })? * self.config.units_per_sat;
@@ -737,7 +738,10 @@ impl Bitcoin {
             .into());
         }
 
-        let fee = (9 + script_pubkey.len() as u64) * self.checkpoints.building()?.fee_rate;
+        let fee = (9 + script_pubkey.len() as u64)
+            * self.checkpoints.building()?.fee_rate
+            * self.checkpoints.config.user_fee_factor
+            / 10_000;
         let value: u64 = Into::<u64>::into(amount) / self.config.units_per_sat;
         let value = match value.checked_sub(fee) {
             None => {
