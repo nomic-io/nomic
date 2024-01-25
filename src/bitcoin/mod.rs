@@ -619,9 +619,7 @@ impl Bitcoin {
 
         println!(
             "Relay deposit with output value: {}, input size: {}, checkpoint fee rate: {}",
-            output.value,
-            input_size,
-            checkpoint.fee_rate
+            output.value, input_size, checkpoint.fee_rate
         );
 
         let outpoint = (btc_tx.txid().into_inner(), btc_vout);
