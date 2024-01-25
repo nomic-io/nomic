@@ -179,7 +179,7 @@ impl InnerApp {
 
         let fee = ibc_fee(amount)?;
         let fee = coins.take(fee)?;
-        self.bitcoin.give_fee(fee)?;
+        self.bitcoin.give_rewards(fee)?;
 
         let building = &mut self.bitcoin.checkpoints.building_mut()?;
         let dest = Dest::Ibc(dest);
@@ -994,7 +994,7 @@ impl IbcDest {
 
         let fee_amount = ibc_fee(coins.amount)?;
         let fee = coins.take(fee_amount)?;
-        bitcoin.give_fee(fee)?;
+        bitcoin.give_rewards(fee)?;
         let nbtc_amount = coins.amount;
 
         ibc.transfer_mut()

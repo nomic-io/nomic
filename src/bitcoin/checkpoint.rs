@@ -458,7 +458,7 @@ pub const DEFAULT_FEE_RATE: u64 = 10;
 /// "intermediate emergency disbursal transaction" (in the second batch of the
 /// `batches` deque), and one or more "final emergency disbursal transactions"
 /// (in the first batch of the `batches` deque).
-#[orga(skip(Default), version = 3)]
+#[orga(skip(Default), version = 4)]
 #[derive(Debug)]
 pub struct Checkpoint {
     /// The status of the checkpoint, either `Building`, `Signing`, or
@@ -478,7 +478,7 @@ pub struct Checkpoint {
     /// disbursal.
     ///
     /// These transfers can be initiated by a simple nBTC send or by a deposit.
-    #[orga(version(V2, V3))]
+    #[orga(version(V2, V3, V4))]
     pub pending: Map<Dest, Coin<Nbtc>>,
 
     /// The fee rate to use when calculating the miner fee for the transactions
@@ -489,21 +489,24 @@ pub struct Checkpoint {
     /// faster than the target confirmation speed (implying the network is
     /// paying too low of a fee), and being decreased if checkpoints are
     /// confirmed faster than the target confirmation speed.
-    #[orga(version(V3))]
+    #[orga(version(V3, V4))]
     pub fee_rate: u64,
 
     /// The height of the Bitcoin block at which the checkpoint was fully signed
     /// and ready to be broadcast to the Bitcoin network, used by the fee
     /// adjustment algorithm to determine if the checkpoint was confirmed too
     /// fast or too slow.
-    #[orga(version(V3))]
+    #[orga(version(V3, V4))]
     pub signed_at_btc_height: Option<u32>,
 
     /// Whether or not to honor relayed deposits made against this signatory
     /// set. This can be used, for example, to enforce a cap on deposits into
     /// the system.
-    #[orga(version(V3))]
+    #[orga(version(V3, V4))]
     pub deposits_enabled: bool,
+
+    #[orga(version(V4))]
+    pub fees_collected: u64,
 
     /// The signatory set associated with the checkpoint. Note that deposits to
     /// slightly older signatory sets can still be processed in this checkpoint,
@@ -542,6 +545,21 @@ impl MigrateFrom<CheckpointV2> for CheckpointV3 {
     }
 }
 
+impl MigrateFrom<CheckpointV3> for CheckpointV4 {
+    fn migrate_from(value: CheckpointV3) -> OrgaResult<Self> {
+        Ok(Self {
+            status: value.status,
+            batches: value.batches,
+            pending: value.pending,
+            fee_rate: value.fee_rate,
+            signed_at_btc_height: value.signed_at_btc_height,
+            deposits_enabled: value.deposits_enabled,
+            sigset: value.sigset,
+            fees_collected: 0,
+        })
+    }
+}
+
 #[orga]
 impl Checkpoint {
     /// Creates a new checkpoint with the given signatory set.
@@ -559,6 +577,7 @@ impl Checkpoint {
             signed_at_btc_height: None,
             deposits_enabled: true,
             sigset,
+            fees_collected: 0,
         };
 
         let disbursal_batch = Batch::default();

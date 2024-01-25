@@ -607,12 +607,16 @@ impl Bitcoin {
         )?;
         let input_size = input.est_vsize();
 
-        let fee =
+        let mut nbtc = Nbtc::mint(output.value * self.config.units_per_sat);
+        let fee_amount =
             input_size * checkpoint.fee_rate * self.checkpoints.config.user_fee_factor / 10_000;
-        let value = output.value.checked_sub(fee).ok_or_else(|| {
-            OrgaError::App("Deposit amount is too small to pay its spending fee".to_string())
-        })? * self.config.units_per_sat;
-        self.fee_pool += (fee * self.config.units_per_sat) as i64;
+        let fee = nbtc.take(fee_amount).or_else(|_| {
+            Err(OrgaError::App(
+                "Deposit amount is too small to pay its spending fee".to_string(),
+            ))
+        })?;
+        self.give_miner_fee(fee)?;
+        // TODO: record as excess collected if inputs are full
 
         let outpoint = (btc_tx.txid().into_inner(), btc_vout);
         if self.processed_outpoints.contains(outpoint)? {
@@ -635,14 +639,14 @@ impl Bitcoin {
             .unwrap();
         let mut checkpoint_tx = building_checkpoint_batch.get_mut(0)?.unwrap();
         checkpoint_tx.input.push_back(input)?;
+        // TODO: keep in excess queue if full
 
-        let mut minted_nbtc = Nbtc::mint(value);
-        let deposit_fee = minted_nbtc.take(calc_deposit_fee(value))?;
-        self.give_fee(deposit_fee)?;
+        let deposit_fee = nbtc.take(calc_deposit_fee(nbtc.amount.clone().into()))?;
+        self.give_rewards(deposit_fee)?;
 
         self.checkpoints
             .building_mut()?
-            .insert_pending(dest, minted_nbtc)?;
+            .insert_pending(dest, nbtc)?;
 
         Ok(())
     }
@@ -719,14 +723,18 @@ impl Bitcoin {
             .signer
             .ok_or_else(|| Error::Orga(OrgaError::App("Call must be signed".into())))?;
 
-        self.accounts.withdraw(signer, amount)?.burn();
+        let coins = self.accounts.withdraw(signer, amount)?;
 
-        self.add_withdrawal(script_pubkey, amount)
+        self.add_withdrawal(script_pubkey, coins)
     }
 
     /// Adds an output to the current `Building` checkpoint to be paid out once
     /// the checkpoint is fully signed.
-    pub fn add_withdrawal(&mut self, script_pubkey: Adapter<Script>, amount: Amount) -> Result<()> {
+    pub fn add_withdrawal(
+        &mut self,
+        script_pubkey: Adapter<Script>,
+        mut coins: Coin<Nbtc>,
+    ) -> Result<()> {
         if script_pubkey.len() as u64 > self.config.max_withdrawal_script_length {
             return Err(OrgaError::App("Script exceeds maximum length".to_string()).into());
         }
@@ -739,32 +747,29 @@ impl Bitcoin {
             .into());
         }
 
-        let fee = (9 + script_pubkey.len() as u64)
+        let fee_amount = (9 + script_pubkey.len() as u64)
             * self.checkpoints.building()?.fee_rate
             * self.checkpoints.config.user_fee_factor
-            / 10_000;
-        let value: u64 = Into::<u64>::into(amount) / self.config.units_per_sat;
-        let value = match value.checked_sub(fee) {
-            None => {
-                return Err(OrgaError::App(
-                    "Withdrawal is too small to pay its miner fee".to_string(),
-                )
-                .into())
-            }
-            Some(value) => value,
-        };
-        self.fee_pool += (fee * self.config.units_per_sat) as i64;
+            / 10_000
+            * self.config.units_per_sat;
+        let fee = coins.take(fee_amount).or_else(|_| {
+            Err(OrgaError::App(
+                "Withdrawal is too small to pay its miner fee".to_string(),
+            ))
+        })?;
+        self.give_miner_fee(fee)?;
+        // TODO: record as collected for excess if full
 
-        if bitcoin::Amount::from_sat(value) <= script_pubkey.dust_value() {
-            return Err(OrgaError::App(
-                "Withdrawal is too small to pay its dust limit".to_string(),
-            )
-            .into());
-        }
-
+        let value = Into::<u64>::into(coins.amount) / self.config.units_per_sat;
         if value < self.config.min_withdrawal_amount {
             return Err(OrgaError::App(
                 "Withdrawal is smaller than than minimum amount".to_string(),
+            )
+            .into());
+        }
+        if bitcoin::Amount::from_sat(value) <= script_pubkey.dust_value() {
+            return Err(OrgaError::App(
+                "Withdrawal is too small to pay its dust limit".to_string(),
             )
             .into());
         }
@@ -781,6 +786,7 @@ impl Bitcoin {
             .unwrap();
         let mut checkpoint_tx = building_checkpoint_batch.get_mut(0)?.unwrap();
         checkpoint_tx.output.push_back(Adapter::new(output))?;
+        // TODO: push to excess if full
 
         Ok(())
     }
@@ -799,7 +805,7 @@ impl Bitcoin {
         let transfer_fee = self
             .accounts
             .withdraw(signer, self.config.transfer_fee.into())?;
-        self.give_fee(transfer_fee)?;
+        self.give_rewards(transfer_fee)?;
 
         let dest = Dest::Address(to);
         let coins = self.accounts.withdraw(signer, amount)?;
@@ -1043,7 +1049,17 @@ impl Bitcoin {
         Ok(dests)
     }
 
-    pub fn give_fee(&mut self, coin: Coin<Nbtc>) -> Result<()> {
+    pub fn give_miner_fee(&mut self, coin: Coin<Nbtc>) -> Result<()> {
+        let amount: u64 = coin.amount.into();
+        coin.burn();
+
+        self.fee_pool += amount as i64;
+        self.checkpoints.building_mut()?.fees_collected += amount;
+
+        Ok(())
+    }
+
+    pub fn give_rewards(&mut self, coin: Coin<Nbtc>) -> Result<()> {
         if self.fee_pool < self.config.fee_pool_target_balance as i64 {
             let amount: u64 = coin.amount.into();
             coin.burn();
@@ -1054,7 +1070,9 @@ impl Bitcoin {
             let fee_amount = amount - reward_amount;
 
             self.reward_pool.give(Coin::mint(reward_amount))?;
-            self.fee_pool += fee_amount as i64;
+            self.give_miner_fee(Coin::mint(fee_amount))?;
+
+            assert_eq!(reward_amount + fee_amount, amount);
         } else {
             self.reward_pool.give(coin)?;
         }
@@ -1063,13 +1081,13 @@ impl Bitcoin {
     }
 
     #[call]
-    pub fn give_to_fee_pool(&mut self, amount: Amount) -> Result<()> {
+    pub fn give_funding_to_fee_pool(&mut self, amount: Amount) -> Result<()> {
         let taken_coins = self
             .context::<Paid>()
             .ok_or_else(|| orga::Error::Coins("No Paid context found".into()))?
             .take(amount)?;
 
-        self.give_fee(taken_coins)
+        self.give_miner_fee(taken_coins)
     }
 }
 
