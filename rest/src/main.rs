@@ -9,6 +9,7 @@ use nomic::{
         Config, Nbtc,
     },
     constants::MAIN_NATIVE_TOKEN_DENOM,
+    error::Result as NomicResult,
     orga::{
         client::{wallet::Unsigned, AppClient},
         coins::{Address, Amount, Decimal, DelegationInfo, Staking, Symbol, ValidatorQueryInfo},
@@ -968,12 +969,14 @@ async fn get_checkpoint_txs() -> Result<Value, BadRequest<String>> {
                 .bitcoin
                 .checkpoints
                 .all()?
-                .iter()
-                .map(|checkpoint| checkpoint.1.checkpoint_tx().unwrap().txid())
-                .collect())
+                .into_iter()
+                .map(|checkpoint| {
+                    Ok::<bitcoin::Txid, nomic::error::Error>(checkpoint.1.checkpoint_tx()?.txid())
+                })
+                .collect::<NomicResult<Vec<_>>>()?)
         })
         .await
-        .unwrap();
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
     Ok(json!(tx_ids))
 }
 
