@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate rocket;
 
-use bitcoin::Address as BitcoinAddress;
+use bitcoin::{hashes::sha256d::Hash, Address as BitcoinAddress};
 use nomic::{
     app::{InnerApp, Nom},
     bitcoin::{
@@ -963,17 +963,15 @@ async fn get_script_pubkey(address: String) -> Result<Value, BadRequest<String>>
 
 #[get("/bitcoin/checkpoint/txs")]
 async fn get_checkpoint_txs() -> Result<Value, BadRequest<String>> {
-    let tx_ids: Vec<bitcoin::Txid> = app_client()
+    let tx_ids: Vec<Hash> = app_client()
         .query(|app: InnerApp| {
             Ok(app
                 .bitcoin
                 .checkpoints
-                .all()?
+                .completed_txs(100u32)?
                 .into_iter()
-                .map(|checkpoint| {
-                    Ok::<bitcoin::Txid, nomic::error::Error>(checkpoint.1.checkpoint_tx()?.txid())
-                })
-                .collect::<NomicResult<Vec<_>>>()?)
+                .map(|tx| tx.ntxid())
+                .collect::<Vec<_>>())
         })
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
