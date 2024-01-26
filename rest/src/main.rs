@@ -863,11 +863,11 @@ async fn latest_validator_set() -> Value {
         .map(|validator| -> Value {
             json!({
                 "address": validator.address,
-                "voting_power": validator.power.to_string(),
+                "voting_power": (i64::from(validator.power) / 1_000_000).to_string(),
                 "proposer_priority": i64::from(validator.proposer_priority).to_string(),
                 "pub_key": {
                     "@type": "/cosmos.crypto.ed25519.PubKey",
-                    "value": base64::encode(validator.pub_key.ed25519().unwrap().to_bytes()),
+                    "key": base64::encode(validator.pub_key.ed25519().unwrap().to_bytes()),
                 }
             })
         })
@@ -896,11 +896,11 @@ async fn validator_set(height: u32) -> Value {
         .map(|validator| -> Value {
             json!({
                 "address": validator.address,
-                "voting_power": validator.power.to_string(),
+                "voting_power": (i64::from(validator.power) / 1_000_000).to_string(),
                 "proposer_priority": i64::from(validator.proposer_priority).to_string(),
                 "pub_key": {
                     "@type": "/cosmos.crypto.ed25519.PubKey",
-                    "value": base64::encode(validator.pub_key.ed25519().unwrap().to_bytes()),
+                    "key": base64::encode(validator.pub_key.ed25519().unwrap().to_bytes()),
                 }
             })
         })
