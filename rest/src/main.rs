@@ -18,6 +18,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use tendermint_rpc as tm;
+use tendermint_proto::types::CommitSig as RawCommitSig;
 use tm::Client as _;
 
 lazy_static::lazy_static! {
@@ -830,7 +831,33 @@ async fn latest_block() -> Value {
         .await
         .unwrap();
 
-    json!(res)
+    let last_commit = res.block.last_commit.unwrap();
+    let signatures: Vec<_> = last_commit.signatures
+        .iter()
+        .map(|signature| -> Value {
+            let signature_raw = RawCommitSig::from(signature.clone());
+
+            json!({
+                "validator_address": base64::encode(signature_raw.validator_address),
+                "block_id_flag": signature_raw.block_id_flag,
+                "timestamp": signature_raw.timestamp,
+                "signature": base64::encode(signature_raw.signature),
+            })
+        })
+        .collect();
+
+    json!({
+        "block_id": res.block_id,
+        "block": {
+            "header": res.block.header,
+            "data": res.block.data,
+            "evidence": res.block.evidence,
+            "last_commit": {
+                "block_id": last_commit.block_id,
+                "signatures": signatures
+            }
+        }
+    })
 }
 
 #[get("/cosmos/base/tendermint/v1beta1/blocks/<height>")]
@@ -842,7 +869,33 @@ async fn block(height: u32) -> Value {
         .await
         .unwrap();
 
-    json!(res)
+    let last_commit = res.block.last_commit.unwrap();
+    let signatures: Vec<_> = last_commit.signatures
+        .iter()
+        .map(|signature| -> Value {
+            let signature_raw = RawCommitSig::from(signature.clone());
+
+            json!({
+                "validator_address": base64::encode(signature_raw.validator_address),
+                "block_id_flag": signature_raw.block_id_flag,
+                "timestamp": signature_raw.timestamp,
+                "signature": base64::encode(signature_raw.signature),
+            })
+        })
+        .collect();
+
+    json!({
+        "block_id": res.block_id,
+        "block": {
+            "header": res.block.header,
+            "data": res.block.data,
+            "evidence": res.block.evidence,
+            "last_commit": {
+                "block_id": last_commit.block_id,
+                "signatures": signatures
+            }
+        }
+    })
 }
 
 #[get("/cosmos/base/tendermint/v1beta1/validatorsets/latest")]
