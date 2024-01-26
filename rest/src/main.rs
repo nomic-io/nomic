@@ -960,6 +960,23 @@ async fn get_script_pubkey(address: String) -> Result<Value, BadRequest<String>>
     Ok(json!(base64_script_pubkey))
 }
 
+#[get("/bitcoin/checkpoint/txs")]
+async fn get_checkpoint_txs() -> Result<Value, BadRequest<String>> {
+    let tx_ids: Vec<bitcoin::Txid> = app_client()
+        .query(|app: InnerApp| {
+            Ok(app
+                .bitcoin
+                .checkpoints
+                .all()?
+                .iter()
+                .map(|checkpoint| checkpoint.1.checkpoint_tx().unwrap().txid())
+                .collect())
+        })
+        .await
+        .unwrap();
+    Ok(json!(tx_ids))
+}
+
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::Header;
 use rocket::{Request, Response};
@@ -1022,7 +1039,8 @@ fn rocket() -> _ {
             bitcoin_checkpoint_size,
             bitcoin_last_checkpoint_size,
             bitcoin_checkpoint_size_with_index,
-            get_script_pubkey
+            get_script_pubkey,
+            get_checkpoint_txs
         ],
     )
 }
