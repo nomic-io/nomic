@@ -830,6 +830,59 @@ impl Checkpoint {
 
         Ok(fees)
     }
+
+    fn base_fee(&self, config: &Config, timestamping_commitment: &[u8]) -> Result<u64> {
+        let est_vsize = self.est_vsize(config, timestamping_commitment)?;
+        Ok(est_vsize * self.fee_rate)
+    }
+
+    fn est_vsize(&self, config: &Config, timestamping_commitment: &[u8]) -> Result<u64> {
+        let batch = self.batches.get(BatchType::Checkpoint as u64)?.unwrap();
+        let cp = batch.get(0)?.unwrap();
+        let mut tx = cp.to_bitcoin_tx()?;
+
+        tx.output = self
+            .additional_outputs(config, timestamping_commitment)?
+            .into_iter()
+            .chain(tx.output.into_iter())
+            .take(config.max_outputs as usize)
+            .collect();
+        tx.input.truncate(config.max_inputs as usize);
+
+        let vsize = tx.vsize() as u64
+            + cp.input
+                .iter()?
+                .take(config.max_inputs as usize)
+                .try_fold(0, |sum, input| {
+                    Ok::<_, Error>(sum + input?.est_witness_vsize)
+                })?;
+
+        Ok(vsize)
+    }
+
+    fn additional_outputs(
+        &self,
+        config: &Config,
+        timestamping_commitment: &[u8],
+    ) -> Result<Vec<bitcoin::TxOut>> {
+        // The reserve output is the first output of the checkpoint tx, and
+        // contains all funds held in reserve by the network.
+        let reserve_out = bitcoin::TxOut {
+            value: 0, // will be updated after counting ins/outs and fees
+            script_pubkey: self.sigset.output_script(&[0u8], config.sigset_threshold)?,
+        };
+
+        // The timestamping commitment output is the second output of the
+        // checkpoint tx, and contains a commitment to some given data, which
+        // will be included on the Bitcoin blockchain as `OP_RETURN` data, now
+        // timestamped by Bitcoin's proof-of-work security.
+        let timestamping_commitment_out = bitcoin::TxOut {
+            value: 0,
+            script_pubkey: bitcoin::Script::new_op_return(timestamping_commitment),
+        };
+
+        Ok(vec![reserve_out, timestamping_commitment_out])
+    }
 }
 
 /// Configuration parameters used in processing checkpoints.
@@ -1506,38 +1559,6 @@ impl<'a> BuildingCheckpointMut<'a> {
         Ok(())
     }
 
-    fn additional_outputs(
-        &self,
-        config: &Config,
-        timestamping_commitment: &[u8],
-    ) -> Result<Vec<bitcoin::TxOut>> {
-        // The reserve output is the first output of the checkpoint tx, and
-        // contains all funds held in reserve by the network.
-        let reserve_out = bitcoin::TxOut {
-            value: 0, // will be updated after counting ins/outs and fees
-            script_pubkey: self
-                .0
-                .sigset
-                .output_script(&[0u8], config.sigset_threshold)?,
-        };
-
-        // The timestamping commitment output is the second output of the
-        // checkpoint tx, and contains a commitment to some given data, which
-        // will be included on the Bitcoin blockchain as `OP_RETURN` data, now
-        // timestamped by Bitcoin's proof-of-work security.
-        let timestamping_commitment_out = bitcoin::TxOut {
-            value: 0,
-            script_pubkey: bitcoin::Script::new_op_return(timestamping_commitment),
-        };
-
-        Ok(vec![reserve_out, timestamping_commitment_out])
-    }
-
-    fn base_fee(&self, config: &Config, timestamping_commitment: &[u8]) -> Result<u64> {
-        let est_vsize = self.est_vsize(config, timestamping_commitment)?;
-        Ok(est_vsize * self.fee_rate)
-    }
-
     /// Advances the checkpoint to the `Signing` state.
     ///
     /// This will generate the emergency disbursal transactions representing the
@@ -1642,30 +1663,6 @@ impl<'a> BuildingCheckpointMut<'a> {
             excess_inputs,
             excess_outputs,
         ))
-    }
-
-    fn est_vsize(&self, config: &Config, timestamping_commitment: &[u8]) -> Result<u64> {
-        let batch = self.0.batches.get(BatchType::Checkpoint as u64)?.unwrap();
-        let cp = batch.get(0)?.unwrap();
-        let mut tx = cp.to_bitcoin_tx()?;
-
-        tx.output = self
-            .additional_outputs(config, timestamping_commitment)?
-            .into_iter()
-            .chain(tx.output.into_iter())
-            .take(config.max_outputs as usize)
-            .collect();
-        tx.input.truncate(config.max_inputs as usize);
-
-        let vsize = tx.vsize() as u64
-            + cp.input
-                .iter()?
-                .take(config.max_inputs as usize)
-                .try_fold(0, |sum, input| {
-                    Ok::<_, Error>(sum + input?.est_witness_vsize)
-                })?;
-
-        Ok(vsize)
     }
 
     /// Insert a transfer to the pending transfer queue.
