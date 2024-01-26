@@ -859,7 +859,28 @@ async fn latest_validator_set() -> Value {
         .await
         .unwrap();
 
-    json!(res)
+    let validators: Vec<_> = res.validators.iter()
+        .map(|validator| -> Value {
+            json!({
+                "address": validator.address,
+                "voting_power": validator.power.to_string(),
+                "proposer_priority": i64::from(validator.proposer_priority).to_string(),
+                "pub_key": {
+                    "@type": "/cosmos.crypto.ed25519.PubKey",
+                    "value": base64::encode(validator.pub_key.ed25519().unwrap().to_bytes()),
+                }
+            })
+        })
+        .collect();
+
+    json!({
+        "block_height": res.block_height,
+        "validators": validators,
+        "pagination": {
+            "next_key": null,
+            "total": res.validators.len(),
+        }
+    })
 }
 
 #[get("/cosmos/base/tendermint/v1beta1/validatorsets/<height>")]
@@ -871,7 +892,28 @@ async fn validator_set(height: u32) -> Value {
         .await
         .unwrap();
 
-    json!(res)
+        let validators: Vec<_> = res.validators.iter()
+        .map(|validator| -> Value {
+            json!({
+                "address": validator.address,
+                "voting_power": validator.power.to_string(),
+                "proposer_priority": i64::from(validator.proposer_priority).to_string(),
+                "pub_key": {
+                    "@type": "/cosmos.crypto.ed25519.PubKey",
+                    "value": base64::encode(validator.pub_key.ed25519().unwrap().to_bytes()),
+                }
+            })
+        })
+        .collect();
+
+    json!({
+        "block_height": res.block_height,
+        "validators": validators,
+        "pagination": {
+            "next_key": null,
+            "total": res.validators.len(),
+        }
+    })
 }
 
 #[get("/cosmos/distribution/v1beta1/community_pool")]
