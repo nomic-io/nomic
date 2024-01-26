@@ -511,7 +511,9 @@ impl Bitcoin {
     /// checkpoint to `Signing`). Returns `false` otherwise.
     #[cfg(feature = "full")]
     pub fn should_push_checkpoint(&mut self) -> Result<bool> {
-        self.checkpoints.should_push(self.signatory_keys.map())
+        self.checkpoints
+            .should_push(self.signatory_keys.map(), &[0; 32])
+        // TODO: we shouldn't need this slice, commitment should be fixed-length
     }
 
     /// Verifies and processes a deposit of BTC into the reserve.

@@ -1979,7 +1979,7 @@ impl CheckpointQueue {
         timestamping_commitment: Vec<u8>,
         fee_pool: &mut i64,
     ) -> Result<bool> {
-        if !self.should_push(sig_keys)? {
+        if !self.should_push(sig_keys, &timestamping_commitment)? {
             return Ok(false);
         }
 
@@ -2088,7 +2088,11 @@ impl CheckpointQueue {
     /// Note that a new checkpoint being pushed also necessarily means that the
     /// `Building` checkpoint will be advanced to `Signing`.
     #[cfg(feature = "full")]
-    pub fn should_push(&mut self, sig_keys: &Map<ConsensusKey, Xpub>) -> Result<bool> {
+    pub fn should_push(
+        &mut self,
+        sig_keys: &Map<ConsensusKey, Xpub>,
+        timestamping_commitment: &[u8],
+    ) -> Result<bool> {
         // Do not push if there is a checkpoint in the `Signing` state. There
         // should only ever be at most one checkpoint in this state.
         if self.signing()?.is_some() {
@@ -2109,7 +2113,8 @@ impl CheckpointQueue {
             }
 
             // Don't push if there are no pending deposits, withdrawals, or
-            // transfers, unless the maximum checkpoint interval has elapsed
+            // transfers, or if not enough has been collected to pay for the
+            // miner fee, unless the maximum checkpoint interval has elapsed
             // since creating the current `Building` checkpoint.
             if elapsed < self.config.max_checkpoint_interval || self.index == 0 {
                 let building = self.building()?;
@@ -2125,6 +2130,17 @@ impl CheckpointQueue {
                 let has_pending_transfers = building.pending.iter()?.next().transpose()?.is_some();
 
                 if !has_pending_deposit && !has_pending_withdrawal && !has_pending_transfers {
+                    return Ok(false);
+                }
+
+                let miner_fee = building.base_fee(&self.config, timestamping_commitment)?
+                    + self.fee_adjustment(building.fee_rate)?;
+                if building.fees_collected < miner_fee {
+                    log::debug!(
+                        "Not enough collected to pay miner fee: {} < {}",
+                        building.fees_collected,
+                        miner_fee,
+                    );
                     return Ok(false);
                 }
             }
@@ -2167,8 +2183,6 @@ impl CheckpointQueue {
         if !sigset.has_quorum() {
             return Ok(false);
         }
-
-        // TODO: Do not push if fee pool does not have enough funds.
 
         // Otherwise, push a new checkpoint.
         Ok(true)
