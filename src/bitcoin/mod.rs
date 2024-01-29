@@ -398,8 +398,6 @@ impl Bitcoin {
     pub fn set_signatory_key(&mut self, _signatory_key: Xpub) -> Result<()> {
         #[cfg(feature = "full")]
         {
-            exempt_from_fee()?;
-
             let signer = self
                 .context::<Signer>()
                 .ok_or_else(|| Error::Orga(OrgaError::App("No Signer context available".into())))?
