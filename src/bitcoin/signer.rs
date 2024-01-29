@@ -183,6 +183,20 @@ where
     /// If the operator has not yet submitted a signatory key, one will be
     /// generated and saved, then submitted.
     pub async fn start(mut self) -> Result<()> {
+        let cons_key = (self.app_client)()
+            .query(|app| app.staking.consensus_key(self.op_addr))
+            .await?;
+        let onchain_xpub = (self.app_client)()
+            .query(|app| Ok(app.bitcoin.signatory_keys.get(cons_key)?))
+            .await?;
+        if onchain_xpub.is_none() {
+            return Err(Error::Signer(
+                "No on-chain xpub found
+            Please run `nomic set-signatory-key` to set a signatory key"
+                    .into(),
+            ));
+        }
+
         if let Some(addr) = self.exporter_addr {
             // Populate change rate gauges
             let _ = self.check_change_rates().await;
@@ -191,34 +205,26 @@ where
             prometheus_exporter::start(addr).unwrap();
         }
 
-        const CHECKPOINT_WINDOW: u32 = 20;
-        info!("Starting signer...");
         let secp = Secp256k1::signing_only();
-
-        let cons_key = (self.app_client)()
-            .query(|app| app.staking.consensus_key(self.op_addr))
-            .await?;
-        let onchain_xpub = (self.app_client)()
-            .query(|app| Ok(app.bitcoin.signatory_keys.get(cons_key)?))
-            .await?
-            .ok_or(Error::Signer("No signatory key found on chain".to_string()))?;
-
         let xprivs = self.xprivs.clone();
         let (xpub_submitted, key_pairs) =
             xprivs
                 .iter()
                 .fold((false, Vec::default()), |mut acc, xpriv| {
                     let xpub = ExtendedPubKey::from_priv(&secp, xpriv);
-                    acc.0 |= xpub == *onchain_xpub;
+                    acc.0 |= xpub == *onchain_xpub.unwrap();
                     acc.1.push((xpub, xpriv));
                     acc
                 });
         if !xpub_submitted {
             return Err(Error::Signer(
-                "On chain signatory key not provided".to_string(),
+                "No passed xpub matches on-chain xpub
+            If you intended to change your signatory key, please run `nomic set-signatory-key`"
+                    .into(),
             ));
         }
 
+        const CHECKPOINT_WINDOW: u32 = 20;
         let mut index = (self.app_client)()
             .query(|app| {
                 let index = app.bitcoin.checkpoints.index();
@@ -238,6 +244,7 @@ where
             }
         }
 
+        info!("Starting signer...");
         loop {
             for (xpub, xpriv) in key_pairs.iter() {
                 let signed = match self.try_sign(xpub, xpriv, index).await {
