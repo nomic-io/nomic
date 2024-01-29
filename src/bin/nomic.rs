@@ -1253,6 +1253,7 @@ impl SignerCmd {
 #[derive(Parser, Debug)]
 pub struct SetSignatoryKeyCmd {
     xpriv_path: Option<PathBuf>,
+    #[clap(long, default_value_t = false)]
     generate: bool,
 
     #[clap(flatten)]
