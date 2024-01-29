@@ -610,8 +610,9 @@ impl Bitcoin {
         let input_size = input.est_vsize();
 
         let mut nbtc = Nbtc::mint(output.value * self.config.units_per_sat);
-        let fee_amount =
-            input_size * checkpoint.fee_rate * self.checkpoints.config.user_fee_factor / 10_000;
+        let fee_amount = input_size * checkpoint.fee_rate * self.checkpoints.config.user_fee_factor
+            / 10_000
+            * self.config.units_per_sat;
         let fee = nbtc.take(fee_amount).or_else(|_| {
             Err(OrgaError::App(
                 "Deposit amount is too small to pay its spending fee".to_string(),
