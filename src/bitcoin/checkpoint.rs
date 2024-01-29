@@ -2454,6 +2454,7 @@ mod test {
                 signed_at_btc_height: None,
                 deposits_enabled: true,
                 sigset: SignatorySet::default(),
+                fees_collected: 0,
             };
             cp.status = status;
             queue.queue.push_back(cp).unwrap();
@@ -2617,7 +2618,8 @@ mod test {
             ..Default::default()
         };
 
-        let maybe_step = |btc_height| {
+        let mut fee_pool = 0;
+        let mut maybe_step = |btc_height| {
             queue
                 .borrow_mut()
                 .maybe_step(
@@ -2632,6 +2634,7 @@ mod test {
                     btc_height,
                     true,
                     vec![1, 2, 3],
+                    &mut fee_pool,
                 )
                 .unwrap();
         };
@@ -2649,6 +2652,7 @@ mod test {
             .unwrap();
             let mut queue = queue.borrow_mut();
             let mut building_mut = queue.building_mut().unwrap();
+            building_mut.fees_collected = 100000000;
             let mut building_checkpoint_batch = building_mut
                 .batches
                 .get_mut(BatchType::Checkpoint as u64)
@@ -2828,7 +2832,8 @@ mod test {
             let time = orga::plugins::Time::from_seconds(time);
             Context::add(time);
         };
-        let maybe_step = |btc_height| {
+        let mut fee_pool = 0;
+        let mut maybe_step = |btc_height| {
             queue
                 .borrow_mut()
                 .maybe_step(
@@ -2843,6 +2848,7 @@ mod test {
                     btc_height,
                     true,
                     vec![1, 2, 3],
+                    &mut fee_pool,
                 )
                 .unwrap();
         };
@@ -2860,6 +2866,7 @@ mod test {
             .unwrap();
             let mut queue = queue.borrow_mut();
             let mut building_mut = queue.building_mut().unwrap();
+            building_mut.fees_collected = 100000000;
             let mut building_checkpoint_batch = building_mut
                 .batches
                 .get_mut(BatchType::Checkpoint as u64)

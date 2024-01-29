@@ -1299,9 +1299,13 @@ mod tests {
         };
 
         let secp = Secp256k1::new();
+        #[cfg(feature = "testnet")]
+        let net = bitcoin::Network::Testnet;
+        #[cfg(not(feature = "testnet"))]
+        let net = bitcoin::Network::Bitcoin;
         let xpriv = vec![
-            ExtendedPrivKey::new_master(bitcoin::Network::Testnet, &[0]).unwrap(),
-            ExtendedPrivKey::new_master(bitcoin::Network::Testnet, &[1]).unwrap(),
+            ExtendedPrivKey::new_master(net, &[0]).unwrap(),
+            ExtendedPrivKey::new_master(net, &[1]).unwrap(),
         ];
         let xpub = vec![
             ExtendedPubKey::from_priv(&secp, &xpriv[0]),
@@ -1324,6 +1328,7 @@ mod tests {
             .unwrap();
             let mut btc = btc.borrow_mut();
             let mut building_mut = btc.checkpoints.building_mut().unwrap();
+            building_mut.fees_collected = 100_000_000;
             let mut building_checkpoint_batch = building_mut
                 .batches
                 .get_mut(BatchType::Checkpoint as u64)
@@ -1436,7 +1441,7 @@ mod tests {
         push_withdrawal();
         maybe_step();
         let change_rates = btc.borrow().change_rates(3000, 5100, 0)?;
-        assert_eq!(change_rates.withdrawal, 8652);
+        assert_eq!(change_rates.withdrawal, 8649);
         assert_eq!(change_rates.sigset_change, 4090);
         assert_eq!(btc.borrow().checkpoints.signing()?.unwrap().sigset.index, 5);
         let change_rates = btc.borrow().change_rates(3000, 5100, 5)?;
