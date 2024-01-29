@@ -52,6 +52,17 @@ lazy_static! {
     .unwrap();
 }
 
+pub fn load_xpriv<P: AsRef<Path> + Clone>(path: P) -> Result<ExtendedPrivKey> {
+    if path.as_ref().exists() {
+        load_bitcoin_key(path)
+    } else {
+        Err(Error::Signer(format!(
+            "Key path {} not found",
+            path.as_ref().display()
+        )))
+    }
+}
+
 /// The signer is responsible for signing checkpoints with a signatory key. It
 /// is run by a signatory in its own process, and constantly watches the state
 /// for new checkpoints to sign.
@@ -109,16 +120,9 @@ where
         };
 
         let xprivs = xpriv_paths.iter().try_fold(Vec::new(), |mut acc, path| {
-            if path.as_ref().exists() {
-                let xpriv = load_bitcoin_key(path)?;
-                acc.push(xpriv);
-                Ok(acc)
-            } else {
-                Err(Error::Signer(format!(
-                    "Key path {} not found",
-                    path.as_ref().display()
-                )))
-            }
+            let res = load_xpriv(path)?;
+            acc.push(res);
+            Ok::<_, Error>(acc)
         })?;
 
         Ok(Self::new(
