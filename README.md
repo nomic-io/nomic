@@ -134,23 +134,21 @@ The funds in the Bitcoin bridge are held in a large multisig controlled by the N
 
 #### i. Set your signatory key
 
-This will submit your public key to the network so you can be added to the multisig. **KEEP THIS KEY SAFE** - similar to your validator private key, it is important to be mindful of this key so that it is never lost or stolen.
+This will submit your public key to the network so you can be added to the multisig. If you do not have a key stored at `~/.nomic-testnet-4c/signer/xpriv`, this will automatically generate a Bitcoin extended private key for you. **KEEP THIS KEY SAFE** - similar to your validator private key, it is important to be mindful of this key so that it is never lost or stolen.
 
 **Note:** Setting your signatory key is only required if you are starting a fresh node. Migrating nodes can move on to the next step.
 
-For example:
-
 ```
-nomic set_signatory_key xpriv_path=<path_to_your_xpriv>
+nomic set-signatory-key
 ```
 
-If you do not have a signatory key, you can use the `--generate` flag to automatically generate a Bitcoin extended private key and store it at `~/.nomic-testnet-4c/signer/xpriv`.
+If you have your extended private key stored in a different location than the default, you may pass a path.
 
 ```
-nomic set_signatory_key --generate
+nomic set-signatory-key <path-to-your-key>
 ```
 
-#### i. Run your Bitcoin signer
+#### ii. Run your Bitcoin signer
 
 You can run the signer with:
 
