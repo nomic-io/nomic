@@ -139,6 +139,13 @@ pub fn generate_bitcoin_key(network: bitcoin::Network) -> Result<ExtendedPrivKey
 }
 
 pub fn load_bitcoin_key<P: AsRef<Path> + Clone>(path: P) -> Result<ExtendedPrivKey> {
+    if !path.as_ref().exists() {
+        return Err(Error::Signer(format!(
+            "Path `{}` does not exist",
+            path.as_ref().display()
+        )));
+    }
+
     let bytes = fs::read(path.clone())?;
     let text = String::from_utf8(bytes).unwrap();
 
