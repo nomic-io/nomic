@@ -1253,8 +1253,6 @@ impl SignerCmd {
 #[derive(Parser, Debug)]
 pub struct SetSignatoryKeyCmd {
     xpriv_path: Option<PathBuf>,
-    #[clap(long, default_value_t = false)]
-    generate: bool,
 
     #[clap(flatten)]
     config: nomic::network::Config,
@@ -1262,16 +1260,20 @@ pub struct SetSignatoryKeyCmd {
 
 impl SetSignatoryKeyCmd {
     async fn run(&self) -> Result<()> {
-        let xpriv_path = self
+        let xpriv = match self
             .xpriv_path
-            .clone()
-            .unwrap_or_else(|| self.config.home_expect().unwrap().join("signer/xpriv"));
-
-        let xpriv = if self.generate {
-            load_or_generate(xpriv_path, nomic::bitcoin::NETWORK)?
-        } else {
-            load_bitcoin_key(xpriv_path)?
-        };
+            .clone() {
+                Some(xpriv_path) => load_bitcoin_key(xpriv_path)?,
+                None => {
+                    load_or_generate(
+                        self.config
+                            .home_expect()
+                            .unwrap()
+                            .join("signer/xpriv"),
+                        nomic::bitcoin::NETWORK,
+                    )?
+                }
+            };
 
         let xpub = ExtendedPubKey::from_priv(&secp256k1::Secp256k1::new(), &xpriv);
 
