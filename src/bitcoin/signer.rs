@@ -114,6 +114,9 @@ where
         exporter_addr: Option<SocketAddr>,
     ) -> Result<Self> {
         let xpriv_paths = if xpriv_paths.is_empty() {
+            if !default_xpriv_path.as_ref().exists() {
+                return Err(Error::Signer("No local xpriv found Run `nomic set-signatory-key` if you do not have a signatory key on-chain".into()))
+            }
             vec![default_xpriv_path]
         } else {
             xpriv_paths
