@@ -916,7 +916,7 @@ async fn latest_validator_set() -> Value {
         .map(|validator| -> Value {
             json!({
                 "address": validator.address,
-                "voting_power": (i64::from(validator.power) / 1_000_000).to_string(),
+                "voting_power": i64::from(validator.power).to_string(),
                 "proposer_priority": i64::from(validator.proposer_priority).to_string(),
                 "pub_key": {
                     "@type": "/cosmos.crypto.ed25519.PubKey",
@@ -949,7 +949,7 @@ async fn validator_set(height: u32) -> Value {
         .map(|validator| -> Value {
             json!({
                 "address": validator.address,
-                "voting_power": (i64::from(validator.power) / 1_000_000).to_string(),
+                "voting_power": i64::from(validator.power).to_string(),
                 "proposer_priority": i64::from(validator.proposer_priority).to_string(),
                 "pub_key": {
                     "@type": "/cosmos.crypto.ed25519.PubKey",
