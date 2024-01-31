@@ -820,7 +820,8 @@ async fn slashing_params() -> Value {
             "slash_fraction_double_sign": slash_fraction_double_sign.to_string(),
             "slash_fraction_downtime": slash_fraction_downtime.to_string()
         }
-    }
+    })
+}
 
 #[get("/cosmos/base/tendermint/v1beta1/blocks/latest")]
 async fn latest_block() -> Value {
@@ -1052,13 +1053,13 @@ fn rocket() -> _ {
             validators,
             validator,
             staking_params,
-            slashing_params
+            slashing_params,
             latest_block,
             block,
             latest_validator_set,
             validator_set,
             community_pool,
             proposals,
-        ],
+        ]
     )
 }
