@@ -77,7 +77,7 @@ pub struct InnerApp {
     #[call]
     pub airdrop: Airdrop,
 
-    community_pool: Coin<Nom>,
+    pub community_pool: Coin<Nom>,
     incentive_pool: Coin<Nom>,
 
     staking_rewards: Faucet<Nom>,

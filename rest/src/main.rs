@@ -18,14 +18,19 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use tendermint_rpc as tm;
+use tendermint_proto::types::CommitSig as RawCommitSig;
 use tm::Client as _;
 
 lazy_static::lazy_static! {
     static ref QUERY_CACHE: Arc<RwLock<HashMap<String, (u64, String)>>> = Arc::new(RwLock::new(HashMap::new()));
 }
 
+fn app_host() -> &'static str {
+    "http://localhost:26657"
+}
+
 fn app_client() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned> {
-    nomic::app_client("http://localhost:26657")
+    nomic::app_client(app_host())
 }
 
 // DONE /cosmos/bank/v1beta1/balances/{address}
@@ -41,8 +46,8 @@ fn app_client() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned> {
 // /ibc/apps/transfer/v1/denom_traces/{hash}
 // /ibc/core/channel/v1/channels/{channelId}/ports/{portId}/client_state
 
-#[get("/cosmos/staking/v1beta1/validators")]
-async fn validators() -> Value {
+#[get("/cosmos/staking/v1beta1/validators?<status>")]
+async fn validators(status: Option<String>) -> Value {
     let all_validators: Vec<ValidatorQueryInfo> = app_client()
         .query(|app: InnerApp| app.staking.all_validators())
         .await
@@ -55,13 +60,17 @@ async fn validators() -> Value {
             .await
             .unwrap(); // TODO: cache
 
-        let status = if validator.unbonding {
+        let validator_status = if validator.unbonding {
             "BOND_STATUS_UNBONDING"
         } else if validator.in_active_set {
             "BOND_STATUS_BONDED"
         } else {
             "BOND_STATUS_UNBONDED"
         };
+
+        if !status.is_none() && status != Some(validator_status.to_owned()) {
+            continue;
+        }
 
         let info: DeclareInfo =
             serde_json::from_str(String::from_utf8(validator.info.to_vec()).unwrap().as_str())
@@ -80,7 +89,7 @@ async fn validators() -> Value {
                  "key": base64::encode(cons_key)
              },
              "jailed": validator.jailed,
-             "status": status,
+             "status": validator_status,
              "tokens": validator.amount_staked.to_string(),
              "delegator_shares": validator.amount_staked.to_string(),
              "description": {
@@ -317,7 +326,7 @@ struct TxRequest {
 async fn txs(tx: &str) -> Result<Value, BadRequest<String>> {
     dbg!(tx);
 
-    let client = tm::HttpClient::new("http://localhost:26657").unwrap();
+    let client = tm::HttpClient::new(app_host()).unwrap();
 
     let tx_bytes = if let Some('{') = tx.chars().next() {
         let tx: TxRequest = serde_json::from_str(tx).unwrap();
@@ -363,7 +372,7 @@ struct TxRequest2 {
 async fn txs2(tx: &str) -> Result<Value, BadRequest<String>> {
     dbg!(tx);
 
-    let client = tm::HttpClient::new("http://localhost:26657").unwrap();
+    let client = tm::HttpClient::new(app_host()).unwrap();
 
     let tx_bytes = if let Some('{') = tx.chars().next() {
         let tx: TxRequest2 = serde_json::from_str(tx).unwrap();
@@ -423,7 +432,7 @@ async fn query(query: &str, height: Option<u32>) -> Result<String, BadRequest<St
     //     }
     // }
 
-    let client = tm::HttpClient::new("http://localhost:26657").unwrap();
+    let client = tm::HttpClient::new(app_host()).unwrap();
 
     let query_bytes = hex::decode(query).map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
@@ -705,10 +714,29 @@ fn bank_total(denom: &str) -> Value {
 }
 
 #[get("/cosmos/staking/v1beta1/pool")]
-fn staking_pool() -> Value {
+async fn staking_pool() -> Value {
+    let validators = app_client()
+        .query(|app| app.staking.all_validators())
+        .await
+        .unwrap();
+
+    let total_bonded: u64 = validators
+        .iter()
+        .filter(|v| v.in_active_set)
+        .map(|v| -> u64 { v.amount_staked.into() })
+        .sum();
+
+    let total_not_bonded: u64 = validators
+        .iter()
+        .filter(|v| !v.in_active_set)
+        .map(|v| -> u64 { v.amount_staked.into() })
+        .sum();
+
     json!({
-        "bonded_tokens": "0",
-        "not_bonded_tokens": "0"
+        "pool": {
+            "bonded_tokens": total_bonded.to_string(),
+            "not_bonded_tokens": total_not_bonded.to_string()
+        }
     })
 }
 
@@ -795,6 +823,181 @@ async fn slashing_params() -> Value {
     })
 }
 
+#[get("/cosmos/base/tendermint/v1beta1/blocks/latest")]
+async fn latest_block() -> Value {
+    let client = tm::HttpClient::new(app_host()).unwrap();
+
+    let res = client
+        .latest_block()
+        .await
+        .unwrap();
+
+    let last_commit = res.block.last_commit.unwrap();
+    let signatures: Vec<_> = last_commit.signatures
+        .iter()
+        .map(|signature| -> Value {
+            let signature_raw = RawCommitSig::from(signature.clone());
+
+            json!({
+                "validator_address": base64::encode(signature_raw.validator_address),
+                "block_id_flag": signature_raw.block_id_flag,
+                "timestamp": signature_raw.timestamp,
+                "signature": base64::encode(signature_raw.signature),
+            })
+        })
+        .collect();
+
+    json!({
+        "block_id": res.block_id,
+        "block": {
+            "header": res.block.header,
+            "data": res.block.data,
+            "evidence": res.block.evidence,
+            "last_commit": {
+                "block_id": last_commit.block_id,
+                "signatures": signatures
+            }
+        }
+    })
+}
+
+#[get("/cosmos/base/tendermint/v1beta1/blocks/<height>")]
+async fn block(height: u32) -> Value {
+    let client = tm::HttpClient::new(app_host()).unwrap();
+
+    let res = client
+        .block(tendermint::block::Height::from(height))
+        .await
+        .unwrap();
+
+    let last_commit = res.block.last_commit.unwrap();
+    let signatures: Vec<_> = last_commit.signatures
+        .iter()
+        .map(|signature| -> Value {
+            let signature_raw = RawCommitSig::from(signature.clone());
+
+            json!({
+                "validator_address": base64::encode(signature_raw.validator_address),
+                "block_id_flag": signature_raw.block_id_flag,
+                "timestamp": signature_raw.timestamp,
+                "signature": base64::encode(signature_raw.signature),
+            })
+        })
+        .collect();
+
+    json!({
+        "block_id": res.block_id,
+        "block": {
+            "header": res.block.header,
+            "data": res.block.data,
+            "evidence": res.block.evidence,
+            "last_commit": {
+                "block_id": last_commit.block_id,
+                "signatures": signatures
+            }
+        }
+    })
+}
+
+#[get("/cosmos/base/tendermint/v1beta1/validatorsets/latest")]
+async fn latest_validator_set() -> Value {
+    let client = tm::HttpClient::new(app_host()).unwrap();
+
+    let block = client
+        .latest_block()
+        .await
+        .unwrap();
+
+    let res = client
+        .validators(block.block.header.height, tendermint_rpc::Paging::All)
+        .await
+        .unwrap();
+
+    let validators: Vec<_> = res.validators.iter()
+        .map(|validator| -> Value {
+            json!({
+                "address": validator.address,
+                "voting_power": i64::from(validator.power).to_string(),
+                "proposer_priority": i64::from(validator.proposer_priority).to_string(),
+                "pub_key": {
+                    "@type": "/cosmos.crypto.ed25519.PubKey",
+                    "key": base64::encode(validator.pub_key.ed25519().unwrap().to_bytes()),
+                }
+            })
+        })
+        .collect();
+
+    json!({
+        "block_height": res.block_height,
+        "validators": validators,
+        "pagination": {
+            "next_key": null,
+            "total": res.validators.len(),
+        }
+    })
+}
+
+#[get("/cosmos/base/tendermint/v1beta1/validatorsets/<height>")]
+async fn validator_set(height: u32) -> Value {
+    let client = tm::HttpClient::new(app_host()).unwrap();
+
+    let res = client
+        .validators(height, tendermint_rpc::Paging::All)
+        .await
+        .unwrap();
+
+        let validators: Vec<_> = res.validators.iter()
+        .map(|validator| -> Value {
+            json!({
+                "address": validator.address,
+                "voting_power": i64::from(validator.power).to_string(),
+                "proposer_priority": i64::from(validator.proposer_priority).to_string(),
+                "pub_key": {
+                    "@type": "/cosmos.crypto.ed25519.PubKey",
+                    "key": base64::encode(validator.pub_key.ed25519().unwrap().to_bytes()),
+                }
+            })
+        })
+        .collect();
+
+    json!({
+        "block_height": res.block_height,
+        "validators": validators,
+        "pagination": {
+            "next_key": null,
+            "total": res.validators.len(),
+        }
+    })
+}
+
+#[get("/cosmos/distribution/v1beta1/community_pool")]
+async fn community_pool() -> Value {
+    let community_pool = app_client()
+        .query(|app| Ok(app.community_pool.amount))
+        .await
+        .unwrap();
+
+    json!({
+        "pool": [
+            {
+                "denom": "unom",
+                "amount": community_pool.to_string()
+            }
+        ]
+    })
+}
+
+#[get("/cosmos/gov/v1beta1/proposals")]
+fn proposals() -> Value {
+    json!({
+        "proposals": [],
+        "pagination": {
+            "next_key": null,
+            "total": 0
+        }
+    })
+}
+
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::Header;
 use rocket::{Request, Response};
@@ -850,7 +1053,13 @@ fn rocket() -> _ {
             validators,
             validator,
             staking_params,
-            slashing_params
-        ],
+            slashing_params,
+            latest_block,
+            block,
+            latest_validator_set,
+            validator_set,
+            community_pool,
+            proposals,
+        ]
     )
 }
