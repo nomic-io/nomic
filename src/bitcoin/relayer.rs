@@ -186,6 +186,18 @@ impl Relayer {
                             sigsets.get(&query.sigset_index).unwrap()
                         }
                     };
+
+                    let deposit_timeout_buffer = app_client(app_client_addr)
+                        .query(|app| Ok(app.bitcoin.checkpoints.config.deposit_timeout_buffer))
+                        .await
+                        .map_err(|e| warp::reject::custom(Error::from(e)))?;
+
+                    if time_now() + deposit_timeout_buffer >= sigset.deposit_timeout {
+                        return Err(warp::reject::custom(Error::Relayer(
+                            "Sigset no longer accepting deposits. Unable to generate deposit address".into(),
+                        )));
+                    }
+
                     let expected_addr = ::bitcoin::Address::from_script(
                         &sigset
                             .output_script(
