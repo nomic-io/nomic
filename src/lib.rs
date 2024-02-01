@@ -6,8 +6,6 @@
 #![feature(async_closure)]
 #![feature(string_leak)]
 
-// #![feature(string_leak)]
-
 #[cfg(feature = "full")]
 use orga::{
     client::{wallet::Unsigned, AppClient},

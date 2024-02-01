@@ -2390,6 +2390,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tendermint 0.23.7",
+ "tendermint-proto 0.23.9",
  "tendermint-rpc 0.23.7",
  "tokio",
 ]

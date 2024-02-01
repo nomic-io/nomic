@@ -72,7 +72,7 @@ pub struct InnerApp {
     #[call]
     pub staking: Staking<Nom>,
 
-    community_pool: Coin<Nom>,
+    pub community_pool: Coin<Nom>,
 
     staking_rewards: Faucet<Nom>,
     community_pool_rewards: Faucet<Nom>,
@@ -469,6 +469,10 @@ mod abci {
                 QueryValidatorCommissionRequest, QueryValidatorCommissionResponse,
                 QueryValidatorOutstandingRewardsRequest, QueryValidatorOutstandingRewardsResponse,
             },
+            slashing::v1beta1::{
+                QueryParamsRequest as SlashingQueryParamsRequest,
+                QueryParamsResponse as SlashingQueryParamsResponse,
+            },
             staking::v1beta1::{
                 query_server::{Query as StakingQuery, QueryServer as StakingQueryServer},
                 BondStatus, Delegation, DelegationResponse, Params, Pool, QueryDelegationRequest,
@@ -614,8 +618,34 @@ mod abci {
                         res_value = response.encode_to_vec().into();
                     }
                 }
-                "/cosmos.slashing.v1beta1.Query/Params"
-                | "/cosmos.gov.v1beta1.Query/Proposals"
+                "/cosmos.slashing.v1beta1.Query/Params" => {
+                    let request = SlashingQueryParamsRequest::decode(req.data.clone()).unwrap();
+
+                    let params = Some(cosmos_sdk_proto::cosmos::slashing::v1beta1::Params {
+                        signed_blocks_window: self.staking.max_offline_blocks as i64,
+                        min_signed_per_window: vec![],
+                        downtime_jail_duration: Some(Duration {
+                            seconds: self.staking.downtime_jail_seconds as i64,
+                            nanos: 0,
+                        }),
+                        slash_fraction_double_sign: self
+                            .staking
+                            .slash_fraction_double_sign
+                            .encode()
+                            .unwrap(),
+                        slash_fraction_downtime: self
+                            .staking
+                            .slash_fraction_downtime
+                            .encode()
+                            .unwrap(),
+                        ..cosmos_sdk_proto::cosmos::slashing::v1beta1::Params::default()
+                    });
+
+                    let response = SlashingQueryParamsResponse { params };
+                    res_value = response.encode_to_vec().into();
+                }
+
+                "/cosmos.gov.v1beta1.Query/Proposals"
                 | "/cosmos.distribution.v1beta1.Query/Params"
                 | "/cosmos.gov.v1beta1.Query/Params" => {
                     res_value = Bytes::default();
@@ -786,14 +816,14 @@ mod abci {
                 }
                 "/cosmos.staking.v1beta1.Query/Params" => {
                     let request = StakingQueryParamsRequest::decode(req.data.clone()).unwrap();
-                    let params = Some(Params {
+                    let params = Some(cosmos_sdk_proto::cosmos::staking::v1beta1::Params {
                         unbonding_time: Some(Duration {
                             seconds: self.staking.unbonding_seconds as i64,
                             nanos: 0i32,
                         }),
                         max_validators: self.staking.max_validators as u32,
                         bond_denom: Nom::NAME.to_string(),
-                        ..Params::default()
+                        ..cosmos_sdk_proto::cosmos::staking::v1beta1::Params::default()
                     });
                     let response = StakingQueryParamsResponse { params };
                     res_value = response.encode_to_vec().into();
@@ -1204,7 +1234,6 @@ impl ConvertSdkTx for InnerApp {
 
                     //     Ok(PaidCall { payer, paid })
                     // }
-
                     "nomic/MsgSetRecoveryAddress" => {
                         let msg = msg
                             .value
