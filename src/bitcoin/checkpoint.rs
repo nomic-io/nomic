@@ -959,6 +959,13 @@ impl Config {
         }
     }
 
+    fn testnet() -> Self {
+        Self {
+            emergency_disbursal_lock_time_interval: 60 * 60 * 24 * 7, // one week
+            ..Config::bitcoin()
+        }
+    }
+
     fn bitcoin() -> Self {
         Self {
             min_checkpoint_interval: 60 * 5,
@@ -971,9 +978,6 @@ impl Config {
             max_fee_rate: 200,
             sigset_threshold: SIGSET_THRESHOLD,
             emergency_disbursal_min_tx_amt: 1000,
-            #[cfg(feature = "testnet")]
-            emergency_disbursal_lock_time_interval: 60 * 60 * 24 * 7, // one week
-            #[cfg(not(feature = "testnet"))]
             emergency_disbursal_lock_time_interval: 60 * 60 * 24 * 7 * 2, // two weeks
             emergency_disbursal_max_tx_size: 50_000,
             max_unconfirmed_checkpoints: 15,
@@ -985,7 +989,8 @@ impl Default for Config {
     fn default() -> Self {
         match super::NETWORK {
             bitcoin::Network::Regtest => Config::regtest(),
-            bitcoin::Network::Testnet | bitcoin::Network::Bitcoin => Config::bitcoin(),
+            bitcoin::Network::Testnet => Config::testnet(),
+            bitcoin::Network::Bitcoin => Config::bitcoin(),
             _ => unimplemented!(),
         }
     }
