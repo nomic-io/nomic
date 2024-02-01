@@ -2095,7 +2095,8 @@ impl CheckpointQueue {
 
         // Build the signatory set for the new checkpoint based on the current
         // validator set.
-        let sigset = SignatorySet::from_validator_ctx(index, sig_keys)?;
+        let sigset =
+            SignatorySet::from_validator_ctx(index, sig_keys, self.config.max_deposit_age)?;
 
         // Do not push if there are no validators in the signatory set.
         if sigset.possible_vp() == 0 {
@@ -2131,7 +2132,8 @@ impl CheckpointQueue {
 
         // Build the signatory set for the new checkpoint based on the current
         // validator set.
-        let sigset = SignatorySet::from_validator_ctx(index, sig_keys)?;
+        let sigset =
+            SignatorySet::from_validator_ctx(index, sig_keys, self.config.max_deposit_age)?;
 
         // Do not push if there are no validators in the signatory set.
         if sigset.possible_vp() == 0 {

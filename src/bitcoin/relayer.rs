@@ -1045,7 +1045,7 @@ impl WatchedScripts {
         let now = time_now();
 
         for (_, (sigset, dests)) in self.sigsets.iter() {
-            if now < sigset.deposit_timeout() {
+            if now < sigset.deposit_timeout {
                 break;
             }
 

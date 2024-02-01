@@ -534,7 +534,7 @@ impl Bitcoin {
         let checkpoint = self.checkpoints.get(sigset_index)?;
         let sigset = checkpoint.sigset.clone();
 
-        if now > sigset.deposit_timeout() {
+        if now > sigset.deposit_timeout {
             return Err(OrgaError::App("Deposit timeout has expired".to_string()))?;
         }
 
@@ -572,7 +572,7 @@ impl Bitcoin {
             ))?;
         }
         self.processed_outpoints
-            .insert(outpoint, sigset.deposit_timeout())?;
+            .insert(outpoint, sigset.deposit_timeout)?;
 
         let mut building_mut = self.checkpoints.building_mut()?;
         if !building_mut.deposits_enabled {
