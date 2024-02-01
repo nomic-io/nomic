@@ -9,7 +9,6 @@ use nomic::{
         checkpoint::{CheckpointQueue, Config as CheckpointConfig},
         Config, Nbtc,
     },
-    constants::MAIN_NATIVE_TOKEN_DENOM,
     orga::{
         client::{wallet::Unsigned, AppClient},
         coins::{Address, Amount, Decimal, DelegationInfo, Staking, Symbol, ValidatorQueryInfo},
@@ -29,6 +28,12 @@ use tm::Client as _;
 
 lazy_static::lazy_static! {
     static ref QUERY_CACHE: Arc<RwLock<HashMap<String, (u64, String)>>> = Arc::new(RwLock::new(HashMap::new()));
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct Balance {
+    pub denom: String,
+    pub amount: String,
 }
 
 fn app_host() -> &'static str {
@@ -677,7 +682,7 @@ fn staking_delegators_unbonding_delegations_2(_address: &str) -> Value {
 async fn staking_validators_delegations(address: &str) -> Value {
     let validator_address: Address = address.parse().unwrap();
     let delegations: Vec<(Address, DelegationInfo)> = app_client()
-        .query(|app: InnerApp| app.staking.validator_delegations(validator_address))
+        .query(|app: InnerApp| app.staking.delegations(validator_address))
         .await
         .unwrap();
 
@@ -741,7 +746,7 @@ async fn staking_validator_single_delegation(
 async fn staking_validators_unbonding_delegations(address: &str) -> Value {
     let validator_address: Address = address.parse().unwrap();
     let delegations: Vec<(Address, DelegationInfo)> = app_client()
-        .query(|app: InnerApp| app.staking.validator_delegations(validator_address))
+        .query(|app: InnerApp| app.staking.delegations(validator_address))
         .await
         .unwrap();
 
@@ -978,7 +983,7 @@ async fn staking_params() -> Result<Value, BadRequest<String>> {
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
     Ok(json!({
         "params": {
-            "unbonding_time": staking.unbonding_seconds,
+            "unbonding_time": staking.unbonding_seconds.to_string() + "s",
             "max_validators": staking.max_validators,
             "max_entries": 7, // FIXME: nomic does not have this value,
             "historical_entries": 1000, // FIXME: nomic does not have this value,
@@ -1074,23 +1079,7 @@ async fn get_script_pubkey(address: String) -> Result<Value, BadRequest<String>>
     Ok(json!(base64_script_pubkey))
 }
 
-#[get("/cosmos/staking/v1beta1/params")]
-async fn staking_params() -> Value {
-    let (unbonding_seconds, max_validators) = app_client()
-        .query(|app| Ok((app.staking.unbonding_seconds, app.staking.max_validators)))
-        .await
-        .unwrap();
 
-    json!({
-        "params": {
-            "unbonding_time": unbonding_seconds.to_string() + "s",
-            "max_validators": max_validators,
-            "max_entries": 7,
-            "historical_entries": 10000,
-            "bond_denom": "unom"
-        }
-    })
-}
 
 #[get("/cosmos/slashing/v1beta1/params")]
 async fn slashing_params() -> Value {
@@ -1363,7 +1352,6 @@ fn rocket() -> _ {
             get_script_pubkey,
             validators,
             validator,
-            staking_params,
             slashing_params,
             latest_block,
             block,
