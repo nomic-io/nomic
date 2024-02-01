@@ -1,9 +1,15 @@
 #![allow(clippy::redundant_closure_call)] // TODO: fix bitcoin-script then remove this
 #![allow(unused_imports)] // TODO
 
+use crate::bitcoin::threshold_sig::Pubkey;
 #[cfg(feature = "full")]
 use crate::error::Error;
 use crate::error::Result;
+use bitcoin::blockdata::opcodes::all::{
+    OP_ADD, OP_CHECKSIG, OP_DROP, OP_ELSE, OP_ENDIF, OP_GREATERTHAN, OP_IF, OP_SWAP,
+};
+use bitcoin::blockdata::opcodes::{self, OP_FALSE};
+use bitcoin::blockdata::script::{read_scriptint, Instruction, Instructions};
 use bitcoin::secp256k1::Context as SecpContext;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::secp256k1::Secp256k1;
@@ -151,6 +157,131 @@ impl SignatorySet {
         sigset.sort_and_truncate();
 
         Ok(sigset)
+    }
+
+    pub fn from_script(script: &bitcoin::Script) -> Result<(Self, Vec<u8>)> {
+        fn take_instruction<'a>(ins: &mut Instructions<'a>) -> Result<Instruction<'a>> {
+            ins.next()
+                .ok_or_else(|| orga::Error::App("Unexpected end of script".to_string()))?
+                .map_err(|_| orga::Error::App("Failed to read script".to_string()).into())
+        }
+
+        fn take_bytes<'a>(ins: &mut Instructions<'a>) -> Result<&'a [u8]> {
+            let instruction = take_instruction(ins)?;
+
+            let Instruction::PushBytes(bytes) = instruction else {
+                return Err(Error::Orga(orga::Error::App("Expected OP_PUSHBYTES".to_string())));
+            };
+
+            Ok(bytes)
+        }
+
+        fn take_key(ins: &mut Instructions) -> Result<Pubkey> {
+            let bytes = take_bytes(ins)?;
+
+            if bytes.len() != 33 {
+                return Err(Error::Orga(orga::Error::App(
+                    "Expected 33 bytes".to_string(),
+                )));
+            }
+
+            Ok(Pubkey::try_from_slice(&bytes)?)
+        }
+
+        fn take_number(ins: &mut Instructions) -> Result<i64> {
+            let bytes = take_bytes(ins)?;
+            read_scriptint(&bytes)
+                .map_err(|_| orga::Error::App("Failed to read scriptint".to_string()).into())
+        }
+
+        fn take_op(ins: &mut Instructions, op: opcodes::All) -> Result<opcodes::All> {
+            let instruction = take_instruction(ins)?;
+
+            let op = match instruction {
+                Instruction::Op(op) => op,
+                Instruction::PushBytes(&[]) => OP_FALSE,
+                _ => {
+                    return Err(Error::Orga(orga::Error::App(format!(
+                        "Expected {}",
+                        format!("{:?}", op)
+                    ))))
+                }
+            };
+
+            if op != op {
+                return Err(Error::Orga(orga::Error::App(format!(
+                    "Expected {}",
+                    format!("{:?}", op),
+                ))));
+            }
+
+            Ok(op)
+        }
+
+        fn take_first_signatory(ins: &mut Instructions) -> Result<Signatory> {
+            let pubkey = take_key(ins)?;
+            take_op(ins, OP_CHECKSIG)?;
+            take_op(ins, OP_IF)?;
+            let voting_power = take_number(ins)?;
+            take_op(ins, OP_ELSE)?;
+            take_op(ins, OP_FALSE)?;
+            take_op(ins, OP_ENDIF)?;
+
+            Ok::<_, Error>(Signatory {
+                pubkey: pubkey.into(),
+                voting_power: voting_power as u64,
+            })
+        }
+
+        fn take_nth_signatory(ins: &mut Instructions) -> Result<Signatory> {
+            take_op(ins, OP_SWAP)?;
+            let pubkey = take_key(ins)?;
+            take_op(ins, OP_CHECKSIG)?;
+            take_op(ins, OP_IF)?;
+            let voting_power = take_number(ins)?;
+            take_op(ins, OP_ADD)?;
+            take_op(ins, OP_ENDIF)?;
+
+            Ok::<_, Error>(Signatory {
+                pubkey: pubkey.into(),
+                voting_power: voting_power as u64,
+            })
+        }
+
+        fn take_threshold(ins: &mut Instructions) -> Result<u64> {
+            let threshold = take_number(ins)?;
+            take_op(ins, OP_GREATERTHAN)?;
+            Ok(threshold as u64)
+        }
+
+        fn take_commitment<'a>(ins: &mut Instructions<'a>) -> Result<&'a [u8]> {
+            let bytes = take_bytes(ins)?;
+            take_op(ins, OP_DROP)?;
+            Ok(bytes)
+        }
+
+        let mut ins = script.instructions();
+        let mut sigs = vec![take_first_signatory(&mut ins)?];
+        // TODO: support variable number of signatories
+        for _ in 1..MAX_SIGNATORIES {
+            sigs.push(take_nth_signatory(&mut ins)?);
+        }
+
+        take_threshold(&mut ins)?;
+        let commitment = take_commitment(&mut ins)?;
+
+        assert!(ins.next().is_none());
+
+        let total_vp: u64 = sigs.iter().map(|s| s.voting_power).sum();
+        let sigset = Self {
+            signatories: sigs,
+            present_vp: total_vp,
+            possible_vp: total_vp,
+            create_time: 0,
+            index: 0,
+        };
+
+        Ok((sigset, commitment.to_vec()))
     }
 
     /// Inserts a signatory into the set. This may cause the signatory set to be
