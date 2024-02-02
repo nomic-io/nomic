@@ -962,6 +962,7 @@ impl Bitcoin {
                 !reached_capacity_limit,
                 timestamping_commitment,
                 &mut self.fee_pool,
+                &self.config,
             )
             .map_err(|err| OrgaError::App(err.to_string()))?;
 
@@ -1063,7 +1064,8 @@ impl Bitcoin {
     }
 
     pub fn give_rewards(&mut self, coin: Coin<Nbtc>) -> Result<()> {
-        if self.fee_pool < self.config.fee_pool_target_balance as i64 {
+        if self.fee_pool < (self.config.fee_pool_target_balance * self.config.units_per_sat) as i64
+        {
             let amount: u64 = coin.amount.into();
             coin.burn();
 

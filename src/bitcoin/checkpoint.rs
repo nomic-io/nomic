@@ -1978,6 +1978,7 @@ impl CheckpointQueue {
         should_allow_deposits: bool,
         timestamping_commitment: Vec<u8>,
         fee_pool: &mut i64,
+        parent_config: &super::Config,
     ) -> Result<bool> {
         if !self.should_push(sig_keys, &timestamping_commitment)? {
             return Ok(false);
@@ -2007,7 +2008,7 @@ impl CheckpointQueue {
                     additional_fees,
                     &config,
                 )?;
-            *fee_pool -= fees_paid as i64;
+            *fee_pool -= (fees_paid * parent_config.units_per_sat) as i64;
 
             // Adjust the fee rate for the next checkpoint based on whether past
             // checkpoints have been confirmed in greater or less than the
@@ -2635,6 +2636,7 @@ mod test {
                     true,
                     vec![1, 2, 3],
                     &mut fee_pool,
+                    &super::super::Config::default(),
                 )
                 .unwrap();
         };
@@ -2849,6 +2851,7 @@ mod test {
                     true,
                     vec![1, 2, 3],
                     &mut fee_pool,
+                    &super::super::Config::default(),
                 )
                 .unwrap();
         };
