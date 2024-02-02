@@ -77,7 +77,7 @@ pub struct InnerApp {
     #[call]
     pub airdrop: Airdrop,
 
-    community_pool: Coin<Nom>,
+    pub community_pool: Coin<Nom>,
     incentive_pool: Coin<Nom>,
 
     staking_rewards: Faucet<Nom>,
@@ -339,6 +339,11 @@ impl InnerApp {
         self.bitcoin.accounts.withdraw(signer, amount)?.burn();
 
         Ok(())
+    }
+
+    // TODO: temporary workaround, will be exposed by client soon
+    pub fn height(&self) -> u64 {
+        self.ibc.ctx.query_height().unwrap()
     }
 
     #[call]
