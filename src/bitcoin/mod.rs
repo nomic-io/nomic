@@ -613,10 +613,8 @@ impl Bitcoin {
         let fee_amount = input_size * checkpoint.fee_rate * self.checkpoints.config.user_fee_factor
             / 10_000
             * self.config.units_per_sat;
-        let fee = nbtc.take(fee_amount).or_else(|_| {
-            Err(OrgaError::App(
-                "Deposit amount is too small to pay its spending fee".to_string(),
-            ))
+        let fee = nbtc.take(fee_amount).map_err(|_| {
+            OrgaError::App("Deposit amount is too small to pay its spending fee".to_string())
         })?;
         self.give_miner_fee(fee)?;
         // TODO: record as excess collected if inputs are full
@@ -644,7 +642,7 @@ impl Bitcoin {
         checkpoint_tx.input.push_back(input)?;
         // TODO: keep in excess queue if full
 
-        let deposit_fee = nbtc.take(calc_deposit_fee(nbtc.amount.clone().into()))?;
+        let deposit_fee = nbtc.take(calc_deposit_fee(nbtc.amount.into()))?;
         self.give_rewards(deposit_fee)?;
 
         self.checkpoints
@@ -755,10 +753,8 @@ impl Bitcoin {
             * self.checkpoints.config.user_fee_factor
             / 10_000
             * self.config.units_per_sat;
-        let fee = coins.take(fee_amount).or_else(|_| {
-            Err(OrgaError::App(
-                "Withdrawal is too small to pay its miner fee".to_string(),
-            ))
+        let fee = coins.take(fee_amount).map_err(|_| {
+            OrgaError::App("Withdrawal is too small to pay its miner fee".to_string())
         })?;
         self.give_miner_fee(fee)?;
         // TODO: record as collected for excess if full
