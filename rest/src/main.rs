@@ -1123,6 +1123,26 @@ async fn ibc_connection(connection: &str) -> Value {
     })
 }
 
+#[get("/ibc/core/connection/v1/connections")]
+async fn ibc_connections() -> Value {
+    let connections = app_client()
+        .query(|app| app.ibc.ctx.query_all_connections())
+        .await
+        .unwrap();
+
+    json!({
+        "connections": connections,
+        "pagination": {
+            "next_key": null,
+            "total": connections.len().to_string()
+          },
+        "proof_height": {
+            "revision_number": "0",
+            "revision_height": "0"
+        },
+    })
+}
+
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::Header;
 use rocket::{Request, Response};
@@ -1189,6 +1209,7 @@ fn rocket() -> _ {
             community_pool,
             proposals,
             ibc_connection,
+            ibc_connections,
         ],
     )
 }
