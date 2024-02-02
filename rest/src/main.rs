@@ -472,6 +472,10 @@ async fn staking_delegators_delegations(address: &str) -> Value {
     let mut entries = vec![];
 
     for (validator_address, delegation) in delegations {
+        if delegation.staked == 0 {
+            continue;
+        }
+
         entries.push(json!({
             "delegation": {
                 "delegator_address": address.to_string(),
@@ -530,6 +534,10 @@ async fn staking_delegators_unbonding_delegations(address: &str) -> Value {
     let mut unbonds = vec![];
 
     for (val_address, delegation) in delegations {
+        if delegation.unbonding.len() == 0 {
+            continue;
+        }
+
         let mut entries = vec![];
         for unbond in delegation.unbonding {
             let t = Utc.timestamp_opt(unbond.start_seconds, 0).unwrap();
@@ -547,7 +555,10 @@ async fn staking_delegators_unbonding_delegations(address: &str) -> Value {
         }))
     }
 
-    json!({ "unbonding_responses": unbonds, "pagination": { "next_key": null, "total": unbonds.len().to_string() } })
+    json!({
+        "unbonding_responses": unbonds,
+        "pagination": { "next_key": null, "total": unbonds.len().to_string() }
+    })
 }
 
 #[get("/staking/delegators/<_address>/unbonding_delegations")]
@@ -566,6 +577,10 @@ async fn staking_validators_delegations(address: &str) -> Value {
     let mut entries = vec![];
 
     for (delegator_address, delegation) in delegations {
+        if delegation.staked == 0 {
+            continue;
+        }
+
         entries.push(json!({
             "delegation": {
                 "delegator_address": delegator_address.to_string(),
