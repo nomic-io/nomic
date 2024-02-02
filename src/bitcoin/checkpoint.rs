@@ -1992,7 +1992,7 @@ impl CheckpointQueue {
 
         if self.index > 0 {
             let prev = self.get(self.index - 1)?;
-            let additional_fees = self.fee_adjustment(prev.fee_rate)?;
+            let additional_fees = self.fee_adjustment(prev.fee_rate, &self.config)?;
 
             let config = self.config();
             let prev = self.get_mut(self.index - 1)?;
@@ -2135,7 +2135,7 @@ impl CheckpointQueue {
                 }
 
                 let miner_fee = building.base_fee(&self.config, timestamping_commitment)?
-                    + self.fee_adjustment(building.fee_rate)?;
+                    + self.fee_adjustment(building.fee_rate, &self.config)?;
                 if building.fees_collected < miner_fee {
                     log::debug!(
                         "Not enough collected to pay miner fee: {} < {}",
@@ -2347,19 +2347,19 @@ impl CheckpointQueue {
             })
     }
 
-    pub fn unconfirmed_vbytes(&self) -> Result<u64> {
+    pub fn unconfirmed_vbytes(&self, config: &Config) -> Result<u64> {
         self.unconfirmed()?
             .iter()
-            .map(|cp| Ok(cp.checkpoint_tx()?.vsize() as u64))
+            .map(|cp| cp.est_vsize(config, &[0; 32])) // TODO: shouldn't need to pass fixed length commitment to est_vsize
             .try_fold(0, |sum, result: Result<_>| {
                 let vbytes = result?;
                 Ok::<_, Error>(sum + vbytes)
             })
     }
 
-    fn fee_adjustment(&self, fee_rate: u64) -> Result<u64> {
+    fn fee_adjustment(&self, fee_rate: u64, config: &Config) -> Result<u64> {
         let unconf_fees_paid = self.unconfirmed_fees_paid()?;
-        let unconf_vbytes = self.unconfirmed_vbytes()?;
+        let unconf_vbytes = self.unconfirmed_vbytes(config)?;
         Ok((unconf_vbytes * fee_rate).saturating_sub(unconf_fees_paid))
     }
 }
