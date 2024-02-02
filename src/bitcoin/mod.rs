@@ -1,6 +1,3 @@
-use std::collections::HashMap;
-use std::ops::Deref;
-
 use self::checkpoint::Input;
 use self::threshold_sig::Signature;
 use crate::app::Dest;
@@ -34,6 +31,8 @@ use orga::{Error as OrgaError, Result as OrgaResult};
 use outpoint_set::OutpointSet;
 use serde::Serialize;
 use signatory::SignatorySet;
+use std::collections::HashMap;
+use std::ops::Deref;
 
 pub mod adapter;
 pub mod checkpoint;
@@ -393,17 +392,12 @@ impl Bitcoin {
     /// Called by validators to store their signatory public key, which will be
     /// used for their signing of Bitcoin transactions.
     ///
-    /// Currently, validators may only set their signatory key once - key
-    /// rotation is not yet supported.
-    ///
     /// This call must be signed by an operator key associated with an account
     /// which has declared a validator.
     #[call]
     pub fn set_signatory_key(&mut self, _signatory_key: Xpub) -> Result<()> {
         #[cfg(feature = "full")]
         {
-            exempt_from_fee()?;
-
             let signer = self
                 .context::<Signer>()
                 .ok_or_else(|| Error::Orga(OrgaError::App("No Signer context available".into())))?
@@ -419,6 +413,7 @@ impl Bitcoin {
                     "Signer does not have a consensus key".to_string(),
                 ))
             })?;
+
             let regtest_mode = self.network() == bitcoin::Network::Regtest
                 && _signatory_key.network == bitcoin::Network::Testnet;
 
@@ -1041,10 +1036,6 @@ impl SignatoryKeys {
         normalized_xpub.key.depth = 0;
         normalized_xpub.key.parent_fingerprint = Default::default();
 
-        if self.by_cons.contains_key(consensus_key)? {
-            return Err(OrgaError::App("Validator already has a signatory key".to_string()).into());
-        }
-
         if self.xpubs.contains_key(normalized_xpub)? {
             return Err(OrgaError::App("Duplicate signatory key".to_string()).into());
         }
@@ -1096,7 +1087,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc};
+    use std::{cell::RefCell, fs, rc::Rc};
 
     use bitcoin::{
         secp256k1::Secp256k1, util::bip32::ExtendedPrivKey, BlockHash, BlockHeader, OutPoint,
@@ -1196,8 +1187,8 @@ mod tests {
 
         let secp = Secp256k1::new();
         let xpriv = vec![
-            ExtendedPrivKey::new_master(bitcoin::Network::Testnet, &[0]).unwrap(),
-            ExtendedPrivKey::new_master(bitcoin::Network::Testnet, &[1]).unwrap(),
+            ExtendedPrivKey::new_master(super::NETWORK, &[0]).unwrap(),
+            ExtendedPrivKey::new_master(super::NETWORK, &[1]).unwrap(),
         ];
         let xpub = vec![
             ExtendedPubKey::from_priv(&secp, &xpriv[0]),

@@ -1,7 +1,8 @@
 use crate::app::{InnerApp, Nom};
 use crate::bitcoin::checkpoint::CheckpointStatus;
 use crate::bitcoin::threshold_sig::Signature;
-use crate::error::Result;
+use crate::error::{Error, Result};
+use crate::utils::load_bitcoin_key;
 use bitcoin::secp256k1::{Message, Secp256k1};
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use lazy_static::lazy_static;
@@ -14,8 +15,6 @@ use orga::tendermint::client::HttpClient;
 use prometheus_exporter::prometheus::{
     register_gauge, register_int_counter, register_int_gauge, Gauge, IntCounter, IntGauge,
 };
-use rand::Rng;
-use std::fs;
 use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::path::Path;
@@ -53,12 +52,23 @@ lazy_static! {
     .unwrap();
 }
 
+pub fn load_xpriv<P: AsRef<Path> + Clone>(path: P) -> Result<ExtendedPrivKey> {
+    if path.as_ref().exists() {
+        load_bitcoin_key(path)
+    } else {
+        Err(Error::Signer(format!(
+            "Key path {} not found",
+            path.as_ref().display()
+        )))
+    }
+}
+
 /// The signer is responsible for signing checkpoints with a signatory key. It
 /// is run by a signatory in its own process, and constantly watches the state
 /// for new checkpoints to sign.
 pub struct Signer<W, F> {
     op_addr: Address,
-    xpriv: ExtendedPrivKey,
+    xprivs: Vec<ExtendedPrivKey>,
     max_withdrawal_rate: f64,
     max_sigset_change_rate: f64,
     reset_index: Option<u32>,
@@ -92,44 +102,35 @@ where
     /// the pending withdrawals and decided they are legitimate.
     /// - `app_client`: A function that returns a new app client to be used in
     ///   querying and submitting calls.
-    pub fn load_or_generate<P: AsRef<Path>>(
+    #[allow(clippy::too_many_arguments)]
+    pub fn load_xprivs<P: AsRef<Path> + Clone>(
         op_addr: Address,
-        key_path: P,
+        default_xpriv_path: P,
+        xpriv_paths: Vec<P>,
         max_withdrawal_rate: f64,
         max_sigset_change_rate: f64,
         reset_index: Option<u32>,
         app_client: F,
         exporter_addr: Option<SocketAddr>,
     ) -> Result<Self> {
-        let path = key_path.as_ref();
-        let xpriv = if path.exists() {
-            info!("Loading signatory key from {}", path.display());
-            let bytes = fs::read(path)?;
-            let text = String::from_utf8(bytes).unwrap();
-            text.trim().parse()?
+        let xpriv_paths = if xpriv_paths.is_empty() {
+            if !default_xpriv_path.as_ref().exists() {
+                return Err(Error::Signer("No local xpriv found. Run `nomic set-signatory-key` if you do not have a signatory key on-chain.".into()));
+            }
+            vec![default_xpriv_path]
         } else {
-            info!("Generating signatory key at {}", path.display());
-            let seed: [u8; 32] = rand::thread_rng().gen();
-
-            let network = if super::NETWORK == bitcoin::Network::Regtest {
-                bitcoin::Network::Testnet
-            } else {
-                super::NETWORK
-            };
-            let xpriv = ExtendedPrivKey::new_master(network, seed.as_slice())?;
-
-            fs::write(path, xpriv.to_string().as_bytes())?;
-
-            xpriv
+            xpriv_paths
         };
 
-        let secp = bitcoin::secp256k1::Secp256k1::signing_only();
-        let xpub = ExtendedPubKey::from_priv(&secp, &xpriv);
-        info!("Signatory xpub:\n{}", xpub);
+        let xprivs = xpriv_paths.iter().try_fold(Vec::new(), |mut acc, path| {
+            let res = load_xpriv(path)?;
+            acc.push(res);
+            Ok::<_, Error>(acc)
+        })?;
 
         Ok(Self::new(
             op_addr,
-            xpriv,
+            xprivs,
             max_withdrawal_rate,
             max_sigset_change_rate,
             reset_index,
@@ -157,7 +158,7 @@ where
     ///  querying and submitting calls.
     pub fn new(
         op_addr: Address,
-        xpriv: ExtendedPrivKey,
+        xprivs: Vec<ExtendedPrivKey>,
         max_withdrawal_rate: f64,
         max_sigset_change_rate: f64,
         reset_index: Option<u32>,
@@ -169,7 +170,7 @@ where
     {
         Signer {
             op_addr,
-            xpriv,
+            xprivs,
             max_withdrawal_rate,
             max_sigset_change_rate,
             reset_index,
@@ -185,6 +186,20 @@ where
     /// If the operator has not yet submitted a signatory key, one will be
     /// generated and saved, then submitted.
     pub async fn start(mut self) -> Result<()> {
+        let cons_key = (self.app_client)()
+            .query(|app| app.staking.consensus_key(self.op_addr))
+            .await?;
+        let onchain_xpub = (self.app_client)()
+            .query(|app| Ok(app.bitcoin.signatory_keys.get(cons_key)?))
+            .await?;
+        if onchain_xpub.is_none() {
+            return Err(Error::Signer(
+                "No on-chain xpub found
+            Please run `nomic set-signatory-key` to set a signatory key"
+                    .into(),
+            ));
+        }
+
         if let Some(addr) = self.exporter_addr {
             // Populate change rate gauges
             let _ = self.check_change_rates().await;
@@ -193,11 +208,26 @@ where
             prometheus_exporter::start(addr).unwrap();
         }
 
-        const CHECKPOINT_WINDOW: u32 = 20;
-        info!("Starting signer...");
         let secp = Secp256k1::signing_only();
-        let xpub = ExtendedPubKey::from_priv(&secp, &self.xpriv);
+        let xprivs = self.xprivs.clone();
+        let (xpub_submitted, key_pairs) =
+            xprivs
+                .iter()
+                .fold((false, Vec::default()), |mut acc, xpriv| {
+                    let xpub = ExtendedPubKey::from_priv(&secp, xpriv);
+                    acc.0 |= xpub == *onchain_xpub.unwrap();
+                    acc.1.push((xpub, xpriv));
+                    acc
+                });
+        if !xpub_submitted {
+            return Err(Error::Signer(
+                "No passed xpub matches on-chain xpub
+            If you intended to change your signatory key, please run `nomic set-signatory-key`"
+                    .into(),
+            ));
+        }
 
+        const CHECKPOINT_WINDOW: u32 = 20;
         let mut index = (self.app_client)()
             .query(|app| {
                 let index = app.bitcoin.checkpoints.index();
@@ -217,60 +247,25 @@ where
             }
         }
 
+        info!("Starting signer...");
         loop {
-            self.maybe_submit_xpub(&xpub).await?;
+            for (xpub, xpriv) in key_pairs.iter() {
+                let signed = match self.try_sign(xpub, xpriv, index).await {
+                    Ok(signed) => signed,
+                    Err(e) => {
+                        ERROR_COUNTER.inc();
+                        eprintln!("Signer error: {}", e);
+                        false
+                    }
+                };
 
-            let signed = match self.try_sign(&xpub, index).await {
-                Ok(signed) => signed,
-                Err(e) => {
-                    ERROR_COUNTER.inc();
-                    eprintln!("Signer error: {}", e);
-                    false
+                if signed {
+                    index += 1;
+                } else {
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                 }
-            };
-
-            if signed {
-                index += 1;
-            } else {
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             }
         }
-    }
-
-    /// Check if the operator has already submitted a signatory key. If not,
-    /// submit the given key.
-    ///
-    /// If the operator has already submitted a key, check that it matches the
-    /// given key. If not, return an error (it is not currently possible to
-    /// change the signatory key after submitting one).
-    async fn maybe_submit_xpub(&mut self, xpub: &ExtendedPubKey) -> Result<()> {
-        let cons_key = (self.app_client)()
-            .query(|app| app.staking.consensus_key(self.op_addr))
-            .await?;
-        let onchain_xpub = (self.app_client)()
-            .query(|app| Ok(app.bitcoin.signatory_keys.get(cons_key)?))
-            .await?;
-
-        match onchain_xpub {
-            None => self.submit_xpub(xpub).await,
-            Some(onchain_xpub) if onchain_xpub.inner() != xpub => Err(orga::Error::App(
-                "Local xpub does not match xpub found on chain".to_string(),
-            )
-            .into()),
-            Some(_) => Ok(()),
-        }
-    }
-
-    /// Submit the given signatory key to the chain.
-    async fn submit_xpub(&mut self, xpub: &ExtendedPubKey) -> Result<()> {
-        (self.app_client)()
-            .call(
-                move |app| build_call!(app.bitcoin.set_signatory_key(xpub.into())),
-                |app| build_call!(app.app_noop()),
-            )
-            .await?;
-        info!("Submitted signatory key.");
-        Ok(())
     }
 
     /// Get a new app client.
@@ -288,7 +283,12 @@ where
     /// and should call `try_sign` for the same index again later (e.g. it is
     /// still `Building`, or we have not yet submitted signatures for the final
     /// batch of transactions).
-    async fn try_sign(&mut self, xpub: &ExtendedPubKey, index: u32) -> Result<bool> {
+    async fn try_sign(
+        &mut self,
+        xpub: &ExtendedPubKey,
+        xpriv: &ExtendedPrivKey,
+        index: u32,
+    ) -> Result<bool> {
         let secp = Secp256k1::signing_only();
 
         let (status, timestamp) = self
@@ -318,7 +318,7 @@ where
         self.check_change_rates().await?;
         info!("Signing checkpoint ({} inputs)...", to_sign.len());
 
-        let sigs = sign(&secp, &self.xpriv, &to_sign)?;
+        let sigs = sign(&secp, xpriv, &to_sign)?;
 
         (self.app_client)()
             .call(
@@ -405,4 +405,109 @@ pub fn sign(
         })
         .collect::<Result<Vec<_>>>()?
         .try_into()?)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::app_client;
+    use crate::utils::generate_bitcoin_key;
+    use std::fs;
+
+    #[test]
+    fn signer_default_path() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let xpriv = generate_bitcoin_key(bitcoin::Network::Testnet).unwrap();
+        fs::write(
+            temp_dir.path().join("xpriv-default"),
+            xpriv.to_string().as_bytes(),
+        )
+        .unwrap();
+
+        let signer = Signer::load_xprivs(
+            Address::default(),
+            temp_dir.path().join("xpriv-default"),
+            Vec::default(),
+            1.0,
+            1.0,
+            None,
+            || app_client("http://localhost:26657"),
+            None,
+        )
+        .unwrap();
+
+        assert!(signer.xprivs.get(0).unwrap() == &xpriv);
+    }
+
+    #[test]
+    fn signer_primary_path() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let xpriv = generate_bitcoin_key(bitcoin::Network::Testnet).unwrap();
+        fs::write(
+            temp_dir.path().join("xpriv-primary"),
+            xpriv.to_string().as_bytes(),
+        )
+        .unwrap();
+
+        let signer = Signer::load_xprivs(
+            Address::default(),
+            temp_dir.path().join("xpriv-default"),
+            vec![temp_dir.path().join("xpriv-primary")],
+            1.0,
+            1.0,
+            None,
+            || app_client("http://localhost:26657"),
+            None,
+        )
+        .unwrap();
+        assert!(signer.xprivs.len() == 1);
+        assert!(signer.xprivs.get(0).unwrap() == &xpriv);
+    }
+
+    #[test]
+    #[should_panic]
+    fn signer_provided_primary_path_non_existent() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        Signer::load_xprivs(
+            Address::default(),
+            temp_dir.path().join("xpriv-default"),
+            vec![temp_dir.path().join("xpriv-primary")],
+            1.0,
+            1.0,
+            None,
+            || app_client("http://localhost:26657"),
+            None,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn signer_additional_paths() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut xpriv_paths = Vec::new();
+        let mut xprivs = Vec::new();
+        for i in 0..10 {
+            let path = temp_dir.path().join(format!("xpriv-additional-{}", i));
+            let xpriv = generate_bitcoin_key(bitcoin::Network::Testnet).unwrap();
+            fs::write(path.clone(), xpriv.to_string().as_bytes()).unwrap();
+            xpriv_paths.push(path);
+            xprivs.push(xpriv);
+        }
+
+        let signer = Signer::load_xprivs(
+            Address::default(),
+            temp_dir.path().join("xpriv-default"),
+            xpriv_paths,
+            1.0,
+            1.0,
+            None,
+            || app_client("http://localhost:26657"),
+            None,
+        )
+        .unwrap();
+
+        signer.xprivs.iter().enumerate().for_each(|(i, xpriv)| {
+            assert!(xpriv == &xprivs[i]);
+        });
+    }
 }
