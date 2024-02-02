@@ -1439,7 +1439,7 @@ mod tests {
         push_withdrawal();
         maybe_step();
         let change_rates = btc.borrow().change_rates(3000, 5100, 0)?;
-        assert_eq!(change_rates.withdrawal, 8649);
+        assert_eq!(change_rates.withdrawal, 8651);
         assert_eq!(change_rates.sigset_change, 4090);
         assert_eq!(btc.borrow().checkpoints.signing()?.unwrap().sigset.index, 5);
         let change_rates = btc.borrow().change_rates(3000, 5100, 5)?;

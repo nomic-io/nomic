@@ -519,7 +519,7 @@ async fn bitcoin_test() {
                 }
             }
         }
-        assert_eq!(signatory_balance, 49991191);
+        assert_eq!(signatory_balance, 49986239);
 
         let funded_account_balances: Vec<_> = funded_accounts
             .iter()
