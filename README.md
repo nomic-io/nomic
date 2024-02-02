@@ -167,7 +167,7 @@ nomic relayer --rpc-port=18332 --rpc-user=satoshi --rpc-pass=nakamoto
 
 Leave this running - the relayer will constantly scan the Bitcoin and Nomic chains and broadcast relevant data.
 
-The relayer will also create a server which listens on port 9000 for clients to announce their deposit addresses. To help make the network more reliable, if you run a relayer please open this port and let us know your node's address in Discord or a Github issue so we can have clients make use of your node. If you're going to make this service public, putting the server behind an HTTP reverse proxy is recommended for extra safety.
+The relayer will also create a server which listens on port 8999 for clients to announce their deposit addresses. To help make the network more reliable, if you run a relayer please open this port and let us know your node's address in Discord or a Github issue so we can have clients make use of your node. If you're going to make this service public, putting the server behind an HTTP reverse proxy is recommended for extra safety.
 
 ---
 
