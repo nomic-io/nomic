@@ -187,17 +187,6 @@ impl Relayer {
                         }
                     };
 
-                    let deposit_timeout_buffer = app_client(app_client_addr)
-                        .query(|app| Ok(app.bitcoin.checkpoints.config.deposit_timeout_buffer))
-                        .await
-                        .map_err(|e| warp::reject::custom(Error::from(e)))?;
-
-                    if time_now() + deposit_timeout_buffer >= sigset.deposit_timeout {
-                        return Err(warp::reject::custom(Error::Relayer(
-                            "Sigset no longer accepting deposits. Unable to generate deposit address".into(),
-                        )));
-                    }
-
                     let expected_addr = ::bitcoin::Address::from_script(
                         &sigset
                             .output_script(
@@ -213,18 +202,30 @@ impl Relayer {
                         return Err(warp::reject::custom(Error::InvalidDepositAddress));
                     }
 
-                    Ok::<_, warp::Rejection>((dest, query.sigset_index, send))
+                    Ok::<_, warp::Rejection>((dest, sigset.deposit_timeout, query.sigset_index, send))
                 },
             )
-            .then(
-                async move |(dest, sigset_index, send): (
+            .and_then(
+                async move |(dest, deposit_timeout, sigset_index, send): (
                     Dest,
+                    u64,
                     u32,
                     tokio::sync::mpsc::Sender<_>,
                 )| {
                     debug!("Received deposit commitment: {:?}, {}", dest, sigset_index);
                     send.send((dest, sigset_index)).await.unwrap();
-                    "OK"
+                    let deposit_timeout_buffer = app_client(app_client_addr)
+                        .query(|app| Ok(app.bitcoin.checkpoints.config.deposit_timeout_buffer))
+                        .await
+                        .map_err(|e| warp::reject::custom(Error::from(e)))?;
+
+                    if time_now() + deposit_timeout_buffer >= deposit_timeout {
+                        return Err(warp::reject::custom(Error::Relayer(
+                            "Sigset no longer accepting deposits. Unable to generate deposit address".into(),
+                        )));
+                    }
+
+                    Ok::<_, warp::Rejection>(warp::reply::json(&"OK"))
                 },
             );
 
