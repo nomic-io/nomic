@@ -43,16 +43,20 @@ pub struct Relayer {
     btc_client: Arc<RwLock<BitcoinRpcClient>>,
     app_client_addr: String,
 
-    scripts: Option<WatchedScriptStore>,
+    scripts: Option<Arc<Mutex<WatchedScriptStore>>>,
 }
 
 impl Relayer {
-    pub fn new(btc_client: BitcoinRpcClient, app_client_addr: String) -> Self {
-        Relayer {
+    pub fn new(
+        btc_client: BitcoinRpcClient,
+        app_client_addr: String,
+        scripts: Option<Arc<Mutex<WatchedScriptStore>>>,
+    ) -> Result<Self> {
+        Ok(Relayer {
             btc_client: Arc::new(RwLock::new(btc_client)),
             app_client_addr,
-            scripts: None,
-        }
+            scripts,
+        })
     }
 
     async fn sidechain_block_hash(&self) -> Result<BlockHash> {
@@ -109,11 +113,8 @@ impl Relayer {
         }
     }
 
-    pub async fn start_deposit_relay<P: AsRef<Path>>(mut self, store_path: P) -> Result<()> {
+    pub async fn start_deposit_relay(mut self) -> Result<()> {
         info!("Starting deposit relay...");
-
-        let scripts = WatchedScriptStore::open(store_path, &self.app_client_addr).await?;
-        self.scripts = Some(scripts);
 
         let index = Arc::new(Mutex::new(DepositIndex::new()));
         let (server, mut recv) = self.create_address_server(index.clone());
@@ -344,7 +345,7 @@ impl Relayer {
 
         for (i, block) in blocks.into_iter().enumerate().rev() {
             let height = (base_height - i) as u32;
-            for (tx, matches) in self.relevant_txs(&block) {
+            for (tx, matches) in self.relevant_txs(&block).await?.into_iter() {
                 for output in matches {
                     if let Err(err) = self
                         .maybe_relay_deposit(tx, height, &block.block_hash(), output, index.clone())
@@ -386,7 +387,8 @@ impl Relayer {
                     return Ok(());
                 }
 
-                if let Some((dest, _)) = self.scripts.as_ref().unwrap().scripts.get(&script) {
+                let script_guard = self.scripts.as_ref().unwrap().lock().await;
+                if let Some((dest, _)) = script_guard.scripts.get(&script) {
                     let bitcoin_address = bitcoin::Address::from_script(
                         &output.script_pubkey.clone(),
                         super::NETWORK,
@@ -656,10 +658,16 @@ impl Relayer {
                 }
             };
 
-            self.scripts.as_mut().unwrap().insert(addr, &sigset)?;
+            if self.scripts.is_none() {
+                return Err(Error::Relayer("No script store".to_string()));
+            }
+
+            let mut script_guard = self.scripts.as_ref().unwrap().lock().await;
+            script_guard.insert(addr, &sigset)?;
         }
 
-        self.scripts.as_mut().unwrap().scripts.remove_expired()?;
+        let mut script_guard = self.scripts.as_ref().unwrap().lock().await;
+        script_guard.scripts.remove_expired()?;
 
         Ok(())
     }
@@ -683,24 +691,19 @@ impl Relayer {
         Ok(blocks)
     }
 
-    pub fn relevant_txs<'a>(
-        &'a self,
+    pub async fn relevant_txs<'a>(
+        &self,
         block: &'a Block,
-    ) -> impl Iterator<Item = (&'a Transaction, impl Iterator<Item = OutputMatch> + 'a)> + 'a {
-        block
-            .txdata
-            .iter()
-            .map(move |tx| (tx, self.relevant_outputs(tx)))
-    }
+    ) -> Result<Vec<(&'a Transaction, Vec<OutputMatch>)>> {
+        if self.scripts.is_none() {
+            return Err(Error::Relayer("No script store found".to_string()));
+        }
 
-    pub fn relevant_outputs<'a>(
-        &'a self,
-        tx: &'a Transaction,
-    ) -> impl Iterator<Item = OutputMatch> + 'a {
-        tx.output
-            .iter()
-            .enumerate()
-            .filter_map(move |(vout, output)| {
+        let mut txs = Vec::new();
+        for tx in block.txdata.iter() {
+            let mut matches = Vec::new();
+
+            for (vout, output) in tx.output.iter().enumerate() {
                 let mut script_bytes = vec![];
                 output
                     .script_pubkey
@@ -708,18 +711,21 @@ impl Relayer {
                     .unwrap();
                 let script =
                     ::bitcoin::Script::consensus_decode(&mut script_bytes.as_slice()).unwrap();
+                let script_guard = self.scripts.as_ref().unwrap().lock().await;
 
-                self.scripts
-                    .as_ref()
-                    .unwrap()
-                    .scripts
-                    .get(&script)
-                    .map(|(dest, sigset_index)| OutputMatch {
+                if let Some((dest, sigset_index)) = script_guard.scripts.get(&script) {
+                    matches.push(OutputMatch {
                         sigset_index,
                         vout: vout as u32,
                         dest,
-                    })
-            })
+                    });
+                }
+            }
+
+            txs.push((tx, matches));
+        }
+
+        Ok(txs)
     }
 
     async fn maybe_relay_deposit(
@@ -1181,7 +1187,13 @@ mod tests {
         let relayer_client = test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await;
 
         btc_client.generate_to_address(25, &address).await.unwrap();
-        let relayer = Relayer::new(relayer_client, "http://localhost:26657".to_string());
+        let path = tempfile::tempdir().unwrap();
+        let rpc_addr = "http://localhost:26657";
+        let script_store = Arc::new(Mutex::new(
+            WatchedScriptStore::open(path, rpc_addr).await.unwrap(),
+        ));
+        let relayer =
+            Relayer::new(relayer_client, rpc_addr.to_string(), Some(script_store)).unwrap();
 
         let block_hash = btc_client.get_block_hash(30).await.unwrap();
         let headers = relayer.get_header_batch(block_hash).await.unwrap();
@@ -1212,7 +1224,13 @@ mod tests {
         let relayer_client = test_bitcoin_client(rpc_url, cookie_file).await;
 
         btc_client.generate_to_address(7, &address).await.unwrap();
-        let relayer = Relayer::new(relayer_client, "http://localhost:26657".to_string());
+        let path = tempfile::tempdir().unwrap();
+        let rpc_addr = "http://localhost:26657";
+        let script_store = Arc::new(Mutex::new(
+            WatchedScriptStore::open(path, rpc_addr).await.unwrap(),
+        ));
+        let relayer =
+            Relayer::new(relayer_client, rpc_addr.to_string(), Some(script_store)).unwrap();
         let block_hash = btc_client.get_block_hash(30).await.unwrap();
         let headers = relayer.get_header_batch(block_hash).await.unwrap();
 

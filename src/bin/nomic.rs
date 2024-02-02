@@ -10,6 +10,7 @@ use nomic::app::Dest;
 use nomic::app::IbcDest;
 use nomic::app::InnerApp;
 use nomic::app::Nom;
+use nomic::bitcoin::relayer::WatchedScriptStore;
 use nomic::bitcoin::Nbtc;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
@@ -31,7 +32,9 @@ use std::fs::Permissions;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::Arc;
 use tendermint_rpc::Client as _;
+use tokio::sync::Mutex;
 
 const BANNER: &str = r#"
 ███╗   ██╗  ██████╗  ███╗   ███╗ ██╗  ██████╗
@@ -1147,13 +1150,17 @@ impl RelayerCmd {
     }
 
     async fn run(&self) -> Result<()> {
-        let create_relayer = async || {
+        let create_relayer = async move |script_store: Option<Arc<Mutex<WatchedScriptStore>>>| {
             let btc_client = self.btc_client().await.unwrap();
 
-            Relayer::new(btc_client, self.config.node.as_ref().unwrap().to_string())
+            Relayer::new(
+                btc_client,
+                self.config.node.as_ref().unwrap().to_string(),
+                script_store,
+            )
         };
 
-        let mut relayer = create_relayer().await;
+        let mut relayer = create_relayer(None).await?;
         let headers = relayer.start_header_relay();
 
         let relayer_dir_path = self.config.home_expect()?.join("relayer");
@@ -1161,16 +1168,20 @@ impl RelayerCmd {
             std::fs::create_dir(&relayer_dir_path)?;
         }
 
-        let relayer = create_relayer().await;
-        let deposits = relayer.start_deposit_relay(relayer_dir_path);
+        let script_store = Arc::new(Mutex::new(
+            WatchedScriptStore::open(relayer_dir_path, "http://localhost:26657").await?,
+        ));
 
-        let mut relayer = create_relayer().await;
+        let relayer = create_relayer(Some(script_store)).await?;
+        let deposits = relayer.start_deposit_relay();
+
+        let mut relayer = create_relayer(None).await?;
         let checkpoints = relayer.start_checkpoint_relay();
 
-        let mut relayer = create_relayer().await;
+        let mut relayer = create_relayer(None).await?;
         let checkpoint_confs = relayer.start_checkpoint_conf_relay();
 
-        let mut relayer = create_relayer().await;
+        let mut relayer = create_relayer(None).await?;
         let emdis = relayer.start_emergency_disbursal_transaction_relay();
 
         let relaunch = relaunch_on_migrate(&self.config);
