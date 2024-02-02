@@ -9,14 +9,20 @@ use nomic::{
         client::{wallet::Unsigned, AppClient},
         coins::{Address, Amount, Decimal, DelegationInfo, Symbol, ValidatorQueryInfo},
         tendermint::client::HttpClient,
+        encoding::EofTerminatedString,
     },
     utils::DeclareInfo,
 };
+
 use rocket::response::status::BadRequest;
 use rocket::serde::json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use std::str::FromStr;
+
+use ibc::core::ics24_host::identifier::ConnectionId as IbcConnectionId;
+use ibc_proto::ibc::core::connection::v1::ConnectionEnd as RawConnectionEnd;
 
 use tendermint_rpc as tm;
 use tendermint_proto::types::CommitSig as RawCommitSig;
@@ -1100,6 +1106,23 @@ fn proposals() -> Value {
     })
 }
 
+#[get("/ibc/core/connection/v1/connections/<connection>")]
+async fn ibc_connection(connection: &str) -> Value {
+    let connection = app_client()
+        .query(|app| app.ibc.ctx.query_connection(EofTerminatedString(IbcConnectionId::from_str(connection).unwrap())))
+        .await
+        .unwrap()
+        .unwrap();
+
+    json!({
+        "connection": RawConnectionEnd::from(connection),
+        "proof_height": {
+            "revision_number": "0",
+            "revision_height": "0"
+        },
+    })
+}
+
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::Header;
 use rocket::{Request, Response};
@@ -1165,6 +1188,7 @@ fn rocket() -> _ {
             validator_set,
             community_pool,
             proposals,
-        ]
+            ibc_connection,
+        ],
     )
 }
