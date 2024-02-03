@@ -1,15 +1,15 @@
 #[macro_use]
 extern crate rocket;
 
-use chrono::{Utc, TimeZone};
+use chrono::{TimeZone, Utc};
 use nomic::{
     app::{InnerApp, Nom},
     bitcoin::Nbtc,
     orga::{
         client::{wallet::Unsigned, AppClient},
         coins::{Address, Amount, Decimal, DelegationInfo, Symbol, ValidatorQueryInfo},
-        tendermint::client::HttpClient,
         encoding::EofTerminatedString,
+        tendermint::client::HttpClient,
     },
     utils::DeclareInfo,
 };
@@ -17,15 +17,19 @@ use nomic::{
 use rocket::response::status::BadRequest;
 use rocket::serde::json::{json, Value};
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use std::str::FromStr;
 
+use ibc::clients::ics07_tendermint::client_state::ClientState;
 use ibc::core::ics24_host::identifier::ConnectionId as IbcConnectionId;
+use ibc_proto::google::protobuf::Any;
+use ibc_proto::ibc::core::client::v1::IdentifiedClientState;
 use ibc_proto::ibc::core::connection::v1::ConnectionEnd as RawConnectionEnd;
+use ibc_proto::ibc::lightclients::tendermint::v1::ClientState as RawTmClientState;
 
-use tendermint_rpc as tm;
 use tendermint_proto::types::CommitSig as RawCommitSig;
+use tendermint_rpc as tm;
 use tm::Client as _;
 
 lazy_static::lazy_static! {
@@ -607,7 +611,10 @@ async fn staking_validators_delegations(address: &str) -> Value {
 }
 
 #[get("/cosmos/staking/v1beta1/validators/<validator_address>/delegations/<delegator_address>")]
-async fn staking_validator_single_delegation(validator_address: &str, delegator_address: &str) -> Value {
+async fn staking_validator_single_delegation(
+    validator_address: &str,
+    delegator_address: &str,
+) -> Value {
     let delegator_address: Address = delegator_address.parse().unwrap();
     let validator_address: Address = validator_address.parse().unwrap();
 
@@ -616,10 +623,11 @@ async fn staking_validator_single_delegation(validator_address: &str, delegator_
         .await
         .unwrap();
 
-    let delegation: &DelegationInfo = delegations.iter().
-        find(|(validator, _delegation)| *validator == validator_address).
-        map(|(_validator, delegation)| delegation).
-        unwrap();
+    let delegation: &DelegationInfo = delegations
+        .iter()
+        .find(|(validator, _delegation)| *validator == validator_address)
+        .map(|(_validator, delegation)| delegation)
+        .unwrap();
 
     json!({
         "delegation_response": {
@@ -635,8 +643,6 @@ async fn staking_validator_single_delegation(validator_address: &str, delegator_
           }
     })
 }
-
-
 
 #[get("/cosmos/staking/v1beta1/validators/<address>/unbonding_delegations")]
 async fn staking_validators_unbonding_delegations(address: &str) -> Value {
@@ -744,7 +750,10 @@ async fn distribution_delegators_rewards(address: &str) -> Value {
 }
 
 #[get("/cosmos/distribution/v1beta1/delegators/<address>/rewards/<validator_address>")]
-async fn distribution_delegators_rewards_for_validator(address: &str, validator_address: &str) -> Value {
+async fn distribution_delegators_rewards_for_validator(
+    address: &str,
+    validator_address: &str,
+) -> Value {
     let address: Address = address.parse().unwrap();
     let validator_address: Address = validator_address.parse().unwrap();
 
@@ -753,10 +762,11 @@ async fn distribution_delegators_rewards_for_validator(address: &str, validator_
         .await
         .unwrap();
 
-    let delegation: &DelegationInfo = delegations.iter().
-        find(|(validator, _delegation)| *validator == validator_address).
-        map(|(_validator, delegation)| delegation).
-        unwrap();
+    let delegation: &DelegationInfo = delegations
+        .iter()
+        .find(|(validator, _delegation)| *validator == validator_address)
+        .map(|(_validator, delegation)| delegation)
+        .unwrap();
 
     let mut rewards = vec![];
 
@@ -925,13 +935,20 @@ async fn staking_params() -> Value {
 
 #[get("/cosmos/slashing/v1beta1/params")]
 async fn slashing_params() -> Value {
-    let (max_offline_blocks, slash_fraction_double_sign, slash_fraction_downtime, downtime_jail_seconds) = app_client()
-        .query(|app| Ok((
-            app.staking.max_offline_blocks,
-            app.staking.slash_fraction_double_sign,
-            app.staking.slash_fraction_downtime,
-            app.staking.downtime_jail_seconds,
-        )))
+    let (
+        max_offline_blocks,
+        slash_fraction_double_sign,
+        slash_fraction_downtime,
+        downtime_jail_seconds,
+    ) = app_client()
+        .query(|app| {
+            Ok((
+                app.staking.max_offline_blocks,
+                app.staking.slash_fraction_double_sign,
+                app.staking.slash_fraction_downtime,
+                app.staking.downtime_jail_seconds,
+            ))
+        })
         .await
         .unwrap();
 
@@ -950,13 +967,11 @@ async fn slashing_params() -> Value {
 async fn latest_block() -> Value {
     let client = tm::HttpClient::new(app_host()).unwrap();
 
-    let res = client
-        .latest_block()
-        .await
-        .unwrap();
+    let res = client.latest_block().await.unwrap();
 
     let last_commit = res.block.last_commit.unwrap();
-    let signatures: Vec<_> = last_commit.signatures
+    let signatures: Vec<_> = last_commit
+        .signatures
         .iter()
         .map(|signature| -> Value {
             let signature_raw = RawCommitSig::from(signature.clone());
@@ -994,7 +1009,8 @@ async fn block(height: u32) -> Value {
         .unwrap();
 
     let last_commit = res.block.last_commit.unwrap();
-    let signatures: Vec<_> = last_commit.signatures
+    let signatures: Vec<_> = last_commit
+        .signatures
         .iter()
         .map(|signature| -> Value {
             let signature_raw = RawCommitSig::from(signature.clone());
@@ -1026,17 +1042,16 @@ async fn block(height: u32) -> Value {
 async fn latest_validator_set() -> Value {
     let client = tm::HttpClient::new(app_host()).unwrap();
 
-    let block = client
-        .latest_block()
-        .await
-        .unwrap();
+    let block = client.latest_block().await.unwrap();
 
     let res = client
         .validators(block.block.header.height, tendermint_rpc::Paging::All)
         .await
         .unwrap();
 
-    let validators: Vec<_> = res.validators.iter()
+    let validators: Vec<_> = res
+        .validators
+        .iter()
         .map(|validator| -> Value {
             json!({
                 "address": validator.address,
@@ -1069,7 +1084,9 @@ async fn validator_set(height: u32) -> Value {
         .await
         .unwrap();
 
-        let validators: Vec<_> = res.validators.iter()
+    let validators: Vec<_> = res
+        .validators
+        .iter()
         .map(|validator| -> Value {
             json!({
                 "address": validator.address,
@@ -1121,16 +1138,160 @@ fn proposals() -> Value {
     })
 }
 
+#[get("/ibc/core/connection/v1/connections/<connection>/client_state")]
+async fn ibc_connection_client_state(connection: &str) -> Value {
+    let connection = app_client()
+        .query(|app| {
+            app.ibc.ctx.query_connection(EofTerminatedString(
+                IbcConnectionId::from_str(connection).unwrap(),
+            ))
+        })
+        .await
+        .unwrap()
+        .unwrap()
+        .inner;
+
+    let states: Vec<IdentifiedClientState> = app_client()
+        .query(|app| app.ibc.ctx.query_client_states())
+        .await
+        .unwrap();
+
+    let state: &IdentifiedClientState = states
+        .iter()
+        .find(|state| state.client_id == connection.client_id().to_string())
+        .unwrap();
+
+    let state_as_any: Any = state.client_state.clone().unwrap();
+
+    let client_state_tmp: ClientState = ClientState::try_from(state_as_any).unwrap().to_owned();
+    let client_state = client_state_tmp.clone();
+    let raw_client_state: RawTmClientState = RawTmClientState::from(client_state_tmp);
+
+    let proof_specs: Vec<_> = raw_client_state
+        .proof_specs
+        .iter()
+        .map(|spec| {
+            json!({
+                "inner_spec": spec.inner_spec.clone().map(|inner_spec| json!({
+                    "child_order": inner_spec.child_order,
+                    "child_size": inner_spec.child_size,
+                    "min_prefix_length": inner_spec.child_size,
+                    "max_prefix_length": inner_spec.max_prefix_length,
+                    "empty_child": inner_spec.empty_child,
+                    "hash": inner_spec.hash
+                })),
+                "leaf_spec": spec.leaf_spec,
+            })
+        })
+        .collect();
+
+    json!({
+        "connection": connection,
+        "identified_client_state": {
+            "client_id": state.client_id,
+            "client_state": {
+                "@type": "/ibc.lightclients.tendermint.v1.ClientState",
+                "chain_id": raw_client_state.chain_id,
+                "trust_level": client_state.trust_level,
+                "trusting_period": raw_client_state.trusting_period.map(|v| format!("{}s", v.seconds)),
+                "unbonding_period": format!("{}s", client_state.unbonding_period.as_secs()),
+                "max_clock_drift": raw_client_state.max_clock_drift.map(|v| format!("{}s", v.seconds)),
+                "frozen_height": raw_client_state.frozen_height.map(|h| json!({
+                    "revision_height": h.revision_height.to_string(),
+                    "revision_number": h.revision_number.to_string(),
+                })),
+                "latest_height": raw_client_state.latest_height.map(|h| json!({
+                    "revision_height": h.revision_height.to_string(),
+                    "revision_number": h.revision_number.to_string(),
+                })),
+                "proof_specs": proof_specs,
+                "upgrade_path": client_state.upgrade_path,
+                "allow_update_after_expiry": raw_client_state.allow_update_after_expiry,
+                "allow_update_after_misbehaviour": raw_client_state.allow_update_after_misbehaviour,
+            }
+        },
+        "proof": null,
+        "proof_height": {
+            "revision_number": "0",
+            "revision_height": "0"
+        }
+    })
+}
+
+#[get("/ibc/core/channel/v1/connections/<connection>/channels")]
+async fn ibc_connection_channels(connection: &str) -> Value {
+    let channels = app_client()
+        .query(|app| {
+            app.ibc.ctx.query_connection_channels(EofTerminatedString(
+                IbcConnectionId::from_str(connection).unwrap(),
+            ))
+        })
+        .await
+        .unwrap();
+
+    let json_channels: Vec<_> = channels
+        .iter()
+        .map(|channel| {
+            json!({
+                "state": match channel.state {
+                    0 => "STATE_UNINITIALIZED_UNSPECIFIED",
+                    1 => "STATE_INIT",
+                    2 => "STATE_TRYOPEN",
+                    3 => "STATE_OPEN",
+                    i32::MIN..=-1_i32 | 4_i32..=i32::MAX => "STATE_UNINITIALIZED_UNSPECIFIED"
+                },
+                "ordering": match channel.ordering {
+                    0 => "ORDER_NONE_UNSPECIFIED",
+                    1 => "ORDER_UNORDERED",
+                    2 => "ORDER_ORDERED",
+                    i32::MIN..=-1_i32 | 3_i32..=i32::MAX => "ORDER_NONE_UNSPECIFIED"
+                },
+                "counterparty": channel.counterparty,
+                "connection_hops": channel.connection_hops,
+                "version": channel.version,
+                "port_id": channel.port_id,
+                "channel_id": channel.channel_id,
+            })
+        })
+        .collect();
+
+    json!({
+        "channels": json_channels,
+        "proof_height": {
+            "revision_number": "0",
+            "revision_height": "0"
+        },
+    })
+}
+
 #[get("/ibc/core/connection/v1/connections/<connection>")]
 async fn ibc_connection(connection: &str) -> Value {
     let connection = app_client()
-        .query(|app| app.ibc.ctx.query_connection(EofTerminatedString(IbcConnectionId::from_str(connection).unwrap())))
+        .query(|app| {
+            app.ibc.ctx.query_connection(EofTerminatedString(
+                IbcConnectionId::from_str(connection).unwrap(),
+            ))
+        })
         .await
         .unwrap()
         .unwrap();
 
+    let raw_connection = RawConnectionEnd::from(connection);
+
     json!({
-        "connection": RawConnectionEnd::from(connection),
+        "connection": {
+            "client_id": raw_connection.client_id,
+            "versions": raw_connection.versions,
+            "state": match raw_connection.state {
+                0 => "STATE_UNINITIALIZED_UNSPECIFIED",
+                1 => "STATE_INIT",
+                2 => "STATE_TRYOPEN",
+                3 => "STATE_OPEN",
+                i32::MIN..=-1_i32 | 4_i32..=i32::MAX => "STATE_UNINITIALIZED_UNSPECIFIED"
+            },
+            "counterparty": raw_connection.counterparty,
+            "delay_period": raw_connection.delay_period,
+        },
         "proof_height": {
             "revision_number": "0",
             "revision_height": "0"
@@ -1225,6 +1386,8 @@ fn rocket() -> _ {
             proposals,
             ibc_connection,
             ibc_connections,
+            ibc_connection_client_state,
+            ibc_connection_channels,
         ],
     )
 }
