@@ -1139,6 +1139,7 @@ fn proposals() -> Value {
 }
 
 #[get("/ibc/core/connection/v1/connections/<connection>/client_state")]
+#[allow(deprecated)]
 async fn ibc_connection_client_state(connection: &str) -> Value {
     let connection = app_client()
         .query(|app| {
@@ -1186,7 +1187,6 @@ async fn ibc_connection_client_state(connection: &str) -> Value {
         .collect();
 
     json!({
-        "connection": connection,
         "identified_client_state": {
             "client_id": state.client_id,
             "client_state": {
