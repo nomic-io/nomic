@@ -9,14 +9,20 @@ use nomic::{
         client::{wallet::Unsigned, AppClient},
         coins::{Address, Amount, Decimal, DelegationInfo, Symbol, ValidatorQueryInfo},
         tendermint::client::HttpClient,
+        encoding::EofTerminatedString,
     },
     utils::DeclareInfo,
 };
+
 use rocket::response::status::BadRequest;
 use rocket::serde::json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use std::str::FromStr;
+
+use ibc::core::ics24_host::identifier::ConnectionId as IbcConnectionId;
+use ibc_proto::ibc::core::connection::v1::ConnectionEnd as RawConnectionEnd;
 
 use tendermint_rpc as tm;
 use tendermint_proto::types::CommitSig as RawCommitSig;
@@ -472,6 +478,10 @@ async fn staking_delegators_delegations(address: &str) -> Value {
     let mut entries = vec![];
 
     for (validator_address, delegation) in delegations {
+        if delegation.staked == 0 {
+            continue;
+        }
+
         entries.push(json!({
             "delegation": {
                 "delegator_address": address.to_string(),
@@ -530,6 +540,10 @@ async fn staking_delegators_unbonding_delegations(address: &str) -> Value {
     let mut unbonds = vec![];
 
     for (val_address, delegation) in delegations {
+        if delegation.unbonding.len() == 0 {
+            continue;
+        }
+
         let mut entries = vec![];
         for unbond in delegation.unbonding {
             let t = Utc.timestamp_opt(unbond.start_seconds, 0).unwrap();
@@ -547,7 +561,10 @@ async fn staking_delegators_unbonding_delegations(address: &str) -> Value {
         }))
     }
 
-    json!({ "unbonding_responses": unbonds, "pagination": { "next_key": null, "total": unbonds.len().to_string() } })
+    json!({
+        "unbonding_responses": unbonds,
+        "pagination": { "next_key": null, "total": unbonds.len().to_string() }
+    })
 }
 
 #[get("/staking/delegators/<_address>/unbonding_delegations")]
@@ -566,6 +583,10 @@ async fn staking_validators_delegations(address: &str) -> Value {
     let mut entries = vec![];
 
     for (delegator_address, delegation) in delegations {
+        if delegation.staked == 0 {
+            continue;
+        }
+
         entries.push(json!({
             "delegation": {
                 "delegator_address": delegator_address.to_string(),
@@ -1100,6 +1121,43 @@ fn proposals() -> Value {
     })
 }
 
+#[get("/ibc/core/connection/v1/connections/<connection>")]
+async fn ibc_connection(connection: &str) -> Value {
+    let connection = app_client()
+        .query(|app| app.ibc.ctx.query_connection(EofTerminatedString(IbcConnectionId::from_str(connection).unwrap())))
+        .await
+        .unwrap()
+        .unwrap();
+
+    json!({
+        "connection": RawConnectionEnd::from(connection),
+        "proof_height": {
+            "revision_number": "0",
+            "revision_height": "0"
+        },
+    })
+}
+
+#[get("/ibc/core/connection/v1/connections")]
+async fn ibc_connections() -> Value {
+    let connections = app_client()
+        .query(|app| app.ibc.ctx.query_all_connections())
+        .await
+        .unwrap();
+
+    json!({
+        "connections": connections,
+        "pagination": {
+            "next_key": null,
+            "total": connections.len().to_string()
+          },
+        "proof_height": {
+            "revision_number": "0",
+            "revision_height": "0"
+        },
+    })
+}
+
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::Header;
 use rocket::{Request, Response};
@@ -1165,6 +1223,8 @@ fn rocket() -> _ {
             validator_set,
             community_pool,
             proposals,
-        ]
+            ibc_connection,
+            ibc_connections,
+        ],
     )
 }

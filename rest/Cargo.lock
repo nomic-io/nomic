@@ -2357,6 +2357,8 @@ dependencies = [
  "base64 0.13.1",
  "chrono",
  "hex",
+ "ibc",
+ "ibc-proto",
  "lazy_static",
  "nomic",
  "rocket",

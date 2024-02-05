@@ -290,7 +290,7 @@ impl BitcoinTx {
     /// populates the input's signing state with it. This should be used when a
     /// transaction is finalized and its structure will not change, and
     /// coordination of signing will begin.
-    fn populate_input_sig_message(&mut self, input_index: usize) -> Result<()> {
+    pub fn populate_input_sig_message(&mut self, input_index: usize) -> Result<()> {
         let bitcoin_tx = self.to_bitcoin_tx()?;
         let mut sc = bitcoin::util::sighash::SighashCache::new(&bitcoin_tx);
         let mut input = self
@@ -458,7 +458,7 @@ pub const DEFAULT_FEE_RATE: u64 = 10;
 /// "intermediate emergency disbursal transaction" (in the second batch of the
 /// `batches` deque), and one or more "final emergency disbursal transactions"
 /// (in the first batch of the `batches` deque).
-#[orga(skip(Default), version = 3)]
+#[orga(skip(Default), version = 4)]
 #[derive(Debug)]
 pub struct Checkpoint {
     /// The status of the checkpoint, either `Building`, `Signing`, or
@@ -478,7 +478,7 @@ pub struct Checkpoint {
     /// disbursal.
     ///
     /// These transfers can be initiated by a simple nBTC send or by a deposit.
-    #[orga(version(V2, V3))]
+    #[orga(version(V2, V3, V4))]
     pub pending: Map<Dest, Coin<Nbtc>>,
 
     /// The fee rate to use when calculating the miner fee for the transactions
@@ -489,21 +489,24 @@ pub struct Checkpoint {
     /// faster than the target confirmation speed (implying the network is
     /// paying too low of a fee), and being decreased if checkpoints are
     /// confirmed faster than the target confirmation speed.
-    #[orga(version(V3))]
+    #[orga(version(V3, V4))]
     pub fee_rate: u64,
 
     /// The height of the Bitcoin block at which the checkpoint was fully signed
     /// and ready to be broadcast to the Bitcoin network, used by the fee
     /// adjustment algorithm to determine if the checkpoint was confirmed too
     /// fast or too slow.
-    #[orga(version(V3))]
+    #[orga(version(V3, V4))]
     pub signed_at_btc_height: Option<u32>,
 
     /// Whether or not to honor relayed deposits made against this signatory
     /// set. This can be used, for example, to enforce a cap on deposits into
     /// the system.
-    #[orga(version(V3))]
+    #[orga(version(V3, V4))]
     pub deposits_enabled: bool,
+
+    #[orga(version(V4))]
+    pub fees_collected: u64,
 
     /// The signatory set associated with the checkpoint. Note that deposits to
     /// slightly older signatory sets can still be processed in this checkpoint,
@@ -542,6 +545,21 @@ impl MigrateFrom<CheckpointV2> for CheckpointV3 {
     }
 }
 
+impl MigrateFrom<CheckpointV3> for CheckpointV4 {
+    fn migrate_from(value: CheckpointV3) -> OrgaResult<Self> {
+        Ok(Self {
+            status: value.status,
+            batches: value.batches,
+            pending: value.pending,
+            fee_rate: value.fee_rate,
+            signed_at_btc_height: value.signed_at_btc_height,
+            deposits_enabled: value.deposits_enabled,
+            sigset: value.sigset,
+            fees_collected: 0,
+        })
+    }
+}
+
 #[orga]
 impl Checkpoint {
     /// Creates a new checkpoint with the given signatory set.
@@ -559,6 +577,7 @@ impl Checkpoint {
             signed_at_btc_height: None,
             deposits_enabled: true,
             sigset,
+            fees_collected: 0,
         };
 
         let disbursal_batch = Batch::default();
@@ -792,6 +811,78 @@ impl Checkpoint {
 
         Ok(txs)
     }
+
+    pub fn checkpoint_tx_miner_fees(&self) -> Result<u64> {
+        let mut fees = 0;
+
+        let batch = self.batches.get(BatchType::Checkpoint as u64)?.unwrap();
+        let tx = batch.get(0)?.unwrap();
+
+        for input in tx.input.iter()? {
+            let input = input?;
+            fees += input.amount;
+        }
+
+        for output in tx.output.iter()? {
+            let output = output?;
+            fees -= output.value;
+        }
+
+        Ok(fees)
+    }
+
+    fn base_fee(&self, config: &Config, timestamping_commitment: &[u8]) -> Result<u64> {
+        let est_vsize = self.est_vsize(config, timestamping_commitment)?;
+        Ok(est_vsize * self.fee_rate)
+    }
+
+    fn est_vsize(&self, config: &Config, timestamping_commitment: &[u8]) -> Result<u64> {
+        let batch = self.batches.get(BatchType::Checkpoint as u64)?.unwrap();
+        let cp = batch.get(0)?.unwrap();
+        let mut tx = cp.to_bitcoin_tx()?;
+
+        tx.output = self
+            .additional_outputs(config, timestamping_commitment)?
+            .into_iter()
+            .chain(tx.output.into_iter())
+            .take(config.max_outputs as usize)
+            .collect();
+        tx.input.truncate(config.max_inputs as usize);
+
+        let vsize = tx.vsize() as u64
+            + cp.input
+                .iter()?
+                .take(config.max_inputs as usize)
+                .try_fold(0, |sum, input| {
+                    Ok::<_, Error>(sum + input?.est_witness_vsize)
+                })?;
+
+        Ok(vsize)
+    }
+
+    fn additional_outputs(
+        &self,
+        config: &Config,
+        timestamping_commitment: &[u8],
+    ) -> Result<Vec<bitcoin::TxOut>> {
+        // The reserve output is the first output of the checkpoint tx, and
+        // contains all funds held in reserve by the network.
+        let reserve_out = bitcoin::TxOut {
+            value: 0, // will be updated after counting ins/outs and fees
+            script_pubkey: self.sigset.output_script(&[0u8], config.sigset_threshold)?,
+        };
+
+        // The timestamping commitment output is the second output of the
+        // checkpoint tx, and contains a commitment to some given data, which
+        // will be included on the Bitcoin blockchain as `OP_RETURN` data, now
+        // timestamped by Bitcoin's proof-of-work security.
+        let timestamping_commitment_out = bitcoin::TxOut {
+            value: 0,
+            script_pubkey: bitcoin::Script::new_op_return(timestamping_commitment),
+        };
+
+        Ok(vec![reserve_out, timestamping_commitment_out])
+    }
 }
 
 /// Configuration parameters used in processing checkpoints.
@@ -866,6 +957,16 @@ pub struct Config {
     /// transaction, in satoshis per virtual byte.
     #[orga(version(V1, V2, V3))]
     pub max_fee_rate: u64,
+
+    /// The value (in basis points) to multiply by when calculating the miner
+    /// fee to deduct from a user's deposit or withdrawal. This value should be
+    /// at least 1 (10,000 basis points).
+    ///
+    /// The difference in the fee deducted and the fee paid in the checkpoint
+    /// transaction is added to the fee pool, to help the network pay for
+    /// its own miner fees.
+    #[orga(version(V3))]
+    pub user_fee_factor: u64,
 
     /// The threshold of signatures required to spend reserve scripts, as a
     /// ratio represented by a tuple, `(numerator, denominator)`.
@@ -1010,6 +1111,7 @@ impl Config {
             target_checkpoint_inclusion: 2,
             min_fee_rate: 2, // relay threshold is 1 sat/vbyte
             max_fee_rate: 200,
+            user_fee_factor: 20000, // 2x
             sigset_threshold: SIGSET_THRESHOLD,
             emergency_disbursal_min_tx_amt: 1000,
             emergency_disbursal_lock_time_interval: 60 * 60 * 24 * 7 * 2, // two weeks
@@ -1148,10 +1250,11 @@ pub struct BuildingCheckpointMut<'a>(ChildMut<'a, u64, Checkpoint>);
 
 /// The data returned by the `advance()` method of `BuildingCheckpointMut`.
 type BuildingAdvanceRes = (
-    bitcoin::OutPoint,
-    u64,
-    Vec<ReadOnly<Input>>,
-    Vec<ReadOnly<Output>>,
+    bitcoin::OutPoint,     // reserve outpoint
+    u64,                   // reserve size (sats)
+    u64,                   // fees paid (sats)
+    Vec<ReadOnly<Input>>,  // excess inputs
+    Vec<ReadOnly<Output>>, // excess outputs
 );
 
 impl<'a> BuildingCheckpointMut<'a> {
@@ -1494,41 +1597,19 @@ impl<'a> BuildingCheckpointMut<'a> {
         recovery_scripts: &Map<orga::coins::Address, Adapter<bitcoin::Script>>,
         external_outputs: impl Iterator<Item = Result<bitcoin::TxOut>>,
         timestamping_commitment: Vec<u8>,
+        additional_fees: u64,
         config: &Config,
     ) -> Result<BuildingAdvanceRes> {
         self.0.status = CheckpointStatus::Signing;
 
-        // The reserve output is the first output of the checkpoint tx, and
-        // contains all funds held in reserve by the network.
-        let reserve_out = bitcoin::TxOut {
-            value: 0, // will be updated after counting ins/outs and fees
-            script_pubkey: self
-                .0
-                .sigset
-                .output_script(&[0u8], config.sigset_threshold)?,
-        };
+        let outs = self.additional_outputs(config, &timestamping_commitment)?;
+        let base_fee = self.base_fee(config, &timestamping_commitment)?;
 
-        // The timestamping commitment output is the second output of the
-        // checkpoint tx, and contains a commitment to some given data, which
-        // will be included on the Bitcoin blockchain as `OP_RETURN` data, now
-        // timestamped by Bitcoin's proof-of-work security.
-        let timestamping_commitment_out = bitcoin::TxOut {
-            value: 0,
-            script_pubkey: bitcoin::Script::new_op_return(&timestamping_commitment),
-        };
-
-        let fee_rate = self.fee_rate;
-
-        let mut checkpoint_batch = self
-            .0
-            .batches
-            .get_mut(BatchType::Checkpoint as u64)?
-            .unwrap();
+        let mut checkpoint_batch = self.batches.get_mut(BatchType::Checkpoint as u64)?.unwrap();
         let mut checkpoint_tx = checkpoint_batch.get_mut(0)?.unwrap();
-        checkpoint_tx
-            .output
-            .push_front(Adapter::new(timestamping_commitment_out))?;
-        checkpoint_tx.output.push_front(Adapter::new(reserve_out))?;
+        for out in outs.iter().rev() {
+            checkpoint_tx.output.push_front(Adapter::new(out.clone()))?;
+        }
 
         // Remove excess inputs and outputs from the checkpoint tx, to be pushed
         // onto the suceeding checkpoint while in its `Building` state.
@@ -1558,14 +1639,7 @@ impl<'a> BuildingCheckpointMut<'a> {
 
         // Deduct the outgoing amount and calculated fee amount from the reserve
         // input amount, to set the resulting reserve output value.
-        let est_vsize = checkpoint_tx.vsize()?
-            + checkpoint_tx
-                .input
-                .iter()?
-                .fold(Ok(0), |sum: Result<u64>, input| {
-                    Ok(sum? + input?.est_witness_vsize)
-                })?;
-        let fee = est_vsize * fee_rate;
+        let fee = base_fee + additional_fees;
         let reserve_value = in_amount
             .checked_sub(out_amount + fee)
             .ok_or_else(|| OrgaError::App("Insufficient funds to cover fees".to_string()))?;
@@ -1606,6 +1680,7 @@ impl<'a> BuildingCheckpointMut<'a> {
         Ok((
             reserve_outpoint,
             reserve_value,
+            fee,
             excess_inputs,
             excess_outputs,
         ))
@@ -1923,8 +1998,10 @@ impl CheckpointQueue {
         btc_height: u32,
         should_allow_deposits: bool,
         timestamping_commitment: Vec<u8>,
+        fee_pool: &mut i64,
+        parent_config: &super::Config,
     ) -> Result<bool> {
-        if !self.should_push(sig_keys)? {
+        if !self.should_push(sig_keys, &timestamping_commitment)? {
             return Ok(false);
         }
 
@@ -1935,18 +2012,24 @@ impl CheckpointQueue {
         self.prune()?;
 
         if self.index > 0 {
+            let prev = self.get(self.index - 1)?;
+            let additional_fees = self.fee_adjustment(prev.fee_rate, &self.config)?;
+
             let config = self.config();
-            let second = self.get_mut(self.index - 1)?;
-            let sigset = second.sigset.clone();
-            let prev_fee_rate = second.fee_rate;
-            let (reserve_outpoint, reserve_value, excess_inputs, excess_outputs) =
-                BuildingCheckpointMut(second).advance(
+            let prev = self.get_mut(self.index - 1)?;
+            let sigset = prev.sigset.clone();
+            let prev_fee_rate = prev.fee_rate;
+
+            let (reserve_outpoint, reserve_value, fees_paid, excess_inputs, excess_outputs) =
+                BuildingCheckpointMut(prev).advance(
                     nbtc_accounts,
                     recovery_scripts,
                     external_outputs,
                     timestamping_commitment,
+                    additional_fees,
                     &config,
                 )?;
+            *fee_pool -= (fees_paid * parent_config.units_per_sat) as i64;
 
             // Adjust the fee rate for the next checkpoint based on whether past
             // checkpoints have been confirmed in greater or less than the
@@ -2027,7 +2110,11 @@ impl CheckpointQueue {
     /// Note that a new checkpoint being pushed also necessarily means that the
     /// `Building` checkpoint will be advanced to `Signing`.
     #[cfg(feature = "full")]
-    pub fn should_push(&mut self, sig_keys: &Map<ConsensusKey, Xpub>) -> Result<bool> {
+    pub fn should_push(
+        &mut self,
+        sig_keys: &Map<ConsensusKey, Xpub>,
+        timestamping_commitment: &[u8],
+    ) -> Result<bool> {
         // Do not push if there is a checkpoint in the `Signing` state. There
         // should only ever be at most one checkpoint in this state.
         if self.signing()?.is_some() {
@@ -2048,7 +2135,8 @@ impl CheckpointQueue {
             }
 
             // Don't push if there are no pending deposits, withdrawals, or
-            // transfers, unless the maximum checkpoint interval has elapsed
+            // transfers, or if not enough has been collected to pay for the
+            // miner fee, unless the maximum checkpoint interval has elapsed
             // since creating the current `Building` checkpoint.
             if elapsed < self.config.max_checkpoint_interval || self.index == 0 {
                 let building = self.building()?;
@@ -2064,6 +2152,17 @@ impl CheckpointQueue {
                 let has_pending_transfers = building.pending.iter()?.next().transpose()?.is_some();
 
                 if !has_pending_deposit && !has_pending_withdrawal && !has_pending_transfers {
+                    return Ok(false);
+                }
+
+                let miner_fee = building.base_fee(&self.config, timestamping_commitment)?
+                    + self.fee_adjustment(building.fee_rate, &self.config)?;
+                if building.fees_collected < miner_fee {
+                    log::debug!(
+                        "Not enough collected to pay miner fee: {} < {}",
+                        building.fees_collected,
+                        miner_fee,
+                    );
                     return Ok(false);
                 }
             }
@@ -2243,6 +2342,49 @@ impl CheckpointQueue {
 
         Ok(Some(self.index - num_unconf - signing_offset))
     }
+
+    pub fn unconfirmed(&self) -> Result<Vec<Ref<'_, Checkpoint>>> {
+        let first_unconf_index = self.first_unconfirmed_index()?;
+        if let Some(index) = first_unconf_index {
+            let mut out = vec![];
+            for i in index..=self.index {
+                let cp = self.get(i)?;
+                if !matches!(cp.status, CheckpointStatus::Complete) {
+                    break;
+                }
+                out.push(cp);
+            }
+            Ok(out)
+        } else {
+            Ok(vec![])
+        }
+    }
+
+    pub fn unconfirmed_fees_paid(&self) -> Result<u64> {
+        self.unconfirmed()?
+            .iter()
+            .map(|cp| cp.checkpoint_tx_miner_fees())
+            .try_fold(0, |fees, result: Result<_>| {
+                let fee = result?;
+                Ok::<_, Error>(fees + fee)
+            })
+    }
+
+    pub fn unconfirmed_vbytes(&self, config: &Config) -> Result<u64> {
+        self.unconfirmed()?
+            .iter()
+            .map(|cp| cp.est_vsize(config, &[0; 32])) // TODO: shouldn't need to pass fixed length commitment to est_vsize
+            .try_fold(0, |sum, result: Result<_>| {
+                let vbytes = result?;
+                Ok::<_, Error>(sum + vbytes)
+            })
+    }
+
+    fn fee_adjustment(&self, fee_rate: u64, config: &Config) -> Result<u64> {
+        let unconf_fees_paid = self.unconfirmed_fees_paid()?;
+        let unconf_vbytes = self.unconfirmed_vbytes(config)?;
+        Ok((unconf_vbytes * fee_rate).saturating_sub(unconf_fees_paid))
+    }
 }
 
 /// Takes a previous fee rate and returns a new fee rate, adjusted up or down by
@@ -2336,6 +2478,7 @@ mod test {
                 signed_at_btc_height: None,
                 deposits_enabled: true,
                 sigset: SignatorySet::default(),
+                fees_collected: 0,
             };
             cp.status = status;
             queue.queue.push_back(cp).unwrap();
@@ -2499,7 +2642,8 @@ mod test {
             ..Default::default()
         };
 
-        let maybe_step = |btc_height| {
+        let mut fee_pool = 0;
+        let mut maybe_step = |btc_height| {
             queue
                 .borrow_mut()
                 .maybe_step(
@@ -2514,6 +2658,8 @@ mod test {
                     btc_height,
                     true,
                     vec![1, 2, 3],
+                    &mut fee_pool,
+                    &super::super::Config::default(),
                 )
                 .unwrap();
         };
@@ -2531,6 +2677,7 @@ mod test {
             .unwrap();
             let mut queue = queue.borrow_mut();
             let mut building_mut = queue.building_mut().unwrap();
+            building_mut.fees_collected = 100000000;
             let mut building_checkpoint_batch = building_mut
                 .batches
                 .get_mut(BatchType::Checkpoint as u64)
@@ -2710,7 +2857,8 @@ mod test {
             let time = orga::plugins::Time::from_seconds(time);
             Context::add(time);
         };
-        let maybe_step = |btc_height| {
+        let mut fee_pool = 0;
+        let mut maybe_step = |btc_height| {
             queue
                 .borrow_mut()
                 .maybe_step(
@@ -2725,6 +2873,8 @@ mod test {
                     btc_height,
                     true,
                     vec![1, 2, 3],
+                    &mut fee_pool,
+                    &super::super::Config::default(),
                 )
                 .unwrap();
         };
@@ -2742,6 +2892,7 @@ mod test {
             .unwrap();
             let mut queue = queue.borrow_mut();
             let mut building_mut = queue.building_mut().unwrap();
+            building_mut.fees_collected = 100000000;
             let mut building_checkpoint_batch = building_mut
                 .batches
                 .get_mut(BatchType::Checkpoint as u64)
