@@ -438,7 +438,7 @@ async fn bitcoin_test() {
             .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
             .await
             .unwrap();
-        assert_eq!(balance, Amount::from(989998435800000));
+        assert_eq!(balance, Amount::from(989996871600000));
 
         btc_client
             .generate_to_address(3, &async_wallet_address)
@@ -468,7 +468,7 @@ async fn bitcoin_test() {
             .await
             .unwrap();
 
-        assert_eq!(balance, Amount::from(39597653700000));
+        assert_eq!(balance, Amount::from(39595307400000));
 
         withdraw_bitcoin(
             &funded_accounts[0],
@@ -502,7 +502,7 @@ async fn bitcoin_test() {
             .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
             .await
             .unwrap();
-        assert_eq!(balance, Amount::from(989991435800000));
+        assert_eq!(balance, Amount::from(989989871600000));
 
         let disbursal_txs = app_client()
             .query(|app: InnerApp| {
@@ -547,7 +547,7 @@ async fn bitcoin_test() {
                 }
             }
         }
-        assert_eq!(signatory_balance, 49989255);
+        assert_eq!(signatory_balance, 49986239);
 
         let funded_account_balances: Vec<_> = funded_accounts
             .iter()
@@ -562,7 +562,7 @@ async fn bitcoin_test() {
             })
             .collect();
 
-        let expected_account_balances: Vec<u64> = vec![989989593, 0, 0, 0];
+        let expected_account_balances: Vec<u64> = vec![989988029, 0, 0, 0];
         assert_eq!(funded_account_balances, expected_account_balances);
 
         for (i, account) in funded_accounts[0..1].iter().enumerate() {
@@ -1715,7 +1715,7 @@ async fn recover_expired_deposit() {
             .query(|app| app.bitcoin.accounts.balance(funded_accounts[1].address))
             .await
             .unwrap();
-        assert_eq!(balance, Amount::from(39597006240000));
+        assert_eq!(balance, Amount::from(39595129200000));
 
         Err::<(), Error>(Error::Test("Test completed successfully".to_string()))
     };

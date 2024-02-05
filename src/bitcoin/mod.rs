@@ -121,6 +121,11 @@ pub struct Config {
 
     #[orga(version(V4))]
     pub max_deposit_age: u64,
+
+    #[orga(version(V4))]
+    pub fee_pool_target_balance: u64,
+    #[orga(version(V4))]
+    pub fee_pool_reward_split: (u64, u64),
 }
 
 impl MigrateFrom<ConfigV0> for ConfigV1 {
@@ -175,10 +180,7 @@ impl MigrateFrom<ConfigV2> for ConfigV3 {
             units_per_sat: value.units_per_sat,
             max_offline_checkpoints: value.max_offline_checkpoints,
             min_checkpoint_confirmations: 0,
-            #[cfg(feature = "testnet")]
-            capacity_limit: 100 * 100_000_000,
-            #[cfg(not(feature = "testnet"))]
-            capacity_limit: 21 * 100_000_000,
+            capacity_limit: ConfigV4::default().capacity_limit,
         })
     }
 }
@@ -198,6 +200,8 @@ impl MigrateFrom<ConfigV3> for ConfigV4 {
             min_checkpoint_confirmations: value.min_checkpoint_confirmations,
             capacity_limit: value.capacity_limit,
             max_deposit_age: Self::default().max_deposit_age,
+            fee_pool_target_balance: Config::default().fee_pool_target_balance,
+            fee_pool_reward_split: Config::default().fee_pool_reward_split,
         })
     }
 }
@@ -226,6 +230,8 @@ impl Config {
             max_deposit_age: 3 * 60,
             #[cfg(not(feature = "testnet"))]
             max_deposit_age: 60 * 60 * 24 * 5,
+            fee_pool_target_balance: 10_000_000, // 0.1 BTC
+            fee_pool_reward_split: (1, 10),
         }
     }
 
@@ -290,6 +296,10 @@ pub struct Bitcoin {
     /// A pool of BTC where bridge fees are collected.
     pub(crate) reward_pool: Coin<Nbtc>,
 
+    // TODO: turn into Coin<Nbtc>
+    #[orga(version(V2))]
+    pub(crate) fee_pool: i64,
+
     /// The recovery scripts for nBTC account holders, which are users' desired
     /// destinations for BTC to be paid out to in the emergency disbursal
     /// process if the network is halted.
@@ -318,12 +328,14 @@ impl MigrateFrom<BitcoinV1> for BitcoinV2 {
             accounts: value.accounts,
             signatory_keys: value.signatory_keys,
             reward_pool: value.reward_pool,
+            fee_pool: 0,
             recovery_scripts: value.recovery_scripts,
             config: value.config,
             recovery_txs: RecoveryTxs::new(),
         })
     }
 }
+
 /// A Tendermint/CometBFT public key.
 pub type ConsensusKey = [u8; 32];
 
@@ -509,7 +521,9 @@ impl Bitcoin {
     /// checkpoint to `Signing`). Returns `false` otherwise.
     #[cfg(feature = "full")]
     pub fn should_push_checkpoint(&mut self) -> Result<bool> {
-        self.checkpoints.should_push(self.signatory_keys.map())
+        self.checkpoints
+            .should_push(self.signatory_keys.map(), &[0; 32])
+        // TODO: we shouldn't need this slice, commitment should be fixed-length
     }
 
     /// Verifies and processes a deposit of BTC into the reserve.
@@ -629,10 +643,15 @@ impl Bitcoin {
             self.checkpoints.config.sigset_threshold,
         )?;
         let input_size = input.est_vsize();
-        let fee = input_size * checkpoint.fee_rate;
-        let value = output.value.checked_sub(fee).ok_or_else(|| {
+        let mut nbtc = Nbtc::mint(output.value * self.config.units_per_sat);
+        let fee_amount = input_size * checkpoint.fee_rate * self.checkpoints.config.user_fee_factor
+            / 10_000
+            * self.config.units_per_sat;
+        let fee = nbtc.take(fee_amount).map_err(|_| {
             OrgaError::App("Deposit amount is too small to pay its spending fee".to_string())
-        })? * self.config.units_per_sat;
+        })?;
+        self.give_miner_fee(fee)?;
+        // TODO: record as excess collected if inputs are full
 
         let mut building_mut = self.checkpoints.building_mut()?;
         let mut building_checkpoint_batch = building_mut
@@ -641,14 +660,14 @@ impl Bitcoin {
             .unwrap();
         let mut checkpoint_tx = building_checkpoint_batch.get_mut(0)?.unwrap();
         checkpoint_tx.input.push_back(input)?;
+        // TODO: keep in excess queue if full
 
-        let mut minted_nbtc = Nbtc::mint(value);
-        let deposit_fee = minted_nbtc.take(calc_deposit_fee(value))?;
-        self.reward_pool.give(deposit_fee)?;
+        let deposit_fee = nbtc.take(calc_deposit_fee(nbtc.amount.into()))?;
+        self.give_rewards(deposit_fee)?;
 
         self.checkpoints
             .building_mut()?
-            .insert_pending(dest, minted_nbtc)?;
+            .insert_pending(dest, nbtc)?;
 
         Ok(())
     }
@@ -725,14 +744,18 @@ impl Bitcoin {
             .signer
             .ok_or_else(|| Error::Orga(OrgaError::App("Call must be signed".into())))?;
 
-        self.accounts.withdraw(signer, amount)?.burn();
+        let coins = self.accounts.withdraw(signer, amount)?;
 
-        self.add_withdrawal(script_pubkey, amount)
+        self.add_withdrawal(script_pubkey, coins)
     }
 
     /// Adds an output to the current `Building` checkpoint to be paid out once
     /// the checkpoint is fully signed.
-    pub fn add_withdrawal(&mut self, script_pubkey: Adapter<Script>, amount: Amount) -> Result<()> {
+    pub fn add_withdrawal(
+        &mut self,
+        script_pubkey: Adapter<Script>,
+        mut coins: Coin<Nbtc>,
+    ) -> Result<()> {
         if script_pubkey.len() as u64 > self.config.max_withdrawal_script_length {
             return Err(OrgaError::App("Script exceeds maximum length".to_string()).into());
         }
@@ -745,28 +768,27 @@ impl Bitcoin {
             .into());
         }
 
-        let fee = (9 + script_pubkey.len() as u64) * self.checkpoints.building()?.fee_rate;
-        let value: u64 = Into::<u64>::into(amount) / self.config.units_per_sat;
-        let value = match value.checked_sub(fee) {
-            None => {
-                return Err(OrgaError::App(
-                    "Withdrawal is too small to pay its miner fee".to_string(),
-                )
-                .into())
-            }
-            Some(value) => value,
-        };
+        let fee_amount = (9 + script_pubkey.len() as u64)
+            * self.checkpoints.building()?.fee_rate
+            * self.checkpoints.config.user_fee_factor
+            / 10_000
+            * self.config.units_per_sat;
+        let fee = coins.take(fee_amount).map_err(|_| {
+            OrgaError::App("Withdrawal is too small to pay its miner fee".to_string())
+        })?;
+        self.give_miner_fee(fee)?;
+        // TODO: record as collected for excess if full
 
-        if bitcoin::Amount::from_sat(value) <= script_pubkey.dust_value() {
-            return Err(OrgaError::App(
-                "Withdrawal is too small to pay its dust limit".to_string(),
-            )
-            .into());
-        }
-
+        let value = Into::<u64>::into(coins.amount) / self.config.units_per_sat;
         if value < self.config.min_withdrawal_amount {
             return Err(OrgaError::App(
                 "Withdrawal is smaller than than minimum amount".to_string(),
+            )
+            .into());
+        }
+        if bitcoin::Amount::from_sat(value) <= script_pubkey.dust_value() {
+            return Err(OrgaError::App(
+                "Withdrawal is too small to pay its dust limit".to_string(),
             )
             .into());
         }
@@ -783,6 +805,7 @@ impl Bitcoin {
             .unwrap();
         let mut checkpoint_tx = building_checkpoint_batch.get_mut(0)?.unwrap();
         checkpoint_tx.output.push_back(Adapter::new(output))?;
+        // TODO: push to excess if full
 
         Ok(())
     }
@@ -801,7 +824,7 @@ impl Bitcoin {
         let transfer_fee = self
             .accounts
             .withdraw(signer, self.config.transfer_fee.into())?;
-        self.reward_pool.give(transfer_fee)?;
+        self.give_rewards(transfer_fee)?;
 
         let dest = Dest::Address(to);
         let coins = self.accounts.withdraw(signer, amount)?;
@@ -954,6 +977,8 @@ impl Bitcoin {
                 self.headers.height()?,
                 !reached_capacity_limit,
                 timestamping_commitment,
+                &mut self.fee_pool,
+                &self.config,
             )
             .map_err(|err| OrgaError::App(err.to_string()))?;
 
@@ -1042,6 +1067,48 @@ impl Bitcoin {
             dests.push((dest, coins));
         }
         Ok(dests)
+    }
+
+    pub fn give_miner_fee(&mut self, coin: Coin<Nbtc>) -> Result<()> {
+        let amount: u64 = coin.amount.into();
+        coin.burn();
+
+        self.fee_pool += amount as i64;
+        self.checkpoints.building_mut()?.fees_collected += amount;
+
+        Ok(())
+    }
+
+    pub fn give_rewards(&mut self, coin: Coin<Nbtc>) -> Result<()> {
+        if self.fee_pool < (self.config.fee_pool_target_balance * self.config.units_per_sat) as i64
+        {
+            let amount: u64 = coin.amount.into();
+            coin.burn();
+
+            let reward_amount = (amount as u128 * self.config.fee_pool_reward_split.0 as u128
+                / self.config.fee_pool_reward_split.1 as u128)
+                as u64;
+            let fee_amount = amount - reward_amount;
+
+            self.reward_pool.give(Coin::mint(reward_amount))?;
+            self.give_miner_fee(Coin::mint(fee_amount))?;
+
+            assert_eq!(reward_amount + fee_amount, amount);
+        } else {
+            self.reward_pool.give(coin)?;
+        }
+
+        Ok(())
+    }
+
+    #[call]
+    pub fn give_funding_to_fee_pool(&mut self, amount: Amount) -> Result<()> {
+        let taken_coins = self
+            .context::<Paid>()
+            .ok_or_else(|| orga::Error::Coins("No Paid context found".into()))?
+            .take(amount)?;
+
+        self.give_miner_fee(taken_coins)
     }
 }
 
@@ -1271,6 +1338,7 @@ mod tests {
             .unwrap();
             let mut btc = btc.borrow_mut();
             let mut building_mut = btc.checkpoints.building_mut().unwrap();
+            building_mut.fees_collected = 100_000_000;
             let mut building_checkpoint_batch = building_mut
                 .batches
                 .get_mut(BatchType::Checkpoint as u64)
@@ -1383,7 +1451,7 @@ mod tests {
         push_withdrawal();
         maybe_step();
         let change_rates = btc.borrow().change_rates(3000, 5100, 0)?;
-        assert_eq!(change_rates.withdrawal, 8649);
+        assert_eq!(change_rates.withdrawal, 8651);
         assert_eq!(change_rates.sigset_change, 4090);
         assert_eq!(btc.borrow().checkpoints.signing()?.unwrap().sigset.index, 5);
         let change_rates = btc.borrow().change_rates(3000, 5100, 5)?;
