@@ -2375,6 +2375,8 @@ impl CheckpointQueue {
     ) -> Result<()> {
         let mut index = first_index;
 
+        let create_time = self.queue.get(0)?.unwrap().create_time();
+
         for script in redeem_scripts {
             if index >= self.first_index()? {
                 index -= 1;
@@ -2383,6 +2385,7 @@ impl CheckpointQueue {
 
             let (mut sigset, _) = SignatorySet::from_script(&script)?;
             sigset.index = index;
+            sigset.create_time = create_time;
             let cp = Checkpoint::new(sigset)?;
 
             self.queue.push_front(cp)?;
