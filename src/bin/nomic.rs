@@ -4,6 +4,8 @@
 #![feature(async_closure)]
 #![feature(never_type)]
 
+use bitcoin::secp256k1;
+use bitcoin::util::bip32::ExtendedPubKey;
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
 use nomic::app::Dest;
@@ -16,6 +18,8 @@ use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::constants::BTC_NATIVE_TOKEN_DENOM;
 use nomic::constants::MAIN_NATIVE_TOKEN_DENOM;
 use nomic::error::Result;
+use nomic::utils::load_bitcoin_key;
+use nomic::utils::load_or_generate;
 use nomic::utils::wallet_path;
 use nomic::utils::write_orga_private_key_from_mnemonic;
 use orga::abci::Node;
@@ -1155,6 +1159,9 @@ impl RelayerCmd {
 
 #[derive(Parser, Debug)]
 pub struct SignerCmd {
+    // TODO: should be a flag
+    reset_limits_at_index: Option<u32>,
+
     #[clap(flatten)]
     config: nomic::network::Config,
 
@@ -1173,8 +1180,8 @@ pub struct SignerCmd {
     #[clap(long)]
     prometheus_addr: Option<std::net::SocketAddr>,
 
-    // TODO: should be a flag
-    reset_limits_at_index: Option<u32>,
+    #[clap(long)]
+    xpriv_paths: Vec<PathBuf>,
 }
 
 impl SignerCmd {
@@ -1184,11 +1191,12 @@ impl SignerCmd {
             std::fs::create_dir(&signer_dir_path)?;
         }
 
-        let key_path = signer_dir_path.join("xpriv");
+        let default_key_path = signer_dir_path.join("xpriv");
 
-        let signer = Signer::load_or_generate(
+        let signer = Signer::load_xprivs(
             my_address(),
-            key_path,
+            default_key_path,
+            self.xpriv_paths.clone(),
             self.max_withdrawal_rate,
             self.max_sigset_change_rate,
             self.reset_limits_at_index,
@@ -1208,7 +1216,7 @@ impl SignerCmd {
 
 #[derive(Parser, Debug)]
 pub struct SetSignatoryKeyCmd {
-    xpub: bitcoin::util::bip32::ExtendedPubKey,
+    xpriv_path: Option<PathBuf>,
 
     #[clap(flatten)]
     config: nomic::network::Config,
@@ -1216,12 +1224,22 @@ pub struct SetSignatoryKeyCmd {
 
 impl SetSignatoryKeyCmd {
     async fn run(&self) -> Result<()> {
+        let xpriv = match self.xpriv_path.clone() {
+            Some(xpriv_path) => load_bitcoin_key(xpriv_path)?,
+            None => load_or_generate(
+                self.config.home_expect().unwrap().join("signer/xpriv"),
+                nomic::bitcoin::NETWORK,
+            )?,
+        };
+
+        let xpub = ExtendedPubKey::from_priv(&secp256k1::Secp256k1::new(), &xpriv);
+
         self.config
             .client()
             .with_wallet(wallet())
             .call(
                 |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
-                |app| build_call!(app.bitcoin.set_signatory_key(self.xpub.into())),
+                |app| build_call!(app.bitcoin.set_signatory_key(xpub.into())),
             )
             .await?;
 

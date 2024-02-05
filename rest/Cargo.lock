@@ -2384,6 +2384,8 @@ dependencies = [
  "bitcoin",
  "chrono",
  "hex",
+ "ibc",
+ "ibc-proto",
  "lazy_static",
  "nomic",
  "rocket",

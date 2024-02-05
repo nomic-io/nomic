@@ -1,6 +1,3 @@
-use std::collections::HashMap;
-use std::ops::Deref;
-
 use self::checkpoint::Input;
 use self::threshold_sig::Signature;
 use crate::app::Dest;
@@ -17,7 +14,7 @@ use bitcoin::Script;
 use bitcoin::{util::merkleblock::PartialMerkleTree, Transaction};
 use checkpoint::CheckpointQueue;
 use header_queue::HeaderQueue;
-use orga::coins::{Accounts, Address, Amount, Coin, Give, Symbol};
+use orga::coins::{Accounts, Address, Amount, Coin, Give, Symbol, Take};
 use orga::collections::Map;
 use orga::collections::{Deque, Next};
 use orga::context::{Context, GetContext};
@@ -37,6 +34,8 @@ use orga::{Error as OrgaError, Result as OrgaResult};
 use outpoint_set::OutpointSet;
 use serde::Serialize;
 use signatory::SignatorySet;
+use std::collections::HashMap;
+use std::ops::Deref;
 
 pub mod adapter;
 pub mod checkpoint;
@@ -73,7 +72,7 @@ pub const SIGSET_THRESHOLD: (u64, u64) = (9, 10);
 pub const SIGSET_THRESHOLD: (u64, u64) = (2, 3);
 
 /// The configuration parameters for the Bitcoin module.
-#[orga(skip(Default), version = 5)]
+#[orga(skip(Default), version = 4)]
 pub struct Config {
     /// The minimum number of checkpoints that must be produced before
     /// withdrawals are enabled.
@@ -120,6 +119,11 @@ pub struct Config {
     /// The maximum amount of BTC that can be held in the network, in satoshis.
     #[orga(version(V2, V3, V4, V5))]
     pub capacity_limit: u64,
+
+    #[orga(version(V4))]
+    pub fee_pool_target_balance: u64,
+    #[orga(version(V4))]
+    pub fee_pool_reward_split: (u64, u64),
 }
 
 impl MigrateFrom<ConfigV0> for ConfigV1 {
@@ -174,7 +178,7 @@ impl MigrateFrom<ConfigV2> for ConfigV3 {
             units_per_sat: value.units_per_sat,
             max_offline_checkpoints: value.max_offline_checkpoints,
             min_checkpoint_confirmations: 0,
-            capacity_limit: Config::bitcoin().capacity_limit,
+            capacity_limit: ConfigV4::default().capacity_limit,
         })
     }
 }
@@ -193,28 +197,10 @@ impl MigrateFrom<ConfigV3> for ConfigV4 {
             min_confirmations: value.min_confirmations,
             units_per_sat: value.units_per_sat,
             max_offline_checkpoints: value.max_offline_checkpoints,
-            min_checkpoint_confirmations: 0,
-            capacity_limit: Config::default().capacity_limit,
-        })
-    }
-}
-
-impl MigrateFrom<ConfigV4> for ConfigV5 {
-    fn migrate_from(value: ConfigV4) -> OrgaResult<Self> {
-        // Migrating to set min_checkpoint_confirmations to 0 and testnet
-        // capacity limit to 100 BTC
-        Ok(Self {
-            min_withdrawal_checkpoints: value.min_withdrawal_checkpoints,
-            min_deposit_amount: Config::default().min_deposit_amount,
-            min_withdrawal_amount: Config::default().min_withdrawal_amount,
-            max_withdrawal_amount: value.max_withdrawal_amount,
-            max_withdrawal_script_length: value.max_withdrawal_script_length,
-            transfer_fee: Config::default().transfer_fee,
-            min_confirmations: value.min_confirmations,
-            units_per_sat: value.units_per_sat,
-            max_offline_checkpoints: value.max_offline_checkpoints,
             min_checkpoint_confirmations: value.min_checkpoint_confirmations,
             capacity_limit: value.capacity_limit,
+            fee_pool_target_balance: Config::default().fee_pool_target_balance,
+            fee_pool_reward_split: Config::default().fee_pool_reward_split,
         })
     }
 }
@@ -238,7 +224,9 @@ impl Config {
             #[cfg(feature = "testnet")]
             capacity_limit: 100 * 100_000_000, // 100 BTC
             #[cfg(not(feature = "testnet"))]
-            capacity_limit: 19 * 100_000_000, // 19 BTC
+            capacity_limit: 21 * 100_000_000, // 21 BTC
+            fee_pool_target_balance: 10_000_000, // 0.1 BTC
+            fee_pool_reward_split: (1, 10),
         }
     }
 
@@ -274,7 +262,7 @@ pub fn calc_deposit_fee(amount: u64) -> u64 {
 /// blockchain headers, relay deposit transactions, maintain nBTC accounts, and
 /// coordinate the checkpointing process to manage the BTC reserve on the
 /// Bitcoin blockchain.
-#[orga(version = 1)]
+#[orga(version = 2)]
 pub struct Bitcoin {
     /// A light client of the Bitcoin blockchain, keeping track of the headers
     /// of the highest-work chain.
@@ -303,6 +291,10 @@ pub struct Bitcoin {
     /// A pool of BTC where bridge fees are collected.
     pub(crate) reward_pool: Coin<Nbtc>,
 
+    // TODO: turn into Coin<Nbtc>
+    #[orga(version(V2))]
+    pub(crate) fee_pool: i64,
+
     /// The recovery scripts for nBTC account holders, which are users' desired
     /// destinations for BTC to be paid out to in the emergency disbursal
     /// process if the network is halted.
@@ -315,6 +307,22 @@ pub struct Bitcoin {
 impl MigrateFrom<BitcoinV0> for BitcoinV1 {
     fn migrate_from(_value: BitcoinV0) -> OrgaResult<Self> {
         unreachable!()
+    }
+}
+
+impl MigrateFrom<BitcoinV1> for BitcoinV2 {
+    fn migrate_from(value: BitcoinV1) -> OrgaResult<Self> {
+        Ok(Self {
+            headers: value.headers,
+            processed_outpoints: value.processed_outpoints,
+            checkpoints: value.checkpoints,
+            accounts: value.accounts,
+            signatory_keys: value.signatory_keys,
+            reward_pool: value.reward_pool,
+            fee_pool: 0,
+            recovery_scripts: value.recovery_scripts,
+            config: value.config,
+        })
     }
 }
 
@@ -436,17 +444,12 @@ impl Bitcoin {
     /// Called by validators to store their signatory public key, which will be
     /// used for their signing of Bitcoin transactions.
     ///
-    /// Currently, validators may only set their signatory key once - key
-    /// rotation is not yet supported.
-    ///
     /// This call must be signed by an operator key associated with an account
     /// which has declared a validator.
     #[call]
     pub fn set_signatory_key(&mut self, _signatory_key: Xpub) -> Result<()> {
         #[cfg(feature = "full")]
         {
-            exempt_from_fee()?;
-
             let signer = self
                 .context::<Signer>()
                 .ok_or_else(|| Error::Orga(OrgaError::App("No Signer context available".into())))?
@@ -462,6 +465,7 @@ impl Bitcoin {
                     "Signer does not have a consensus key".to_string(),
                 ))
             })?;
+
             let regtest_mode = self.network() == bitcoin::Network::Regtest
                 && _signatory_key.network == bitcoin::Network::Testnet;
 
@@ -510,7 +514,9 @@ impl Bitcoin {
     /// checkpoint to `Signing`). Returns `false` otherwise.
     #[cfg(feature = "full")]
     pub fn should_push_checkpoint(&mut self) -> Result<bool> {
-        self.checkpoints.should_push(self.signatory_keys.map())
+        self.checkpoints
+            .should_push(self.signatory_keys.map(), &[0; 32])
+        // TODO: we shouldn't need this slice, commitment should be fixed-length
     }
 
     /// Verifies and processes a deposit of BTC into the reserve.
@@ -606,10 +612,13 @@ impl Bitcoin {
         )?;
         let input_size = input.est_vsize();
 
-        let fee = input_size * checkpoint.fee_rate;
-        let value = output.value.checked_sub(fee).ok_or_else(|| {
+        let mut nbtc = Nbtc::mint(output.value * self.config.units_per_sat);
+        let fee_amount = input_size * checkpoint.fee_rate * self.checkpoints.config.user_fee_factor
+            / 10_000
+            * self.config.units_per_sat;
+        let fee = nbtc.take(fee_amount).map_err(|_| {
             OrgaError::App("Deposit amount is too small to pay its spending fee".to_string())
-        })? * self.config.units_per_sat;
+        })?;
         log::info!(
             "Relay deposit with output value: {}, input size: {}, checkpoint fee rate: {}",
             output.value,
@@ -617,10 +626,8 @@ impl Bitcoin {
             checkpoint.fee_rate
         );
 
-        println!(
-            "Relay deposit with output value: {}, input size: {}, checkpoint fee rate: {}",
-            output.value, input_size, checkpoint.fee_rate
-        );
+        self.give_miner_fee(fee)?;
+        // TODO: record as excess collected if inputs are full
 
         let outpoint = (btc_tx.txid().into_inner(), btc_vout);
         if self.processed_outpoints.contains(outpoint)? {
@@ -643,14 +650,14 @@ impl Bitcoin {
             .unwrap();
         let mut checkpoint_tx = building_checkpoint_batch.get_mut(0)?.unwrap();
         checkpoint_tx.input.push_back(input)?;
+        // TODO: keep in excess queue if full
 
-        let minted_nbtc = Nbtc::mint(value);
-        // let deposit_fee = minted_nbtc.take(calc_deposit_fee(value))?;
-        // self.reward_pool.give(deposit_fee)?;
+        let deposit_fee = nbtc.take(calc_deposit_fee(nbtc.amount.into()))?;
+        self.give_rewards(deposit_fee)?;
 
         self.checkpoints
             .building_mut()?
-            .insert_pending(dest, minted_nbtc)?;
+            .insert_pending(dest, nbtc)?;
 
         Ok(())
     }
@@ -727,14 +734,18 @@ impl Bitcoin {
             .signer
             .ok_or_else(|| Error::Orga(OrgaError::App("Call must be signed".into())))?;
 
-        self.accounts.withdraw(signer, amount)?.burn();
+        let coins = self.accounts.withdraw(signer, amount)?;
 
-        self.add_withdrawal(script_pubkey, amount)
+        self.add_withdrawal(script_pubkey, coins)
     }
 
     /// Adds an output to the current `Building` checkpoint to be paid out once
     /// the checkpoint is fully signed.
-    pub fn add_withdrawal(&mut self, script_pubkey: Adapter<Script>, amount: Amount) -> Result<()> {
+    pub fn add_withdrawal(
+        &mut self,
+        script_pubkey: Adapter<Script>,
+        mut coins: Coin<Nbtc>,
+    ) -> Result<()> {
         if script_pubkey.len() as u64 > self.config.max_withdrawal_script_length {
             return Err(OrgaError::App("Script exceeds maximum length".to_string()).into());
         }
@@ -747,28 +758,27 @@ impl Bitcoin {
             .into());
         }
 
-        let fee = (9 + script_pubkey.len() as u64) * self.checkpoints.building()?.fee_rate;
-        let value: u64 = Into::<u64>::into(amount) / self.config.units_per_sat;
-        let value = match value.checked_sub(fee) {
-            None => {
-                return Err(OrgaError::App(
-                    "Withdrawal is too small to pay its miner fee".to_string(),
-                )
-                .into())
-            }
-            Some(value) => value,
-        };
+        let fee_amount = (9 + script_pubkey.len() as u64)
+            * self.checkpoints.building()?.fee_rate
+            * self.checkpoints.config.user_fee_factor
+            / 10_000
+            * self.config.units_per_sat;
+        let fee = coins.take(fee_amount).map_err(|_| {
+            OrgaError::App("Withdrawal is too small to pay its miner fee".to_string())
+        })?;
+        self.give_miner_fee(fee)?;
+        // TODO: record as collected for excess if full
 
-        if bitcoin::Amount::from_sat(value) <= script_pubkey.dust_value() {
-            return Err(OrgaError::App(
-                "Withdrawal is too small to pay its dust limit".to_string(),
-            )
-            .into());
-        }
-
+        let value = Into::<u64>::into(coins.amount) / self.config.units_per_sat;
         if value < self.config.min_withdrawal_amount {
             return Err(OrgaError::App(
                 "Withdrawal is smaller than than minimum amount".to_string(),
+            )
+            .into());
+        }
+        if bitcoin::Amount::from_sat(value) <= script_pubkey.dust_value() {
+            return Err(OrgaError::App(
+                "Withdrawal is too small to pay its dust limit".to_string(),
             )
             .into());
         }
@@ -785,6 +795,7 @@ impl Bitcoin {
             .unwrap();
         let mut checkpoint_tx = building_checkpoint_batch.get_mut(0)?.unwrap();
         checkpoint_tx.output.push_back(Adapter::new(output))?;
+        // TODO: push to excess if full
 
         Ok(())
     }
@@ -803,7 +814,7 @@ impl Bitcoin {
         let transfer_fee = self
             .accounts
             .withdraw(signer, self.config.transfer_fee.into())?;
-        self.reward_pool.give(transfer_fee)?;
+        self.give_rewards(transfer_fee)?;
 
         let dest = Dest::Address(to);
         let coins = self.accounts.withdraw(signer, amount)?;
@@ -956,6 +967,8 @@ impl Bitcoin {
                 self.headers.height()?,
                 !reached_capacity_limit,
                 timestamping_commitment,
+                &mut self.fee_pool,
+                &self.config,
             )
             .map_err(|err| OrgaError::App(err.to_string()))?;
 
@@ -1047,6 +1060,48 @@ impl Bitcoin {
         }
         Ok(dests)
     }
+
+    pub fn give_miner_fee(&mut self, coin: Coin<Nbtc>) -> Result<()> {
+        let amount: u64 = coin.amount.into();
+        coin.burn();
+
+        self.fee_pool += amount as i64;
+        self.checkpoints.building_mut()?.fees_collected += amount;
+
+        Ok(())
+    }
+
+    pub fn give_rewards(&mut self, coin: Coin<Nbtc>) -> Result<()> {
+        if self.fee_pool < (self.config.fee_pool_target_balance * self.config.units_per_sat) as i64
+        {
+            let amount: u64 = coin.amount.into();
+            coin.burn();
+
+            let reward_amount = (amount as u128 * self.config.fee_pool_reward_split.0 as u128
+                / self.config.fee_pool_reward_split.1 as u128)
+                as u64;
+            let fee_amount = amount - reward_amount;
+
+            self.reward_pool.give(Coin::mint(reward_amount))?;
+            self.give_miner_fee(Coin::mint(fee_amount))?;
+
+            assert_eq!(reward_amount + fee_amount, amount);
+        } else {
+            self.reward_pool.give(coin)?;
+        }
+
+        Ok(())
+    }
+
+    #[call]
+    pub fn give_funding_to_fee_pool(&mut self, amount: Amount) -> Result<()> {
+        let taken_coins = self
+            .context::<Paid>()
+            .ok_or_else(|| orga::Error::Coins("No Paid context found".into()))?
+            .take(amount)?;
+
+        self.give_miner_fee(taken_coins)
+    }
 }
 
 /// The current rates of change of the reserve output and signatory set, in
@@ -1100,10 +1155,6 @@ impl SignatoryKeys {
         normalized_xpub.key.depth = 0;
         normalized_xpub.key.parent_fingerprint = Default::default();
 
-        if self.by_cons.contains_key(consensus_key)? {
-            return Err(OrgaError::App("Validator already has a signatory key".to_string()).into());
-        }
-
         if self.xpubs.contains_key(normalized_xpub)? {
             return Err(OrgaError::App("Duplicate signatory key".to_string()).into());
         }
@@ -1155,7 +1206,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc};
+    use std::{cell::RefCell, fs, rc::Rc};
 
     use bitcoin::{
         secp256k1::Secp256k1, util::bip32::ExtendedPrivKey, BlockHash, BlockHeader, OutPoint,
@@ -1279,6 +1330,7 @@ mod tests {
             .unwrap();
             let mut btc = btc.borrow_mut();
             let mut building_mut = btc.checkpoints.building_mut().unwrap();
+            building_mut.fees_collected = 100_000_000;
             let mut building_checkpoint_batch = building_mut
                 .batches
                 .get_mut(BatchType::Checkpoint as u64)
@@ -1391,7 +1443,7 @@ mod tests {
         push_withdrawal();
         maybe_step();
         let change_rates = btc.borrow().change_rates(3000, 5100, 0)?;
-        assert_eq!(change_rates.withdrawal, 8649);
+        assert_eq!(change_rates.withdrawal, 8651);
         assert_eq!(change_rates.sigset_change, 4090);
         assert_eq!(btc.borrow().checkpoints.signing()?.unwrap().sigset.index, 5);
         let change_rates = btc.borrow().change_rates(3000, 5100, 5)?;
