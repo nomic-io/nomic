@@ -1507,6 +1507,15 @@ async fn recover_expired_deposit() {
     let signer_path = path.clone();
     let header_relayer_path = path.clone();
 
+    let xpriv = generate_bitcoin_key(bitcoin::Network::Regtest).unwrap();
+    fs::create_dir_all(signer_path.join("signer")).unwrap();
+    fs::write(
+        signer_path.join("signer/xpriv"),
+        xpriv.to_string().as_bytes(),
+    )
+    .unwrap();
+    let xpub = ExtendedPubKey::from_priv(&secp256k1::Secp256k1::new(), &xpriv);
+
     std::env::set_var("NOMIC_HOME_DIR", &path);
 
     let headers_config = HeaderQueueConfig {
@@ -1582,12 +1591,16 @@ async fn recover_expired_deposit() {
         let val_priv_key = load_privkey().unwrap();
         let nomic_wallet = DerivedKey::from_secret_key(val_priv_key);
         let consensus_key = load_consensus_key(&path)?;
-        declare_validator(consensus_key, nomic_wallet, 100_000)
+        declare_validator(consensus_key, nomic_wallet.clone(), 100_000)
             .await
             .unwrap();
-        declare_validator([0; 32], funded_accounts[2].wallet.clone(), 4_000)
-            .await
-            .unwrap();
+        app_client()
+            .with_wallet(nomic_wallet.clone())
+            .call(
+                |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
+                |app| build_call!(app.bitcoin.set_signatory_key(xpub.into())),
+            )
+            .await?;
 
         let wallet = retry(|| bitcoind.create_wallet("nomic-integration-test"), 10).unwrap();
         let wallet_address = wallet.get_new_address(None, None).unwrap();
