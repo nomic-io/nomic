@@ -752,15 +752,7 @@ impl Relayer {
             self.scripts.as_mut().unwrap().insert(addr, &sigset)?;
         }
 
-        let max_age = app_client(&self.app_client_addr)
-            .query(|app| Ok(app.bitcoin.checkpoints.config.max_age))
-            .await?;
-
-        self.scripts
-            .as_mut()
-            .unwrap()
-            .scripts
-            .remove_expired(max_age)?;
+        self.scripts.as_mut().unwrap().scripts.remove_expired()?;
 
         Ok(())
     }
@@ -1142,7 +1134,7 @@ impl WatchedScripts {
         Ok(true)
     }
 
-    pub fn remove_expired(&mut self, max_age: u64) -> Result<()> {
+    pub fn remove_expired(&mut self) -> Result<()> {
         let now = time_now();
 
         for (_, (sigset, dests)) in self.sigsets.iter() {
@@ -1239,11 +1231,8 @@ impl WatchedScriptStore {
 
             scripts.insert(dest, sigset)?;
         }
-        let max_age = app_client(app_client_addr)
-            .query(|app| Ok(app.bitcoin.checkpoints.config.max_age))
-            .await?;
 
-        scripts.remove_expired(max_age)?;
+        scripts.remove_expired()?;
 
         info!("Loaded {} deposit addresses", scripts.len());
 
