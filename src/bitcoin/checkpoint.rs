@@ -11,8 +11,8 @@ use crate::{
     app::Dest,
     bitcoin::{signatory::derive_pubkey, Nbtc},
 };
-use bitcoin::hashes::Hash;
 use bitcoin::{blockdata::transaction::EcdsaSighashType, Sequence, Transaction, TxIn, TxOut};
+use bitcoin::{hashes::Hash, Script};
 use derive_more::{Deref, DerefMut};
 use log::info;
 use orga::coins::{Accounts, Coin};
@@ -1701,7 +1701,7 @@ impl CheckpointQueue {
         Ok(())
     }
 
-    /// Gets a refernce to the checkpoint at the given index.
+    /// Gets a reference to the checkpoint at the given index.
     ///
     /// If the index is out of bounds or was pruned, an error is returned.
     #[query]
@@ -1820,6 +1820,11 @@ impl CheckpointQueue {
             self.index.checked_sub(1)
         }
         .ok_or_else(|| Error::Orga(OrgaError::App("No completed checkpoints yet".to_string())))
+    }
+
+    #[query]
+    pub fn first_index(&self) -> Result<u32> {
+        Ok(self.index + 1 - self.len()?)
     }
 
     /// A reference to the last completed checkpoint.
@@ -2361,6 +2366,30 @@ impl CheckpointQueue {
         let unconf_fees_paid = self.unconfirmed_fees_paid()?;
         let unconf_vbytes = self.unconfirmed_vbytes(config)?;
         Ok((unconf_vbytes * fee_rate).saturating_sub(unconf_fees_paid))
+    }
+
+    pub fn backfill(
+        &mut self,
+        first_index: u32,
+        redeem_scripts: impl Iterator<Item = Script>,
+    ) -> Result<()> {
+        let mut index = first_index;
+
+        for script in redeem_scripts {
+            if index >= self.first_index()? {
+                index -= 1;
+                continue;
+            }
+
+            let (mut sigset, _) = SignatorySet::from_script(&script)?;
+            sigset.index = index;
+            let cp = Checkpoint::new(sigset)?;
+
+            self.queue.push_front(cp)?;
+            index -= 1;
+        }
+
+        Ok(())
     }
 }
 
