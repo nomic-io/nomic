@@ -28,12 +28,6 @@ use super::threshold_sig::VersionedPubkey;
 use super::ConsensusKey;
 use super::Xpub;
 
-/// The maximum age of a signatory set which can still be deposited into, in
-/// seconds.
-///
-/// Deposits which pay to this signatory set which are relayed after this
-/// interval will be ignored.
-pub const MAX_DEPOSIT_AGE: u64 = 60 * 60 * 24 * 5;
 /// The maximum number of signatories in a signatory set.
 ///
 /// Signatory sets will be constructed by iterating over the validator set in
@@ -319,11 +313,6 @@ impl SignatorySet {
     /// The time at which this signatory set was created, in seconds.
     pub fn create_time(&self) -> u64 {
         self.create_time
-    }
-
-    /// The time at which this signatory set will expire, in seconds.
-    pub fn deposit_timeout(&self) -> u64 {
-        self.create_time + MAX_DEPOSIT_AGE
     }
 
     /// The index of this signatory set.

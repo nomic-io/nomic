@@ -1,4 +1,5 @@
 use self::checkpoint::Input;
+use self::recovery::{RecoveryTxInput, RecoveryTxs};
 use self::threshold_sig::Signature;
 use crate::app::Dest;
 use crate::bitcoin::checkpoint::BatchType;
@@ -40,6 +41,7 @@ pub mod checkpoint;
 pub mod deposit_index;
 pub mod header_queue;
 pub mod outpoint_set;
+pub mod recovery;
 #[cfg(feature = "full")]
 pub mod relayer;
 pub mod signatory;
@@ -118,6 +120,9 @@ pub struct Config {
     pub capacity_limit: u64,
 
     #[orga(version(V4))]
+    pub max_deposit_age: u64,
+
+    #[orga(version(V4))]
     pub fee_pool_target_balance: u64,
     #[orga(version(V4))]
     pub fee_pool_reward_split: (u64, u64),
@@ -194,6 +199,7 @@ impl MigrateFrom<ConfigV3> for ConfigV4 {
             max_offline_checkpoints: value.max_offline_checkpoints,
             min_checkpoint_confirmations: value.min_checkpoint_confirmations,
             capacity_limit: value.capacity_limit,
+            max_deposit_age: Self::default().max_deposit_age,
             fee_pool_target_balance: Config::default().fee_pool_target_balance,
             fee_pool_reward_split: Config::default().fee_pool_reward_split,
         })
@@ -220,6 +226,10 @@ impl Config {
             capacity_limit: 100 * 100_000_000, // 100 BTC
             #[cfg(not(feature = "testnet"))]
             capacity_limit: 21 * 100_000_000, // 21 BTC
+            #[cfg(feature = "testnet")]
+            max_deposit_age: 3 * 60,
+            #[cfg(not(feature = "testnet"))]
+            max_deposit_age: 60 * 60 * 24 * 5,
             fee_pool_target_balance: 10_000_000, // 0.1 BTC
             fee_pool_reward_split: (1, 10),
         }
@@ -297,6 +307,10 @@ pub struct Bitcoin {
 
     /// The configuration parameters for the Bitcoin module.
     pub config: Config,
+
+    #[orga(version(V2))]
+    #[call]
+    pub recovery_txs: RecoveryTxs,
 }
 
 impl MigrateFrom<BitcoinV0> for BitcoinV1 {
@@ -317,6 +331,7 @@ impl MigrateFrom<BitcoinV1> for BitcoinV2 {
             fee_pool: 0,
             recovery_scripts: value.recovery_scripts,
             config: value.config,
+            recovery_txs: RecoveryTxs::new(),
         })
     }
 }
@@ -578,10 +593,6 @@ impl Bitcoin {
         let checkpoint = self.checkpoints.get(sigset_index)?;
         let sigset = checkpoint.sigset.clone();
 
-        if now > sigset.deposit_timeout() {
-            return Err(OrgaError::App("Deposit timeout has expired".to_string()))?;
-        }
-
         let dest_bytes = dest.commitment_bytes()?;
         let expected_script =
             sigset.output_script(&dest_bytes, self.checkpoints.config.sigset_threshold)?;
@@ -589,6 +600,35 @@ impl Bitcoin {
             return Err(OrgaError::App(
                 "Output script does not match signature set".to_string(),
             ))?;
+        }
+        let outpoint = (btc_tx.txid().into_inner(), btc_vout);
+        if self.processed_outpoints.contains(outpoint)? {
+            return Err(OrgaError::App(
+                "Output has already been relayed".to_string(),
+            ))?;
+        }
+        let deposit_timeout = sigset.create_time() + self.config.max_deposit_age;
+        self.processed_outpoints.insert(outpoint, deposit_timeout)?;
+
+        if !checkpoint.deposits_enabled {
+            return Err(OrgaError::App(
+                "Deposits are disabled for the given checkpoint".to_string(),
+            ))?;
+        }
+
+        if now > deposit_timeout {
+            self.recovery_txs.create_recovery_tx(RecoveryTxInput {
+                expired_tx: btc_tx.into_inner(),
+                vout: btc_vout,
+                old_sigset: &sigset,
+                new_sigset: &self.checkpoints.building()?.sigset,
+                dest,
+                fee_rate: self.checkpoints.building()?.fee_rate,
+                //TODO: Hold checkpoint config on state
+                threshold: self.checkpoints.config.sigset_threshold,
+            })?;
+
+            return Ok(());
         }
 
         let prevout = bitcoin::OutPoint {
@@ -603,7 +643,6 @@ impl Bitcoin {
             self.checkpoints.config.sigset_threshold,
         )?;
         let input_size = input.est_vsize();
-
         let mut nbtc = Nbtc::mint(output.value * self.config.units_per_sat);
         let fee_amount = input_size * checkpoint.fee_rate * self.checkpoints.config.user_fee_factor
             / 10_000
@@ -614,21 +653,7 @@ impl Bitcoin {
         self.give_miner_fee(fee)?;
         // TODO: record as excess collected if inputs are full
 
-        let outpoint = (btc_tx.txid().into_inner(), btc_vout);
-        if self.processed_outpoints.contains(outpoint)? {
-            return Err(OrgaError::App(
-                "Output has already been relayed".to_string(),
-            ))?;
-        }
-        self.processed_outpoints
-            .insert(outpoint, sigset.deposit_timeout())?;
-
         let mut building_mut = self.checkpoints.building_mut()?;
-        if !building_mut.deposits_enabled {
-            return Err(OrgaError::App(
-                "Deposits are disabled for the given checkpoint".to_string(),
-            ))?;
-        }
         let mut building_checkpoint_batch = building_mut
             .batches
             .get_mut(BatchType::Checkpoint as u64)?
