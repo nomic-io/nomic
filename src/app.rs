@@ -35,10 +35,10 @@ use orga::ibc::ibc_rs::core::ics24_host::identifier::{ChannelId, PortId};
 use orga::ibc::ibc_rs::core::timestamp::Timestamp;
 use orga::ibc::{ClientId, Ibc, IbcTx};
 
-use orga::ibc::ibc_rs::Signer as IbcSigner;
-
 use orga::coins::Declaration;
 use orga::encoding::Adapter as EdAdapter;
+use orga::ibc::ibc_rs::core::ics24_host::identifier::ConnectionId as IbcConnectionId;
+use orga::ibc::ibc_rs::Signer as IbcSigner;
 use orga::macros::build_call;
 use orga::migrate::Migrate;
 use orga::orga;
@@ -497,8 +497,7 @@ mod abci {
         traits::Message,
     };
 
-    use ibc_proto::ibc::core::connection::v1::{
-        query_server::{Query as ConnectionQuery, QueryServer as ConnectionQueryServer},
+    use cosmos_sdk_proto::ibc::core::connection::v1::{
         QueryClientConnectionsRequest, QueryClientConnectionsResponse,
         QueryConnectionClientStateRequest, QueryConnectionClientStateResponse,
         QueryConnectionConsensusStateRequest, QueryConnectionConsensusStateResponse,
@@ -513,6 +512,7 @@ mod abci {
         },
         coins::{Give, Take, ValidatorQueryInfo, UNBONDING_SECONDS},
         collections::Map,
+        encoding::EofTerminatedString,
         ibc::ibc_rs::core::{ics02_client::error::ClientError, ics24_host::path::Path},
         plugins::{BeginBlockCtx, EndBlockCtx, InitChainCtx},
     };
@@ -603,20 +603,20 @@ mod abci {
             let res_value;
             match req.path.as_str() {
                 "/cosmos.bank.v1beta1.Query/SupplyOf" => {
-                    let request = QuerySupplyOfRequest::decode(req.data.clone()).unwrap();
-                    let balance = self.get_total_balances(&request.denom);
-                    if let Ok(balance) = balance {
-                        let amount = Some(Coin {
-                            amount: balance.to_string(),
-                            denom: request.denom,
-                        });
+                    let request = ibc_proto::cosmos::bank::v1beta1::QuerySupplyOfRequest::decode(
+                        req.data.clone(),
+                    )
+                    .unwrap();
+                    let balance = self.get_total_balances(&request.denom).ok();
 
-                        let response = QuerySupplyOfResponse { amount };
-                        res_value = response.encode_to_vec().into();
-                    } else {
-                        let response = QuerySupplyOfResponse { amount: None };
-                        res_value = response.encode_to_vec().into();
-                    }
+                    let amount = balance.map(|balance| ibc_proto::cosmos::base::v1beta1::Coin {
+                        amount: balance.to_string(),
+                        denom: request.denom,
+                    });
+
+                    let response =
+                        ibc_proto::cosmos::bank::v1beta1::QuerySupplyOfResponse { amount };
+                    res_value = response.encode_to_vec().into();
                 }
                 "/cosmos.slashing.v1beta1.Query/Params" => {
                     let request = SlashingQueryParamsRequest::decode(req.data.clone()).unwrap();
@@ -815,17 +815,21 @@ mod abci {
                     res_value = response.encode_to_vec().into();
                 }
                 "/cosmos.staking.v1beta1.Query/Params" => {
-                    let request = StakingQueryParamsRequest::decode(req.data.clone()).unwrap();
-                    let params = Some(cosmos_sdk_proto::cosmos::staking::v1beta1::Params {
-                        unbonding_time: Some(Duration {
+                    let request = ibc_proto::cosmos::staking::v1beta1::QueryParamsRequest::decode(
+                        req.data.clone(),
+                    )
+                    .unwrap();
+                    let params = Some(ibc_proto::cosmos::staking::v1beta1::Params {
+                        unbonding_time: Some(ibc_proto::google::protobuf::Duration {
                             seconds: self.staking.unbonding_seconds as i64,
                             nanos: 0i32,
                         }),
                         max_validators: self.staking.max_validators as u32,
                         bond_denom: Nom::NAME.to_string(),
-                        ..cosmos_sdk_proto::cosmos::staking::v1beta1::Params::default()
+                        ..ibc_proto::cosmos::staking::v1beta1::Params::default()
                     });
-                    let response = StakingQueryParamsResponse { params };
+                    let response =
+                        ibc_proto::cosmos::staking::v1beta1::QueryParamsResponse { params };
                     res_value = response.encode_to_vec().into();
                 }
                 "/cosmos.staking.v1beta1.Query/Pool" => {
@@ -842,15 +846,95 @@ mod abci {
                     };
                     res_value = response.encode_to_vec().into();
                 }
-                // "/ibc.core.connection.v1.Query/Connections" => {
-                //     let connections = self.ibc.ctx.query_all_connections()?;
-                //     let response = QueryConnectionsResponse {
-                //         connections,
-                //         pagination: None,
-                //         height: None,
-                //     };
-                //     res_value = response.encode_to_vec().into();
-                // }
+                "/ibc.applications.transfer.v1.Query/Params" => {
+                    let request =
+                        ibc_proto::ibc::applications::transfer::v1::QueryParamsRequest::decode(
+                            req.data.clone(),
+                        )
+                        .unwrap();
+                    let response =
+                        ibc_proto::ibc::applications::transfer::v1::QueryParamsResponse {
+                            params: Some(ibc_proto::ibc::applications::transfer::v1::Params {
+                                send_enabled: false,
+                                receive_enabled: false,
+                            }),
+                        };
+                    res_value = response.encode_to_vec().into();
+                }
+                "/ibc.core.connection.v1.Query/Connection" => {
+                    let request =
+                        ibc_proto::ibc::core::connection::v1::QueryConnectionRequest::decode(
+                            req.data.clone(),
+                        )
+                        .unwrap();
+
+                    let connection = self
+                        .ibc
+                        .ctx
+                        .query_connection(EofTerminatedString(
+                            IbcConnectionId::from_str(&request.connection_id).unwrap(),
+                        ))
+                        .unwrap()
+                        .unwrap();
+
+                    let raw_connection: ibc_proto::ibc::core::connection::v1::ConnectionEnd =
+                        connection.into();
+
+                    let response = ibc_proto::ibc::core::connection::v1::QueryConnectionResponse {
+                        connection: Some(ibc_proto::ibc::core::connection::v1::ConnectionEnd {
+                            client_id: raw_connection.client_id,
+                            versions: raw_connection
+                                .versions
+                                .into_iter()
+                                .map(|v| ibc_proto::ibc::core::connection::v1::Version {
+                                    identifier: v.identifier,
+                                    features: v.features,
+                                })
+                                .collect(),
+                            state: raw_connection.state,
+                            counterparty: raw_connection.counterparty.map(|c| {
+                                ibc_proto::ibc::core::connection::v1::Counterparty {
+                                    client_id: c.client_id,
+                                    connection_id: c.connection_id,
+                                    prefix: c.prefix.map(|p| {
+                                        ibc_proto::ibc::core::commitment::v1::MerklePrefix {
+                                            key_prefix: p.key_prefix,
+                                        }
+                                    }),
+                                }
+                            }),
+                            delay_period: raw_connection.delay_period,
+                        }),
+                        proof: vec![],
+                        proof_height: Some(ibc_proto::ibc::core::client::v1::Height {
+                            revision_height: 0,
+                            revision_number: 0,
+                        }),
+                    };
+
+                    res_value = response.encode_to_vec().into();
+                }
+                "/ibc.core.connection.v1.Query/Connections" => {
+                    let request =
+                        ibc_proto::ibc::core::connection::v1::QueryConnectionsRequest::decode(
+                            req.data.clone(),
+                        )
+                        .unwrap();
+                    let connections = self.ibc.ctx.query_all_connections().unwrap();
+                    let total = connections.len() as u64;
+                    let response = ibc_proto::ibc::core::connection::v1::QueryConnectionsResponse {
+                        connections,
+                        pagination: Some(ibc_proto::cosmos::base::query::v1beta1::PageResponse {
+                            next_key: vec![],
+                            total,
+                        }),
+                        height: Some(ibc_proto::ibc::core::client::v1::Height {
+                            revision_height: 0,
+                            revision_number: 0,
+                        }),
+                    };
+                    res_value = response.encode_to_vec().into();
+                }
                 _ => {
                     // return Err(Error::ABCI(format!("Invalid query path: {}", req.path)));
                     return self.ibc.abci_query(req);
