@@ -49,7 +49,7 @@ pub async fn main() {
 
     loop {
         let block = btc_client.get_block_info(&block_hash).await.unwrap();
-        let has_tx = block.tx.iter().find(|txid| **txid == prev_txid).is_some();
+        let has_tx = block.tx.iter().any(|txid| *txid == prev_txid);
         if !has_tx {
             block_hash = block.previousblockhash.unwrap();
             continue;

@@ -189,16 +189,16 @@ impl SignatorySet {
                 )));
             }
 
-            Ok(Pubkey::try_from_slice(&bytes)?)
+            Ok(Pubkey::try_from_slice(bytes)?)
         }
 
         fn take_number<'a>(ins: &mut impl Iter<'a>) -> Result<i64> {
             let bytes = take_bytes(ins)?;
-            read_scriptint(&bytes)
+            read_scriptint(bytes)
                 .map_err(|_| orga::Error::App("Failed to read scriptint".to_string()).into())
         }
 
-        fn take_op<'a>(ins: &mut impl Iter<'a>, op: opcodes::All) -> Result<opcodes::All> {
+        fn take_op<'a>(ins: &mut impl Iter<'a>, expected_op: opcodes::All) -> Result<opcodes::All> {
             let instruction = take_instruction(ins)?;
 
             let op = match instruction {
@@ -207,15 +207,15 @@ impl SignatorySet {
                 _ => {
                     return Err(Error::Orga(orga::Error::App(format!(
                         "Expected {}",
-                        format!("{:?}", op)
+                        format!("{:?}", expected_op)
                     ))))
                 }
             };
 
-            if op != op {
+            if op != expected_op {
                 return Err(Error::Orga(orga::Error::App(format!(
                     "Expected {}",
-                    format!("{:?}", op),
+                    format!("{:?}", expected_op),
                 ))));
             }
 
@@ -273,9 +273,7 @@ impl SignatorySet {
                     Error::Orga(orga::Error::App("Unexpected end of script".to_string()))
                 })?
                 .clone()
-                .map_err(|_| {
-                    Error::Orga(orga::Error::App("Failed to read script".to_string()).into())
-                })?;
+                .map_err(|_| Error::Orga(orga::Error::App("Failed to read script".to_string())))?;
 
             if let Instruction::Op(opcodes::all::OP_SWAP) = next {
                 sigs.push(take_nth_signatory(&mut ins)?);
