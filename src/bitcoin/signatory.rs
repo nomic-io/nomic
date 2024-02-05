@@ -2,7 +2,6 @@
 #![allow(unused_imports)] // TODO
 
 use crate::bitcoin::threshold_sig::Pubkey;
-#[cfg(feature = "full")]
 use crate::error::Error;
 use crate::error::Result;
 use bitcoin::blockdata::opcodes::all::{
