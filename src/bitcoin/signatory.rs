@@ -160,13 +160,17 @@ impl SignatorySet {
     }
 
     pub fn from_script(script: &bitcoin::Script) -> Result<(Self, Vec<u8>)> {
-        fn take_instruction<'a>(ins: &mut Instructions<'a>) -> Result<Instruction<'a>> {
+        trait Iter<'a> = Iterator<
+            Item = std::result::Result<Instruction<'a>, bitcoin::blockdata::script::Error>,
+        >;
+
+        fn take_instruction<'a>(ins: &mut impl Iter<'a>) -> Result<Instruction<'a>> {
             ins.next()
                 .ok_or_else(|| orga::Error::App("Unexpected end of script".to_string()))?
                 .map_err(|_| orga::Error::App("Failed to read script".to_string()).into())
         }
 
-        fn take_bytes<'a>(ins: &mut Instructions<'a>) -> Result<&'a [u8]> {
+        fn take_bytes<'a>(ins: &mut impl Iter<'a>) -> Result<&'a [u8]> {
             let instruction = take_instruction(ins)?;
 
             let Instruction::PushBytes(bytes) = instruction else {
@@ -176,7 +180,7 @@ impl SignatorySet {
             Ok(bytes)
         }
 
-        fn take_key(ins: &mut Instructions) -> Result<Pubkey> {
+        fn take_key<'a>(ins: &mut impl Iter<'a>) -> Result<Pubkey> {
             let bytes = take_bytes(ins)?;
 
             if bytes.len() != 33 {
@@ -188,13 +192,13 @@ impl SignatorySet {
             Ok(Pubkey::try_from_slice(&bytes)?)
         }
 
-        fn take_number(ins: &mut Instructions) -> Result<i64> {
+        fn take_number<'a>(ins: &mut impl Iter<'a>) -> Result<i64> {
             let bytes = take_bytes(ins)?;
             read_scriptint(&bytes)
                 .map_err(|_| orga::Error::App("Failed to read scriptint".to_string()).into())
         }
 
-        fn take_op(ins: &mut Instructions, op: opcodes::All) -> Result<opcodes::All> {
+        fn take_op<'a>(ins: &mut impl Iter<'a>, op: opcodes::All) -> Result<opcodes::All> {
             let instruction = take_instruction(ins)?;
 
             let op = match instruction {
@@ -218,7 +222,7 @@ impl SignatorySet {
             Ok(op)
         }
 
-        fn take_first_signatory(ins: &mut Instructions) -> Result<Signatory> {
+        fn take_first_signatory<'a>(ins: &mut impl Iter<'a>) -> Result<Signatory> {
             let pubkey = take_key(ins)?;
             take_op(ins, OP_CHECKSIG)?;
             take_op(ins, OP_IF)?;
@@ -233,7 +237,7 @@ impl SignatorySet {
             })
         }
 
-        fn take_nth_signatory(ins: &mut Instructions) -> Result<Signatory> {
+        fn take_nth_signatory<'a>(ins: &mut impl Iter<'a>) -> Result<Signatory> {
             take_op(ins, OP_SWAP)?;
             let pubkey = take_key(ins)?;
             take_op(ins, OP_CHECKSIG)?;
@@ -248,23 +252,36 @@ impl SignatorySet {
             })
         }
 
-        fn take_threshold(ins: &mut Instructions) -> Result<u64> {
+        fn take_threshold<'a>(ins: &mut impl Iter<'a>) -> Result<u64> {
             let threshold = take_number(ins)?;
             take_op(ins, OP_GREATERTHAN)?;
             Ok(threshold as u64)
         }
 
-        fn take_commitment<'a>(ins: &mut Instructions<'a>) -> Result<&'a [u8]> {
+        fn take_commitment<'a>(ins: &mut impl Iter<'a>) -> Result<&'a [u8]> {
             let bytes = take_bytes(ins)?;
             take_op(ins, OP_DROP)?;
             Ok(bytes)
         }
 
-        let mut ins = script.instructions();
+        let mut ins = script.instructions().peekable();
         let mut sigs = vec![take_first_signatory(&mut ins)?];
-        // TODO: support variable number of signatories
-        for _ in 1..MAX_SIGNATORIES {
-            sigs.push(take_nth_signatory(&mut ins)?);
+        loop {
+            let next = ins
+                .peek()
+                .ok_or_else(|| {
+                    Error::Orga(orga::Error::App("Unexpected end of script".to_string()))
+                })?
+                .clone()
+                .map_err(|_| {
+                    Error::Orga(orga::Error::App("Failed to read script".to_string()).into())
+                })?;
+
+            if let Instruction::Op(opcodes::all::OP_SWAP) = next {
+                sigs.push(take_nth_signatory(&mut ins)?);
+            } else {
+                break;
+            }
         }
 
         take_threshold(&mut ins)?;
