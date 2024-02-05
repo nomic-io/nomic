@@ -279,11 +279,10 @@ where
         key_pairs: Vec<(ExtendedPubKey, &ExtendedPrivKey)>,
     ) -> Result<()> {
         info!("Starting recovery transaction signer...");
-        let secp = Secp256k1::signing_only();
 
         loop {
             for (xpub, xpriv) in key_pairs.iter() {
-                match self.try_sign_recovery_txs(&xpub, xpriv).await {
+                match self.try_sign_recovery_txs(xpub, xpriv).await {
                     Ok(signed) => signed,
                     Err(e) => {
                         ERROR_COUNTER.inc();
@@ -294,42 +293,6 @@ where
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             }
         }
-    }
-
-    /// Check if the operator has already submitted a signatory key. If not,
-    /// submit the given key.
-    ///
-    /// If the operator has already submitted a key, check that it matches the
-    /// given key. If not, return an error (it is not currently possible to
-    /// change the signatory key after submitting one).
-    async fn maybe_submit_xpub(&mut self, xpub: &ExtendedPubKey) -> Result<()> {
-        let cons_key = (self.app_client)()
-            .query(|app| app.staking.consensus_key(self.op_addr))
-            .await?;
-        let onchain_xpub = (self.app_client)()
-            .query(|app| Ok(app.bitcoin.signatory_keys.get(cons_key)?))
-            .await?;
-
-        match onchain_xpub {
-            None => self.submit_xpub(xpub).await,
-            Some(onchain_xpub) if onchain_xpub.inner() != xpub => Err(orga::Error::App(
-                "Local xpub does not match xpub found on chain".to_string(),
-            )
-            .into()),
-            Some(_) => Ok(()),
-        }
-    }
-
-    /// Submit the given signatory key to the chain.
-    async fn submit_xpub(&mut self, xpub: &ExtendedPubKey) -> Result<()> {
-        (self.app_client)()
-            .call(
-                move |app| build_call!(app.bitcoin.set_signatory_key(xpub.into())),
-                |app| build_call!(app.app_noop()),
-            )
-            .await?;
-        info!("Submitted signatory key.");
-        Ok(())
     }
 
     /// Get a new app client.
