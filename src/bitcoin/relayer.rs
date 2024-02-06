@@ -501,6 +501,10 @@ impl Relayer {
                 if relayed.contains(&tx.txid()) {
                     continue;
                 }
+                // skip checkpoints that came from backfill
+                if tx.input.is_empty() {
+                    continue;
+                }
 
                 let mut tx_bytes = vec![];
                 tx.consensus_encode(&mut tx_bytes)?;
