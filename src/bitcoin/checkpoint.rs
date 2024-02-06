@@ -2983,31 +2983,31 @@ mod test {
         assert_eq!(queue.borrow().len().unwrap(), 5);
     }
 
+    fn sigset(n: u32) -> SignatorySet {
+        let mut sigset = SignatorySet::default();
+        sigset.index = n;
+        sigset.create_time = n as u64;
+
+        let secret = bitcoin::secp256k1::SecretKey::from_slice(&[(n + 1) as u8; 32]).unwrap();
+        let pubkey: Pubkey = bitcoin::secp256k1::PublicKey::from_secret_key(
+            &bitcoin::secp256k1::Secp256k1::new(),
+            &secret,
+        )
+        .into();
+
+        sigset.signatories.push(Signatory {
+            pubkey: pubkey.into(),
+            voting_power: 100,
+        });
+
+        sigset.possible_vp = 100;
+        sigset.present_vp = 100;
+
+        sigset
+    }
+
     #[test]
-    fn backfill() {
-        fn sigset(n: u32) -> SignatorySet {
-            let mut sigset = SignatorySet::default();
-            sigset.index = n;
-            sigset.create_time = n as u64;
-
-            let secret = bitcoin::secp256k1::SecretKey::from_slice(&[n as u8; 32]).unwrap();
-            let pubkey: Pubkey = bitcoin::secp256k1::PublicKey::from_secret_key(
-                &bitcoin::secp256k1::Secp256k1::new(),
-                &secret,
-            )
-            .into();
-
-            sigset.signatories.push(Signatory {
-                pubkey: pubkey.into(),
-                voting_power: 100,
-            });
-
-            sigset.possible_vp = 100;
-            sigset.present_vp = 100;
-
-            sigset
-        }
-
+    fn backfill_basic() {
         let mut queue = CheckpointQueue::default();
         queue.index = 10;
         queue
@@ -3056,6 +3056,40 @@ mod test {
                 .redeem_script(&[0], (2, 3))
                 .unwrap(),
             sigset(10).redeem_script(&[0], (2, 3)).unwrap(),
+        );
+    }
+
+    #[test]
+    fn backfill_with_zeroth() {
+        let mut queue = CheckpointQueue::default();
+        queue.index = 1;
+        queue
+            .queue
+            .push_back(Checkpoint::new(sigset(1)).unwrap())
+            .unwrap();
+
+        let backfill_data = vec![sigset(0).redeem_script(&[0], (2, 3)).unwrap()];
+        queue.backfill(0, backfill_data.into_iter()).unwrap();
+
+        assert_eq!(queue.len().unwrap(), 2);
+        assert_eq!(queue.index, 1);
+        assert_eq!(
+            queue
+                .get(0)
+                .unwrap()
+                .sigset
+                .redeem_script(&[0], (2, 3))
+                .unwrap(),
+            sigset(0).redeem_script(&[0], (2, 3)).unwrap(),
+        );
+        assert_eq!(
+            queue
+                .get(1)
+                .unwrap()
+                .sigset
+                .redeem_script(&[0], (2, 3))
+                .unwrap(),
+            sigset(1).redeem_script(&[0], (2, 3)).unwrap(),
         );
     }
 }
