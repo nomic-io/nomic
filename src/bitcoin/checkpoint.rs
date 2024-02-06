@@ -1008,6 +1008,20 @@ pub struct Config {
     /// checkpoint transactions.
     #[orga(version(V2, V3))]
     pub max_unconfirmed_checkpoints: u32,
+
+    /// The maximum age of a checkpoint which can still be deposited into, in
+    /// seconds.
+    ///
+    /// Deposits which pay to this checkpoint which are relayed after this
+    /// interval will be ignored.
+    #[orga(version(V3))]
+    pub max_deposit_age: u64,
+
+    /// A buffer period between the current deposit time and the max_deposit_age
+    /// to allow for the Bitcoin network to process the deposit before the max_deposit
+    /// age is reached.
+    #[orga(version(V3))]
+    pub deposit_timeout_buffer: u64,
 }
 
 impl MigrateFrom<ConfigV0> for ConfigV1 {
@@ -1080,6 +1094,13 @@ impl Config {
         }
     }
 
+    fn testnet() -> Self {
+        Self {
+            emergency_disbursal_lock_time_interval: 60 * 60 * 24 * 7, // one week
+            ..Config::bitcoin()
+        }
+    }
+
     fn bitcoin() -> Self {
         Self {
             min_checkpoint_interval: 60 * 5,
@@ -1093,12 +1114,11 @@ impl Config {
             user_fee_factor: 20000, // 2x
             sigset_threshold: SIGSET_THRESHOLD,
             emergency_disbursal_min_tx_amt: 1000,
-            #[cfg(feature = "testnet")]
-            emergency_disbursal_lock_time_interval: 60 * 60 * 24 * 7, // one week
-            #[cfg(not(feature = "testnet"))]
             emergency_disbursal_lock_time_interval: 60 * 60 * 24 * 7 * 2, // two weeks
             emergency_disbursal_max_tx_size: 50_000,
             max_unconfirmed_checkpoints: 15,
+            max_deposit_age: 60 * 60 * 24 * 5,    // 5 days
+            deposit_timeout_buffer: 60 * 60 * 12, // 12 hours
         }
     }
 }
@@ -1107,7 +1127,8 @@ impl Default for Config {
     fn default() -> Self {
         match super::NETWORK {
             bitcoin::Network::Regtest => Config::regtest(),
-            bitcoin::Network::Testnet | bitcoin::Network::Bitcoin => Config::bitcoin(),
+            bitcoin::Network::Testnet => Config::testnet(),
+            bitcoin::Network::Bitcoin => Config::bitcoin(),
             _ => unimplemented!(),
         }
     }
@@ -2173,7 +2194,8 @@ impl CheckpointQueue {
 
         // Build the signatory set for the new checkpoint based on the current
         // validator set.
-        let sigset = SignatorySet::from_validator_ctx(index, sig_keys)?;
+        let sigset =
+            SignatorySet::from_validator_ctx(index, sig_keys, self.config.max_deposit_age)?;
 
         // Do not push if there are no validators in the signatory set.
         if sigset.possible_vp() == 0 {
@@ -2209,7 +2231,8 @@ impl CheckpointQueue {
 
         // Build the signatory set for the new checkpoint based on the current
         // validator set.
-        let sigset = SignatorySet::from_validator_ctx(index, sig_keys)?;
+        let sigset =
+            SignatorySet::from_validator_ctx(index, sig_keys, self.config.max_deposit_age)?;
 
         // Do not push if there are no validators in the signatory set.
         if sigset.possible_vp() == 0 {
