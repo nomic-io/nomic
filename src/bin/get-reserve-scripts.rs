@@ -38,9 +38,7 @@ pub async fn main() {
         .await
         .unwrap();
 
-    let mut index = last_conf_index - 1; // subtract 1 because the witness data
-                                         // represents the sigset for the
-                                         // previous checkpoint
+    let mut index = last_conf_index;
     let mut prev_txid = last_conf_cp;
     let mut block_hash = btc_client.get_best_block_hash().await.unwrap();
     let mut scripts = vec![];
