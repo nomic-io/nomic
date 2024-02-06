@@ -5,6 +5,7 @@ use crate::error::{Error, Result};
 use crate::utils::load_bitcoin_key;
 use bitcoin::secp256k1::{Message, Secp256k1};
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
+use futures::try_join;
 use lazy_static::lazy_static;
 use log::info;
 use orga::client::{AppClient, Wallet};
@@ -180,26 +181,7 @@ where
         }
     }
 
-    /// Start the signer, which will run forever, signing checkpoints as they
-    /// become available.
-    ///
-    /// If the operator has not yet submitted a signatory key, one will be
-    /// generated and saved, then submitted.
-    pub async fn start(mut self) -> Result<()> {
-        let cons_key = (self.app_client)()
-            .query(|app| app.staking.consensus_key(self.op_addr))
-            .await?;
-        let onchain_xpub = (self.app_client)()
-            .query(|app| Ok(app.bitcoin.signatory_keys.get(cons_key)?))
-            .await?;
-        if onchain_xpub.is_none() {
-            return Err(Error::Signer(
-                "No on-chain xpub found
-            Please run `nomic set-signatory-key` to set a signatory key"
-                    .into(),
-            ));
-        }
-
+    pub async fn start(self) -> Result<()> {
         if let Some(addr) = self.exporter_addr {
             // Populate change rate gauges
             let _ = self.check_change_rates().await;
@@ -208,6 +190,19 @@ where
             prometheus_exporter::start(addr).unwrap();
         }
 
+        let cons_key = (self.app_client)()
+            .query(|app| app.staking.consensus_key(self.op_addr))
+            .await?;
+        let onchain_xpub = (self.app_client)()
+            .query(|app| Ok(app.bitcoin.signatory_keys.get(cons_key)?))
+            .await?;
+        if onchain_xpub.is_none() {
+            return Err(Error::Signer(
+                "No on-chain xpub found.
+            Please run `nomic set-signatory-key` to set a signatory key."
+                    .into(),
+            ));
+        }
         let secp = Secp256k1::signing_only();
         let xprivs = self.xprivs.clone();
         let (xpub_submitted, key_pairs) =
@@ -227,6 +222,17 @@ where
             ));
         }
 
+        let checkpoint_signing = self.start_checkpoint_signing(key_pairs.clone());
+        let recovery_signing = self.start_recovery_signing(key_pairs);
+        try_join!(checkpoint_signing, recovery_signing)?;
+
+        Ok(())
+    }
+
+    pub async fn start_checkpoint_signing(
+        &self,
+        key_pairs: Vec<(ExtendedPubKey, &ExtendedPrivKey)>,
+    ) -> Result<()> {
         const CHECKPOINT_WINDOW: u32 = 20;
         let mut index = (self.app_client)()
             .query(|app| {
@@ -247,10 +253,10 @@ where
             }
         }
 
-        info!("Starting signer...");
+        info!("Starting checkpoint signer...");
         loop {
             for (xpub, xpriv) in key_pairs.iter() {
-                let signed = match self.try_sign(xpub, xpriv, index).await {
+                let signed = match self.try_sign_checkpoint(xpub, xpriv, index).await {
                     Ok(signed) => signed,
                     Err(e) => {
                         ERROR_COUNTER.inc();
@@ -264,6 +270,27 @@ where
                 } else {
                     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                 }
+            }
+        }
+    }
+
+    pub async fn start_recovery_signing(
+        &self,
+        key_pairs: Vec<(ExtendedPubKey, &ExtendedPrivKey)>,
+    ) -> Result<()> {
+        info!("Starting recovery transaction signer...");
+
+        loop {
+            for (xpub, xpriv) in key_pairs.iter() {
+                match self.try_sign_recovery_txs(xpub, xpriv).await {
+                    Ok(signed) => signed,
+                    Err(e) => {
+                        ERROR_COUNTER.inc();
+                        eprintln!("Recovery tx signer error: {}", e);
+                    }
+                }
+
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             }
         }
     }
@@ -283,8 +310,8 @@ where
     /// and should call `try_sign` for the same index again later (e.g. it is
     /// still `Building`, or we have not yet submitted signatures for the final
     /// batch of transactions).
-    async fn try_sign(
-        &mut self,
+    async fn try_sign_checkpoint(
+        &self,
         xpub: &ExtendedPubKey,
         xpriv: &ExtendedPrivKey,
         index: u32,
@@ -332,6 +359,34 @@ where
         info!("Submitted signatures");
 
         Ok(false)
+    }
+
+    async fn try_sign_recovery_txs(
+        &self,
+        xpub: &ExtendedPubKey,
+        xpriv: &ExtendedPrivKey,
+    ) -> Result<()> {
+        let secp = Secp256k1::signing_only();
+
+        let to_sign = self
+            .client()
+            .query(|app| Ok(app.bitcoin.recovery_txs.to_sign(xpub.into())?))
+            .await?;
+
+        if to_sign.is_empty() {
+            return Ok(());
+        }
+
+        let sigs = sign(&secp, xpriv, &to_sign)?;
+
+        (self.app_client)()
+            .call(
+                move |app| build_call!(app.bitcoin.recovery_txs.sign(xpub.into(), sigs.clone())),
+                |app| build_call!(app.app_noop()),
+            )
+            .await?;
+
+        Ok(())
     }
 
     /// Check the current withdrawal and signatory set change rates, and return

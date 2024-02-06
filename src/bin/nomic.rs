@@ -1130,7 +1130,10 @@ impl RelayerCmd {
         }
 
         let relayer = create_relayer().await;
-        let deposits = relayer.start_deposit_relay(relayer_dir_path);
+        let deposits = relayer.start_deposit_relay(relayer_dir_path.clone());
+
+        let mut relayer = create_relayer().await;
+        let recovery_txs = relayer.start_recovery_tx_relay(relayer_dir_path);
 
         let mut relayer = create_relayer().await;
         let checkpoints = relayer.start_checkpoint_relay();
@@ -1146,6 +1149,7 @@ impl RelayerCmd {
         futures::try_join!(
             headers,
             deposits,
+            recovery_txs,
             checkpoints,
             checkpoint_confs,
             emdis,

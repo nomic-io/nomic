@@ -439,11 +439,15 @@ impl OraiBtc {
         let script = sigset.output_script(dest.commitment_bytes()?.as_slice(), threshold)?;
 
         let btc_addr = bitcoin::Address::from_script(&script, self.network)?;
+        let max_deposit_age = self
+            .client
+            .query(|app: InnerApp| Ok(app.bitcoin.config.max_deposit_age))
+            .await?;
 
         Ok(DepositAddress {
             address: btc_addr.to_string(),
             sigset_index: sigset.index(),
-            expiration: sigset.deposit_timeout() * 1000,
+            expiration: (sigset.create_time() + max_deposit_age) * 1000,
         })
     }
 
