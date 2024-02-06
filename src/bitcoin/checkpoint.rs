@@ -2373,23 +2373,24 @@ impl CheckpointQueue {
         first_index: u32,
         redeem_scripts: impl Iterator<Item = Script>,
     ) -> Result<()> {
-        let mut index = first_index;
+        let mut index = first_index + 1;
 
         let create_time = self.queue.get(0)?.unwrap().create_time();
 
         for script in redeem_scripts {
+            index -= 1;
+
             if index >= self.first_index()? {
-                index -= 1;
                 continue;
             }
 
             let (mut sigset, _) = SignatorySet::from_script(&script)?;
             sigset.index = index;
             sigset.create_time = create_time;
-            let cp = Checkpoint::new(sigset)?;
+            let mut cp = Checkpoint::new(sigset)?;
+            cp.status = CheckpointStatus::Complete;
 
             self.queue.push_front(cp)?;
-            index -= 1;
         }
 
         Ok(())
