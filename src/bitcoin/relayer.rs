@@ -203,18 +203,34 @@ impl Relayer {
                         return Err(warp::reject::custom(Error::InvalidDepositAddress));
                     }
 
-                    Ok::<_, warp::Rejection>((dest, query.sigset_index, send))
+                    Ok::<_, warp::Rejection>((dest, sigset.create_time, query.sigset_index, send))
                 },
             )
-            .then(
-                async move |(dest, sigset_index, send): (
+            .and_then(
+                async move |(dest, create_time, sigset_index, send): (
                     Dest,
+                    u64,
                     u32,
                     tokio::sync::mpsc::Sender<_>,
                 )| {
                     debug!("Received deposit commitment: {:?}, {}", dest, sigset_index);
                     send.send((dest, sigset_index)).await.unwrap();
-                    "OK"
+                    let max_deposit_age = app_client(app_client_addr)
+                        .query(|app| Ok(app.bitcoin.config.max_deposit_age))
+                        .await
+                        .map_err(|e| warp::reject::custom(Error::from(e)))?;
+                    let deposit_timeout_buffer = app_client(app_client_addr)
+                        .query(|app| Ok(app.bitcoin.config.deposit_timeout_buffer))
+                        .await
+                        .map_err(|e| warp::reject::custom(Error::from(e)))?;
+
+                    if time_now() + deposit_timeout_buffer >= create_time + max_deposit_age {
+                        return Err(warp::reject::custom(Error::Relayer(
+                            "Sigset no longer accepting deposits. Unable to generate deposit address".into(),
+                        )));
+                    }
+
+                    Ok::<_, warp::Rejection>(warp::reply::json(&"OK"))
                 },
             );
 
