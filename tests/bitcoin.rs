@@ -105,7 +105,10 @@ pub async fn broadcast_deposit_addr(
         .unwrap();
     match res.status() {
         StatusCode::OK => Ok(()),
-        _ => Err(Error::Relayer(format!("{}", res.text().await.unwrap()))),
+        _ => Err(Error::Relayer(format!(
+            "Relayer response returned with error code: {}",
+            res.status()
+        ))),
     }
 }
 
@@ -139,7 +142,8 @@ async fn deposit_bitcoin(
         "http://localhost:8999".to_string(),
         deposit_address.deposit_addr.clone(),
     )
-    .await?;
+    .await
+    .unwrap();
 
     wallet
         .send_to_address(
@@ -1731,148 +1735,6 @@ async fn recover_expired_deposit() {
         Ok(_) => (),
         other => {
             other.unwrap();
-        }
-    }
-
-    #[tokio::test]
-    #[serial]
-    #[ignore]
-    async fn generate_deposit_expired() {
-        INIT.call_once(|| {
-            pretty_env_logger::init();
-            let genesis_time = Utc.with_ymd_and_hms(2022, 10, 5, 0, 0, 0).unwrap();
-            let time = Time::from_seconds(genesis_time.timestamp());
-            set_time(time);
-        });
-
-        let mut conf = Conf::default();
-        conf.args.push("-txindex");
-        let bitcoind =
-            BitcoinD::with_conf(bitcoind::downloaded_exe_path().unwrap(), &conf).unwrap();
-        let rpc_url = bitcoind.rpc_url();
-        let cookie_file = bitcoind.params.cookie_file.clone();
-        let btc_client = test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await;
-
-        let block_data = populate_bitcoin_block(&btc_client).await;
-
-        let home = tempdir().unwrap();
-        let path = home.into_path();
-
-        let node_path = path.clone();
-        let signer_path = path.clone();
-        let header_relayer_path = path.clone();
-
-        std::env::set_var("NOMIC_HOME_DIR", &path);
-
-        let headers_config = HeaderQueueConfig {
-            encoded_trusted_header: Adapter::new(block_data.block_header)
-                .encode()
-                .unwrap()
-                .try_into()
-                .unwrap(),
-            trusted_height: block_data.height,
-            retargeting: false,
-            min_difficulty_blocks: true,
-            max_length: 59,
-            ..Default::default()
-        };
-
-        let checkpoint_config = CheckpointConfig {
-            max_deposit_age: 60 * 5,
-            deposit_timeout_buffer: 60 * 5,
-            ..Default::default()
-        };
-        let funded_accounts = setup_test_app(
-            &path,
-            4,
-            Some(headers_config),
-            Some(checkpoint_config),
-            None,
-        );
-
-        let node = Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"), Default::default());
-        let node_child = node.await.run().await.unwrap();
-
-        let rpc_addr = "http://localhost:26657".to_string();
-
-        let mut relayer = Relayer::new(
-            test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
-            rpc_addr.clone(),
-        );
-        let headers = relayer.start_header_relay();
-
-        let relayer = Relayer::new(
-            test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
-            rpc_addr.clone(),
-        );
-        let deposits = relayer.start_deposit_relay(&header_relayer_path);
-
-        let mut relayer = Relayer::new(
-            test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
-            rpc_addr.clone(),
-        );
-        let checkpoints = relayer.start_checkpoint_relay();
-
-        let signer = async {
-            tokio::time::sleep(Duration::from_secs(10)).await;
-            setup_test_signer(&signer_path, client_provider)
-                .start()
-                .await
-        };
-
-        let test = async {
-            let val_priv_key = load_privkey().unwrap();
-            let nomic_wallet = DerivedKey::from_secret_key(val_priv_key);
-            let consensus_key = load_consensus_key(&path)?;
-            declare_validator(consensus_key, nomic_wallet, 100_000)
-                .await
-                .unwrap();
-
-            let wallet = retry(|| bitcoind.create_wallet("nomic-integration-test"), 10).unwrap();
-            let wallet_address = wallet.get_new_address(None, None).unwrap();
-            let async_wallet_address =
-                bitcoincore_rpc_async::bitcoin::Address::from_str(&wallet_address.to_string())
-                    .unwrap();
-
-            btc_client
-                .generate_to_address(120, &async_wallet_address)
-                .await
-                .unwrap();
-
-            poll_for_bitcoin_header(1120).await.unwrap();
-
-            let balance = app_client()
-                .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
-                .await
-                .unwrap();
-            assert_eq!(balance, Amount::from(0));
-
-            poll_for_active_sigset().await;
-            poll_for_signatory_key(consensus_key).await;
-
-            deposit_bitcoin(
-                &funded_accounts[0].address,
-                bitcoin::Amount::from_btc(10.0).unwrap(),
-                &wallet,
-            )
-            .await?;
-
-            Err::<(), Error>(Error::Test("Test completed successfully".to_string()))
-        };
-
-        poll_for_blocks().await;
-
-        match futures::try_join!(headers, deposits, checkpoints, signer, test) {
-            Err(Error::Test(_)) => (),
-            Err(Error::Relayer(e)) => {
-                if !e.to_string().contains("Unable to generate deposit address") {
-                    panic!("Unexpected error: {}", e);
-                }
-            }
-            Ok(_) => (),
-            other => {
-                other.unwrap();
-            }
         }
     }
 }

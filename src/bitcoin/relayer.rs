@@ -188,7 +188,6 @@ impl Relayer {
                             sigsets.get(&query.sigset_index).unwrap()
                         }
                     };
-
                     let expected_addr = ::bitcoin::Address::from_script(
                         &sigset
                             .output_script(
@@ -204,30 +203,18 @@ impl Relayer {
                         return Err(warp::reject::custom(Error::InvalidDepositAddress));
                     }
 
-                    Ok::<_, warp::Rejection>((dest, sigset.deposit_timeout, query.sigset_index, send))
+                    Ok::<_, warp::Rejection>((dest, query.sigset_index, send))
                 },
             )
-            .and_then(
-                async move |(dest, deposit_timeout, sigset_index, send): (
+            .then(
+                async move |(dest, sigset_index, send): (
                     Dest,
-                    u64,
                     u32,
                     tokio::sync::mpsc::Sender<_>,
                 )| {
                     debug!("Received deposit commitment: {:?}, {}", dest, sigset_index);
                     send.send((dest, sigset_index)).await.unwrap();
-                    let deposit_timeout_buffer = app_client(app_client_addr)
-                        .query(|app| Ok(app.bitcoin.checkpoints.config.deposit_timeout_buffer))
-                        .await
-                        .map_err(|e| warp::reject::custom(Error::from(e)))?;
-
-                    if time_now() + deposit_timeout_buffer >= deposit_timeout {
-                        return Err(warp::reject::custom(Error::Relayer(
-                            "Sigset no longer accepting deposits. Unable to generate deposit address".into(),
-                        )));
-                    }
-
-                    Ok::<_, warp::Rejection>(warp::reply::json(&"OK"))
+                    "OK"
                 },
             );
 
@@ -752,7 +739,15 @@ impl Relayer {
             self.scripts.as_mut().unwrap().insert(addr, &sigset)?;
         }
 
-        self.scripts.as_mut().unwrap().scripts.remove_expired()?;
+        let max_age = app_client(&self.app_client_addr)
+            .query(|app| Ok(app.bitcoin.checkpoints.config.max_age))
+            .await?;
+
+        self.scripts
+            .as_mut()
+            .unwrap()
+            .scripts
+            .remove_expired(max_age)?;
 
         Ok(())
     }
@@ -1134,11 +1129,11 @@ impl WatchedScripts {
         Ok(true)
     }
 
-    pub fn remove_expired(&mut self) -> Result<()> {
+    pub fn remove_expired(&mut self, max_age: u64) -> Result<()> {
         let now = time_now();
 
         for (_, (sigset, dests)) in self.sigsets.iter() {
-            if now < sigset.deposit_timeout {
+            if now < sigset.create_time() + max_age {
                 break;
             }
 
@@ -1231,8 +1226,11 @@ impl WatchedScriptStore {
 
             scripts.insert(dest, sigset)?;
         }
+        let max_age = app_client(app_client_addr)
+            .query(|app| Ok(app.bitcoin.checkpoints.config.max_age))
+            .await?;
 
-        scripts.remove_expired()?;
+        scripts.remove_expired(max_age)?;
 
         info!("Loaded {} deposit addresses", scripts.len());
 
