@@ -154,7 +154,7 @@ impl Relayer {
         let app_client_addr: &'static str = self.app_client_addr.clone().leak();
 
         let btc_client = self.btc_client.clone();
-        let deposit_buffer = match self.deposit_buffer.clone() {
+        let deposit_buffer = match self.deposit_buffer {
             Some(deposit_buffer) => deposit_buffer,
             None => return Err(Error::Relayer("Deposit buffer not set".to_string())),
         };
