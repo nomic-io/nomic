@@ -1074,7 +1074,7 @@ impl Bitcoin {
         coin.burn();
 
         self.fee_pool += amount as i64;
-        self.checkpoints.building_mut()?.fees_collected += amount;
+        self.checkpoints.building_mut()?.fees_collected += amount / self.config.units_per_sat;
 
         Ok(())
     }
