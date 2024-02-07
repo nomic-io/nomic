@@ -17,14 +17,12 @@ use orga::collections::Map;
 #[cfg(feature = "full")]
 use orga::context::Context;
 use orga::encoding::Encode;
-use orga::migrate::MigrateFrom;
 use orga::orga;
 #[cfg(feature = "full")]
 use orga::plugins::Time;
 #[cfg(feature = "full")]
 use orga::plugins::Validators;
 use orga::Error as OrgaError;
-use orga::Result as OrgaResult;
 
 use super::threshold_sig::VersionedPubkey;
 use super::ConsensusKey;
@@ -75,15 +73,14 @@ where
 /// Bitcoin scripts can be generated from a signatory set, which can be used to
 /// create a UTXO which can be only spent by a threshold of the signatories,
 /// based on voting power.
-#[orga(version = 1)]
+#[orga]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SignatorySet {
     /// The time at which this signatory set was created, in seconds.
+    ///
+    /// This is used to enforce that deposits can not be relayed against old
+    /// signatory sets (see [`MAX_DEPOSIT_AGE`]).
     pub create_time: u64,
-
-    /// The time at which this signatory set expires, in seconds.
-    #[orga(version(V1))]
-    pub deposit_timeout: u64,
 
     /// The total voting power of the validators participating in this set. If a
     /// validator has not submitted their signatory xpub, they will not be
@@ -102,33 +99,15 @@ pub struct SignatorySet {
     pub signatories: Vec<Signatory>,
 }
 
-impl MigrateFrom<SignatorySetV0> for SignatorySetV1 {
-    fn migrate_from(from: SignatorySetV0) -> OrgaResult<Self> {
-        Ok(Self {
-            create_time: from.create_time,
-            deposit_timeout: from.create_time + 60 * 60 * 24 * 5,
-            present_vp: from.present_vp,
-            possible_vp: from.possible_vp,
-            index: from.index,
-            signatories: from.signatories,
-        })
-    }
-}
-
 impl SignatorySet {
     /// Creates a signatory set based on the current validator set.
     #[cfg(feature = "full")]
-    pub fn from_validator_ctx(
-        index: u32,
-        sig_keys: &Map<ConsensusKey, Xpub>,
-        max_deposit_age: u64,
-    ) -> Result<Self> {
+    pub fn from_validator_ctx(index: u32, sig_keys: &Map<ConsensusKey, Xpub>) -> Result<Self> {
         let time: &mut Time = Context::resolve()
             .ok_or_else(|| OrgaError::App("No time context found".to_string()))?;
 
         let mut sigset = SignatorySet {
             create_time: time.seconds as u64,
-            deposit_timeout: time.seconds as u64 + max_deposit_age,
             present_vp: 0,
             possible_vp: 0,
             index,

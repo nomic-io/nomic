@@ -651,8 +651,8 @@ impl Bitcoin {
             OrgaError::App("Deposit amount is too small to pay its spending fee".to_string())
         })?;
         self.give_miner_fee(fee)?;
-
         // TODO: record as excess collected if inputs are full
+
         let mut building_mut = self.checkpoints.building_mut()?;
         let mut building_checkpoint_batch = building_mut
             .batches

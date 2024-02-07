@@ -442,7 +442,7 @@ pub async fn gen_deposit_addr(dest_addr: String) -> Result<DepositAddress, JsErr
     Ok(DepositAddress {
         address: btc_addr.to_string(),
         sigset_index: sigset.index(),
-        expiration: sigset.deposit_timeout * 1000,
+        expiration: (sigset.create_time() + max_deposit_age) * 1000,
     })
 }
 
