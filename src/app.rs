@@ -66,7 +66,7 @@ const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1d5n325zrf4elfu0heqd59gna5j6xyunhe
 const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhqd8dcqeq";
 
 const IBC_FEE_USATS: u64 = 1_000_000;
-const DECLARE_FEE_USATS: u64 = 100_000_000;
+const CALL_FEE_USATS: u64 = 100_000_000;
 
 #[orga(version = 4)]
 pub struct InnerApp {
@@ -328,9 +328,14 @@ impl InnerApp {
 
     #[call]
     pub fn declare_with_nbtc(&mut self, declaration: Declaration) -> Result<()> {
-        self.deduct_nbtc_fee(DECLARE_FEE_USATS.into())?;
+        self.deduct_nbtc_fee(CALL_FEE_USATS.into())?;
         let signer = self.signer()?;
         self.staking.declare(signer, declaration, 0.into())
+    }
+
+    #[call]
+    pub fn pay_nbtc_fee(&mut self) -> Result<()> {
+        self.deduct_nbtc_fee(CALL_FEE_USATS.into())
     }
 
     fn deduct_nbtc_fee(&mut self, amount: Amount) -> Result<()> {
