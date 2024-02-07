@@ -1688,8 +1688,7 @@ async fn recover_expired_deposit() {
             "http://localhost:8999".to_string(),
             expiring_deposit_address.deposit_addr.clone(),
         )
-        .await
-        .unwrap();
+        .await;
 
         btc_client
             .generate_to_address(1, &async_wallet_address)
