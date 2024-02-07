@@ -256,7 +256,7 @@ async fn bitcoin_test() {
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
         rpc_addr.clone(),
     );
-    let deposits = relayer.start_deposit_relay(&header_relayer_path);
+    let deposits = relayer.start_deposit_relay(&header_relayer_path, 60 * 60 * 12);
 
     let mut relayer = Relayer::new(
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
@@ -721,7 +721,7 @@ async fn signing_completed_checkpoint_test() {
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
         rpc_addr.clone(),
     );
-    let deposits = relayer.start_deposit_relay(&header_relayer_path);
+    let deposits = relayer.start_deposit_relay(&header_relayer_path, 60 * 60 * 12);
 
     let mut relayer = Relayer::new(
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
@@ -994,7 +994,7 @@ async fn pending_deposits() {
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
         rpc_addr.clone(),
     );
-    let deposits = relayer.start_deposit_relay(&header_relayer_path);
+    let deposits = relayer.start_deposit_relay(&header_relayer_path, 60 * 60 * 12);
 
     let mut relayer = Relayer::new(
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
@@ -1200,7 +1200,7 @@ async fn signer_key_updating() {
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
         rpc_addr.clone(),
     );
-    let deposits = relayer.start_deposit_relay(&header_relayer_path);
+    let deposits = relayer.start_deposit_relay(&header_relayer_path, 60 * 60 * 12);
 
     let mut relayer = Relayer::new(
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
@@ -1557,7 +1557,7 @@ async fn recover_expired_deposit() {
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
         rpc_addr.clone(),
     );
-    let deposits = relayer.start_deposit_relay(&header_relayer_path);
+    let deposits = relayer.start_deposit_relay(&header_relayer_path, 60 * 60 * 12);
 
     let mut relayer = Relayer::new(
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
@@ -1779,7 +1779,6 @@ async fn generate_deposit_expired() {
 
     let bitcoin_config = BitcoinConfig {
         max_deposit_age: 60 * 5,
-        deposit_timeout_buffer: 60 * 5,
         ..Default::default()
     };
 
@@ -1801,7 +1800,7 @@ async fn generate_deposit_expired() {
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
         rpc_addr.clone(),
     );
-    let deposits = relayer.start_deposit_relay(&header_relayer_path);
+    let deposits = relayer.start_deposit_relay(&header_relayer_path, 5 * 60);
 
     let mut relayer = Relayer::new(
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
