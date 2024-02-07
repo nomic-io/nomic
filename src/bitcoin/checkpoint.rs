@@ -11,8 +11,8 @@ use crate::{
     app::Dest,
     bitcoin::{signatory::derive_pubkey, Nbtc},
 };
-use bitcoin::hashes::Hash;
 use bitcoin::{blockdata::transaction::EcdsaSighashType, Sequence, Transaction, TxIn, TxOut};
+use bitcoin::{hashes::Hash, Script};
 use derive_more::{Deref, DerefMut};
 use log::info;
 use orga::coins::{Accounts, Coin};
@@ -1701,7 +1701,7 @@ impl CheckpointQueue {
         Ok(())
     }
 
-    /// Gets a refernce to the checkpoint at the given index.
+    /// Gets a reference to the checkpoint at the given index.
     ///
     /// If the index is out of bounds or was pruned, an error is returned.
     #[query]
@@ -1820,6 +1820,11 @@ impl CheckpointQueue {
             self.index.checked_sub(1)
         }
         .ok_or_else(|| Error::Orga(OrgaError::App("No completed checkpoints yet".to_string())))
+    }
+
+    #[query]
+    pub fn first_index(&self) -> Result<u32> {
+        Ok(self.index + 1 - self.len()?)
     }
 
     /// A reference to the last completed checkpoint.
@@ -2362,6 +2367,34 @@ impl CheckpointQueue {
         let unconf_vbytes = self.unconfirmed_vbytes(config)?;
         Ok((unconf_vbytes * fee_rate).saturating_sub(unconf_fees_paid))
     }
+
+    pub fn backfill(
+        &mut self,
+        first_index: u32,
+        redeem_scripts: impl Iterator<Item = Script>,
+    ) -> Result<()> {
+        let mut index = first_index + 1;
+
+        let create_time = self.queue.get(0)?.unwrap().create_time();
+
+        for script in redeem_scripts {
+            index -= 1;
+
+            if index >= self.first_index()? {
+                continue;
+            }
+
+            let (mut sigset, _) = SignatorySet::from_script(&script)?;
+            sigset.index = index;
+            sigset.create_time = create_time;
+            let mut cp = Checkpoint::new(sigset)?;
+            cp.status = CheckpointStatus::Complete;
+
+            self.queue.push_front(cp)?;
+        }
+
+        Ok(())
+    }
 }
 
 /// Takes a previous fee rate and returns a new fee rate, adjusted up or down by
@@ -2379,6 +2412,7 @@ pub fn adjust_fee_rate(prev_fee_rate: u64, up: bool, config: &Config) -> u64 {
 
 #[cfg(test)]
 mod test {
+    use crate::bitcoin::threshold_sig::Pubkey;
     #[cfg(feature = "full")]
     use crate::utils::set_time;
 
@@ -2390,7 +2424,11 @@ mod test {
         util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey},
         OutPoint, PubkeyHash, Script, Txid,
     };
-    use orga::{collections::EntryMap, context::Context};
+    use orga::{
+        collections::EntryMap,
+        context::Context,
+        secp256k1::{PublicKey, SecretKey},
+    };
     #[cfg(all(feature = "full"))]
     use rand::Rng;
 
@@ -2943,5 +2981,115 @@ mod test {
         maybe_step(11);
 
         assert_eq!(queue.borrow().len().unwrap(), 5);
+    }
+
+    fn sigset(n: u32) -> SignatorySet {
+        let mut sigset = SignatorySet::default();
+        sigset.index = n;
+        sigset.create_time = n as u64;
+
+        let secret = bitcoin::secp256k1::SecretKey::from_slice(&[(n + 1) as u8; 32]).unwrap();
+        let pubkey: Pubkey = bitcoin::secp256k1::PublicKey::from_secret_key(
+            &bitcoin::secp256k1::Secp256k1::new(),
+            &secret,
+        )
+        .into();
+
+        sigset.signatories.push(Signatory {
+            pubkey: pubkey.into(),
+            voting_power: 100,
+        });
+
+        sigset.possible_vp = 100;
+        sigset.present_vp = 100;
+
+        sigset
+    }
+
+    #[test]
+    fn backfill_basic() {
+        let mut queue = CheckpointQueue::default();
+        queue.index = 10;
+        queue
+            .queue
+            .push_back(Checkpoint::new(sigset(7)).unwrap())
+            .unwrap();
+        queue
+            .queue
+            .push_back(Checkpoint::new(sigset(8)).unwrap())
+            .unwrap();
+        queue
+            .queue
+            .push_back(Checkpoint::new(sigset(9)).unwrap())
+            .unwrap();
+        queue
+            .queue
+            .push_back(Checkpoint::new(sigset(10)).unwrap())
+            .unwrap();
+
+        let backfill_data = vec![
+            sigset(8).redeem_script(&[0], (2, 3)).unwrap(),
+            sigset(7).redeem_script(&[0], (2, 3)).unwrap(),
+            sigset(6).redeem_script(&[0], (2, 3)).unwrap(),
+            sigset(5).redeem_script(&[0], (2, 3)).unwrap(),
+            sigset(4).redeem_script(&[0], (2, 3)).unwrap(),
+            sigset(3).redeem_script(&[0], (2, 3)).unwrap(),
+        ];
+        queue.backfill(8, backfill_data.into_iter()).unwrap();
+
+        assert_eq!(queue.len().unwrap(), 8);
+        assert_eq!(queue.index, 10);
+        assert_eq!(
+            queue
+                .get(3)
+                .unwrap()
+                .sigset
+                .redeem_script(&[0], (2, 3))
+                .unwrap(),
+            sigset(3).redeem_script(&[0], (2, 3)).unwrap(),
+        );
+        assert_eq!(
+            queue
+                .get(10)
+                .unwrap()
+                .sigset
+                .redeem_script(&[0], (2, 3))
+                .unwrap(),
+            sigset(10).redeem_script(&[0], (2, 3)).unwrap(),
+        );
+    }
+
+    #[test]
+    fn backfill_with_zeroth() {
+        let mut queue = CheckpointQueue::default();
+        queue.index = 1;
+        queue
+            .queue
+            .push_back(Checkpoint::new(sigset(1)).unwrap())
+            .unwrap();
+
+        let backfill_data = vec![sigset(0).redeem_script(&[0], (2, 3)).unwrap()];
+        queue.backfill(0, backfill_data.into_iter()).unwrap();
+
+        assert_eq!(queue.len().unwrap(), 2);
+        assert_eq!(queue.index, 1);
+        assert_eq!(
+            queue
+                .get(0)
+                .unwrap()
+                .sigset
+                .redeem_script(&[0], (2, 3))
+                .unwrap(),
+            sigset(0).redeem_script(&[0], (2, 3)).unwrap(),
+        );
+        assert_eq!(
+            queue
+                .get(1)
+                .unwrap()
+                .sigset
+                .redeem_script(&[0], (2, 3))
+                .unwrap(),
+            sigset(1).redeem_script(&[0], (2, 3)).unwrap(),
+        );
     }
 }
