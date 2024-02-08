@@ -1,7 +1,7 @@
 use crate::{
     bitcoin::{
         signatory::{derive_pubkey, Signatory, SignatorySet},
-        threshold_sig::{Pubkey, VersionedPubkey},
+        threshold_sig::Pubkey,
         Nbtc, Xpub,
     },
     error::Result,
@@ -334,7 +334,7 @@ impl Proof {
 
 #[orga]
 pub struct Chain {
-    pub op_keys_by_cons: Map<LengthVec<u8, u8>, VersionedPubkey>,
+    pub op_keys_by_cons: Map<LengthVec<u8, u8>, Pubkey>,
 }
 
 #[orga]
