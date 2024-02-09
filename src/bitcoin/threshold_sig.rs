@@ -29,19 +29,11 @@ pub struct Signature(
 );
 
 /// A compressed secp256k1 public key.
-#[orga(skip(Default, Migrate), version = 1)]
+#[orga(skip(Default), version = 1)]
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Copy)]
 pub struct Pubkey {
     #[serde(serialize_with = "<[_]>::serialize")]
     bytes: [u8; PUBLIC_KEY_SIZE],
-}
-
-impl Migrate for Pubkey {
-    fn migrate(_src: Store, _dest: Store, bytes: &mut &[u8]) -> Result<Self> {
-        let mut buf = [0; PUBLIC_KEY_SIZE];
-        bytes.read_exact(buf.as_mut())?;
-        Ok(Self { bytes: buf })
-    }
 }
 
 impl Default for Pubkey {
@@ -92,9 +84,7 @@ impl Pubkey {
 
 impl MigrateFrom<PubkeyV0> for PubkeyV1 {
     fn migrate_from(value: PubkeyV0) -> Result<Self> {
-        let mut bytes = [0; PUBLIC_KEY_SIZE];
-        bytes[1..].copy_from_slice(value.bytes.as_slice());
-        Ok(PubkeyV1 { bytes })
+        Ok(PubkeyV1 { bytes: value.bytes })
     }
 }
 
