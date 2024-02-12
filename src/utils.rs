@@ -371,6 +371,29 @@ pub async fn poll_for_completed_checkpoint(num_checkpoints: u32) {
     }
 }
 
+pub async fn poll_for_updated_balance(address: Address, expected_balance: u64) -> u64 {
+    info!("Polling for updated balance...");
+    let initial_balance = app_client(DEFAULT_RPC)
+        .query(|app| app.bitcoin.accounts.balance(address))
+        .await
+        .unwrap();
+
+    if initial_balance == expected_balance {
+        return initial_balance.into();
+    }
+
+    loop {
+        let balance = app_client(DEFAULT_RPC)
+            .query(|app| app.bitcoin.accounts.balance(address))
+            .await
+            .unwrap();
+        if balance != initial_balance {
+            break balance.into();
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+}
+
 pub async fn poll_for_bitcoin_header(height: u32) -> Result<()> {
     info!("Scanning for bitcoin header {}...", height);
     loop {
