@@ -180,7 +180,7 @@ impl MigrateFrom<ConfigV2> for ConfigV3 {
             units_per_sat: value.units_per_sat,
             max_offline_checkpoints: value.max_offline_checkpoints,
             min_checkpoint_confirmations: 0,
-            capacity_limit: ConfigV4::default().capacity_limit,
+            capacity_limit: Config::default().capacity_limit,
         })
     }
 }
@@ -199,7 +199,7 @@ impl MigrateFrom<ConfigV3> for ConfigV4 {
             max_offline_checkpoints: value.max_offline_checkpoints,
             min_checkpoint_confirmations: value.min_checkpoint_confirmations,
             capacity_limit: value.capacity_limit,
-            max_deposit_age: Self::default().max_deposit_age,
+            max_deposit_age: Config::default().max_deposit_age,
             fee_pool_target_balance: Config::default().fee_pool_target_balance,
             fee_pool_reward_split: Config::default().fee_pool_reward_split,
         })
@@ -226,9 +226,6 @@ impl Config {
             capacity_limit: 100 * 100_000_000, // 100 BTC
             #[cfg(not(feature = "testnet"))]
             capacity_limit: 21 * 100_000_000, // 21 BTC
-            #[cfg(feature = "testnet")]
-            max_deposit_age: 3 * 60,
-            #[cfg(not(feature = "testnet"))]
             max_deposit_age: 60 * 60 * 24 * 5,
             fee_pool_target_balance: 10_000_000, // 0.1 BTC
             fee_pool_reward_split: (1, 10),

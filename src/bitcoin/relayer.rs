@@ -46,6 +46,7 @@ pub struct Relayer {
     app_client_addr: String,
 
     scripts: Option<WatchedScriptStore>,
+    deposit_buffer: Option<u64>,
 }
 
 impl Relayer {
@@ -54,6 +55,7 @@ impl Relayer {
             btc_client: Arc::new(RwLock::new(btc_client)),
             app_client_addr,
             scripts: None,
+            deposit_buffer: None,
         }
     }
 
@@ -111,14 +113,20 @@ impl Relayer {
         }
     }
 
-    pub async fn start_deposit_relay<P: AsRef<Path>>(mut self, store_path: P) -> Result<()> {
+    pub async fn start_deposit_relay<P: AsRef<Path>>(
+        mut self,
+        store_path: P,
+        deposit_buffer: u64,
+    ) -> Result<()> {
         info!("Starting deposit relay...");
 
         let scripts = WatchedScriptStore::open(store_path, &self.app_client_addr).await?;
         self.scripts = Some(scripts);
 
+        self.deposit_buffer = Some(deposit_buffer);
+
         let index = Arc::new(Mutex::new(DepositIndex::new()));
-        let (server, mut recv) = self.create_address_server(index.clone());
+        let (server, mut recv) = self.create_address_server(index.clone())?;
 
         let deposit_relay = async {
             loop {
@@ -137,7 +145,7 @@ impl Relayer {
     fn create_address_server(
         &self,
         index: Arc<Mutex<DepositIndex>>,
-    ) -> (impl Future<Output = ()>, Receiver<(Dest, u32)>) {
+    ) -> Result<(impl Future<Output = ()>, Receiver<(Dest, u32)>)> {
         let (send, recv) = tokio::sync::mpsc::channel(1024);
 
         let sigsets = Arc::new(Mutex::new(BTreeMap::new()));
@@ -146,6 +154,10 @@ impl Relayer {
         let app_client_addr: &'static str = self.app_client_addr.clone().leak();
 
         let btc_client = self.btc_client.clone();
+        let deposit_buffer = match self.deposit_buffer {
+            Some(deposit_buffer) => deposit_buffer,
+            None => return Err(Error::Relayer("Deposit buffer not set".to_string())),
+        };
 
         // TODO: configurable listen address
         use bytes::Bytes;
@@ -203,18 +215,29 @@ impl Relayer {
                         return Err(warp::reject::custom(Error::InvalidDepositAddress));
                     }
 
-                    Ok::<_, warp::Rejection>((dest, query.sigset_index, send))
+                    Ok::<_, warp::Rejection>((dest, sigset.create_time, query.sigset_index, send))
                 },
             )
-            .then(
-                async move |(dest, sigset_index, send): (
+            .and_then(
+                async move |(dest, create_time, sigset_index, send): (
                     Dest,
+                    u64,
                     u32,
                     tokio::sync::mpsc::Sender<_>,
                 )| {
                     debug!("Received deposit commitment: {:?}, {}", dest, sigset_index);
                     send.send((dest, sigset_index)).await.unwrap();
-                    "OK"
+                    let max_deposit_age = app_client(app_client_addr)
+                        .query(|app| Ok(app.bitcoin.config.max_deposit_age))
+                        .await
+                        .map_err(|e| warp::reject::custom(Error::from(e)))?;
+                    if time_now() + deposit_buffer >= create_time + max_deposit_age {
+                        return Err(warp::reject::custom(Error::Relayer(
+                            "Sigset no longer accepting deposits. Unable to generate deposit address".into(),
+                        )));
+                    }
+
+                    Ok::<_, warp::Rejection>(warp::reply::json(&"OK"))
                 },
             );
 
@@ -291,7 +314,7 @@ impl Relayer {
                 ),
         )
         .run(([0, 0, 0, 0], 8999));
-        (server, recv)
+        Ok((server, recv))
     }
 
     async fn relay_deposits(
