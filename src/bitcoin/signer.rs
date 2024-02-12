@@ -255,8 +255,10 @@ where
 
         info!("Starting checkpoint signer...");
         loop {
+            let mut signed = false;
+
             for (xpub, xpriv) in key_pairs.iter() {
-                let signed = match self.try_sign_checkpoint(xpub, xpriv, index).await {
+                signed |= match self.try_sign_checkpoint(xpub, xpriv, index).await {
                     Ok(signed) => signed,
                     Err(e) => {
                         ERROR_COUNTER.inc();
@@ -264,12 +266,12 @@ where
                         false
                     }
                 };
+            }
 
-                if signed {
-                    index += 1;
-                } else {
-                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                }
+            if signed {
+                index += 1;
+            } else {
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             }
         }
     }
