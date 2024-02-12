@@ -2372,6 +2372,7 @@ impl CheckpointQueue {
         &mut self,
         first_index: u32,
         redeem_scripts: impl Iterator<Item = Script>,
+        threshold_ratio: (u64, u64),
     ) -> Result<()> {
         let mut index = first_index + 1;
 
@@ -2384,7 +2385,7 @@ impl CheckpointQueue {
                 continue;
             }
 
-            let (mut sigset, _) = SignatorySet::from_script(&script)?;
+            let (mut sigset, _) = SignatorySet::from_script(&script, threshold_ratio)?;
             sigset.index = index;
             sigset.create_time = create_time;
             let mut cp = Checkpoint::new(sigset)?;
@@ -3035,7 +3036,9 @@ mod test {
             sigset(4).redeem_script(&[0], (2, 3)).unwrap(),
             sigset(3).redeem_script(&[0], (2, 3)).unwrap(),
         ];
-        queue.backfill(8, backfill_data.into_iter()).unwrap();
+        queue
+            .backfill(8, backfill_data.into_iter(), (2, 3))
+            .unwrap();
 
         assert_eq!(queue.len().unwrap(), 8);
         assert_eq!(queue.index, 10);
@@ -3069,7 +3072,9 @@ mod test {
             .unwrap();
 
         let backfill_data = vec![sigset(0).redeem_script(&[0], (2, 3)).unwrap()];
-        queue.backfill(0, backfill_data.into_iter()).unwrap();
+        queue
+            .backfill(0, backfill_data.into_iter(), (2, 3))
+            .unwrap();
 
         assert_eq!(queue.len().unwrap(), 2);
         assert_eq!(queue.index, 1);

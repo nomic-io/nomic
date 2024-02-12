@@ -164,6 +164,7 @@ pub fn load_or_generate(path: PathBuf, network: bitcoin::Network) -> Result<Exte
         load_bitcoin_key(path)
     } else {
         let key = generate_bitcoin_key(network)?;
+        fs::create_dir_all(path.parent().unwrap())?;
         fs::write(path.clone(), key.to_string())?;
         info!("Generated bitcoin key at {}", path.display());
         warn!("This is your signer key. Back it up!");
