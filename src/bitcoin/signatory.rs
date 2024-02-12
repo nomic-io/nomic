@@ -158,7 +158,10 @@ impl SignatorySet {
         Ok(sigset)
     }
 
-    pub fn from_script(script: &bitcoin::Script) -> Result<(Self, Vec<u8>)> {
+    pub fn from_script(
+        script: &bitcoin::Script,
+        threshold_ratio: (u64, u64),
+    ) -> Result<(Self, Vec<u8>)> {
         trait Iter<'a> = Iterator<
             Item = std::result::Result<Instruction<'a>, bitcoin::blockdata::script::Error>,
         >;
@@ -281,19 +284,38 @@ impl SignatorySet {
             }
         }
 
-        take_threshold(&mut ins)?;
+        let expected_threshold = take_threshold(&mut ins)?;
         let commitment = take_commitment(&mut ins)?;
 
         assert!(ins.next().is_none());
 
         let total_vp: u64 = sigs.iter().map(|s| s.voting_power).sum();
-        let sigset = Self {
+        let mut sigset = Self {
             signatories: sigs,
             present_vp: total_vp,
             possible_vp: total_vp,
             create_time: 0,
             index: 0,
         };
+
+        for _ in 0..100 {
+            let actual_threshold = sigset.signature_threshold(threshold_ratio);
+            if actual_threshold == expected_threshold {
+                break;
+            } else if actual_threshold < expected_threshold {
+                sigset.present_vp += 1;
+                sigset.possible_vp += 1;
+            } else {
+                sigset.present_vp -= 1;
+                sigset.possible_vp -= 1;
+            }
+        }
+
+        assert_eq!(
+            sigset.signature_threshold(threshold_ratio),
+            expected_threshold,
+        );
+        assert_eq!(&sigset.redeem_script(commitment, threshold_ratio)?, script);
 
         Ok((sigset, commitment.to_vec()))
     }
@@ -595,15 +617,15 @@ mod tests {
     fn from_script() {
         let script = bitcoin::Script::from_hex("21028891f36b691a40036f2b3ecb17c13780a932503ef2c39f3faed9b95bf71ea27fac630339e0116700687c2102f6fee7ad7dc87d0a636ae1584273c849bf540f4c1780434a0430888b0c5b151cac63033c910e93687c2102d207371a1e9a588e447d91dc12a8f3479f1f9ff8da748aae04bb5d07f0737790ac630371730893687c2103713e9bb6025fa9dc3c26507762cffd2a9524ff48f1d84c6753caa581347e5e10ac63031def0793687c2103d8fc0412a866bfb14d3fbc9e1b714ca31141d0f7e211d0fa634d53dda9789ecaac6303d1f00693687c2102c7961e04206af92f4b4cf3f19b43722f301e4915a49f5ca2908d9af5ce343830ac6303496f0693687c2103205472bb87799cb9140b5d471cc045b65821a4e75591026a8411ee3ac3e27027ac6303fe500693687c2102c923df10e8141072504b1f9513ee6796dc4d748d774ce9396942b63d42d3d575ac6303ed1f0593687c21031e8124547a5f28e04652d61fab1053ba8af41b682ccecdf5fa58595add7c7d9eac6303d4a00493687c21038060738940b9b3513851aa45df9f8b9d8e3304ef5abc5f8c1928bf4f1c8601adac630347210493687c21022e1efe78c688bceb7a36bf8af0e905da65e1942b84afe31716a356a91c0d9c05ac6303c5620393687c21020598956ed409e190b763bed8ed1ec3a18138c582c761eb8a4cf60861bfb44f13ac6303b3550393687c2102c8b2e54cafced96b1438e9ee6ebddc27c4aca68f14b2199eb8b8da111b584c2cac63036c330393687c2102d8a4c0accefa93b6a8d390a81dbffa4d05cd0a844371b2bed0ba1b1b65e14300ac6303521d0393687c2102460ccc0db97b1027e4fe2ab178f015a786b6b8f016b580f495dde3230f34984cac630304060393687c2102def64dfc155e17988ea6dee5a5659e2ec0a19fce54af90ca84dcd4df53b1a222ac630341d20293687c21030c9057c92c19f749c891037379766c0642d03bd1c50e3b262fc7d954c232f4d8ac630356c30293687c21027e1ebe3dd4fbbf250a8161a8a7af19815d5c07363e220f28f81c535c3950c7cbac6303d3ab0293687c210235e1d72961cb475971e2bc437ac21f9be13c83f1aa039e64f406aae87e2b4816ac6303bdaa0293687c210295d565c8ae94d46d439b4591dcd146742f918893292c23c49d000c4023bad4ffac630308aa029368030fb34aa0010075").unwrap();
 
-        let (sigset, commitment) = SignatorySet::from_script(&script).unwrap();
+        let (sigset, commitment) = SignatorySet::from_script(&script, (2, 3)).unwrap();
 
         let pk = |bytes| Pubkey::new(bytes).unwrap().into();
         assert_eq!(
             sigset,
             SignatorySet {
                 create_time: 0,
-                present_vp: 7343244,
-                possible_vp: 7343244,
+                present_vp: 7343255,
+                possible_vp: 7343255,
                 index: 0,
                 signatories: vec![
                     Signatory {
