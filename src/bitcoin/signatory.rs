@@ -1,6 +1,8 @@
 #![allow(clippy::redundant_closure_call)] // TODO: fix bitcoin-script then remove this
 #![allow(unused_imports)] // TODO
 
+use std::cmp::Ordering;
+
 use crate::bitcoin::threshold_sig::Pubkey;
 use crate::error::Error;
 use crate::error::Result;
@@ -300,14 +302,16 @@ impl SignatorySet {
 
         for _ in 0..100 {
             let actual_threshold = sigset.signature_threshold(threshold_ratio);
-            if actual_threshold == expected_threshold {
-                break;
-            } else if actual_threshold < expected_threshold {
-                sigset.present_vp += 1;
-                sigset.possible_vp += 1;
-            } else {
-                sigset.present_vp -= 1;
-                sigset.possible_vp -= 1;
+            match actual_threshold.cmp(&expected_threshold) {
+                Ordering::Equal => break,
+                Ordering::Less => {
+                    sigset.present_vp += 1;
+                    sigset.possible_vp += 1;
+                }
+                Ordering::Greater => {
+                    sigset.present_vp -= 1;
+                    sigset.possible_vp -= 1;
+                }
             }
         }
 
