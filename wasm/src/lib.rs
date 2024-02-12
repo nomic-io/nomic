@@ -639,6 +639,7 @@ pub async fn ibc_transfer_out(
     value.insert("receiver".to_string(), receiver_address.into());
     value.insert("sender".to_string(), self_address.clone().into());
     value.insert("timeout_timestamp".to_string(), timeout_timestamp.into());
+    value.insert("memo".to_string(), "".into());
 
     let address = self_address
         .parse()
