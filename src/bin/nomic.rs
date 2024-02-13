@@ -4,14 +4,18 @@
 #![feature(async_closure)]
 #![feature(never_type)]
 
+use bitcoin::consensus::{Decodable, Encodable};
 use bitcoin::secp256k1;
 use bitcoin::util::bip32::ExtendedPubKey;
+use bitcoincore_rpc_async::RpcApi;
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
 use nomic::app::Dest;
 use nomic::app::IbcDest;
 use nomic::app::InnerApp;
 use nomic::app::Nom;
+use nomic::bitcoin::adapter::Adapter;
+use nomic::bitcoin::signatory::SignatorySet;
 use nomic::bitcoin::Nbtc;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
@@ -35,6 +39,8 @@ use std::fs::Permissions;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::time::SystemTime;
+use std::time::UNIX_EPOCH;
 use tendermint_rpc::Client as _;
 
 const BANNER: &str = r#"
@@ -100,6 +106,7 @@ pub enum Command {
     RelayOpKeys(RelayOpKeysCmd),
     SetRecoveryAddress(SetRecoveryAddressCmd),
     SigningStatus(SigningStatusCmd),
+    RecoverDeposit(RecoverDepositCmd),
 }
 
 impl Command {
@@ -161,6 +168,7 @@ impl Command {
                 RelayOpKeys(cmd) => cmd.run().await,
                 SetRecoveryAddress(cmd) => cmd.run().await,
                 SigningStatus(cmd) => cmd.run().await,
+                RecoverDeposit(cmd) => cmd.run().await,
             }
         })
     }
@@ -1888,6 +1896,214 @@ impl SigningStatusCmd {
         );
 
         Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct RecoverDepositCmd {
+    #[clap(short = 'p', long, default_value_t = 8332)]
+    rpc_port: u16,
+    #[clap(short = 'u', long)]
+    rpc_user: Option<String>,
+    #[clap(short = 'P', long)]
+    rpc_pass: Option<String>,
+
+    #[clap(long)]
+    channel: Option<String>,
+    #[clap(long)]
+    remote_prefix: Option<String>,
+
+    #[clap(long)]
+    nomic_addr: Address,
+    #[clap(long)]
+    deposit_addr: bitcoin::Address,
+    #[clap(long)]
+    block_hash: bitcoin::BlockHash,
+    #[clap(long)]
+    txid: bitcoin::Txid,
+    #[clap(long)]
+    vout: u32,
+
+    #[clap(long)]
+    reserve_script_path: PathBuf,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
+}
+
+impl RecoverDepositCmd {
+    async fn btc_client(&self) -> Result<BtcClient> {
+        let rpc_url = format!("http://localhost:{}", self.rpc_port);
+        let auth = match (self.rpc_user.clone(), self.rpc_pass.clone()) {
+            (Some(user), Some(pass)) => Auth::UserPass(user, pass),
+            _ => Auth::None,
+        };
+
+        let btc_client = BtcClient::new(rpc_url, auth)
+            .await
+            .map_err(|e| orga::Error::App(e.to_string()))?;
+
+        Ok(btc_client)
+    }
+
+    async fn relay_deposit(&self, dest: Dest, sigset_index: u32) -> Result<()> {
+        let nomic_client = self.config.client();
+        let btc_client = self.btc_client().await?;
+
+        let block_height = btc_client.get_block_info(&self.block_hash).await?.height as u32;
+
+        let tx = btc_client
+            .get_raw_transaction(&self.txid, Some(&self.block_hash))
+            .await?;
+        let output = tx.output.get(self.vout as usize).unwrap();
+
+        let proof_bytes = btc_client
+            .get_tx_out_proof(&[tx.txid()], Some(&self.block_hash))
+            .await?;
+        let proof = ::bitcoin::MerkleBlock::consensus_decode(&mut proof_bytes.as_slice())?.txn;
+        {
+            let mut tx_bytes = vec![];
+            tx.consensus_encode(&mut tx_bytes)?;
+            let tx = ::bitcoin::Transaction::consensus_decode(&mut tx_bytes.as_slice())?;
+            let tx = Adapter::new(tx);
+            let proof = Adapter::new(proof);
+
+            let dest2 = dest.clone();
+            nomic_client
+                .call(
+                    move |app| {
+                        build_call!(app.relay_deposit(
+                            tx,
+                            block_height,
+                            proof,
+                            self.vout,
+                            sigset_index,
+                            dest2
+                        ))
+                    },
+                    |app| build_call!(app.app_noop()),
+                )
+                .await?;
+        }
+
+        log::info!(
+            "Relayed deposit: {} sats, {:?}",
+            tx.output[self.vout as usize].value,
+            dest
+        );
+
+        return Ok(());
+    }
+
+    async fn run(&self) -> Result<()> {
+        if self.channel.is_some() != self.remote_prefix.is_some() {
+            return Err(nomic::error::Error::Orga(orga::Error::App(
+                "Both --channel and --remote-prefix must be specified".to_string(),
+            )));
+        }
+
+        // TODO: support passing in script csv by path
+        let sigsets: Vec<(u32, SignatorySet)> = std::fs::read_to_string(&self.reserve_script_path)?
+            .lines()
+            .map(|line| {
+                let mut split = line.split(',');
+                (split.next().unwrap(), split.next().unwrap())
+            })
+            .map(|(i, script_hex)| {
+                let i = i.parse::<u32>().unwrap();
+                let script = bitcoin::Script::from(hex::decode(script_hex).unwrap());
+                let (sigset, _) = SignatorySet::from_script(&script, (2, 3)).unwrap();
+                (i, sigset)
+            })
+            .collect();
+
+        dbg!(sigsets.len());
+
+        if let (Some(channel), Some(remote_prefix)) =
+            (self.channel.as_ref(), self.remote_prefix.as_ref())
+        {
+            let remote_addr = bech32::encode(
+                remote_prefix.as_str(),
+                bech32::decode(self.nomic_addr.to_string().as_str())
+                    .unwrap()
+                    .1,
+                bech32::Variant::Bech32,
+            )
+            .unwrap();
+
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+                * 1_000_000_000;
+            let mut dest = Dest::Ibc(IbcDest {
+                source_port: "transfer".to_string().try_into().unwrap(),
+                source_channel: channel.bytes().collect::<Vec<_>>().try_into().unwrap(),
+                receiver: orga::encoding::Adapter(remote_addr.into()),
+                sender: orga::encoding::Adapter(self.nomic_addr.to_string().into()),
+                timeout_timestamp: now,
+                memo: "".to_string().try_into().unwrap(),
+            });
+
+            dbg!(&dest);
+
+            let mut i = 0;
+            let mut dest_bytes = dest.commitment_bytes().unwrap();
+            loop {
+                for (sigset_index, sigset) in sigsets.iter() {
+                    if i % 10_000 == 0 {
+                        if let Dest::Ibc(dest) = &dest {
+                            println!("{} {}", i, dest.timeout_timestamp);
+                        } else {
+                            unreachable!()
+                        }
+                    }
+
+                    let script = sigset.output_script(&dest_bytes, (2, 3)).unwrap();
+                    let addr =
+                        bitcoin::Address::from_script(&script, bitcoin::Network::Bitcoin).unwrap();
+                    if addr.to_string().to_lowercase()
+                        == self.deposit_addr.to_string().to_lowercase()
+                    {
+                        if let Dest::Ibc(ibc_dest) = &dest {
+                            println!(
+                                "Found at sigset index {}, timeout_timestamp {}",
+                                sigset_index, ibc_dest.timeout_timestamp,
+                            );
+                        } else {
+                            unreachable!()
+                        }
+
+                        return self.relay_deposit(dest, *sigset_index).await;
+                    }
+
+                    i += 1;
+                }
+
+                if let Dest::Ibc(ibc_dest) = &mut dest {
+                    ibc_dest.timeout_timestamp -= 60 * 60 * 1_000_000_000;
+                    dest_bytes = dest.commitment_bytes().unwrap();
+                } else {
+                    unreachable!()
+                }
+            }
+        }
+
+        let dest = Dest::Address(self.nomic_addr.clone());
+        let dest_bytes = dest.commitment_bytes().unwrap();
+
+        for (sigset_index, sigset) in sigsets.iter() {
+            let script = sigset.output_script(&dest_bytes, (2, 3)).unwrap();
+            let addr = bitcoin::Address::from_script(&script, bitcoin::Network::Bitcoin).unwrap();
+            if addr.to_string().to_lowercase() == self.deposit_addr.to_string().to_lowercase() {
+                println!("Found at sigset index {}", sigset_index,);
+                return self.relay_deposit(dest, *sigset_index).await;
+            }
+        }
+
+        Err(nomic::error::Error::Orga(orga::Error::App(
+            "Deposit address not found in any sigset".to_string(),
+        )))
     }
 }
 
