@@ -362,7 +362,9 @@ where
                 .await? as u64;
             let last_signed_btc_height: Option<u64> = self
                 .client()
-                .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.get(index)?.signed_at_btc_height))
+                .query(|app: InnerApp| {
+                    Ok(app.bitcoin.checkpoints.get(index - 1)?.signed_at_btc_height)
+                })
                 .await?
                 .map(|v| v as u64);
 
