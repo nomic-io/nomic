@@ -341,8 +341,8 @@ impl InnerApp {
     fn deduct_nbtc_fee(&mut self, amount: Amount) -> Result<()> {
         disable_fee();
         let signer = self.signer()?;
-        self.bitcoin.accounts.withdraw(signer, amount)?.burn();
-
+        let fee = self.bitcoin.accounts.withdraw(signer, amount)?;
+        self.bitcoin.give_rewards(fee)?;
         Ok(())
     }
 
