@@ -1384,7 +1384,6 @@ const ONE_DAY_NS: u64 = 86400 * 1_000_000_000;
 impl InterchainDepositCmd {
     async fn run(&self) -> Result<()> {
         use orga::encoding::Adapter;
-        use std::time::SystemTime;
 
         let now_ns = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -1415,8 +1414,6 @@ pub struct WithdrawCmd {
 
 impl WithdrawCmd {
     async fn run(&self) -> Result<()> {
-        use nomic::bitcoin::adapter::Adapter;
-
         let script = self.dest.script_pubkey();
 
         self.config
@@ -1955,7 +1952,6 @@ impl RecoverDepositCmd {
         let tx = btc_client
             .get_raw_transaction(&self.txid, Some(&self.block_hash))
             .await?;
-        let output = tx.output.get(self.vout as usize).unwrap();
 
         let proof_bytes = btc_client
             .get_tx_out_proof(&[tx.txid()], Some(&self.block_hash))
