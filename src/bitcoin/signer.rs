@@ -72,7 +72,7 @@ pub struct Signer<W, F> {
     xprivs: Vec<ExtendedPrivKey>,
     max_withdrawal_rate: f64,
     max_sigset_change_rate: f64,
-    min_checkpoint_seconds: u64,
+    min_blocks_per_checkpoint: u64,
     reset_index: Option<u32>,
     app_client: F,
     exporter_addr: Option<SocketAddr>,
@@ -158,8 +158,8 @@ where
     /// - `max_sigset_change_rate`: The maximum rate at which the signatory set
     /// can change in a 24-hour period, temporarily halting signing if the limit
     /// is reached.
-    /// - `min_checkpoint_seconds`: The minimum amount of time that must pass
-    /// before this signer will contribute its signature.
+    /// - `min_blocks_per_checkpoint`: The minimum number of new Bitcoin blocks
+    /// that must be mined before this signer will contribute its signature.
     /// - `reset_index`: A checkpoint index at which the rate limits should be
     /// reset, used to manually override the limits if the signer has checked on
     /// the pending withdrawals and decided they are legitimate.
@@ -170,7 +170,7 @@ where
         xprivs: Vec<ExtendedPrivKey>,
         max_withdrawal_rate: f64,
         max_sigset_change_rate: f64,
-        min_checkpoint_seconds: u64,
+        min_blocks_per_checkpoint: u64,
         reset_index: Option<u32>,
         app_client: F,
         exporter_addr: Option<SocketAddr>,
@@ -183,7 +183,7 @@ where
             xprivs,
             max_withdrawal_rate,
             max_sigset_change_rate,
-            min_checkpoint_seconds,
+            min_blocks_per_checkpoint,
             reset_index,
             app_client,
             exporter_addr,
@@ -332,7 +332,7 @@ where
 
         let (status, timestamp) = self
             .client()
-            .query(|app| {
+            .query(|app: InnerApp| {
                 let cp = app.bitcoin.checkpoints.get(index)?;
                 Ok((cp.status, cp.create_time()))
             })
@@ -356,16 +356,27 @@ where
 
         if matches!(status, CheckpointStatus::Signing) {
             self.check_change_rates().await?;
-            let now_seconds = SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap()
-                .as_secs();
-            if timestamp + self.min_checkpoint_seconds > now_seconds {
-                info!(
-                    "Checkpoint is too recent, waiting {} seconds",
-                    (timestamp + self.min_checkpoint_seconds) - now_seconds
-                );
-                return Ok(false);
+            let current_btc_height = self
+                .client()
+                .query(|app: InnerApp| Ok(app.bitcoin.headers.height()?))
+                .await? as u64;
+            let last_signed_btc_height: Option<u64> = self
+                .client()
+                .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.get(index)?.signed_at_btc_height))
+                .await?
+                .map(|v| v as u64);
+
+            if let Some(last_signed_btc_height) = last_signed_btc_height {
+                if current_btc_height < last_signed_btc_height + self.min_blocks_per_checkpoint {
+                    let delta = last_signed_btc_height + self.min_blocks_per_checkpoint
+                        - current_btc_height;
+                    info!(
+                        "Checkpoint is too recent, {} more Bitcoin block{} required",
+                        delta,
+                        if delta == 1 { "" } else { "s" },
+                    );
+                    return Ok(false);
+                }
             }
         }
 

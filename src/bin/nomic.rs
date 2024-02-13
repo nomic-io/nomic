@@ -1225,13 +1225,13 @@ pub struct SignerCmd {
     #[clap(long, default_value_t = 0.1)]
     max_sigset_change_rate: f64,
 
-    /// The minimum age of a checkpoint before the signer will contribute its
-    /// signature. This setting can be used to change the rate at which the
+    /// The minimum number of Bitcoin blocks that must be mined before the signer will contribute its
+    /// signature to the current signing checkpoint. This setting can be used to change the rate at which the
     /// network produces checkpoints (higher values cause less frequent checkpoints).
     ///
     /// Signatures will always be contributed to previously completed checkpoints.
-    #[clap(long, default_value_t = 120)]
-    min_checkpoint_minutes: u64,
+    #[clap(long, default_value_t = 12)]
+    min_blocks_per_checkpoint: u64,
 
     #[clap(long)]
     prometheus_addr: Option<std::net::SocketAddr>,
@@ -1255,7 +1255,7 @@ impl SignerCmd {
             self.xpriv_paths.clone(),
             self.max_withdrawal_rate,
             self.max_sigset_change_rate,
-            self.min_checkpoint_minutes * 60,
+            self.min_blocks_per_checkpoint,
             self.reset_limits_at_index,
             // TODO: check for custom RPC port, allow config, etc
             || nomic::app_client("http://localhost:26657").with_wallet(wallet()),
