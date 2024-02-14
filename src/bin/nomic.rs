@@ -1917,7 +1917,7 @@ pub struct RecoverDepositCmd {
     #[clap(long)]
     channel: Option<String>,
     #[clap(long)]
-    remote_prefix: Option<String>,
+    remote_addr: Option<String>,
 
     #[clap(long)]
     nomic_addr: Address,
@@ -2001,7 +2001,7 @@ impl RecoverDepositCmd {
     }
 
     async fn run(&self) -> Result<()> {
-        if self.channel.is_some() != self.remote_prefix.is_some() {
+        if self.channel.is_some() != self.remote_addr.is_some() {
             return Err(nomic::error::Error::Orga(orga::Error::App(
                 "Both --channel and --remote-prefix must be specified".to_string(),
             )));
@@ -2024,29 +2024,20 @@ impl RecoverDepositCmd {
 
         dbg!(sigsets.len());
 
-        if let (Some(channel), Some(remote_prefix)) =
-            (self.channel.as_ref(), self.remote_prefix.as_ref())
+        if let (Some(channel), Some(remote_addr)) =
+            (self.channel.as_ref(), self.remote_addr.as_ref())
         {
-            let remote_addr = bech32::encode(
-                remote_prefix.as_str(),
-                bech32::decode(self.nomic_addr.to_string().as_str())
-                    .unwrap()
-                    .1,
-                bech32::Variant::Bech32,
-            )
-            .unwrap();
-
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_secs()
-                * 1_000_000_000;
+                .as_secs();
+            let start = (now + 60 * 60 * 24 * 7 - (now % (60 * 60))) * 1_000_000_000;
             let mut dest = Dest::Ibc(IbcDest {
                 source_port: "transfer".to_string().try_into().unwrap(),
                 source_channel: channel.bytes().collect::<Vec<_>>().try_into().unwrap(),
-                receiver: orga::encoding::Adapter(remote_addr.into()),
+                receiver: orga::encoding::Adapter(remote_addr.to_string().into()),
                 sender: orga::encoding::Adapter(self.nomic_addr.to_string().into()),
-                timeout_timestamp: now,
+                timeout_timestamp: start,
                 memo: "".to_string().try_into().unwrap(),
             });
 
