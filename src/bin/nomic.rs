@@ -1209,11 +1209,11 @@ impl RelayerCmd {
 
 #[derive(Parser, Debug)]
 pub struct SignerCmd {
-    // TODO: should be a flag
-    reset_limits_at_index: Option<u32>,
-
     #[clap(flatten)]
     config: nomic::network::Config,
+
+    #[clap(long)]
+    reset_limits_at_index: Option<u32>,
 
     /// Limits the fraction of the total reserve that may be withdrawn within
     /// the trailing 24-hour period
