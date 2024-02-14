@@ -26,8 +26,9 @@ use nomic::bitcoin::Config as BitcoinConfig;
 use nomic::error::{Error, Result};
 use nomic::utils::*;
 use nomic::utils::{
-    declare_validator, poll_for_active_sigset, poll_for_blocks, populate_bitcoin_block, retry,
-    set_time, setup_test_app, setup_test_signer, test_bitcoin_client, NomicTestWallet,
+    declare_validator, poll_for_active_sigset, poll_for_blocks, poll_for_updated_balance,
+    populate_bitcoin_block, retry, set_time, setup_test_app, setup_test_signer,
+    test_bitcoin_client, NomicTestWallet,
 };
 use orga::abci::Node;
 use orga::client::{
@@ -385,11 +386,9 @@ async fn bitcoin_test() {
 
         poll_for_bitcoin_header(1120).await.unwrap();
 
-        let balance = app_client()
-            .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
-            .await
-            .unwrap();
-        assert_eq!(balance, Amount::from(0));
+        let expected_balance = 0;
+        let balance = poll_for_updated_balance(funded_accounts[0].address, expected_balance).await;
+        assert_eq!(balance, expected_balance);
 
         poll_for_active_sigset().await;
         poll_for_signatory_key(consensus_key).await;
@@ -402,11 +401,9 @@ async fn bitcoin_test() {
         .await
         .unwrap();
 
-        let balance = app_client()
-            .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
-            .await
-            .unwrap();
-        assert_eq!(balance, Amount::from(0));
+        let expected_balance = 0;
+        let balance = poll_for_updated_balance(funded_accounts[0].address, expected_balance).await;
+        assert_eq!(balance, expected_balance);
 
         btc_client
             .generate_to_address(4, &async_wallet_address)
@@ -416,11 +413,9 @@ async fn bitcoin_test() {
         poll_for_bitcoin_header(1124).await.unwrap();
         poll_for_signing_checkpoint().await;
 
-        let balance = app_client()
-            .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
-            .await
-            .unwrap();
-        assert_eq!(balance, Amount::from(0));
+        let expected_balance = 0;
+        let balance = poll_for_updated_balance(funded_accounts[0].address, expected_balance).await;
+        assert_eq!(balance, expected_balance);
 
         let confirmed_index = app_client()
             .query(|app| Ok(app.bitcoin.checkpoints.confirmed_index))
@@ -432,11 +427,9 @@ async fn bitcoin_test() {
 
         tx.send(Some(())).await.unwrap();
 
-        let balance = app_client()
-            .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
-            .await
-            .unwrap();
-        assert_eq!(balance, Amount::from(989996871600000));
+        let expected_balance = 989996871600000;
+        let balance = poll_for_updated_balance(funded_accounts[0].address, expected_balance).await;
+        assert_eq!(balance, Amount::from(expected_balance));
 
         btc_client
             .generate_to_address(3, &async_wallet_address)
@@ -461,12 +454,9 @@ async fn bitcoin_test() {
         poll_for_bitcoin_header(1131).await.unwrap();
         poll_for_completed_checkpoint(2).await;
 
-        let balance = app_client()
-            .query(|app| app.bitcoin.accounts.balance(funded_accounts[1].address))
-            .await
-            .unwrap();
-
-        assert_eq!(balance, Amount::from(39595307400000));
+        let expected_balance = 39595307400000;
+        let balance = poll_for_updated_balance(funded_accounts[1].address, expected_balance).await;
+        assert_eq!(balance, Amount::from(expected_balance));
 
         withdraw_bitcoin(
             &funded_accounts[0],
@@ -496,11 +486,9 @@ async fn bitcoin_test() {
             .unwrap();
         assert!(signer_jailed);
 
-        let balance = app_client()
-            .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
-            .await
-            .unwrap();
-        assert_eq!(balance, Amount::from(989989871600000));
+        let expected_balance = 989989871600000;
+        let balance = poll_for_updated_balance(funded_accounts[0].address, expected_balance).await;
+        assert_eq!(balance, Amount::from(expected_balance));
 
         let disbursal_txs = app_client()
             .query(|app: InnerApp| {
@@ -1045,11 +1033,9 @@ async fn pending_deposits() {
 
         poll_for_bitcoin_header(1120).await.unwrap();
 
-        let balance = app_client()
-            .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
-            .await
-            .unwrap();
-        assert_eq!(balance, Amount::from(0));
+        let expected_balance = 0;
+        let balance = poll_for_updated_balance(funded_accounts[0].address, expected_balance).await;
+        assert_eq!(balance, expected_balance);
 
         poll_for_active_sigset().await;
         poll_for_signatory_key(consensus_key).await;
@@ -1062,11 +1048,9 @@ async fn pending_deposits() {
         .await
         .unwrap();
 
-        let balance = app_client()
-            .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
-            .await
-            .unwrap();
-        assert_eq!(balance, Amount::from(0));
+        let expected_balance = 0;
+        let balance = poll_for_updated_balance(funded_accounts[0].address, expected_balance).await;
+        assert_eq!(balance, expected_balance);
 
         loop {
             let deposits = reqwest::get(format!(
@@ -1272,11 +1256,9 @@ async fn signer_key_updating() {
 
         poll_for_bitcoin_header(1120).await.unwrap();
 
-        let balance = app_client()
-            .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
-            .await
-            .unwrap();
-        assert_eq!(balance, Amount::from(0));
+        let expected_balance = 0;
+        let balance = poll_for_updated_balance(funded_accounts[0].address, expected_balance).await;
+        assert_eq!(balance, expected_balance);
 
         poll_for_active_sigset().await;
         poll_for_signatory_key(consensus_key).await;
@@ -1618,11 +1600,9 @@ async fn recover_expired_deposit() {
 
         poll_for_bitcoin_header(1120).await.unwrap();
 
-        let balance = app_client()
-            .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
-            .await
-            .unwrap();
-        assert_eq!(balance, Amount::from(0));
+        let expected_balance = 0;
+        let balance = poll_for_updated_balance(funded_accounts[0].address, expected_balance).await;
+        assert_eq!(balance, expected_balance);
 
         poll_for_active_sigset().await;
         poll_for_signatory_key(consensus_key).await;
@@ -1710,11 +1690,9 @@ async fn recover_expired_deposit() {
         poll_for_bitcoin_header(1185).await.unwrap();
         poll_for_completed_checkpoint(3).await;
 
-        let balance = app_client()
-            .query(|app| app.bitcoin.accounts.balance(funded_accounts[1].address))
-            .await
-            .unwrap();
-        assert_eq!(balance, Amount::from(39595129200000));
+        let expected_balance = 39595129200000;
+        let balance = poll_for_updated_balance(funded_accounts[1].address, expected_balance).await;
+        assert_eq!(balance, Amount::from(expected_balance));
 
         Err::<(), Error>(Error::Test("Test completed successfully".to_string()))
     };
