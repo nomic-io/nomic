@@ -68,7 +68,7 @@ const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhq
 const IBC_FEE_USATS: u64 = 1_000_000;
 const CALL_FEE_USATS: u64 = 100_000_000;
 
-#[orga(version = 4)]
+#[orga(version = 5)]
 pub struct InnerApp {
     #[call]
     pub accounts: Accounts<Nom>,

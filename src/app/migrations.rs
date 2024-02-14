@@ -1,6 +1,6 @@
 use crate::incentives::Incentives;
 
-use super::{InnerAppV0, InnerAppV1, InnerAppV2, InnerAppV3, InnerAppV4};
+use super::{InnerAppV0, InnerAppV1, InnerAppV2, InnerAppV3, InnerAppV4, InnerAppV5};
 use orga::{
     coins::Take,
     ibc::Ibc,
@@ -84,6 +84,33 @@ impl MigrateFrom<InnerAppV3> for InnerAppV4 {
             cosmos: other.cosmos,
             #[cfg(not(feature = "testnet"))]
             cosmos: Default::default(),
+        })
+    }
+}
+
+impl MigrateFrom<InnerAppV4> for InnerAppV5 {
+    fn migrate_from(other: InnerAppV4) -> Result<Self> {
+        #[cfg(not(feature = "testnet"))]
+        {
+            todo!()
+        }
+
+        Ok(Self {
+            accounts: other.accounts,
+            staking: other.staking,
+            airdrop: other.airdrop,
+            community_pool: other.community_pool,
+            incentive_pool: other.incentive_pool,
+            staking_rewards: other.staking_rewards,
+            dev_rewards: other.dev_rewards,
+            community_pool_rewards: other.community_pool_rewards,
+            incentive_pool_rewards: other.incentive_pool_rewards,
+            bitcoin: other.bitcoin,
+            reward_timer: other.reward_timer,
+            upgrade: other.upgrade,
+            incentives: other.incentives,
+            ibc: other.ibc,
+            cosmos: other.cosmos,
         })
     }
 }
