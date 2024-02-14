@@ -1,25 +1,17 @@
 state_sync_rpc = [
     "http://147.182.171.216:26667",
     "http://147.182.171.216:26677",
-    "https://rpc.nomic-testnet.basementnodes.ca"
+    "https://rpc.nomic-testnet.basementnodes.ca",
 ]
-tendermint_flags = [
-    "--p2p.seeds",
-    """
+tendermint_flags = ["--p2p.seeds", """
         6a6c1af342ce45d550e30ddc187bbbb81167d9b8@147.182.171.216:26656,\
-    """,
-]
-btc_relayer = [
-  "https://relayer.nomic-testnet.mappum.io:8443"
-]
-
-legacy_version = "6.4"
+    """]
+btc_relayer = ["https://relayer.nomic-testnet.mappum.io:8443"]
 
 genesis = """
 {
-  "genesis_time": "2022-10-05T00:00:00Z",
-  "chain_id": "nomic-testnet-4d",
-  "initial_height": "0",
+  "app_hash": "",
+  "chain_id": "nomic-testnet-5",
   "consensus_params": {
     "block": {
       "max_bytes": "22020096",
@@ -27,16 +19,29 @@ genesis = """
       "time_iota_ms": "1000"
     },
     "evidence": {
-      "max_age_num_blocks": "100000",
       "max_age_duration": "172800000000000",
+      "max_age_num_blocks": "100000",
       "max_bytes": "1048576"
     },
     "validator": {
-      "pub_key_types": ["ed25519"]
+      "pub_key_types": [
+        "ed25519"
+      ]
     },
     "version": {}
   },
-  "validators": [],
-  "app_hash": ""
+  "genesis_time": "2024-02-14T19:53:11.939148Z",
+  "initial_height": "0",
+  "validators": [
+    {
+      "address": "044AD55B10017D73B72269396305A71B82CD1216",
+      "name": "",
+      "power": "10",
+      "pub_key": {
+        "type": "tendermint/PubKeyEd25519",
+        "value": "orlC75T55Qe9hgqGZzkPMIOeTn7kvsA2+/d2gZWHL2g="
+      }
+    }
+  ]
 }
 """
