@@ -21,7 +21,7 @@ use nomic::bitcoin::header_queue::Config as HeaderQueueConfig;
 use nomic::bitcoin::relayer::DepositAddress;
 use nomic::bitcoin::relayer::Relayer;
 use nomic::bitcoin::signer::Signer;
-use nomic::bitcoin::threshold_sig::VersionedPubkey;
+use nomic::bitcoin::threshold_sig::Pubkey;
 use nomic::bitcoin::Config as BitcoinConfig;
 use nomic::error::{Error, Result};
 use nomic::utils::*;
@@ -1217,6 +1217,7 @@ async fn signer_key_updating() {
             vec![xpriv],
             0.1,
             1.0,
+            0,
             None,
             client_provider,
             None,
@@ -1300,7 +1301,7 @@ async fn signer_key_updating() {
 
         assert_eq!(
             completed_checkpoint_0_pubkey,
-            VersionedPubkey::from(derived_public_key_0)
+            Pubkey::from(derived_public_key_0)
         );
 
         let building_checkpoint_1_pubkey = app_client()
@@ -1322,7 +1323,7 @@ async fn signer_key_updating() {
 
         assert_eq!(
             building_checkpoint_1_pubkey,
-            VersionedPubkey::from(derived_public_key_1)
+            Pubkey::from(derived_public_key_1)
         );
 
         tx.send(Some(())).await.unwrap();
@@ -1354,6 +1355,7 @@ async fn signer_key_updating() {
                 vec![new_xpriv, xpriv],
                 0.1,
                 1.0,
+                0,
                 None,
                 client_provider,
                 None,
@@ -1392,7 +1394,7 @@ async fn signer_key_updating() {
 
         assert_eq!(
             completed_checkpoint_1_pubkey,
-            VersionedPubkey::from(derived_public_key_1)
+            Pubkey::from(derived_public_key_1)
         );
 
         let building_checkpoint_2_pubkey = app_client()
@@ -1414,7 +1416,7 @@ async fn signer_key_updating() {
 
         assert_eq!(
             building_checkpoint_2_pubkey,
-            VersionedPubkey::from(derived_public_key_2)
+            Pubkey::from(derived_public_key_2)
         );
 
         deposit_bitcoin(
@@ -1445,7 +1447,7 @@ async fn signer_key_updating() {
 
         assert_eq!(
             completed_checkpoint_2_pubkey,
-            VersionedPubkey::from(derived_public_key_2)
+            Pubkey::from(derived_public_key_2)
         );
 
         Err::<(), Error>(Error::Test("Test completed successfully".to_string()))
