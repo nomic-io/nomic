@@ -1110,6 +1110,12 @@ impl Bitcoin {
 
     #[call]
     pub fn transfer_to_fee_pool(&mut self, amount: Amount) -> Result<()> {
+        if amount < 100 * self.config.units_per_sat {
+            return Err(Error::Orga(OrgaError::App(
+                "Minimum transfer to fee pool is 100 sat".into(),
+            )));
+        }
+
         exempt_from_fee()?;
 
         let signer = self
