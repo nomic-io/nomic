@@ -1370,6 +1370,9 @@ mod tests {
 
             btc.add_withdrawal(Adapter::new(Script::new()), 459_459_927_000_000.into())
                 .unwrap();
+
+            let mut building_mut = btc.checkpoints.building_mut().unwrap();
+            building_mut.fees_collected = 100_000_000;
         };
 
         let sign_batch = |btc_height| {
