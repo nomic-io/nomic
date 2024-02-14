@@ -338,7 +338,7 @@ impl Config {
 pub struct HeaderQueue {
     pub(crate) deque: Deque<WorkHeader>,
     pub(crate) current_work: Adapter<Uint256>,
-    config: Config,
+    pub(crate) config: Config,
 }
 
 impl MigrateFrom<HeaderQueueV0> for HeaderQueueV1 {
