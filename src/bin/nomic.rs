@@ -2007,6 +2007,12 @@ impl RecoverDepositCmd {
             )));
         }
 
+        let threshold = self
+            .config
+            .client()
+            .query(|app| Ok(app.bitcoin.checkpoints.config.sigset_threshold))
+            .await?;
+
         // TODO: support passing in script csv by path
         let sigsets: Vec<(u32, SignatorySet)> = std::fs::read_to_string(&self.reserve_script_path)?
             .lines()
@@ -2017,7 +2023,7 @@ impl RecoverDepositCmd {
             .map(|(i, script_hex)| {
                 let i = i.parse::<u32>().unwrap();
                 let script = bitcoin::Script::from(hex::decode(script_hex).unwrap());
-                let (sigset, _) = SignatorySet::from_script(&script, (2, 3)).unwrap();
+                let (sigset, _) = SignatorySet::from_script(&script, threshold).unwrap();
                 (i, sigset)
             })
             .collect();
@@ -2055,9 +2061,9 @@ impl RecoverDepositCmd {
                         }
                     }
 
-                    let script = sigset.output_script(&dest_bytes, (2, 3)).unwrap();
+                    let script = sigset.output_script(&dest_bytes, threshold).unwrap();
                     let addr =
-                        bitcoin::Address::from_script(&script, bitcoin::Network::Bitcoin).unwrap();
+                        bitcoin::Address::from_script(&script, nomic::bitcoin::NETWORK).unwrap();
                     if addr.to_string().to_lowercase()
                         == self.deposit_addr.to_string().to_lowercase()
                     {
@@ -2089,8 +2095,8 @@ impl RecoverDepositCmd {
         let dest_bytes = dest.commitment_bytes().unwrap();
 
         for (sigset_index, sigset) in sigsets.iter() {
-            let script = sigset.output_script(&dest_bytes, (2, 3)).unwrap();
-            let addr = bitcoin::Address::from_script(&script, bitcoin::Network::Bitcoin).unwrap();
+            let script = sigset.output_script(&dest_bytes, threshold).unwrap();
+            let addr = bitcoin::Address::from_script(&script, nomic::bitcoin::NETWORK).unwrap();
             if addr.to_string().to_lowercase() == self.deposit_addr.to_string().to_lowercase() {
                 println!("Found at sigset index {}", sigset_index,);
                 return self.relay_deposit(dest, *sigset_index).await;
