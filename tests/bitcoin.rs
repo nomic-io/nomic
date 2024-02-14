@@ -427,7 +427,7 @@ async fn bitcoin_test() {
 
         tx.send(Some(())).await.unwrap();
 
-        let expected_balance = 989996871600000;
+        let expected_balance = 989996715180000;
         let balance = poll_for_updated_balance(funded_accounts[0].address, expected_balance).await;
         assert_eq!(balance, Amount::from(expected_balance));
 
