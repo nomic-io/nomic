@@ -216,7 +216,7 @@ impl Config {
             max_withdrawal_script_length: 64,
             transfer_fee: 1_000_000,
             #[cfg(feature = "testnet")]
-            min_confirmations: 0,
+            min_confirmations: 1,
             #[cfg(not(feature = "testnet"))]
             min_confirmations: 5,
             units_per_sat: 1_000_000,
@@ -227,7 +227,7 @@ impl Config {
             #[cfg(not(feature = "testnet"))]
             capacity_limit: 21 * 100_000_000, // 21 BTC
             max_deposit_age: 60 * 60 * 24 * 5,
-            fee_pool_target_balance: 10_000_000, // 0.1 BTC
+            fee_pool_target_balance: 100_000_000, // 1 BTC
             fee_pool_reward_split: (1, 10),
         }
     }

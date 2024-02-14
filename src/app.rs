@@ -429,6 +429,11 @@ mod abci {
                 .current_version
                 .insert((), vec![Self::CONSENSUS_VERSION].try_into().unwrap())?;
 
+            #[cfg(feature = "testnet")]
+            {
+                self.upgrade.activation_delay_seconds = 20 * 60;
+            }
+
             Ok(())
         }
     }
