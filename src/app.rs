@@ -93,7 +93,7 @@ pub struct InnerApp {
     #[call]
     pub ibc: Ibc,
     #[cfg(not(feature = "testnet"))]
-    #[orga(version(V4))]
+    #[orga(version(V4, V5))]
     #[call]
     pub ibc: Ibc,
 
