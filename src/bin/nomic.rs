@@ -442,17 +442,19 @@ fn legacy_bin(config: &nomic::network::Config) -> Result<Option<PathBuf>> {
 
             #[cfg(feature = "legacy-bin")]
             {
-                if !bin_dir.exists() {
-                    std::fs::create_dir_all(&bin_dir)?;
-                }
+                if !env!("NOMIC_LEGACY_BUILD_VERSION").is_empty() {
+                    if !bin_dir.exists() {
+                        std::fs::create_dir_all(&bin_dir)?;
+                    }
 
-                let bin_name = env!("NOMIC_LEGACY_BUILD_VERSION").trim().replace(' ', "-");
-                let bin_path = bin_dir.join(bin_name);
-                let bin_bytes = include_bytes!(env!("NOMIC_LEGACY_BUILD_PATH"));
-                if !bin_path.exists() {
-                    log::debug!("Writing legacy binary to {}...", bin_path.display());
-                    std::fs::write(&bin_path, bin_bytes).unwrap();
-                    std::fs::set_permissions(bin_path, Permissions::from_mode(0o777)).unwrap();
+                    let bin_name = env!("NOMIC_LEGACY_BUILD_VERSION").trim().replace(' ', "-");
+                    let bin_path = bin_dir.join(bin_name);
+                    let bin_bytes = include_bytes!(env!("NOMIC_LEGACY_BUILD_PATH"));
+                    if !bin_path.exists() {
+                        log::debug!("Writing legacy binary to {}...", bin_path.display());
+                        std::fs::write(&bin_path, bin_bytes).unwrap();
+                        std::fs::set_permissions(bin_path, Permissions::from_mode(0o777)).unwrap();
+                    }
                 }
             }
 
