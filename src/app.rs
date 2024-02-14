@@ -435,11 +435,10 @@ mod abci {
 
                 include_str!("../testnet_addresses.csv")
                     .lines()
-                    .map(|line| {
+                    .try_for_each(|line| {
                         let address = line.parse().unwrap();
                         self.accounts.deposit(address, Coin::mint(10_000_000_000))
-                    })
-                    .collect::<Result<()>>()?;
+                    })?;
             }
 
             Ok(())

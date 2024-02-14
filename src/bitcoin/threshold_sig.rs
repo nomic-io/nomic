@@ -169,7 +169,7 @@ impl ThresholdSig {
 
         for signatory in signatories.iter() {
             ts.sigs.insert(
-                signatory.pubkey.into(),
+                signatory.pubkey,
                 Share {
                     power: signatory.voting_power,
                     sig: None,

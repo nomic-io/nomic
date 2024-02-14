@@ -235,7 +235,7 @@ impl SignatorySet {
             take_op(ins, OP_ENDIF)?;
 
             Ok::<_, Error>(Signatory {
-                pubkey: pubkey.into(),
+                pubkey,
                 voting_power: voting_power as u64,
             })
         }
@@ -250,7 +250,7 @@ impl SignatorySet {
             take_op(ins, OP_ENDIF)?;
 
             Ok::<_, Error>(Signatory {
-                pubkey: pubkey.into(),
+                pubkey,
                 voting_power: voting_power as u64,
             })
         }

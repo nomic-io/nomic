@@ -1999,7 +1999,7 @@ impl RecoverDepositCmd {
             dest
         );
 
-        return Ok(());
+        Ok(())
     }
 
     async fn run(&self) -> Result<()> {
@@ -2093,7 +2093,7 @@ impl RecoverDepositCmd {
             }
         }
 
-        let dest = Dest::Address(self.nomic_addr.clone());
+        let dest = Dest::Address(self.nomic_addr);
         let dest_bytes = dest.commitment_bytes().unwrap();
 
         for (sigset_index, sigset) in sigsets.iter() {

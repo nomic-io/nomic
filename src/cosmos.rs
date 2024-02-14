@@ -198,8 +198,7 @@ impl Cosmos {
                 .map_err(|_| OrgaError::App("Invalid public key".to_string()))?
                 .key
                 .as_slice(),
-        )?
-        .into();
+        )?;
 
         let mut chain = self.chains.entry(client_id)?.or_default()?;
         if let Some(existing_key) = chain.op_keys_by_cons.get(cons_key.clone())? {
