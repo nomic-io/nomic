@@ -497,11 +497,17 @@ pub async fn capacity_limit() -> Result<u64, JsError> {
 
 #[wasm_bindgen(js_name = feeInfo)]
 pub async fn fee_info() -> Result<FeeInfo, JsError> {
+    let user_fee_factor = app_client()
+        .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.config.user_fee_factor))
+        .await?;
+
     Ok(app_client()
         .query(|app: InnerApp| {
             let building = app.bitcoin.checkpoints.building()?;
-            let est_miner_fee =
-                building.fee_rate * app.bitcoin.checkpoints.active_sigset()?.est_witness_vsize();
+            let est_miner_fee = building.fee_rate
+                * app.bitcoin.checkpoints.active_sigset()?.est_witness_vsize()
+                * user_fee_factor
+                / 10_000;
             Ok(FeeInfo {
                 bridgeFeeRate: 0.015,
                 minerFeeRate: est_miner_fee,
