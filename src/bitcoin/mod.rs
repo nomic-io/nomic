@@ -519,7 +519,7 @@ impl Bitcoin {
     #[cfg(feature = "full")]
     pub fn should_push_checkpoint(&mut self) -> Result<bool> {
         self.checkpoints
-            .should_push(self.signatory_keys.map(), &[0; 32])
+            .should_push(self.signatory_keys.map(), &[0; 32], self.headers.height()?)
         // TODO: we shouldn't need this slice, commitment should be fixed-length
     }
 
