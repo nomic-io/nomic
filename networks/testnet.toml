@@ -1,7 +1,6 @@
 state_sync_rpc = [
     "http://147.182.171.216:26667",
     "http://147.182.171.216:26677",
-    "https://rpc.nomic-testnet.basementnodes.ca",
 ]
 tendermint_flags = ["--p2p.seeds", """
         6a6c1af342ce45d550e30ddc187bbbb81167d9b8@147.182.171.216:26656,\
