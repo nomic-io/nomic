@@ -963,12 +963,7 @@ async fn slashing_params() -> Value {
     })
 }
 
-#[get("/cosmos/base/tendermint/v1beta1/blocks/latest")]
-async fn latest_block() -> Value {
-    let client = tm::HttpClient::new(app_host()).unwrap();
-
-    let res = client.latest_block().await.unwrap();
-
+fn parse_block(res: tendermint_rpc::endpoint::block::Response) -> Value {
     let last_commit = res.block.last_commit.unwrap();
     let signatures: Vec<_> = last_commit
         .signatures
@@ -988,7 +983,25 @@ async fn latest_block() -> Value {
     json!({
         "block_id": res.block_id,
         "block": {
-            "header": res.block.header,
+            "header": {
+                "version": {
+                    "block": res.block.header.version.block,
+                    "app": res.block.header.version.block,
+                },
+                "chain_id": res.block.header.chain_id,
+                "height": res.block.header.height,
+                "time": res.block.header.time,
+                "last_block_id": res.block.header.last_block_id,
+                "last_commit_hash": res.block.header.last_commit_hash.map(|hash| base64::encode(hash.as_bytes())),
+                "data_hash": res.block.header.data_hash.map(|hash| base64::encode(hash.as_bytes())),
+                "validators_hash": base64::encode(res.block.header.validators_hash.as_bytes()),
+                "next_validators_hash": base64::encode(res.block.header.next_validators_hash.as_bytes()),
+                "consensus_hash": base64::encode(res.block.header.consensus_hash.as_bytes()),
+                "app_hash": base64::encode(res.block.header.app_hash.value()),
+                "last_results_hash": res.block.header.last_results_hash.map(|hash| base64::encode(hash.as_bytes())),
+                "evidence_hash": res.block.header.evidence_hash.map(|hash| base64::encode(hash.as_bytes())),
+                "proposer_address": base64::encode(res.block.header.proposer_address),
+            },
             "data": res.block.data,
             "evidence": res.block.evidence,
             "last_commit": {
@@ -997,6 +1010,14 @@ async fn latest_block() -> Value {
             }
         }
     })
+}
+
+#[get("/cosmos/base/tendermint/v1beta1/blocks/latest")]
+async fn latest_block() -> Value {
+    let client = tm::HttpClient::new(app_host()).unwrap();
+
+    let res = client.latest_block().await.unwrap();
+    parse_block(res)
 }
 
 #[get("/cosmos/base/tendermint/v1beta1/blocks/<height>")]
@@ -1008,50 +1029,11 @@ async fn block(height: u32) -> Value {
         .await
         .unwrap();
 
-    let last_commit = res.block.last_commit.unwrap();
-    let signatures: Vec<_> = last_commit
-        .signatures
-        .iter()
-        .map(|signature| -> Value {
-            let signature_raw = RawCommitSig::from(signature.clone());
-
-            json!({
-                "validator_address": base64::encode(signature_raw.validator_address),
-                "block_id_flag": signature_raw.block_id_flag,
-                "timestamp": signature_raw.timestamp,
-                "signature": base64::encode(signature_raw.signature),
-            })
-        })
-        .collect();
-
-    json!({
-        "block_id": res.block_id,
-        "block": {
-            "header": res.block.header,
-            "data": res.block.data,
-            "evidence": res.block.evidence,
-            "last_commit": {
-                "block_id": last_commit.block_id,
-                "signatures": signatures
-            }
-        }
-    })
+    parse_block(res)
 }
 
-#[get("/cosmos/base/tendermint/v1beta1/validatorsets/latest")]
-async fn latest_validator_set() -> Value {
-    let client = tm::HttpClient::new(app_host()).unwrap();
-
-    let block = client.latest_block().await.unwrap();
-
-    let res = client
-        .validators(block.block.header.height, tendermint_rpc::Paging::All)
-        .await
-        .unwrap();
-
-    let validators: Vec<_> = res
-        .validators
-        .iter()
+fn parse_validator_set(res: tendermint_rpc::endpoint::validators::Response) -> Value {
+    let validators: Vec<_> = res.validators.iter()
         .map(|validator| -> Value {
             json!({
                 "address": validator.address,
@@ -1073,6 +1055,23 @@ async fn latest_validator_set() -> Value {
             "total": res.validators.len(),
         }
     })
+}
+
+#[get("/cosmos/base/tendermint/v1beta1/validatorsets/latest")]
+async fn latest_validator_set() -> Value {
+    let client = tm::HttpClient::new(app_host()).unwrap();
+
+    let block = client
+        .latest_block()
+        .await
+        .unwrap();
+
+    let res = client
+        .validators(block.block.header.height, tendermint_rpc::Paging::All)
+        .await
+        .unwrap();
+
+    parse_validator_set(res)
 }
 
 #[get("/cosmos/base/tendermint/v1beta1/validatorsets/<height>")]
@@ -1084,30 +1083,7 @@ async fn validator_set(height: u32) -> Value {
         .await
         .unwrap();
 
-    let validators: Vec<_> = res
-        .validators
-        .iter()
-        .map(|validator| -> Value {
-            json!({
-                "address": validator.address,
-                "voting_power": i64::from(validator.power).to_string(),
-                "proposer_priority": i64::from(validator.proposer_priority).to_string(),
-                "pub_key": {
-                    "@type": "/cosmos.crypto.ed25519.PubKey",
-                    "key": base64::encode(validator.pub_key.ed25519().unwrap().to_bytes()),
-                }
-            })
-        })
-        .collect();
-
-    json!({
-        "block_height": res.block_height,
-        "validators": validators,
-        "pagination": {
-            "next_key": null,
-            "total": res.validators.len(),
-        }
-    })
+    parse_validator_set(res)
 }
 
 #[get("/cosmos/distribution/v1beta1/community_pool")]

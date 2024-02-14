@@ -164,6 +164,7 @@ pub fn load_or_generate(path: PathBuf, network: bitcoin::Network) -> Result<Exte
         load_bitcoin_key(path)
     } else {
         let key = generate_bitcoin_key(network)?;
+        fs::create_dir_all(path.parent().unwrap())?;
         fs::write(path.clone(), key.to_string())?;
         info!("Generated bitcoin key at {}", path.display());
         warn!("This is your signer key. Back it up!");
@@ -366,6 +367,29 @@ pub async fn poll_for_completed_checkpoint(num_checkpoints: u32) {
             .query(|app| Ok(app.bitcoin.checkpoints.completed(1_000)?.len()))
             .await
             .unwrap();
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+}
+
+pub async fn poll_for_updated_balance(address: Address, expected_balance: u64) -> u64 {
+    info!("Polling for updated balance...");
+    let initial_balance = app_client(DEFAULT_RPC)
+        .query(|app| app.bitcoin.accounts.balance(address))
+        .await
+        .unwrap();
+
+    if initial_balance == expected_balance {
+        return initial_balance.into();
+    }
+
+    loop {
+        let balance = app_client(DEFAULT_RPC)
+            .query(|app| app.bitcoin.accounts.balance(address))
+            .await
+            .unwrap();
+        if balance != initial_balance {
+            break balance.into();
+        }
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
 }
