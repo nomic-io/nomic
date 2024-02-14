@@ -432,6 +432,14 @@ mod abci {
             #[cfg(feature = "testnet")]
             {
                 self.upgrade.activation_delay_seconds = 20 * 60;
+
+                include_str!("../testnet_addresses.csv")
+                    .lines()
+                    .map(|line| {
+                        let address = line.parse().unwrap();
+                        self.accounts.deposit(address, Coin::mint(10_000_000_000))
+                    })
+                    .collect::<Result<()>>()?;
             }
 
             Ok(())
