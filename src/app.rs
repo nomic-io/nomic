@@ -947,6 +947,24 @@ impl ConvertSdkTx for InnerApp {
                         Ok(PaidCall { payer, paid })
                     }
 
+                    "nomic/PayToFeePool" => {
+                        let msg = msg
+                            .value
+                            .as_object()
+                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
+
+                        let amount: u64 = msg["amount"]
+                            .as_str()
+                            .ok_or_else(|| Error::App("Invalid amount".to_string()))?
+                            .parse()
+                            .map_err(|e: std::num::ParseIntError| Error::App(e.to_string()))?;
+
+                        let payer = build_call!(self.bitcoin.transfer_to_fee_pool(amount.into()));
+                        let paid = build_call!(self.app_noop());
+
+                        Ok(PaidCall { payer, paid })
+                    }
+
                     _ => Err(Error::App("Unsupported message type".into())),
                 }
             }
