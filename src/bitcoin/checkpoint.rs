@@ -1985,7 +1985,7 @@ impl CheckpointQueue {
         fee_pool: &mut i64,
         parent_config: &super::Config,
     ) -> Result<bool> {
-        if !self.should_push(sig_keys, &timestamping_commitment)? {
+        if !self.should_push(sig_keys, &timestamping_commitment, btc_height)? {
             return Ok(false);
         }
 
@@ -2098,6 +2098,7 @@ impl CheckpointQueue {
         &mut self,
         sig_keys: &Map<ConsensusKey, Xpub>,
         timestamping_commitment: &[u8],
+        btc_height: u32,
     ) -> Result<bool> {
         // Do not push if there is a checkpoint in the `Signing` state. There
         // should only ever be at most one checkpoint in this state.
@@ -2116,6 +2117,17 @@ impl CheckpointQueue {
             // since creating the current `Building` checkpoint.
             if elapsed < self.config.min_checkpoint_interval {
                 return Ok(false);
+            }
+
+            // Do not push if Bitcoin headers are being backfilled (e.g. the
+            // current latest height is less than the height at which the last
+            // confirmed checkpoint was signed).
+            if let Ok(last_completed_index) = self.last_completed_index() {
+                let last_completed = self.get(last_completed_index)?;
+                let last_signed_height = last_completed.signed_at_btc_height.unwrap_or(0);
+                if btc_height < last_signed_height {
+                    return Ok(false);
+                }
             }
 
             // Don't push if there are no pending deposits, withdrawals, or
