@@ -1234,7 +1234,7 @@ pub struct SignerCmd {
     /// network produces checkpoints (higher values cause less frequent checkpoints).
     ///
     /// Signatures will always be contributed to previously completed checkpoints.
-    #[clap(long, default_value_t = 12)]
+    #[clap(long, default_value_t = 6)]
     min_blocks_per_checkpoint: u64,
 
     #[clap(long)]
