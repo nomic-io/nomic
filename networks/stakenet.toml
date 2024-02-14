@@ -14,8 +14,7 @@ btc_relayer = [
   "https://rly.nomic.basementnodes.ca:443"
 ]
 
-upgrade_height = 9357000
-legacy_version = "3.0.2"
+legacy_version = "6.0.x"
 
 genesis = """
 {

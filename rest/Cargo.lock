@@ -627,6 +627,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-targets",
 ]
@@ -2308,7 +2309,7 @@ dependencies = [
 
 [[package]]
 name = "nomic"
-version = "6.6.1"
+version = "7.0.0"
 dependencies = [
  "base64 0.13.1",
  "bech32",
@@ -2354,13 +2355,17 @@ name = "nomic-rest"
 version = "0.1.0"
 dependencies = [
  "base64 0.13.1",
+ "chrono",
  "hex",
+ "ibc",
+ "ibc-proto",
  "lazy_static",
  "nomic",
  "rocket",
  "serde",
  "serde_json",
  "tendermint 0.23.7",
+ "tendermint-proto 0.23.9",
  "tendermint-rpc 0.23.7",
  "tokio",
 ]
@@ -2515,7 +2520,7 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.3.1"
-source = "git+https://github.com/nomic-io/orga.git?rev=3d422b1702841b9ebb76878d7336d6fa68729c91#3d422b1702841b9ebb76878d7336d6fa68729c91"
+source = "git+https://github.com/nomic-io/orga.git?rev=38682a1eafc9c3566aa5de4601a1aff06eb79c4f#38682a1eafc9c3566aa5de4601a1aff06eb79c4f"
 dependencies = [
  "abci2",
  "async-trait",
@@ -2576,7 +2581,7 @@ dependencies = [
 [[package]]
 name = "orga-macros"
 version = "0.3.1"
-source = "git+https://github.com/nomic-io/orga.git?rev=3d422b1702841b9ebb76878d7336d6fa68729c91#3d422b1702841b9ebb76878d7336d6fa68729c91"
+source = "git+https://github.com/nomic-io/orga.git?rev=38682a1eafc9c3566aa5de4601a1aff06eb79c4f#38682a1eafc9c3566aa5de4601a1aff06eb79c4f"
 dependencies = [
  "darling",
  "heck 0.3.3",

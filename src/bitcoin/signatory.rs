@@ -1,9 +1,16 @@
 #![allow(clippy::redundant_closure_call)] // TODO: fix bitcoin-script then remove this
 #![allow(unused_imports)] // TODO
 
-#[cfg(feature = "full")]
+use std::cmp::Ordering;
+
+use crate::bitcoin::threshold_sig::Pubkey;
 use crate::error::Error;
 use crate::error::Result;
+use bitcoin::blockdata::opcodes::all::{
+    OP_ADD, OP_CHECKSIG, OP_DROP, OP_ELSE, OP_ENDIF, OP_GREATERTHAN, OP_IF, OP_SWAP,
+};
+use bitcoin::blockdata::opcodes::{self, OP_FALSE};
+use bitcoin::blockdata::script::{read_scriptint, Instruction, Instructions};
 use bitcoin::secp256k1::Context as SecpContext;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::secp256k1::Secp256k1;
@@ -28,12 +35,6 @@ use super::threshold_sig::VersionedPubkey;
 use super::ConsensusKey;
 use super::Xpub;
 
-/// The maximum age of a signatory set which can still be deposited into, in
-/// seconds.
-///
-/// Deposits which pay to this signatory set which are relayed after this
-/// interval will be ignored.
-pub const MAX_DEPOSIT_AGE: u64 = 60 * 60 * 24 * 5;
 /// The maximum number of signatories in a signatory set.
 ///
 /// Signatory sets will be constructed by iterating over the validator set in
@@ -157,6 +158,170 @@ impl SignatorySet {
         sigset.sort_and_truncate();
 
         Ok(sigset)
+    }
+
+    pub fn from_script(
+        script: &bitcoin::Script,
+        threshold_ratio: (u64, u64),
+    ) -> Result<(Self, Vec<u8>)> {
+        trait Iter<'a> = Iterator<
+            Item = std::result::Result<Instruction<'a>, bitcoin::blockdata::script::Error>,
+        >;
+
+        fn take_instruction<'a>(ins: &mut impl Iter<'a>) -> Result<Instruction<'a>> {
+            ins.next()
+                .ok_or_else(|| orga::Error::App("Unexpected end of script".to_string()))?
+                .map_err(|_| orga::Error::App("Failed to read script".to_string()).into())
+        }
+
+        fn take_bytes<'a>(ins: &mut impl Iter<'a>) -> Result<&'a [u8]> {
+            let instruction = take_instruction(ins)?;
+
+            let Instruction::PushBytes(bytes) = instruction else {
+                return Err(Error::Orga(orga::Error::App("Expected OP_PUSHBYTES".to_string())));
+            };
+
+            Ok(bytes)
+        }
+
+        fn take_key<'a>(ins: &mut impl Iter<'a>) -> Result<Pubkey> {
+            let bytes = take_bytes(ins)?;
+
+            if bytes.len() != 33 {
+                return Err(Error::Orga(orga::Error::App(
+                    "Expected 33 bytes".to_string(),
+                )));
+            }
+
+            Ok(Pubkey::try_from_slice(bytes)?)
+        }
+
+        fn take_number<'a>(ins: &mut impl Iter<'a>) -> Result<i64> {
+            let bytes = take_bytes(ins)?;
+            read_scriptint(bytes)
+                .map_err(|_| orga::Error::App("Failed to read scriptint".to_string()).into())
+        }
+
+        fn take_op<'a>(ins: &mut impl Iter<'a>, expected_op: opcodes::All) -> Result<opcodes::All> {
+            let instruction = take_instruction(ins)?;
+
+            let op = match instruction {
+                Instruction::Op(op) => op,
+                Instruction::PushBytes(&[]) => OP_FALSE,
+                _ => {
+                    return Err(Error::Orga(orga::Error::App(format!(
+                        "Expected {}",
+                        format!("{:?}", expected_op)
+                    ))))
+                }
+            };
+
+            if op != expected_op {
+                return Err(Error::Orga(orga::Error::App(format!(
+                    "Expected {}",
+                    format!("{:?}", expected_op),
+                ))));
+            }
+
+            Ok(op)
+        }
+
+        fn take_first_signatory<'a>(ins: &mut impl Iter<'a>) -> Result<Signatory> {
+            let pubkey = take_key(ins)?;
+            take_op(ins, OP_CHECKSIG)?;
+            take_op(ins, OP_IF)?;
+            let voting_power = take_number(ins)?;
+            take_op(ins, OP_ELSE)?;
+            take_op(ins, OP_FALSE)?;
+            take_op(ins, OP_ENDIF)?;
+
+            Ok::<_, Error>(Signatory {
+                pubkey: pubkey.into(),
+                voting_power: voting_power as u64,
+            })
+        }
+
+        fn take_nth_signatory<'a>(ins: &mut impl Iter<'a>) -> Result<Signatory> {
+            take_op(ins, OP_SWAP)?;
+            let pubkey = take_key(ins)?;
+            take_op(ins, OP_CHECKSIG)?;
+            take_op(ins, OP_IF)?;
+            let voting_power = take_number(ins)?;
+            take_op(ins, OP_ADD)?;
+            take_op(ins, OP_ENDIF)?;
+
+            Ok::<_, Error>(Signatory {
+                pubkey: pubkey.into(),
+                voting_power: voting_power as u64,
+            })
+        }
+
+        fn take_threshold<'a>(ins: &mut impl Iter<'a>) -> Result<u64> {
+            let threshold = take_number(ins)?;
+            take_op(ins, OP_GREATERTHAN)?;
+            Ok(threshold as u64)
+        }
+
+        fn take_commitment<'a>(ins: &mut impl Iter<'a>) -> Result<&'a [u8]> {
+            let bytes = take_bytes(ins)?;
+            take_op(ins, OP_DROP)?;
+            Ok(bytes)
+        }
+
+        let mut ins = script.instructions().peekable();
+        let mut sigs = vec![take_first_signatory(&mut ins)?];
+        loop {
+            let next = ins
+                .peek()
+                .ok_or_else(|| {
+                    Error::Orga(orga::Error::App("Unexpected end of script".to_string()))
+                })?
+                .clone()
+                .map_err(|_| Error::Orga(orga::Error::App("Failed to read script".to_string())))?;
+
+            if let Instruction::Op(opcodes::all::OP_SWAP) = next {
+                sigs.push(take_nth_signatory(&mut ins)?);
+            } else {
+                break;
+            }
+        }
+
+        let expected_threshold = take_threshold(&mut ins)?;
+        let commitment = take_commitment(&mut ins)?;
+
+        assert!(ins.next().is_none());
+
+        let total_vp: u64 = sigs.iter().map(|s| s.voting_power).sum();
+        let mut sigset = Self {
+            signatories: sigs,
+            present_vp: total_vp,
+            possible_vp: total_vp,
+            create_time: 0,
+            index: 0,
+        };
+
+        for _ in 0..100 {
+            let actual_threshold = sigset.signature_threshold(threshold_ratio);
+            match actual_threshold.cmp(&expected_threshold) {
+                Ordering::Equal => break,
+                Ordering::Less => {
+                    sigset.present_vp += 1;
+                    sigset.possible_vp += 1;
+                }
+                Ordering::Greater => {
+                    sigset.present_vp -= 1;
+                    sigset.possible_vp -= 1;
+                }
+            }
+        }
+
+        assert_eq!(
+            sigset.signature_threshold(threshold_ratio),
+            expected_threshold,
+        );
+        assert_eq!(&sigset.redeem_script(commitment, threshold_ratio)?, script);
+
+        Ok((sigset, commitment.to_vec()))
     }
 
     /// Inserts a signatory into the set. This may cause the signatory set to be
@@ -321,11 +486,6 @@ impl SignatorySet {
         self.create_time
     }
 
-    /// The time at which this signatory set will expire, in seconds.
-    pub fn deposit_timeout(&self) -> u64 {
-        self.create_time + MAX_DEPOSIT_AGE
-    }
-
     /// The index of this signatory set.
     pub fn index(&self) -> u32 {
         self.index
@@ -450,4 +610,190 @@ mod tests {
     //     signatories.set(mock_signatory(1, 100_000_000));
     //     assert_eq!(get_truncation(&signatories, 23), 4);
     // }
+
+    use bitcoin::hashes::hex::FromHex;
+
+    use crate::bitcoin::{signatory::Signatory, threshold_sig::Pubkey};
+
+    use super::SignatorySet;
+
+    #[test]
+    fn from_script() {
+        let script = bitcoin::Script::from_hex("21028891f36b691a40036f2b3ecb17c13780a932503ef2c39f3faed9b95bf71ea27fac630339e0116700687c2102f6fee7ad7dc87d0a636ae1584273c849bf540f4c1780434a0430888b0c5b151cac63033c910e93687c2102d207371a1e9a588e447d91dc12a8f3479f1f9ff8da748aae04bb5d07f0737790ac630371730893687c2103713e9bb6025fa9dc3c26507762cffd2a9524ff48f1d84c6753caa581347e5e10ac63031def0793687c2103d8fc0412a866bfb14d3fbc9e1b714ca31141d0f7e211d0fa634d53dda9789ecaac6303d1f00693687c2102c7961e04206af92f4b4cf3f19b43722f301e4915a49f5ca2908d9af5ce343830ac6303496f0693687c2103205472bb87799cb9140b5d471cc045b65821a4e75591026a8411ee3ac3e27027ac6303fe500693687c2102c923df10e8141072504b1f9513ee6796dc4d748d774ce9396942b63d42d3d575ac6303ed1f0593687c21031e8124547a5f28e04652d61fab1053ba8af41b682ccecdf5fa58595add7c7d9eac6303d4a00493687c21038060738940b9b3513851aa45df9f8b9d8e3304ef5abc5f8c1928bf4f1c8601adac630347210493687c21022e1efe78c688bceb7a36bf8af0e905da65e1942b84afe31716a356a91c0d9c05ac6303c5620393687c21020598956ed409e190b763bed8ed1ec3a18138c582c761eb8a4cf60861bfb44f13ac6303b3550393687c2102c8b2e54cafced96b1438e9ee6ebddc27c4aca68f14b2199eb8b8da111b584c2cac63036c330393687c2102d8a4c0accefa93b6a8d390a81dbffa4d05cd0a844371b2bed0ba1b1b65e14300ac6303521d0393687c2102460ccc0db97b1027e4fe2ab178f015a786b6b8f016b580f495dde3230f34984cac630304060393687c2102def64dfc155e17988ea6dee5a5659e2ec0a19fce54af90ca84dcd4df53b1a222ac630341d20293687c21030c9057c92c19f749c891037379766c0642d03bd1c50e3b262fc7d954c232f4d8ac630356c30293687c21027e1ebe3dd4fbbf250a8161a8a7af19815d5c07363e220f28f81c535c3950c7cbac6303d3ab0293687c210235e1d72961cb475971e2bc437ac21f9be13c83f1aa039e64f406aae87e2b4816ac6303bdaa0293687c210295d565c8ae94d46d439b4591dcd146742f918893292c23c49d000c4023bad4ffac630308aa029368030fb34aa0010075").unwrap();
+
+        let (sigset, commitment) = SignatorySet::from_script(&script, (2, 3)).unwrap();
+
+        let pk = |bytes| Pubkey::new(bytes).unwrap().into();
+        assert_eq!(
+            sigset,
+            SignatorySet {
+                create_time: 0,
+                present_vp: 7343255,
+                possible_vp: 7343255,
+                index: 0,
+                signatories: vec![
+                    Signatory {
+                        voting_power: 1171513,
+                        pubkey: pk([
+                            2, 136, 145, 243, 107, 105, 26, 64, 3, 111, 43, 62, 203, 23, 193, 55,
+                            128, 169, 50, 80, 62, 242, 195, 159, 63, 174, 217, 185, 91, 247, 30,
+                            162, 127
+                        ])
+                    },
+                    Signatory {
+                        voting_power: 954684,
+                        pubkey: pk([
+                            2, 246, 254, 231, 173, 125, 200, 125, 10, 99, 106, 225, 88, 66, 115,
+                            200, 73, 191, 84, 15, 76, 23, 128, 67, 74, 4, 48, 136, 139, 12, 91, 21,
+                            28
+                        ])
+                    },
+                    Signatory {
+                        voting_power: 553841,
+                        pubkey: pk([
+                            2, 210, 7, 55, 26, 30, 154, 88, 142, 68, 125, 145, 220, 18, 168, 243,
+                            71, 159, 31, 159, 248, 218, 116, 138, 174, 4, 187, 93, 7, 240, 115,
+                            119, 144
+                        ])
+                    },
+                    Signatory {
+                        voting_power: 519965,
+                        pubkey: pk([
+                            3, 113, 62, 155, 182, 2, 95, 169, 220, 60, 38, 80, 119, 98, 207, 253,
+                            42, 149, 36, 255, 72, 241, 216, 76, 103, 83, 202, 165, 129, 52, 126,
+                            94, 16
+                        ])
+                    },
+                    Signatory {
+                        voting_power: 454865,
+                        pubkey: pk([
+                            3, 216, 252, 4, 18, 168, 102, 191, 177, 77, 63, 188, 158, 27, 113, 76,
+                            163, 17, 65, 208, 247, 226, 17, 208, 250, 99, 77, 83, 221, 169, 120,
+                            158, 202
+                        ])
+                    },
+                    Signatory {
+                        voting_power: 421705,
+                        pubkey: pk([
+                            2, 199, 150, 30, 4, 32, 106, 249, 47, 75, 76, 243, 241, 155, 67, 114,
+                            47, 48, 30, 73, 21, 164, 159, 92, 162, 144, 141, 154, 245, 206, 52, 56,
+                            48
+                        ])
+                    },
+                    Signatory {
+                        voting_power: 413950,
+                        pubkey: pk([
+                            3, 32, 84, 114, 187, 135, 121, 156, 185, 20, 11, 93, 71, 28, 192, 69,
+                            182, 88, 33, 164, 231, 85, 145, 2, 106, 132, 17, 238, 58, 195, 226,
+                            112, 39
+                        ])
+                    },
+                    Signatory {
+                        voting_power: 335853,
+                        pubkey: pk([
+                            2, 201, 35, 223, 16, 232, 20, 16, 114, 80, 75, 31, 149, 19, 238, 103,
+                            150, 220, 77, 116, 141, 119, 76, 233, 57, 105, 66, 182, 61, 66, 211,
+                            213, 117
+                        ])
+                    },
+                    Signatory {
+                        voting_power: 303316,
+                        pubkey: pk([
+                            3, 30, 129, 36, 84, 122, 95, 40, 224, 70, 82, 214, 31, 171, 16, 83,
+                            186, 138, 244, 27, 104, 44, 206, 205, 245, 250, 88, 89, 90, 221, 124,
+                            125, 158
+                        ])
+                    },
+                    Signatory {
+                        voting_power: 270663,
+                        pubkey: pk([
+                            3, 128, 96, 115, 137, 64, 185, 179, 81, 56, 81, 170, 69, 223, 159, 139,
+                            157, 142, 51, 4, 239, 90, 188, 95, 140, 25, 40, 191, 79, 28, 134, 1,
+                            173
+                        ])
+                    },
+                    Signatory {
+                        voting_power: 221893,
+                        pubkey: pk([
+                            2, 46, 30, 254, 120, 198, 136, 188, 235, 122, 54, 191, 138, 240, 233,
+                            5, 218, 101, 225, 148, 43, 132, 175, 227, 23, 22, 163, 86, 169, 28, 13,
+                            156, 5
+                        ])
+                    },
+                    Signatory {
+                        voting_power: 218547,
+                        pubkey: pk([
+                            2, 5, 152, 149, 110, 212, 9, 225, 144, 183, 99, 190, 216, 237, 30, 195,
+                            161, 129, 56, 197, 130, 199, 97, 235, 138, 76, 246, 8, 97, 191, 180,
+                            79, 19
+                        ])
+                    },
+                    Signatory {
+                        voting_power: 209772,
+                        pubkey: pk([
+                            2, 200, 178, 229, 76, 175, 206, 217, 107, 20, 56, 233, 238, 110, 189,
+                            220, 39, 196, 172, 166, 143, 20, 178, 25, 158, 184, 184, 218, 17, 27,
+                            88, 76, 44
+                        ])
+                    },
+                    Signatory {
+                        voting_power: 204114,
+                        pubkey: pk([
+                            2, 216, 164, 192, 172, 206, 250, 147, 182, 168, 211, 144, 168, 29, 191,
+                            250, 77, 5, 205, 10, 132, 67, 113, 178, 190, 208, 186, 27, 27, 101,
+                            225, 67, 0
+                        ])
+                    },
+                    Signatory {
+                        voting_power: 198148,
+                        pubkey: pk([
+                            2, 70, 12, 204, 13, 185, 123, 16, 39, 228, 254, 42, 177, 120, 240, 21,
+                            167, 134, 182, 184, 240, 22, 181, 128, 244, 149, 221, 227, 35, 15, 52,
+                            152, 76
+                        ])
+                    },
+                    Signatory {
+                        voting_power: 184897,
+                        pubkey: pk([
+                            2, 222, 246, 77, 252, 21, 94, 23, 152, 142, 166, 222, 229, 165, 101,
+                            158, 46, 192, 161, 159, 206, 84, 175, 144, 202, 132, 220, 212, 223, 83,
+                            177, 162, 34
+                        ])
+                    },
+                    Signatory {
+                        voting_power: 181078,
+                        pubkey: pk([
+                            3, 12, 144, 87, 201, 44, 25, 247, 73, 200, 145, 3, 115, 121, 118, 108,
+                            6, 66, 208, 59, 209, 197, 14, 59, 38, 47, 199, 217, 84, 194, 50, 244,
+                            216
+                        ])
+                    },
+                    Signatory {
+                        voting_power: 175059,
+                        pubkey: pk([
+                            2, 126, 30, 190, 61, 212, 251, 191, 37, 10, 129, 97, 168, 167, 175, 25,
+                            129, 93, 92, 7, 54, 62, 34, 15, 40, 248, 28, 83, 92, 57, 80, 199, 203
+                        ])
+                    },
+                    Signatory {
+                        voting_power: 174781,
+                        pubkey: pk([
+                            2, 53, 225, 215, 41, 97, 203, 71, 89, 113, 226, 188, 67, 122, 194, 31,
+                            155, 225, 60, 131, 241, 170, 3, 158, 100, 244, 6, 170, 232, 126, 43,
+                            72, 22
+                        ])
+                    },
+                    Signatory {
+                        voting_power: 174600,
+                        pubkey: pk([
+                            2, 149, 213, 101, 200, 174, 148, 212, 109, 67, 155, 69, 145, 220, 209,
+                            70, 116, 47, 145, 136, 147, 41, 44, 35, 196, 157, 0, 12, 64, 35, 186,
+                            212, 255
+                        ])
+                    }
+                ]
+            }
+        );
+        assert_eq!(commitment, vec![0]);
+    }
 }

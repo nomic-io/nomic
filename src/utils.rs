@@ -13,6 +13,7 @@ use crate::bitcoin::Config as BitcoinConfig;
 use crate::error::{Error, Result};
 use bitcoin::hashes::hex::ToHex;
 use bitcoin::secp256k1::{self, rand, SecretKey};
+use bitcoin::util::bip32::ExtendedPrivKey;
 #[cfg(feature = "full")]
 use bitcoin::BlockHeader;
 use bitcoin::Script;
@@ -20,6 +21,7 @@ use bitcoin::Script;
 use bitcoincore_rpc_async::{Auth, Client as BitcoinRpcClient, RpcApi};
 #[cfg(feature = "full")]
 use log::info;
+use log::warn;
 use orga::client::Wallet;
 use orga::coins::staking::{Commission, Declaration};
 use orga::coins::{Address, Coin, Decimal};
@@ -38,8 +40,10 @@ use orga::store::{Shared, Store};
 use orga::tendermint::client::HttpClient;
 use orga::Result as OrgaResult;
 use orga::{client::wallet::DerivedKey, macros::build_call};
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::fs;
 #[cfg(feature = "full")]
 use std::path::Path;
 use std::path::PathBuf;
@@ -122,6 +126,52 @@ pub fn make_std_tx(
     map
 }
 
+pub fn generate_bitcoin_key(network: bitcoin::Network) -> Result<ExtendedPrivKey> {
+    let seed: [u8; 32] = rand::thread_rng().gen();
+
+    let network = if network == bitcoin::Network::Regtest {
+        bitcoin::Network::Testnet
+    } else {
+        network
+    };
+
+    Ok(ExtendedPrivKey::new_master(network, seed.as_slice())?)
+}
+
+pub fn load_bitcoin_key<P: AsRef<Path> + Clone>(path: P) -> Result<ExtendedPrivKey> {
+    if !path.as_ref().exists() {
+        return Err(Error::Signer(format!(
+            "Path `{}` does not exist",
+            path.as_ref().display()
+        )));
+    }
+
+    let bytes = fs::read(path.clone())?;
+    let text = String::from_utf8(bytes).unwrap();
+
+    text.trim().parse().map_err(|_| {
+        Error::Signer(format!(
+            "Unable to parse key at {}",
+            path.as_ref().display()
+        ))
+    })
+}
+
+pub fn load_or_generate(path: PathBuf, network: bitcoin::Network) -> Result<ExtendedPrivKey> {
+    if path.exists() {
+        warn!("Bitcoin key already exists at {}", path.display());
+        info!("Loading key from {}", path.display());
+        load_bitcoin_key(path)
+    } else {
+        let key = generate_bitcoin_key(network)?;
+        fs::create_dir_all(path.parent().unwrap())?;
+        fs::write(path.clone(), key.to_string())?;
+        info!("Generated bitcoin key at {}", path.display());
+        warn!("This is your signer key. Back it up!");
+        Ok(key)
+    }
+}
+
 pub fn load_privkey(dir: &Path) -> Result<SecretKey> {
     let orga_home = dir.join(".orga-wallet");
 
@@ -183,9 +233,10 @@ where
     }
 
     let key_path = signer_dir_path.join("xpriv");
-    Signer::load_or_generate(
+    Signer::load_xprivs(
         address_from_privkey(&load_privkey(home.as_ref()).unwrap()),
         key_path,
+        Vec::default(),
         0.1,
         1.0,
         None,
@@ -316,6 +367,29 @@ pub async fn poll_for_completed_checkpoint(num_checkpoints: u32) {
             .query(|app| Ok(app.bitcoin.checkpoints.completed(1_000)?.len()))
             .await
             .unwrap();
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+}
+
+pub async fn poll_for_updated_balance(address: Address, expected_balance: u64) -> u64 {
+    info!("Polling for updated balance...");
+    let initial_balance = app_client(DEFAULT_RPC)
+        .query(|app| app.bitcoin.accounts.balance(address))
+        .await
+        .unwrap();
+
+    if initial_balance == expected_balance {
+        return initial_balance.into();
+    }
+
+    loop {
+        let balance = app_client(DEFAULT_RPC)
+            .query(|app| app.bitcoin.accounts.balance(address))
+            .await
+            .unwrap();
+        if balance != initial_balance {
+            break balance.into();
+        }
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
 }

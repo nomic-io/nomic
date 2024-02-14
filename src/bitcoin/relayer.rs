@@ -1,11 +1,13 @@
 use super::signatory::Signatory;
 use super::SignatorySet;
+use super::SIGSET_THRESHOLD;
 use crate::app::Dest;
 use crate::app_client;
 use crate::bitcoin::deposit_index::{Deposit, DepositIndex};
 use crate::bitcoin::{adapter::Adapter, header_queue::WrappedHeader};
 use crate::error::Error;
 use crate::error::Result;
+use crate::orga::encoding::Encode;
 use crate::utils::time_now;
 use bitcoin::consensus::{Decodable, Encodable};
 use bitcoin::Txid;
@@ -14,6 +16,7 @@ use bitcoincore_rpc_async::{json::GetBlockHeaderResult, Client as BitcoinRpcClie
 use log::{debug, error, info, warn};
 use orga::encoding::Decode;
 use orga::macros::build_call;
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::future::Future;
@@ -32,7 +35,6 @@ where
 }
 
 const HEADER_BATCH_SIZE: usize = 250;
-const THRESHOLD: (u64, u64) = (9, 10);
 
 #[derive(Serialize, Deserialize)]
 pub struct DepositsQuery {
@@ -44,6 +46,7 @@ pub struct Relayer {
     app_client_addr: String,
 
     scripts: Option<WatchedScriptStore>,
+    deposit_buffer: Option<u64>,
 }
 
 impl Relayer {
@@ -52,6 +55,7 @@ impl Relayer {
             btc_client: Arc::new(RwLock::new(btc_client)),
             app_client_addr,
             scripts: None,
+            deposit_buffer: None,
         }
     }
 
@@ -109,14 +113,20 @@ impl Relayer {
         }
     }
 
-    pub async fn start_deposit_relay<P: AsRef<Path>>(mut self, store_path: P) -> Result<()> {
+    pub async fn start_deposit_relay<P: AsRef<Path>>(
+        mut self,
+        store_path: P,
+        deposit_buffer: u64,
+    ) -> Result<()> {
         info!("Starting deposit relay...");
 
         let scripts = WatchedScriptStore::open(store_path, &self.app_client_addr).await?;
         self.scripts = Some(scripts);
 
+        self.deposit_buffer = Some(deposit_buffer);
+
         let index = Arc::new(Mutex::new(DepositIndex::new()));
-        let (server, mut recv) = self.create_address_server(index.clone());
+        let (server, mut recv) = self.create_address_server(index.clone())?;
 
         let deposit_relay = async {
             loop {
@@ -135,7 +145,7 @@ impl Relayer {
     fn create_address_server(
         &self,
         index: Arc<Mutex<DepositIndex>>,
-    ) -> (impl Future<Output = ()>, Receiver<(Dest, u32)>) {
+    ) -> Result<(impl Future<Output = ()>, Receiver<(Dest, u32)>)> {
         let (send, recv) = tokio::sync::mpsc::channel(1024);
 
         let sigsets = Arc::new(Mutex::new(BTreeMap::new()));
@@ -144,6 +154,10 @@ impl Relayer {
         let app_client_addr: &'static str = self.app_client_addr.clone().leak();
 
         let btc_client = self.btc_client.clone();
+        let deposit_buffer = match self.deposit_buffer {
+            Some(deposit_buffer) => deposit_buffer,
+            None => return Err(Error::Relayer("Deposit buffer not set".to_string())),
+        };
 
         // TODO: configurable listen address
         use bytes::Bytes;
@@ -190,7 +204,7 @@ impl Relayer {
                         &sigset
                             .output_script(
                                 dest.commitment_bytes().map_err(|_| reject())?.as_slice(),
-                                THRESHOLD,
+                                SIGSET_THRESHOLD,
                             )
                             .map_err(warp::reject::custom)?,
                         super::NETWORK,
@@ -201,18 +215,29 @@ impl Relayer {
                         return Err(warp::reject::custom(Error::InvalidDepositAddress));
                     }
 
-                    Ok::<_, warp::Rejection>((dest, query.sigset_index, send))
+                    Ok::<_, warp::Rejection>((dest, sigset.create_time, query.sigset_index, send))
                 },
             )
-            .then(
-                async move |(dest, sigset_index, send): (
+            .and_then(
+                async move |(dest, create_time, sigset_index, send): (
                     Dest,
+                    u64,
                     u32,
                     tokio::sync::mpsc::Sender<_>,
                 )| {
                     debug!("Received deposit commitment: {:?}, {}", dest, sigset_index);
                     send.send((dest, sigset_index)).await.unwrap();
-                    "OK"
+                    let max_deposit_age = app_client(app_client_addr)
+                        .query(|app| Ok(app.bitcoin.config.max_deposit_age))
+                        .await
+                        .map_err(|e| warp::reject::custom(Error::from(e)))?;
+                    if time_now() + deposit_buffer >= create_time + max_deposit_age {
+                        return Err(warp::reject::custom(Error::Relayer(
+                            "Sigset no longer accepting deposits. Unable to generate deposit address".into(),
+                        )));
+                    }
+
+                    Ok::<_, warp::Rejection>(warp::reply::json(&"OK"))
                 },
             );
 
@@ -289,7 +314,7 @@ impl Relayer {
                 ),
         )
         .run(([0, 0, 0, 0], 8999));
-        (server, recv)
+        Ok((server, recv))
     }
 
     async fn relay_deposits(
@@ -499,6 +524,10 @@ impl Relayer {
                 if relayed.contains(&tx.txid()) {
                     continue;
                 }
+                // skip checkpoints that came from backfill
+                if tx.input.is_empty() {
+                    continue;
+                }
 
                 let mut tx_bytes = vec![];
                 tx.consensus_encode(&mut tx_bytes)?;
@@ -521,6 +550,84 @@ impl Relayer {
                 }
 
                 relayed.insert(tx.txid());
+            }
+
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        }
+    }
+
+    pub async fn start_recovery_tx_relay<P: AsRef<Path>>(&mut self, store_path: P) -> Result<()> {
+        info!("Starting recovery tx relay...");
+
+        let scripts = WatchedScriptStore::open(store_path, &self.app_client_addr).await?;
+        self.scripts = Some(scripts);
+
+        loop {
+            if let Err(e) = self.relay_recovery_txs().await {
+                error!("Recovery tx relay error: {}", e);
+            }
+
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        }
+    }
+
+    async fn relay_recovery_txs(&mut self) -> Result<()> {
+        let mut relayed = HashSet::new();
+
+        loop {
+            let recovery_txs = app_client(&self.app_client_addr)
+                .query(|app| Ok(app.bitcoin.recovery_txs.signed()?))
+                .await?;
+            for signed_tx in recovery_txs.iter() {
+                if relayed.contains(&signed_tx.tx.txid()) {
+                    continue;
+                }
+
+                let mut tx_bytes = vec![];
+                signed_tx.tx.consensus_encode(&mut tx_bytes)?;
+                match self
+                    .btc_client()
+                    .await
+                    .send_raw_transaction(&tx_bytes)
+                    .await
+                {
+                    Ok(_) => {
+                        info!("Broadcast recovery tx: {}", signed_tx.tx.txid());
+                    }
+                    Err(err) if err.to_string().contains("bad-txns-inputs-missingorspent") => {}
+                    Err(err)
+                        if err
+                            .to_string()
+                            .contains("Transaction already in block chain") => {}
+                    Err(err) => Err(err)?,
+                }
+
+                let script_pubkey = signed_tx.tx.output[0].script_pubkey.clone();
+                let deposit_addr = bitcoin::Address::from_script(&script_pubkey, super::NETWORK)?;
+                let url = format!("{}/address", "http://localhost:8999",);
+                let client = reqwest::Client::new();
+                let res = client
+                    .post(url)
+                    .query(&[
+                        ("sigset_index", &signed_tx.sigset_index.to_string()),
+                        ("deposit_addr", &deposit_addr.to_string()),
+                    ])
+                    .body(signed_tx.dest.encode()?)
+                    .send()
+                    .await
+                    .unwrap();
+
+                match res.status() {
+                    StatusCode::OK => {
+                        relayed.insert(signed_tx.tx.txid());
+                    }
+                    _ => {
+                        return Err(Error::Relayer(format!(
+                            "Relayer response returned with error code: {}",
+                            res.status()
+                        )))
+                    }
+                }
             }
 
             tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
@@ -659,7 +766,15 @@ impl Relayer {
             self.scripts.as_mut().unwrap().insert(addr, &sigset)?;
         }
 
-        self.scripts.as_mut().unwrap().scripts.remove_expired()?;
+        let max_age = app_client(&self.app_client_addr)
+            .query(|app| Ok(app.bitcoin.checkpoints.config.max_age))
+            .await?;
+
+        self.scripts
+            .as_mut()
+            .unwrap()
+            .scripts
+            .remove_expired(max_age)?;
 
         Ok(())
     }
@@ -1024,7 +1139,7 @@ impl WatchedScripts {
     }
 
     pub fn insert(&mut self, dest: Dest, sigset: &SignatorySet) -> Result<bool> {
-        let script = self.derive_script(&dest, sigset, THRESHOLD)?;
+        let script = self.derive_script(&dest, sigset, SIGSET_THRESHOLD)?;
 
         if self.scripts.contains_key(&script) {
             return Ok(false);
@@ -1041,16 +1156,16 @@ impl WatchedScripts {
         Ok(true)
     }
 
-    pub fn remove_expired(&mut self) -> Result<()> {
+    pub fn remove_expired(&mut self, max_age: u64) -> Result<()> {
         let now = time_now();
 
         for (_, (sigset, dests)) in self.sigsets.iter() {
-            if now < sigset.deposit_timeout() {
+            if now < sigset.create_time() + max_age {
                 break;
             }
 
             for dest in dests {
-                let script = self.derive_script(dest, sigset, THRESHOLD)?; // TODO: get threshold from state
+                let script = self.derive_script(dest, sigset, SIGSET_THRESHOLD)?; // TODO: get threshold from state
                 self.scripts.remove(&script);
             }
         }
@@ -1138,8 +1253,11 @@ impl WatchedScriptStore {
 
             scripts.insert(dest, sigset)?;
         }
+        let max_age = app_client(app_client_addr)
+            .query(|app| Ok(app.bitcoin.checkpoints.config.max_age))
+            .await?;
 
-        scripts.remove_expired()?;
+        scripts.remove_expired(max_age)?;
 
         info!("Loaded {} deposit addresses", scripts.len());
 

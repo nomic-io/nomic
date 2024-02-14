@@ -132,12 +132,35 @@ nomic declare \
 
 The funds in the Bitcoin bridge are held in a large multisig controlled by the Nomic validators. If you are a validator with a significant amount of voting power, it is very important that you run a signer.
 
+#### i. Set your signatory key
+
+This will submit your public key to the network so you can be added to the multisig. If you do not have a key stored at `~/.nomic-testnet-4c/signer/xpriv`, this will automatically generate a Bitcoin extended private key for you. **KEEP THIS KEY SAFE** - similar to your validator private key, it is important to be mindful of this key so that it is never lost or stolen.
+
+**Note:** Setting your signatory key is only required if you are starting a fresh node. Migrating nodes can move on to the next step.
+
+```
+nomic set-signatory-key
+```
+
+If you have your extended private key stored in a different location than the default, you may pass a path.
+
+```
+nomic set-signatory-key <path-to-your-key>
+```
+
+#### ii. Run your Bitcoin signer
+
 You can run the signer with:
+
 ```
 nomic signer
 ```
 
-This will automatically generate a Bitcoin extended private key and store it at `~/.nomic-testnet-4c/signer/xpriv`. It will also prompt you to submit your public key to the network so you can be added to the multisig. **KEEP THIS KEY SAFE** - similar to your validator private key, it is important to be mindful of this key so that it is never lost or stolen.
+If you have stored your xpriv in a different location, you can pass the path to the signer.
+
+```
+nomic signer xpriv_paths=[<path_to_your_xpriv>]
+```
 
 Leave this process running, it will automatically sign Bitcoin transactions that the network wants to create.
 
@@ -167,7 +190,7 @@ nomic relayer --rpc-port=18332 --rpc-user=satoshi --rpc-pass=nakamoto
 
 Leave this running - the relayer will constantly scan the Bitcoin and Nomic chains and broadcast relevant data.
 
-The relayer will also create a server which listens on port 9000 for clients to announce their deposit addresses. To help make the network more reliable, if you run a relayer please open this port and let us know your node's address in Discord or a Github issue so we can have clients make use of your node. If you're going to make this service public, putting the server behind an HTTP reverse proxy is recommended for extra safety.
+The relayer will also create a server which listens on port 8999 for clients to announce their deposit addresses. To help make the network more reliable, if you run a relayer please open this port and let us know your node's address in Discord or a Github issue so we can have clients make use of your node. If you're going to make this service public, putting the server behind an HTTP reverse proxy is recommended for extra safety.
 
 ---
 
