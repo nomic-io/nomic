@@ -941,7 +941,7 @@ impl ConvertSdkTx for InnerApp {
                             crate::bitcoin::adapter::Adapter::new(recovery_addr.script_pubkey());
 
                         let funding_amt = MIN_FEE;
-                        let payer = build_call!(self.accounts.take_as_funding(funding_amt.into()));
+                        let payer = build_call!(self.pay_nbtc_fee());
                         let paid = build_call!(self.bitcoin.set_recovery_script(script.clone()));
 
                         Ok(PaidCall { payer, paid })
