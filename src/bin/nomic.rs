@@ -107,6 +107,7 @@ pub enum Command {
     SetRecoveryAddress(SetRecoveryAddressCmd),
     SigningStatus(SigningStatusCmd),
     RecoverDeposit(RecoverDepositCmd),
+    PayToFeePool(PayToFeePoolCmd),
 }
 
 impl Command {
@@ -169,6 +170,7 @@ impl Command {
                 SetRecoveryAddress(cmd) => cmd.run().await,
                 SigningStatus(cmd) => cmd.run().await,
                 RecoverDeposit(cmd) => cmd.run().await,
+                PayToFeePool(cmd) => cmd.run().await,
             }
         })
     }
@@ -2106,6 +2108,28 @@ impl RecoverDepositCmd {
         Err(nomic::error::Error::Orga(orga::Error::App(
             "Deposit address not found in any sigset".to_string(),
         )))
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct PayToFeePoolCmd {
+    amount: u64,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
+}
+
+impl PayToFeePoolCmd {
+    async fn run(&self) -> Result<()> {
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
+            .call(
+                |app| build_call!(app.bitcoin.transfer_to_fee_pool(self.amount.into())),
+                |app| build_call!(app.app_noop()),
+            )
+            .await?)
     }
 }
 
