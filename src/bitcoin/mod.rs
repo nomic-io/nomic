@@ -1107,6 +1107,20 @@ impl Bitcoin {
 
         self.give_miner_fee(taken_coins)
     }
+
+    #[call]
+    pub fn transfer_to_fee_pool(&mut self, amount: Amount) -> Result<()> {
+        exempt_from_fee()?;
+
+        let signer = self
+            .context::<Signer>()
+            .ok_or_else(|| Error::Orga(OrgaError::App("No Signer context available".into())))?
+            .signer
+            .ok_or_else(|| Error::Orga(OrgaError::App("Call must be signed".into())))?;
+
+        let coins = self.accounts.withdraw(signer, amount)?;
+        self.give_miner_fee(coins)
+    }
 }
 
 /// The current rates of change of the reserve output and signatory set, in
