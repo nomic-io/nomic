@@ -946,7 +946,7 @@ impl ConvertSdkTx for InnerApp {
                         Ok(PaidCall { payer, paid })
                     }
 
-                    "nomic/PayToFeePool" => {
+                    "nomic/MsgPayToFeePool" => {
                         let msg = msg
                             .value
                             .as_object()
