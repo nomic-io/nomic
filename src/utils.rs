@@ -383,15 +383,18 @@ pub async fn poll_for_updated_balance(address: Address, expected_balance: u64) -
         return initial_balance.into();
     }
 
+    let mut count = 0;
     loop {
         let balance = app_client(DEFAULT_RPC)
             .query(|app| app.bitcoin.accounts.balance(address))
             .await
             .unwrap();
-        if balance != initial_balance {
+        if count >= 60 || balance != initial_balance {
             break balance.into();
         }
+
         tokio::time::sleep(Duration::from_secs(1)).await;
+        count += 1;
     }
 }
 
