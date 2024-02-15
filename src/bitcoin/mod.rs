@@ -236,6 +236,8 @@ impl Config {
         Self {
             min_withdrawal_checkpoints: 1,
             max_offline_checkpoints: 1,
+            min_confirmations: 0,
+            fee_pool_target_balance: 10_000_000,
             ..Self::bitcoin()
         }
     }

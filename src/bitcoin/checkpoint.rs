@@ -1076,6 +1076,8 @@ impl Config {
             min_checkpoint_interval: 15,
             emergency_disbursal_lock_time_interval: 60,
             emergency_disbursal_max_tx_size: 11,
+            user_fee_factor: 20_000,
+            max_age: 60 * 60 * 24 * 7 * 3,
             ..Config::bitcoin()
         }
     }
@@ -1086,7 +1088,7 @@ impl Config {
             max_checkpoint_interval: 60 * 60 * 8,
             max_inputs: 40,
             max_outputs: 200,
-            max_age: 60 * 60 * 24 * 30 * 4,
+            max_age: 60 * 60 * 24 * 7 * 3,
             target_checkpoint_inclusion: 2,
             min_fee_rate: 2, // relay threshold is 1 sat/vbyte
             max_fee_rate: 200,
