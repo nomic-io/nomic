@@ -962,12 +962,6 @@ impl Relayer {
             batch[0].height(),
             batch.len(),
         );
-        app_client(&self.app_client_addr)
-            .call(
-                |app| build_call!(app.bitcoin.headers.add(batch.clone().into_iter().collect())),
-                |app| build_call!(app.app_noop()),
-            )
-            .await?;
         let res = app_client(&self.app_client_addr)
             .call(
                 move |app| build_call!(app.bitcoin.headers.add(batch.clone().into())),
