@@ -617,6 +617,24 @@ pub async fn withdraw(address: String, dest_addr: String, amount: u64) -> Result
     .await
 }
 
+#[wasm_bindgen(js_name = payToFeePool)]
+pub async fn pay_to_fee_pool(address: String, amount: u64) -> Result<String, JsError> {
+    let mut value = serde_json::Map::new();
+    value.insert("amount".to_string(), amount.to_string().into());
+
+    let address = address
+        .parse()
+        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+    gen_call_bytes(
+        address,
+        sdk::Msg {
+            type_: "nomic/MsgPayToFeePool".to_string(),
+            value: value.into(),
+        },
+    )
+    .await
+}
+
 #[wasm_bindgen(js_name = joinRewardAccounts)]
 pub async fn join_reward_accounts(
     source_address: String,
