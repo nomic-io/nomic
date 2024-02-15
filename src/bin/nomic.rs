@@ -1130,7 +1130,7 @@ impl RelayerCmd {
         }
 
         let relayer = create_relayer().await;
-        let deposits = relayer.start_deposit_relay(relayer_dir_path.clone());
+        let deposits = relayer.start_deposit_relay(relayer_dir_path.clone(), 60 * 60 * 12);
 
         let mut relayer = create_relayer().await;
         let recovery_txs = relayer.start_recovery_tx_relay(relayer_dir_path);

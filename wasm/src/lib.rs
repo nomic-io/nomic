@@ -642,6 +642,30 @@ impl OraiBtc {
     }
 
     #[allow(non_snake_case)]
+    #[wasm_bindgen(js_name = feeInfo)]
+    pub async fn fee_info(&self) -> Result<FeeInfo, JsError> {
+        let user_fee_factor = self
+            .client
+            .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.config.user_fee_factor))
+            .await?;
+
+        Ok(self
+            .client
+            .query(|app: InnerApp| {
+                let building = app.bitcoin.checkpoints.building()?;
+                let est_miner_fee = building.fee_rate
+                    * app.bitcoin.checkpoints.active_sigset()?.est_witness_vsize()
+                    * user_fee_factor
+                    / 10_000;
+                Ok(FeeInfo {
+                    bridgeFeeRate: 0.015,
+                    minerFeeRate: est_miner_fee,
+                })
+            })
+            .await?)
+    }
+
+    #[allow(non_snake_case)]
     #[wasm_bindgen(js_name=ibcTransferOut)]
     pub async fn ibc_transfer_out(
         &self,
@@ -661,6 +685,7 @@ impl OraiBtc {
         value.insert("receiver".to_string(), receiver_address.into());
         value.insert("sender".to_string(), self_address.clone().into());
         value.insert("timeout_timestamp".to_string(), timeout_timestamp.into());
+        value.insert("memo".to_string(), "".into());
 
         let address = self_address
             .parse()
