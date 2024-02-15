@@ -7,7 +7,10 @@ use crate::{
 };
 
 use super::{InnerAppV0, InnerAppV1, InnerAppV2, InnerAppV3, InnerAppV4, InnerAppV5};
-use bitcoin::BlockHeader;
+use bitcoin::{
+    util::{uint::Uint256, BitArray},
+    BlockHeader,
+};
 use orga::{
     coins::Take,
     ibc::Ibc,
@@ -113,6 +116,7 @@ impl MigrateFrom<InnerAppV4> for InnerAppV5 {
             let header: (u32, BlockHeader) = serde_json::from_str(checkpoint_json)?;
             let wrapped_header = WrappedHeader::new(Adapter::new(header.1), header.0);
             let work_header = WorkHeader::new(wrapped_header.clone(), wrapped_header.work());
+            other.bitcoin.headers.current_work = Adapter::new(work_header.work());
             other.bitcoin.headers.deque.push_back(work_header)?;
 
             // backfill checkpoint history
