@@ -22,7 +22,7 @@ use rocket::response::status::BadRequest;
 use rocket::serde::json::{json, Value};
 use std::str::FromStr;
 use std::sync::Arc;
-use std::{collections::HashMap, str::FromStr};
+use std::collections::HashMap;
 use tokio::sync::RwLock;
 
 use ibc::clients::ics07_tendermint::client_state::ClientState;
@@ -1413,11 +1413,7 @@ async fn ibc_connection_channels(connection: &str) -> Value {
 #[get("/ibc/core/connection/v1/connections/<connection>")]
 async fn ibc_connection(connection: &str) -> Value {
     let connection = app_client()
-        .query(|app| {
-            app.ibc.ctx.query_connection(EofTerminatedString(
-                IbcConnectionId::from_str(connection).unwrap(),
-            ))
-        })
+        .query(|app| app.ibc.ctx.query_connection(EofTerminatedString(IbcConnectionId::from_str(connection).unwrap())))
         .await
         .unwrap()
         .unwrap();
@@ -1444,6 +1440,7 @@ async fn ibc_connection(connection: &str) -> Value {
         },
     })
 }
+
 
 #[get("/ibc/core/connection/v1/connections")]
 async fn ibc_connections() -> Value {
