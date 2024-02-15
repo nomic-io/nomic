@@ -294,37 +294,35 @@ impl InnerApp {
     pub fn mint_initial_supply(&mut self) -> Result<String> {
         {
             // mint uoraibtc and nbtc for a funded address given in the env variable
-            let funded_address = env::var("FUNDED_ADDRESS").map_err(|err| {
-                orga::Error::Client(format!(
-                    "Get funded address with error: {}",
-                    err.to_string()
-                ))
-            })?;
-            let funded_oraibtc_amount = env::var("FUNDED_ORAIBTC_AMOUNT").unwrap_or_default();
-            let funded_usat_amount = env::var("FUNDED_USAT_AMOUNT").unwrap_or_default();
-
-            let unom_coin: Coin<Nom> = Amount::new(
-                funded_oraibtc_amount
-                    .parse::<u64>()
-                    .unwrap_or(INITIAL_SUPPLY_ORAIBTC),
-            )
-            .into();
-
-            // mint new uoraibtc coin for funded address
-            self.accounts
-                .deposit(funded_address.parse().unwrap(), unom_coin)?;
-
-            let nbtc_coin: Coin<Nbtc> = Amount::new(
-                funded_usat_amount
-                    .parse::<u64>()
-                    .unwrap_or(INITIAL_SUPPLY_USATS_FOR_RELAYER),
-            )
-            .into();
-            // add new nbtc coin to the funded address
-            self.credit_transfer(Dest::Address(funded_address.parse().unwrap()), nbtc_coin)?;
-            self.accounts
-                .add_transfer_exception(funded_address.parse().unwrap())?;
-            Ok(funded_address)
+            if let Ok(funded_address) = env::var("FUNDED_ADDRESS") {
+                let funded_oraibtc_amount = env::var("FUNDED_ORAIBTC_AMOUNT").unwrap_or_default();
+                let funded_usat_amount = env::var("FUNDED_USAT_AMOUNT").unwrap_or_default();
+    
+                let unom_coin: Coin<Nom> = Amount::new(
+                    funded_oraibtc_amount
+                        .parse::<u64>()
+                        .unwrap_or(INITIAL_SUPPLY_ORAIBTC),
+                )
+                .into();
+    
+                // mint new uoraibtc coin for funded address
+                self.accounts
+                    .deposit(funded_address.parse().unwrap(), unom_coin)?;
+    
+                let nbtc_coin: Coin<Nbtc> = Amount::new(
+                    funded_usat_amount
+                        .parse::<u64>()
+                        .unwrap_or(INITIAL_SUPPLY_USATS_FOR_RELAYER),
+                )
+                .into();
+                // add new nbtc coin to the funded address
+                self.credit_transfer(Dest::Address(funded_address.parse().unwrap()), nbtc_coin)?;
+                self.accounts
+                    .add_transfer_exception(funded_address.parse().unwrap())?;
+                return Ok(funded_address);
+            }
+            
+            Ok("".to_string())
         }
         // #[cfg(not(feature = "faucet-test"))]
         // Err(orga::Error::Unknown)
