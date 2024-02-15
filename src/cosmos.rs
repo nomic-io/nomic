@@ -1,7 +1,7 @@
 use crate::{
     bitcoin::{
         signatory::{derive_pubkey, Signatory, SignatorySet},
-        threshold_sig::{Pubkey, VersionedPubkey},
+        threshold_sig::Pubkey,
         Nbtc, Xpub,
     },
     error::Result,
@@ -198,8 +198,7 @@ impl Cosmos {
                 .map_err(|_| OrgaError::App("Invalid public key".to_string()))?
                 .key
                 .as_slice(),
-        )?
-        .into();
+        )?;
 
         let mut chain = self.chains.entry(client_id)?.or_default()?;
         if let Some(existing_key) = chain.op_keys_by_cons.get(cons_key.clone())? {
@@ -334,7 +333,7 @@ impl Proof {
 
 #[orga]
 pub struct Chain {
-    pub op_keys_by_cons: Map<LengthVec<u8, u8>, VersionedPubkey>,
+    pub op_keys_by_cons: Map<LengthVec<u8, u8>, Pubkey>,
 }
 
 #[orga]

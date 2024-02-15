@@ -10,10 +10,7 @@ use orga::collections::Map;
 use orga::encoding::{Decode, Encode};
 use orga::macros::Describe;
 use orga::migrate::{Migrate, MigrateFrom};
-use orga::prelude::FieldCall;
-use orga::query::FieldQuery;
 use orga::state::State;
-use orga::store::Store;
 use orga::{orga, Error, Result};
 use serde::Serialize;
 
@@ -29,19 +26,11 @@ pub struct Signature(
 );
 
 /// A compressed secp256k1 public key.
-#[orga(skip(Default, Migrate), version = 1)]
+#[orga(skip(Default), version = 1)]
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Copy)]
 pub struct Pubkey {
     #[serde(serialize_with = "<[_]>::serialize")]
     bytes: [u8; PUBLIC_KEY_SIZE],
-}
-
-impl Migrate for Pubkey {
-    fn migrate(_src: Store, _dest: Store, bytes: &mut &[u8]) -> Result<Self> {
-        let mut buf = [0; PUBLIC_KEY_SIZE];
-        bytes.read_exact(buf.as_mut())?;
-        Ok(Self { bytes: buf })
-    }
 }
 
 impl Default for Pubkey {
@@ -92,79 +81,13 @@ impl Pubkey {
 
 impl MigrateFrom<PubkeyV0> for PubkeyV1 {
     fn migrate_from(value: PubkeyV0) -> Result<Self> {
-        let mut bytes = [0; PUBLIC_KEY_SIZE];
-        bytes[1..].copy_from_slice(value.bytes.as_slice());
-        Ok(PubkeyV1 { bytes })
+        Ok(PubkeyV1 { bytes: value.bytes })
     }
 }
 
 impl From<PublicKey> for Pubkey {
     fn from(pubkey: PublicKey) -> Self {
         Pubkey {
-            bytes: pubkey.serialize(),
-        }
-    }
-}
-
-/// See `Pubkey` - this type is separate to always include a version byte in its
-/// `Encode` and `Decode` implementations, unlike `Pubkey` which only includes
-/// it in its `State` implementation. This distinction will be removed once all
-/// networks have migrated to include a version byte in their `Pubkey` type.
-#[derive(
-    Encode,
-    Decode,
-    State,
-    FieldQuery,
-    FieldCall,
-    Clone,
-    Debug,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Serialize,
-    Describe,
-    Migrate,
-)]
-pub struct VersionedPubkey {
-    #[serde(serialize_with = "<[_]>::serialize")]
-    bytes: [u8; PUBLIC_KEY_SIZE],
-}
-
-impl Default for VersionedPubkey {
-    fn default() -> Self {
-        VersionedPubkey {
-            bytes: [0; PUBLIC_KEY_SIZE],
-        }
-    }
-}
-
-impl VersionedPubkey {
-    pub fn as_slice(&self) -> &[u8] {
-        &self.bytes
-    }
-}
-
-impl From<Pubkey> for VersionedPubkey {
-    fn from(pubkey: Pubkey) -> Self {
-        VersionedPubkey {
-            bytes: pubkey.bytes,
-        }
-    }
-}
-
-impl From<VersionedPubkey> for Pubkey {
-    fn from(pubkey: VersionedPubkey) -> Self {
-        Pubkey {
-            bytes: pubkey.bytes,
-        }
-    }
-}
-
-impl From<PublicKey> for VersionedPubkey {
-    fn from(pubkey: PublicKey) -> Self {
-        VersionedPubkey {
             bytes: pubkey.serialize(),
         }
     }
@@ -246,7 +169,7 @@ impl ThresholdSig {
 
         for signatory in signatories.iter() {
             ts.sigs.insert(
-                signatory.pubkey.into(),
+                signatory.pubkey,
                 Share {
                     power: signatory.voting_power,
                     sig: None,
@@ -417,7 +340,6 @@ impl ThresholdSig {
 }
 
 use std::fmt::Debug;
-use std::io::Read;
 impl Debug for ThresholdSig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ThresholdSig")

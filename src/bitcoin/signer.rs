@@ -72,6 +72,7 @@ pub struct Signer<W, F> {
     xprivs: Vec<ExtendedPrivKey>,
     max_withdrawal_rate: f64,
     max_sigset_change_rate: f64,
+    min_blocks_per_checkpoint: u64,
     reset_index: Option<u32>,
     app_client: F,
     exporter_addr: Option<SocketAddr>,
@@ -82,6 +83,7 @@ impl<W: Wallet, F> Signer<W, F>
 where
     F: Fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, W>,
 {
+    #![allow(clippy::too_many_arguments)]
     /// Create a new signer, loading the extended private key from the given
     /// path (`key_path`) if it exists. If the key does not exist, one will be
     /// generated and written to the path, then submitted to the chain, becoming
@@ -98,6 +100,8 @@ where
     /// - `max_sigset_change_rate`: The maximum rate at which the signatory set
     /// can change in a 24-hour period, temporarily halting signing if the limit
     /// is reached.
+    /// - `min_checkpoint_seconds`: The minimum amount of time that must pass
+    /// before this signer will contribute its signature.
     /// - `reset_index`: A checkpoint index at which the rate limits should be
     /// reset, used to manually override the limits if the signer has checked on
     /// the pending withdrawals and decided they are legitimate.
@@ -110,6 +114,7 @@ where
         xpriv_paths: Vec<P>,
         max_withdrawal_rate: f64,
         max_sigset_change_rate: f64,
+        min_checkpoint_seconds: u64,
         reset_index: Option<u32>,
         app_client: F,
         exporter_addr: Option<SocketAddr>,
@@ -134,6 +139,7 @@ where
             xprivs,
             max_withdrawal_rate,
             max_sigset_change_rate,
+            min_checkpoint_seconds,
             reset_index,
             app_client,
             exporter_addr,
@@ -152,6 +158,8 @@ where
     /// - `max_sigset_change_rate`: The maximum rate at which the signatory set
     /// can change in a 24-hour period, temporarily halting signing if the limit
     /// is reached.
+    /// - `min_blocks_per_checkpoint`: The minimum number of new Bitcoin blocks
+    /// that must be mined before this signer will contribute its signature.
     /// - `reset_index`: A checkpoint index at which the rate limits should be
     /// reset, used to manually override the limits if the signer has checked on
     /// the pending withdrawals and decided they are legitimate.
@@ -162,6 +170,7 @@ where
         xprivs: Vec<ExtendedPrivKey>,
         max_withdrawal_rate: f64,
         max_sigset_change_rate: f64,
+        min_blocks_per_checkpoint: u64,
         reset_index: Option<u32>,
         app_client: F,
         exporter_addr: Option<SocketAddr>,
@@ -174,6 +183,7 @@ where
             xprivs,
             max_withdrawal_rate,
             max_sigset_change_rate,
+            min_blocks_per_checkpoint,
             reset_index,
             app_client,
             exporter_addr,
@@ -322,7 +332,7 @@ where
 
         let (status, timestamp) = self
             .client()
-            .query(|app| {
+            .query(|app: InnerApp| {
                 let cp = app.bitcoin.checkpoints.get(index)?;
                 Ok((cp.status, cp.create_time()))
             })
@@ -344,7 +354,38 @@ where
             return Ok(matches!(status, CheckpointStatus::Complete));
         }
 
-        self.check_change_rates().await?;
+        if matches!(status, CheckpointStatus::Signing) {
+            self.check_change_rates().await?;
+            let current_btc_height = self
+                .client()
+                .query(|app: InnerApp| Ok(app.bitcoin.headers.height()?))
+                .await? as u64;
+            let last_signed_btc_height: Option<u64> = self
+                .client()
+                .query(|app: InnerApp| {
+                    Ok(app
+                        .bitcoin
+                        .checkpoints
+                        .get(index.saturating_sub(1))?
+                        .signed_at_btc_height)
+                })
+                .await?
+                .map(|v| v as u64);
+
+            if let Some(last_signed_btc_height) = last_signed_btc_height {
+                if current_btc_height < last_signed_btc_height + self.min_blocks_per_checkpoint {
+                    let delta = last_signed_btc_height + self.min_blocks_per_checkpoint
+                        - current_btc_height;
+                    info!(
+                        "Checkpoint is too recent, {} more Bitcoin block{} required",
+                        delta,
+                        if delta == 1 { "" } else { "s" },
+                    );
+                    return Ok(false);
+                }
+            }
+        }
+
         info!("Signing checkpoint ({} inputs)...", to_sign.len());
 
         let sigs = sign(&secp, xpriv, &to_sign)?;
@@ -487,6 +528,7 @@ mod test {
             Vec::default(),
             1.0,
             1.0,
+            0,
             None,
             || app_client("http://localhost:26657"),
             None,
@@ -512,6 +554,7 @@ mod test {
             vec![temp_dir.path().join("xpriv-primary")],
             1.0,
             1.0,
+            0,
             None,
             || app_client("http://localhost:26657"),
             None,
@@ -531,6 +574,7 @@ mod test {
             vec![temp_dir.path().join("xpriv-primary")],
             1.0,
             1.0,
+            0,
             None,
             || app_client("http://localhost:26657"),
             None,
@@ -557,6 +601,7 @@ mod test {
             xpriv_paths,
             1.0,
             1.0,
+            0,
             None,
             || app_client("http://localhost:26657"),
             None,
