@@ -297,14 +297,12 @@ impl InnerApp {
             if let Ok(funded_address) = env::var("FUNDED_ADDRESS") {
                 let funded_oraibtc_amount = env::var("FUNDED_ORAIBTC_AMOUNT").unwrap_or_default();
                 let funded_usat_amount = env::var("FUNDED_USAT_AMOUNT").unwrap_or_default();
-    
                 let unom_coin: Coin<Nom> = Amount::new(
                     funded_oraibtc_amount
                         .parse::<u64>()
                         .unwrap_or(INITIAL_SUPPLY_ORAIBTC),
                 )
                 .into();
-    
                 // mint new uoraibtc coin for funded address
                 self.accounts
                     .deposit(funded_address.parse().unwrap(), unom_coin)?;
@@ -321,7 +319,6 @@ impl InnerApp {
                     .add_transfer_exception(funded_address.parse().unwrap())?;
                 return Ok(funded_address);
             }
-            
             Ok("".to_string())
         }
         // #[cfg(not(feature = "faucet-test"))]
