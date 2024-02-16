@@ -1922,6 +1922,8 @@ pub struct RecoverDepositCmd {
     channel: Option<String>,
     #[clap(long)]
     remote_addr: Option<String>,
+    #[clap(long)]
+    remote_prefix: Option<String>,
 
     #[clap(long)]
     nomic_addr: Address,
@@ -2005,9 +2007,16 @@ impl RecoverDepositCmd {
     }
 
     async fn run(&self) -> Result<()> {
-        if self.channel.is_some() != self.remote_addr.is_some() {
+        let mut remote_addr = self.remote_addr.clone();
+        if let Some(remote_prefix) = &self.remote_prefix {
+            let data = bech32::decode(&self.nomic_addr.to_string()).unwrap().1;
+            remote_addr =
+                Some(bech32::encode(remote_prefix, data, bech32::Variant::Bech32).unwrap());
+        }
+
+        if self.channel.is_some() != remote_addr.is_some() {
             return Err(nomic::error::Error::Orga(orga::Error::App(
-                "Both --channel and --remote-prefix must be specified".to_string(),
+                "Both --channel and --remote-prefix or --remote-addr must be specified".to_string(),
             )));
         }
 
@@ -2034,9 +2043,7 @@ impl RecoverDepositCmd {
 
         dbg!(sigsets.len());
 
-        if let (Some(channel), Some(remote_addr)) =
-            (self.channel.as_ref(), self.remote_addr.as_ref())
-        {
+        if let (Some(channel), Some(remote_addr)) = (self.channel.as_ref(), remote_addr.as_ref()) {
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
