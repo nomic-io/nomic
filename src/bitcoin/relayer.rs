@@ -272,8 +272,11 @@ impl Relayer {
                 let sigset: RawSignatorySet = app_client(app_client_addr)
                     .query(|app: crate::app::InnerApp| {
                         let building = app.bitcoin.checkpoints.building()?;
-                        let est_miner_fee = building.fee_rate
-                            * app.bitcoin.checkpoints.active_sigset()?.est_witness_vsize();
+                        let est_miner_fee =
+                            (app.bitcoin.checkpoints.active_sigset()?.est_witness_vsize() + 40)
+                                * building.fee_rate
+                                * app.bitcoin.checkpoints.config.user_fee_factor
+                                / 10_000;
                         let deposits_enabled = building.deposits_enabled;
                         let sigset = RawSignatorySet::new(
                             app.bitcoin.checkpoints.active_sigset()?,
@@ -992,14 +995,6 @@ impl Relayer {
             batch[0].height(),
             batch.len(),
         );
-        app_client(&self.app_client_addr)
-            .call(
-                |app: &InnerApp| {
-                    build_call!(app.bitcoin.headers.add(batch.clone().into_iter().collect()))
-                },
-                |app: &InnerApp| build_call!(app.app_noop()),
-            )
-            .await?;
         let res = app_client(&self.app_client_addr)
             .call(
                 move |app: &InnerApp| build_call!(app.bitcoin.headers.add(batch.clone().into())),

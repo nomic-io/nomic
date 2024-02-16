@@ -21,7 +21,7 @@ use nomic::bitcoin::header_queue::Config as HeaderQueueConfig;
 use nomic::bitcoin::relayer::DepositAddress;
 use nomic::bitcoin::relayer::Relayer;
 use nomic::bitcoin::signer::Signer;
-use nomic::bitcoin::threshold_sig::VersionedPubkey;
+use nomic::bitcoin::threshold_sig::Pubkey;
 use nomic::bitcoin::Config as BitcoinConfig;
 use nomic::error::{Error, Result};
 use nomic::utils::*;
@@ -298,6 +298,7 @@ async fn bitcoin_test() {
             vec![slashable_signer_xpriv],
             0.1,
             1.0,
+            0,
             None,
             || {
                 let wallet = DerivedKey::from_secret_key(privkey);
@@ -465,6 +466,14 @@ async fn bitcoin_test() {
         .await
         .unwrap();
 
+        app_client()
+            .with_wallet(funded_accounts[0].wallet.clone())
+            .call(
+                move |app| build_call!(app.accounts.take_as_funding((MIN_FEE).into())),
+                move |app| build_call!(app.bitcoin.transfer_to_fee_pool(8000000000.into())),
+            )
+            .await?;
+
         btc_client
             .generate_to_address(4, &async_wallet_address)
             .await
@@ -485,7 +494,7 @@ async fn bitcoin_test() {
             .unwrap();
         assert!(signer_jailed);
 
-        let expected_balance = 989989871600000;
+        let expected_balance = 989981871600000;
         let balance = poll_for_updated_balance(funded_accounts[0].address, expected_balance).await;
         assert_eq!(balance, Amount::from(expected_balance));
 
@@ -532,7 +541,7 @@ async fn bitcoin_test() {
                 }
             }
         }
-        assert_eq!(signatory_balance, 49986239);
+        assert_eq!(signatory_balance, 49994239);
 
         let funded_account_balances: Vec<_> = funded_accounts
             .iter()
@@ -547,7 +556,7 @@ async fn bitcoin_test() {
             })
             .collect();
 
-        let expected_account_balances: Vec<u64> = vec![989988029, 0, 0, 0];
+        let expected_account_balances: Vec<u64> = vec![989980029, 0, 0, 0];
         assert_eq!(funded_account_balances, expected_account_balances);
 
         for (i, account) in funded_accounts[0..1].iter().enumerate() {
@@ -744,6 +753,7 @@ async fn signing_completed_checkpoint_test() {
             vec![xpriv],
             0.1,
             1.0,
+            0,
             None,
             || {
                 let wallet = DerivedKey::from_secret_key(privkey);
@@ -771,6 +781,7 @@ async fn signing_completed_checkpoint_test() {
             vec![xpriv],
             0.1,
             1.0,
+            0,
             None,
             move || {
                 let wallet = DerivedKey::from_secret_key(privkey);
@@ -1214,6 +1225,7 @@ async fn signer_key_updating() {
             vec![xpriv],
             0.1,
             1.0,
+            0,
             None,
             client_provider,
             None,
@@ -1297,7 +1309,7 @@ async fn signer_key_updating() {
 
         assert_eq!(
             completed_checkpoint_0_pubkey,
-            VersionedPubkey::from(derived_public_key_0)
+            Pubkey::from(derived_public_key_0)
         );
 
         let building_checkpoint_1_pubkey = app_client()
@@ -1319,7 +1331,7 @@ async fn signer_key_updating() {
 
         assert_eq!(
             building_checkpoint_1_pubkey,
-            VersionedPubkey::from(derived_public_key_1)
+            Pubkey::from(derived_public_key_1)
         );
 
         tx.send(Some(())).await.unwrap();
@@ -1351,6 +1363,7 @@ async fn signer_key_updating() {
                 vec![new_xpriv, xpriv],
                 0.1,
                 1.0,
+                0,
                 None,
                 client_provider,
                 None,
@@ -1389,7 +1402,7 @@ async fn signer_key_updating() {
 
         assert_eq!(
             completed_checkpoint_1_pubkey,
-            VersionedPubkey::from(derived_public_key_1)
+            Pubkey::from(derived_public_key_1)
         );
 
         let building_checkpoint_2_pubkey = app_client()
@@ -1411,7 +1424,7 @@ async fn signer_key_updating() {
 
         assert_eq!(
             building_checkpoint_2_pubkey,
-            VersionedPubkey::from(derived_public_key_2)
+            Pubkey::from(derived_public_key_2)
         );
 
         deposit_bitcoin(
@@ -1442,7 +1455,7 @@ async fn signer_key_updating() {
 
         assert_eq!(
             completed_checkpoint_2_pubkey,
-            VersionedPubkey::from(derived_public_key_2)
+            Pubkey::from(derived_public_key_2)
         );
 
         Err::<(), Error>(Error::Test("Test completed successfully".to_string()))

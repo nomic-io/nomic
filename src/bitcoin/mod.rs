@@ -221,7 +221,7 @@ impl Config {
             max_withdrawal_script_length: 64,
             transfer_fee: TRANSFER_FEE,
             #[cfg(feature = "testnet")]
-            min_confirmations: 0,
+            min_confirmations: 1,
             #[cfg(not(feature = "testnet"))]
             min_confirmations: 1,
             units_per_sat: 1_000_000,
@@ -232,7 +232,7 @@ impl Config {
             #[cfg(not(feature = "testnet"))]
             capacity_limit: 21 * 100_000_000, // 21 BTC
             max_deposit_age: 60 * 60 * 24 * 5,
-            fee_pool_target_balance: 10_000_000, // 0.1 BTC
+            fee_pool_target_balance: 100_000_000, // 1 BTC
             fee_pool_reward_split: (1, 10),
         }
     }
@@ -241,6 +241,8 @@ impl Config {
         Self {
             min_withdrawal_checkpoints: 1,
             max_offline_checkpoints: 1,
+            min_confirmations: 0,
+            fee_pool_target_balance: 10_000_000,
             ..Self::bitcoin()
         }
     }
@@ -527,7 +529,7 @@ impl Bitcoin {
     #[cfg(feature = "full")]
     pub fn should_push_checkpoint(&mut self) -> Result<bool> {
         self.checkpoints
-            .should_push(self.signatory_keys.map(), &[0; 32])
+            .should_push(self.signatory_keys.map(), &[0; 32], self.headers.height()?)
         // TODO: we shouldn't need this slice, commitment should be fixed-length
     }
 
@@ -1088,7 +1090,7 @@ impl Bitcoin {
         coin.burn();
 
         self.fee_pool += amount as i64;
-        self.checkpoints.building_mut()?.fees_collected += amount;
+        self.checkpoints.building_mut()?.fees_collected += amount / self.config.units_per_sat;
 
         Ok(())
     }
@@ -1123,6 +1125,26 @@ impl Bitcoin {
             .take(amount)?;
 
         self.give_miner_fee(taken_coins)
+    }
+
+    #[call]
+    pub fn transfer_to_fee_pool(&mut self, amount: Amount) -> Result<()> {
+        if amount < 100 * self.config.units_per_sat {
+            return Err(Error::Orga(OrgaError::App(
+                "Minimum transfer to fee pool is 100 sat".into(),
+            )));
+        }
+
+        exempt_from_fee()?;
+
+        let signer = self
+            .context::<Signer>()
+            .ok_or_else(|| Error::Orga(OrgaError::App("No Signer context available".into())))?
+            .signer
+            .ok_or_else(|| Error::Orga(OrgaError::App("Call must be signed".into())))?;
+
+        let coins = self.accounts.withdraw(signer, amount)?;
+        self.give_miner_fee(coins)
     }
 }
 
@@ -1367,6 +1389,9 @@ mod tests {
 
             btc.add_withdrawal(Adapter::new(Script::new()), 459_459_927_000_000.into())
                 .unwrap();
+
+            let mut building_mut = btc.checkpoints.building_mut().unwrap();
+            building_mut.fees_collected = 100_000_000;
         };
 
         let sign_batch = |btc_height| {

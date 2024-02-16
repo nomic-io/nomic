@@ -65,7 +65,9 @@ impl Symbol for Nom {
     const NAME: &'static str = MAIN_NATIVE_TOKEN_DENOM;
 }
 
-#[orga(version = 4)]
+const CALL_FEE_USATS: u64 = 100_000_000;
+
+#[orga(version = 5)]
 pub struct InnerApp {
     #[call]
     pub accounts: Accounts<Nom>,
@@ -85,7 +87,7 @@ pub struct InnerApp {
     #[call]
     pub ibc: Ibc,
     #[cfg(not(feature = "testnet"))]
-    #[orga(version(V4))]
+    #[orga(version(V4, V5))]
     #[call]
     pub ibc: Ibc,
 
@@ -94,13 +96,45 @@ pub struct InnerApp {
     #[cfg(feature = "testnet")]
     pub cosmos: Cosmos,
     #[cfg(not(feature = "testnet"))]
-    #[orga(version(V4))]
+    #[orga(version(V4, V5))]
     pub cosmos: Cosmos,
 }
 
 #[orga]
 impl InnerApp {
     pub const CONSENSUS_VERSION: u8 = 11;
+
+    #[cfg(feature = "full")]
+    fn configure_faucets(&mut self) -> Result<()> {
+        use std::time::Duration;
+
+        let day = 60 * 60 * 24;
+        let year = Duration::from_secs(60 * 60 * 24 * 365);
+        let two_thirds = (Amount::new(2) / Amount::new(3))?;
+
+        let genesis_time = self
+            .context::<Time>()
+            .ok_or_else(|| Error::App("No Time context available".into()))?
+            .seconds;
+
+        self.staking_rewards.configure(FaucetOptions {
+            num_periods: 9,
+            period_length: year,
+            total_coins: 49_875_000_000_000.into(),
+            period_decay: two_thirds,
+            start_seconds: genesis_time + day,
+        })?;
+
+        self.community_pool_rewards.configure(FaucetOptions {
+            num_periods: 9,
+            period_length: year,
+            total_coins: 9_975_000_000_000.into(),
+            period_decay: two_thirds,
+            start_seconds: genesis_time + day,
+        })?;
+
+        Ok(())
+    }
 
     #[call]
     pub fn deposit_rewards(&mut self) -> Result<()> {
@@ -267,16 +301,21 @@ impl InnerApp {
 
     #[call]
     pub fn declare_with_nbtc(&mut self, declaration: Declaration) -> Result<()> {
-        self.deduct_nbtc_fee(DECLARE_FEE_USATS.into())?;
+        self.deduct_nbtc_fee(CALL_FEE_USATS.into())?;
         let signer = self.signer()?;
         self.staking.declare(signer, declaration, 0.into())
+    }
+
+    #[call]
+    pub fn pay_nbtc_fee(&mut self) -> Result<()> {
+        self.deduct_nbtc_fee(CALL_FEE_USATS.into())
     }
 
     fn deduct_nbtc_fee(&mut self, amount: Amount) -> Result<()> {
         disable_fee();
         let signer = self.signer()?;
-        self.bitcoin.accounts.withdraw(signer, amount)?.burn();
-
+        let fee = self.bitcoin.accounts.withdraw(signer, amount)?;
+        self.bitcoin.give_rewards(fee)?;
         Ok(())
     }
 
@@ -306,7 +345,7 @@ impl InnerApp {
                 // mint new uoraibtc coin for funded address
                 self.accounts
                     .deposit(funded_address.parse().unwrap(), unom_coin)?;
-    
+
                 let nbtc_coin: Coin<Nbtc> = Amount::new(
                     funded_usat_amount
                         .parse::<u64>()
@@ -535,6 +574,18 @@ mod abci {
                 .insert((), vec![Self::CONSENSUS_VERSION].try_into().unwrap())?;
 
             self.mint_initial_supply()?;
+            #[cfg(feature = "testnet")]
+            {
+                self.upgrade.activation_delay_seconds = 20 * 60;
+
+                include_str!("../testnet_addresses.csv")
+                    .lines()
+                    .try_for_each(|line| {
+                        let address = line.parse().unwrap();
+                        self.accounts.deposit(address, Coin::mint(10_000_000_000))
+                    })?;
+            }
+
             Ok(())
         }
     }
@@ -1328,10 +1379,27 @@ impl ConvertSdkTx for InnerApp {
                         let script =
                             crate::bitcoin::adapter::Adapter::new(recovery_addr.script_pubkey());
 
-                        // let funding_amt = MIN_FEE;
-                        // let payer = build_call!(self.accounts.take_as_funding(funding_amt.into()));
-                        let payer = build_call!(self.app_noop());
+                        let funding_amt = MIN_FEE;
+                        let payer = build_call!(self.pay_nbtc_fee());
                         let paid = build_call!(self.bitcoin.set_recovery_script(script.clone()));
+
+                        Ok(PaidCall { payer, paid })
+                    }
+
+                    "nomic/MsgPayToFeePool" => {
+                        let msg = msg
+                            .value
+                            .as_object()
+                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
+
+                        let amount: u64 = msg["amount"]
+                            .as_str()
+                            .ok_or_else(|| Error::App("Invalid amount".to_string()))?
+                            .parse()
+                            .map_err(|e: std::num::ParseIntError| Error::App(e.to_string()))?;
+
+                        let payer = build_call!(self.bitcoin.transfer_to_fee_pool(amount.into()));
+                        let paid = build_call!(self.app_noop());
 
                         Ok(PaidCall { payer, paid })
                     }

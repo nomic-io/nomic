@@ -1077,6 +1077,8 @@ impl Config {
             min_checkpoint_interval: 15,
             emergency_disbursal_lock_time_interval: 60,
             emergency_disbursal_max_tx_size: 11,
+            user_fee_factor: 20_000,
+            max_age: 60 * 60 * 24 * 7 * 3,
             ..Config::bitcoin()
         }
     }
@@ -1091,7 +1093,7 @@ impl Config {
             target_checkpoint_inclusion: 2,
             min_fee_rate: MIN_FEE_RATE, // relay threshold is 1 sat/vbyte
             max_fee_rate: MAX_FEE_RATE,
-            user_fee_factor: 20000, // 2x
+            user_fee_factor: 21000, // 2.1x
             sigset_threshold: SIGSET_THRESHOLD,
             emergency_disbursal_min_tx_amt: 1000,
             #[cfg(feature = "testnet")]
@@ -1991,7 +1993,7 @@ impl CheckpointQueue {
         fee_pool: &mut i64,
         parent_config: &super::Config,
     ) -> Result<bool> {
-        if !self.should_push(sig_keys, &timestamping_commitment)? {
+        if !self.should_push(sig_keys, &timestamping_commitment, btc_height)? {
             return Ok(false);
         }
 
@@ -2104,6 +2106,7 @@ impl CheckpointQueue {
         &mut self,
         sig_keys: &Map<ConsensusKey, Xpub>,
         timestamping_commitment: &[u8],
+        btc_height: u32,
     ) -> Result<bool> {
         // Do not push if there is a checkpoint in the `Signing` state. There
         // should only ever be at most one checkpoint in this state.
@@ -2122,6 +2125,17 @@ impl CheckpointQueue {
             // since creating the current `Building` checkpoint.
             if elapsed < self.config.min_checkpoint_interval {
                 return Ok(false);
+            }
+
+            // Do not push if Bitcoin headers are being backfilled (e.g. the
+            // current latest height is less than the height at which the last
+            // confirmed checkpoint was signed).
+            if let Ok(last_completed_index) = self.last_completed_index() {
+                let last_completed = self.get(last_completed_index)?;
+                let last_signed_height = last_completed.signed_at_btc_height.unwrap_or(0);
+                if btc_height < last_signed_height {
+                    return Ok(false);
+                }
             }
 
             // Don't push if there are no pending deposits, withdrawals, or
@@ -2430,13 +2444,7 @@ mod test {
         util::bip32::{ExtendedPrivKey, ExtendedPubKey},
         OutPoint, Script, Txid,
     };
-    use orga::{
-        collections::EntryMap,
-        context::Context,
-        secp256k1::{PublicKey, SecretKey},
-    };
-    #[cfg(all(feature = "full"))]
-    use rand::Rng;
+    use orga::{collections::EntryMap, context::Context};
 
     // #[cfg(all(feature = "full"))]
     // use crate::bitcoin::{signatory::Signatory, threshold_sig::Share};
