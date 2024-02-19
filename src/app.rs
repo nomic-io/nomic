@@ -35,10 +35,10 @@ use orga::ibc::ibc_rs::core::ics24_host::identifier::{ChannelId, PortId};
 use orga::ibc::ibc_rs::core::timestamp::Timestamp;
 use orga::ibc::{ClientId, Ibc, IbcTx};
 
-use orga::ibc::ibc_rs::Signer as IbcSigner;
-
 use orga::coins::Declaration;
 use orga::encoding::Adapter as EdAdapter;
+use orga::ibc::ibc_rs::core::ics24_host::identifier::ConnectionId as IbcConnectionId;
+use orga::ibc::ibc_rs::Signer as IbcSigner;
 use orga::macros::build_call;
 use orga::migrate::Migrate;
 use orga::orga;
@@ -65,14 +65,16 @@ impl Symbol for Nom {
     const NAME: &'static str = MAIN_NATIVE_TOKEN_DENOM;
 }
 
-#[orga(version = 4)]
+const CALL_FEE_USATS: u64 = 100_000_000;
+
+#[orga(version = 5)]
 pub struct InnerApp {
     #[call]
     pub accounts: Accounts<Nom>,
     #[call]
     pub staking: Staking<Nom>,
 
-    community_pool: Coin<Nom>,
+    pub community_pool: Coin<Nom>,
 
     staking_rewards: Faucet<Nom>,
     community_pool_rewards: Faucet<Nom>,
@@ -85,7 +87,7 @@ pub struct InnerApp {
     #[call]
     pub ibc: Ibc,
     #[cfg(not(feature = "testnet"))]
-    #[orga(version(V4))]
+    #[orga(version(V4, V5))]
     #[call]
     pub ibc: Ibc,
 
@@ -94,13 +96,45 @@ pub struct InnerApp {
     #[cfg(feature = "testnet")]
     pub cosmos: Cosmos,
     #[cfg(not(feature = "testnet"))]
-    #[orga(version(V4))]
+    #[orga(version(V4, V5))]
     pub cosmos: Cosmos,
 }
 
 #[orga]
 impl InnerApp {
     pub const CONSENSUS_VERSION: u8 = 11;
+
+    #[cfg(feature = "full")]
+    fn configure_faucets(&mut self) -> Result<()> {
+        use std::time::Duration;
+
+        let day = 60 * 60 * 24;
+        let year = Duration::from_secs(60 * 60 * 24 * 365);
+        let two_thirds = (Amount::new(2) / Amount::new(3))?;
+
+        let genesis_time = self
+            .context::<Time>()
+            .ok_or_else(|| Error::App("No Time context available".into()))?
+            .seconds;
+
+        self.staking_rewards.configure(FaucetOptions {
+            num_periods: 9,
+            period_length: year,
+            total_coins: 49_875_000_000_000.into(),
+            period_decay: two_thirds,
+            start_seconds: genesis_time + day,
+        })?;
+
+        self.community_pool_rewards.configure(FaucetOptions {
+            num_periods: 9,
+            period_length: year,
+            total_coins: 9_975_000_000_000.into(),
+            period_decay: two_thirds,
+            start_seconds: genesis_time + day,
+        })?;
+
+        Ok(())
+    }
 
     #[call]
     pub fn deposit_rewards(&mut self) -> Result<()> {
@@ -122,7 +156,7 @@ impl InnerApp {
 
         let fee = ibc_fee(amount)?;
         let fee = coins.take(fee)?;
-        self.bitcoin.reward_pool.give(fee)?;
+        self.bitcoin.give_rewards(fee)?;
 
         let building = &mut self.bitcoin.checkpoints.building_mut()?;
         let dest = Dest::Ibc(dest);
@@ -267,16 +301,21 @@ impl InnerApp {
 
     #[call]
     pub fn declare_with_nbtc(&mut self, declaration: Declaration) -> Result<()> {
-        self.deduct_nbtc_fee(DECLARE_FEE_USATS.into())?;
+        self.deduct_nbtc_fee(CALL_FEE_USATS.into())?;
         let signer = self.signer()?;
         self.staking.declare(signer, declaration, 0.into())
+    }
+
+    #[call]
+    pub fn pay_nbtc_fee(&mut self) -> Result<()> {
+        self.deduct_nbtc_fee(CALL_FEE_USATS.into())
     }
 
     fn deduct_nbtc_fee(&mut self, amount: Amount) -> Result<()> {
         disable_fee();
         let signer = self.signer()?;
-        self.bitcoin.accounts.withdraw(signer, amount)?.burn();
-
+        let fee = self.bitcoin.accounts.withdraw(signer, amount)?;
+        self.bitcoin.give_rewards(fee)?;
         Ok(())
     }
 
@@ -294,37 +333,32 @@ impl InnerApp {
     pub fn mint_initial_supply(&mut self) -> Result<String> {
         {
             // mint uoraibtc and nbtc for a funded address given in the env variable
-            let funded_address = env::var("FUNDED_ADDRESS").map_err(|err| {
-                orga::Error::Client(format!(
-                    "Get funded address with error: {}",
-                    err.to_string()
-                ))
-            })?;
-            let funded_oraibtc_amount = env::var("FUNDED_ORAIBTC_AMOUNT").unwrap_or_default();
-            let funded_usat_amount = env::var("FUNDED_USAT_AMOUNT").unwrap_or_default();
+            if let Ok(funded_address) = env::var("FUNDED_ADDRESS") {
+                let funded_oraibtc_amount = env::var("FUNDED_ORAIBTC_AMOUNT").unwrap_or_default();
+                let funded_usat_amount = env::var("FUNDED_USAT_AMOUNT").unwrap_or_default();
+                let unom_coin: Coin<Nom> = Amount::new(
+                    funded_oraibtc_amount
+                        .parse::<u64>()
+                        .unwrap_or(INITIAL_SUPPLY_ORAIBTC),
+                )
+                .into();
+                // mint new uoraibtc coin for funded address
+                self.accounts
+                    .deposit(funded_address.parse().unwrap(), unom_coin)?;
 
-            let unom_coin: Coin<Nom> = Amount::new(
-                funded_oraibtc_amount
-                    .parse::<u64>()
-                    .unwrap_or(INITIAL_SUPPLY_ORAIBTC),
-            )
-            .into();
-
-            // mint new uoraibtc coin for funded address
-            self.accounts
-                .deposit(funded_address.parse().unwrap(), unom_coin)?;
-
-            let nbtc_coin: Coin<Nbtc> = Amount::new(
-                funded_usat_amount
-                    .parse::<u64>()
-                    .unwrap_or(INITIAL_SUPPLY_USATS_FOR_RELAYER),
-            )
-            .into();
-            // add new nbtc coin to the funded address
-            self.credit_transfer(Dest::Address(funded_address.parse().unwrap()), nbtc_coin)?;
-            self.accounts
-                .add_transfer_exception(funded_address.parse().unwrap())?;
-            Ok(funded_address)
+                let nbtc_coin: Coin<Nbtc> = Amount::new(
+                    funded_usat_amount
+                        .parse::<u64>()
+                        .unwrap_or(INITIAL_SUPPLY_USATS_FOR_RELAYER),
+                )
+                .into();
+                // add new nbtc coin to the funded address
+                self.credit_transfer(Dest::Address(funded_address.parse().unwrap()), nbtc_coin)?;
+                self.accounts
+                    .add_transfer_exception(funded_address.parse().unwrap())?;
+                return Ok(funded_address);
+            }
+            Ok("".to_string())
         }
         // #[cfg(not(feature = "faucet-test"))]
         // Err(orga::Error::Unknown)
@@ -469,6 +503,10 @@ mod abci {
                 QueryValidatorCommissionRequest, QueryValidatorCommissionResponse,
                 QueryValidatorOutstandingRewardsRequest, QueryValidatorOutstandingRewardsResponse,
             },
+            slashing::v1beta1::{
+                QueryParamsRequest as SlashingQueryParamsRequest,
+                QueryParamsResponse as SlashingQueryParamsResponse,
+            },
             staking::v1beta1::{
                 query_server::{Query as StakingQuery, QueryServer as StakingQueryServer},
                 BondStatus, Delegation, DelegationResponse, Params, Pool, QueryDelegationRequest,
@@ -493,8 +531,7 @@ mod abci {
         traits::Message,
     };
 
-    use ibc_proto::ibc::core::connection::v1::{
-        query_server::{Query as ConnectionQuery, QueryServer as ConnectionQueryServer},
+    use cosmos_sdk_proto::ibc::core::connection::v1::{
         QueryClientConnectionsRequest, QueryClientConnectionsResponse,
         QueryConnectionClientStateRequest, QueryConnectionClientStateResponse,
         QueryConnectionConsensusStateRequest, QueryConnectionConsensusStateResponse,
@@ -509,6 +546,7 @@ mod abci {
         },
         coins::{Give, Take, ValidatorQueryInfo, UNBONDING_SECONDS},
         collections::Map,
+        encoding::EofTerminatedString,
         ibc::ibc_rs::core::{ics02_client::error::ClientError, ics24_host::path::Path},
         plugins::{BeginBlockCtx, EndBlockCtx, InitChainCtx},
     };
@@ -536,6 +574,18 @@ mod abci {
                 .insert((), vec![Self::CONSENSUS_VERSION].try_into().unwrap())?;
 
             self.mint_initial_supply()?;
+            #[cfg(feature = "testnet")]
+            {
+                self.upgrade.activation_delay_seconds = 20 * 60;
+
+                include_str!("../testnet_addresses.csv")
+                    .lines()
+                    .try_for_each(|line| {
+                        let address = line.parse().unwrap();
+                        self.accounts.deposit(address, Coin::mint(10_000_000_000))
+                    })?;
+            }
+
             Ok(())
         }
     }
@@ -599,23 +649,49 @@ mod abci {
             let res_value;
             match req.path.as_str() {
                 "/cosmos.bank.v1beta1.Query/SupplyOf" => {
-                    let request = QuerySupplyOfRequest::decode(req.data.clone()).unwrap();
-                    let balance = self.get_total_balances(&request.denom);
-                    if let Ok(balance) = balance {
-                        let amount = Some(Coin {
-                            amount: balance.to_string(),
-                            denom: request.denom,
-                        });
+                    let request = ibc_proto::cosmos::bank::v1beta1::QuerySupplyOfRequest::decode(
+                        req.data.clone(),
+                    )
+                    .unwrap();
+                    let balance = self.get_total_balances(&request.denom).ok();
 
-                        let response = QuerySupplyOfResponse { amount };
-                        res_value = response.encode_to_vec().into();
-                    } else {
-                        let response = QuerySupplyOfResponse { amount: None };
-                        res_value = response.encode_to_vec().into();
-                    }
+                    let amount = balance.map(|balance| ibc_proto::cosmos::base::v1beta1::Coin {
+                        amount: balance.to_string(),
+                        denom: request.denom,
+                    });
+
+                    let response =
+                        ibc_proto::cosmos::bank::v1beta1::QuerySupplyOfResponse { amount };
+                    res_value = response.encode_to_vec().into();
                 }
-                "/cosmos.slashing.v1beta1.Query/Params"
-                | "/cosmos.gov.v1beta1.Query/Proposals"
+                "/cosmos.slashing.v1beta1.Query/Params" => {
+                    let request = SlashingQueryParamsRequest::decode(req.data.clone()).unwrap();
+
+                    let params = Some(cosmos_sdk_proto::cosmos::slashing::v1beta1::Params {
+                        signed_blocks_window: self.staking.max_offline_blocks as i64,
+                        min_signed_per_window: vec![],
+                        downtime_jail_duration: Some(Duration {
+                            seconds: self.staking.downtime_jail_seconds as i64,
+                            nanos: 0,
+                        }),
+                        slash_fraction_double_sign: self
+                            .staking
+                            .slash_fraction_double_sign
+                            .encode()
+                            .unwrap(),
+                        slash_fraction_downtime: self
+                            .staking
+                            .slash_fraction_downtime
+                            .encode()
+                            .unwrap(),
+                        ..cosmos_sdk_proto::cosmos::slashing::v1beta1::Params::default()
+                    });
+
+                    let response = SlashingQueryParamsResponse { params };
+                    res_value = response.encode_to_vec().into();
+                }
+
+                "/cosmos.gov.v1beta1.Query/Proposals"
                 | "/cosmos.distribution.v1beta1.Query/Params"
                 | "/cosmos.gov.v1beta1.Query/Params" => {
                     res_value = Bytes::default();
@@ -785,17 +861,21 @@ mod abci {
                     res_value = response.encode_to_vec().into();
                 }
                 "/cosmos.staking.v1beta1.Query/Params" => {
-                    let request = StakingQueryParamsRequest::decode(req.data.clone()).unwrap();
-                    let params = Some(Params {
-                        unbonding_time: Some(Duration {
+                    let request = ibc_proto::cosmos::staking::v1beta1::QueryParamsRequest::decode(
+                        req.data.clone(),
+                    )
+                    .unwrap();
+                    let params = Some(ibc_proto::cosmos::staking::v1beta1::Params {
+                        unbonding_time: Some(ibc_proto::google::protobuf::Duration {
                             seconds: self.staking.unbonding_seconds as i64,
                             nanos: 0i32,
                         }),
                         max_validators: self.staking.max_validators as u32,
                         bond_denom: Nom::NAME.to_string(),
-                        ..Params::default()
+                        ..ibc_proto::cosmos::staking::v1beta1::Params::default()
                     });
-                    let response = StakingQueryParamsResponse { params };
+                    let response =
+                        ibc_proto::cosmos::staking::v1beta1::QueryParamsResponse { params };
                     res_value = response.encode_to_vec().into();
                 }
                 "/cosmos.staking.v1beta1.Query/Pool" => {
@@ -812,15 +892,95 @@ mod abci {
                     };
                     res_value = response.encode_to_vec().into();
                 }
-                // "/ibc.core.connection.v1.Query/Connections" => {
-                //     let connections = self.ibc.ctx.query_all_connections()?;
-                //     let response = QueryConnectionsResponse {
-                //         connections,
-                //         pagination: None,
-                //         height: None,
-                //     };
-                //     res_value = response.encode_to_vec().into();
-                // }
+                "/ibc.applications.transfer.v1.Query/Params" => {
+                    let request =
+                        ibc_proto::ibc::applications::transfer::v1::QueryParamsRequest::decode(
+                            req.data.clone(),
+                        )
+                        .unwrap();
+                    let response =
+                        ibc_proto::ibc::applications::transfer::v1::QueryParamsResponse {
+                            params: Some(ibc_proto::ibc::applications::transfer::v1::Params {
+                                send_enabled: false,
+                                receive_enabled: false,
+                            }),
+                        };
+                    res_value = response.encode_to_vec().into();
+                }
+                "/ibc.core.connection.v1.Query/Connection" => {
+                    let request =
+                        ibc_proto::ibc::core::connection::v1::QueryConnectionRequest::decode(
+                            req.data.clone(),
+                        )
+                        .unwrap();
+
+                    let connection = self
+                        .ibc
+                        .ctx
+                        .query_connection(EofTerminatedString(
+                            IbcConnectionId::from_str(&request.connection_id).unwrap(),
+                        ))
+                        .unwrap()
+                        .unwrap();
+
+                    let raw_connection: ibc_proto::ibc::core::connection::v1::ConnectionEnd =
+                        connection.into();
+
+                    let response = ibc_proto::ibc::core::connection::v1::QueryConnectionResponse {
+                        connection: Some(ibc_proto::ibc::core::connection::v1::ConnectionEnd {
+                            client_id: raw_connection.client_id,
+                            versions: raw_connection
+                                .versions
+                                .into_iter()
+                                .map(|v| ibc_proto::ibc::core::connection::v1::Version {
+                                    identifier: v.identifier,
+                                    features: v.features,
+                                })
+                                .collect(),
+                            state: raw_connection.state,
+                            counterparty: raw_connection.counterparty.map(|c| {
+                                ibc_proto::ibc::core::connection::v1::Counterparty {
+                                    client_id: c.client_id,
+                                    connection_id: c.connection_id,
+                                    prefix: c.prefix.map(|p| {
+                                        ibc_proto::ibc::core::commitment::v1::MerklePrefix {
+                                            key_prefix: p.key_prefix,
+                                        }
+                                    }),
+                                }
+                            }),
+                            delay_period: raw_connection.delay_period,
+                        }),
+                        proof: vec![],
+                        proof_height: Some(ibc_proto::ibc::core::client::v1::Height {
+                            revision_height: 0,
+                            revision_number: 0,
+                        }),
+                    };
+
+                    res_value = response.encode_to_vec().into();
+                }
+                "/ibc.core.connection.v1.Query/Connections" => {
+                    let request =
+                        ibc_proto::ibc::core::connection::v1::QueryConnectionsRequest::decode(
+                            req.data.clone(),
+                        )
+                        .unwrap();
+                    let connections = self.ibc.ctx.query_all_connections().unwrap();
+                    let total = connections.len() as u64;
+                    let response = ibc_proto::ibc::core::connection::v1::QueryConnectionsResponse {
+                        connections,
+                        pagination: Some(ibc_proto::cosmos::base::query::v1beta1::PageResponse {
+                            next_key: vec![],
+                            total,
+                        }),
+                        height: Some(ibc_proto::ibc::core::client::v1::Height {
+                            revision_height: 0,
+                            revision_number: 0,
+                        }),
+                    };
+                    res_value = response.encode_to_vec().into();
+                }
                 _ => {
                     // return Err(Error::ABCI(format!("Invalid query path: {}", req.path)));
                     return self.ibc.abci_query(req);
@@ -1204,7 +1364,6 @@ impl ConvertSdkTx for InnerApp {
 
                     //     Ok(PaidCall { payer, paid })
                     // }
-
                     "nomic/MsgSetRecoveryAddress" => {
                         let msg = msg
                             .value
@@ -1220,10 +1379,27 @@ impl ConvertSdkTx for InnerApp {
                         let script =
                             crate::bitcoin::adapter::Adapter::new(recovery_addr.script_pubkey());
 
-                        // let funding_amt = MIN_FEE;
-                        // let payer = build_call!(self.accounts.take_as_funding(funding_amt.into()));
-                        let payer = build_call!(self.app_noop());
+                        let funding_amt = MIN_FEE;
+                        let payer = build_call!(self.pay_nbtc_fee());
                         let paid = build_call!(self.bitcoin.set_recovery_script(script.clone()));
+
+                        Ok(PaidCall { payer, paid })
+                    }
+
+                    "nomic/MsgPayToFeePool" => {
+                        let msg = msg
+                            .value
+                            .as_object()
+                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
+
+                        let amount: u64 = msg["amount"]
+                            .as_str()
+                            .ok_or_else(|| Error::App("Invalid amount".to_string()))?
+                            .parse()
+                            .map_err(|e: std::num::ParseIntError| Error::App(e.to_string()))?;
+
+                        let payer = build_call!(self.bitcoin.transfer_to_fee_pool(amount.into()));
+                        let paid = build_call!(self.app_noop());
 
                         Ok(PaidCall { payer, paid })
                     }
@@ -1293,7 +1469,7 @@ impl IbcDest {
 
         let fee_amount = ibc_fee(coins.amount)?;
         let fee = coins.take(fee_amount)?;
-        bitcoin.reward_pool.give(fee)?;
+        bitcoin.give_rewards(fee)?;
         let nbtc_amount = coins.amount;
 
         ibc.transfer_mut()

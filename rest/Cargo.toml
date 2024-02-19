@@ -15,6 +15,9 @@ bitcoin = { version = "0.29.2", features = ["serde"] }
 hex = "0.4.3"
 tendermint-rpc = { version = "=0.23.7", features = ["http-client"] }
 tendermint = "=0.23.7"
+tendermint-proto = "=0.23.9"
+ibc = { git = "https://github.com/oraichain/ibc-rs", rev = "b7c1f92d5f8dd20c1f675adae2d9a256826c2197", features = ["borsh"] }
+ibc-proto = { version = "0.32.1", default-features = false, features = ["std", "borsh"] }
 base64 = "0.13.0"
 serde = "1.0.136"
 serde_json = "1.0.78"

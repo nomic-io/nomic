@@ -35,14 +35,14 @@ fn main() {
                     include_str!("networks/stakenet.toml")
                 };
                 let config: toml::Value = toml::from_str(toml).unwrap();
-                config
-                    .as_table()
-                    .unwrap()
-                    .get("legacy_version")
-                    .unwrap()
-                    .as_str()
-                    .unwrap()
-                    .to_string()
+                if let Some(legacy_version) = config.as_table().unwrap().get("legacy_version") {
+                    legacy_version.as_str().unwrap().to_string()
+                } else {
+                    println!("No legacy_version set in network config");
+                    println!("cargo:rustc-env=NOMIC_LEGACY_BUILD_PATH=/dev/null");
+                    println!("cargo:rustc-env=NOMIC_LEGACY_BUILD_VERSION=");
+                    return;
+                }
             };
             if version_req_str.chars().next().unwrap().is_numeric() {
                 version_req_str = format!("={}", version_req_str);

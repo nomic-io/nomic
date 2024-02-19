@@ -13,7 +13,7 @@ use orga::prelude::*;
 use orga::Error as OrgaError;
 use orga::Result as OrgaResult;
 
-const MAX_LENGTH: u64 = 4032;
+const MAX_LENGTH: u64 = 24_192; // ~6 months
 const MAX_RELAY: u64 = 1000;
 const MAX_TIME_INCREASE: u32 = 2 * 60 * 60;
 const RETARGET_INTERVAL: u32 = 2016;
@@ -338,7 +338,7 @@ impl Config {
 pub struct HeaderQueue {
     pub(crate) deque: Deque<WorkHeader>,
     pub(crate) current_work: Adapter<Uint256>,
-    config: Config,
+    pub(crate) config: Config,
 }
 
 impl MigrateFrom<HeaderQueueV0> for HeaderQueueV1 {
