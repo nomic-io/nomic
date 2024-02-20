@@ -48,9 +48,9 @@ impl DepositIndex {
     ) {
         self.receiver_index
             .entry(receiver)
-            .or_insert_with(HashMap::new)
+            .or_default()
             .entry(address)
-            .or_insert_with(HashMap::new)
+            .or_default()
             .insert((deposit.txid, deposit.vout), deposit);
     }
 

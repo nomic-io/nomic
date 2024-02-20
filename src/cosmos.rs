@@ -168,14 +168,14 @@ impl Cosmos {
         op_addr.verify(root, "staking")?;
         acc.verify(root, "acc")?;
 
-        if op_addr.key()? != &vec![&[0x22, 0x14], cons_addr.as_slice()].concat() {
+        if op_addr.key()? != &[&[0x22, 0x14], cons_addr.as_slice()].concat() {
             return Err(OrgaError::App(
                 "Operator address proof does not match consensus address".to_string(),
             )
             .into());
         }
 
-        if acc.key()? != &vec![&[0x01], op_addr.value()?.as_slice()].concat() {
+        if acc.key()? != &[&[0x01], op_addr.value()?.as_slice()].concat() {
             return Err(OrgaError::App(
                 "Account proof does not match operator address".to_string(),
             )

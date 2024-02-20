@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate rocket;
 
+use bitcoin::hashes::sha256d::Hash;
 use bitcoin::Address as BitcoinAddress;
 use chrono::{TimeZone, Utc};
 use nomic::{
@@ -20,9 +21,9 @@ use nomic::{
 
 use rocket::response::status::BadRequest;
 use rocket::serde::json::{json, Value};
+use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::collections::HashMap;
 use tokio::sync::RwLock;
 
 use ibc::clients::ics07_tendermint::client_state::ClientState;
@@ -1104,6 +1105,23 @@ async fn get_script_pubkey(address: String) -> Result<Value, BadRequest<String>>
     Ok(json!(base64_script_pubkey))
 }
 
+#[get("/bitcoin/checkpoint/txs")]
+async fn get_checkpoint_txs() -> Result<Value, BadRequest<String>> {
+    let tx_ids: Vec<Hash> = app_client()
+        .query(|app: InnerApp| {
+            Ok(app
+                .bitcoin
+                .checkpoints
+                .completed_txs(100u32)?
+                .into_iter()
+                .map(|tx| tx.ntxid())
+                .collect::<Vec<_>>())
+        })
+        .await
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+    Ok(json!(tx_ids))
+}
+
 #[get("/cosmos/slashing/v1beta1/params")]
 async fn slashing_params() -> Value {
     let (
@@ -1413,7 +1431,11 @@ async fn ibc_connection_channels(connection: &str) -> Value {
 #[get("/ibc/core/connection/v1/connections/<connection>")]
 async fn ibc_connection(connection: &str) -> Value {
     let connection = app_client()
-        .query(|app| app.ibc.ctx.query_connection(EofTerminatedString(IbcConnectionId::from_str(connection).unwrap())))
+        .query(|app| {
+            app.ibc.ctx.query_connection(EofTerminatedString(
+                IbcConnectionId::from_str(connection).unwrap(),
+            ))
+        })
         .await
         .unwrap()
         .unwrap();
@@ -1440,7 +1462,6 @@ async fn ibc_connection(connection: &str) -> Value {
         },
     })
 }
-
 
 #[get("/ibc/core/connection/v1/connections")]
 async fn ibc_connections() -> Value {
@@ -1526,6 +1547,7 @@ fn rocket() -> _ {
             bitcoin_last_checkpoint_size,
             bitcoin_checkpoint_size_with_index,
             get_script_pubkey,
+            get_checkpoint_txs,
             validators,
             validator,
             slashing_params,
