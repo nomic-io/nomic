@@ -285,6 +285,7 @@ impl BitcoinTx {
 
     /// The total value of the outputs in the transaction, in satoshis.
     pub fn value(&self) -> Result<u64> {
+        #[allow(clippy::manual_try_fold)]
         self.output
             .iter()?
             .fold(Ok(0), |sum: Result<u64>, out| Ok(sum? + out?.value))
@@ -716,7 +717,7 @@ impl Checkpoint {
         // TODO: should return None for Building checkpoints? otherwise this
         // might return a withdrawal
         let checkpoint_tx = self.checkpoint_tx()?;
-        if let Some(output) = checkpoint_tx.output.get(0) {
+        if let Some(output) = checkpoint_tx.output.first() {
             Ok(Some(output.clone()))
         } else {
             Ok(None)
@@ -845,7 +846,7 @@ impl Checkpoint {
         tx.output = self
             .additional_outputs(config, timestamping_commitment)?
             .into_iter()
-            .chain(tx.output.into_iter())
+            .chain(tx.output)
             .take(config.max_outputs as usize)
             .collect();
         tx.input.truncate(config.max_inputs as usize);
@@ -2438,7 +2439,6 @@ mod test {
 
     use std::{cell::RefCell, rc::Rc};
 
-    #[cfg(all(feature = "full"))]
     use bitcoin::{
         secp256k1::Secp256k1,
         util::bip32::{ExtendedPrivKey, ExtendedPubKey},

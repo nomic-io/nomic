@@ -8,6 +8,12 @@ Nomic Bitcoin Bridge
 
 This testnet version is the release candidate for the upcoming Stakenet upgrade.
 
+## Run test cases
+
+```bash
+./run-tests.sh
+```
+
 ## Upgrading existing nodes
 
 If you're upgrading your existing testnet node:

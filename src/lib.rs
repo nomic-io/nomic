@@ -4,6 +4,7 @@
 #![feature(specialization)]
 #![feature(type_alias_impl_trait)]
 #![feature(async_closure)]
+#![allow(stable_features)] // Add this line to allow the usage of stable features
 #![feature(string_leak)]
 #![feature(trait_alias)]
 

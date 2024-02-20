@@ -104,37 +104,37 @@ pub struct InnerApp {
 impl InnerApp {
     pub const CONSENSUS_VERSION: u8 = 11;
 
-    #[cfg(feature = "full")]
-    fn configure_faucets(&mut self) -> Result<()> {
-        use std::time::Duration;
+    // #[cfg(feature = "full")]
+    // fn configure_faucets(&mut self) -> Result<()> {
+    //     use std::time::Duration;
 
-        let day = 60 * 60 * 24;
-        let year = Duration::from_secs(60 * 60 * 24 * 365);
-        let two_thirds = (Amount::new(2) / Amount::new(3))?;
+    //     let day = 60 * 60 * 24;
+    //     let year = Duration::from_secs(60 * 60 * 24 * 365);
+    //     let two_thirds = (Amount::new(2) / Amount::new(3))?;
 
-        let genesis_time = self
-            .context::<Time>()
-            .ok_or_else(|| Error::App("No Time context available".into()))?
-            .seconds;
+    //     let genesis_time = self
+    //         .context::<Time>()
+    //         .ok_or_else(|| Error::App("No Time context available".into()))?
+    //         .seconds;
 
-        self.staking_rewards.configure(FaucetOptions {
-            num_periods: 9,
-            period_length: year,
-            total_coins: 49_875_000_000_000.into(),
-            period_decay: two_thirds,
-            start_seconds: genesis_time + day,
-        })?;
+    //     self.staking_rewards.configure(FaucetOptions {
+    //         num_periods: 9,
+    //         period_length: year,
+    //         total_coins: 49_875_000_000_000.into(),
+    //         period_decay: two_thirds,
+    //         start_seconds: genesis_time + day,
+    //     })?;
 
-        self.community_pool_rewards.configure(FaucetOptions {
-            num_periods: 9,
-            period_length: year,
-            total_coins: 9_975_000_000_000.into(),
-            period_decay: two_thirds,
-            start_seconds: genesis_time + day,
-        })?;
+    //     self.community_pool_rewards.configure(FaucetOptions {
+    //         num_periods: 9,
+    //         period_length: year,
+    //         total_coins: 9_975_000_000_000.into(),
+    //         period_decay: two_thirds,
+    //         start_seconds: genesis_time + day,
+    //     })?;
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
     #[call]
     pub fn deposit_rewards(&mut self) -> Result<()> {
@@ -574,17 +574,17 @@ mod abci {
                 .insert((), vec![Self::CONSENSUS_VERSION].try_into().unwrap())?;
 
             self.mint_initial_supply()?;
-            #[cfg(feature = "testnet")]
-            {
-                self.upgrade.activation_delay_seconds = 20 * 60;
+            // #[cfg(feature = "testnet")]
+            // {
+            //     self.upgrade.activation_delay_seconds = 20 * 60;
 
-                include_str!("../testnet_addresses.csv")
-                    .lines()
-                    .try_for_each(|line| {
-                        let address = line.parse().unwrap();
-                        self.accounts.deposit(address, Coin::mint(10_000_000_000))
-                    })?;
-            }
+            //     include_str!("../testnet_addresses.csv")
+            //         .lines()
+            //         .try_for_each(|line| {
+            //             let address = line.parse().unwrap();
+            //             self.accounts.deposit(address, Coin::mint(10_000_000_000))
+            //         })?;
+            // }
 
             Ok(())
         }
@@ -646,8 +646,7 @@ mod abci {
 
     impl AbciQuery for InnerApp {
         fn abci_query(&self, req: &messages::RequestQuery) -> Result<messages::ResponseQuery> {
-            let res_value;
-            match req.path.as_str() {
+            let res_value = match req.path.as_str() {
                 "/cosmos.bank.v1beta1.Query/SupplyOf" => {
                     let request = ibc_proto::cosmos::bank::v1beta1::QuerySupplyOfRequest::decode(
                         req.data.clone(),
@@ -662,7 +661,7 @@ mod abci {
 
                     let response =
                         ibc_proto::cosmos::bank::v1beta1::QuerySupplyOfResponse { amount };
-                    res_value = response.encode_to_vec().into();
+                    response.encode_to_vec().into()
                 }
                 "/cosmos.slashing.v1beta1.Query/Params" => {
                     let request = SlashingQueryParamsRequest::decode(req.data.clone()).unwrap();
@@ -684,24 +683,21 @@ mod abci {
                             .slash_fraction_downtime
                             .encode()
                             .unwrap(),
-                        ..cosmos_sdk_proto::cosmos::slashing::v1beta1::Params::default()
                     });
 
                     let response = SlashingQueryParamsResponse { params };
-                    res_value = response.encode_to_vec().into();
+                    response.encode_to_vec().into()
                 }
 
                 "/cosmos.gov.v1beta1.Query/Proposals"
                 | "/cosmos.distribution.v1beta1.Query/Params"
-                | "/cosmos.gov.v1beta1.Query/Params" => {
-                    res_value = Bytes::default();
-                }
+                | "/cosmos.gov.v1beta1.Query/Params" => Bytes::default(),
                 "/cosmos.distribution.v1beta1.Query/ValidatorOutstandingRewards" => {
                     let request =
                         QueryValidatorOutstandingRewardsRequest::decode(req.data.clone()).unwrap();
 
                     let response = QueryValidatorOutstandingRewardsResponse { rewards: None };
-                    res_value = response.encode_to_vec().into();
+                    response.encode_to_vec().into()
                 }
                 "/cosmos.staking.v1beta1.Query/Delegation" => {
                     let request = QueryDelegationRequest::decode(req.data.clone()).unwrap();
@@ -714,7 +710,7 @@ mod abci {
                     let response = QueryDelegationResponse {
                         delegation_response: None,
                     };
-                    res_value = response.encode_to_vec().into();
+                    response.encode_to_vec().into()
                 }
                 "/cosmos.staking.v1beta1.Query/Validator" => {
                     let request = QueryValidatorRequest::decode(req.data.clone()).unwrap();
@@ -727,14 +723,14 @@ mod abci {
                         .map(|validator| self.parse_validator(validator));
 
                     let response = QueryValidatorResponse { validator: None };
-                    res_value = response.encode_to_vec().into();
+                    response.encode_to_vec().into()
                 }
                 "/cosmos.distribution.v1beta1.Query/ValidatorCommission" => {
                     let request =
                         QueryValidatorCommissionRequest::decode(req.data.clone()).unwrap();
 
                     let response = QueryValidatorCommissionResponse { commission: None };
-                    res_value = response.encode_to_vec().into();
+                    response.encode_to_vec().into()
                 }
                 "/cosmos.distribution.v1beta1.Query/CommunityPool" => {
                     let request = QueryCommunityPoolRequest::decode(req.data.clone()).unwrap();
@@ -744,7 +740,7 @@ mod abci {
                             amount: self.community_pool.amount.to_string(),
                         }],
                     };
-                    res_value = response.encode_to_vec().into();
+                    response.encode_to_vec().into()
                 }
                 "/cosmos.bank.v1beta1.Query/TotalSupply" => {
                     let request = QueryTotalSupplyRequest::decode(req.data.clone()).unwrap();
@@ -764,7 +760,7 @@ mod abci {
                         pagination: None,
                     };
 
-                    res_value = response.encode_to_vec().into();
+                    response.encode_to_vec().into()
                 }
                 "/cosmos.staking.v1beta1.Query/DelegatorDelegations" => {
                     let request =
@@ -791,7 +787,7 @@ mod abci {
                         delegation_responses,
                         pagination: None,
                     };
-                    res_value = response.encode_to_vec().into();
+                    response.encode_to_vec().into()
                 }
                 "/cosmos.staking.v1beta1.Query/ValidatorDelegations" => {
                     let request =
@@ -823,11 +819,11 @@ mod abci {
                             total,
                         }),
                     };
-                    res_value = response.encode_to_vec().into();
+                    response.encode_to_vec().into()
                 }
                 "/cosmos.tx.v1beta1.Service/GetTx" => {
                     let request = GetTxRequest::decode(req.data.clone()).unwrap();
-                    res_value = Bytes::default();
+                    Bytes::default()
                 }
                 "/cosmos.staking.v1beta1.Query/Validators" => {
                     let request = QueryValidatorsRequest::decode(req.data.clone()).unwrap();
@@ -858,7 +854,7 @@ mod abci {
                             total,
                         }),
                     };
-                    res_value = response.encode_to_vec().into();
+                    response.encode_to_vec().into()
                 }
                 "/cosmos.staking.v1beta1.Query/Params" => {
                     let request = ibc_proto::cosmos::staking::v1beta1::QueryParamsRequest::decode(
@@ -876,7 +872,7 @@ mod abci {
                     });
                     let response =
                         ibc_proto::cosmos::staking::v1beta1::QueryParamsResponse { params };
-                    res_value = response.encode_to_vec().into();
+                    response.encode_to_vec().into()
                 }
                 "/cosmos.staking.v1beta1.Query/Pool" => {
                     let request = QueryPoolRequest::decode(req.data.clone()).unwrap();
@@ -890,7 +886,7 @@ mod abci {
                             not_bonded_tokens: not_bonded.to_string(),
                         }),
                     };
-                    res_value = response.encode_to_vec().into();
+                    response.encode_to_vec().into()
                 }
                 "/ibc.applications.transfer.v1.Query/Params" => {
                     let request =
@@ -905,7 +901,7 @@ mod abci {
                                 receive_enabled: false,
                             }),
                         };
-                    res_value = response.encode_to_vec().into();
+                    response.encode_to_vec().into()
                 }
                 "/ibc.core.connection.v1.Query/Connection" => {
                     let request =
@@ -958,7 +954,7 @@ mod abci {
                         }),
                     };
 
-                    res_value = response.encode_to_vec().into();
+                    response.encode_to_vec().into()
                 }
                 "/ibc.core.connection.v1.Query/Connections" => {
                     let request =
@@ -979,13 +975,13 @@ mod abci {
                             revision_number: 0,
                         }),
                     };
-                    res_value = response.encode_to_vec().into();
+                    response.encode_to_vec().into()
                 }
                 _ => {
                     // return Err(Error::ABCI(format!("Invalid query path: {}", req.path)));
                     return self.ibc.abci_query(req);
                 }
-            }
+            };
 
             Ok(ResponseQuery {
                 code: 0,
