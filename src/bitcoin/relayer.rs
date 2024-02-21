@@ -245,7 +245,7 @@ impl Relayer {
             .and_then(move || async {
                 let sigset = app_client(app_client_addr)
                     .query(|app: crate::app::InnerApp| {
-                        let building = app.bitcoin.checkpoints.building()?;
+                        let building = app.bitcoin.checkpoints.current_building()?;
                         let est_miner_fee =
                             (app.bitcoin.checkpoints.active_sigset()?.est_witness_vsize() + 40)
                                 * building.fee_rate

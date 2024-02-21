@@ -1314,7 +1314,7 @@ async fn signer_key_updating() {
 
         let building_checkpoint_1_pubkey = app_client()
             .query(|app| {
-                let building = app.bitcoin.checkpoints.building()?;
+                let building = app.bitcoin.checkpoints.current_building()?;
                 assert!(building.sigset.signatories.len() == 1);
                 Ok(building.sigset.signatories.get(0).unwrap().pubkey)
             })
@@ -1407,7 +1407,7 @@ async fn signer_key_updating() {
 
         let building_checkpoint_2_pubkey = app_client()
             .query(|app| {
-                let building = app.bitcoin.checkpoints.building()?;
+                let building = app.bitcoin.checkpoints.current_building()?;
                 assert!(building.sigset.signatories.len() == 1);
                 Ok(building.sigset.signatories.get(0).unwrap().pubkey)
             })

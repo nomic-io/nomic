@@ -620,9 +620,9 @@ impl Bitcoin {
                 expired_tx: btc_tx.into_inner(),
                 vout: btc_vout,
                 old_sigset: &sigset,
-                new_sigset: &self.checkpoints.building()?.sigset,
+                new_sigset: &self.checkpoints.current_building()?.sigset,
                 dest,
-                fee_rate: self.checkpoints.building()?.fee_rate,
+                fee_rate: self.checkpoints.current_building()?.fee_rate,
                 //TODO: Hold checkpoint config on state
                 threshold: self.checkpoints.config.sigset_threshold,
             })?;
@@ -768,7 +768,7 @@ impl Bitcoin {
         }
 
         let fee_amount = (9 + script_pubkey.len() as u64)
-            * self.checkpoints.building()?.fee_rate
+            * self.checkpoints.current_building()?.fee_rate
             * self.checkpoints.config.user_fee_factor
             / 10_000
             * self.config.units_per_sat;
@@ -1349,7 +1349,7 @@ mod tests {
                     txid: Txid::from_slice(&[0; 32]).unwrap(),
                     vout: 0,
                 },
-                &btc.borrow().checkpoints.building().unwrap().sigset,
+                &btc.borrow().checkpoints.current_building().unwrap().sigset,
                 &[0u8],
                 100_000_000,
                 (9, 10),

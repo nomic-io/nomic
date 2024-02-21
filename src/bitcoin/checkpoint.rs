@@ -1904,7 +1904,7 @@ impl CheckpointQueue {
     /// being signed. Other than at the start of the network, before the first
     /// deposit has been received, there will always be a checkpoint in this
     /// state.
-    pub fn building(&self) -> Result<BuildingCheckpoint> {
+    pub fn current_building(&self) -> Result<BuildingCheckpoint> {
         let last = self.get(self.index)?;
         Ok(BuildingCheckpoint(last))
     }
@@ -1922,7 +1922,7 @@ impl CheckpointQueue {
 
     /// Prunes old checkpoints from the queue.
     pub fn prune(&mut self) -> Result<()> {
-        let latest = self.building()?.create_time();
+        let latest = self.current_building()?.create_time();
 
         while let Some(oldest) = self.queue.front()? {
             // TODO: move to min_checkpoints field in config
@@ -2113,7 +2113,7 @@ impl CheckpointQueue {
                 .context::<Time>()
                 .ok_or_else(|| OrgaError::App("No time context".to_string()))?
                 .seconds as u64;
-            let elapsed = now - self.building()?.create_time();
+            let elapsed = now - self.current_building()?.create_time();
 
             // Do not push if the minimum checkpoint interval has not elapsed
             // since creating the current `Building` checkpoint.
@@ -2137,7 +2137,7 @@ impl CheckpointQueue {
             // miner fee, unless the maximum checkpoint interval has elapsed
             // since creating the current `Building` checkpoint.
             if elapsed < self.config.max_checkpoint_interval || self.index == 0 {
-                let building = self.building()?;
+                let building = self.current_building()?;
                 let checkpoint_tx = building.checkpoint_tx()?;
 
                 let has_pending_deposit = if self.index == 0 {
@@ -2253,7 +2253,7 @@ impl CheckpointQueue {
     /// checkpoint.
     #[query]
     pub fn active_sigset(&self) -> Result<SignatorySet> {
-        Ok(self.building()?.sigset.clone())
+        Ok(self.current_building()?.sigset.clone())
     }
 
     /// Process a batch of signatures, applying them to the checkpoint with the
@@ -2699,7 +2699,7 @@ mod test {
                     txid: Txid::from_slice(&[0; 32]).unwrap(),
                     vout: 0,
                 },
-                &queue.borrow().building().unwrap().sigset,
+                &queue.borrow().current_building().unwrap().sigset,
                 &[0u8],
                 100_000_000,
                 (9, 10),
@@ -2746,20 +2746,20 @@ mod test {
         maybe_step(10);
 
         assert_eq!(queue.borrow().len().unwrap(), 1);
-        assert_eq!(queue.borrow().building().unwrap().create_time(), 0);
+        assert_eq!(queue.borrow().current_building().unwrap().create_time(), 0);
 
         push_deposit();
         maybe_step(10);
 
         assert_eq!(queue.borrow().len().unwrap(), 1);
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 10);
+        assert_eq!(queue.borrow().current_building().unwrap().fee_rate, 10);
 
         set_time(1_000);
         maybe_step(10);
 
         assert_eq!(queue.borrow().len().unwrap(), 2);
         assert!(queue.borrow().last_completed_index().is_err());
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 10);
+        assert_eq!(queue.borrow().current_building().unwrap().fee_rate, 10);
 
         sign_cp(11);
 
@@ -2781,7 +2781,7 @@ mod test {
         sign_cp(11);
 
         assert_eq!(queue.borrow().len().unwrap(), 3);
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 10);
+        assert_eq!(queue.borrow().current_building().unwrap().fee_rate, 10);
 
         set_time(3_000);
         push_deposit();
@@ -2789,7 +2789,7 @@ mod test {
         sign_cp(11);
 
         assert_eq!(queue.borrow().len().unwrap(), 4);
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 10);
+        assert_eq!(queue.borrow().current_building().unwrap().fee_rate, 10);
 
         set_time(4_000);
         push_deposit();
@@ -2797,7 +2797,7 @@ mod test {
         sign_cp(12);
 
         assert_eq!(queue.borrow().len().unwrap(), 5);
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 10);
+        assert_eq!(queue.borrow().current_building().unwrap().fee_rate, 10);
 
         set_time(5_000);
         push_deposit();
@@ -2805,7 +2805,7 @@ mod test {
         sign_cp(13);
 
         assert_eq!(queue.borrow().len().unwrap(), 6);
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 12);
+        assert_eq!(queue.borrow().current_building().unwrap().fee_rate, 12);
 
         set_time(6_000);
         push_deposit();
@@ -2813,7 +2813,7 @@ mod test {
         sign_cp(13);
 
         assert_eq!(queue.borrow().len().unwrap(), 7);
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 12);
+        assert_eq!(queue.borrow().current_building().unwrap().fee_rate, 12);
 
         set_time(7_000);
         push_deposit();
@@ -2821,7 +2821,7 @@ mod test {
         sign_cp(14);
 
         assert_eq!(queue.borrow().len().unwrap(), 8);
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 15);
+        assert_eq!(queue.borrow().current_building().unwrap().fee_rate, 15);
 
         confirm_cp(5, 14);
         set_time(8_000);
@@ -2830,7 +2830,7 @@ mod test {
         sign_cp(15);
 
         assert_eq!(queue.borrow().len().unwrap(), 9);
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 15);
+        assert_eq!(queue.borrow().current_building().unwrap().fee_rate, 15);
 
         confirm_cp(7, 15);
         set_time(9_000);
@@ -2839,7 +2839,7 @@ mod test {
         sign_cp(16);
 
         assert_eq!(queue.borrow().len().unwrap(), 10);
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 11);
+        assert_eq!(queue.borrow().current_building().unwrap().fee_rate, 11);
 
         set_time(10_000);
         push_deposit();
@@ -2847,7 +2847,7 @@ mod test {
         sign_cp(17);
 
         assert_eq!(queue.borrow().len().unwrap(), 11);
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 11);
+        assert_eq!(queue.borrow().current_building().unwrap().fee_rate, 11);
     }
 
     #[cfg(feature = "full")]
@@ -2914,7 +2914,7 @@ mod test {
                     txid: Txid::from_slice(&[0; 32]).unwrap(),
                     vout: 0,
                 },
-                &queue.borrow().building().unwrap().sigset,
+                &queue.borrow().current_building().unwrap().sigset,
                 &[0u8],
                 100_000_000,
                 (9, 10),
