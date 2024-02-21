@@ -382,7 +382,7 @@ pub async fn poll_for_completed_checkpoint(num_checkpoints: u32) {
 pub async fn poll_for_updated_balance(address: Address, expected_balance: u64) -> u64 {
     info!("Polling for updated balance...");
     let initial_balance = app_client(DEFAULT_RPC)
-        .query(|app| app.bitcoin.accounts.balance(address))
+        .query(|app: InnerApp| app.bitcoin.accounts.balance(address))
         .await
         .unwrap();
 
@@ -393,7 +393,7 @@ pub async fn poll_for_updated_balance(address: Address, expected_balance: u64) -
     let mut count = 0;
     loop {
         let balance = app_client(DEFAULT_RPC)
-            .query(|app| app.bitcoin.accounts.balance(address))
+            .query(|app: InnerApp| app.bitcoin.accounts.balance(address))
             .await
             .unwrap();
         if count >= 60 || balance != initial_balance {
