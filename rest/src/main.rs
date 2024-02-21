@@ -557,13 +557,19 @@ async fn bitcoin_value_locked() -> Value {
 async fn bitcoin_checkpoint(checkpoint_index: u32) -> Result<Value, BadRequest<String>> {
     let data = app_client()
         .query(|app: InnerApp| 
-            Ok(
-                (
-                    app.bitcoin.checkpoints.get(checkpoint_index)?.fee_rate,
-                    app.bitcoin.checkpoints.get(checkpoint_index)?.fees_collected,
-                    app.bitcoin.checkpoints.get(checkpoint_index)?.status,
+            {
+                let checkpoint = app.bitcoin.checkpoints.get(checkpoint_index)?;
+                let sigset = checkpoint.sigset.clone();
+                Ok(
+                    (
+                        checkpoint.fee_rate,
+                        checkpoint.fees_collected,
+                        checkpoint.status,
+                        checkpoint.signed_at_btc_height,
+                        sigset
+                    )
                 )
-            )
+            }
         )
         .await
         .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
@@ -572,6 +578,8 @@ async fn bitcoin_checkpoint(checkpoint_index: u32) -> Result<Value, BadRequest<S
         "data": {
             "fee_rate": data.0,
             "fees_collected": data.1,
+            "signed_at_btc_height": data.3,
+            "sigset": data.4,
             "status": data.2,
         }
     }))
