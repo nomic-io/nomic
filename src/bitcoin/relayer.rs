@@ -489,27 +489,16 @@ impl Relayer {
             .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.emergency_disbursal_txs()?))
             .await?;
 
-        println!("disbursal txs length: {}", disbursal_txs.len());
-
         for tx in disbursal_txs.iter() {
             if relayed.contains(&tx.txid()) {
                 continue;
-            }
-
-            println!("tx lock time: {:?}", tx.lock_time.0);
-            for output in tx.output.clone() {
-                println!(
-                    "output bitcoin address: {:?}",
-                    bitcoin::Address::from_script(&output.script_pubkey, bitcoin::Network::Regtest)
-                        .unwrap()
-                        .to_string()
-                )
             }
 
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs();
+
             println!(
                 "is now smaller than lock time: {:?}",
                 now < tx.lock_time.0 as u64
@@ -522,14 +511,28 @@ impl Relayer {
             let mut tx_bytes = vec![];
             tx.consensus_encode(&mut tx_bytes)?;
 
-            let result = self
+            match self
                 .btc_client()
                 .await
                 .send_raw_transaction(&tx_bytes)
-                .await?;
+                .await
+            {
+                Ok(_) => {
+                    info!("Relayed emergency disbursal transaction: {}", tx.txid());
+                }
+                Err(err) if err.to_string().contains("bad-txns-inputs-missingorspent") => {
+                    debug!("Relayed bad txns input error: {}", err.to_string());
+                }
+                Err(err)
+                    if err
+                        .to_string()
+                        .contains("Transaction already in block chain") => {
+                            debug!("Already in blockchain error: {}", err.to_string());
+                        }
+                Err(err) => Err(err)?,
+            };
 
-            println!("Relayed emergency disbursal transaction: {}", result);
-            relayed.insert(result);
+            relayed.insert(tx.txid());
         }
         Ok(())
     }
