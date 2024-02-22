@@ -609,6 +609,18 @@ async fn bitcoin_checkpoint_config() -> Result<Value, BadRequest<String>> {
     Ok(json!(config))
 }
 
+#[get("/bitcoin/checkpoint/disbursal_txs")]
+async fn checkpoint_disbursal_txs() -> Result<Value, BadRequest<String>> {
+    let data = app_client()
+        .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.emergency_disbursal_txs()?))
+        .await
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+
+    Ok(json!({
+        "data": data
+    }))
+}
+
 #[get("/bitcoin/checkpoint")]
 async fn bitcoin_latest_checkpoint() -> Result<Value, BadRequest<String>> {
     let checkpoint_queue: CheckpointQueue = app_client()
@@ -1600,6 +1612,7 @@ fn rocket() -> _ {
             bitcoin_value_locked,
             bitcoin_checkpoint,
             bitcoin_checkpoint_queue,
+            checkpoint_disbursal_txs
         ],
     )
 }
