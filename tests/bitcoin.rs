@@ -10,6 +10,7 @@ use bitcoind::bitcoincore_rpc::RpcApi;
 use bitcoind::{BitcoinD, Conf};
 use chrono::TimeZone;
 use chrono::Utc;
+use futures::FutureExt;
 use log::info;
 use nomic::app::Dest;
 use nomic::app::{InnerApp, Nom};
@@ -2512,6 +2513,16 @@ async fn test_withdraw() {
         poll_for_bitcoin_header(1131).await.unwrap();
         poll_for_completed_checkpoint(2).await;
 
+        match wallet.get_balances() {
+            Ok(data) => {
+                let range = 2.8..3.0;
+                assert!(range.contains(&data.mine.untrusted_pending.to_btc()));
+            },
+            Err(e) => {
+                info!("Error: {:?}", e);
+            }
+        }
+
         let expected_balance = 689988871600000;
         let balance = poll_for_updated_balance(funded_accounts[0].address, expected_balance).await;
         assert_eq!(balance, Amount::from(expected_balance));
@@ -2572,6 +2583,7 @@ async fn test_withdraw() {
         .await
         .unwrap();
 
+        // Lack of fee pool here, so i send more BTC to fee pool
         app_client()
             .with_wallet(funded_accounts[0].wallet.clone())
             .call(
@@ -2587,6 +2599,17 @@ async fn test_withdraw() {
 
         poll_for_bitcoin_header(1135).await.unwrap();
         poll_for_completed_checkpoint(5).await;
+
+        match wallet.get_balances() {
+            Ok(data) => {
+                let range = 12.9..13.0;
+                assert!(range.contains(&data.mine.untrusted_pending.to_btc()));
+                info!("Received: {:?}", data);
+            },
+            Err(e) => {
+                info!("Error: {:?}", e);
+            }
+        }
 
         let expected_balance = 82947201580000;
         let balance = poll_for_updated_balance(funded_accounts[0].address, expected_balance).await;
