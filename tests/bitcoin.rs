@@ -2127,7 +2127,8 @@ async fn test_emergency_disbursal() {
         // balance only gets updated after moving pass bitcoin header & checkpoint has completed
         poll_for_completed_checkpoint(1).await;
 
-        // what does this do?
+        // what does this do? => This will send some signal to recv to make the signer 2 stop
+        // after enough time, the signer 2 will be slashed
         tx.send(Some(())).await.unwrap();
 
         let expected_balance = 989996871600000;
