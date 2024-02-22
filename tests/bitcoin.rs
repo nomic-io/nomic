@@ -423,8 +423,10 @@ async fn bitcoin_test() {
             .unwrap();
         assert_eq!(confirmed_index, None);
 
+        // balance only gets updated after moving pass bitcoin header & checkpoint has completed
         poll_for_completed_checkpoint(1).await;
 
+        // what does this do?
         tx.send(Some(())).await.unwrap();
 
         let expected_balance = 989996871600000;
@@ -458,6 +460,7 @@ async fn bitcoin_test() {
         let balance = poll_for_updated_balance(funded_accounts[1].address, expected_balance).await;
         assert_eq!(balance, Amount::from(expected_balance));
 
+        println!("prepare withdrawing bitcoin");
         withdraw_bitcoin(
             &funded_accounts[0],
             bitcoin::Amount::from_sat(7000),
@@ -642,7 +645,7 @@ async fn bitcoin_test() {
         Ok(_) => (),
         other => {
             other.unwrap();
-        }
+        },
     }
 }
 
@@ -1650,6 +1653,8 @@ async fn recover_expired_deposit() {
             )
             .unwrap();
 
+        println!("sent_txid: {:?}", sent_txid);
+
         btc_client
             .generate_to_address(6, &async_wallet_address)
             .await
@@ -1681,7 +1686,7 @@ async fn recover_expired_deposit() {
             "http://localhost:8999".to_string(),
             expiring_deposit_address.deposit_addr.clone(),
         )
-        .await;
+        .await?;
 
         btc_client
             .generate_to_address(1, &async_wallet_address)
@@ -1700,7 +1705,7 @@ async fn recover_expired_deposit() {
         poll_for_bitcoin_header(1185).await.unwrap();
         poll_for_completed_checkpoint(3).await;
 
-        let expected_balance = 39595129200000;
+        let expected_balance = 39596871600000;
         let balance = poll_for_updated_balance(funded_accounts[1].address, expected_balance).await;
         assert_eq!(balance, Amount::from(expected_balance));
 

@@ -12,6 +12,9 @@ This testnet version is the release candidate for the upcoming Stakenet upgrade.
 
 ```bash
 ./run-tests.sh
+
+# for bitcoin e2e testing, if you want to test individual unit tests, you can use the following command:
+cargo test --verbose --features full,feat-ibc,testnet,faucet-test,devnet --test bitcoin recover_expired_deposit -- --ignored --exact
 ```
 
 ## Upgrading existing nodes
