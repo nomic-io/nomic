@@ -564,7 +564,7 @@ async fn bitcoin_test() {
 
         for (i, account) in funded_accounts[0..1].iter().enumerate() {
             let dump_address = wallet.get_new_address(None, None).unwrap();
-            let disbursal_txs = app_client()
+            let disbursal_txs: Vec<Adapter<bitcoin::Transaction>> = app_client()
                 .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.emergency_disbursal_txs()?))
                 .await
                 .unwrap();
