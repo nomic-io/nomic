@@ -2182,6 +2182,11 @@ async fn test_emergency_disbursal() {
 #[tokio::test]
 #[serial]
 #[ignore]
+/***
+ * Thís will test withdraw 2 times:
+ * + Deposit 10 BTC => withdraw 3 BTC
+ * + Deposit 5 BTC + 2 BTC => withdraw 13 BTC
+ */
 async fn test_withdraw() {
     INIT.call_once(|| {
         pretty_env_logger::init();
@@ -2411,10 +2416,7 @@ async fn test_withdraw() {
             .unwrap();
         assert_eq!(confirmed_index, None);
 
-        // balance only gets updated after moving pass bitcoin header & checkpoint has completed
         poll_for_completed_checkpoint(1).await;
-
-        // what does this do?
         tx.send(Some(())).await.unwrap();
 
         let expected_balance = 989996871600000;
@@ -2453,6 +2455,82 @@ async fn test_withdraw() {
         poll_for_completed_checkpoint(2).await;
 
         let expected_balance = 689988871600000;
+        let balance = poll_for_updated_balance(funded_accounts[0].address, expected_balance).await;
+        assert_eq!(balance, Amount::from(expected_balance));
+
+        // After this, i will test two more deposit and withdraw all
+        deposit_bitcoin(
+            &funded_accounts[0].address,
+            bitcoin::Amount::from_btc(5.0).unwrap(),
+            &wallet,
+        )
+        .await
+        .unwrap();
+        btc_client
+            .generate_to_address(1, &async_wallet_address)
+            .await
+            .unwrap();
+
+        poll_for_bitcoin_header(1132).await.unwrap();
+        poll_for_signing_checkpoint().await;
+        poll_for_completed_checkpoint(3).await;
+        
+        deposit_bitcoin(
+            &funded_accounts[0].address,
+            bitcoin::Amount::from_btc(2.0).unwrap(),
+            &wallet,
+        )
+        .await
+        .unwrap();
+        btc_client
+            .generate_to_address(1, &async_wallet_address)
+            .await
+            .unwrap();
+
+        poll_for_bitcoin_header(1133).await.unwrap();
+
+        // Lack of fee pool here, so i send more BTC to fee pool
+        app_client()
+        .with_wallet(funded_accounts[0].wallet.clone())
+        .call(
+            move |app| build_call!(app.accounts.take_as_funding((MIN_FEE).into())),
+            move |app| build_call!(app.bitcoin.transfer_to_fee_pool(9000000000.into())),
+        )
+        .await?;
+
+        poll_for_signing_checkpoint().await;
+        poll_for_completed_checkpoint(4).await;
+
+        let expected_balance = 1382967201580000;
+        let balance = poll_for_updated_balance(funded_accounts[0].address, expected_balance).await;
+        assert_eq!(balance, Amount::from(expected_balance));
+
+        // Withdraw all
+        withdraw_bitcoin(
+            &funded_accounts[0],
+            bitcoin::Amount::from_btc(13.00).unwrap(),
+            &withdraw_address,
+        )
+        .await
+        .unwrap();
+
+        app_client()
+            .with_wallet(funded_accounts[0].wallet.clone())
+            .call(
+                move |app| build_call!(app.accounts.take_as_funding((MIN_FEE).into())),
+                move |app| build_call!(app.bitcoin.transfer_to_fee_pool(20000000000.into())),
+            )
+            .await?;
+
+        btc_client
+            .generate_to_address(2, &async_wallet_address)
+            .await
+            .unwrap();
+
+        poll_for_bitcoin_header(1135).await.unwrap();
+        poll_for_completed_checkpoint(5).await;
+
+        let expected_balance = 82947201580000;
         let balance = poll_for_updated_balance(funded_accounts[0].address, expected_balance).await;
         assert_eq!(balance, Amount::from(expected_balance));
 
