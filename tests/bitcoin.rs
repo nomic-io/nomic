@@ -1969,7 +1969,6 @@ async fn test_emergency_disbursal() {
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
         rpc_addr.clone(),
     );
-    // let disbursal = relayer.start_emergency_disbursal_transaction_relay();
 
     let signer = async {
         tokio::time::sleep(Duration::from_secs(10)).await;
@@ -2152,10 +2151,70 @@ async fn test_emergency_disbursal() {
         poll_for_bitcoin_header(1130).await.unwrap();
         tokio::time::sleep(Duration::from_secs(20)).await;
         let mut relayed = HashSet::new();
+        let funded_bitcoin_address = funded_accounts[0].bitcoin_address();
+        let funded_bitcoin_wallet =
+            retry(|| bitcoind.create_wallet("nomic-funded-bitcoin-wallet"), 10).unwrap();
+        funded_bitcoin_wallet
+            .import_address(&funded_bitcoin_address, Some("funded"), None)
+            .unwrap();
+        let btc_balances = funded_bitcoin_wallet.get_balances().unwrap();
+        println!(
+            "my btc balances before emergency disbursal: {:?}",
+            btc_balances.mine
+        );
+        // before emergency disbursal -> should be zero in balance
+        assert_eq!(btc_balances.mine.immature, bitcoin::Amount::default());
+        assert_eq!(btc_balances.mine.trusted, bitcoin::Amount::default());
+        assert_eq!(
+            btc_balances.mine.untrusted_pending,
+            bitcoin::Amount::default()
+        );
+        let watch_only = btc_balances.watchonly.unwrap();
+        assert_eq!(watch_only.clone().immature, bitcoin::Amount::default());
+        assert_eq!(watch_only.clone().trusted, bitcoin::Amount::default());
+        assert_eq!(
+            watch_only.clone().untrusted_pending,
+            bitcoin::Amount::default()
+        );
+
+        // fixture
+        let mut disbursal_amount_sat: u64 = 0;
+        let disbursal_txs: Vec<Adapter<bitcoin::Transaction>> = app_client()
+            .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.emergency_disbursal_txs()?))
+            .await
+            .unwrap();
+
+        for tx in disbursal_txs.clone() {
+            let mut will_break = false;
+            for output in tx.output.clone() {
+                let address =
+                    bitcoin::Address::from_script(&output.script_pubkey, bitcoin::Network::Regtest)
+                        .unwrap();
+                if address.eq(&funded_bitcoin_address) {
+                    // collect disbursal amount of our funded account in the case of emergency disbursal.
+                    // The amount should match with the btc balance after disbursal
+                    disbursal_amount_sat = output.value;
+                    will_break = true;
+                    break;
+                }
+            }
+            if will_break {
+                break;
+            }
+        }
+
+        // action
         relayer
             .relay_emergency_disbursal_transactions(&mut relayed)
             .await
             .unwrap();
+
+        let btc_balances = funded_bitcoin_wallet.get_balances().unwrap();
+        println!("btc balances after emergency disbursal: {:?}", btc_balances);
+        assert_eq!(
+            btc_balances.watchonly.unwrap().untrusted_pending.to_sat(),
+            disbursal_amount_sat
+        );
 
         Err::<(), Error>(Error::Test("Test completed successfully".to_string()))
     };
@@ -2166,7 +2225,6 @@ async fn test_emergency_disbursal() {
         headers,
         deposits,
         checkpoints,
-        // disbursal,
         signer,
         slashable_signer,
         test
@@ -2474,7 +2532,7 @@ async fn test_withdraw() {
         poll_for_bitcoin_header(1132).await.unwrap();
         poll_for_signing_checkpoint().await;
         poll_for_completed_checkpoint(3).await;
-        
+
         deposit_bitcoin(
             &funded_accounts[0].address,
             bitcoin::Amount::from_btc(2.0).unwrap(),
@@ -2491,12 +2549,12 @@ async fn test_withdraw() {
 
         // Lack of fee pool here, so i send more BTC to fee pool
         app_client()
-        .with_wallet(funded_accounts[0].wallet.clone())
-        .call(
-            move |app| build_call!(app.accounts.take_as_funding((MIN_FEE).into())),
-            move |app| build_call!(app.bitcoin.transfer_to_fee_pool(9000000000.into())),
-        )
-        .await?;
+            .with_wallet(funded_accounts[0].wallet.clone())
+            .call(
+                move |app| build_call!(app.accounts.take_as_funding((MIN_FEE).into())),
+                move |app| build_call!(app.bitcoin.transfer_to_fee_pool(9000000000.into())),
+            )
+            .await?;
 
         poll_for_signing_checkpoint().await;
         poll_for_completed_checkpoint(4).await;
