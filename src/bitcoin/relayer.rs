@@ -230,7 +230,7 @@ impl Relayer {
                     debug!("Received deposit commitment: {:?}, {}", dest, sigset_index);
                     send.send((dest, sigset_index)).await.unwrap();
                     let max_deposit_age = app_client(app_client_addr)
-                        .query(|app| Ok(app.bitcoin.config.max_deposit_age))
+                        .query(|app: InnerApp| Ok(app.bitcoin.config.max_deposit_age))
                         .await
                         .map_err(|e| warp::reject::custom(Error::from(e)))?;
                     if time_now() + deposit_buffer >= create_time + max_deposit_age {
