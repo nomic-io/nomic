@@ -69,6 +69,11 @@ chrono = "0.4.19"
 serial_test = "2.0.0"
 tempfile = "3.6.0"
 
+[dev-dependencies.cargo-husky]
+version = "1"
+default-features = false # Disable features which are enabled by default
+features = ["prepush-hook"]
+
 [build-dependencies]
 toml = { version = "0.7.2", features = ["parse"] }
 semver = "1.0.18"
