@@ -2164,7 +2164,7 @@ impl CheckpointQueue {
                 let miner_fee = building.base_fee(&self.config, timestamping_commitment)?
                     + self.fee_adjustment(building.fee_rate, &self.config)?;
                 if building.fees_collected < miner_fee {
-                    log::debug!(
+                    log::info!(
                         "Not enough collected to pay miner fee: {} < {}",
                         building.fees_collected,
                         miner_fee,
