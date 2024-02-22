@@ -365,7 +365,7 @@ pub async fn poll_for_signing_checkpoint() {
 
 pub async fn poll_for_completed_checkpoint(num_checkpoints: u32) {
     info!("Scanning for signed checkpoints...");
-    let mut checkpoint_len = app_client(DEFAULT_RPC)
+    let mut checkpoint_len: usize = app_client(DEFAULT_RPC)
         .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.completed(1_000)?.len()))
         .await
         .unwrap();
@@ -377,6 +377,7 @@ pub async fn poll_for_completed_checkpoint(num_checkpoints: u32) {
             .unwrap();
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
+    println!("total completed checkpoints: {}", checkpoint_len);
 }
 
 pub async fn poll_for_updated_balance(address: Address, expected_balance: u64) -> u64 {

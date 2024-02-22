@@ -43,7 +43,7 @@ use orga::tendermint::client::HttpClient;
 use rand::Rng;
 use reqwest::StatusCode;
 use serial_test::serial;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::str::FromStr;
 use std::sync::Once;
@@ -1905,8 +1905,6 @@ async fn test_emergency_disbursal() {
 
     let node_path = path.clone();
     let signer_path = path.clone();
-    let header_relayer_path = path.clone();
-
     let xpriv = generate_bitcoin_key(bitcoin::Network::Regtest).unwrap();
     fs::create_dir_all(signer_path.join("signer")).unwrap();
     fs::write(
@@ -1915,6 +1913,7 @@ async fn test_emergency_disbursal() {
     )
     .unwrap();
     let xpub = ExtendedPubKey::from_priv(&secp256k1::Secp256k1::new(), &xpriv);
+    let header_relayer_path = path.clone();
 
     std::env::set_var("NOMIC_HOME_DIR", &path);
 
@@ -1930,13 +1929,11 @@ async fn test_emergency_disbursal() {
         max_length: 59,
         ..Default::default()
     };
-
     let checkpoint_config = CheckpointConfig {
-        min_checkpoint_interval: 20,
+        min_checkpoint_interval: 5,
         emergency_disbursal_lock_time_interval: 10,
         ..Default::default()
     };
-
     let funded_accounts = setup_test_app(
         &path,
         4,
@@ -1946,7 +1943,7 @@ async fn test_emergency_disbursal() {
     );
 
     let node = Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"), Default::default());
-    let node_child = node.await.run().await.unwrap();
+    let _node_child = node.await.run().await.unwrap();
 
     let rpc_addr = "http://localhost:26657".to_string();
 
@@ -1966,19 +1963,13 @@ async fn test_emergency_disbursal() {
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
         rpc_addr.clone(),
     );
-    let recovery_txs = relayer.start_recovery_tx_relay(&header_relayer_path);
-
-    let mut relayer = Relayer::new(
-        test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
-        rpc_addr.clone(),
-    );
     let checkpoints = relayer.start_checkpoint_relay();
 
     let mut relayer = Relayer::new(
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
         rpc_addr.clone(),
     );
-    let disbursal = relayer.start_emergency_disbursal_transaction_relay();
+    // let disbursal = relayer.start_emergency_disbursal_transaction_relay();
 
     let signer = async {
         tokio::time::sleep(Duration::from_secs(10)).await;
@@ -1987,18 +1978,67 @@ async fn test_emergency_disbursal() {
             .await
     };
 
+    let (tx, mut rx) = mpsc::channel(100);
+    let shutdown_listener = async {
+        rx.recv().await;
+        Err::<(), Error>(Error::Test("Signer shutdown initiated".to_string()))
+    };
+
+    let slashable_signer_xpriv = generate_bitcoin_key(bitcoin::Network::Regtest).unwrap();
+    let slashable_signer_xpub = ExtendedPubKey::from_priv(
+        &secp256k1::Secp256k1::new(),
+        &slashable_signer_xpriv.clone(),
+    );
+    let slashable_signer = async {
+        tokio::time::sleep(Duration::from_secs(15)).await;
+        let privkey_bytes = funded_accounts[2].privkey.secret_bytes();
+        let privkey = orga::secp256k1::SecretKey::from_slice(&privkey_bytes).unwrap();
+        let signer = Signer::new(
+            address_from_privkey(&funded_accounts[2].privkey),
+            vec![slashable_signer_xpriv],
+            0.1,
+            1.0,
+            0,
+            None,
+            || {
+                let wallet = DerivedKey::from_secret_key(privkey);
+                app_client().with_wallet(wallet)
+            },
+            None,
+        )
+        .start();
+
+        match futures::try_join!(signer, shutdown_listener) {
+            Err(Error::Test(_)) | Ok(_) => Ok(()),
+            Err(e) => Err(e),
+        }
+    };
+
     let test = async {
         let val_priv_key = load_privkey().unwrap();
         let nomic_wallet = DerivedKey::from_secret_key(val_priv_key);
         let consensus_key = load_consensus_key(&path)?;
-        declare_validator(consensus_key, nomic_wallet.clone(), 100_000)
+        declare_validator(consensus_key, nomic_wallet, 100_000)
             .await
             .unwrap();
         app_client()
-            .with_wallet(nomic_wallet.clone())
+            .with_wallet(DerivedKey::from_secret_key(val_priv_key))
             .call(
                 |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
                 |app| build_call!(app.bitcoin.set_signatory_key(xpub.into())),
+            )
+            .await?;
+
+        let privkey_bytes = funded_accounts[2].privkey.secret_bytes();
+        let privkey = orga::secp256k1::SecretKey::from_slice(&privkey_bytes).unwrap();
+        declare_validator([0; 32], funded_accounts[2].wallet.clone(), 4_000)
+            .await
+            .unwrap();
+        app_client()
+            .with_wallet(DerivedKey::from_secret_key(privkey))
+            .call(
+                |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
+                |app| build_call!(app.bitcoin.set_signatory_key(slashable_signer_xpub.into())),
             )
             .await?;
 
@@ -2006,6 +2046,34 @@ async fn test_emergency_disbursal() {
         let wallet_address = wallet.get_new_address(None, None).unwrap();
         let async_wallet_address =
             bitcoincore_rpc_async::bitcoin::Address::from_str(&wallet_address.to_string()).unwrap();
+        let withdraw_address = wallet.get_new_address(None, None).unwrap();
+
+        let mut labels = vec![];
+        for i in 0..funded_accounts.len() {
+            labels.push(format!("funded-account-{}", i));
+        }
+
+        let mut import_multi_reqest = vec![];
+        for (i, account) in funded_accounts.iter().enumerate() {
+            import_multi_reqest.push(ImportMultiRequest {
+                timestamp: ImportMultiRescanSince::Now,
+                descriptor: None,
+                script_pubkey: Some(ImportMultiRequestScriptPubkey::Script(&account.script)),
+                redeem_script: None,
+                witness_script: None,
+                pubkeys: &[],
+                keys: &[],
+                range: None,
+                internal: None,
+                watchonly: Some(true),
+                label: Some(&labels[i]),
+                keypool: None,
+            });
+        }
+
+        wallet
+            .import_multi(import_multi_reqest.as_slice(), None)
+            .unwrap();
 
         set_recovery_address(funded_accounts[0].clone())
             .await
@@ -2016,6 +2084,7 @@ async fn test_emergency_disbursal() {
             .await
             .unwrap();
 
+        // populate_bitcoin_block populates 1000 blocks of bitcoin initially
         poll_for_bitcoin_header(1120).await.unwrap();
 
         let expected_balance = 0;
@@ -2025,17 +2094,17 @@ async fn test_emergency_disbursal() {
         poll_for_active_sigset().await;
         poll_for_signatory_key(consensus_key).await;
 
-        let expiring_deposit_address = generate_deposit_address(&funded_accounts[1].address)
-            .await
-            .unwrap();
-
         deposit_bitcoin(
             &funded_accounts[0].address,
-            bitcoin::Amount::from_btc(5.0).unwrap(),
+            bitcoin::Amount::from_btc(10.0).unwrap(),
             &wallet,
         )
         .await
         .unwrap();
+
+        let expected_balance = 0;
+        let balance = poll_for_updated_balance(funded_accounts[0].address, expected_balance).await;
+        assert_eq!(balance, expected_balance);
 
         btc_client
             .generate_to_address(4, &async_wallet_address)
@@ -2043,72 +2112,49 @@ async fn test_emergency_disbursal() {
             .unwrap();
 
         poll_for_bitcoin_header(1124).await.unwrap();
+        poll_for_signing_checkpoint().await;
+
+        let expected_balance = 0;
+        let balance = poll_for_updated_balance(funded_accounts[0].address, expected_balance).await;
+        assert_eq!(balance, expected_balance);
+
+        let confirmed_index = app_client()
+            .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.confirmed_index))
+            .await
+            .unwrap();
+        assert_eq!(confirmed_index, None);
+
+        // balance only gets updated after moving pass bitcoin header & checkpoint has completed
         poll_for_completed_checkpoint(1).await;
 
-        let sent_txid = wallet
-            .send_to_address(
-                &bitcoin::Address::from_str(&expiring_deposit_address.deposit_addr).unwrap(),
-                bitcoin::Amount::from_btc(0.4).unwrap(),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-            .unwrap();
+        // what does this do?
+        tx.send(Some(())).await.unwrap();
 
-        println!("sent_txid: {:?}", sent_txid);
-
-        btc_client
-            .generate_to_address(6, &async_wallet_address)
-            .await
-            .unwrap();
-
-        poll_for_bitcoin_header(1130).await.unwrap();
-
-        deposit_bitcoin(
-            &funded_accounts[0].address,
-            bitcoin::Amount::from_btc(5.0).unwrap(),
-            &wallet,
-        )
-        .await
-        .unwrap();
-
-        btc_client
-            .generate_to_address(4, &async_wallet_address)
-            .await
-            .unwrap();
-
-        poll_for_bitcoin_header(1134).await.unwrap();
-        poll_for_completed_checkpoint(2).await;
-
-        broadcast_deposit_addr(
-            funded_accounts[1].address.to_string(),
-            expiring_deposit_address.sigset_index,
-            "http://localhost:8999".to_string(),
-            expiring_deposit_address.deposit_addr.clone(),
-        )
-        .await?;
-
-        btc_client
-            .generate_to_address(1, &async_wallet_address)
-            .await
-            .unwrap();
-
-        poll_for_bitcoin_header(1135).await.unwrap();
-
-        btc_client
-            .generate_to_address(50, &async_wallet_address)
-            .await
-            .unwrap();
-
-        poll_for_bitcoin_header(1185).await.unwrap();
-        poll_for_completed_checkpoint(3).await;
-
-        let expected_balance = 39596871600000;
-        let balance = poll_for_updated_balance(funded_accounts[1].address, expected_balance).await;
+        let expected_balance = 989996871600000;
+        let balance = poll_for_updated_balance(funded_accounts[0].address, expected_balance).await;
         assert_eq!(balance, Amount::from(expected_balance));
+
+        // Now we need to mock a new signing checkpoint and don't let it complete before the emergency disbursal
+        println!(
+            "funded account bitcoin address: {:?}",
+            funded_accounts[0].bitcoin_address()
+        );
+        println!(
+            "address type: {:?}",
+            funded_accounts[0].bitcoin_address().address_type()
+        );
+
+        btc_client
+            .generate_to_address(130, &async_wallet_address)
+            .await
+            .unwrap();
+        poll_for_bitcoin_header(1130).await.unwrap();
+        tokio::time::sleep(Duration::from_secs(20)).await;
+        let mut relayed = HashSet::new();
+        relayer
+            .relay_emergency_disbursal_transactions(&mut relayed)
+            .await
+            .unwrap();
 
         Err::<(), Error>(Error::Test("Test completed successfully".to_string()))
     };
@@ -2118,10 +2164,10 @@ async fn test_emergency_disbursal() {
     match futures::try_join!(
         headers,
         deposits,
-        recovery_txs,
         checkpoints,
-        disbursal,
+        // disbursal,
         signer,
+        slashable_signer,
         test
     ) {
         Err(Error::Test(_)) => (),

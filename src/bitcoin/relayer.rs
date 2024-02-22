@@ -464,8 +464,12 @@ impl Relayer {
     pub async fn start_emergency_disbursal_transaction_relay(&mut self) -> Result<()> {
         info!("Starting emergency disbursal transaction relay...");
 
+        let mut relayed: HashSet<Txid> = HashSet::new();
         loop {
-            if let Err(e) = self.relay_emergency_disbursal_transactions().await {
+            if let Err(e) = self
+                .relay_emergency_disbursal_transactions(&mut relayed)
+                .await
+            {
                 if !e.to_string().contains("No completed checkpoints yet") {
                     error!("Emergency disbursal relay error: {}", e);
                 }
@@ -475,54 +479,59 @@ impl Relayer {
         }
     }
 
-    async fn relay_emergency_disbursal_transactions(&mut self) -> Result<()> {
+    pub async fn relay_emergency_disbursal_transactions(
+        &mut self,
+        relayed: &mut HashSet<Txid>,
+    ) -> Result<()> {
         use std::time::{SystemTime, UNIX_EPOCH};
 
-        let mut relayed = HashSet::new();
-        loop {
-            let disbursal_txs: Vec<Adapter<bitcoin::Transaction>> =
-                app_client(&self.app_client_addr)
-                    .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.emergency_disbursal_txs()?))
-                    .await?;
+        let disbursal_txs: Vec<Adapter<bitcoin::Transaction>> = app_client(&self.app_client_addr)
+            .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.emergency_disbursal_txs()?))
+            .await?;
 
-            for tx in disbursal_txs.iter() {
-                if relayed.contains(&tx.txid()) {
-                    continue;
-                }
+        println!("disbursal txs length: {}", disbursal_txs.len());
 
-                let now = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs();
-                if now < tx.lock_time.to_u32() as u64 {
-                    return Ok(());
-                }
-
-                let mut tx_bytes = vec![];
-                tx.consensus_encode(&mut tx_bytes)?;
-
-                match self
-                    .btc_client()
-                    .await
-                    .send_raw_transaction(&tx_bytes)
-                    .await
-                {
-                    Ok(_) => {
-                        info!("Relayed emergency disbursal transaction: {}", tx.txid());
-                    }
-                    Err(err) if err.to_string().contains("bad-txns-inputs-missingorspent") => {}
-                    Err(err)
-                        if err
-                            .to_string()
-                            .contains("Transaction already in block chain") => {}
-                    Err(err) => Err(err)?,
-                }
-
-                relayed.insert(tx.txid());
+        for tx in disbursal_txs.iter() {
+            if relayed.contains(&tx.txid()) {
+                continue;
             }
 
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            println!("tx lock time: {:?}", tx.lock_time.0);
+            for output in tx.output.clone() {
+                println!(
+                    "output bitcoin address: {:?}",
+                    bitcoin::Address::from_script(&output.script_pubkey, bitcoin::Network::Regtest)
+                        .unwrap()
+                        .to_string()
+                )
+            }
+
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            println!(
+                "is now smaller than lock time: {:?}",
+                now < tx.lock_time.0 as u64
+            );
+
+            if now < tx.lock_time.to_u32() as u64 {
+                return Ok(());
+            }
+
+            let mut tx_bytes = vec![];
+            tx.consensus_encode(&mut tx_bytes)?;
+
+            let result = self
+                .btc_client()
+                .await
+                .send_raw_transaction(&tx_bytes)
+                .await?;
+
+            println!("Relayed emergency disbursal transaction: {}", result);
+            relayed.insert(result);
         }
+        Ok(())
     }
 
     pub async fn start_checkpoint_relay(&mut self) -> Result<()> {
