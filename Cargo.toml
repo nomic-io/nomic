@@ -72,7 +72,7 @@ tempfile = "3.6.0"
 [dev-dependencies.cargo-husky]
 version = "1"
 default-features = false # Disable features which are enabled by default
-features = ["user-hooks"]
+features = ["prepush-hook"]
 
 [build-dependencies]
 toml = { version = "0.7.2", features = ["parse"] }
