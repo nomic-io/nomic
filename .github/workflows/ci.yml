@@ -23,7 +23,7 @@ jobs:
       - name: Use Nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2023-05-08
+          toolchain: nightly-2024-02-14
           override: true
       - name: Cache
         uses: actions/cache@v4
@@ -48,7 +48,7 @@ jobs:
       - name: Use Nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2023-05-08
+          toolchain: nightly-2024-02-14
           override: true
       - name: Cache
         uses: actions/cache@v4
@@ -73,7 +73,7 @@ jobs:
       - name: Use Nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2023-05-08
+          toolchain: nightly-2024-02-14
           override: true
       - name: Cache
         uses: actions/cache@v4
@@ -100,7 +100,7 @@ jobs:
       - name: Use Nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2023-05-08
+          toolchain: nightly-2024-02-14
           override: true
       - name: Check Rest
         uses: actions-rs/cargo@v1
@@ -116,7 +116,7 @@ jobs:
       - name: Use Nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2023-05-08
+          toolchain: nightly-2024-02-14
           override: true
       - name: Install
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
@@ -132,7 +132,7 @@ jobs:
       - name: Use Nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2023-05-08
+          toolchain: nightly-2024-02-14
           components: llvm-tools-preview
           override: true
       - name: Cache
@@ -171,7 +171,7 @@ jobs:
       - name: Use Nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2023-05-08
+          toolchain: nightly-2024-02-14
           components: rustfmt
           override: true
       - name: Check
@@ -188,7 +188,7 @@ jobs:
       - name: Use Nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2023-05-08
+          toolchain: nightly-2024-02-14
           components: clippy
           override: true
       - name: Cache
