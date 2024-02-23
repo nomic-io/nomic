@@ -100,10 +100,6 @@ name = "store-diff"
 name = "create-checkpoint"
 
 [[bin]]
-name = "create-airdrop-snapshot"
-required-features = ["csv"]
-
-[[bin]]
 name = "append-airdrop-snapshot"
 required-features = ["testnet"]
 
