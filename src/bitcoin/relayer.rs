@@ -663,8 +663,8 @@ impl Relayer {
 
     async fn relay_checkpoint_confs(&mut self) -> Result<()> {
         loop {
-            let (confirmed_index, unconf_index, last_completed_index) =
-                match app_client(&self.app_client_addr)
+            let (confirmed_index, unconf_index, last_completed_index) = {
+                let res = app_client(&self.app_client_addr)
                     .query(|app| {
                         let checkpoints = &app.bitcoin.checkpoints;
                         Ok((
@@ -677,8 +677,9 @@ impl Relayer {
                             checkpoints.last_completed_index()?,
                         ))
                     })
-                    .await
-                {
+                    .await;
+
+                match res {
                     Ok(res) => res,
                     Err(err) => {
                         if err.to_string().contains("No completed checkpoints yet") {
@@ -688,7 +689,8 @@ impl Relayer {
                             return Err(err.into());
                         }
                     }
-                };
+                }
+            };
 
             let unconf_index = unconf_index.max(last_completed_index.saturating_sub(5));
 

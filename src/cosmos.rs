@@ -67,13 +67,10 @@ impl Cosmos {
 
         for entry in self.chains.iter()? {
             let (client_id, chain) = entry?;
-            let Some(client) = ibc
-                .ctx
-                .clients
-                .get(client_id.clone())? else {
-                    log::debug!("Warning: client not found");
-                    continue;
-                };
+            let Some(client) = ibc.ctx.clients.get(client_id.clone())? else {
+                log::debug!("Warning: client not found");
+                continue;
+            };
 
             let sigset_res = chain.to_sigset(index, &client);
             let Ok(Some(sigset)) = sigset_res else {
@@ -171,14 +168,14 @@ impl Cosmos {
         op_addr.verify(root, "staking")?;
         acc.verify(root, "acc")?;
 
-        if op_addr.key()? != &vec![&[0x22, 0x14], cons_addr.as_slice()].concat() {
+        if op_addr.key()? != &[&[0x22, 0x14], cons_addr.as_slice()].concat() {
             return Err(OrgaError::App(
                 "Operator address proof does not match consensus address".to_string(),
             )
             .into());
         }
 
-        if acc.key()? != &vec![&[0x01], op_addr.value()?.as_slice()].concat() {
+        if acc.key()? != &[&[0x01], op_addr.value()?.as_slice()].concat() {
             return Err(OrgaError::App(
                 "Account proof does not match operator address".to_string(),
             )
@@ -351,11 +348,9 @@ impl Chain {
         for val in vals.validators() {
             sigset.possible_vp += val.power();
 
-            let Some(cons_key) = val
-                .pub_key
-                .ed25519().map(|v|v.as_bytes().to_vec()) else {
-                    continue;
-                };
+            let Some(cons_key) = val.pub_key.ed25519().map(|v| v.as_bytes().to_vec()) else {
+                continue;
+            };
             let op_key = match self.op_keys_by_cons.get(cons_key.try_into()?)? {
                 None => continue,
                 Some(op_key) => op_key,
@@ -430,11 +425,9 @@ pub async fn relay_op_keys<
     for validator in res.validators.iter() {
         let client_id = client_id.clone();
         let cons_addr_bytes = validator.address.as_bytes().to_vec();
-        let Some(cons_key) = validator
-            .pub_key
-            .ed25519().map(|v|v.as_bytes().to_vec()) else  {
-                continue;
-            };
+        let Some(cons_key) = validator.pub_key.ed25519().map(|v| v.as_bytes().to_vec()) else {
+            continue;
+        };
         let already_relayed = (app_client)()
             .query(|app: InnerApp| {
                 Ok(app
