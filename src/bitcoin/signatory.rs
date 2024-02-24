@@ -177,7 +177,9 @@ impl SignatorySet {
             let instruction = take_instruction(ins)?;
 
             let Instruction::PushBytes(bytes) = instruction else {
-                return Err(Error::Orga(orga::Error::App("Expected OP_PUSHBYTES".to_string())));
+                return Err(Error::Orga(orga::Error::App(
+                    "Expected OP_PUSHBYTES".to_string(),
+                )));
             };
 
             Ok(bytes)
@@ -209,16 +211,16 @@ impl SignatorySet {
                 Instruction::PushBytes(&[]) => OP_FALSE,
                 _ => {
                     return Err(Error::Orga(orga::Error::App(format!(
-                        "Expected {}",
-                        format!("{:?}", expected_op)
+                        "Expected {:?}",
+                        expected_op
                     ))))
                 }
             };
 
             if op != expected_op {
                 return Err(Error::Orga(orga::Error::App(format!(
-                    "Expected {}",
-                    format!("{:?}", expected_op),
+                    "Expected {:?}",
+                    expected_op
                 ))));
             }
 
