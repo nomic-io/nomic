@@ -203,6 +203,18 @@ impl InnerApp {
     }
 
     #[query]
+    pub fn total_supply(&self) -> Result<Amount> {
+        let initial_supply: u64 = 17_500_000_000_000;
+
+        let staking_rewards_minted: u64 = self.staking_rewards.amount_minted.into();
+        let dev_rewards_minted: u64 = self.dev_rewards.amount_minted.into();
+        let community_pool_rewards_minted: u64 = self.community_pool_rewards.amount_minted.into();
+        let incentive_pool_rewards_minted: u64 = self.incentive_pool_rewards.amount_minted.into();
+
+        Ok(Amount::new(initial_supply + staking_rewards_minted + dev_rewards_minted + community_pool_rewards_minted + incentive_pool_rewards_minted))
+    }
+
+    #[query]
     pub fn escrowed_nbtc(&self, address: Address) -> Result<Amount> {
         self.ibc.transfer().symbol_balance::<Nbtc>(address)
     }
