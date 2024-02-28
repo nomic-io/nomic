@@ -513,7 +513,7 @@ impl SignatorySet {
 
 #[cfg(test)]
 mod tests {
-    // use super::*;
+    use super::*;
 
     // #[test]
     // #[should_panic(expected = "Cannot build script for empty signatory set")]
@@ -619,6 +619,81 @@ mod tests {
     use crate::bitcoin::{signatory::Signatory, threshold_sig::Pubkey};
 
     use super::SignatorySet;
+
+    fn mock_signatory_set() -> SignatorySet {
+        let pk = |bytes| Pubkey::new(bytes).unwrap().into();
+        let sigsets = SignatorySet {
+            create_time: 0,
+            present_vp: 12000,
+            possible_vp: 12000,
+            index: 25,
+            signatories: vec![
+                Signatory {
+                    voting_power: 3000,
+                    pubkey: pk([
+                        3, 144, 133, 164, 227, 11, 15, 32, 57, 222, 17, 218, 214, 79, 52, 149, 38,
+                        2, 111, 79, 87, 97, 245, 111, 169, 180, 238, 39, 224, 105, 176, 180, 137,
+                    ]),
+                },
+                Signatory {
+                    voting_power: 4000,
+                    pubkey: pk([
+                        3, 119, 35, 166, 180, 67, 152, 140, 51, 249, 141, 208, 60, 212, 134, 142,
+                        244, 196, 239, 254, 145, 69, 173, 168, 87, 3, 61, 4, 39, 64, 235, 183, 78,
+                    ]),
+                },
+                Signatory {
+                    voting_power: 5000,
+                    pubkey: pk([
+                        2, 42, 187, 47, 134, 233, 86, 222, 154, 32, 48, 177, 77, 19, 39, 220, 123,
+                        106, 30, 198, 20, 232, 248, 204, 95, 82, 54, 94, 0, 40, 251, 133, 106,
+                    ]),
+                },
+            ],
+        };
+        sigsets
+    }
+
+    #[test]
+    fn test_redeem_script_creation() {
+        let sigsets = mock_signatory_set();
+        let script = sigsets.redeem_script(
+            &[
+                19, 147, 69, 143, 37, 59, 136, 7, 10, 113, 245, 63, 123, 14, 25, 150, 162, 72, 106,
+                16, 123, 127, 34, 111, 110, 139, 181, 102, 8, 1, 206, 250,
+            ],
+            (2, 3),
+        );
+
+        let into_script_result: Result<Script> = script.into();
+        let final_script = into_script_result.unwrap();
+        let script_gen_by_js_lib = [
+            33, 3, 144, 133, 164, 227, 11, 15, 32, 57, 222, 17, 218, 214, 79, 52, 149, 38, 2, 111,
+            79, 87, 97, 245, 111, 169, 180, 238, 39, 224, 105, 176, 180, 137, 172, 99, 2, 184, 11,
+            103, 0, 104, 124, 33, 3, 119, 35, 166, 180, 67, 152, 140, 51, 249, 141, 208, 60, 212,
+            134, 142, 244, 196, 239, 254, 145, 69, 173, 168, 87, 3, 61, 4, 39, 64, 235, 183, 78,
+            172, 99, 2, 160, 15, 147, 104, 124, 33, 2, 42, 187, 47, 134, 233, 86, 222, 154, 32, 48,
+            177, 77, 19, 39, 220, 123, 106, 30, 198, 20, 232, 248, 204, 95, 82, 54, 94, 0, 40, 251,
+            133, 106, 172, 99, 2, 136, 19, 147, 104, 2, 64, 31, 160, 32, 19, 147, 69, 143, 37, 59,
+            136, 7, 10, 113, 245, 63, 123, 14, 25, 150, 162, 72, 106, 16, 123, 127, 34, 111, 110,
+            139, 181, 102, 8, 1, 206, 250, 117,
+        ];
+        assert_eq!(final_script.clone().into_bytes(), script_gen_by_js_lib);
+    }
+
+    #[test]
+    fn test_output_script() {
+        let sigsets = mock_signatory_set();
+        let output_script = sigsets.output_script(
+            &[
+                19, 147, 69, 143, 37, 59, 136, 7, 10, 113, 245, 63, 123, 14, 25, 150, 162, 72, 106,
+                16, 123, 127, 34, 111, 110, 139, 181, 102, 8, 1, 206, 250,
+            ],
+            (2, 3),
+        ).unwrap();
+        let addr = bitcoin::Address::from_script(&output_script, bitcoin::Network::Bitcoin).unwrap();
+        assert_eq!(addr.to_string(), "bc1q7vdh8ttns5k2u5acel8yddjw0shens4zmyun4n06gd5mjeq3y4kq9lhw09".to_string());
+    }
 
     #[test]
     fn from_script() {
