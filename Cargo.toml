@@ -9,7 +9,7 @@ default-run = "nomic"
 bitcoin = { version = "0.29.2", features = ["serde", "rand"] }
 orga = { git = "https://github.com/oraichain/orga.git", rev = "4b1ec2a48330622d0c761d625cd3180d412b8e4e", features = [
     "merk-verify",
-    "abci",
+    # "abci",
 ] }
 thiserror = "1.0.30"
 ed = { git = "https://github.com/nomic-io/ed", rev = "9c0e206ffdb59dacb90f083e004e8080713e6ad8" }
@@ -68,11 +68,6 @@ crossbeam-channel = "0.5.8"
 chrono = "0.4.19"
 serial_test = "2.0.0"
 tempfile = "3.6.0"
-
-[dev-dependencies.cargo-husky]
-version = "1"
-default-features = false # Disable features which are enabled by default
-features = ["prepush-hook"]
 
 [build-dependencies]
 toml = { version = "0.7.2", features = ["parse"] }

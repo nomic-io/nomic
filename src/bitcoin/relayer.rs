@@ -248,12 +248,12 @@ impl Relayer {
             .and_then(async move |query: Sigset| {
                 let sigset: RawSignatorySet = app_client(app_client_addr)
                     .query(|app: crate::app::InnerApp| {
-                        let building = app.bitcoin.checkpoints.get(query.sigset_index)?;
-                        let est_miner_fee = building.fee_rate
-                            * app.bitcoin.checkpoints.active_sigset()?.est_witness_vsize();
-                        let deposits_enabled = building.deposits_enabled;
+                        let checkpoint = app.bitcoin.checkpoints.get(query.sigset_index)?;
+                        let est_miner_fee =
+                            checkpoint.fee_rate * checkpoint.sigset.est_witness_vsize();
+                        let deposits_enabled = checkpoint.deposits_enabled;
                         let sigset = RawSignatorySet::new(
-                            app.bitcoin.checkpoints.active_sigset()?,
+                            checkpoint.sigset.clone(),
                             BRIDGE_FEE_RATE,
                             est_miner_fee as f64 / 100_000_000.0,
                             deposits_enabled,
@@ -526,9 +526,10 @@ impl Relayer {
                 Err(err)
                     if err
                         .to_string()
-                        .contains("Transaction already in block chain") => {
-                            debug!("Already in blockchain error: {}", err.to_string());
-                        }
+                        .contains("Transaction already in block chain") =>
+                {
+                    debug!("Already in blockchain error: {}", err.to_string());
+                }
                 Err(err) => Err(err)?,
             };
 

@@ -7,6 +7,7 @@ use nomic::{
     app::{InnerApp, Nom},
     bitcoin::{
         checkpoint::{CheckpointQueue, Config as CheckpointConfig},
+        signatory::SignatorySet,
         Config, Nbtc,
     },
     orga::{
@@ -551,6 +552,17 @@ async fn bitcoin_value_locked() -> Value {
     json!({
         "value": value_locked
     })
+}
+
+#[get("/bitcoin/sigset?<index>")]
+async fn bitcoin_sigset_with_index(index: u32) -> Result<Value, BadRequest<String>> {
+    let sigset: SignatorySet = app_client()
+        .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.sigset(index)?))
+        .await
+        .map_err(|e| BadRequest(Some(format!("error: {:?}", e))))?;
+    Ok(json!({
+        "sigset": sigset,
+    }))
 }
 
 #[get("/bitcoin/checkpoint/<checkpoint_index>")]
@@ -1634,7 +1646,8 @@ fn rocket() -> _ {
             bitcoin_checkpoint,
             bitcoin_checkpoint_queue,
             checkpoint_disbursal_txs,
-            bitcoin_last_confirmed_checkpoint
+            bitcoin_last_confirmed_checkpoint,
+            bitcoin_sigset_with_index
         ],
     )
 }

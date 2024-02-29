@@ -2517,7 +2517,7 @@ async fn test_withdraw() {
             Ok(data) => {
                 let range = 2.8..3.0;
                 assert!(range.contains(&data.mine.untrusted_pending.to_btc()));
-            },
+            }
             Err(e) => {
                 info!("Error: {:?}", e);
             }
@@ -2605,7 +2605,7 @@ async fn test_withdraw() {
                 let range = 12.9..13.0;
                 assert!(range.contains(&data.mine.untrusted_pending.to_btc()));
                 info!("Received: {:?}", data);
-            },
+            }
             Err(e) => {
                 info!("Error: {:?}", e);
             }

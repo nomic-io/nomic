@@ -684,15 +684,21 @@ mod tests {
     #[test]
     fn test_output_script() {
         let sigsets = mock_signatory_set();
-        let output_script = sigsets.output_script(
-            &[
-                19, 147, 69, 143, 37, 59, 136, 7, 10, 113, 245, 63, 123, 14, 25, 150, 162, 72, 106,
-                16, 123, 127, 34, 111, 110, 139, 181, 102, 8, 1, 206, 250,
-            ],
-            (2, 3),
-        ).unwrap();
-        let addr = bitcoin::Address::from_script(&output_script, bitcoin::Network::Bitcoin).unwrap();
-        assert_eq!(addr.to_string(), "bc1q7vdh8ttns5k2u5acel8yddjw0shens4zmyun4n06gd5mjeq3y4kq9lhw09".to_string());
+        let output_script = sigsets
+            .output_script(
+                &[
+                    19, 147, 69, 143, 37, 59, 136, 7, 10, 113, 245, 63, 123, 14, 25, 150, 162, 72,
+                    106, 16, 123, 127, 34, 111, 110, 139, 181, 102, 8, 1, 206, 250,
+                ],
+                (2, 3),
+            )
+            .unwrap();
+        let addr =
+            bitcoin::Address::from_script(&output_script, bitcoin::Network::Bitcoin).unwrap();
+        assert_eq!(
+            addr.to_string(),
+            "bc1q7vdh8ttns5k2u5acel8yddjw0shens4zmyun4n06gd5mjeq3y4kq9lhw09".to_string()
+        );
     }
 
     #[test]
