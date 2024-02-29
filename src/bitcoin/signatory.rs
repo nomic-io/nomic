@@ -206,23 +206,21 @@ impl SignatorySet {
         fn take_op<'a>(ins: &mut impl Iter<'a>, expected_op: opcodes::All) -> Result<opcodes::All> {
             let instruction = take_instruction(ins)?;
 
-            let expected_op_str = format!("{:?}", expected_op);
             let op = match instruction {
                 Instruction::Op(op) => op,
                 Instruction::PushBytes(&[]) => OP_FALSE,
                 _ => {
                     return Err(Error::Orga(orga::Error::App(format!(
-                        "Expected {}",
-                        expected_op_str
+                        "Expected {:?}",
+                        expected_op
                     ))))
                 }
             };
 
             if op != expected_op {
-                let expected = format!("{:?}", expected_op);
                 return Err(Error::Orga(orga::Error::App(format!(
-                    "Expected {}",
-                    expected
+                    "Expected {:?}",
+                    expected_op
                 ))));
             }
 

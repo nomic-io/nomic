@@ -42,7 +42,7 @@ use orga::prelude::*;
 use orga::{client::AppClient, tendermint::client::HttpClient};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::convert::TryInto;
+// use std::convert::TryInto;
 use std::fs::Permissions;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;

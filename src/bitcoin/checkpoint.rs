@@ -38,7 +38,7 @@ use orga::{
 use super::SIGSET_THRESHOLD;
 use orga::{describe::Describe, store::Store};
 use serde::{Deserialize, Serialize};
-use std::convert::TryFrom;
+// use std::convert::TryFrom;
 use std::ops::{Deref, DerefMut};
 
 /// The status of a checkpoint. Checkpoints start as `Building`, and eventually
@@ -285,11 +285,10 @@ impl BitcoinTx {
 
     /// The total value of the outputs in the transaction, in satoshis.
     pub fn value(&self) -> Result<u64> {
-        let mut result: u64 = 0;
-        for out in self.output.iter()? {
-            result += out?.value;
-        }
-        Ok(result)
+        #[allow(clippy::manual_try_fold)]
+        self.output
+            .iter()?
+            .fold(Ok(0), |sum: Result<u64>, out| Ok(sum? + out?.value))
     }
 
     /// Calculates the sighash to be signed for the given input index, and
@@ -2440,15 +2439,17 @@ mod test {
 
     use std::{cell::RefCell, rc::Rc};
 
+    #[cfg(feature = "full")]
     use bitcoin::{
         secp256k1::Secp256k1,
         util::bip32::{ExtendedPrivKey, ExtendedPubKey},
         OutPoint, Script, Txid,
     };
-    use orga::{collections::EntryMap, context::Context};
+    #[cfg(feature = "full")]
+    use rand::Rng;
 
-    // #[cfg(all(feature = "full"))]
-    // use crate::bitcoin::{signatory::Signatory, threshold_sig::Share};
+    #[cfg(feature = "full")]
+    use crate::bitcoin::threshold_sig::Share;
 
     use super::*;
 
@@ -2645,6 +2646,8 @@ mod test {
     #[serial_test::serial]
     fn fee_adjustments() {
         // TODO: extract pieces into util functions, test more cases
+
+        use orga::{collections::EntryMap, context::Context};
 
         let paid = orga::plugins::Paid::default();
         Context::add(paid);
@@ -2855,6 +2858,8 @@ mod test {
     #[serial_test::serial]
     fn max_unconfirmed_checkpoints() {
         // TODO: extract pieces into util functions, test more cases
+
+        use orga::{collections::EntryMap, context::Context};
 
         let paid = orga::plugins::Paid::default();
         Context::add(paid);

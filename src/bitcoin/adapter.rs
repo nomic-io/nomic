@@ -3,8 +3,6 @@ use orga::describe::Describe;
 use orga::encoding::Result as EncodingResult;
 use orga::migrate::Migrate;
 use orga::prelude::*;
-use orga::state::State;
-use orga::store::Store;
 use orga::Result as OrgaResult;
 use serde::Serialize;
 use std::io::{Read, Write};

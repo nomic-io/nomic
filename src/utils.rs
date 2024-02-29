@@ -12,7 +12,7 @@ use crate::bitcoin::signer::Signer;
 use crate::bitcoin::Config as BitcoinConfig;
 use crate::error::{Error, Result};
 use bitcoin::hashes::hex::ToHex;
-use bitcoin::secp256k1::{self, rand, SecretKey};
+use bitcoin::secp256k1::{self, SecretKey};
 #[cfg(feature = "full")]
 use bitcoin::BlockHeader;
 use bitcoin::Script;

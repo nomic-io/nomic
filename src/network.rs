@@ -2,7 +2,7 @@ use crate::{
     app::{InnerApp, Nom},
     error::{Error, Result},
 };
-use clap::{self, ArgMatches, Args, Command, CommandFactory, ErrorKind, FromArgMatches, Parser};
+use clap::{ArgMatches, Args, Command, CommandFactory, ErrorKind, FromArgMatches, Parser};
 use orga::{
     client::{wallet::Unsigned, AppClient},
     tendermint::client::HttpClient,

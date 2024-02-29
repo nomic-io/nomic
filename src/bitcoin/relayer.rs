@@ -170,82 +170,92 @@ impl Relayer {
             .and(warp::filters::body::bytes())
             .map(move |query: DepositAddress, body| (query, send.clone(), sigsets.clone(), body))
             .and_then(
-                async move |(query, send, sigsets, body): (
+                move |(query, send, sigsets, body): (
                     DepositAddress,
                     tokio::sync::mpsc::Sender<_>,
                     Arc<Mutex<BTreeMap<_, _>>>,
                     Bytes,
                 )| {
-                    let dest = Dest::decode(body.to_vec().as_slice())
-                        .map_err(|e| warp::reject::custom(Error::from(e)))?;
+                    async move {
+                        let dest = Dest::decode(body.to_vec().as_slice())
+                            .map_err(|e| warp::reject::custom(Error::from(e)))?;
 
-                    let mut sigsets = sigsets.lock().await;
+                        let mut sigsets = sigsets.lock().await;
 
-                    //TODO: Replace catch-all 404 rejections
-                    let sigset = match sigsets.get(&query.sigset_index) {
-                        Some(sigset) => sigset,
-                        None => {
-                            app_client(app_client_addr)
-                                .query(|app: InnerApp| {
-                                    let cp = app.bitcoin.checkpoints.get(query.sigset_index)?;
-                                    if !cp.deposits_enabled {
-                                        return Err(orga::Error::App(
-                                            "Deposits disabled for this checkpoint".to_string(),
-                                        ));
-                                    }
-                                    let sigset = cp.sigset.clone();
-                                    Ok(sigsets.insert(query.sigset_index, sigset))
-                                })
-                                .await
-                                .map_err(|e| warp::reject::custom(Error::from(e)))?;
-                            // TODO: prune sigsets
-                            sigsets.get(&query.sigset_index).unwrap()
+                        //TODO: Replace catch-all 404 rejections
+                        let sigset = match sigsets.get(&query.sigset_index) {
+                            Some(sigset) => sigset,
+                            None => {
+                                app_client(app_client_addr)
+                                    .query(|app: InnerApp| {
+                                        let cp = app.bitcoin.checkpoints.get(query.sigset_index)?;
+                                        if !cp.deposits_enabled {
+                                            return Err(orga::Error::App(
+                                                "Deposits disabled for this checkpoint".to_string(),
+                                            ));
+                                        }
+                                        let sigset = cp.sigset.clone();
+                                        Ok(sigsets.insert(query.sigset_index, sigset))
+                                    })
+                                    .await
+                                    .map_err(|e| warp::reject::custom(Error::from(e)))?;
+                                // TODO: prune sigsets
+                                sigsets.get(&query.sigset_index).unwrap()
+                            }
+                        };
+                        let expected_addr = ::bitcoin::Address::from_script(
+                            &sigset
+                                .output_script(
+                                    dest.commitment_bytes().map_err(|_| reject())?.as_slice(),
+                                    SIGSET_THRESHOLD,
+                                )
+                                .map_err(warp::reject::custom)?,
+                            super::NETWORK,
+                        )
+                        .unwrap()
+                        .to_string();
+                        if expected_addr != query.deposit_addr {
+                            return Err(warp::reject::custom(Error::InvalidDepositAddress));
                         }
-                    };
-                    let expected_addr = ::bitcoin::Address::from_script(
-                        &sigset
-                            .output_script(
-                                dest.commitment_bytes().map_err(|_| reject())?.as_slice(),
-                                SIGSET_THRESHOLD,
-                            )
-                            .map_err(warp::reject::custom)?,
-                        super::NETWORK,
-                    )
-                    .unwrap()
-                    .to_string();
-                    if expected_addr != query.deposit_addr {
-                        return Err(warp::reject::custom(Error::InvalidDepositAddress));
-                    }
 
-                    Ok::<_, warp::Rejection>((dest, sigset.create_time, query.sigset_index, send))
+                        Ok::<_, warp::Rejection>((
+                            dest,
+                            sigset.create_time,
+                            query.sigset_index,
+                            send,
+                        ))
+                    }
                 },
             )
             .and_then(
-                async move |(dest, create_time, sigset_index, send): (
+                move |(dest, create_time, sigset_index, send): (
                     Dest,
                     u64,
                     u32,
                     tokio::sync::mpsc::Sender<_>,
                 )| {
-                    debug!("Received deposit commitment: {:?}, {}", dest, sigset_index);
-                    send.send((dest, sigset_index)).await.unwrap();
-                    let max_deposit_age = app_client(app_client_addr)
-                        .query(|app: InnerApp| Ok(app.bitcoin.config.max_deposit_age))
-                        .await
-                        .map_err(|e| warp::reject::custom(Error::from(e)))?;
-                    if time_now() + deposit_buffer >= create_time + max_deposit_age {
-                        return Err(warp::reject::custom(Error::Relayer(
-                            "Sigset no longer accepting deposits. Unable to generate deposit address".into(),
-                        )));
-                    }
+                    async move {
+                        debug!("Received deposit commitment: {:?}, {}", dest, sigset_index);
+                        send.send((dest, sigset_index)).await.unwrap();
+                        let max_deposit_age = app_client(app_client_addr)
+                            .query(|app| Ok(app.bitcoin.config.max_deposit_age))
+                            .await
+                            .map_err(|e| warp::reject::custom(Error::from(e)))?;
+                        if time_now() + deposit_buffer >= create_time + max_deposit_age {
+                            return Err(warp::reject::custom(Error::Relayer(
+                        "Sigset no longer accepting deposits. Unable to generate deposit address"
+                            .into(),
+                    )));
+                        }
 
-                    Ok::<_, warp::Rejection>(warp::reply::json(&"OK"))
+                        Ok::<_, warp::Rejection>(warp::reply::json(&"OK"))
+                    }
                 },
             );
 
         let sigset_with_index_route = warp::path("sigset")
             .and(warp::query::<Sigset>())
-            .and_then(async move |query: Sigset| {
+            .and_then(move |query: Sigset| async move {
                 let sigset: RawSignatorySet = app_client(app_client_addr)
                     .query(|app: crate::app::InnerApp| {
                         let checkpoint = app.bitcoin.checkpoints.get(query.sigset_index)?;
@@ -297,35 +307,37 @@ impl Relayer {
             .and(warp::query::<DepositsQuery>())
             .map(move |query: DepositsQuery| (query, btc_client.clone(), index.clone()))
             .and_then(
-                async move |(query, btc_client, index): (
+                move |(query, btc_client, index): (
                     DepositsQuery,
                     Arc<RwLock<BitcoinRpcClient>>,
                     Arc<Mutex<DepositIndex>>,
                 )| {
-                    let btc_client = btc_client.read().await;
-                    let tip = btc_client
-                        .get_best_block_hash()
-                        .await
-                        .map_err(|_| reject())?;
-                    let height = btc_client
-                        .get_block_header_info(&tip)
-                        .await
-                        .map_err(|_| reject())?
-                        .height;
+                    async move {
+                        let btc_client = btc_client.read().await;
+                        let tip = btc_client
+                            .get_best_block_hash()
+                            .await
+                            .map_err(|_| reject())?;
+                        let height = btc_client
+                            .get_block_header_info(&tip)
+                            .await
+                            .map_err(|_| reject())?
+                            .height;
 
-                    let index = index.lock().await;
-                    let deposits = index
-                        .get_deposits_by_receiver(query.receiver, height as u64)
-                        .map_err(|_| reject())?;
+                        let index = index.lock().await;
+                        let deposits = index
+                            .get_deposits_by_receiver(query.receiver, height as u64)
+                            .map_err(|_| reject())?;
 
-                    Ok::<_, warp::Rejection>(warp::reply::json(&deposits))
+                        Ok::<_, warp::Rejection>(warp::reply::json(&deposits))
+                    }
                 },
             );
 
         let server = warp::serve(
             warp::any()
-                .and(bcast_route)
-                .or(sigset_route)
+                .and(bcast_route.clone())
+                .or(sigset_route.clone())
                 .or(pending_deposits_route)
                 .or(sigset_with_index_route)
                 .with(
@@ -692,8 +704,8 @@ impl Relayer {
 
     async fn relay_checkpoint_confs(&mut self) -> Result<()> {
         loop {
-            let (confirmed_index, unconf_index, last_completed_index) =
-                match app_client(&self.app_client_addr)
+            let (confirmed_index, unconf_index, last_completed_index) = {
+                let res = app_client(&self.app_client_addr)
                     .query(|app: InnerApp| {
                         let checkpoints = &app.bitcoin.checkpoints;
                         Ok((
@@ -706,8 +718,9 @@ impl Relayer {
                             checkpoints.last_completed_index()?,
                         ))
                     })
-                    .await
-                {
+                    .await;
+
+                match res {
                     Ok(res) => res,
                     Err(err) => {
                         if err.to_string().contains("No completed checkpoints yet") {
@@ -717,7 +730,8 @@ impl Relayer {
                             return Err(err.into());
                         }
                     }
-                };
+                }
+            };
 
             let unconf_index = unconf_index.max(last_completed_index.saturating_sub(5));
 
@@ -1086,7 +1100,7 @@ impl Relayer {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct DepositAddress {
     pub sigset_index: u32,
     pub deposit_addr: String,
