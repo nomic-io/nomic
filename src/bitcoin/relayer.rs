@@ -790,7 +790,7 @@ impl Relayer {
         &mut self,
         txid: bitcoin::Txid,
         num_blocks: usize,
-        maximum_blocks: usize
+        maximum_blocks: usize,
     ) -> Result<Option<(u32, BlockHash)>> {
         let mut tip = self.sidechain_block_hash().await?;
         let mut base_height = self
@@ -819,7 +819,12 @@ impl Relayer {
                 break;
             }
             tip = oldest_block;
-            base_height = self.btc_client().await.get_block_header_info(&tip).await?.height;
+            base_height = self
+                .btc_client()
+                .await
+                .get_block_header_info(&tip)
+                .await?
+                .height;
         }
 
         Ok(None)
