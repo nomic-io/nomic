@@ -753,7 +753,7 @@ impl Relayer {
                     .await?;
             let unconfirmed_txid = tx.txid();
 
-            let maybe_conf = self.scan_for_txid(unconfirmed_txid, 100).await?;
+            let maybe_conf = self.scan_for_txid(unconfirmed_txid, 100, 1000).await?;
             if let Some((height, block_hash)) = maybe_conf {
                 if height > btc_height - min_confs {
                     continue;
@@ -780,6 +780,9 @@ impl Relayer {
                     )
                     .await?;
             }
+
+            // This will avoid spamming rpc when there are no confirm checkpoints yet
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
         }
     }
 
@@ -787,23 +790,36 @@ impl Relayer {
         &mut self,
         txid: bitcoin::Txid,
         num_blocks: usize,
+        maximum_blocks: usize
     ) -> Result<Option<(u32, BlockHash)>> {
-        let tip = self.sidechain_block_hash().await?;
-        let base_height = self
+        let mut tip = self.sidechain_block_hash().await?;
+        let mut base_height = self
             .btc_client()
             .await
             .get_block_header_info(&tip)
             .await?
             .height;
-        let blocks = self.last_n_blocks(num_blocks, tip).await?;
+        let initial_height = base_height;
 
-        for (i, block) in blocks.into_iter().enumerate().rev() {
-            let height = (base_height - i) as u32;
-            for tx in block.txdata.iter() {
-                if tx.txid() == txid {
-                    return Ok(Some((height, block.block_hash())));
+        loop {
+            if initial_height - base_height >= maximum_blocks {
+                break;
+            }
+            let blocks = self.last_n_blocks(num_blocks, tip).await?;
+            for (i, block) in blocks.clone().into_iter().enumerate().rev() {
+                let height = (base_height - i) as u32;
+                for tx in block.txdata.iter() {
+                    if tx.txid() == txid {
+                        return Ok(Some((height, block.block_hash())));
+                    }
                 }
             }
+            let oldest_block = blocks[blocks.len() - 1].header.block_hash();
+            if oldest_block.eq(&tip) {
+                break;
+            }
+            tip = oldest_block;
+            base_height = self.btc_client().await.get_block_header_info(&tip).await?.height;
         }
 
         Ok(None)
