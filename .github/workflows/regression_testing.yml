@@ -128,44 +128,44 @@ jobs:
   #       working-directory: ./wasm
   #       run: wasm-pack -v build --target web
 
-  coverage:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-      - name: Use Nightly
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly-2024-02-14
-          components: llvm-tools-preview
-          override: true
-      - name: Cache
-        id: cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo
-            ./target
-          key: ${{ runner.os }}-coverage-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-coverage-
-      - if: ${{ steps.cache.outputs.cache-hit != 'true' }}
-        name: Install Coverage Tooling
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: cargo-llvm-cov --force
-      - name: Run Coverage
-        uses: actions-rs/cargo@v1
-        with:
-          command: llvm-cov
-          args: --no-default-features --features=full,feat-ibc,testnet --workspace --lcov --no-cfg-coverage-nightly
-      # - name: Upload to codecov.io
-      #   uses: codecov/codecov-action@v1
-      #   with:
-      #     token: ${{ secrets.CODECOV_TOKEN }}
-      #     files: lcov.info
-      #     fail_ci_if_error: true
+  # coverage:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v2
+  #     - name: Use Nightly
+  #       uses: actions-rs/toolchain@v1
+  #       with:
+  #         toolchain: nightly-2024-02-14
+  #         components: llvm-tools-preview
+  #         override: true
+  #     - name: Cache
+  #       id: cache
+  #       uses: actions/cache@v4
+  #       with:
+  #         path: |
+  #           ~/.cargo
+  #           ./target
+  #         key: ${{ runner.os }}-coverage-${{ hashFiles('Cargo.lock') }}
+  #         restore-keys: |
+  #           ${{ runner.os }}-coverage-
+  #     - if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+  #       name: Install Coverage Tooling
+  #       uses: actions-rs/cargo@v1
+  #       with:
+  #         command: install
+  #         args: cargo-llvm-cov --force
+  #     - name: Run Coverage
+  #       uses: actions-rs/cargo@v1
+  #       with:
+  #         command: llvm-cov
+  #         args: --no-default-features --features=full,feat-ibc,testnet --workspace --lcov --no-cfg-coverage-nightly
+  #     # - name: Upload to codecov.io
+  #     #   uses: codecov/codecov-action@v1
+  #     #   with:
+  #     #     token: ${{ secrets.CODECOV_TOKEN }}
+  #     #     files: lcov.info
+  #     #     fail_ci_if_error: true
 
   format:
     runs-on: ubuntu-latest
