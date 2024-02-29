@@ -12,6 +12,15 @@ cargo test --verbose --features full,feat-ibc,testnet,faucet-test,devnet
 # check rest
 cargo check --manifest-path rest/Cargo.toml --verbose
 
+<<<<<<< HEAD
+=======
+# run code coverage
+cargo llvm-cov --no-default-features --features=full,feat-ibc,testnet --workspace --lcov --no-cfg-coverage-nightly
+
+# run code coverage
+cargo llvm-cov --no-default-features --features=full,feat-ibc,testnet --workspace --lcov --no-cfg-coverage-nightly
+
+>>>>>>> 1c3351b (chore: add llvm html for visualizing test coverage)
 # formatter
 cargo fmt --all -- --check
 
