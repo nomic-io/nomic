@@ -17,7 +17,7 @@ env:
 jobs:
   test-base:
     runs-on: ubuntu-latest-m
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -42,8 +42,8 @@ jobs:
           args: --verbose --no-default-features --features=full,feat-ibc,testnet
 
   test-all-features:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    runs-on: ubuntu-latest-m
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -68,7 +68,8 @@ jobs:
           args: --verbose --features full,feat-ibc,testnet,faucet-test,devnet
 
   test-bitcoin:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-m
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -129,7 +130,6 @@ jobs:
 
   coverage:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v2
