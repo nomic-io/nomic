@@ -6,10 +6,7 @@ use chrono::{TimeZone, Utc};
 use nomic::{
     app::{InnerApp, Nom},
     bitcoin::{
-        calc_deposit_fee,
-        checkpoint::{BuildingCheckpoint, CheckpointQueue, Config as CheckpointConfig},
-        signatory::SignatorySet,
-        Config, Nbtc,
+        adapter::Adapter, calc_deposit_fee, checkpoint::{BuildingCheckpoint, CheckpointQueue, Config as CheckpointConfig}, signatory::SignatorySet, Config, Nbtc
     },
     orga::{
         client::{wallet::Unsigned, AppClient},
@@ -566,6 +563,21 @@ async fn bitcoin_minimum_deposit(
 
     Ok(json!({
         "deposit_fees": deposit_fees
+    }))
+}
+
+#[get("/bitcoin/withdrawal_fees/<address>?<checkpoint_index>")]
+async fn bitcoin_minimum_withdrawal(
+    address: String,
+    checkpoint_index: Option<u32>,
+) -> Result<Value, BadRequest<String>> {
+    let withdrawal_fees: u64 = app_client()
+        .query(|app: InnerApp| Ok(app.withdrawal_fees(Adapter::new(address), checkpoint_index)?))
+        .await
+        .map_err(|e| BadRequest(Some(format!("error: {:?}", e))))?;
+
+    Ok(json!({
+        "withdrawal_fees": withdrawal_fees
     }))
 }
 
@@ -1663,7 +1675,8 @@ fn rocket() -> _ {
             checkpoint_disbursal_txs,
             bitcoin_last_confirmed_checkpoint,
             bitcoin_sigset_with_index,
-            bitcoin_minimum_deposit
+            bitcoin_minimum_deposit,
+            bitcoin_minimum_withdrawal
         ],
     )
 }

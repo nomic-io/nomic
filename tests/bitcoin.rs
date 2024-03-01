@@ -2292,7 +2292,17 @@ async fn test_withdraw() {
         max_length: 59,
         ..Default::default()
     };
-    let funded_accounts = setup_test_app(&path, 4, Some(headers_config), None, None);
+    let checkpoint_config = CheckpointConfig {
+        emergency_disbursal_lock_time_interval: 10 * 60,
+        ..Default::default()
+    };
+    let funded_accounts = setup_test_app(
+        &path,
+        4,
+        Some(headers_config),
+        Some(checkpoint_config),
+        None,
+    );
 
     let node = Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"), Default::default());
     let _node_child = node.await.run().await.unwrap();
@@ -2478,7 +2488,14 @@ async fn test_withdraw() {
         poll_for_completed_checkpoint(1).await;
         tx.send(Some(())).await.unwrap();
 
-        let expected_balance = 989996871600000;
+        app_client()
+            .with_wallet(funded_accounts[0].wallet.clone())
+            .call(
+                move |app| build_call!(app.accounts.take_as_funding((MIN_FEE).into())),
+                move |app| build_call!(app.bitcoin.transfer_to_fee_pool(10000000000.into())),
+            )
+            .await?;
+        let expected_balance = 989974200000000;
         let balance = poll_for_updated_balance(funded_accounts[0].address, expected_balance).await;
         assert_eq!(balance, Amount::from(expected_balance));
 
@@ -2489,6 +2506,12 @@ async fn test_withdraw() {
 
         poll_for_bitcoin_header(1127).await.unwrap();
 
+        let simulate_withdrawal_fee = app_client()
+            .query(|app: InnerApp| {
+                Ok(app.withdrawal_fees(Adapter::new(withdraw_address.to_string()), None)?)
+            })
+            .await
+            .unwrap();
         withdraw_bitcoin(
             &funded_accounts[0],
             bitcoin::Amount::from_btc(3.0).unwrap(),
@@ -2501,7 +2524,7 @@ async fn test_withdraw() {
             .with_wallet(funded_accounts[0].wallet.clone())
             .call(
                 move |app| build_call!(app.accounts.take_as_funding((MIN_FEE).into())),
-                move |app| build_call!(app.bitcoin.transfer_to_fee_pool(8000000000.into())),
+                move |app| build_call!(app.bitcoin.transfer_to_fee_pool(15350000000.into())),
             )
             .await?;
 
@@ -2515,15 +2538,15 @@ async fn test_withdraw() {
 
         match wallet.get_balances() {
             Ok(data) => {
-                let range = 2.8..3.0;
-                assert!(range.contains(&data.mine.untrusted_pending.to_btc()));
+                assert_eq!(simulate_withdrawal_fee, 3100000000);
+                assert_eq!(data.mine.untrusted_pending.to_sat() * 1000000, 299996900000000);
             }
             Err(e) => {
                 info!("Error: {:?}", e);
             }
         }
 
-        let expected_balance = 689988871600000;
+        let expected_balance = 689958850000000;
         let balance = poll_for_updated_balance(funded_accounts[0].address, expected_balance).await;
         assert_eq!(balance, Amount::from(expected_balance));
 
@@ -2570,7 +2593,7 @@ async fn test_withdraw() {
         poll_for_signing_checkpoint().await;
         poll_for_completed_checkpoint(4).await;
 
-        let expected_balance = 1382967201580000;
+        let expected_balance = 1382883964000000;
         let balance = poll_for_updated_balance(funded_accounts[0].address, expected_balance).await;
         assert_eq!(balance, Amount::from(expected_balance));
 
@@ -2588,7 +2611,7 @@ async fn test_withdraw() {
             .with_wallet(funded_accounts[0].wallet.clone())
             .call(
                 move |app| build_call!(app.accounts.take_as_funding((MIN_FEE).into())),
-                move |app| build_call!(app.bitcoin.transfer_to_fee_pool(20000000000.into())),
+                move |app| build_call!(app.bitcoin.transfer_to_fee_pool(90000000000.into())),
             )
             .await?;
 
@@ -2600,18 +2623,23 @@ async fn test_withdraw() {
         poll_for_bitcoin_header(1135).await.unwrap();
         poll_for_completed_checkpoint(5).await;
 
+        let simulate_withdrawal_fee = app_client()
+            .query(|app: InnerApp| {
+                Ok(app.withdrawal_fees(Adapter::new(withdraw_address.to_string()), None)?)
+            })
+            .await
+            .unwrap();
         match wallet.get_balances() {
             Ok(data) => {
-                let range = 12.9..13.0;
-                assert!(range.contains(&data.mine.untrusted_pending.to_btc()));
-                info!("Received: {:?}", data);
+                assert_eq!(simulate_withdrawal_fee, 5952000000);
+                assert_eq!(data.mine.untrusted_pending.to_sat() * 1000000, 1299994048000000);
             }
             Err(e) => {
                 info!("Error: {:?}", e);
             }
         }
 
-        let expected_balance = 82947201580000;
+        let expected_balance = 82793964000000;
         let balance = poll_for_updated_balance(funded_accounts[0].address, expected_balance).await;
         assert_eq!(balance, Amount::from(expected_balance));
 

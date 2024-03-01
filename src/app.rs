@@ -13,7 +13,7 @@ use crate::constants::{
 };
 use crate::utils::DeclareInfo;
 use bitcoin::util::merkleblock::PartialMerkleTree;
-use bitcoin::{Script, Transaction, TxOut};
+use bitcoin::{Script, Transaction, TxOut, Address as BitcoinAddress};
 use orga::coins::{
     Accounts, Address, Amount, Coin, Faucet, FaucetOptions, Give, Staking, Symbol, Take,
     ValidatorQueryInfo,
@@ -343,6 +343,21 @@ impl InnerApp {
             .bitcoin
             .calc_minimum_deposit_fees(input_vsize, checkpoint.fee_rate);
         Ok(deposit_fees)
+    }
+
+    #[query]
+    pub fn withdrawal_fees(&self, address: Adapter<String>, index: Option<u32>) -> Result<u64> {
+        let checkpoint = match index {
+            Some(index) => self.bitcoin.checkpoints.get(index)?,
+            None => self
+                .bitcoin
+                .checkpoints
+                .get(self.bitcoin.checkpoints.index)?, // get current checkpoint being built
+        };
+        let btc_address: BitcoinAddress = address.into_inner().parse().unwrap();
+        let script = btc_address.script_pubkey();
+        let withdrawal_fees = self.bitcoin.calc_minimum_withdrawal_fees(script.len() as u64, checkpoint.fee_rate);
+        Ok(withdrawal_fees)
     }
 
     #[call]

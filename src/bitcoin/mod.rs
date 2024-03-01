@@ -542,6 +542,15 @@ impl Bitcoin {
         fee_amount
     }
 
+    pub fn calc_minimum_withdrawal_fees(&self, script_pubkey_length: u64, fee_rate: u64) -> u64 {
+        let fee_amount = (9 + script_pubkey_length)
+            * fee_rate
+            * self.checkpoints.config.user_fee_factor
+            / 10_000
+            * self.config.units_per_sat;
+        fee_amount
+    }
+
     /// Verifies and processes a deposit of BTC into the reserve.
     ///
     /// This will check that the Bitcoin transaction has been sufficiently
@@ -790,11 +799,10 @@ impl Bitcoin {
             .into());
         }
 
-        let fee_amount = (9 + script_pubkey.len() as u64)
-            * self.checkpoints.building()?.fee_rate
-            * self.checkpoints.config.user_fee_factor
-            / 10_000
-            * self.config.units_per_sat;
+        let fee_amount = self.calc_minimum_withdrawal_fees(
+            script_pubkey.len() as u64,
+            self.checkpoints.building()?.fee_rate,
+        );
         let fee = coins.take(fee_amount).map_err(|_| {
             OrgaError::App("Withdrawal is too small to pay its miner fee".to_string())
         })?;
