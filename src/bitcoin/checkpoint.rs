@@ -9,7 +9,7 @@ use super::{
 use crate::{
     app::Dest,
     bitcoin::{signatory::derive_pubkey, Nbtc},
-    constants::{MAX_FEE_RATE, MIN_FEE_RATE},
+    constants::{MAX_FEE_RATE, MIN_FEE_RATE, USER_FEE_FACTOR},
 };
 use crate::{
     constants::DEFAULT_FEE_RATE,
@@ -553,7 +553,7 @@ impl MigrateFrom<CheckpointV3> for CheckpointV4 {
             status: value.status,
             batches: value.batches,
             pending: value.pending,
-            fee_rate: value.fee_rate,
+            fee_rate: DEFAULT_FEE_RATE,
             signed_at_btc_height: value.signed_at_btc_height,
             deposits_enabled: value.deposits_enabled,
             sigset: value.sigset,
@@ -1065,8 +1065,15 @@ impl MigrateFrom<ConfigV2> for ConfigV3 {
             max_fee_rate: value.max_fee_rate,
             sigset_threshold: value.sigset_threshold,
             emergency_disbursal_min_tx_amt: value.emergency_disbursal_min_tx_amt,
-            emergency_disbursal_lock_time_interval: value.emergency_disbursal_lock_time_interval,
+            #[cfg(feature = "testnet")]
+            emergency_disbursal_lock_time_interval: 60 * 60 * 24 * 7,
+            #[cfg(not(feature = "testnet"))]
+            emergency_disbursal_lock_time_interval: 60 * 60 * 24 * 7 * 8, // 8 weeks
             emergency_disbursal_max_tx_size: value.emergency_disbursal_max_tx_size,
+            #[cfg(feature = "testnet")]
+            max_unconfirmed_checkpoints: 15,
+            #[cfg(not(feature = "testnet"))]
+            max_unconfirmed_checkpoints: 1,
             ..Default::default()
         })
     }
@@ -1094,7 +1101,7 @@ impl Config {
             target_checkpoint_inclusion: 2,
             min_fee_rate: MIN_FEE_RATE, // relay threshold is 1 sat/vbyte
             max_fee_rate: MAX_FEE_RATE,
-            user_fee_factor: 21000, // 2.1x
+            user_fee_factor: USER_FEE_FACTOR, // 2.1x
             sigset_threshold: SIGSET_THRESHOLD,
             emergency_disbursal_min_tx_amt: 1000,
             #[cfg(feature = "testnet")]
@@ -2755,14 +2762,14 @@ mod test {
         maybe_step(10);
 
         assert_eq!(queue.borrow().len().unwrap(), 1);
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 10);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 50);
 
         set_time(1_000);
         maybe_step(10);
 
         assert_eq!(queue.borrow().len().unwrap(), 2);
         assert!(queue.borrow().last_completed_index().is_err());
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 10);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 50);
 
         sign_cp(11);
 
@@ -2784,7 +2791,7 @@ mod test {
         sign_cp(11);
 
         assert_eq!(queue.borrow().len().unwrap(), 3);
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 10);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 50);
 
         set_time(3_000);
         push_deposit();
@@ -2792,7 +2799,7 @@ mod test {
         sign_cp(11);
 
         assert_eq!(queue.borrow().len().unwrap(), 4);
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 10);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 50);
 
         set_time(4_000);
         push_deposit();
@@ -2800,7 +2807,7 @@ mod test {
         sign_cp(12);
 
         assert_eq!(queue.borrow().len().unwrap(), 5);
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 10);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 50);
 
         set_time(5_000);
         push_deposit();
@@ -2808,7 +2815,7 @@ mod test {
         sign_cp(13);
 
         assert_eq!(queue.borrow().len().unwrap(), 6);
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 12);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 62);
 
         set_time(6_000);
         push_deposit();
@@ -2816,7 +2823,7 @@ mod test {
         sign_cp(13);
 
         assert_eq!(queue.borrow().len().unwrap(), 7);
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 12);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 62);
 
         set_time(7_000);
         push_deposit();
@@ -2824,7 +2831,7 @@ mod test {
         sign_cp(14);
 
         assert_eq!(queue.borrow().len().unwrap(), 8);
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 15);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 77);
 
         confirm_cp(5, 14);
         set_time(8_000);
@@ -2833,7 +2840,7 @@ mod test {
         sign_cp(15);
 
         assert_eq!(queue.borrow().len().unwrap(), 9);
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 15);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 77);
 
         confirm_cp(7, 15);
         set_time(9_000);
@@ -2842,7 +2849,7 @@ mod test {
         sign_cp(16);
 
         assert_eq!(queue.borrow().len().unwrap(), 10);
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 11);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 57);
 
         set_time(10_000);
         push_deposit();
@@ -2850,7 +2857,7 @@ mod test {
         sign_cp(17);
 
         assert_eq!(queue.borrow().len().unwrap(), 11);
-        assert_eq!(queue.borrow().building().unwrap().fee_rate, 11);
+        assert_eq!(queue.borrow().building().unwrap().fee_rate, 57);
     }
 
     #[cfg(feature = "full")]
