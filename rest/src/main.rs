@@ -6,7 +6,8 @@ use chrono::{TimeZone, Utc};
 use nomic::{
     app::{InnerApp, Nom},
     bitcoin::{
-        checkpoint::{CheckpointQueue, Config as CheckpointConfig},
+        calc_deposit_fee,
+        checkpoint::{BuildingCheckpoint, CheckpointQueue, Config as CheckpointConfig},
         signatory::SignatorySet,
         Config, Nbtc,
     },
@@ -552,6 +553,20 @@ async fn bitcoin_value_locked() -> Value {
     json!({
         "value": value_locked
     })
+}
+
+#[get("/bitcoin/deposit_fees?<checkpoint_index>")]
+async fn bitcoin_minimum_deposit(
+    checkpoint_index: Option<u32>,
+) -> Result<Value, BadRequest<String>> {
+    let deposit_fees: u64 = app_client()
+        .query(|app: InnerApp| Ok(app.deposit_fees(checkpoint_index)?))
+        .await
+        .map_err(|e| BadRequest(Some(format!("error: {:?}", e))))?;
+
+    Ok(json!({
+        "deposit_fees": deposit_fees
+    }))
 }
 
 #[get("/bitcoin/sigset?<index>")]
@@ -1647,7 +1662,8 @@ fn rocket() -> _ {
             bitcoin_checkpoint_queue,
             checkpoint_disbursal_txs,
             bitcoin_last_confirmed_checkpoint,
-            bitcoin_sigset_with_index
+            bitcoin_sigset_with_index,
+            bitcoin_minimum_deposit
         ],
     )
 }

@@ -2636,3 +2636,246 @@ async fn test_withdraw() {
         }
     }
 }
+
+#[tokio::test]
+#[serial]
+#[ignore]
+async fn test_minimum_deposit_fees() {
+    INIT.call_once(|| {
+        pretty_env_logger::init();
+        let genesis_time = Utc.with_ymd_and_hms(2022, 10, 5, 0, 0, 0).unwrap();
+        let time = Time::from_seconds(genesis_time.timestamp());
+        set_time(time);
+    });
+
+    let mut conf = Conf::default();
+    conf.args.push("-txindex");
+    let bitcoind = BitcoinD::with_conf(bitcoind::downloaded_exe_path().unwrap(), &conf).unwrap();
+    let rpc_url = bitcoind.rpc_url();
+    let cookie_file = bitcoind.params.cookie_file.clone();
+    let btc_client = test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await;
+
+    let block_data = populate_bitcoin_block(&btc_client).await;
+
+    let home = tempdir().unwrap();
+    let path = home.into_path();
+
+    let node_path = path.clone();
+    let signer_path = path.clone();
+    let xpriv = generate_bitcoin_key(bitcoin::Network::Regtest).unwrap();
+    fs::create_dir_all(signer_path.join("signer")).unwrap();
+    fs::write(
+        signer_path.join("signer/xpriv"),
+        xpriv.to_string().as_bytes(),
+    )
+    .unwrap();
+    let xpub = ExtendedPubKey::from_priv(&secp256k1::Secp256k1::new(), &xpriv);
+    let header_relayer_path = path.clone();
+
+    std::env::set_var("NOMIC_HOME_DIR", &path);
+
+    let headers_config = HeaderQueueConfig {
+        encoded_trusted_header: Adapter::new(block_data.block_header)
+            .encode()
+            .unwrap()
+            .try_into()
+            .unwrap(),
+        trusted_height: block_data.height,
+        retargeting: false,
+        min_difficulty_blocks: true,
+        max_length: 59,
+        ..Default::default()
+    };
+    let bitcoin_config = BitcoinConfig {
+        max_offline_checkpoints: 20,
+        ..Default::default()
+    };
+    let checkpoint_config = CheckpointConfig {
+        user_fee_factor: 10000,
+        ..Default::default()
+    };
+    let funded_accounts = setup_test_app(
+        &path,
+        4,
+        Some(headers_config),
+        Some(checkpoint_config),
+        Some(bitcoin_config),
+    );
+
+    info!("Starting Nomic node...");
+    let node = Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"), Default::default()).await;
+    let node_child = node.run().await.unwrap();
+
+    let rpc_addr = "http://localhost:26657".to_string();
+
+    let mut relayer = Relayer::new(
+        test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
+        rpc_addr.clone(),
+    );
+    let headers = relayer.start_header_relay();
+
+    let relayer = Relayer::new(
+        test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
+        rpc_addr.clone(),
+    );
+    let deposits = relayer.start_deposit_relay(&header_relayer_path, 60 * 60 * 12);
+
+    let mut relayer = Relayer::new(
+        test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
+        rpc_addr.clone(),
+    );
+    let checkpoints = relayer.start_checkpoint_relay();
+
+    let signer = async {
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        setup_test_signer(&signer_path, client_provider)
+            .start()
+            .await
+    };
+
+    let (tx, mut rx) = mpsc::channel(100);
+    let shutdown_listener = async {
+        rx.recv().await;
+        Err::<(), Error>(Error::Test("Signer shutdown initiated".to_string()))
+    };
+
+    let slashable_xpriv_seed: [u8; 32] = rand::thread_rng().gen();
+
+    let slashable_signer = async {
+        tokio::time::sleep(Duration::from_secs(15)).await;
+        let xpriv =
+            ExtendedPrivKey::new_master(bitcoin::Network::Testnet, slashable_xpriv_seed.as_slice())
+                .unwrap();
+        let privkey_bytes = funded_accounts[2].privkey.secret_bytes();
+        let privkey = orga::secp256k1::SecretKey::from_slice(&privkey_bytes).unwrap();
+        let signer = Signer::new(
+            address_from_privkey(&funded_accounts[2].privkey),
+            vec![xpriv],
+            0.1,
+            1.0,
+            0,
+            None,
+            || {
+                let wallet = DerivedKey::from_secret_key(privkey);
+                app_client().with_wallet(wallet)
+            },
+            None,
+        )
+        .start();
+
+        match futures::try_join!(signer, shutdown_listener) {
+            Err(Error::Test(_)) | Ok(_) => Ok(()),
+            Err(e) => Err(e),
+        }
+    };
+
+    let test = async {
+        let val_priv_key = load_privkey().unwrap();
+        let nomic_wallet = DerivedKey::from_secret_key(val_priv_key);
+        let consensus_key = load_consensus_key(&path)?;
+        declare_validator(consensus_key, nomic_wallet, 100_000)
+            .await
+            .unwrap();
+        app_client()
+            .with_wallet(DerivedKey::from_secret_key(val_priv_key))
+            .call(
+                |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
+                |app| build_call!(app.bitcoin.set_signatory_key(xpub.into())),
+            )
+            .await?;
+
+        let xpriv =
+            ExtendedPrivKey::new_master(bitcoin::Network::Testnet, slashable_xpriv_seed.as_slice())
+                .unwrap();
+        let xpub = ExtendedPubKey::from_priv(&secp256k1::Secp256k1::new(), &xpriv);
+        let privkey_bytes = funded_accounts[2].privkey.secret_bytes();
+        let privkey = orga::secp256k1::SecretKey::from_slice(&privkey_bytes).unwrap();
+        declare_validator([0; 32], funded_accounts[2].wallet.clone(), 4_000)
+            .await
+            .unwrap();
+        app_client()
+            .with_wallet(DerivedKey::from_secret_key(privkey))
+            .call(
+                |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
+                |app| build_call!(app.bitcoin.set_signatory_key(xpub.into())),
+            )
+            .await?;
+
+        let wallet = retry(|| bitcoind.create_wallet("nomic-integration-test"), 10).unwrap();
+        let wallet_address = wallet.get_new_address(None, None).unwrap();
+        let async_wallet_address =
+            bitcoincore_rpc_async::bitcoin::Address::from_str(&wallet_address.to_string()).unwrap();
+
+        btc_client
+            .generate_to_address(120, &async_wallet_address)
+            .await
+            .unwrap();
+
+        poll_for_bitcoin_header(1120).await.unwrap();
+
+        poll_for_signatory_key(consensus_key).await;
+        poll_for_signatory_key([0; 32]).await;
+        tx.send(Some(())).await.unwrap();
+
+        // case 1: test query with current building checkpoint
+        let deposit_fees = app_client()
+            .query(|app: InnerApp| Ok(app.deposit_fees(None)?))
+            .await
+            .unwrap();
+
+        // sigset len = 1 => deposit_fees = 158 (input vsize) * 50 (default fee rate) * 10000 (use fee factor config above) / 10000 * 10^6 (units per sat)
+        assert_eq!(deposit_fees, 7900000000);
+
+        // fixture: try creating some checkpoints and then we can query
+        for i in 0..3 {
+            deposit_bitcoin(
+                &funded_accounts[0].address,
+                bitcoin::Amount::from_btc(1.0).unwrap(),
+                &wallet,
+            )
+            .await
+            .unwrap();
+
+            btc_client
+                .generate_to_address(1, &async_wallet_address)
+                .await
+                .unwrap();
+            poll_for_bitcoin_header(1120 + i).await.unwrap();
+            poll_for_completed_checkpoint(i + 1).await;
+        }
+
+        let first_checkpoint_deposit_fees = app_client()
+            .query(|app: InnerApp| Ok(app.deposit_fees(Some(0))?))
+            .await
+            .unwrap();
+        // first checkpoint minimum deposit fees should stay the same
+        assert_eq!(first_checkpoint_deposit_fees, 7900000000);
+
+        // case 2:
+        let second_checkpoint_deposit_fees = app_client()
+            .query(|app: InnerApp| Ok(app.deposit_fees(Some(1))?))
+            .await
+            .unwrap();
+        // in the 2nd checkpoint, the signatory length is 2 -> 237 * 50 * 10^6
+        assert_eq!(second_checkpoint_deposit_fees, 11850000000);
+
+        Err::<(), Error>(Error::Test("Test completed successfully".to_string()))
+    };
+
+    poll_for_blocks().await;
+
+    match futures::try_join!(
+        headers,
+        deposits,
+        checkpoints,
+        signer,
+        slashable_signer,
+        test
+    ) {
+        Err(Error::Test(_)) => (),
+        Ok(_) => (),
+        other => {
+            other.unwrap();
+        }
+    }
+}

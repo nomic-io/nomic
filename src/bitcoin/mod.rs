@@ -489,9 +489,6 @@ impl Bitcoin {
             let regtest_mode = self.network() == bitcoin::Network::Regtest
                 && _signatory_key.network == bitcoin::Network::Testnet;
 
-            println!("network: {:?}", self.network());
-            println!("signatory key network: {:?}", _signatory_key.network);
-
             if !regtest_mode && _signatory_key.network != self.network() {
                 return Err(Error::Orga(orga::Error::App(
                     "Signatory key network does not match network".to_string(),
@@ -537,6 +534,12 @@ impl Bitcoin {
         self.checkpoints
             .should_push(self.signatory_keys.map(), &[0; 32], self.headers.height()?)
         // TODO: we shouldn't need this slice, commitment should be fixed-length
+    }
+
+    pub fn calc_minimum_deposit_fees(&self, input_vsize: u64, fee_rate: u64) -> u64 {
+        let fee_amount = input_vsize * fee_rate * self.checkpoints.config.user_fee_factor / 10_000
+            * self.config.units_per_sat;
+        fee_amount
     }
 
     /// Verifies and processes a deposit of BTC into the reserve.
@@ -657,9 +660,7 @@ impl Bitcoin {
         )?;
         let input_size = input.est_vsize();
         let mut nbtc = Nbtc::mint(output.value * self.config.units_per_sat);
-        let fee_amount = input_size * checkpoint.fee_rate * self.checkpoints.config.user_fee_factor
-            / 10_000
-            * self.config.units_per_sat;
+        let fee_amount = self.calc_minimum_deposit_fees(input_size, checkpoint.fee_rate);
         let deposit_fees = calc_deposit_fee(nbtc.amount.into());
         let fee = nbtc.take(fee_amount + deposit_fees).map_err(|_| {
             OrgaError::App("Deposit amount is too small to pay its spending fee".to_string())
