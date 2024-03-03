@@ -1882,6 +1882,14 @@ impl CheckpointQueue {
         }
     }
 
+    #[query]
+    pub fn last_complete_building_checkpoint_tx(&self) -> Result<Adapter<bitcoin::Transaction>> {
+        if let Some(completed) = self.completed(1)?.last() {
+            Ok(completed.checkpoint_tx())
+        }
+        None
+    }
+
     /// A reference to the checkpoint in the `Signing` state, if there is one.
     #[query]
     pub fn signing(&self) -> Result<Option<SigningCheckpoint<'_>>> {
