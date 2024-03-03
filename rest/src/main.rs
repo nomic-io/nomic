@@ -572,7 +572,7 @@ async fn bitcoin_minimum_withdrawal(
     checkpoint_index: Option<u32>,
 ) -> Result<Value, BadRequest<String>> {
     let withdrawal_fees: u64 = app_client()
-        .query(|app: InnerApp| Ok(app.withdrawal_fees(Adapter::new(address), checkpoint_index)?))
+        .query(|app: InnerApp| Ok(app.withdrawal_fees(Adapter::new(address.clone()), checkpoint_index)?))
         .await
         .map_err(|e| BadRequest(Some(format!("error: {:?}", e))))?;
 
