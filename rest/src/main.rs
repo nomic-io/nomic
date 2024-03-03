@@ -678,6 +678,18 @@ async fn checkpoint_disbursal_txs() -> Result<Value, BadRequest<String>> {
     }))
 }
 
+#[get("/bitcoin/checkpoint/last_complete_building_tx")]
+async fn last_complete_building_checkpoint_tx() -> Result<Value, BadRequest<String>> {
+    let data = app_client()
+    .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.last_complete_building_checkpoint_tx()?))
+    .await
+    .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+
+    Ok(json!({
+        "data": data
+    }))
+}
+
 #[get("/bitcoin/checkpoint")]
 async fn bitcoin_latest_checkpoint() -> Result<Value, BadRequest<String>> {
     let checkpoint_queue: CheckpointQueue = app_client()
@@ -1676,7 +1688,8 @@ fn rocket() -> _ {
             bitcoin_last_confirmed_checkpoint,
             bitcoin_sigset_with_index,
             bitcoin_minimum_deposit,
-            bitcoin_minimum_withdrawal
+            bitcoin_minimum_withdrawal,
+            last_complete_building_checkpoint_tx
         ],
     )
 }
