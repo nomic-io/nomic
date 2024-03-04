@@ -6,7 +6,11 @@ use chrono::{TimeZone, Utc};
 use nomic::{
     app::{InnerApp, Nom},
     bitcoin::{
-        adapter::Adapter, calc_deposit_fee, checkpoint::{BuildingCheckpoint, CheckpointQueue, Config as CheckpointConfig}, signatory::SignatorySet, Config, Nbtc
+        adapter::Adapter,
+        calc_deposit_fee,
+        checkpoint::{BuildingCheckpoint, CheckpointQueue, Config as CheckpointConfig},
+        signatory::SignatorySet,
+        Config, Nbtc,
     },
     orga::{
         client::{wallet::Unsigned, AppClient},
@@ -572,7 +576,9 @@ async fn bitcoin_minimum_withdrawal(
     checkpoint_index: Option<u32>,
 ) -> Result<Value, BadRequest<String>> {
     let withdrawal_fees: u64 = app_client()
-        .query(|app: InnerApp| Ok(app.withdrawal_fees(Adapter::new(address.clone()), checkpoint_index)?))
+        .query(|app: InnerApp| {
+            Ok(app.withdrawal_fees(Adapter::new(address.clone()), checkpoint_index)?)
+        })
         .await
         .map_err(|e| BadRequest(Some(format!("error: {:?}", e))))?;
 
@@ -678,12 +684,12 @@ async fn checkpoint_disbursal_txs() -> Result<Value, BadRequest<String>> {
     }))
 }
 
-#[get("/bitcoin/checkpoint/last_complete_building_tx")]
-async fn last_complete_building_checkpoint_tx() -> Result<Value, BadRequest<String>> {
+#[get("/bitcoin/checkpoint/last_completed_tx")]
+async fn last_completed_checkpoint_tx() -> Result<Value, BadRequest<String>> {
     let data = app_client()
-    .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.last_complete_building_checkpoint_tx()?))
-    .await
-    .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+        .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.last_completed_checkpoint_tx()?))
+        .await
+        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
 
     Ok(json!({
         "data": data
@@ -1689,7 +1695,7 @@ fn rocket() -> _ {
             bitcoin_sigset_with_index,
             bitcoin_minimum_deposit,
             bitcoin_minimum_withdrawal,
-            last_complete_building_checkpoint_tx
+            last_completed_checkpoint_tx
         ],
     )
 }

@@ -2506,6 +2506,10 @@ async fn test_withdraw() {
 
         poll_for_bitcoin_header(1127).await.unwrap();
 
+        println!(
+            "withdraw address to string: {:?}",
+            withdraw_address.to_string()
+        );
         let simulate_withdrawal_fee = app_client()
             .query(|app: InnerApp| {
                 Ok(app.withdrawal_fees(Adapter::new(withdraw_address.to_string()), None)?)
@@ -2539,7 +2543,10 @@ async fn test_withdraw() {
         match wallet.get_balances() {
             Ok(data) => {
                 assert_eq!(simulate_withdrawal_fee, 3100000000);
-                assert_eq!(data.mine.untrusted_pending.to_sat() * 1000000, 299996900000000);
+                assert_eq!(
+                    data.mine.untrusted_pending.to_sat() * 1000000,
+                    299996900000000
+                );
             }
             Err(e) => {
                 info!("Error: {:?}", e);
@@ -2632,7 +2639,10 @@ async fn test_withdraw() {
         match wallet.get_balances() {
             Ok(data) => {
                 assert_eq!(simulate_withdrawal_fee, 5952000000);
-                assert_eq!(data.mine.untrusted_pending.to_sat() * 1000000, 1299994048000000);
+                assert_eq!(
+                    data.mine.untrusted_pending.to_sat() * 1000000,
+                    1299994048000000
+                );
             }
             Err(e) => {
                 info!("Error: {:?}", e);

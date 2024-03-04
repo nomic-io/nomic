@@ -511,11 +511,6 @@ impl Relayer {
                 .unwrap()
                 .as_secs();
 
-            println!(
-                "is now smaller than lock time: {:?}",
-                now < tx.lock_time.0 as u64
-            );
-
             if now < tx.lock_time.to_u32() as u64 {
                 return Ok(());
             }

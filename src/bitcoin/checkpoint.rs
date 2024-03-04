@@ -1884,9 +1884,9 @@ impl CheckpointQueue {
 
     /// The last complete builiding checkpoint transaction, which have the type BatchType::Checkpoint
     /// Here we have only one element in the vector, and I use vector because I don't want to throw
-    /// any error if vec! is empty 
+    /// any error if vec! is empty
     #[query]
-    pub fn last_complete_building_checkpoint_tx(&self) -> Result<Vec<Adapter<bitcoin::Transaction>>> {
+    pub fn last_completed_checkpoint_tx(&self) -> Result<Vec<Adapter<bitcoin::Transaction>>> {
         let mut txs = vec![];
         if let Some(completed) = self.completed(1)?.last() {
             txs.push(completed.checkpoint_tx()?);
