@@ -1824,6 +1824,16 @@ impl CheckpointQueue {
         .ok_or_else(|| Error::Orga(OrgaError::App("No completed checkpoints yet".to_string())))
     }
 
+    pub fn has_completed_checkpoint(&self) -> Result<bool> {
+        match self.last_completed_index() {
+            Ok(_) => Ok(true),
+            Err(Error::Orga(OrgaError::App(err))) if err == "No completed checkpoints yet" => {
+                Ok(false)
+            }
+            Err(err) => return Err(err),
+        }
+    }
+
     #[query]
     pub fn first_index(&self) -> Result<u32> {
         Ok(self.index + 1 - self.len()?)
@@ -2377,8 +2387,7 @@ impl CheckpointQueue {
                 prev_fee_rate
             }
         } else {
-            let has_completed = self.last_completed_index().is_ok();
-            if has_completed {
+            if self.has_completed_checkpoint()? {
                 // No unconfirmed checkpoints.
                 adjust_fee_rate(prev_fee_rate, false, &config)
             } else {
