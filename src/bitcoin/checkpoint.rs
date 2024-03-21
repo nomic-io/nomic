@@ -269,8 +269,8 @@ impl BitcoinTx {
     /// all input witnesses once fully signed, in virtual bytes.
     pub fn est_vsize(&self) -> Result<u64> {
         let base_vsize: u64 = self.to_bitcoin_tx()?.vsize().try_into()?;
-        let est_witness_vsize = self.input.iter()?.fold(Ok(0), |sum: Result<u64>, input| {
-            Ok(sum? + input?.est_witness_vsize)
+        let est_witness_vsize = self.input.iter()?.try_fold(0, |sum: u64, input| {
+            Ok::<_, Error>(sum + input?.est_witness_vsize)
         })?;
         Ok(base_vsize + est_witness_vsize)
     }
