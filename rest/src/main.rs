@@ -64,13 +64,13 @@ async fn validators(status: Option<String>) -> Value {
         .await
         .unwrap();
 
+    let all_keys: Vec<_> = app_client()
+        .query(|app: InnerApp| app.staking.consensus_keys())
+        .await
+        .unwrap();
+
     let mut validators = vec![];
     for validator in all_validators {
-        let cons_key = app_client()
-            .query(|app: InnerApp| app.staking.consensus_key(validator.address.into()))
-            .await
-            .unwrap(); // TODO: cache
-
         let validator_status = if validator.unbonding {
             "BOND_STATUS_UNBONDING"
         } else if validator.in_active_set {
@@ -82,6 +82,12 @@ async fn validators(status: Option<String>) -> Value {
         if !status.is_none() && status != Some(validator_status.to_owned()) {
             continue;
         }
+
+        let cons_key = all_keys
+            .iter()
+            .find(|entry| (**entry).0 == validator.address.into())
+            .map(|entry| (*entry).1)
+            .unwrap();
 
         let info: DeclareInfo =
             serde_json::from_str(String::from_utf8(validator.info.to_vec()).unwrap().as_str())
