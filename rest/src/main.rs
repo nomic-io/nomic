@@ -880,11 +880,37 @@ async fn staking_pool() -> Value {
 }
 
 #[get("/cosmos/bank/v1beta1/supply/unom")]
-fn bank_supply_unom() -> Value {
+async fn bank_supply_unom() -> Value {
+    let supply = app_client()
+        .query(|app| app.total_supply())
+        .await
+        .unwrap();
+
     json!({
         "amount": {
             "denom": "unom",
-            "amount": "1"
+            "amount": supply.to_string(),
+        }
+    })
+}
+
+#[get("/cosmos/bank/v1beta1/supply")]
+async fn bank_supply() -> Value {
+    let supply = app_client()
+        .query(|app| app.total_supply())
+        .await
+        .unwrap();
+
+    json!({
+        "supply": [
+            {
+                "denom": "unom",
+                "amount": supply.to_string()
+            }
+        ],
+        "pagination": {
+            "next_key": null,
+            "total": "1",
         }
     })
 }
@@ -1356,6 +1382,7 @@ fn rocket() -> _ {
             ibc_apps_transfer_params,
             ibc_applications_transfer_params,
             bank_supply_unom,
+            bank_supply,
             validators,
             validator,
             staking_params,
