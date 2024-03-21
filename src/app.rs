@@ -211,7 +211,13 @@ impl InnerApp {
         let community_pool_rewards_minted: u64 = self.community_pool_rewards.amount_minted.into();
         let incentive_pool_rewards_minted: u64 = self.incentive_pool_rewards.amount_minted.into();
 
-        Ok(Amount::new(initial_supply + staking_rewards_minted + dev_rewards_minted + community_pool_rewards_minted + incentive_pool_rewards_minted))
+        Ok(Amount::new(
+            initial_supply
+                + staking_rewards_minted
+                + dev_rewards_minted
+                + community_pool_rewards_minted
+                + incentive_pool_rewards_minted,
+        ))
     }
 
     #[query]
