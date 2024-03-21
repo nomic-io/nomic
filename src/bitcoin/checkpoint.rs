@@ -267,8 +267,12 @@ impl BitcoinTx {
 
     /// The estimated size of the transaction, including the worst-case sizes of
     /// all input witnesses once fully signed, in virtual bytes.
-    pub fn vsize(&self) -> Result<u64> {
-        Ok(self.to_bitcoin_tx()?.vsize().try_into()?)
+    pub fn est_vsize(&self) -> Result<u64> {
+        let base_vsize: u64 = self.to_bitcoin_tx()?.vsize().try_into()?;
+        let est_witness_vsize = self.input.iter()?.try_fold(0, |sum: u64, input| {
+            Ok::<_, Error>(sum + input?.est_witness_vsize)
+        })?;
+        Ok(base_vsize + est_witness_vsize)
     }
 
     /// The hash of the transaction. Note that this will change if any inputs or
@@ -1303,7 +1307,7 @@ impl<'a> BuildingCheckpointMut<'a> {
                 .get_mut(BatchType::IntermediateTx as u64)?
                 .unwrap();
             let mut intermediate_tx = intermediate_tx_batch.get_mut(0)?.unwrap();
-            let fee = intermediate_tx.vsize()? * fee_rate;
+            let fee = intermediate_tx.est_vsize()? * fee_rate;
             intermediate_tx.deduct_fee(fee)?;
             fee
         };
@@ -1366,7 +1370,9 @@ impl<'a> BuildingCheckpointMut<'a> {
                     // Deduct the final tx's miner fee from its outputs,
                     // removing any outputs which are too small to pay their
                     // share of the fee.
-                    let tx_size = tx.vsize().map_err(|err| OrgaError::App(err.to_string()))?;
+                    let tx_size = tx
+                        .est_vsize()
+                        .map_err(|err| OrgaError::App(err.to_string()))?;
                     let fee = intermediate_tx_fee / intermediate_tx_len + tx_size * fee_rate;
                     tx.deduct_fee(fee)
                         .map_err(|err| OrgaError::App(err.to_string()))?;
@@ -1479,7 +1485,7 @@ impl<'a> BuildingCheckpointMut<'a> {
                 // and add our output there instead.
                 // TODO: don't pop and repush, just get a mutable reference
                 let mut curr_tx = final_txs.pop().unwrap();
-                if curr_tx.vsize()? >= config.emergency_disbursal_max_tx_size {
+                if curr_tx.est_vsize()? >= config.emergency_disbursal_max_tx_size {
                     self.link_intermediate_tx(&mut curr_tx, config.sigset_threshold)?;
                     final_txs.push(curr_tx);
                     curr_tx = BitcoinTx::with_lock_time(lock_time);
