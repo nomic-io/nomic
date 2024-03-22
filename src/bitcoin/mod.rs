@@ -266,7 +266,7 @@ pub fn calc_deposit_fee(amount: u64) -> u64 {
 /// blockchain headers, relay deposit transactions, maintain nBTC accounts, and
 /// coordinate the checkpointing process to manage the BTC reserve on the
 /// Bitcoin blockchain.
-#[orga(version = 2)]
+#[orga(version = 3)]
 pub struct Bitcoin {
     /// A light client of the Bitcoin blockchain, keeping track of the headers
     /// of the highest-work chain.
@@ -296,7 +296,7 @@ pub struct Bitcoin {
     pub(crate) reward_pool: Coin<Nbtc>,
 
     // TODO: turn into Coin<Nbtc>
-    #[orga(version(V2))]
+    #[orga(version(V2, V3))]
     pub(crate) fee_pool: i64,
 
     /// The recovery scripts for nBTC account holders, which are users' desired
@@ -307,9 +307,12 @@ pub struct Bitcoin {
     /// The configuration parameters for the Bitcoin module.
     pub config: Config,
 
-    #[orga(version(V2))]
+    #[orga(version(V2, V3))]
     #[call]
     pub recovery_txs: RecoveryTxs,
+
+    #[orga(version(V3))]
+    pub last_timestamping_commitment: Option<[u8; 32]>,
 }
 
 impl MigrateFrom<BitcoinV0> for BitcoinV1 {
@@ -331,6 +334,24 @@ impl MigrateFrom<BitcoinV1> for BitcoinV2 {
             recovery_scripts: value.recovery_scripts,
             config: value.config,
             recovery_txs: RecoveryTxs::new(),
+        })
+    }
+}
+
+impl MigrateFrom<BitcoinV2> for BitcoinV3 {
+    fn migrate_from(value: BitcoinV2) -> OrgaResult<Self> {
+        Ok(Self {
+            headers: value.headers,
+            processed_outpoints: value.processed_outpoints,
+            checkpoints: value.checkpoints,
+            accounts: value.accounts,
+            signatory_keys: value.signatory_keys,
+            reward_pool: value.reward_pool,
+            fee_pool: value.fee_pool,
+            recovery_scripts: value.recovery_scripts,
+            config: value.config,
+            recovery_txs: RecoveryTxs::new(),
+            last_timestamping_commitment: None,
         })
     }
 }
@@ -518,12 +539,12 @@ impl Bitcoin {
     /// Returns `true` if the next call to `self.checkpoints.maybe_step()` will
     /// push a new checkpoint (along with advancing the current `Building`
     /// checkpoint to `Signing`). Returns `false` otherwise.
-    #[cfg(feature = "full")]
-    pub fn should_push_checkpoint(&mut self) -> Result<bool> {
-        self.checkpoints
-            .should_push(self.signatory_keys.map(), &[0; 32], self.headers.height()?)
-        // TODO: we shouldn't need this slice, commitment should be fixed-length
-    }
+    // #[cfg(feature = "full")]
+    // pub fn should_push_checkpoint(&mut self) -> Result<bool> {
+    //     self.checkpoints
+    //         .should_push(self.signatory_keys.map(), &[0; 32], self.headers.height()?)
+    //     // TODO: we shouldn't need this slice, commitment should be fixed-length
+    // }
 
     /// Verifies and processes a deposit of BTC into the reserve.
     ///
@@ -664,9 +685,14 @@ impl Bitcoin {
         let deposit_fee = nbtc.take(calc_deposit_fee(nbtc.amount.into()))?;
         self.give_rewards(deposit_fee)?;
 
-        self.checkpoints
-            .building_mut()?
-            .insert_pending(dest, nbtc)?;
+        let under_capacity = self.checkpoints.has_completed_checkpoint()?
+            && self.value_locked()? < self.config.capacity_limit;
+        self.checkpoints.insert_pending_deposit(
+            dest,
+            nbtc,
+            self.signatory_keys.map(),
+            under_capacity,
+        )?;
 
         Ok(())
     }
@@ -804,6 +830,7 @@ impl Bitcoin {
             .unwrap();
         let mut checkpoint_tx = building_checkpoint_batch.get_mut(0)?.unwrap();
         checkpoint_tx.output.push_back(Adapter::new(output))?;
+        self.checkpoints.building_withdrawals += 1;
         // TODO: push to excess if full
 
         Ok(())
@@ -827,9 +854,16 @@ impl Bitcoin {
 
         let dest = Dest::Address(to);
         let coins = self.accounts.withdraw(signer, amount)?;
-        self.checkpoints
-            .building_mut()?
-            .insert_pending(dest, coins)?;
+
+        let under_capacity = self.checkpoints.has_completed_checkpoint()?
+            && self.value_locked()? < self.config.capacity_limit;
+
+        self.checkpoints.insert_pending_deposit(
+            dest,
+            coins,
+            self.signatory_keys.map(),
+            under_capacity,
+        )?;
 
         Ok(())
     }
@@ -851,8 +885,11 @@ impl Bitcoin {
     /// checkpoint.
     #[query]
     pub fn value_locked(&self) -> Result<u64> {
-        let last_completed = self.checkpoints.last_completed()?;
-        Ok(last_completed.reserve_output()?.unwrap().value)
+        self.checkpoints
+            .last_completed()
+            .and_then(|last_completed| last_completed.reserve_output())
+            .map(|reserve_output| reserve_output.map_or(0, |output| output.value))
+            .or_else(|_| Ok(0))
     }
 
     /// The network (e.g. Bitcoin testnet vs mainnet) which is currently
@@ -948,8 +985,20 @@ impl Bitcoin {
         external_outputs: impl Iterator<Item = Result<bitcoin::TxOut>>,
         timestamping_commitment: Vec<u8>,
     ) -> Result<Vec<ConsensusKey>> {
-        let reached_capacity_limit = self.checkpoints.has_completed_checkpoint()?
-            && self.value_locked()? >= self.config.capacity_limit;
+        self.last_timestamping_commitment =
+            Some(timestamping_commitment.clone().try_into().map_err(|_| {
+                OrgaError::App(
+                    format!(
+                        "Timestamping commitment is not 32 bytes. Got {} bytes",
+                        timestamping_commitment.len()
+                    )
+                    .to_string(),
+                )
+            })?);
+
+        let under_capacity = self.checkpoints.index() == 0
+            || (self.checkpoints.has_completed_checkpoint()?
+                && self.value_locked()? < self.config.capacity_limit);
 
         let pushed = self
             .checkpoints
@@ -959,7 +1008,7 @@ impl Bitcoin {
                 &self.recovery_scripts,
                 external_outputs,
                 self.headers.height()?,
-                !reached_capacity_limit,
+                under_capacity,
                 timestamping_commitment,
                 &mut self.fee_pool,
                 &self.config,
@@ -1040,6 +1089,7 @@ impl Bitcoin {
         }
 
         // TODO: drain iter
+        let mut removed_deposits = 0;
         let pending = &mut self.checkpoints.last_completed_mut()?.pending;
         let keys = pending
             .iter()?
@@ -1048,6 +1098,7 @@ impl Bitcoin {
         let mut dests = vec![];
         for dest in keys {
             let coins = pending.remove(dest.clone())?.unwrap().into_inner();
+            removed_deposits += 1;
             dests.push((dest, coins));
         }
         Ok(dests)
@@ -1390,7 +1441,7 @@ mod tests {
         let maybe_step = || {
             let mut btc = btc.borrow_mut();
 
-            btc.begin_block_step(vec![].into_iter(), vec![1, 2, 3])
+            btc.begin_block_step(vec![].into_iter(), [0; 32].to_vec())
                 .unwrap();
         };
 

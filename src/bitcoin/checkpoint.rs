@@ -915,7 +915,7 @@ pub struct Config {
     /// If a checkpoint has more inputs than this when advancing from `Building`
     /// to `Signing`, the excess inputs will be moved to the suceeding,
     /// newly-created `Building` checkpoint.
-    pub max_inputs: u64,
+    pub max_inputs: u32,
 
     /// The maximum number of outputs allowed in a checkpoint transaction.
     ///
@@ -925,7 +925,7 @@ pub struct Config {
     /// If a checkpoint has more outputs than this when advancing from `Building`
     /// to `Signing`, the excess outputs will be moved to the suceeding,
     /// newly-created `Building` checkpoint.∑
-    pub max_outputs: u64,
+    pub max_outputs: u32,
 
     /// The default fee rate to use when creating the first checkpoint of the
     /// network, in satoshis per virtual byte.
@@ -1160,7 +1160,7 @@ impl Default for Config {
 /// broadcast to the Bitcoin network. The queue also maintains a counter
 /// (`confirmed_index`) to track which of these completed checkpoints have been
 /// confirmed in a Bitcoin block.
-#[orga(version = 2)]
+#[orga(version = 3)]
 pub struct CheckpointQueue {
     /// The checkpoints in the queue, in order from oldest to newest. The last
     /// checkpoint is the checkpoint currently being built, and has the index
@@ -1174,11 +1174,17 @@ pub struct CheckpointQueue {
     /// block. Since checkpoints are a sequential cahin, each spending an output
     /// from the previous, all checkpoints with an index lower than this must
     /// have also been confirmed.
-    #[orga(version(V2))]
+    #[orga(version(V2, V3))]
     pub confirmed_index: Option<u32>,
 
     /// Configuration parameters used in processing checkpoints.
     pub config: Config,
+
+    #[orga(version(V3))]
+    pub building_deposits: u32,
+
+    #[orga(version(V3))]
+    pub building_withdrawals: u32,
 }
 
 impl MigrateFrom<CheckpointQueueV0> for CheckpointQueueV1 {
@@ -1194,6 +1200,20 @@ impl MigrateFrom<CheckpointQueueV1> for CheckpointQueueV2 {
             index: value.index,
             confirmed_index: None,
             config: value.config,
+        })
+    }
+}
+
+impl MigrateFrom<CheckpointQueueV2> for CheckpointQueueV3 {
+    fn migrate_from(value: CheckpointQueueV2) -> OrgaResult<Self> {
+        Ok(Self {
+            queue: value.queue,
+            index: value.index,
+            confirmed_index: value.confirmed_index,
+            config: value.config,
+            //TODO: Iterate over queue to populate these values
+            building_deposits: 0,
+            building_withdrawals: 0,
         })
     }
 }
@@ -1259,11 +1279,11 @@ pub struct BuildingCheckpointMut<'a>(ChildMut<'a, u64, Checkpoint>);
 
 /// The data returned by the `advance()` method of `BuildingCheckpointMut`.
 type BuildingAdvanceRes = (
-    bitcoin::OutPoint,     // reserve outpoint
-    u64,                   // reserve size (sats)
-    u64,                   // fees paid (sats)
-    Vec<ReadOnly<Input>>,  // excess inputs
-    Vec<ReadOnly<Output>>, // excess outputs
+    bitcoin::OutPoint, // reserve outpoint
+    u64,               // reserve size (sats)
+    u64,               // fees paid (sats)
+    u32,               // building deposits
+    u32,               // building withdrawals
 );
 
 impl<'a> BuildingCheckpointMut<'a> {
@@ -1608,6 +1628,7 @@ impl<'a> BuildingCheckpointMut<'a> {
         timestamping_commitment: Vec<u8>,
         additional_fees: u64,
         config: &Config,
+        first: bool,
     ) -> Result<BuildingAdvanceRes> {
         self.0.status = CheckpointStatus::Signing;
 
@@ -1616,21 +1637,16 @@ impl<'a> BuildingCheckpointMut<'a> {
 
         let mut checkpoint_batch = self.batches.get_mut(BatchType::Checkpoint as u64)?.unwrap();
         let mut checkpoint_tx = checkpoint_batch.get_mut(0)?.unwrap();
+
+        let num_deposits = if first {
+            checkpoint_tx.input.len()
+        } else {
+            checkpoint_tx.input.len() - 1
+        };
+        let num_withdrawals = checkpoint_tx.output.len();
+
         for out in outs.iter().rev() {
             checkpoint_tx.output.push_front(Adapter::new(out.clone()))?;
-        }
-
-        // Remove excess inputs and outputs from the checkpoint tx, to be pushed
-        // onto the suceeding checkpoint while in its `Building` state.
-        let mut excess_inputs = vec![];
-        while checkpoint_tx.input.len() > config.max_inputs {
-            let removed_input = checkpoint_tx.input.pop_back()?.unwrap();
-            excess_inputs.push(removed_input);
-        }
-        let mut excess_outputs = vec![];
-        while checkpoint_tx.output.len() > config.max_outputs {
-            let removed_output = checkpoint_tx.output.pop_back()?.unwrap();
-            excess_outputs.push(removed_output);
         }
 
         // Sum the total input and output amounts.
@@ -1690,8 +1706,8 @@ impl<'a> BuildingCheckpointMut<'a> {
             reserve_outpoint,
             reserve_value,
             fee,
-            excess_inputs,
-            excess_outputs,
+            num_deposits as u32,
+            num_withdrawals as u32,
         ))
     }
 
@@ -1828,14 +1844,16 @@ impl CheckpointQueue {
             return Ok(out);
         }
 
-        let skip = if self.signing()?.is_some() { 2 } else { 1 };
+        let skip = self.signing()?.is_some() as u32 + self.num_building()?;
         let end = self.index.saturating_sub(skip - 1);
 
         let start = end - limit.min(length - skip);
 
         for i in start..end {
             let checkpoint = self.get(i)?;
-            out.push(CompletedCheckpoint(checkpoint));
+            if matches!(checkpoint.status, CheckpointStatus::Complete) {
+                out.push(CompletedCheckpoint(checkpoint));
+            }
         }
 
         Ok(out)
@@ -1909,16 +1927,16 @@ impl CheckpointQueue {
     /// A reference to the checkpoint in the `Signing` state, if there is one.
     #[query]
     pub fn signing(&self) -> Result<Option<SigningCheckpoint<'_>>> {
-        if self.queue.len() < 2 {
-            return Ok(None);
+        for c in self.queue.iter()? {
+            let c = c?;
+            match c.status {
+                CheckpointStatus::Signing => return Ok(Some(SigningCheckpoint(c))),
+                CheckpointStatus::Building => return Ok(None),
+                _ => continue,
+            }
         }
 
-        let second = self.get(self.index - 1)?;
-        if !matches!(second.status, CheckpointStatus::Signing) {
-            return Ok(None);
-        }
-
-        Ok(Some(SigningCheckpoint(second)))
+        Ok(None)
     }
 
     /// A mutable reference to the checkpoint in the `Signing` state, if there
@@ -1945,6 +1963,44 @@ impl CheckpointQueue {
     pub fn current_building(&self) -> Result<BuildingCheckpoint> {
         let last = self.get(self.index)?;
         Ok(BuildingCheckpoint(last))
+    }
+
+    fn next_building_index(&self) -> Result<u32> {
+        let num_building = self.num_building()?;
+        if self.index == 0 {
+            Ok(0)
+        } else {
+            Ok(self.index + 1 - num_building)
+        }
+    }
+
+    pub fn next_building(&self) -> Result<BuildingCheckpoint> {
+        let index = self.next_building_index()?;
+        let last = self.get(index)?;
+
+        Ok(BuildingCheckpoint(last))
+    }
+
+    pub fn next_building_mut(&mut self) -> Result<ChildMut<u64, Checkpoint>> {
+        let index = self.next_building_index()?;
+        Ok(self.get_mut(index)?)
+    }
+
+    pub fn all_building(&self) -> Result<Vec<BuildingCheckpoint>> {
+        //TODO: Use reverse iteration
+        let mut all_building = vec![];
+        for c in self.queue.iter()? {
+            let c = c?;
+            if matches!(c.status, CheckpointStatus::Building) {
+                all_building.push(BuildingCheckpoint(c));
+            }
+        }
+
+        Ok(all_building)
+    }
+
+    pub fn num_building(&self) -> Result<u32> {
+        Ok(self.all_building()?.len() as u32)
     }
 
     /// A mutable reference to the checkpoint in the `Building` state.
@@ -2012,6 +2068,27 @@ impl CheckpointQueue {
         Ok(())
     }
 
+    pub fn insert_pending_deposit(
+        &mut self,
+        dest: Dest,
+        coins: Coin<Nbtc>,
+        sig_keys: &Map<ConsensusKey, Xpub>,
+        deposits_enabled: bool,
+    ) -> Result<()> {
+        let mut building = self.building_mut_or_insert(true, sig_keys, deposits_enabled)?;
+
+        let mut amount = building
+            .pending
+            .remove(dest.clone())?
+            .map_or(0.into(), |c| c.amount);
+        amount = (amount + coins.amount).result()?;
+
+        building.pending.insert(dest, Coin::mint(amount))?;
+        self.building_deposits += 1;
+
+        Ok(())
+    }
+
     /// Advances the checkpoint queue state machine.
     ///
     /// This method is called once per sidechain block, and will handle adding
@@ -2059,39 +2136,49 @@ impl CheckpointQueue {
         fee_pool: &mut i64,
         parent_config: &super::Config,
     ) -> Result<bool> {
-        if !self.should_push(sig_keys, &timestamping_commitment, btc_height)? {
-            return Ok(false);
-        }
+        let mut pushed = false;
 
-        if self.maybe_push(sig_keys, should_allow_deposits)?.is_none() {
-            return Ok(false);
+        if self.is_empty()? {
+            pushed |= self.maybe_push(sig_keys, should_allow_deposits)?.is_some();
         }
 
         self.prune()?;
 
-        if self.index > 0 {
-            let prev = self.get(self.index - 1)?;
-            let additional_fees = self.fee_adjustment(prev.fee_rate, &self.config)?;
+        if !self.is_empty()? && self.num_building()? > 0 {
+            if !self.should_advance(sig_keys, &timestamping_commitment, btc_height)? {
+                return Ok(pushed);
+            }
+            let current_index = self.index;
+
+            let oldest_building = self.next_building()?;
+            let additional_fees = self.fee_adjustment(oldest_building.fee_rate, &self.config)?;
 
             let config = self.config();
-            let prev = self.get_mut(self.index - 1)?;
-            let sigset = prev.sigset.clone();
-            let prev_fee_rate = prev.fee_rate;
-
-            let (reserve_outpoint, reserve_value, fees_paid, excess_inputs, excess_outputs) =
-                BuildingCheckpointMut(prev).advance(
+            let oldest_building = self.next_building_mut()?;
+            let sigset = oldest_building.sigset.clone();
+            let prev_fee_rate = oldest_building.fee_rate;
+            let (reserve_outpoint, reserve_value, fees_paid, num_deposits, num_withdrawals) =
+                BuildingCheckpointMut(oldest_building).advance(
                     nbtc_accounts,
                     recovery_scripts,
                     external_outputs,
                     timestamping_commitment,
                     additional_fees,
                     &config,
+                    current_index == 0,
                 )?;
+            self.building_deposits -= num_deposits;
+            self.building_withdrawals -= num_withdrawals;
+
+            if self.num_building()? == 0 {
+                pushed |= self.maybe_push(sig_keys, should_allow_deposits)?.is_some();
+            }
+
             *fee_pool -= (fees_paid * parent_config.units_per_sat) as i64;
 
             let fee_rate = self.get_adjusted_fee_rate(prev_fee_rate, btc_height, &config)?;
 
-            let mut building = self.building_mut()?;
+            let mut building = self.next_building_mut()?;
             building.fee_rate = fee_rate;
             let mut building_checkpoint_batch = building
                 .batches
@@ -2109,22 +2196,9 @@ impl CheckpointQueue {
                 config.sigset_threshold,
             )?;
             checkpoint_tx.input.push_back(input)?;
-
-            // Add any excess inputs and outputs from the previous checkpoint to
-            // the new checkpoint.
-            for input in excess_inputs {
-                let shares = input.signatures.shares()?;
-                let mut data = input.into_inner();
-                data.signatures = ThresholdSig::from_shares(shares)?;
-                checkpoint_tx.input.push_back(data)?;
-            }
-            for output in excess_outputs {
-                let data = output.into_inner();
-                checkpoint_tx.output.push_back(data)?;
-            }
         }
 
-        Ok(true)
+        Ok(pushed)
     }
 
     /// Returns `true` if a new checkpoint will be pushed to the queue in the
@@ -2133,13 +2207,13 @@ impl CheckpointQueue {
     /// Note that a new checkpoint being pushed also necessarily means that the
     /// `Building` checkpoint will be advanced to `Signing`.
     #[cfg(feature = "full")]
-    pub fn should_push(
+    pub fn should_advance(
         &mut self,
         sig_keys: &Map<ConsensusKey, Xpub>,
         timestamping_commitment: &[u8],
         btc_height: u32,
     ) -> Result<bool> {
-        // Do not push if there is a checkpoint in the `Signing` state. There
+        // Do not advance if there is a checkpoint in the `Signing` state. There
         // should only ever be at most one checkpoint in this state.
         if self.signing()?.is_some() {
             return Ok(false);
@@ -2150,15 +2224,15 @@ impl CheckpointQueue {
                 .context::<Time>()
                 .ok_or_else(|| OrgaError::App("No time context".to_string()))?
                 .seconds as u64;
-            let elapsed = now - self.current_building()?.create_time();
+            let elapsed = now - self.next_building()?.create_time();
 
-            // Do not push if the minimum checkpoint interval has not elapsed
+            // Do not advance if the minimum checkpoint interval has not elapsed
             // since creating the current `Building` checkpoint.
             if elapsed < self.config.min_checkpoint_interval {
                 return Ok(false);
             }
 
-            // Do not push if Bitcoin headers are being backfilled (e.g. the
+            // Do not advance if Bitcoin headers are being backfilled (e.g. the
             // current latest height is less than the height at which the last
             // confirmed checkpoint was signed).
             if let Ok(last_completed_index) = self.last_completed_index() {
@@ -2169,12 +2243,12 @@ impl CheckpointQueue {
                 }
             }
 
-            // Don't push if there are no pending deposits, withdrawals, or
+            // Do not advance if there are no pending deposits, withdrawals, or
             // transfers, or if not enough has been collected to pay for the
             // miner fee, unless the maximum checkpoint interval has elapsed
             // since creating the current `Building` checkpoint.
             if elapsed < self.config.max_checkpoint_interval || self.index == 0 {
-                let building = self.current_building()?;
+                let building = self.next_building()?;
                 let checkpoint_tx = building.checkpoint_tx()?;
 
                 let has_pending_deposit = if self.index == 0 {
@@ -2231,17 +2305,17 @@ impl CheckpointQueue {
         // validator set.
         let sigset = SignatorySet::from_validator_ctx(index, sig_keys)?;
 
-        // Do not push if there are no validators in the signatory set.
+        // Do not advance if there are no validators in the signatory set.
         if sigset.possible_vp() == 0 {
             return Ok(false);
         }
 
-        // Do not push if the signatory set does not have a quorum.
+        // Do not advance if the signatory set does not have a quorum.
         if !sigset.has_quorum() {
             return Ok(false);
         }
 
-        // Otherwise, push a new checkpoint.
+        // Otherwise, advance the checkpoint to signing.
         Ok(true)
     }
 
@@ -2786,6 +2860,7 @@ mod test {
             )
             .unwrap();
             let mut queue = queue.borrow_mut();
+            queue.building_deposits += 1;
             let mut building_mut = queue.building_mut().unwrap();
             building_mut.fees_collected = 100000000;
             let mut building_checkpoint_batch = building_mut
@@ -3001,6 +3076,7 @@ mod test {
             )
             .unwrap();
             let mut queue = queue.borrow_mut();
+            queue.building_deposits += 1;
             let mut building_mut = queue.building_mut().unwrap();
             building_mut.fees_collected = 100000000;
             let mut building_checkpoint_batch = building_mut

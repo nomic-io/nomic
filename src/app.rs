@@ -181,9 +181,15 @@ impl InnerApp {
         let fee = coins.take(fee)?;
         self.bitcoin.give_rewards(fee)?;
 
-        let building = &mut self.bitcoin.checkpoints.building_mut()?;
         let dest = Dest::Ibc(dest);
-        building.insert_pending(dest, coins)?;
+        let under_capacity = self.bitcoin.checkpoints.has_completed_checkpoint()?
+            && self.bitcoin.value_locked()? < self.bitcoin.config.capacity_limit;
+        self.bitcoin.checkpoints.insert_pending_deposit(
+            dest,
+            coins,
+            self.bitcoin.signatory_keys.map(),
+            under_capacity,
+        )?;
 
         Ok(())
     }
@@ -495,15 +501,20 @@ mod abci {
                 self.credit_transfer(dest, coins)?;
             }
 
-            let external_outputs = if self.bitcoin.should_push_checkpoint()? {
-                self.cosmos
-                    .build_outputs(&self.ibc, self.bitcoin.checkpoints.index)?
-            } else {
-                vec![]
-            };
+            // let external_outputs = if self.bitcoin.should_push_checkpoint()? {
+            //     self.cosmos
+            //         .build_outputs(&self.ibc, self.bitcoin.checkpoints.index)?
+            // } else {
+            //     vec![]
+            // };
+
+            // let offline_signers = self
+            //     .bitcoin
+            //     .begin_block_step(external_outputs.into_iter().map(Ok), ctx.hash.clone())?;
+
             let offline_signers = self
                 .bitcoin
-                .begin_block_step(external_outputs.into_iter().map(Ok), ctx.hash.clone())?;
+                .begin_block_step(vec![].into_iter().map(Ok), ctx.hash.clone())?;
             for cons_key in offline_signers {
                 let address = self.staking.address_by_consensus_key(cons_key)?.unwrap();
                 self.staking.punish_downtime(address)?;
