@@ -887,7 +887,7 @@ impl Checkpoint {
 }
 
 /// Configuration parameters used in processing checkpoints.
-#[orga(skip(Default), version = 3)]
+#[orga(skip(Default), version = 4)]
 #[derive(Clone)]
 pub struct Config {
     /// The minimum amount of time between the creation of checkpoints, in
@@ -946,17 +946,17 @@ pub struct Config {
     /// will be adjusted up if the checkpoint transaction is not confirmed
     /// within the target number of blocks, and will be adjusted down if the
     /// checkpoint transaction faster than the target.
-    #[orga(version(V1, V2, V3))]
+    #[orga(version(V1, V2, V3, V4))]
     pub target_checkpoint_inclusion: u32,
 
     /// The lower bound to use when adjusting the fee rate of the checkpoint
     /// transaction, in satoshis per virtual byte.
-    #[orga(version(V1, V2, V3))]
+    #[orga(version(V1, V2, V3, V4))]
     pub min_fee_rate: u64,
 
     /// The upper bound to use when adjusting the fee rate of the checkpoint
     /// transaction, in satoshis per virtual byte.
-    #[orga(version(V1, V2, V3))]
+    #[orga(version(V1, V2, V3, V4))]
     pub max_fee_rate: u64,
 
     /// The value (in basis points) to multiply by when calculating the miner
@@ -966,24 +966,24 @@ pub struct Config {
     /// The difference in the fee deducted and the fee paid in the checkpoint
     /// transaction is added to the fee pool, to help the network pay for
     /// its own miner fees.
-    #[orga(version(V3))]
+    #[orga(version(V3, V4))]
     pub user_fee_factor: u64,
 
     /// The threshold of signatures required to spend reserve scripts, as a
     /// ratio represented by a tuple, `(numerator, denominator)`.
     ///
     /// For example, `(9, 10)` means the threshold is 90% of the signatory set.
-    #[orga(version(V1, V2, V3))]
+    #[orga(version(V1, V2, V3, V4))]
     pub sigset_threshold: (u64, u64),
 
     /// The minimum amount of nBTC an account must hold to be eligible for an
     /// output in the emergency disbursal.
-    #[orga(version(V1, V2, V3))]
+    #[orga(version(V1, V2, V3, V4))]
     pub emergency_disbursal_min_tx_amt: u64,
 
     /// The amount of time between the creation of a checkpoint and when the
     /// associated emergency disbursal transactions can be spent, in seconds.
-    #[orga(version(V1, V2, V3))]
+    #[orga(version(V1, V2, V3, V4))]
     pub emergency_disbursal_lock_time_interval: u32,
 
     /// The maximum size of a final emergency disbursal transaction, in virtual
@@ -991,7 +991,7 @@ pub struct Config {
     ///
     /// The outputs to be included in final emergency disbursal transactions
     /// will be distributed across multiple transactions around this size.
-    #[orga(version(V1, V2, V3))]
+    #[orga(version(V1, V2, V3, V4))]
     pub emergency_disbursal_max_tx_size: u64,
 
     /// The maximum number of unconfirmed checkpoints before the network will
@@ -1007,8 +1007,11 @@ pub struct Config {
     /// This will also stop the fee rate from being adjusted too high if the
     /// issue is simply with relayers failing to report the confirmation of the
     /// checkpoint transactions.
-    #[orga(version(V2, V3))]
+    #[orga(version(V2, V3, V4))]
     pub max_unconfirmed_checkpoints: u32,
+
+    #[orga(version(V4))]
+    pub min_completed_checkpoints: u32,
 }
 
 impl MigrateFrom<ConfigV0> for ConfigV1 {
@@ -1019,14 +1022,14 @@ impl MigrateFrom<ConfigV0> for ConfigV1 {
             max_inputs: value.max_inputs,
             max_outputs: value.max_outputs,
             max_age: value.max_age,
-            target_checkpoint_inclusion: ConfigV3::default().target_checkpoint_inclusion,
-            min_fee_rate: ConfigV3::default().min_fee_rate,
-            max_fee_rate: ConfigV3::default().max_fee_rate,
-            sigset_threshold: ConfigV3::default().sigset_threshold,
-            emergency_disbursal_min_tx_amt: ConfigV3::default().emergency_disbursal_min_tx_amt,
-            emergency_disbursal_lock_time_interval: ConfigV3::default()
+            target_checkpoint_inclusion: ConfigV4::default().target_checkpoint_inclusion,
+            min_fee_rate: ConfigV4::default().min_fee_rate,
+            max_fee_rate: ConfigV4::default().max_fee_rate,
+            sigset_threshold: ConfigV4::default().sigset_threshold,
+            emergency_disbursal_min_tx_amt: ConfigV4::default().emergency_disbursal_min_tx_amt,
+            emergency_disbursal_lock_time_interval: ConfigV4::default()
                 .emergency_disbursal_lock_time_interval,
-            emergency_disbursal_max_tx_size: ConfigV3::default().emergency_disbursal_max_tx_size,
+            emergency_disbursal_max_tx_size: ConfigV4::default().emergency_disbursal_max_tx_size,
         })
     }
 }
@@ -1046,7 +1049,7 @@ impl MigrateFrom<ConfigV1> for ConfigV2 {
             emergency_disbursal_min_tx_amt: value.emergency_disbursal_min_tx_amt,
             emergency_disbursal_lock_time_interval: value.emergency_disbursal_lock_time_interval,
             emergency_disbursal_max_tx_size: value.emergency_disbursal_max_tx_size,
-            max_unconfirmed_checkpoints: ConfigV3::default().max_unconfirmed_checkpoints,
+            max_unconfirmed_checkpoints: ConfigV4::default().max_unconfirmed_checkpoints,
         })
     }
 }
@@ -1066,7 +1069,30 @@ impl MigrateFrom<ConfigV2> for ConfigV3 {
             emergency_disbursal_min_tx_amt: value.emergency_disbursal_min_tx_amt,
             emergency_disbursal_lock_time_interval: value.emergency_disbursal_lock_time_interval,
             emergency_disbursal_max_tx_size: value.emergency_disbursal_max_tx_size,
-            ..Default::default()
+            max_unconfirmed_checkpoints: value.max_unconfirmed_checkpoints,
+            user_fee_factor: ConfigV4::default().user_fee_factor,
+        })
+    }
+}
+
+impl MigrateFrom<ConfigV3> for ConfigV4 {
+    fn migrate_from(value: ConfigV3) -> OrgaResult<Self> {
+        Ok(Self {
+            min_checkpoint_interval: value.min_checkpoint_interval,
+            max_checkpoint_interval: value.max_checkpoint_interval,
+            max_inputs: value.max_inputs,
+            max_outputs: value.max_outputs,
+            max_age: value.max_age,
+            target_checkpoint_inclusion: value.target_checkpoint_inclusion,
+            min_fee_rate: value.min_fee_rate,
+            max_fee_rate: value.max_fee_rate,
+            sigset_threshold: value.sigset_threshold,
+            emergency_disbursal_min_tx_amt: value.emergency_disbursal_min_tx_amt,
+            emergency_disbursal_lock_time_interval: value.emergency_disbursal_lock_time_interval,
+            emergency_disbursal_max_tx_size: value.emergency_disbursal_max_tx_size,
+            max_unconfirmed_checkpoints: value.max_unconfirmed_checkpoints,
+            user_fee_factor: value.user_fee_factor,
+            min_completed_checkpoints: ConfigV4::default().min_completed_checkpoints,
         })
     }
 }
@@ -1102,6 +1128,7 @@ impl Config {
             emergency_disbursal_lock_time_interval: 60 * 60 * 24 * 7 * 2, // two weeks
             emergency_disbursal_max_tx_size: 50_000,
             max_unconfirmed_checkpoints: 15,
+            min_completed_checkpoints: 10,
         }
     }
 }
@@ -1931,13 +1958,46 @@ impl CheckpointQueue {
         Ok(BuildingCheckpointMut(last))
     }
 
+    pub fn building_mut_or_insert(
+        &mut self,
+        deposit: bool,
+        sig_keys: &Map<ConsensusKey, Xpub>,
+        deposits_enabled: bool,
+    ) -> Result<BuildingCheckpointMut> {
+        let num_deposit_full = self.building_deposits / self.config.max_inputs;
+        let num_withdrawal_full = self.building_withdrawals / self.config.max_outputs;
+
+        let num_building = self.num_building()?;
+
+        let num_action_full = if deposit {
+            num_deposit_full
+        } else {
+            num_withdrawal_full
+        };
+
+        let building = if num_building != 0 && num_action_full as u64 >= num_building as u64 {
+            self.maybe_push(sig_keys, deposits_enabled)?
+                .ok_or_else(|| Error::Checkpoint("Maybe push failed".to_string()))?
+        } else {
+            let first_available_building = self.index - num_action_full;
+            BuildingCheckpointMut(self.get_mut(first_available_building)?)
+        };
+
+        Ok(building)
+    }
+
     /// Prunes old checkpoints from the queue.
     pub fn prune(&mut self) -> Result<()> {
-        let latest = self.current_building()?.create_time();
+        if self.is_empty()? {
+            return Ok(());
+        }
+
+        let latest = self.next_building()?.create_time();
+        let mut num_completed =
+            self.len()? - self.num_building()? - self.signing()?.is_some() as u32;
 
         while let Some(oldest) = self.queue.front()? {
-            // TODO: move to min_checkpoints field in config
-            if self.queue.len() <= 10 {
+            if num_completed <= self.config.min_completed_checkpoints {
                 break;
             }
 
@@ -1946,6 +2006,7 @@ impl CheckpointQueue {
             }
 
             self.queue.pop_front()?;
+            num_completed -= 1;
         }
 
         Ok(())
