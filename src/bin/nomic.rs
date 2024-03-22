@@ -1314,9 +1314,9 @@ async fn deposit(
     relayers: Vec<String>,
 ) -> Result<()> {
     if relayers.is_empty() {
-        return Err(nomic::error::Error::Orga(orga::Error::App(format!(
-            "No relayers configured, please specify at least one with --btc-relayer"
-        ))));
+        return Err(nomic::error::Error::Orga(orga::Error::App(
+            "No relayers configured, please specify at least one with --btc-relayer".to_string(),
+        )));
     }
 
     let (sigset, threshold) = client
@@ -1351,9 +1351,9 @@ async fn deposit(
     }
 
     if successes < required_successes {
-        return Err(nomic::error::Error::Orga(orga::Error::App(format!(
-            "Failed to broadcast deposit address to relayers"
-        ))));
+        return Err(nomic::error::Error::Orga(orga::Error::App(
+            "Failed to broadcast deposit address to relayers".to_string(),
+        )));
     }
 
     println!("Deposit address: {}", btc_addr);
@@ -1703,7 +1703,7 @@ impl UpgradeStatusCmd {
         let mut entries = validator_names.iter().collect::<Vec<_>>();
         entries.sort_by(|(_, (_, a)), (_, (_, b))| b.cmp(a));
 
-        println!("");
+        println!();
         println!("Upgraded:");
         for (addr, (name, power)) in entries.iter() {
             let cons_key = consensus_keys.get(addr).unwrap();
@@ -1715,7 +1715,7 @@ impl UpgradeStatusCmd {
                 );
             }
         }
-        println!("");
+        println!();
         println!("Not upgraded:");
         for (addr, (name, power)) in entries.iter() {
             let cons_key = consensus_keys.get(addr).unwrap();
@@ -1727,7 +1727,7 @@ impl UpgradeStatusCmd {
                 );
             }
         }
-        println!("");
+        println!();
 
         println!(
             "Upgrade has been signaled by {:.2}% of voting power",
@@ -1849,8 +1849,8 @@ impl SigningStatusCmd {
             .inner
             .inner;
         let Some(signing) = app.bitcoin.checkpoints.signing()? else {
-           println!("No signing checkpoint");
-           return Ok(())
+            println!("No signing checkpoint");
+            return Ok(());
         };
         let batch = signing.current_batch()?.unwrap();
         let mut lowest_index = 0;
