@@ -24,3 +24,5 @@ serde_json = "1.0.78"
 lazy_static = "1.4.0"
 tokio = "1.19.2"
 chrono = { version = "0.4.31", features = ["serde"] }
+sha2 = "0.10.6"
+bech32 = { version = "0.9.1" }
