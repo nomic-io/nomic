@@ -1005,7 +1005,12 @@ fn parse_block(res: tendermint_rpc::endpoint::block::Response) -> Value {
 
             json!({
                 "validator_address": base64::encode(signature_raw.validator_address),
-                "block_id_flag": signature_raw.block_id_flag,
+                "block_id_flag": match signature_raw.block_id_flag {
+                    1 => "BLOCK_ID_FLAG_ABSENT",
+                    2 => "BLOCK_ID_FLAG_COMMIT",
+                    3 => "BLOCK_ID_FLAG_NIL",
+                    i32::MIN..=0_i32 | 4_i32..=i32::MAX => "BLOCK_ID_FLAG_UNKNOWN"
+                },
                 "timestamp": signature_raw.timestamp,
                 "signature": base64::encode(signature_raw.signature),
             })
