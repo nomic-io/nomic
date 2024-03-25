@@ -501,20 +501,12 @@ mod abci {
                 self.credit_transfer(dest, coins)?;
             }
 
-            // let external_outputs = if self.bitcoin.should_push_checkpoint()? {
-            //     self.cosmos
-            //         .build_outputs(&self.ibc, self.bitcoin.checkpoints.index)?
-            // } else {
-            //     vec![]
-            // };
-
-            // let offline_signers = self
-            //     .bitcoin
-            //     .begin_block_step(external_outputs.into_iter().map(Ok), ctx.hash.clone())?;
-
+            let external_outputs = self
+                .cosmos
+                .build_outputs(&self.ibc, self.bitcoin.checkpoints.index)?;
             let offline_signers = self
                 .bitcoin
-                .begin_block_step(vec![].into_iter().map(Ok), ctx.hash.clone())?;
+                .begin_block_step(external_outputs.into_iter().map(Ok), ctx.hash.clone())?;
             for cons_key in offline_signers {
                 let address = self.staking.address_by_consensus_key(cons_key)?.unwrap();
                 self.staking.punish_downtime(address)?;

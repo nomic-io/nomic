@@ -536,16 +536,6 @@ impl Bitcoin {
         Ok(())
     }
 
-    /// Returns `true` if the next call to `self.checkpoints.maybe_step()` will
-    /// push a new checkpoint (along with advancing the current `Building`
-    /// checkpoint to `Signing`). Returns `false` otherwise.
-    // #[cfg(feature = "full")]
-    // pub fn should_push_checkpoint(&mut self) -> Result<bool> {
-    //     self.checkpoints
-    //         .should_push(self.signatory_keys.map(), &[0; 32], self.headers.height()?)
-    //     // TODO: we shouldn't need this slice, commitment should be fixed-length
-    // }
-
     /// Verifies and processes a deposit of BTC into the reserve.
     ///
     /// This will check that the Bitcoin transaction has been sufficiently
