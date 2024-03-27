@@ -59,6 +59,8 @@ pub enum Error {
     #[error("{0}")]
     Signer(String),
     #[error(transparent)]
+    TaprootBuilder(#[from] bitcoin::util::taproot::TaprootBuilderError),
+    #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error("Warp Rejection")]
     WarpRejection(),

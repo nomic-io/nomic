@@ -36,6 +36,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 
 pub mod adapter;
+pub mod babylon;
 pub mod checkpoint;
 #[cfg(feature = "full")]
 pub mod deposit_index;
