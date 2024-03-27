@@ -1110,8 +1110,7 @@ impl Default for Config {
     fn default() -> Self {
         match super::NETWORK {
             bitcoin::Network::Regtest => Config::regtest(),
-            bitcoin::Network::Testnet | bitcoin::Network::Bitcoin => Config::bitcoin(),
-            _ => unimplemented!(),
+            _ => Config::bitcoin(),
         }
     }
 }

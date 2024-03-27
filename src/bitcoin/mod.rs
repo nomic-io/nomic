@@ -57,11 +57,18 @@ impl Symbol for Nbtc {
     const NAME: &'static str = "usat";
 }
 
-#[cfg(all(not(feature = "testnet"), not(feature = "devnet")))]
+// TODO: select via generics or at runtime
+#[cfg(all(
+    not(feature = "testnet"),
+    not(feature = "devnet"),
+    not(feature = "signet")
+))]
 pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Bitcoin;
-#[cfg(all(feature = "testnet", not(feature = "devnet")))]
+#[cfg(feature = "signet")]
+pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Signet;
+#[cfg(all(feature = "testnet", not(feature = "devnet"), not(feature = "signet")))]
 pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Testnet;
-#[cfg(all(feature = "devnet", feature = "testnet"))]
+#[cfg(all(feature = "devnet", feature = "testnet", not(feature = "signet")))]
 pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Regtest;
 
 // TODO: move to config
@@ -247,8 +254,7 @@ impl Default for Config {
     fn default() -> Self {
         match NETWORK {
             bitcoin::Network::Regtest => Config::regtest(),
-            bitcoin::Network::Testnet | bitcoin::Network::Bitcoin => Config::bitcoin(),
-            _ => unimplemented!(),
+            _ => Config::bitcoin(),
         }
     }
 }
@@ -475,10 +481,12 @@ impl Bitcoin {
                 ))
             })?;
 
-            let regtest_mode = self.network() == bitcoin::Network::Regtest
+            let alt_testnet = (self.network() == bitcoin::Network::Regtest
+                || self.network() == bitcoin::Network::Signet)
                 && _signatory_key.network == bitcoin::Network::Testnet;
 
-            if !regtest_mode && _signatory_key.network != self.network() {
+            // TODO: should still check network on testnet
+            if !alt_testnet && _signatory_key.network != self.network() {
                 return Err(Error::Orga(orga::Error::App(
                     "Signatory key network does not match network".to_string(),
                 )));
