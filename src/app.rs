@@ -908,7 +908,9 @@ impl ConvertSdkTx for InnerApp {
                             .as_object()
                             .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
 
-                        let dest_addr: Address = msg["dest_address"]
+                        let dest_addr: Address = msg
+                            .get("dest_address")
+                            .ok_or_else(|| Error::App("Missing destination address".to_string()))?
                             .as_str()
                             .ok_or_else(|| Error::App("Invalid destination address".to_string()))?
                             .parse()
@@ -941,7 +943,9 @@ impl ConvertSdkTx for InnerApp {
                             .as_object()
                             .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
 
-                        let recovery_addr: bitcoin::Address = msg["recovery_address"]
+                        let recovery_addr: bitcoin::Address = msg
+                            .get("reovery_address")
+                            .ok_or_else(|| Error::App("Missing reovery address".to_string()))?
                             .as_str()
                             .ok_or_else(|| Error::App("Invalid recovery address".to_string()))?
                             .parse()
@@ -963,7 +967,9 @@ impl ConvertSdkTx for InnerApp {
                             .as_object()
                             .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
 
-                        let amount: u64 = msg["amount"]
+                        let amount: u64 = msg
+                            .get("amount")
+                            .ok_or_else(|| Error::App("Missing amount".to_string()))?
                             .as_str()
                             .ok_or_else(|| Error::App("Invalid amount".to_string()))?
                             .parse()
