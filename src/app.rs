@@ -571,7 +571,11 @@ impl ConvertSdkTx for InnerApp {
 
                     match msg.amount[0].denom.to_string().as_str() {
                         "unom" => {
-                            let amount: u64 = msg.amount[0].amount.to_string().parse().unwrap();
+                            let amount: u64 = msg.amount[0]
+                                .amount
+                                .to_string()
+                                .parse()
+                                .map_err(|_| Error::App("Invalid amount".to_string()))?;
 
                             let payer = build_call!(self.accounts.take_as_funding(MIN_FEE.into()));
                             let paid = build_call!(self.accounts.transfer(to, amount.into()));
@@ -579,7 +583,11 @@ impl ConvertSdkTx for InnerApp {
                             return Ok(PaidCall { payer, paid });
                         }
                         "usat" => {
-                            let amount: u64 = msg.amount[0].amount.to_string().parse().unwrap();
+                            let amount: u64 = msg.amount[0]
+                                .amount
+                                .to_string()
+                                .parse()
+                                .map_err(|_| Error::App("Invalid amount".to_string()))?;
 
                             let payer = build_call!(self.bitcoin.transfer(to, amount.into()));
                             let paid = build_call!(self.app_noop());
@@ -858,7 +866,10 @@ impl ConvertSdkTx for InnerApp {
                             return Err(Error::App("Unsupported denom for IBC transfer".into()));
                         }
 
-                        let amount = msg.amount.into();
+                        let amount: u64 = msg
+                            .amount
+                            .parse()
+                            .map_err(|e: std::num::ParseIntError| Error::App(e.to_string()))?;
 
                         let ibc_sender_addr = msg
                             .sender
@@ -885,7 +896,7 @@ impl ConvertSdkTx for InnerApp {
                             memo: msg.memo.try_into()?,
                         };
 
-                        let payer = build_call!(self.ibc_transfer_nbtc(dest, amount));
+                        let payer = build_call!(self.ibc_transfer_nbtc(dest, amount.into()));
                         let paid = build_call!(self.app_noop());
 
                         Ok(PaidCall { payer, paid })
@@ -981,7 +992,7 @@ pub struct MsgWithdraw {
 pub struct MsgIbcTransfer {
     pub channel_id: String,
     pub port_id: String,
-    pub amount: u64,
+    pub amount: String,
     pub denom: String,
     pub receiver: String,
     pub sender: String,
