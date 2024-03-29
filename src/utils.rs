@@ -44,6 +44,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 #[cfg(feature = "full")]
 use std::path::Path;
 use std::path::PathBuf;
@@ -165,7 +166,8 @@ pub fn load_or_generate(path: PathBuf, network: bitcoin::Network) -> Result<Exte
     } else {
         let key = generate_bitcoin_key(network)?;
         fs::create_dir_all(path.parent().unwrap())?;
-        fs::write(path.clone(), key.to_string())?;
+        fs::write(&path, key.to_string())?;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
         info!("Generated bitcoin key at {}", path.display());
         warn!("This is your signer key. Back it up!");
         Ok(key)
