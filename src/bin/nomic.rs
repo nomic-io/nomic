@@ -1327,7 +1327,15 @@ async fn deposit(
             ))
         })
         .await?;
-    let script = sigset.output_script(dest.commitment_bytes()?.as_slice(), threshold)?;
+    let commitment_bytes = match dest.commitment_bytes()? {
+        Some(commitment_bytes) => commitment_bytes,
+        None => {
+            return Err(nomic::error::Error::Orga(orga::Error::App(
+                "Unable to create commitment bytes from fee Dest".to_string(),
+            )));
+        }
+    };
+    let script = sigset.output_script(&commitment_bytes, threshold)?;
     let btc_addr = bitcoin::Address::from_script(&script, nomic::bitcoin::NETWORK).unwrap();
 
     let mut successes = 0;
@@ -2061,7 +2069,7 @@ impl RecoverDepositCmd {
             dbg!(&dest);
 
             let mut i = 0;
-            let mut dest_bytes = dest.commitment_bytes().unwrap();
+            let mut dest_bytes = dest.commitment_bytes().unwrap().unwrap();
             loop {
                 for (sigset_index, sigset) in sigsets.iter() {
                     if i % 10_000 == 0 {
@@ -2095,7 +2103,7 @@ impl RecoverDepositCmd {
 
                 if let Dest::Ibc(ibc_dest) = &mut dest {
                     ibc_dest.timeout_timestamp -= 60 * 60 * 1_000_000_000;
-                    dest_bytes = dest.commitment_bytes().unwrap();
+                    dest_bytes = dest.commitment_bytes().unwrap().unwrap();
                 } else {
                     unreachable!()
                 }
@@ -2103,7 +2111,7 @@ impl RecoverDepositCmd {
         }
 
         let dest = Dest::Address(self.nomic_addr);
-        let dest_bytes = dest.commitment_bytes().unwrap();
+        let dest_bytes = dest.commitment_bytes().unwrap().unwrap();
 
         for (sigset_index, sigset) in sigsets.iter() {
             let script = sigset.output_script(&dest_bytes, threshold).unwrap();

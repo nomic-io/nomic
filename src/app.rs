@@ -278,6 +278,7 @@ impl InnerApp {
         match dest {
             Dest::Address(addr) => self.bitcoin.accounts.deposit(addr, nbtc),
             Dest::Ibc(dest) => dest.transfer(nbtc, &mut self.bitcoin, &mut self.ibc),
+            Dest::Fee => Ok(self.bitcoin.give_rewards(nbtc)?),
         }
     }
 
@@ -1011,13 +1012,15 @@ pub struct MsgIbcTransfer {
 pub enum Dest {
     Address(Address),
     Ibc(IbcDest),
+    Fee,
 }
 
 impl Dest {
-    pub fn to_receiver_addr(&self) -> String {
+    pub fn to_receiver_addr(&self) -> Option<String> {
         match self {
-            Dest::Address(addr) => addr.to_string(),
-            Dest::Ibc(dest) => dest.receiver.0.to_string(),
+            Dest::Address(addr) => Some(addr.to_string()),
+            Dest::Ibc(dest) => Some(dest.receiver.0.to_string()),
+            Dest::Fee => None,
         }
     }
 }
@@ -1103,12 +1106,13 @@ impl IbcDest {
 }
 
 impl Dest {
-    pub fn commitment_bytes(&self) -> Result<Vec<u8>> {
+    pub fn commitment_bytes(&self) -> Result<Option<Vec<u8>>> {
         use sha2::{Digest, Sha256};
         use Dest::*;
         let bytes = match self {
-            Address(addr) => addr.bytes().into(),
-            Ibc(dest) => Sha256::digest(dest.encode()?).to_vec(),
+            Address(addr) => Some(addr.bytes().into()),
+            Ibc(dest) => Some(Sha256::digest(dest.encode()?).to_vec()),
+            Fee => None,
         };
 
         Ok(bytes)

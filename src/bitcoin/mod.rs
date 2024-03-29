@@ -592,7 +592,14 @@ impl Bitcoin {
         let checkpoint = self.checkpoints.get(sigset_index)?;
         let sigset = checkpoint.sigset.clone();
 
-        let dest_bytes = dest.commitment_bytes()?;
+        let dest_bytes = match dest.commitment_bytes()? {
+            Some(bytes) => bytes,
+            None => {
+                return Err(OrgaError::App(
+                    "Unable to create commitment bytes for fee Dest".to_string(),
+                ))?
+            }
+        };
         let expected_script =
             sigset.output_script(&dest_bytes, self.checkpoints.config.sigset_threshold)?;
         if output.script_pubkey != expected_script {
@@ -662,7 +669,9 @@ impl Bitcoin {
         // TODO: keep in excess queue if full
 
         let deposit_fee = nbtc.take(calc_deposit_fee(nbtc.amount.into()))?;
-        self.give_rewards(deposit_fee)?;
+        self.checkpoints
+            .building_mut()?
+            .insert_pending(Dest::Fee, deposit_fee)?;
 
         self.checkpoints
             .building_mut()?
