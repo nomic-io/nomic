@@ -1428,6 +1428,13 @@ pub struct WithdrawCmd {
 impl WithdrawCmd {
     async fn run(&self) -> Result<()> {
         let script = self.dest.script_pubkey();
+        if self.dest.network != nomic::bitcoin::NETWORK {
+            return Err(nomic::error::Error::Address(format!(
+                "Invalid network for destination address. Got {}, Expected {}",
+                self.dest.network,
+                nomic::bitcoin::NETWORK
+            )));
+        }
 
         self.config
             .client()
@@ -1802,6 +1809,13 @@ pub struct SetRecoveryAddressCmd {
 impl SetRecoveryAddressCmd {
     async fn run(&self) -> Result<()> {
         let script = self.address.script_pubkey();
+        if self.address.network != nomic::bitcoin::NETWORK {
+            return Err(nomic::error::Error::Address(format!(
+                "Invalid network for recovery address. Got {}, Expected {}",
+                self.address.network,
+                nomic::bitcoin::NETWORK
+            )));
+        }
         Ok(self
             .config
             .client()
