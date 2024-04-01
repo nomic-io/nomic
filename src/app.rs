@@ -944,7 +944,7 @@ impl ConvertSdkTx for InnerApp {
                             .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
 
                         let recovery_addr: bitcoin::Address = msg
-                            .get("reovery_address")
+                            .get("recovery_address")
                             .ok_or_else(|| Error::App("Missing reovery address".to_string()))?
                             .as_str()
                             .ok_or_else(|| Error::App("Invalid recovery address".to_string()))?
