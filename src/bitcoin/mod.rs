@@ -591,15 +591,7 @@ impl Bitcoin {
 
         let checkpoint = self.checkpoints.get(sigset_index)?;
         let sigset = checkpoint.sigset.clone();
-
-        let dest_bytes = match dest.commitment_bytes()? {
-            Some(bytes) => bytes,
-            None => {
-                return Err(OrgaError::App(
-                    "Unable to create commitment bytes for fee Dest".to_string(),
-                ))?
-            }
-        };
+        let dest_bytes = dest.commitment_bytes()?;
         let expected_script =
             sigset.output_script(&dest_bytes, self.checkpoints.config.sigset_threshold)?;
         if output.script_pubkey != expected_script {

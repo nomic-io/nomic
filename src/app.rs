@@ -1106,13 +1106,13 @@ impl IbcDest {
 }
 
 impl Dest {
-    pub fn commitment_bytes(&self) -> Result<Option<Vec<u8>>> {
+    pub fn commitment_bytes(&self) -> Result<Vec<u8>> {
         use sha2::{Digest, Sha256};
         use Dest::*;
         let bytes = match self {
-            Address(addr) => Some(addr.bytes().into()),
-            Ibc(dest) => Some(Sha256::digest(dest.encode()?).to_vec()),
-            Fee => None,
+            Address(addr) => addr.bytes().into(),
+            Ibc(dest) => Sha256::digest(dest.encode()?).to_vec(),
+            Fee => vec![1],
         };
 
         Ok(bytes)

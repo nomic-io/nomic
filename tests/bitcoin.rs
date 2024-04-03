@@ -69,10 +69,7 @@ async fn generate_deposit_address(address: &Address) -> Result<DepositAddress> {
         })
         .await?;
     let script = sigset.output_script(
-        Dest::Address(*address)
-            .commitment_bytes()?
-            .unwrap()
-            .as_slice(),
+        Dest::Address(*address).commitment_bytes()?.as_slice(),
         threshold,
     )?;
 

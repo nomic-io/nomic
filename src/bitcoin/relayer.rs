@@ -204,10 +204,7 @@ impl Relayer {
                         let expected_addr = ::bitcoin::Address::from_script(
                             &sigset
                                 .output_script(
-                                    dest.commitment_bytes()
-                                        .map_err(|_| reject())?
-                                        .ok_or(reject())?
-                                        .as_slice(),
+                                    dest.commitment_bytes().map_err(|_| reject())?.as_slice(),
                                     SIGSET_THRESHOLD,
                                 )
                                 .map_err(warp::reject::custom)?,
@@ -1201,16 +1198,7 @@ impl WatchedScripts {
         sigset: &SignatorySet,
         threshold: (u64, u64),
     ) -> Result<::bitcoin::Script> {
-        let commitment_bytes = match dest.commitment_bytes()? {
-            Some(bytes) => bytes,
-            None => {
-                return Err(Error::Relayer(
-                    "Could not derive script for fee Dest".to_string(),
-                ))
-            }
-        };
-
-        sigset.output_script(&commitment_bytes, threshold)
+        sigset.output_script(&dest.commitment_bytes()?, threshold)
     }
 }
 

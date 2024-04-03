@@ -54,14 +54,7 @@ impl RecoveryTxs {
             .output
             .get(args.vout as usize)
             .ok_or_else(|| Error::Signer("Invalid recovery tx vout".to_string()))?;
-        let commitment_bytes = match args.dest.commitment_bytes()? {
-            Some(bytes) => bytes,
-            None => {
-                return Err(Error::Signer(
-                    "Unable to create commitment bytes for fee Dest".to_string(),
-                ))
-            }
-        };
+        let commitment_bytes = args.dest.commitment_bytes()?;
 
         let input = Input::new(
             OutPoint::new(args.expired_tx.txid(), args.vout),
