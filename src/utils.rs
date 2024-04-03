@@ -129,10 +129,11 @@ pub fn make_std_tx(
 pub fn generate_bitcoin_key(network: bitcoin::Network) -> Result<ExtendedPrivKey> {
     let seed: [u8; 32] = rand::thread_rng().gen();
 
-    let network = if network == bitcoin::Network::Regtest {
-        bitcoin::Network::Testnet
-    } else {
-        network
+    let network = match network {
+        bitcoin::Network::Bitcoin => bitcoin::Network::Bitcoin,
+        bitcoin::Network::Testnet | bitcoin::Network::Signet | bitcoin::Network::Regtest => {
+            bitcoin::Network::Testnet
+        }
     };
 
     Ok(ExtendedPrivKey::new_master(network, seed.as_slice())?)
@@ -198,6 +199,18 @@ pub fn load_consensus_key(dir: &Path) -> Result<[u8; 32]> {
         .map_err(|_| orga::Error::App("invalid consensus key".to_string()))?
         .try_into()
         .map_err(|_| orga::Error::App("invalid consensus key".to_string()))?)
+}
+
+pub fn matches_bitcoin_network(network: &bitcoin::Network) -> bool {
+    match crate::bitcoin::NETWORK {
+        bitcoin::Network::Bitcoin => network == &crate::bitcoin::NETWORK,
+        bitcoin::Network::Regtest => {
+            network == &bitcoin::Network::Regtest || network == &bitcoin::Network::Testnet
+        }
+        bitcoin::Network::Testnet | bitcoin::Network::Signet => {
+            network == &bitcoin::Network::Testnet || network == &bitcoin::Network::Signet
+        }
+    }
 }
 
 pub fn set_time<T: Into<Time>>(time: T) {

@@ -4,6 +4,7 @@ use self::threshold_sig::Signature;
 use crate::app::Dest;
 use crate::bitcoin::checkpoint::BatchType;
 use crate::error::{Error, Result};
+use crate::utils::matches_bitcoin_network;
 use adapter::Adapter;
 use bitcoin::hashes::Hash;
 use bitcoin::util::bip32::ChildNumber;
@@ -475,10 +476,7 @@ impl Bitcoin {
                 ))
             })?;
 
-            let regtest_mode = self.network() == bitcoin::Network::Regtest
-                && _signatory_key.network == bitcoin::Network::Testnet;
-
-            if !regtest_mode && _signatory_key.network != self.network() {
+            if !matches_bitcoin_network(&_signatory_key.network) {
                 return Err(Error::Orga(orga::Error::App(
                     "Signatory key network does not match network".to_string(),
                 )));

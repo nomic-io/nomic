@@ -19,8 +19,7 @@ use nomic::bitcoin::signatory::SignatorySet;
 use nomic::bitcoin::Nbtc;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
-use nomic::utils::load_bitcoin_key;
-use nomic::utils::load_or_generate;
+use nomic::utils::{load_bitcoin_key, load_or_generate, matches_bitcoin_network};
 use orga::abci::Node;
 use orga::client::wallet::{SimpleWallet, Wallet};
 use orga::coins::{Address, Commission, Decimal, Declaration, Symbol};
@@ -1428,7 +1427,7 @@ pub struct WithdrawCmd {
 impl WithdrawCmd {
     async fn run(&self) -> Result<()> {
         let script = self.dest.script_pubkey();
-        if self.dest.network != nomic::bitcoin::NETWORK {
+        if !matches_bitcoin_network(&self.dest.network) {
             return Err(nomic::error::Error::Address(format!(
                 "Invalid network for destination address. Got {}, Expected {}",
                 self.dest.network,
@@ -1809,13 +1808,14 @@ pub struct SetRecoveryAddressCmd {
 impl SetRecoveryAddressCmd {
     async fn run(&self) -> Result<()> {
         let script = self.address.script_pubkey();
-        if self.address.network != nomic::bitcoin::NETWORK {
+        if !matches_bitcoin_network(&self.address.network) {
             return Err(nomic::error::Error::Address(format!(
                 "Invalid network for recovery address. Got {}, Expected {}",
                 self.address.network,
                 nomic::bitcoin::NETWORK
             )));
         }
+
         Ok(self
             .config
             .client()
