@@ -1391,6 +1391,7 @@ mod tests {
                 .unwrap();
             let mut checkpoint_tx = building_checkpoint_batch.get_mut(0).unwrap().unwrap();
             checkpoint_tx.input.push_back(input).unwrap();
+            btc.checkpoints.building_deposits += 1;
         };
 
         let push_withdrawal = || {
@@ -1401,6 +1402,7 @@ mod tests {
 
             let mut building_mut = btc.checkpoints.building_mut().unwrap();
             building_mut.fees_collected = 100_000_000;
+            btc.checkpoints.building_withdrawals += 1;
         };
 
         let sign_batch = |btc_height| {
