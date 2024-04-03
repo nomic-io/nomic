@@ -16,6 +16,7 @@ pub use thiserror;
 
 pub mod airdrop;
 pub mod app;
+pub mod babylon;
 pub mod bitcoin;
 pub mod cosmos;
 pub mod error;
