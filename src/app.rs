@@ -4,6 +4,7 @@
 #![allow(unused_imports)]
 
 use crate::airdrop::Airdrop;
+use crate::babylon::Babylon;
 use crate::bitcoin::adapter::Adapter;
 use crate::bitcoin::{Bitcoin, Nbtc};
 use crate::cosmos::{Chain, Cosmos, Proof};
@@ -68,7 +69,7 @@ const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhq
 const IBC_FEE_USATS: u64 = 1_000_000;
 const CALL_FEE_USATS: u64 = 100_000_000;
 
-#[orga(version = 5)]
+#[orga(version = 6)]
 pub struct InnerApp {
     #[call]
     pub accounts: Accounts<Nom>,
@@ -93,7 +94,7 @@ pub struct InnerApp {
     #[call]
     pub ibc: Ibc,
     #[cfg(not(feature = "testnet"))]
-    #[orga(version(V4, V5))]
+    #[orga(version(V4, V5, V6))]
     #[call]
     pub ibc: Ibc,
 
@@ -105,8 +106,13 @@ pub struct InnerApp {
     #[cfg(feature = "testnet")]
     pub cosmos: Cosmos,
     #[cfg(not(feature = "testnet"))]
-    #[orga(version(V4, V5))]
+    #[orga(version(V4, V5, V6))]
     pub cosmos: Cosmos,
+
+    #[cfg(feature = "testnet")]
+    #[orga(version(V6))]
+    #[call]
+    pub babylon: Babylon,
 }
 
 #[orga]
