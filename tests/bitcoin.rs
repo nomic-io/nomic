@@ -458,14 +458,6 @@ async fn bitcoin_test() {
         let balance = poll_for_updated_balance(funded_accounts[1].address, expected_balance).await;
         assert_eq!(balance, Amount::from(expected_balance));
 
-        withdraw_bitcoin(
-            &funded_accounts[0],
-            bitcoin::Amount::from_sat(7000),
-            &withdraw_address,
-        )
-        .await
-        .unwrap();
-
         app_client()
             .with_wallet(funded_accounts[0].wallet.clone())
             .call(
@@ -473,6 +465,14 @@ async fn bitcoin_test() {
                 move |app| build_call!(app.bitcoin.transfer_to_fee_pool(8000000000.into())),
             )
             .await?;
+
+        withdraw_bitcoin(
+            &funded_accounts[0],
+            bitcoin::Amount::from_sat(7000),
+            &withdraw_address,
+        )
+        .await
+        .unwrap();
 
         btc_client
             .generate_to_address(4, &async_wallet_address)
