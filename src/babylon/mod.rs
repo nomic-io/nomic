@@ -2,13 +2,18 @@ use bitcoin::{
     hashes::Hash,
     secp256k1::{ecdsa, schnorr, PublicKey, Secp256k1},
     util::{sighash::SighashCache, taproot::TaprootBuilder},
-    Address, LockTime, OutPoint, Script, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
-    XOnlyPublicKey,
+    LockTime, OutPoint, Script, Sequence, Transaction, TxIn, TxOut, Txid, Witness, XOnlyPublicKey,
 };
 use bitcoin_script::bitcoin_script as script;
 use cosmos_sdk_proto::traits::TypeUrl;
+use ed::{Decode, Encode};
 use orga::{
-    coins::Coin, collections::Deque, encoding::LengthVec, macros::Migrate, orga, state::State,
+    coins::{Accounts, Address, Coin, Symbol},
+    collections::{Deque, Map},
+    encoding::LengthVec,
+    macros::Migrate,
+    orga,
+    state::State,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -25,12 +30,20 @@ use self::proto::MsgCreateBtcDelegation;
 
 pub mod proto;
 
-const UNSPENDABLE_KEY: &str = "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
+/// The symbol for stBTC, a BTC liquid staking token.
+#[derive(State, Debug, Clone, Encode, Decode, Default, Migrate, Serialize)]
+pub struct Stbtc(());
+impl Symbol for Stbtc {
+    const INDEX: u8 = 22;
+    const NAME: &'static str = "stusat";
+}
 
 #[orga]
 pub struct Babylon {
-    // delegations: Deque<Delegation>,
-    pub(crate) coins: Coin<Nbtc>,
+    pub(crate) delegations: Deque<Delegation>,
+    pub(crate) pending_stake: Deque<(Address, Coin<Nbtc>)>,
+    pub(crate) stake: Accounts<Stbtc>,
+    pub(crate) pending_unstake: Deque<(Address, Coin<Stbtc>)>,
 }
 
 pub fn multisig_script(pks: &[XOnlyPublicKey], threshold: u32, verify: bool) -> Result<Script> {
@@ -120,7 +133,7 @@ pub fn aggregate_scripts(scripts: &[Script]) -> Script {
 pub struct Params {
     pub covenant_keys: Vec<XOnlyPublicKey>,
     pub covenant_quorum: u32,
-    pub slashing_addr: Address,
+    pub slashing_addr: bitcoin::Address,
     pub slashing_min_fee: u64,
 }
 
@@ -165,6 +178,8 @@ pub fn slashing_script(
         multisig_script(&params.covenant_keys, params.covenant_quorum, false)?,
     ]))
 }
+
+const UNSPENDABLE_KEY: &str = "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
 
 pub fn staking_script(
     staker_key: XOnlyPublicKey,
@@ -260,27 +275,69 @@ pub fn unbonding_tx(
     })
 }
 
-// #[orga]
+pub type XOnlyPubkey = [u8; 32];
+
+#[orga]
 pub struct Delegation {
-    pub btc_key: XOnlyPublicKey,
-    pub fp_keys: Vec<XOnlyPublicKey>,
+    pub btc_key: XOnlyPubkey,
+    pub fp_keys: LengthVec<u8, XOnlyPubkey>,
     pub staking_period: u16,
     pub unbonding_period: u16,
     pub stake: Coin<Nbtc>,
 
     // TODO: don't use basic pubkey, use Interchain Accounts
     pub bbn_key: Option<Pubkey>,
-    pub pop_btc_sig: Option<Signature>,
-    pub pop_bbn_sig: Option<Signature>,
+    pub(crate) pop_btc_sig: Option<Signature>,
+    pub(crate) pop_bbn_sig: Option<Signature>,
 
-    pub staking_outpoint: Option<OutPoint>,
+    pub staking_outpoint: Option<crate::bitcoin::adapter::Adapter<OutPoint>>,
 
-    pub slashing_tx_sig: Option<Signature>,
-    pub unbonding_slashing_tx_sig: Option<Signature>,
+    pub(crate) slashing_tx_sig: Option<Signature>,
+    pub(crate) unbonding_slashing_tx_sig: Option<Signature>,
 }
 
-// #[orga]
+fn bytes_to_pubkey(bytes: XOnlyPubkey) -> Result<XOnlyPublicKey> {
+    Ok(XOnlyPublicKey::from_slice(&bytes)?)
+}
+
+#[orga]
 impl Delegation {
+    pub fn new(
+        btc_key: XOnlyPublicKey,
+        fp_keys: Vec<XOnlyPublicKey>,
+        staking_period: u16,
+        unbonding_period: u16,
+        stake: Coin<Nbtc>,
+    ) -> Result<Self> {
+        Ok(Self {
+            btc_key: btc_key.serialize(),
+            fp_keys: fp_keys
+                .iter()
+                .map(|k| k.serialize())
+                .collect::<Vec<_>>()
+                .try_into()?,
+            staking_period,
+            unbonding_period,
+            stake,
+            bbn_key: None,
+            pop_btc_sig: None,
+            pop_bbn_sig: None,
+            staking_outpoint: None,
+            slashing_tx_sig: None,
+            unbonding_slashing_tx_sig: None,
+        })
+    }
+
+    // TODO: remove conversion methods once orga can transparently convert
+
+    fn btc_key(&self) -> Result<XOnlyPublicKey> {
+        bytes_to_pubkey(self.btc_key)
+    }
+
+    fn fp_keys(&self) -> Result<Vec<XOnlyPublicKey>> {
+        self.fp_keys.iter().cloned().map(bytes_to_pubkey).collect()
+    }
+
     // #[call]
     pub fn sign_pop(
         &mut self,
@@ -299,7 +356,7 @@ impl Delegation {
         }
 
         // let btc_key = XOnlyPublicKey::from_slice(&self.btc_key)?;
-        verify_pop(self.btc_key, bbn_key, btc_sig, bbn_sig)?;
+        verify_pop(self.btc_key()?, bbn_key, btc_sig, bbn_sig)?;
         self.bbn_key = Some(bbn_key);
         self.pop_btc_sig = Some(btc_sig);
         self.pop_bbn_sig = Some(bbn_sig);
@@ -320,8 +377,8 @@ impl Delegation {
 
     pub fn staking_script(&self) -> Result<Script> {
         Ok(staking_script(
-            self.btc_key,
-            &self.fp_keys,
+            self.btc_key()?,
+            &self.fp_keys()?,
             self.staking_period,
             &Params::bbn_test_3(),
         )?)
@@ -329,9 +386,9 @@ impl Delegation {
 
     pub fn unbonding_tx(&self) -> Result<Transaction> {
         Ok(unbonding_tx(
-            self.btc_key,
-            &self.fp_keys,
-            self.staking_outpoint.ok_or_else(|| {
+            self.btc_key()?,
+            &self.fp_keys()?,
+            *self.staking_outpoint.ok_or_else(|| {
                 Error::Orga(orga::Error::App("Missing staking outpoint".to_string()))
             })?,
             self.stake.amount.into(),
@@ -342,8 +399,8 @@ impl Delegation {
 
     pub fn slashing_tx(&self) -> Result<Transaction> {
         Ok(slashing_tx(
-            self.btc_key,
-            self.staking_outpoint.ok_or_else(|| {
+            self.btc_key()?,
+            *self.staking_outpoint.ok_or_else(|| {
                 Error::Orga(orga::Error::App("Missing staking outpoint".to_string()))
             })?,
             self.stake.amount.into(),
@@ -354,7 +411,7 @@ impl Delegation {
 
     pub fn unbonding_slashing_tx(&self) -> Result<Transaction> {
         Ok(slashing_tx(
-            self.btc_key,
+            self.btc_key()?,
             OutPoint {
                 txid: self.unbonding_tx()?.txid(),
                 vout: 0,
@@ -374,13 +431,14 @@ pub fn verify_pop(
 ) -> Result<()> {
     let secp = Secp256k1::verification_only();
 
+    // TODO: babylon signs message as hex encoded string
+
     let bbn_key = PublicKey::from_slice(&bbn_key.as_slice())?;
     let bbn_msg = bitcoin::secp256k1::Message::from_slice(&btc_key.serialize())?;
     let bbn_sig = ecdsa::Signature::from_compact(bbn_sig.as_slice())?;
     #[cfg(not(fuzzing))]
     dbg!(secp.verify_ecdsa(&bbn_msg, &bbn_sig, &bbn_key)?);
 
-    use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(&bbn_sig.serialize_compact());
     let hash = hasher.finalize().to_vec();
@@ -519,7 +577,7 @@ mod tests {
             &Params::bbn_test_3(),
         )
         .unwrap();
-        let staking_addr = Address::from_script(&staking_script, Network::Signet).unwrap();
+        let staking_addr = bitcoin::Address::from_script(&staking_script, Network::Signet).unwrap();
         assert_eq!(staking_addr.to_string(), expected_staking_addr);
     }
 
