@@ -314,7 +314,7 @@ impl Config {
             retarget_interval: RETARGET_INTERVAL,
             target_spacing: TARGET_SPACING,
             target_timespan: TARGET_TIMESPAN,
-            max_target: MAX_TARGET,
+            max_target: 0x1e0377ae,
             trusted_height: height,
             encoded_trusted_header: header_bytes.try_into().unwrap(),
             retargeting: true,
