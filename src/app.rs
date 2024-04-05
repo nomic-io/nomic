@@ -383,6 +383,13 @@ impl InnerApp {
         Ok(())
     }
 
+    #[call]
+    pub fn unstake_nbtc(&mut self, amount: Amount) -> Result<()> {
+        let signer = self.signer()?;
+        self.babylon.unstake(signer, amount)?;
+        Ok(())
+    }
+
     // TODO: move into babylon module, get HeaderQueue via context
     #[call]
     pub fn relay_btc_staking_tx(

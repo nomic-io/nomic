@@ -13,11 +13,13 @@ use bitcoin_script::bitcoin_script as script;
 use cosmos_sdk_proto::traits::TypeUrl;
 use ed::{Decode, Encode};
 use orga::{
-    coins::{Accounts, Address, Amount, Coin, Give, Symbol, Transfer},
+    coins::{Accounts, Address, Amount, Coin, Give, Symbol, Take, Transfer},
     collections::{Deque, Map},
+    context::Context,
     encoding::LengthVec,
     macros::Migrate,
     orga,
+    plugins::Signer,
     state::State,
 };
 use serde::{Deserialize, Serialize};
@@ -51,13 +53,16 @@ impl Symbol for Stbtc {
 #[orga]
 pub struct Babylon {
     pub delegations: Deque<Delegation>,
+
     pub(crate) pending_stake: Coin<Nbtc>,
-    pub(crate) pending_stake_accts: Map<Address, Amount>,
+    pub(crate) pending_stake_queue: Deque<(Address, Amount)>,
+    pub(crate) pending_stake_by_addr: Map<Address, Amount>,
     pub stake: Accounts<Stbtc>,
-    pub(crate) pending_unbonds: Amount,
-    pub(crate) pending_unbonds_queue: Deque<(Address, Coin<Stbtc>)>,
-    pub(crate) pending_unbonds_by_addr: Map<Address, Amount>,
-    pub(crate) unstaked: Accounts<Nbtc>,
+
+    pub(crate) pending_unstake: Coin<Stbtc>,
+    pub(crate) pending_unstake_queue: Deque<(Address, Amount)>,
+    pub(crate) pending_unstake_by_addr: Map<Address, Amount>,
+    pub unstaked: Accounts<Nbtc>,
     // TODO: spendable outputs to renew
     // TODO: spendable outputs (w/ info for ~relay_deposit) to redeposit as nbtc, and dests
     // TODO: config
@@ -71,13 +76,6 @@ impl Babylon {
     }
 
     pub fn step(&mut self, btc: &crate::bitcoin::Bitcoin) -> Result<Vec<TxOut>> {
-        // let mut del = self.delegations.get_mut(0).unwrap().unwrap();
-        // del.bbn_key = None;
-        // del.pop_bbn_sig = None;
-        // del.pop_btc_sig = None;
-        // del.slashing_tx_sig = None;
-        // del.unbonding_slashing_tx_sig = None;
-
         let mut pending_outputs = vec![];
 
         if self.pending_stake_sats() >= MIN_DELEGATION {
@@ -101,13 +99,17 @@ impl Babylon {
             // TODO: use draining iterator
             // TODO: pay stBTC after delegation is signed
             let mut addrs = vec![];
-            for entry in self.pending_stake_accts.iter()? {
-                let (addr, amount) = entry?;
+            for entry in self.pending_stake_by_addr.iter()? {
+                let (addr, _) = entry?;
                 addrs.push(*addr);
-                self.stake.deposit(*addr, Stbtc::mint(*amount))?;
             }
             for addr in addrs {
-                self.pending_stake_accts.remove(addr)?;
+                self.pending_stake_by_addr.remove(addr)?;
+            }
+
+            while let Some(entry) = self.pending_stake_queue.pop_front()? {
+                let (addr, amount) = entry.into_inner();
+                self.stake.deposit(addr, Stbtc::mint(amount))?;
             }
         }
 
@@ -117,20 +119,105 @@ impl Babylon {
         Ok(pending_outputs)
     }
 
-    pub fn stake(&mut self, addr: Address, coins: Coin<Nbtc>) -> Result<()> {
-        // TODO: swap w/ pending unbonds if any
-        let prev_amount = self.pending_stake_accts.get(addr)?.unwrap_or_default();
-        self.pending_stake_accts
-            .insert(addr, (*prev_amount + coins.amount).result()?)?;
-        self.pending_stake.give(coins)?;
+    pub fn stake(&mut self, addr: Address, mut coins: Coin<Nbtc>) -> Result<()> {
+        let swap_amount = coins.amount.min(self.pending_unstake.amount);
+        if swap_amount > 0 {
+            let st_coins = self.pay_off_unbond_queue(coins.take(swap_amount)?)?;
+            self.stake.deposit(addr, st_coins)?;
+        }
+
+        if coins.amount > 0 {
+            let prev_amount = self.pending_stake_by_addr.get(addr)?.unwrap_or_default();
+            self.pending_stake_by_addr
+                .insert(addr, (*prev_amount + coins.amount).result()?)?;
+            self.pending_stake_queue.push_back((addr, coins.amount))?;
+            self.pending_stake.give(coins)?;
+        }
+
         Ok(())
     }
 
+    fn pay_off_unbond_queue(&mut self, mut coins: Coin<Nbtc>) -> Result<Coin<Stbtc>> {
+        if coins.amount > self.pending_unstake.amount {
+            return Err(Error::Orga(orga::Error::App(
+                "Paying excess into unbond queue".into(),
+            )));
+        }
+
+        let st_coins = self.pending_unstake.take(coins.amount)?;
+
+        while coins.amount > 0 {
+            let (addr, amount) = self
+                .pending_unstake_queue
+                .pop_front()?
+                .ok_or_else(|| Error::Orga(orga::Error::App("No pending unbonds".into())))?
+                .into_inner();
+
+            let to_pay = amount.min(coins.amount);
+            self.unstaked.deposit(addr, coins.take(to_pay)?)?;
+            let prev_amount = self.pending_unstake_by_addr.get(addr)?.unwrap_or_default();
+            self.pending_unstake_by_addr
+                .insert(addr, (*prev_amount - to_pay).result()?)?;
+
+            let remaining = (amount - to_pay).result()?;
+            if remaining > 0 {
+                self.pending_unstake_queue.push_front((addr, remaining))?;
+            }
+        }
+
+        Ok(st_coins)
+    }
+
+    fn pay_off_stake_queue(&mut self, mut st_coins: Coin<Stbtc>) -> Result<Coin<Nbtc>> {
+        if st_coins.amount > self.pending_stake.amount {
+            return Err(Error::Orga(orga::Error::App(
+                "Paying excess into stake queue".into(),
+            )));
+        }
+
+        let coins = self.pending_stake.take(st_coins.amount)?;
+
+        while st_coins.amount > 0 {
+            let (addr, amount) = self
+                .pending_stake_queue
+                .pop_front()?
+                .ok_or_else(|| Error::Orga(orga::Error::App("No pending stake".into())))?
+                .into_inner();
+
+            let to_pay = amount.min(st_coins.amount);
+            self.stake.deposit(addr, st_coins.take(to_pay)?)?;
+            let prev_amount = self.pending_stake_by_addr.get(addr)?.unwrap_or_default();
+            self.pending_stake_by_addr
+                .insert(addr, (*prev_amount - to_pay).result()?)?;
+
+            let remaining = (amount - to_pay).result()?;
+            if remaining > 0 {
+                self.pending_stake_queue.push_front((addr, remaining))?;
+            }
+        }
+
+        Ok(coins)
+    }
+
     pub fn unstake(&mut self, addr: Address, amount: Amount) -> Result<()> {
-        // TODO: swap w/ pending stake if any
-        // TODO: verify signature
-        // TODO: withdraw stBTC, burn, add to pending_unbonds*
-        todo!()
+        let mut st_coins = self.stake.withdraw(addr, amount)?;
+
+        let swap_amount = amount.min(self.pending_stake.amount);
+        if swap_amount > 0 {
+            let coins = self.pay_off_stake_queue(st_coins.take(swap_amount)?)?;
+            self.unstaked.deposit(addr, coins)?;
+        }
+
+        if st_coins.amount > 0 {
+            let prev_amount = self.pending_unstake_by_addr.get(addr)?.unwrap_or_default();
+            self.pending_unstake_by_addr
+                .insert(addr, (*prev_amount + st_coins.amount).result()?)?;
+            self.pending_unstake_queue
+                .push_back((addr, st_coins.amount))?;
+            self.pending_unstake.give(st_coins)?;
+        }
+
+        Ok(())
     }
 
     // TODO: we shouldn't need this once we can do subclient calls
@@ -155,8 +242,6 @@ impl Babylon {
                 unbonding_slashing_sig,
             )
     }
-
-    // TODO: method to unbond stbtc, or swap w/ pending
 }
 
 pub fn multisig_script(pks: &[XOnlyPublicKey], threshold: u32, verify: bool) -> Result<Script> {
