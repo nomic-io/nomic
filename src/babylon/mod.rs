@@ -13,7 +13,7 @@ use bitcoin_script::bitcoin_script as script;
 use cosmos_sdk_proto::traits::TypeUrl;
 use ed::{Decode, Encode};
 use orga::{
-    coins::{Accounts, Address, Amount, Coin, Symbol},
+    coins::{Accounts, Address, Amount, Coin, Give, Symbol, Transfer},
     collections::{Deque, Map},
     encoding::LengthVec,
     macros::Migrate,
@@ -34,7 +34,11 @@ use crate::bitcoin::threshold_sig::{Pubkey, Signature};
 use self::proto::MsgCreateBtcDelegation;
 
 pub mod proto;
+pub mod relayer;
 pub mod signer;
+
+const MIN_DELEGATION: u64 = 20_000;
+const DEFAULT_FP: &str = "bd17e43d349d10f4ff4c1e3591427a8e65197d9a859930def60af21b0ec7b3ce";
 
 /// The symbol for stBTC, a BTC liquid staking token.
 #[derive(State, Debug, Clone, Encode, Decode, Default, Migrate, Serialize)]
@@ -47,19 +51,88 @@ impl Symbol for Stbtc {
 #[orga]
 pub struct Babylon {
     pub delegations: Deque<Delegation>,
-    // TODO: 3: spendable outputs to renew
-    // TODO: 3: spendable outputs (w/ info for ~relay_deposit) to redeposit as nbtc, and dests
-    pub(crate) pending_stake: Deque<(Address, Coin<Nbtc>)>,
-    pub(crate) pending_stake_by_addr: Map<Address, Amount>,
-    pub(crate) stake: Accounts<Stbtc>,
-    pub(crate) pending_unbonds: Deque<(Address, Coin<Stbtc>)>,
+    pub(crate) pending_stake: Coin<Nbtc>,
+    pub(crate) pending_stake_accts: Map<Address, Amount>,
+    pub stake: Accounts<Stbtc>,
+    pub(crate) pending_unbonds: Amount,
+    pub(crate) pending_unbonds_queue: Deque<(Address, Coin<Stbtc>)>,
     pub(crate) pending_unbonds_by_addr: Map<Address, Amount>,
     pub(crate) unstaked: Accounts<Nbtc>,
+    // TODO: spendable outputs to renew
+    // TODO: spendable outputs (w/ info for ~relay_deposit) to redeposit as nbtc, and dests
     // TODO: config
 }
 
 #[orga]
 impl Babylon {
+    pub fn pending_stake_sats(&self) -> u64 {
+        let amount: u64 = self.pending_stake.amount.into();
+        amount / 1_000_000 // TODO: get conversion rate from btc config
+    }
+
+    pub fn step(&mut self, btc: &crate::bitcoin::Bitcoin) -> Result<Vec<TxOut>> {
+        // let mut del = self.delegations.get_mut(0).unwrap().unwrap();
+        // del.bbn_key = None;
+        // del.pop_bbn_sig = None;
+        // del.pop_btc_sig = None;
+        // del.slashing_tx_sig = None;
+        // del.unbonding_slashing_tx_sig = None;
+
+        let mut pending_outputs = vec![];
+
+        if self.pending_stake_sats() >= MIN_DELEGATION {
+            let del = Delegation::new(
+                self.delegations.len(),
+                PublicKey::from_slice(
+                    btc.checkpoints.active_sigset()?.signatories[0]
+                        .pubkey
+                        .as_slice(),
+                )?
+                .into(), // TODO: use frost
+                vec![DEFAULT_FP.parse().unwrap()], // TODO: choose dynamically
+                1_008,
+                101,
+                self.pending_stake.take_all()?,
+                btc.checkpoints.index,
+            )?;
+            pending_outputs.push(del.staking_output()?);
+            self.delegations.push_back(del)?;
+
+            // TODO: use draining iterator
+            // TODO: pay stBTC after delegation is signed
+            let mut addrs = vec![];
+            for entry in self.pending_stake_accts.iter()? {
+                let (addr, amount) = entry?;
+                addrs.push(*addr);
+                self.stake.deposit(*addr, Stbtc::mint(*amount))?;
+            }
+            for addr in addrs {
+                self.pending_stake_accts.remove(addr)?;
+            }
+        }
+
+        //  TODO: process matured delegations, lock in tx which spends the stake and redeposits(?)
+        //  TODO: process matured+signed delegations, pay unbonding queue
+
+        Ok(pending_outputs)
+    }
+
+    pub fn stake(&mut self, addr: Address, coins: Coin<Nbtc>) -> Result<()> {
+        // TODO: swap w/ pending unbonds if any
+        let prev_amount = self.pending_stake_accts.get(addr)?.unwrap_or_default();
+        self.pending_stake_accts
+            .insert(addr, (*prev_amount + coins.amount).result()?)?;
+        self.pending_stake.give(coins)?;
+        Ok(())
+    }
+
+    pub fn unstake(&mut self, addr: Address, amount: Amount) -> Result<()> {
+        // TODO: swap w/ pending stake if any
+        // TODO: verify signature
+        // TODO: withdraw stBTC, burn, add to pending_unbonds*
+        todo!()
+    }
+
     // TODO: we shouldn't need this once we can do subclient calls
     #[call]
     pub fn sign(
@@ -83,12 +156,7 @@ impl Babylon {
             )
     }
 
-    // TODO: method to deposit funds into pending (2: or swap w/ unstaking)
-    // TODO: 2: method to unbond stbtc, or swap w/ pending
-    // TODO: method to step
-    //  1 - process pending stake, create delegation (with rules, e.g. min interval, min size)
-    //  3 - process matured delegations, lock in tx which spends the stake and redeposits(?)
-    //  3 - process matured+signed delegations, pay unbonding queue
+    // TODO: method to unbond stbtc, or swap w/ pending
 }
 
 pub fn multisig_script(pks: &[XOnlyPublicKey], threshold: u32, verify: bool) -> Result<Script> {
@@ -138,7 +206,6 @@ pub fn sort_keys(pks: &[XOnlyPublicKey]) -> Result<Vec<XOnlyPublicKey>> {
     }
 
     let mut pks = pks.to_vec();
-    // TODO: reverse sort order?
     pks.sort_by(|a, b| a.serialize().cmp(&b.serialize()));
 
     for i in 0..pks.len() - 1 {
@@ -342,6 +409,7 @@ pub struct Delegation {
     pub staking_period: u16,
     pub unbonding_period: u16,
     pub stake: Coin<Nbtc>,
+    pub checkpoint_index: u32,
 
     pub staking_outpoint: Option<crate::bitcoin::adapter::Adapter<OutPoint>>,
     pub staking_height: Option<u32>,
@@ -364,6 +432,7 @@ impl Delegation {
         staking_period: u16,
         unbonding_period: u16,
         stake: Coin<Nbtc>,
+        checkpoint_index: u32,
     ) -> Result<Self> {
         Ok(Self {
             index,
@@ -376,6 +445,7 @@ impl Delegation {
             staking_period,
             unbonding_period,
             stake,
+            checkpoint_index,
             ..Default::default()
         })
     }
@@ -388,6 +458,11 @@ impl Delegation {
 
     fn fp_keys(&self) -> Result<Vec<XOnlyPublicKey>> {
         self.fp_keys.iter().cloned().map(bytes_to_pubkey).collect()
+    }
+
+    pub fn stake_sats(&self) -> u64 {
+        let stake_amount: u64 = self.stake.amount.into();
+        stake_amount / 1_000_000 // TODO: get covnersion from bitcoin config
     }
 
     #[call]
@@ -446,16 +521,67 @@ impl Delegation {
         tx: Transaction,
         vout: u32,
     ) -> Result<()> {
-        let txid = tx.txid();
-        let outpoint = OutPoint { txid, vout };
-        let txout = tx
-            .output
-            .get(vout as usize)
-            .ok_or_else(|| Error::Orga(orga::Error::App("Invalid vout".to_string())))?;
-        let script = self.staking_script()?;
-        let amount = txout.value;
-        // TODO: verification
+        if self.status()? != DelegationStatus::Created {
+            return Err(Error::Orga(orga::Error::App(
+                "Staking tx already relayed".to_string(),
+            )));
+        }
 
+        // TODO: move to config
+        if headers.height()?.saturating_sub(height) < 1 {
+            return Err(Error::Orga(orga::Error::App(
+                "Staking tx is not confirmed".to_string(),
+            )));
+        }
+
+        // TODO: dedupe this with other proof verification calls
+        let header = headers
+            .get_by_height(height)?
+            .ok_or_else(|| Error::Orga(orga::Error::App("Header not found".to_string())))?;
+        let mut txids = vec![];
+        let mut block_indexes = vec![];
+        let proof_merkle_root = proof
+            .extract_matches(&mut txids, &mut block_indexes)
+            .map_err(|_| Error::BitcoinMerkleBlockError)?;
+        if proof_merkle_root != header.merkle_root() {
+            return Err(orga::Error::App(
+                "Bitcoin merkle proof does not match header".to_string(),
+            ))?;
+        }
+        if txids.len() != 1 {
+            return Err(orga::Error::App(
+                "Bitcoin merkle proof contains an invalid number of txids".to_string(),
+            ))?;
+        }
+        if txids[0] != tx.txid() {
+            return Err(orga::Error::App(
+                "Bitcoin merkle proof does not match transaction".to_string(),
+            ))?;
+        }
+
+        if vout as usize >= tx.output.len() {
+            return Err(orga::Error::App(
+                "Output index is out of bounds".to_string(),
+            ))?;
+        }
+        let output = &tx.output[vout as usize];
+
+        if output.value != self.stake_sats() {
+            // TODO: get conversion from config
+            return Err(orga::Error::App(
+                "Staking amount does not match".to_string(),
+            ))?;
+        }
+        if output.script_pubkey != self.staking_script()? {
+            return Err(orga::Error::App(
+                "Staking script pubkey does not match".to_string(),
+            ))?;
+        }
+
+        let outpoint = OutPoint {
+            txid: tx.txid(),
+            vout,
+        };
         self.staking_outpoint = Some(outpoint.into());
         self.staking_height = Some(height);
 
@@ -484,6 +610,13 @@ impl Delegation {
         Ok(DelegationStatus::Signed)
     }
 
+    pub fn staking_output(&self) -> Result<TxOut> {
+        Ok(TxOut {
+            value: self.stake_sats(),
+            script_pubkey: self.staking_script()?,
+        })
+    }
+
     pub fn staking_script(&self) -> Result<Script> {
         Ok(staking_script(
             self.btc_key()?,
@@ -500,7 +633,7 @@ impl Delegation {
             *self.staking_outpoint.ok_or_else(|| {
                 Error::Orga(orga::Error::App("Missing staking outpoint".to_string()))
             })?,
-            self.stake.amount.into(),
+            self.stake_sats(),
             self.unbonding_period,
             &Params::bbn_test_3(),
         )?)
@@ -512,7 +645,7 @@ impl Delegation {
             *self.staking_outpoint.ok_or_else(|| {
                 Error::Orga(orga::Error::App("Missing staking outpoint".to_string()))
             })?,
-            self.stake.amount.into(),
+            self.stake_sats(),
             self.unbonding_period,
             &Params::bbn_test_3(),
         )?)
@@ -525,7 +658,7 @@ impl Delegation {
                 txid: self.unbonding_tx()?.txid(),
                 vout: 0,
             },
-            self.stake.amount.into(),
+            self.unbonding_tx()?.output[0].value,
             self.unbonding_period,
             &Params::bbn_test_3(),
         )?)
@@ -538,7 +671,7 @@ impl Delegation {
             0,
             &Prevouts::All(&[&TxOut {
                 script_pubkey: self.staking_script()?,
-                value: self.stake.amount.into(),
+                value: self.stake_sats(),
             }]),
             TapLeafHash::from_script(
                 &slashing_script(self.btc_key()?, &self.fp_keys()?, &Params::bbn_test_3())?,
@@ -580,7 +713,6 @@ pub fn verify_pop(
     #[cfg(not(fuzzing))]
     secp.verify_ecdsa(&bbn_msg, &bbn_sig, &bbn_key)?;
 
-    use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(&bbn_sig_hex.as_bytes());
     let hash = hasher.finalize().to_vec();
@@ -620,7 +752,7 @@ fn tree_node(hashes: &[[u8; 32]], index: u32, level: u32) -> Option<[u8; 32]> {
     tree_hash(Some(left), right)
 }
 
-pub fn create_proof(txids: &[Txid], target_txid: Txid) -> Vec<u8> {
+pub fn create_proof(txids: &[Txid], target_txid: Txid) -> (u32, Vec<u8>) {
     let index = txids.iter().position(|txid| *txid == target_txid).unwrap() as u32;
     let hashes: Vec<_> = txids.iter().map(|txid| txid.into_inner()).collect();
 
@@ -637,7 +769,7 @@ pub fn create_proof(txids: &[Txid], target_txid: Txid) -> Vec<u8> {
         idx >>= 1;
     }
 
-    proof_bytes
+    (index, proof_bytes)
 }
 
 #[cfg(test)]

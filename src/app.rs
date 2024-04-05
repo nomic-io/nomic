@@ -6,7 +6,7 @@
 use crate::airdrop::Airdrop;
 use crate::babylon::Babylon;
 use crate::bitcoin::adapter::Adapter;
-use crate::bitcoin::{Bitcoin, Nbtc};
+use crate::bitcoin::{exempt_from_fee, Bitcoin, Nbtc};
 use crate::cosmos::{Chain, Cosmos, Proof};
 
 use crate::incentives::Incentives;
@@ -376,6 +376,41 @@ impl InnerApp {
     }
 
     #[call]
+    pub fn stake_nbtc(&mut self, amount: Amount) -> Result<()> {
+        let signer = self.signer()?;
+        let stake = self.bitcoin.accounts.withdraw(signer, amount)?;
+        self.babylon.stake(signer, stake)?;
+        Ok(())
+    }
+
+    // TODO: move into babylon module, get HeaderQueue via context
+    #[call]
+    pub fn relay_btc_staking_tx(
+        &mut self,
+        del_index: u64,
+        height: u32,
+        proof: Adapter<PartialMerkleTree>,
+        tx: Adapter<Transaction>,
+        vout: u32,
+    ) -> Result<()> {
+        exempt_from_fee()?;
+
+        self.babylon
+            .delegations
+            .get_mut(del_index)?
+            .ok_or_else(|| Error::App("Delegation not found".into()))?
+            .relay_staking_tx(
+                &self.bitcoin.headers,
+                height,
+                proof.into_inner(),
+                tx.into_inner(),
+                vout,
+            )?;
+
+        Ok(())
+    }
+
+    #[call]
     pub fn app_noop(&mut self) -> Result<()> {
         Ok(())
     }
@@ -495,6 +530,19 @@ mod abci {
 
             let ip_reward = self.incentive_pool_rewards.mint()?;
             self.incentive_pool.give(ip_reward)?;
+
+            if !self.bitcoin.checkpoints.is_empty()? {
+                let staking_outputs = self.babylon.step(&self.bitcoin)?;
+                let mut checkpoint = self.bitcoin.checkpoints.building_mut()?;
+                let mut building_checkpoint_batch = checkpoint
+                    .batches
+                    .get_mut(crate::bitcoin::checkpoint::BatchType::Checkpoint as u64)?
+                    .unwrap();
+                let mut checkpoint_tx = building_checkpoint_batch.get_mut(0)?.unwrap();
+                for output in staking_outputs {
+                    checkpoint_tx.output.push_back(output.into())?;
+                }
+            }
 
             let pending_nbtc_transfers = self.bitcoin.take_pending()?;
             for (dest, coins) in pending_nbtc_transfers {

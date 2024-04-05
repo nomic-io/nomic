@@ -1,4 +1,7 @@
-use bitcoin::secp256k1::{self, hashes::Hash, KeyPair, Secp256k1};
+use bitcoin::{
+    secp256k1::{self, hashes::Hash, KeyPair, Secp256k1},
+    util::bip32::{ChildNumber, ExtendedPrivKey},
+};
 use orga::{
     call::build_call,
     client::{wallet::Unsigned, AppClient, Client},
@@ -22,9 +25,9 @@ pub async fn maybe_sign(
     del_client: AppClient<InnerApp, Delegation, HttpClient, Nom, Unsigned>,
     app_client: AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned>,
     bbn_privkey: secp256k1::SecretKey,
-    btc_privkey: KeyPair,
+    btc_xpriv: ExtendedPrivKey,
 ) -> Result<bool> {
-    let secp = Secp256k1::signing_only();
+    let secp = Secp256k1::new();
 
     let delegation = del_client.query(Ok).await?;
     dbg!(&delegation);
@@ -37,10 +40,18 @@ pub async fn maybe_sign(
         return Ok(true);
     }
 
-    let btc_pubkey = &delegation.btc_key;
+    let btc_privkey = btc_xpriv
+        .derive_priv(
+            &secp,
+            &[ChildNumber::from_normal_idx(delegation.checkpoint_index)?],
+        )?
+        .to_keypair(&secp);
+    let btc_pubkey = btc_privkey.x_only_public_key().0;
+    assert_eq!(btc_pubkey.serialize(), delegation.btc_key);
+
     let bbn_pubkey = bbn_privkey.public_key(&secp);
 
-    let bbn_msg = secp256k1::Message::from_slice(btc_pubkey).unwrap();
+    let bbn_msg = secp256k1::Message::from_slice(&btc_pubkey.serialize()).unwrap();
     let bbn_sig = secp.sign_ecdsa(&bbn_msg, &bbn_privkey);
 
     let bbn_sig_hex = hex::encode(bbn_sig.serialize_compact());
