@@ -4,26 +4,44 @@
 #![feature(async_closure)]
 #![feature(never_type)]
 
+use bech32::ToBase32;
 use bitcoin::consensus::{Decodable, Encodable};
-use bitcoin::secp256k1;
+use bitcoin::psbt::Prevouts;
+use bitcoin::secp256k1::SecretKey;
 use bitcoin::util::bip32::ExtendedPubKey;
+use bitcoin::util::sighash::SighashCache;
+use bitcoin::util::taproot::TapLeafHash;
+use bitcoin::{secp256k1, BlockHash, OutPoint, TxMerkleNode, TxOut, Txid, XOnlyPublicKey};
 use bitcoincore_rpc_async::RpcApi;
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
+use cosmos_sdk_proto::cosmos::crypto::secp256k1::PubKey;
+use cosmos_sdk_proto::traits::MessageExt;
+use cosmrs::crypto::secp256k1::SigningKey;
+use cosmrs::crypto::PublicKey;
+use cosmrs::tendermint::block::Height;
+use cosmrs::tx::mode_info::Single;
+use cosmrs::tx::{ModeInfo, SignDoc, SignMode};
 use nomic::app::Dest;
 use nomic::app::IbcDest;
 use nomic::app::InnerApp;
 use nomic::app::Nom;
+use nomic::babylon;
+use nomic::babylon::proto::btccheckpoint::TransactionInfo;
 use nomic::bitcoin::adapter::Adapter;
 use nomic::bitcoin::signatory::SignatorySet;
+use nomic::bitcoin::threshold_sig::Pubkey;
 use nomic::bitcoin::Nbtc;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
+use nomic::cosmos::tmhash;
 use nomic::error::Result;
 use nomic::utils::load_bitcoin_key;
 use nomic::utils::load_or_generate;
 use orga::abci::Node;
 use orga::client::wallet::{SimpleWallet, Wallet};
-use orga::coins::{Address, Commission, Decimal, Declaration, Symbol};
+use orga::coins::{Address, Coin, Commission, Decimal, Declaration, Symbol};
+use orga::collections::Ref;
+use orga::ibc::ibc_rs::clients::AsAny;
 use orga::ibc::ibc_rs::core::{
     ics24_host::identifier::{ChannelId, PortId},
     timestamp::Timestamp,
@@ -32,6 +50,7 @@ use orga::macros::build_call;
 use orga::merk::MerkStore;
 use orga::plugins::MIN_FEE;
 use orga::prelude::*;
+use orga::secp256k1::Secp256k1;
 use orga::{client::AppClient, tendermint::client::HttpClient};
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
@@ -108,6 +127,9 @@ pub enum Command {
     SigningStatus(SigningStatusCmd),
     RecoverDeposit(RecoverDepositCmd),
     PayToFeePool(PayToFeePoolCmd),
+    BabylonRelayer(BabylonRelayerCmd),
+    BabylonSigner(BabylonSignerCmd),
+    StakeNbtc(StakeNbtcCmd),
 }
 
 impl Command {
@@ -171,6 +193,9 @@ impl Command {
                 SigningStatus(cmd) => cmd.run().await,
                 RecoverDeposit(cmd) => cmd.run().await,
                 PayToFeePool(cmd) => cmd.run().await,
+                BabylonRelayer(cmd) => cmd.run().await,
+                BabylonSigner(cmd) => cmd.run().await,
+                StakeNbtc(cmd) => cmd.run().await,
             }
         })
     }
@@ -1502,7 +1527,7 @@ impl GrpcCmd {
         std::panic::set_hook(Box::new(|_| {}));
         orga::ibc::start_grpc(
             // TODO: support configuring RPC address
-            || nomic::app_client("http://localhost:26657").sub(|app| app.ibc.ctx),
+            || nomic::app_client("http://localhost:26657").sub(|app| Ok(app.ibc.ctx)),
             &GrpcOpts {
                 host: "127.0.0.1".to_string(),
                 port: self.port,
@@ -2137,6 +2162,141 @@ impl PayToFeePoolCmd {
             .call(
                 |app| build_call!(app.bitcoin.transfer_to_fee_pool(self.amount.into())),
                 |app| build_call!(app.app_noop()),
+            )
+            .await?)
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct BabylonRelayerCmd {
+    #[clap(short = 'p', long, default_value_t = 8332)]
+    rpc_port: u16,
+    #[clap(short = 'u', long)]
+    rpc_user: Option<String>,
+    #[clap(short = 'P', long)]
+    rpc_pass: Option<String>,
+
+    // TODO: babylon rpc
+    #[clap(flatten)]
+    config: nomic::network::Config,
+}
+
+impl BabylonRelayerCmd {
+    async fn btc_client(&self) -> Result<BtcClient> {
+        let rpc_url = format!("http://localhost:{}", self.rpc_port);
+        let auth = match (self.rpc_user.clone(), self.rpc_pass.clone()) {
+            (Some(user), Some(pass)) => Auth::UserPass(user, pass),
+            _ => Auth::None,
+        };
+
+        let btc_client = BtcClient::new(rpc_url, auth)
+            .await
+            .map_err(|e| orga::Error::App(e.to_string()))?;
+
+        Ok(btc_client)
+    }
+
+    async fn run(&self) -> Result<()> {
+        let bbn_privkey = SecretKey::from_slice(&[124; 32]).unwrap();
+        let mut sha = sha2::Sha256::new();
+        sha.update(
+            &bbn_privkey
+                .public_key(&bitcoin::secp256k1::Secp256k1::new())
+                .serialize(),
+        );
+        let hash = sha.finalize();
+        use ripemd::Digest as _;
+        let mut ripemd = ripemd::Ripemd160::new();
+        ripemd.update(hash);
+        let hash = ripemd.finalize();
+        let mut bbn_addr_bytes = [0; orga::coins::Address::LENGTH];
+        bbn_addr_bytes.copy_from_slice(hash.as_slice());
+        let bbn_addr =
+            bech32::encode("bbn", bbn_addr_bytes.to_base32(), bech32::Variant::Bech32).unwrap();
+        dbg!(&bbn_addr);
+
+        let app_client = self.config.client();
+        let del = app_client
+            .query(|app| {
+                let r = app.babylon.delegations.back()?.unwrap();
+                // TODO
+                if let Ref::Owned(d) = r {
+                    Ok(d)
+                } else {
+                    panic!();
+                }
+            })
+            .await?;
+
+        let btc_client = self.btc_client().await?;
+        dbg!(
+            babylon::relayer::maybe_relay_staking_conf(self.config.client(), btc_client, &del)
+                .await?
+        );
+
+        let btc_client = self.btc_client().await?;
+        let bbn_privkey = SecretKey::from_slice(&[124; 32]).unwrap();
+        dbg!(
+            babylon::relayer::maybe_relay_create_delegation(&btc_client, &bbn_privkey, &del)
+                .await?
+        );
+
+        Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct BabylonSignerCmd {
+    #[clap(flatten)]
+    config: nomic::network::Config,
+}
+
+impl BabylonSignerCmd {
+    async fn run(&self) -> Result<()> {
+        let app_client = self.config.client();
+        let del_client = self.config.client().sub(|app| {
+            let r = app.babylon.delegations.get(0)?.unwrap();
+            // TODO
+            if let Ref::Owned(d) = r {
+                Ok(d)
+            } else {
+                panic!();
+            }
+        });
+
+        let bbn_privkey = SecretKey::from_slice(&[124; 32]).unwrap();
+
+        let key_path = self.config.home_expect()?.join("signer/xpriv");
+        if !key_path.exists() {
+            return Err(Error::Signer("Signer key does not exist".into()).into());
+        }
+
+        let secp = secp256k1::Secp256k1::new();
+        let btc_xpriv = nomic::bitcoin::signer::load_xpriv(key_path)?;
+
+        babylon::signer::maybe_sign(del_client, app_client, bbn_privkey, btc_xpriv).await?;
+
+        Ok(())
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct StakeNbtcCmd {
+    amount: u64,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
+}
+
+impl StakeNbtcCmd {
+    async fn run(&self) -> Result<()> {
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
+            .call(
+                |app| build_call!(app.pay_nbtc_fee()),
+                |app| build_call!(app.stake_nbtc((self.amount).into())),
             )
             .await?)
     }

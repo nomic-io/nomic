@@ -4,7 +4,6 @@ use self::threshold_sig::Signature;
 use crate::app::Dest;
 use crate::bitcoin::checkpoint::BatchType;
 use crate::error::{Error, Result};
-use adapter::Adapter;
 use bitcoin::hashes::Hash;
 use bitcoin::util::bip32::ChildNumber;
 use bitcoin::util::bip32::ExtendedPubKey;
@@ -48,6 +47,8 @@ pub mod signatory;
 #[cfg(feature = "full")]
 pub mod signer;
 pub mod threshold_sig;
+
+pub use adapter::Adapter;
 
 /// The symbol for nBTC, the network's native BTC token.
 #[derive(State, Debug, Clone, Encode, Decode, Default, Migrate, Serialize)]
