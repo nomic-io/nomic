@@ -64,6 +64,8 @@ pub struct Babylon {
     pub(crate) pending_unstake_queue: Deque<(Address, Amount)>,
     pub(crate) pending_unstake_by_addr: Map<Address, Amount>,
     pub unstaked: Accounts<Nbtc>,
+    #[call]
+    pub frost: Frost,
     // TODO: spendable outputs to renew
     // TODO: spendable outputs (w/ info for ~relay_deposit) to redeposit as nbtc, and dests
     // TODO: config
