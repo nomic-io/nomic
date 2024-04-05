@@ -1,0 +1,167 @@
+use ed::{Decode, Encode};
+use frost_secp256k1_tr::keys::PublicKeyPackage;
+use frost_secp256k1_tr::round2::SignatureShare;
+use frost_secp256k1_tr::{aggregate, Signature, SigningTarget};
+use frost_secp256k1_tr::{round1::SigningCommitments, SigningPackage};
+use frost_secp256k1_tr::{Error as FrostError, SigningParameters};
+use orga::query::Query;
+use orga::Error;
+use serde::{Deserialize, Serialize};
+
+use orga::{collections::Map, encoding::LengthVec, orga, Result};
+
+use super::{assemble_by_identifier, Adapter, Config};
+
+#[derive(
+    Clone, Copy, PartialEq, Eq, Hash, Debug, Default, Serialize, Deserialize, Encode, Decode,
+)]
+pub enum SigningState {
+    #[default]
+    Round1,
+    Round2,
+    Complete,
+}
+
+impl Query for SigningState {
+    type Query = ();
+
+    fn query(&self, _query: Self::Query) -> Result<()> {
+        Ok(())
+    }
+}
+
+#[orga]
+pub struct Signing {
+    config: Config,
+    message: LengthVec<u16, u8>,
+    commitments: Map<u16, Adapter<SigningCommitments>>,
+    commitments_len: u16,
+    pub(crate) signing_package: Option<Adapter<SigningPackage>>,
+    sig_shares: Map<u16, Adapter<SignatureShare>>,
+    sig_shares_len: u16,
+    pub signature: Option<Adapter<Signature>>,
+}
+
+impl Signing {
+    pub fn new(config: Config, message: LengthVec<u16, u8>) -> Self {
+        Self {
+            config,
+            message,
+            ..Default::default()
+        }
+    }
+    pub fn state(&self) -> SigningState {
+        if self.commitments_len < self.config.participants.len() as u16 {
+            return SigningState::Round1;
+        }
+        if self.sig_shares_len < self.config.participants.len() as u16 {
+            return SigningState::Round2;
+        }
+
+        SigningState::Complete
+    }
+
+    pub fn submit_commitments(
+        &mut self,
+        participant: u16,
+        commitments: Adapter<SigningCommitments>,
+    ) -> Result<()> {
+        if self.state() != SigningState::Round1 {
+            return Err(Error::App("Not in round 1".to_string()));
+        }
+        if self.commitments.contains_key(participant)? {
+            return Err(Error::App("Commitment already submitted".to_string()));
+        }
+
+        self.commitments.insert(participant, commitments)?;
+        self.commitments_len += 1;
+
+        if self.state() == SigningState::Round2 {
+            self.build_signing_package()?;
+        }
+
+        Ok(())
+    }
+
+    pub fn submit_sig_share(
+        &mut self,
+        participant: u16,
+        share: Adapter<SignatureShare>,
+        pubkey_package: &PublicKeyPackage,
+    ) -> Result<()> {
+        if self.state() != SigningState::Round2 {
+            return Err(Error::App("Not in round 2".to_string()));
+        }
+        if self.sig_shares.contains_key(participant)? {
+            return Err(Error::App("Signature share already submitted".to_string()));
+        }
+
+        self.sig_shares.insert(participant, share)?;
+        self.sig_shares_len += 1;
+        if self.state() == SigningState::Complete {
+            self.aggregate_signature(pubkey_package)?;
+        }
+
+        Ok(())
+    }
+
+    fn build_signing_package(&mut self) -> Result<()> {
+        let mut commitments = vec![];
+        if self.signing_package.is_some() {
+            return Err(Error::App("Signing package already built".to_string()));
+        }
+
+        for entry in self.commitments.iter()? {
+            let (k, v) = entry?;
+            commitments.push((*k, v.inner));
+        }
+        let commitments = assemble_by_identifier(commitments.into_iter());
+        let sig_params = SigningParameters {
+            tapscript_merkle_root: None,
+        };
+
+        let sig_target = SigningTarget::new(self.message.as_slice(), sig_params);
+        let signing_package = SigningPackage::new(commitments, sig_target);
+        self.signing_package.replace(Adapter {
+            inner: signing_package,
+        });
+
+        Ok(())
+    }
+
+    fn aggregate_signature(&mut self, pubkey_package: &PublicKeyPackage) -> Result<()> {
+        let Some(Adapter {
+            inner: signing_package,
+        }) = &self.signing_package
+        else {
+            return Err(Error::App("Signing package not built".to_string()));
+        };
+
+        if self.signature.is_some() {
+            return Err(Error::App("Signature already aggregated".to_string()));
+        }
+
+        let mut sig_shares = vec![];
+        for entry in self.sig_shares.iter()? {
+            let (k, v) = entry?;
+            sig_shares.push((*k, v.inner));
+        }
+
+        let sig_shares = assemble_by_identifier(sig_shares.into_iter());
+
+        let signature = match aggregate(signing_package, &sig_shares, pubkey_package) {
+            Ok(signature) => signature,
+            Err(FrostError::InvalidSignatureShare { culprit }) => {
+                return Err(Error::App(format!(
+                    "Invalid signature share from {:?}",
+                    culprit
+                )));
+            }
+            Err(e) => return Err(Error::App(format!("Failed to aggregate signature: {}", e))),
+        };
+
+        self.signature.replace(Adapter { inner: signature });
+
+        Ok(())
+    }
+}

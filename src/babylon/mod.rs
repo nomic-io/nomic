@@ -29,6 +29,7 @@ use crate::{
     bitcoin::{adapter::Adapter, exempt_from_fee, header_queue::HeaderQueue, Nbtc},
     cosmos::tmhash,
     error::{Error, Result},
+    frost::Frost,
 };
 
 use crate::bitcoin::threshold_sig::{Pubkey, Signature};
