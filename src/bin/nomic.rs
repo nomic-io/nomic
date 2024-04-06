@@ -26,7 +26,6 @@ use nomic::app::Dest;
 use nomic::app::IbcDest;
 use nomic::app::InnerApp;
 use nomic::app::Nom;
-use nomic::babylon;
 use nomic::babylon::proto::btccheckpoint::TransactionInfo;
 use nomic::bitcoin::adapter::Adapter;
 use nomic::bitcoin::signatory::SignatorySet;
@@ -37,6 +36,7 @@ use nomic::cosmos::tmhash;
 use nomic::error::Result;
 use nomic::utils::load_bitcoin_key;
 use nomic::utils::load_or_generate;
+use nomic::{babylon, frost};
 use orga::abci::Node;
 use orga::client::wallet::{SimpleWallet, Wallet};
 use orga::coins::{Address, Coin, Commission, Decimal, Declaration, Symbol};
@@ -130,6 +130,7 @@ pub enum Command {
     BabylonRelayer(BabylonRelayerCmd),
     BabylonSigner(BabylonSignerCmd),
     StakeNbtc(StakeNbtcCmd),
+    FrostSigner(FrostSignerCmd),
 }
 
 impl Command {
@@ -196,6 +197,7 @@ impl Command {
                 BabylonRelayer(cmd) => cmd.run().await,
                 BabylonSigner(cmd) => cmd.run().await,
                 StakeNbtc(cmd) => cmd.run().await,
+                FrostSigner(cmd) => cmd.run().await,
             }
         })
     }
@@ -2296,6 +2298,23 @@ impl StakeNbtcCmd {
                 |app| build_call!(app.stake_nbtc((self.amount).into())),
             )
             .await?)
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct FrostSignerCmd {
+    #[clap(flatten)]
+    config: nomic::network::Config,
+}
+
+impl FrostSignerCmd {
+    async fn run(&self) -> Result<()> {
+        let store = Store::with_map_store();
+        let mut signer =
+            crate::frost::signer::Signer::new(store, || self.config.client(), my_address());
+        loop {
+            signer.step().await?;
+        }
     }
 }
 
