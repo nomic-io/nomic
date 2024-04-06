@@ -11,7 +11,7 @@ use orga::{
 use crate::{
     app::{InnerApp, Nom},
     babylon::DelegationStatus,
-    bitcoin::threshold_sig::Pubkey,
+    bitcoin::threshold_sig::{Pubkey, Signature},
     error::Result,
 };
 
@@ -21,14 +21,36 @@ use super::Delegation;
 // TODO: sign and submit pops
 // TODO: sign and submit slashing sigs
 
+pub fn sign_bbn_pop(del: &Delegation, privkey: secp256k1::SecretKey) -> Signature {
+    let secp = Secp256k1::new();
+    let msg = secp256k1::Message::from_slice(&del.btc_key).unwrap();
+    let sig = secp.sign_ecdsa(&msg, &privkey);
+    sig.serialize_compact().into()
+}
+
+pub fn sign_btc(del: &Delegation, privkey: KeyPair) -> Result<(Signature, Signature, Signature)> {
+    let secp = Secp256k1::new();
+
+    let sign = |msg| {
+        let msg = secp256k1::Message::from_slice(msg).unwrap();
+        let sig = secp.sign_schnorr(&msg, &privkey);
+        let mut sig_bytes = [0; 64];
+        sig_bytes.copy_from_slice(&sig.as_ref()[..]);
+        sig_bytes.into()
+    };
+
+    Ok((
+        sign(&del.pop_btc_sighash()?),
+        sign(&del.slashing_sighash()?),
+        sign(&del.unbonding_slashing_sighash()?),
+    ))
+}
+
 pub async fn maybe_sign(
     del_client: AppClient<InnerApp, Delegation, HttpClient, Nom, Unsigned>,
     app_client: AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned>,
     bbn_privkey: secp256k1::SecretKey,
-    // btc_xpriv: ExtendedPrivKey,
 ) -> Result<bool> {
-    let secp = Secp256k1::new();
-
     let delegation = del_client.query(Ok).await?;
     dbg!(&delegation);
 
@@ -40,45 +62,7 @@ pub async fn maybe_sign(
         return Ok(true);
     }
 
-    // let btc_privkey = btc_xpriv
-    //     .derive_priv(
-    //         &secp,
-    //         &[ChildNumber::from_normal_idx(delegation.checkpoint_index)?],
-    //     )?
-    //     .to_keypair(&secp);
-    // let btc_pubkey = btc_privkey.x_only_public_key().0;
-    // assert_eq!(btc_pubkey.serialize(), delegation.btc_key);
-
-    let btc_pubkey = &delegation.btc_key()?;
-    let bbn_pubkey = bbn_privkey.public_key(&secp);
-
-    let bbn_msg = secp256k1::Message::from_slice(&btc_pubkey.serialize()).unwrap();
-    let bbn_sig = secp.sign_ecdsa(&bbn_msg, &bbn_privkey);
-
-    // let bbn_sig_hex = hex::encode(bbn_sig.serialize_compact());
-    // use sha2::{Digest, Sha256};
-    // let mut hasher = Sha256::new();
-    // hasher.update(&bbn_sig_hex);
-    // let hash = hasher.finalize().to_vec();
-    // let btc_msg = secp256k1::Message::from_slice(&hash).unwrap();
-    // let btc_sig = secp.sign_schnorr(&btc_msg, &btc_privkey);
-
-    // let slashing_sighash = delegation.slashing_sighash()?;
-    // let slashing_msg = bitcoin::secp256k1::Message::from_slice(&slashing_sighash.into_inner())?;
-    // let slashing_sig = secp.sign_schnorr(&slashing_msg, &btc_privkey);
-
-    // let unbonding_slashing_sighash = delegation.unbonding_slashing_sighash()?;
-    // let us_sig = bitcoin::secp256k1::Message::from_slice(&unbonding_slashing_sighash.into_inner())?;
-    // let us_sig = secp.sign_schnorr(&us_sig, &btc_privkey);
-
-    let bbn_pubkey = Pubkey::new(bbn_pubkey.serialize())?;
-    let bbn_sig = bbn_sig.serialize_compact().into();
-    // let mut btc_sig_bytes = [0; 64];
-    // btc_sig_bytes.copy_from_slice(&btc_sig.as_ref()[..]);
-    // let mut slashing_sig_bytes = [0; 64];
-    // slashing_sig_bytes.copy_from_slice(&slashing_sig.as_ref()[..]);
-    // let mut us_sig_bytes = [0; 64];
-    // us_sig_bytes.copy_from_slice(&us_sig.as_ref()[..]);
+    let bbn_sig = sign_bbn_pop(&delegation, bbn_privkey);
 
     log::info!("Submitting signatures...");
     app_client
@@ -90,6 +74,3 @@ pub async fn maybe_sign(
 
     Ok(false)
 }
-
-//
-//

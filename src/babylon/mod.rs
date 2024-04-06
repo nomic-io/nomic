@@ -1007,4 +1007,58 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn delegation() -> Result<()> {
+        let secp = Secp256k1::new();
+        let xpriv = ExtendedPrivKey::new_master(Network::Signet, b"foo")?;
+        let keypair = xpriv.to_keypair(&secp);
+        let privkey = keypair.secret_key();
+
+        // tb1p7aunqrcsrr0vrh7w9jcsm82w7c8xlrgererrfc5zae9ejxfupl3st6lal6
+        let btc_pubkey = keypair.x_only_public_key().0;
+        // bbn1t56n5tkdkf3ywutjs5k40gl3rhsvry5xh45ln9
+        let bbn_pubkey = keypair.public_key();
+
+        let mut del = Delegation::new(
+            0,
+            btc_pubkey,
+            0,
+            bbn_pubkey,
+            vec![super::DEFAULT_FP.parse().unwrap()],
+            1_008,
+            101,
+            Nbtc::mint(20_000_000_000),
+            0,
+        )?;
+        assert_eq!(del.status()?, DelegationStatus::Created);
+
+        // TODO: test verifying merkle proof
+        del.staking_outpoint = Some(
+            OutPoint {
+                txid: "a09ea4943670c1988b962aad002e400adf7e3baff62ecf37a9508474a266f51d"
+                    .parse()
+                    .unwrap(),
+                vout: 0,
+            }
+            .into(),
+        );
+        del.staking_height = Some(190_065);
+        assert_eq!(del.status()?, DelegationStatus::SigningBbn);
+
+        let bbn_sig = sign_bbn_pop(&del, privkey);
+        del.sign_bbn(bbn_sig, None)?;
+        assert!(del
+            .sign_bbn(bbn_sig, None)
+            .unwrap_err()
+            .to_string()
+            .contains("Already signed"));
+        assert_eq!(del.status()?, DelegationStatus::SigningBtc);
+
+        let btc_sigs = sign_btc(&del, keypair)?;
+        del.sign_btc(btc_sigs.0, btc_sigs.1, btc_sigs.2)?;
+        assert_eq!(del.status()?, DelegationStatus::Signed);
+
+        Ok(())
+    }
 }
