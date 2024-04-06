@@ -65,8 +65,6 @@ pub struct Babylon {
     pub(crate) pending_unstake_queue: Deque<(Address, Amount)>,
     pub(crate) pending_unstake_by_addr: Map<Address, Amount>,
     pub unstaked: Accounts<Nbtc>,
-    #[call]
-    pub frost: Frost,
     // TODO: spendable outputs to renew
     // TODO: spendable outputs (w/ info for ~relay_deposit) to redeposit as nbtc, and dests
     // TODO: config
@@ -79,18 +77,22 @@ impl Babylon {
         amount / 1_000_000 // TODO: get conversion rate from btc config
     }
 
-    pub fn step(&mut self, btc: &crate::bitcoin::Bitcoin) -> Result<Vec<TxOut>> {
+    pub fn step(
+        &mut self,
+        btc: &crate::bitcoin::Bitcoin,
+        frost: &mut crate::frost::Frost,
+    ) -> Result<Vec<TxOut>> {
         let mut pending_outputs = vec![];
+        // TODO
+        let frost_index = frost.most_recent_with_key()?;
 
-        if self.pending_stake_sats() >= MIN_DELEGATION {
+        if self.pending_stake_sats() >= MIN_DELEGATION && frost_index.is_some() {
+            let frost_index = frost_index.unwrap();
+            let group_pubkey = frost.group_pubkey(frost_index)?.unwrap();
             let del = Delegation::new(
                 self.delegations.len(),
-                PublicKey::from_slice(
-                    btc.checkpoints.active_sigset()?.signatories[0]
-                        .pubkey
-                        .as_slice(),
-                )?
-                .into(), // TODO: use frost
+                PublicKey::from_slice(&group_pubkey.inner.verifying_key().serialize())?.into(),
+                frost_index,
                 vec![DEFAULT_FP.parse().unwrap()], // TODO: choose dynamically
                 1_008,
                 101,
@@ -119,6 +121,23 @@ impl Babylon {
 
         //  TODO: process matured delegations, lock in tx which spends the stake and redeposits(?)
         //  TODO: process matured+signed delegations, pay unbonding queue
+
+        for entry in self.delegations.iter()? {
+            let del = entry?;
+            if del.status()? != DelegationStatus::SigningBtc {
+                continue;
+            }
+
+            let offset = del.frost_sig_offset.unwrap();
+            let mut sigs = vec![];
+            for sig_index in offset..offset + 3 {
+                if let Some(sig) = frost.signature(del.frost_group, sig_index)? {
+                    sigs.push(Signature(sig.inner.serialize()[1..].try_into().unwrap()));
+                } else {
+                    break;
+                }
+            }
+        }
 
         Ok(pending_outputs)
     }
@@ -222,15 +241,6 @@ impl Babylon {
         }
 
         Ok(())
-    }
-
-    // TODO: we shouldn't need this once we can do subclient calls
-    #[call]
-    pub fn sign_bbn(&mut self, del_index: u64, bbn_sig: Signature) -> Result<()> {
-        self.delegations
-            .get_mut(del_index)?
-            .ok_or_else(|| Error::Orga(orga::Error::App("Delegation not found".to_string())))?
-            .sign_bbn(bbn_sig)
     }
 }
 
@@ -481,6 +491,7 @@ pub enum DelegationStatus {
 pub struct Delegation {
     pub index: u64,
     pub btc_key: XOnlyPubkey,
+    pub frost_group: u64,
     // TODO: don't use basic pubkey, use Interchain Accounts
     pub bbn_key: Pubkey,
     pub fp_keys: LengthVec<u8, XOnlyPubkey>,
@@ -494,6 +505,7 @@ pub struct Delegation {
 
     pub(crate) pop_bbn_sig: Option<Signature>,
 
+    pub(crate) frost_sig_offset: Option<u64>,
     pub(crate) pop_btc_sig: Option<Signature>,
     pub(crate) slashing_tx_sig: Option<Signature>,
     pub(crate) unbonding_slashing_tx_sig: Option<Signature>,
@@ -505,6 +517,7 @@ impl Delegation {
     pub fn new(
         index: u64,
         btc_key: XOnlyPublicKey,
+        frost_group: u64,
         fp_keys: Vec<XOnlyPublicKey>,
         staking_period: u16,
         unbonding_period: u16,
@@ -515,6 +528,7 @@ impl Delegation {
             index,
             btc_key: btc_key.serialize(),
             bbn_key: Pubkey::try_from_slice(&hex::decode(BBN_PUBKEY).unwrap())?,
+            frost_group,
             fp_keys: fp_keys
                 .iter()
                 .map(|k| k.serialize())
@@ -543,8 +557,7 @@ impl Delegation {
         stake_amount / 1_000_000 // TODO: get covnersion from bitcoin config
     }
 
-    #[call]
-    pub fn sign_bbn(&mut self, sig: Signature) -> Result<()> {
+    pub fn sign_bbn(&mut self, sig: Signature, frost: &mut Frost) -> Result<()> {
         exempt_from_fee()?;
 
         if self.pop_bbn_sig.is_some() {
@@ -554,13 +567,19 @@ impl Delegation {
         // TODO: reuse secp instance
         let secp = Secp256k1::verification_only();
 
-        let key = PublicKey::from_slice(&self.bbn_key.as_slice())?;
+        let key = PublicKey::from_slice(self.bbn_key.as_slice())?;
         let msg = bitcoin::secp256k1::Message::from_slice(&self.btc_key)?;
         let sig = ecdsa::Signature::from_compact(sig.as_slice())?;
         #[cfg(not(fuzzing))]
         secp.verify_ecdsa(&msg, &sig, &key)?;
 
         self.pop_bbn_sig = Some(sig.serialize_compact().into());
+
+        let mut group = frost.groups.get_mut(self.frost_group)?.unwrap();
+        self.frost_sig_offset.replace(group.signing.len());
+        group.push_message(self.pop_btc_sighash()?.to_vec().try_into()?)?;
+        group.push_message(self.slashing_sighash()?.to_vec().try_into()?)?;
+        group.push_message(self.unbonding_slashing_sighash()?.to_vec().try_into()?)?;
 
         Ok(())
     }

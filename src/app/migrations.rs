@@ -180,6 +180,7 @@ impl MigrateFrom<InnerAppV5> for InnerAppV6 {
             ibc: other.ibc,
             cosmos: other.cosmos,
             babylon: Default::default(),
+            frost: Default::default(),
         })
     }
 }

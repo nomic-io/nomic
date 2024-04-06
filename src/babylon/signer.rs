@@ -83,7 +83,7 @@ pub async fn maybe_sign(
     log::info!("Submitting signatures...");
     app_client
         .call(
-            |app| build_call!(app.babylon.sign_bbn(delegation.index, bbn_sig)),
+            |app| build_call!(app.sign_bbn(delegation.index, bbn_sig)),
             |app| build_call!(app.app_noop()),
         )
         .await?;

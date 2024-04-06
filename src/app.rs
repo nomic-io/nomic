@@ -6,9 +6,12 @@
 use crate::airdrop::Airdrop;
 use crate::babylon::Babylon;
 use crate::bitcoin::adapter::Adapter;
+use crate::bitcoin::threshold_sig::Signature;
 use crate::bitcoin::{exempt_from_fee, Bitcoin, Nbtc};
 use crate::cosmos::{Chain, Cosmos, Proof};
+use crate::frost::Config as FrostConfig;
 
+use crate::frost::Frost;
 use crate::incentives::Incentives;
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::{Script, Transaction, TxOut};
@@ -113,6 +116,11 @@ pub struct InnerApp {
     #[orga(version(V6))]
     #[call]
     pub babylon: Babylon,
+
+    #[cfg(feature = "testnet")]
+    #[orga(version(V6))]
+    #[call]
+    pub frost: Frost,
 }
 
 #[orga]
@@ -417,6 +425,17 @@ impl InnerApp {
         Ok(())
     }
 
+    // TODO: we shouldn't need this once we can do subclient calls
+    #[call]
+    pub fn sign_bbn(&mut self, del_index: u64, bbn_sig: Signature) -> Result<()> {
+        Ok(self
+            .babylon
+            .delegations
+            .get_mut(del_index)?
+            .ok_or_else(|| Error::App("Delegation not found".to_string()))?
+            .sign_bbn(bbn_sig, &mut self.frost)?)
+    }
+
     #[call]
     pub fn app_noop(&mut self) -> Result<()> {
         Ok(())
@@ -465,8 +484,10 @@ mod abci {
         abci::{messages, AbciQuery, BeginBlock, EndBlock, InitChain},
         coins::{Give, Take},
         collections::Map,
-        plugins::{BeginBlockCtx, EndBlockCtx, InitChainCtx},
+        plugins::{BeginBlockCtx, EndBlockCtx, InitChainCtx, Validators},
     };
+
+    use crate::frost::FrostGroup;
 
     use super::*;
 
@@ -539,7 +560,16 @@ mod abci {
             self.incentive_pool.give(ip_reward)?;
 
             if !self.bitcoin.checkpoints.is_empty()? {
-                let staking_outputs = self.babylon.step(&self.bitcoin)?;
+                if let Some(frost_group) = self.frost.groups.back()? {
+                    if now > frost_group.created_at + 60 * 60 {
+                        let frost_config = FrostConfig::from_staking(&self.staking, 10, 8)?;
+
+                        let group = FrostGroup::with_config(frost_config, now)?;
+                        self.frost.groups.push_back(group)?;
+                    }
+                }
+
+                let staking_outputs = self.babylon.step(&self.bitcoin, &mut self.frost)?;
                 let mut checkpoint = self.bitcoin.checkpoints.building_mut()?;
                 let mut building_checkpoint_batch = checkpoint
                     .batches

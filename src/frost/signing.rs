@@ -34,27 +34,38 @@ impl Query for SigningState {
 pub struct Signing {
     config: Config,
     message: LengthVec<u16, u8>,
-    commitments: Map<u16, Adapter<SigningCommitments>>,
+    commitments: Map<(u32, u16), Adapter<SigningCommitments>>,
     commitments_len: u16,
     pub(crate) signing_package: Option<Adapter<SigningPackage>>,
-    sig_shares: Map<u16, Adapter<SignatureShare>>,
+    sig_shares: Map<(u32, u16), Adapter<SignatureShare>>,
     sig_shares_len: u16,
     pub signature: Option<Adapter<Signature>>,
+    pub iteration: u32,
+    pub iteration_start_seconds: i64,
 }
 
 impl Signing {
-    pub fn new(config: Config, message: LengthVec<u16, u8>) -> Self {
+    pub fn new(config: Config, message: LengthVec<u16, u8>, now: i64) -> Self {
         Self {
             config,
             message,
+            iteration_start_seconds: now,
             ..Default::default()
         }
     }
+
+    pub fn next_iteration(&mut self) -> Result<()> {
+        self.iteration += 1;
+        self.commitments_len = 0;
+        self.sig_shares_len = 0;
+        Ok(())
+    }
+
     pub fn state(&self) -> SigningState {
-        if self.commitments_len < self.config.participants.len() as u16 {
+        if self.commitments_len < self.config.threshold {
             return SigningState::Round1;
         }
-        if self.sig_shares_len < self.config.participants.len() as u16 {
+        if self.sig_shares_len < self.config.threshold {
             return SigningState::Round2;
         }
 
@@ -63,17 +74,22 @@ impl Signing {
 
     pub fn submit_commitments(
         &mut self,
+        iteration: u32,
         participant: u16,
         commitments: Adapter<SigningCommitments>,
     ) -> Result<()> {
         if self.state() != SigningState::Round1 {
             return Err(Error::App("Not in round 1".to_string()));
         }
-        if self.commitments.contains_key(participant)? {
+        if iteration != self.iteration {
+            return Err(Error::App("Invalid iteration".to_string()));
+        }
+        if self.commitments.contains_key((iteration, participant))? {
             return Err(Error::App("Commitment already submitted".to_string()));
         }
 
-        self.commitments.insert(participant, commitments)?;
+        self.commitments
+            .insert((iteration, participant), commitments)?;
         self.commitments_len += 1;
 
         if self.state() == SigningState::Round2 {
@@ -85,6 +101,7 @@ impl Signing {
 
     pub fn submit_sig_share(
         &mut self,
+        iteration: u32,
         participant: u16,
         share: Adapter<SignatureShare>,
         pubkey_package: &PublicKeyPackage,
@@ -92,11 +109,17 @@ impl Signing {
         if self.state() != SigningState::Round2 {
             return Err(Error::App("Not in round 2".to_string()));
         }
-        if self.sig_shares.contains_key(participant)? {
+        if self.sig_shares.contains_key((iteration, participant))? {
             return Err(Error::App("Signature share already submitted".to_string()));
         }
 
-        self.sig_shares.insert(participant, share)?;
+        if !self.commitments.contains_key((iteration, participant))? {
+            return Err(Error::App(
+                "Participant not included in this round".to_string(),
+            ));
+        }
+
+        self.sig_shares.insert((iteration, participant), share)?;
         self.sig_shares_len += 1;
         if self.state() == SigningState::Complete {
             self.aggregate_signature(pubkey_package)?;
@@ -113,7 +136,10 @@ impl Signing {
 
         for entry in self.commitments.iter()? {
             let (k, v) = entry?;
-            commitments.push((*k, v.inner));
+            if k.0 != self.iteration {
+                continue;
+            }
+            commitments.push((k.1, v.inner));
         }
         let commitments = assemble_by_identifier(commitments.into_iter());
         let sig_params = SigningParameters {
@@ -144,7 +170,10 @@ impl Signing {
         let mut sig_shares = vec![];
         for entry in self.sig_shares.iter()? {
             let (k, v) = entry?;
-            sig_shares.push((*k, v.inner));
+            if k.0 != self.iteration {
+                continue;
+            }
+            sig_shares.push((k.1, v.inner));
         }
 
         let sig_shares = assemble_by_identifier(sig_shares.into_iter());

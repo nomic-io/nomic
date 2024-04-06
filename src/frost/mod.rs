@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 use std::ops::Range;
 
-use orga::coins::Address;
+use orga::coins::{Address, Symbol};
 use orga::collections::Deque;
 use orga::context::GetContext;
 use orga::encoding::LengthVec;
 
-use orga::plugins::{disable_fee, Signer as SignerCtx};
+use orga::plugins::{disable_fee, Signer as SignerCtx, Time};
 use orga::Result;
 use orga::{orga, Error};
 
@@ -31,6 +31,31 @@ pub struct Config {
 }
 
 impl Config {
+    pub fn from_staking<S: Symbol>(
+        staking: &orga::coins::Staking<S>,
+        top_n: u16,
+        threshold: u16,
+    ) -> Result<Self> {
+        let mut validators = staking.all_validators()?;
+        // TODO: check order
+        validators.sort_by_key(|v| v.amount_staked);
+
+        let threshold = std::cmp::min(threshold, validators.len() as u16);
+
+        let participants: Vec<_> = validators
+            .into_iter()
+            .take(top_n as usize)
+            .map(|v| Participant {
+                address: v.address.into(),
+                shares: 1,
+            })
+            .collect();
+
+        Ok(Self {
+            participants: participants.try_into()?,
+            threshold,
+        })
+    }
     pub fn total_shares(&self) -> u16 {
         self.participants.iter().map(|p| p.shares).sum()
     }
@@ -57,6 +82,7 @@ pub struct FrostGroup {
     pub config: Config,
     pub dkg: dkg::Dkg,
     pub signing: Deque<Signing>,
+    pub created_at: i64,
 }
 
 #[orga]
@@ -72,18 +98,20 @@ pub struct Participant {
 }
 
 impl FrostGroup {
-    pub fn with_config(config: Config) -> Result<Self> {
+    pub fn with_config(config: Config, now: i64) -> Result<Self> {
         let dkg = Dkg::from_config(&config)?;
         Ok(Self {
             config,
             dkg,
             signing: Deque::new(),
+            created_at: now,
         })
     }
 
     pub fn push_message(&mut self, message: LengthVec<u16, u8>) -> Result<()> {
+        let now = self.now()?;
         self.signing
-            .push_back(Signing::new(self.config.clone(), message))?;
+            .push_back(Signing::new(self.config.clone(), message, now))?;
 
         Ok(())
     }
@@ -93,6 +121,13 @@ impl FrostGroup {
             .ok_or_else(|| Error::Coins("No Signer context available".into()))?
             .signer
             .ok_or_else(|| Error::Coins("Call must be signed".into()))
+    }
+
+    fn now(&mut self) -> Result<i64> {
+        Ok(self
+            .context::<Time>()
+            .ok_or_else(|| Error::App("No time context available".into()))?
+            .seconds)
     }
 
     pub fn submit_dkg_round1(
@@ -150,6 +185,7 @@ impl FrostGroup {
     pub fn submit_commitments(
         &mut self,
         sig_index: u64,
+        iteration: u32,
         commitments: LengthVec<u16, Adapter<SigningCommitments>>,
     ) -> Result<()> {
         let address = self.signer()?;
@@ -161,7 +197,7 @@ impl FrostGroup {
         let commitments: Vec<Adapter<SigningCommitments>> = commitments.into();
         for (i, commitment) in commitments.into_iter().enumerate() {
             let participant = share_range.start + i as u16;
-            sig.submit_commitments(participant, commitment)?;
+            sig.submit_commitments(iteration, participant, commitment)?;
         }
 
         Ok(())
@@ -170,6 +206,7 @@ impl FrostGroup {
     pub fn submit_sig_shares(
         &mut self,
         sig_index: u64,
+        iteration: u32,
         shares: LengthVec<u16, Adapter<SignatureShare>>,
     ) -> Result<()> {
         let address = self.signer()?;
@@ -188,7 +225,7 @@ impl FrostGroup {
         let shares: Vec<Adapter<SignatureShare>> = shares.into();
         for (i, share) in shares.into_iter().enumerate() {
             let participant = share_range.start + i as u16;
-            sig.submit_sig_share(participant, share, pubkey_package)?;
+            sig.submit_sig_share(iteration, participant, share, pubkey_package)?;
         }
 
         Ok(())
@@ -253,6 +290,7 @@ impl Frost {
         &mut self,
         group_index: u64,
         sig_index: u64,
+        iteration: u32,
         commitments: LengthVec<u16, Adapter<SigningCommitments>>,
     ) -> Result<()> {
         disable_fee();
@@ -261,7 +299,7 @@ impl Frost {
             .get_mut(group_index)?
             .ok_or(Error::App("Sig not found".into()))?;
 
-        group.submit_commitments(sig_index, commitments)
+        group.submit_commitments(sig_index, iteration, commitments)
     }
 
     #[call]
@@ -269,6 +307,7 @@ impl Frost {
         &mut self,
         group_index: u64,
         sig_index: u64,
+        iteration: u32,
         shares: LengthVec<u16, Adapter<SignatureShare>>,
     ) -> Result<()> {
         disable_fee();
@@ -277,7 +316,7 @@ impl Frost {
             .get_mut(group_index)?
             .ok_or(Error::App("Sig not found".into()))?;
 
-        group.submit_sig_shares(sig_index, shares)
+        group.submit_sig_shares(sig_index, iteration, shares)
     }
 
     #[query]
@@ -324,6 +363,25 @@ impl Frost {
             .ok_or(Error::App("Signing not found".into()))?;
 
         Ok(sig.state())
+    }
+
+    #[query]
+    pub fn signing_state_with_iteration(
+        &self,
+        group_index: u64,
+        sig_index: u64,
+    ) -> Result<(u32, SigningState)> {
+        let group = self
+            .groups
+            .get(group_index)?
+            .ok_or(Error::App("Sig not found".into()))?;
+
+        let sig = group
+            .signing
+            .get(sig_index)?
+            .ok_or(Error::App("Signing not found".into()))?;
+
+        Ok((sig.iteration, sig.state()))
     }
 
     #[query]
@@ -418,6 +476,17 @@ impl Frost {
             .ok_or(Error::App("Sig not found".into()))?
             .signature
             .clone())
+    }
+
+    #[query]
+    pub fn most_recent_with_key(&self) -> Result<Option<u64>> {
+        for i in (0..self.groups.len()).rev() {
+            if self.group_pubkey(i)?.is_some() {
+                return Ok(Some(i));
+            }
+        }
+
+        Ok(None)
     }
 }
 

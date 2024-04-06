@@ -63,7 +63,7 @@ where
 
     fn with_signing_nonces<
         T,
-        F: FnMut(&mut Map<(u64, u64, u16), Adapter<SigningNonces>>) -> Result<T>,
+        F: FnMut(&mut Map<(u64, u64, u32, u16), Adapter<SigningNonces>>) -> Result<T>,
     >(
         &mut self,
         mut op: F,
@@ -83,7 +83,7 @@ where
         payer: F,
     ) -> Result<()> {
         self.client()
-            .call(payer, |app| build_call!(app.babylon.frost.noop_call()))
+            .call(payer, |app| build_call!(app.frost.noop_call()))
             .await?;
 
         Ok(())
@@ -104,13 +104,13 @@ where
         let address = self.address;
         let indices: Vec<u64> = self
             .client()
-            .query(|app: InnerApp| app.babylon.frost.dkg_action_required(address))
+            .query(|app: InnerApp| app.frost.dkg_action_required(address))
             .await?;
 
         for index in indices {
             let dkg_state = self
                 .client()
-                .query(|app: InnerApp| app.babylon.frost.dkg_state(index))
+                .query(|app: InnerApp| app.frost.dkg_state(index))
                 .await?;
 
             let res = match dkg_state {
@@ -135,18 +135,21 @@ where
         let address = self.address;
         let indices: Vec<(u64, u64)> = self
             .client()
-            .query(|app: InnerApp| app.babylon.frost.signing_action_required(address))
+            .query(|app: InnerApp| app.frost.signing_action_required(address))
             .await?;
 
         for (group_index, sig_index) in indices {
             let res = match self
                 .client()
-                .query(|app: InnerApp| app.babylon.frost.signing_state(group_index, sig_index))
+                .query(|app: InnerApp| {
+                    app.frost
+                        .signing_state_with_iteration(group_index, sig_index)
+                })
                 .await?
             {
-                SigningState::Round1 => self.signing_commit(group_index, sig_index).await,
-                SigningState::Round2 => self.signing_sign(group_index, sig_index).await,
-                SigningState::Complete => Ok(()),
+                (i, SigningState::Round1) => self.signing_commit(group_index, sig_index, i).await,
+                (i, SigningState::Round2) => self.signing_sign(group_index, sig_index, i).await,
+                (i, SigningState::Complete) => Ok(()),
             };
 
             match res {
@@ -162,7 +165,7 @@ where
 
     async fn get_config(&self, index: u64) -> Result<Config> {
         self.client()
-            .query(|app: InnerApp| app.babylon.frost.config(index))
+            .query(|app: InnerApp| app.frost.config(index))
             .await
     }
 
@@ -182,7 +185,7 @@ where
         }
 
         let packages: LengthVec<u16, Adapter<dkg::round1::Package>> = packages.try_into()?;
-        self.call(|app| build_call!(app.babylon.frost.submit_dkg_round1(index, packages.clone())))
+        self.call(|app| build_call!(app.frost.submit_dkg_round1(index, packages.clone())))
             .await?;
 
         Ok(())
@@ -192,7 +195,7 @@ where
         let config = self.get_config(index).await?;
         let packages: Vec<(u16, dkg::round1::Package)> = self
             .client()
-            .query(|app: InnerApp| app.babylon.frost.dkg_round1_packages(index))
+            .query(|app: InnerApp| app.frost.dkg_round1_packages(index))
             .await?;
 
         let round1_packages = assemble_by_identifier(packages.into_iter());
@@ -217,13 +220,8 @@ where
         }
 
         let round2_packages: LengthVec<u16, _> = round2_packages.try_into()?;
-        self.call(|app| {
-            build_call!(app
-                .babylon
-                .frost
-                .submit_dkg_round2(index, round2_packages.clone()))
-        })
-        .await?;
+        self.call(|app| build_call!(app.frost.submit_dkg_round2(index, round2_packages.clone())))
+            .await?;
 
         Ok(())
     }
@@ -232,7 +230,7 @@ where
         let config = self.get_config(index).await?;
         let packages: Vec<(u16, dkg::round1::Package)> = self
             .client()
-            .query(|app: InnerApp| app.babylon.frost.dkg_round1_packages(index))
+            .query(|app: InnerApp| app.frost.dkg_round1_packages(index))
             .await?;
 
         let round1_packages = assemble_by_identifier(packages.into_iter());
@@ -242,7 +240,7 @@ where
             round1_packages.remove(&identifier(i));
             let round2_packages: Vec<(u16, dkg::round2::Package)> = self
                 .client()
-                .query(|app: InnerApp| app.babylon.frost.dkg_round2_packages(index, i))
+                .query(|app: InnerApp| app.frost.dkg_round2_packages(index, i))
                 .await?;
 
             let secret_package = self.dkg_round2.get(&(index, i)).ok_or_else(|| {
@@ -277,17 +275,20 @@ where
             }
             if let Some(pubkey) = last_pubkey_package.take() {
                 let pubkey = Adapter { inner: pubkey };
-                self.call(|app| {
-                    build_call!(app.babylon.frost.attest_dkg_pubkey(index, pubkey.clone()))
-                })
-                .await?;
+                self.call(|app| build_call!(app.frost.attest_dkg_pubkey(index, pubkey.clone())))
+                    .await?;
             }
         }
 
         Ok(())
     }
 
-    async fn signing_commit(&mut self, group_index: u64, sig_index: u64) -> Result<()> {
+    async fn signing_commit(
+        &mut self,
+        group_index: u64,
+        sig_index: u64,
+        iteration: u32,
+    ) -> Result<()> {
         let mut rng = thread_rng();
         let config = self.get_config(group_index).await?;
         let mut commitments = vec![];
@@ -304,7 +305,7 @@ where
             let (nonces, commitment) = commit(signing_share, &mut rng);
             self.with_signing_nonces(|signing_nonces| {
                 signing_nonces.insert(
-                    (group_index, sig_index, i),
+                    (group_index, sig_index, iteration, i),
                     Adapter {
                         inner: nonces.clone(),
                     },
@@ -317,9 +318,10 @@ where
 
         let commitments: LengthVec<u16, Adapter<SigningCommitments>> = commitments.try_into()?;
         self.call(|app| {
-            build_call!(app.babylon.frost.submit_commitments(
+            build_call!(app.frost.submit_commitments(
                 group_index,
                 sig_index,
+                iteration,
                 commitments.clone()
             ))
         })
@@ -328,12 +330,16 @@ where
         Ok(())
     }
 
-    async fn signing_sign(&mut self, group_index: u64, sig_index: u64) -> Result<()> {
+    async fn signing_sign(
+        &mut self,
+        group_index: u64,
+        sig_index: u64,
+        iteration: u32,
+    ) -> Result<()> {
         let Some(signing_package) = self
             .client()
             .query(|app| {
-                app.babylon
-                    .frost
+                app.frost
                     .signing_package(group_index, sig_index)
                     .map(|p| p.map(|p| p.inner))
             })
@@ -356,7 +362,7 @@ where
 
             let nonces = self.with_signing_nonces(|signing_nonces| {
                 Ok(signing_nonces
-                    .get((group_index, sig_index, i))?
+                    .get((group_index, sig_index, iteration, i))?
                     .ok_or_else(|| Error::App("Missing signing nonces".to_string()))?
                     .inner
                     .clone())
@@ -370,9 +376,10 @@ where
 
         let sig_shares: LengthVec<u16, Adapter<SignatureShare>> = sig_shares.try_into()?;
         self.call(|app| {
-            build_call!(app.babylon.frost.submit_sig_shares(
+            build_call!(app.frost.submit_sig_shares(
                 group_index,
                 sig_index,
+                iteration,
                 sig_shares.clone()
             ))
         })
