@@ -72,7 +72,7 @@ const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhq
 const IBC_FEE_USATS: u64 = 1_000_000;
 const CALL_FEE_USATS: u64 = 100_000_000;
 
-const FROST_GROUP_INTERVAL: i64 = 4 * 60 * 60;
+const FROST_GROUP_INTERVAL: i64 = 60;
 const FROST_TOP_N: u16 = 3;
 const FROST_THRESHOLD: u16 = 2;
 

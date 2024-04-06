@@ -2308,6 +2308,7 @@ impl FrostSignerCmd {
             crate::frost::signer::Signer::new(store, || self.config.client(), my_address());
         loop {
             signer.step().await?;
+            std::thread::sleep(std::time::Duration::from_secs(5));
         }
     }
 }
