@@ -473,6 +473,9 @@ impl InnerApp {
                 frost_config.participants = participants.try_into()?;
             }
 
+            if frost_config.participants.len() < FROST_THRESHOLD as usize {
+                return Ok(());
+            }
             let group = FrostGroup::with_config(frost_config, now)?;
 
             self.frost.groups.push_back(group)?;
