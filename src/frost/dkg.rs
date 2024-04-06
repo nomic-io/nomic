@@ -33,7 +33,7 @@ pub struct Dkg {
     round1_len: u16,
     round2: Map<u16, Map<u16, Adapter<round2::Package>>>,
     round2_len: u16,
-    pub(super) group_pubkey: Option<Adapter<PublicKeyPackage>>,
+    group_pubkey: Option<Adapter<PublicKeyPackage>>,
     attested: Map<u16, ()>,
     attested_len: u16,
 }
@@ -125,6 +125,14 @@ impl Dkg {
         Ok(())
     }
 
+    pub fn group_pubkey(&self) -> Result<Option<Adapter<PublicKeyPackage>>> {
+        if self.state() == DkgState::Complete {
+            Ok(self.group_pubkey.clone())
+        } else {
+            Ok(None)
+        }
+    }
+
     pub fn round1_packages(&self) -> Result<Vec<(u16, round1::Package)>> {
         let mut packages = vec![];
         for i in 0..self.participants {
@@ -147,5 +155,9 @@ impl Dkg {
         }
 
         Ok(packages)
+    }
+
+    pub fn absent(&self, participant: u16) -> Result<bool> {
+        Ok(!self.round1.contains_key(participant)?)
     }
 }

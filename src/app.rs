@@ -9,7 +9,7 @@ use crate::bitcoin::adapter::Adapter;
 use crate::bitcoin::threshold_sig::Signature;
 use crate::bitcoin::{exempt_from_fee, Bitcoin, Nbtc};
 use crate::cosmos::{Chain, Cosmos, Proof};
-use crate::frost::Config as FrostConfig;
+use crate::frost::{Config as FrostConfig, FrostGroup};
 
 use crate::frost::Frost;
 use crate::incentives::Incentives;
@@ -71,6 +71,10 @@ const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhq
 
 const IBC_FEE_USATS: u64 = 1_000_000;
 const CALL_FEE_USATS: u64 = 100_000_000;
+
+const FROST_GROUP_INTERVAL: i64 = 4 * 60 * 60;
+const FROST_TOP_N: u16 = 3;
+const FROST_THRESHOLD: u16 = 2;
 
 #[orga(version = 6)]
 pub struct InnerApp {
@@ -445,6 +449,37 @@ impl InnerApp {
     pub fn app_noop_query(&self) -> Result<()> {
         Ok(())
     }
+
+    fn step_frost(&mut self, now: i64) -> Result<()> {
+        self.frost.advance_with_timeout(5 * 60)?;
+
+        let last_frost_group = self.frost.groups.back()?;
+        let last_frost_group_time = last_frost_group.as_ref().map(|g| g.created_at).unwrap_or(0);
+        let absent = last_frost_group
+            .map(|v| v.absent().unwrap_or_default())
+            .unwrap_or_default();
+
+        if now > last_frost_group_time + FROST_GROUP_INTERVAL {
+            let mut frost_config =
+                FrostConfig::from_staking(&self.staking, FROST_TOP_N, FROST_THRESHOLD)?;
+            if absent.len() as u16 <= FROST_TOP_N - FROST_THRESHOLD {
+                let participants: Vec<_> = frost_config
+                    .participants
+                    .iter()
+                    .filter(|p| !absent.contains(&p.address))
+                    .cloned()
+                    .collect();
+
+                frost_config.participants = participants.try_into()?;
+            }
+
+            let group = FrostGroup::with_config(frost_config, now)?;
+
+            self.frost.groups.push_back(group)?;
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -559,18 +594,8 @@ mod abci {
             let ip_reward = self.incentive_pool_rewards.mint()?;
             self.incentive_pool.give(ip_reward)?;
 
-            self.frost.advance_with_timeout(5 * 60)?;
-
             if !self.bitcoin.checkpoints.is_empty()? {
-                let last_frost_group_time =
-                    self.frost.groups.back()?.map(|g| g.created_at).unwrap_or(0);
-                if now > last_frost_group_time + 4 * 60 * 60 {
-                    let frost_config = FrostConfig::from_staking(&self.staking, 10, 8)?;
-
-                    let group = FrostGroup::with_config(frost_config, now)?;
-                    self.frost.groups.push_back(group)?;
-                }
-
+                self.step_frost(now)?;
                 let staking_outputs = self.babylon.step(&self.bitcoin, &mut self.frost)?;
                 let mut checkpoint = self.bitcoin.checkpoints.building_mut()?;
                 let mut building_checkpoint_batch = checkpoint

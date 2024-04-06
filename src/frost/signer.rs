@@ -149,7 +149,7 @@ where
             {
                 (i, SigningState::Round1) => self.signing_commit(group_index, sig_index, i).await,
                 (i, SigningState::Round2) => self.signing_sign(group_index, sig_index, i).await,
-                (i, SigningState::Complete) => Ok(()),
+                (_i, SigningState::Complete) => Ok(()),
             };
 
             match res {

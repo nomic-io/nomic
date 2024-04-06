@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::ops::Range;
 
 use orga::coins::{Address, Symbol};
@@ -214,8 +214,7 @@ impl FrostGroup {
 
         let pubkey_package = &self
             .dkg
-            .group_pubkey
-            .as_ref()
+            .group_pubkey()?
             .ok_or(Error::App("Pubkey not yet generated for group".into()))?
             .inner;
         let mut sig = self
@@ -242,6 +241,22 @@ impl FrostGroup {
         }
 
         Ok(())
+    }
+
+    pub fn absent(&self) -> Result<HashSet<Address>> {
+        let mut res = HashSet::new();
+        if self.dkg.state() != DkgState::Round1 {
+            return Ok(res);
+        }
+        for participant in self.config.participants.iter() {
+            for i in self.config.share_range(participant.address)? {
+                if self.dkg.absent(i)? {
+                    res.insert(participant.address);
+                }
+            }
+        }
+
+        Ok(res)
     }
 }
 
@@ -407,13 +422,11 @@ impl Frost {
 
     #[query]
     pub fn group_pubkey(&self, index: u64) -> Result<Option<Adapter<PublicKeyPackage>>> {
-        Ok(self
-            .groups
+        self.groups
             .get(index)?
             .ok_or(Error::App("Sig not found".into()))?
             .dkg
-            .group_pubkey
-            .clone())
+            .group_pubkey()
     }
 
     #[query]
