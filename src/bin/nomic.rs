@@ -2237,8 +2237,7 @@ impl BabylonRelayerCmd {
         let btc_client = self.btc_client().await?;
         let bbn_privkey = SecretKey::from_slice(&[124; 32]).unwrap();
         dbg!(
-            babylon::relayer::maybe_relay_create_delegation(&btc_client, &bbn_privkey, &del)
-                .await?
+            babylon::relayer::maybe_relay_create_delegation(&btc_client, bbn_privkey, &del).await?
         );
 
         Ok(())
@@ -2265,11 +2264,6 @@ impl BabylonSignerCmd {
         });
 
         let bbn_privkey = SecretKey::from_slice(&[124; 32]).unwrap();
-
-        let key_path = self.config.home_expect()?.join("signer/xpriv");
-        if !key_path.exists() {
-            return Err(Error::Signer("Signer key does not exist".into()).into());
-        }
 
         babylon::signer::maybe_sign(del_client, app_client, bbn_privkey).await?;
 

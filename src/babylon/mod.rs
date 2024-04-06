@@ -832,57 +832,10 @@ impl Delegation {
     }
 }
 
-impl TypeUrl for MsgCreateBtcDelegation {
-    const TYPE_URL: &'static str = "/babylon.btcstaking.v1.MsgCreateBTCDelegation";
-}
-
-fn tree_hash(left: Option<[u8; 32]>, right: Option<[u8; 32]>) -> Option<[u8; 32]> {
-    if left.is_none() && right.is_none() {
-        return None;
-    }
-
-    let mut first = Sha256::new();
-    first.update(left.unwrap());
-    first.update(right.unwrap_or(left.unwrap()));
-
-    let mut second = Sha256::new();
-    second.update(first.finalize());
-    Some(second.finalize().into())
-}
-
-fn tree_node(hashes: &[[u8; 32]], index: u32, level: u32) -> Option<[u8; 32]> {
-    if level == 0 {
-        return hashes.get(index as usize).map(|h| *h);
-    }
-
-    let left = tree_node(hashes, index * 2, level - 1)?;
-    let right = tree_node(hashes, index * 2 + 1, level - 1);
-    tree_hash(Some(left), right)
-}
-
-pub fn create_proof(txids: &[Txid], target_txid: Txid) -> (u32, Vec<u8>) {
-    let index = txids.iter().position(|txid| *txid == target_txid).unwrap() as u32;
-    let hashes: Vec<_> = txids.iter().map(|txid| txid.into_inner()).collect();
-
-    let mut proof_bytes = vec![];
-    let mut level = 0;
-    let mut idx = index;
-    loop {
-        let sibling = tree_node(&hashes, idx ^ 1, level);
-        if sibling.is_none() {
-            break;
-        }
-        proof_bytes.extend_from_slice(&sibling.unwrap());
-        level += 1;
-        idx >>= 1;
-    }
-
-    (index, proof_bytes)
-}
-
 #[cfg(test)]
 mod tests {
-    use bitcoin::{psbt::serialize::Deserialize, Network};
+    use bitcoin::{psbt::serialize::Deserialize, util::bip32::ExtendedPrivKey, KeyPair, Network};
+    use tests::signer::{sign_bbn_pop, sign_btc};
 
     use super::*;
 
