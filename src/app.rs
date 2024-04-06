@@ -560,13 +560,13 @@ mod abci {
             self.incentive_pool.give(ip_reward)?;
 
             if !self.bitcoin.checkpoints.is_empty()? {
-                if let Some(frost_group) = self.frost.groups.back()? {
-                    if now > frost_group.created_at + 60 * 60 {
-                        let frost_config = FrostConfig::from_staking(&self.staking, 10, 8)?;
+                let last_frost_group_time =
+                    self.frost.groups.back()?.map(|g| g.created_at).unwrap_or(0);
+                if now > last_frost_group_time + 60 * 60 {
+                    let frost_config = FrostConfig::from_staking(&self.staking, 10, 8)?;
 
-                        let group = FrostGroup::with_config(frost_config, now)?;
-                        self.frost.groups.push_back(group)?;
-                    }
+                    let group = FrostGroup::with_config(frost_config, now)?;
+                    self.frost.groups.push_back(group)?;
                 }
 
                 let staking_outputs = self.babylon.step(&self.bitcoin, &mut self.frost)?;
