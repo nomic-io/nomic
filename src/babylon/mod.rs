@@ -83,7 +83,6 @@ impl Babylon {
         frost: &mut crate::frost::Frost,
     ) -> Result<Vec<TxOut>> {
         let mut pending_outputs = vec![];
-        // TODO
         let frost_index = frost.most_recent_with_key()?;
 
         if self.pending_stake_sats() >= MIN_DELEGATION && frost_index.is_some() {
@@ -122,8 +121,8 @@ impl Babylon {
         //  TODO: process matured delegations, lock in tx which spends the stake and redeposits(?)
         //  TODO: process matured+signed delegations, pay unbonding queue
 
-        for entry in self.delegations.iter()? {
-            let del = entry?;
+        for i in 0..self.delegations.len() {
+            let del = self.delegations.get(i)?.unwrap();
             if del.status()? != DelegationStatus::SigningBtc {
                 continue;
             }
@@ -136,6 +135,10 @@ impl Babylon {
                 } else {
                     break;
                 }
+            }
+            let mut del = self.delegations.get_mut(i)?.unwrap();
+            if sigs.len() == 3 {
+                del.sign_btc(sigs[0], sigs[1], sigs[2])?;
             }
         }
 
