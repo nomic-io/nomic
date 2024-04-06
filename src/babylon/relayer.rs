@@ -44,8 +44,7 @@ pub async fn maybe_relay_staking_conf(
 ) -> Result<bool> {
     dbg!(&del);
 
-    let status = del.status()?;
-    if status == DelegationStatus::Signing || status == DelegationStatus::Signed {
+    if del.staking_outpoint.is_some() {
         log::debug!("Staking tx relayed, continuing");
         return Ok(true);
     }
@@ -175,7 +174,7 @@ pub async fn maybe_relay_create_delegation(
         .serialize();
 
     let mut sha = Sha256::new();
-    sha.update(del.bbn_key.unwrap().as_slice());
+    sha.update(del.bbn_key.as_slice());
     let hash = sha.finalize();
     use ripemd::Digest as _;
     let mut ripemd = ripemd::Ripemd160::new();
@@ -194,7 +193,7 @@ pub async fn maybe_relay_create_delegation(
 
     let msg = proto::MsgCreateBtcDelegation {
         babylon_pk: Some(PubKey {
-            key: del.bbn_key.unwrap().as_slice().to_vec(),
+            key: del.bbn_key.as_slice().to_vec(),
         }),
         btc_pk: del.btc_key.to_vec(),
         fp_btc_pk_list: del.fp_keys.iter().map(|k| k.to_vec()).collect(),
@@ -224,7 +223,7 @@ pub async fn maybe_relay_create_delegation(
         signer_infos: vec![cosmrs::tx::SignerInfo {
             public_key: Some(cosmrs::tx::SignerPublicKey::Single(
                 cosmrs::tendermint::public_key::PublicKey::from_raw_secp256k1(
-                    del.bbn_key.unwrap().as_slice(),
+                    del.bbn_key.as_slice(),
                 )
                 .unwrap()
                 .into(),

@@ -42,6 +42,7 @@ pub mod signer;
 
 const MIN_DELEGATION: u64 = 20_000;
 const DEFAULT_FP: &str = "bd17e43d349d10f4ff4c1e3591427a8e65197d9a859930def60af21b0ec7b3ce";
+const BBN_PUBKEY: &str = "TODO";
 
 /// The symbol for stBTC, a BTC liquid staking token.
 #[derive(State, Debug, Clone, Encode, Decode, Default, Migrate, Serialize)]
@@ -225,25 +226,11 @@ impl Babylon {
 
     // TODO: we shouldn't need this once we can do subclient calls
     #[call]
-    pub fn sign(
-        &mut self,
-        del_index: u64,
-        bbn_key: Pubkey,
-        btc_sig: Signature,
-        bbn_sig: Signature,
-        slashing_sig: Signature,
-        unbonding_slashing_sig: Signature,
-    ) -> Result<()> {
+    pub fn sign_bbn(&mut self, del_index: u64, bbn_sig: Signature) -> Result<()> {
         self.delegations
             .get_mut(del_index)?
             .ok_or_else(|| Error::Orga(orga::Error::App("Delegation not found".to_string())))?
-            .sign(
-                bbn_key,
-                btc_sig,
-                bbn_sig,
-                slashing_sig,
-                unbonding_slashing_sig,
-            )
+            .sign_bbn(bbn_sig)
     }
 }
 
@@ -416,7 +403,7 @@ pub fn slashing_tx(
         witness: Witness::default(),
     };
 
-    let slashing_rate = (9, 10); // TODO: parameterize
+    let slashing_rate = (1, 10); // TODO: parameterize
     let slashing_value = stake_value * slashing_rate.0 / slashing_rate.1;
     let slashing_out = TxOut {
         value: slashing_value,
@@ -484,7 +471,8 @@ fn bytes_to_pubkey(bytes: XOnlyPubkey) -> Result<XOnlyPublicKey> {
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub enum DelegationStatus {
     Created,
-    Signing,
+    SigningBbn,
+    SigningBtc,
     Signed,
 }
 
@@ -493,6 +481,8 @@ pub enum DelegationStatus {
 pub struct Delegation {
     pub index: u64,
     pub btc_key: XOnlyPubkey,
+    // TODO: don't use basic pubkey, use Interchain Accounts
+    pub bbn_key: Pubkey,
     pub fp_keys: LengthVec<u8, XOnlyPubkey>,
     pub staking_period: u16,
     pub unbonding_period: u16,
@@ -502,10 +492,9 @@ pub struct Delegation {
     pub staking_outpoint: Option<crate::bitcoin::adapter::Adapter<OutPoint>>,
     pub staking_height: Option<u32>,
 
-    // TODO: don't use basic pubkey, use Interchain Accounts
-    pub bbn_key: Option<Pubkey>,
-    pub(crate) pop_btc_sig: Option<Signature>,
     pub(crate) pop_bbn_sig: Option<Signature>,
+
+    pub(crate) pop_btc_sig: Option<Signature>,
     pub(crate) slashing_tx_sig: Option<Signature>,
     pub(crate) unbonding_slashing_tx_sig: Option<Signature>,
     // TODO: tx to spend mature stake
@@ -525,6 +514,7 @@ impl Delegation {
         Ok(Self {
             index,
             btc_key: btc_key.serialize(),
+            bbn_key: Pubkey::try_from_slice(&hex::decode(BBN_PUBKEY).unwrap())?,
             fp_keys: fp_keys
                 .iter()
                 .map(|k| k.serialize())
@@ -554,48 +544,58 @@ impl Delegation {
     }
 
     #[call]
-    pub fn sign(
-        &mut self,
-        bbn_key: Pubkey,
-        btc_sig: Signature,
-        bbn_sig: Signature,
-        slashing_sig: Signature,
-        unbonding_slashing_sig: Signature,
-    ) -> Result<()> {
+    pub fn sign_bbn(&mut self, sig: Signature) -> Result<()> {
         exempt_from_fee()?;
 
-        let status = self.status()?;
-        if status != DelegationStatus::Signing {
-            let msg = match status {
-                DelegationStatus::Created => "Not ready to sign",
-                DelegationStatus::Signing => unreachable!(),
-                DelegationStatus::Signed => "Already signed",
-            };
-            return Err(Error::Orga(orga::Error::App(msg.to_string())));
+        if self.pop_bbn_sig.is_some() {
+            return Err(Error::Orga(orga::Error::App("Already signed".to_string())));
         }
-
-        verify_pop(self.btc_key()?, bbn_key, btc_sig, bbn_sig)?;
-        self.bbn_key = Some(bbn_key);
-        self.pop_btc_sig = Some(btc_sig);
-        self.pop_bbn_sig = Some(bbn_sig);
 
         // TODO: reuse secp instance
         let secp = Secp256k1::verification_only();
-        let key = bytes_to_pubkey(self.btc_key)?;
+
+        let key = PublicKey::from_slice(&self.bbn_key.as_slice())?;
+        let msg = bitcoin::secp256k1::Message::from_slice(&self.btc_key)?;
+        let sig = ecdsa::Signature::from_compact(sig.as_slice())?;
+        #[cfg(not(fuzzing))]
+        secp.verify_ecdsa(&msg, &sig, &key)?;
+
+        self.pop_bbn_sig = Some(sig.serialize_compact().into());
+
+        Ok(())
+    }
+
+    pub fn sign_btc(
+        &mut self,
+        pop_btc_sig: Signature,
+        slashing_sig: Signature,
+        unbonding_slashing_sig: Signature,
+    ) -> Result<()> {
+        // TODO: reuse secp instance
+        let secp = Secp256k1::verification_only();
+
+        let key = self.btc_key()?;
+        let verify = |msg: &[u8], sig: &Signature| -> Result<()> {
+            let msg = bitcoin::secp256k1::Message::from_slice(msg)?;
+            let sig = schnorr::Signature::from_slice(sig.as_slice())?;
+            #[cfg(not(fuzzing))]
+            secp.verify_schnorr(&sig, &msg, &key)?;
+            Ok(())
+        };
+
+        let pop_btc_msg = self.pop_btc_sighash()?;
+        verify(&pop_btc_msg, &pop_btc_sig)?;
+        self.pop_btc_sig = Some(pop_btc_sig);
 
         let slashing_sighash = self.slashing_sighash()?;
-        let msg = bitcoin::secp256k1::Message::from_slice(&slashing_sighash.into_inner())?;
-        let sig = schnorr::Signature::from_slice(slashing_sig.as_slice())?;
-        #[cfg(not(fuzzing))]
-        secp.verify_schnorr(&sig, &msg, &key)?;
+        verify(&slashing_sighash.into_inner(), &slashing_sig)?;
         self.slashing_tx_sig = Some(slashing_sig);
 
         let unbonding_slashing_sighash = self.unbonding_slashing_sighash()?;
-        let msg =
-            bitcoin::secp256k1::Message::from_slice(&unbonding_slashing_sighash.into_inner())?;
-        let sig = schnorr::Signature::from_slice(unbonding_slashing_sig.as_slice())?;
-        #[cfg(not(fuzzing))]
-        secp.verify_schnorr(&sig, &msg, &key)?;
+        verify(
+            &unbonding_slashing_sighash.into_inner(),
+            &unbonding_slashing_sig,
+        )?;
         self.unbonding_slashing_tx_sig = Some(unbonding_slashing_sig);
 
         Ok(())
@@ -677,23 +677,25 @@ impl Delegation {
     }
 
     pub fn status(&self) -> Result<DelegationStatus> {
-        assert_eq!(self.bbn_key.is_none(), self.pop_btc_sig.is_none());
-        assert_eq!(self.bbn_key.is_none(), self.pop_bbn_sig.is_none());
-        assert_eq!(self.bbn_key.is_none(), self.slashing_tx_sig.is_none());
-        assert_eq!(
-            self.bbn_key.is_none(),
-            self.unbonding_slashing_tx_sig.is_none()
-        );
         assert_eq!(
             self.staking_outpoint.is_none(),
             self.staking_height.is_none()
         );
 
+        assert_eq!(self.pop_btc_sig.is_none(), self.slashing_tx_sig.is_none());
+        assert_eq!(
+            self.pop_btc_sig.is_none(),
+            self.unbonding_slashing_tx_sig.is_none()
+        );
+
         if self.staking_outpoint.is_none() {
             return Ok(DelegationStatus::Created);
         }
-        if self.bbn_key.is_none() {
-            return Ok(DelegationStatus::Signing);
+        if self.pop_bbn_sig.is_none() {
+            return Ok(DelegationStatus::SigningBbn);
+        }
+        if self.pop_btc_sig.is_none() {
+            return Ok(DelegationStatus::SigningBtc);
         }
         Ok(DelegationStatus::Signed)
     }
@@ -783,33 +785,20 @@ impl Delegation {
             bitcoin::SchnorrSighashType::Default,
         )?)
     }
-}
 
-pub fn verify_pop(
-    btc_key: XOnlyPublicKey,
-    bbn_key: Pubkey,
-    btc_sig: Signature,
-    bbn_sig: Signature,
-) -> Result<()> {
-    // TODO: reuse secp instance
-    let secp = Secp256k1::verification_only();
+    pub fn pop_btc_sighash(&self) -> Result<Vec<u8>> {
+        let bbn_sig = self.pop_bbn_sig.ok_or_else(|| {
+            Error::Orga(orga::Error::App("Missing BBN PoP signature".to_string()))
+        })?;
 
-    let bbn_key = PublicKey::from_slice(&bbn_key.as_slice())?;
-    let bbn_msg = bitcoin::secp256k1::Message::from_slice(&btc_key.serialize())?;
-    let bbn_sig_hex = hex::encode(bbn_sig.as_slice());
-    let bbn_sig = ecdsa::Signature::from_compact(bbn_sig.as_slice())?;
-    #[cfg(not(fuzzing))]
-    secp.verify_ecdsa(&bbn_msg, &bbn_sig, &bbn_key)?;
+        let bbn_sig_hex = hex::encode(bbn_sig.as_slice());
 
-    let mut hasher = Sha256::new();
-    hasher.update(&bbn_sig_hex.as_bytes());
-    let hash = hasher.finalize().to_vec();
-    let btc_msg = bitcoin::secp256k1::Message::from_slice(&hash)?;
-    let btc_sig = schnorr::Signature::from_slice(btc_sig.as_slice())?;
-    #[cfg(not(fuzzing))]
-    secp.verify_schnorr(&btc_sig, &btc_msg, &btc_key)?;
+        let mut hasher = Sha256::new();
+        hasher.update(bbn_sig_hex.as_bytes());
+        let hash = hasher.finalize();
 
-    Ok(())
+        Ok(hash.to_vec())
+    }
 }
 
 impl TypeUrl for MsgCreateBtcDelegation {

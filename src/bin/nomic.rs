@@ -2271,10 +2271,7 @@ impl BabylonSignerCmd {
             return Err(Error::Signer("Signer key does not exist".into()).into());
         }
 
-        let secp = secp256k1::Secp256k1::new();
-        let btc_xpriv = nomic::bitcoin::signer::load_xpriv(key_path)?;
-
-        babylon::signer::maybe_sign(del_client, app_client, bbn_privkey, btc_xpriv).await?;
+        babylon::signer::maybe_sign(del_client, app_client, bbn_privkey).await?;
 
         Ok(())
     }
