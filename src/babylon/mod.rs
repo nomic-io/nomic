@@ -958,4 +958,80 @@ mod tests {
 
         // TODO
     }
+
+    #[test]
+    pub fn stake_unstake_queues() -> Result<()> {
+        let mut babylon = Babylon::default();
+
+        let addr = |n| Address::from([n; Address::LENGTH]);
+
+        babylon.stake(addr(0), Nbtc::mint(10_000_000_000))?;
+        babylon.stake(addr(1), Nbtc::mint(5_000_000_000))?;
+        babylon.stake(addr(0), Nbtc::mint(1_000_000_000))?;
+
+        assert_eq!(babylon.pending_stake.amount, 16_000_000_000);
+        assert_eq!(babylon.pending_unstake.amount, 0);
+        assert_eq!(babylon.pending_stake_queue.len(), 3);
+        assert_eq!(babylon.pending_unstake_queue.len(), 0);
+        assert_eq!(
+            *babylon.pending_stake_by_addr.get(addr(0))?.unwrap(),
+            11_000_000_000,
+        );
+        assert_eq!(
+            *babylon.pending_stake_by_addr.get(addr(1))?.unwrap(),
+            5_000_000_000,
+        );
+
+        babylon
+            .stake
+            .deposit(addr(2), Stbtc::mint(20_000_000_000))?;
+        babylon.unstake(addr(2), Amount::new(12_000_000_000))?;
+
+        assert_eq!(babylon.pending_stake.amount, 4_000_000_000);
+        assert_eq!(babylon.pending_unstake.amount, 0);
+        assert_eq!(babylon.pending_stake_queue.len(), 2);
+        assert_eq!(babylon.pending_unstake_queue.len(), 0);
+        assert_eq!(
+            *babylon.pending_stake_by_addr.get(addr(0))?.unwrap(),
+            1_000_000_000,
+        );
+        assert_eq!(
+            *babylon.pending_stake_by_addr.get(addr(1))?.unwrap(),
+            3_000_000_000,
+        );
+        assert_eq!(babylon.unstaked.balance(addr(2))?, 12_000_000_000);
+        assert_eq!(babylon.stake.balance(addr(0))?, 10_000_000_000);
+        assert_eq!(babylon.stake.balance(addr(1))?, 2_000_000_000);
+        assert_eq!(babylon.stake.balance(addr(2))?, 8_000_000_000);
+
+        babylon.unstake(addr(2), Amount::new(8_000_000_000))?;
+
+        assert_eq!(babylon.pending_stake.amount, 0);
+        assert_eq!(babylon.pending_unstake.amount, 4_000_000_000);
+        assert_eq!(babylon.pending_stake_queue.len(), 0);
+        assert_eq!(babylon.pending_unstake_queue.len(), 1);
+        assert_eq!(
+            *babylon.pending_unstake_by_addr.get(addr(2))?.unwrap(),
+            4_000_000_000,
+        );
+        assert_eq!(babylon.unstaked.balance(addr(2))?, 16_000_000_000);
+        assert_eq!(babylon.stake.balance(addr(0))?, 11_000_000_000);
+        assert_eq!(babylon.stake.balance(addr(1))?, 5_000_000_000);
+        assert_eq!(babylon.stake.balance(addr(2))?, 0);
+
+        babylon.stake(addr(3), Nbtc::mint(5_000_000_000))?;
+
+        assert_eq!(babylon.pending_stake.amount, 1_000_000_000);
+        assert_eq!(babylon.pending_unstake.amount, 0);
+        assert_eq!(babylon.pending_stake_queue.len(), 1);
+        assert_eq!(babylon.pending_unstake_queue.len(), 0);
+        assert_eq!(
+            *babylon.pending_stake_by_addr.get(addr(3))?.unwrap(),
+            1_000_000_000,
+        );
+        assert_eq!(babylon.unstaked.balance(addr(2))?, 20_000_000_000);
+        assert_eq!(babylon.stake.balance(addr(3))?, 4_000_000_000);
+
+        Ok(())
+    }
 }
