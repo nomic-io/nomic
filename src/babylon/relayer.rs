@@ -7,10 +7,10 @@ use bitcoin::{
     consensus::{Decodable, Encodable},
     psbt::serialize::Serialize,
     secp256k1::{self, hashes::Hash, KeyPair, Secp256k1},
-    Block, BlockHash, TxOut,
+    Block, BlockHash, TxMerkleNode, TxOut, Txid,
 };
 use bitcoincore_rpc_async::{json::GetBlockHeaderResult, Client as BitcoinRpcClient, RpcApi};
-use cosmos_sdk_proto::cosmos::crypto::secp256k1::PubKey;
+use cosmos_sdk_proto::{cosmos::crypto::secp256k1::PubKey, traits::TypeUrl};
 use cosmrs::{
     crypto::secp256k1::SigningKey,
     tx::{mode_info::Single, MessageExt, ModeInfo, SignDoc, SignMode},
@@ -31,7 +31,10 @@ use crate::{
     error::{Error, Result},
 };
 
-use super::{proto, Delegation};
+use super::{
+    proto::{self, MsgCreateBtcDelegation},
+    Delegation,
+};
 
 // TODO: scan loop
 // TODO: sign and submit pops
@@ -151,9 +154,25 @@ pub async fn last_n_blocks(
     Ok(blocks)
 }
 
+pub fn bbn_addr(pubkey: Pubkey) -> String {
+    let mut sha = Sha256::new();
+    sha.update(pubkey.as_slice());
+    let hash = sha.finalize();
+
+    use ripemd::Digest as _;
+    let mut ripemd = ripemd::Ripemd160::new();
+    ripemd.update(hash);
+    let hash = ripemd.finalize();
+
+    let mut bbn_addr_bytes = [0; orga::coins::Address::LENGTH];
+    bbn_addr_bytes.copy_from_slice(hash.as_slice());
+
+    bech32::encode("bbn", bbn_addr_bytes.to_base32(), bech32::Variant::Bech32).unwrap()
+}
+
 pub async fn maybe_relay_create_delegation(
     btc_client: &BitcoinRpcClient,
-    bbn_privkey: &secp256k1::SecretKey,
+    bbn_privkey: secp256k1::SecretKey,
     del: &Delegation,
 ) -> Result<bool> {
     if del.status()? != DelegationStatus::Signed {
@@ -165,25 +184,18 @@ pub async fn maybe_relay_create_delegation(
         .get_block_hash(del.staking_height.unwrap() as u64)
         .await?;
     let block = btc_client.get_block_info(&block_hash).await?;
-    let (block_index, proof_bytes) =
-        super::create_proof(&block.tx, del.staking_outpoint.unwrap().txid);
+    let (block_index, proof_bytes) = create_proof(
+        &block.tx,
+        del.staking_outpoint.unwrap().txid,
+        Some(block.merkleroot),
+    );
 
     let staking_tx_bytes = btc_client
         .get_raw_transaction(&del.staking_outpoint.unwrap().txid, Some(&block_hash))
         .await?
         .serialize();
 
-    let mut sha = Sha256::new();
-    sha.update(del.bbn_key.as_slice());
-    let hash = sha.finalize();
-    use ripemd::Digest as _;
-    let mut ripemd = ripemd::Ripemd160::new();
-    ripemd.update(hash);
-    let hash = ripemd.finalize();
-    let mut bbn_addr_bytes = [0; orga::coins::Address::LENGTH];
-    bbn_addr_bytes.copy_from_slice(hash.as_slice());
-    let bbn_addr =
-        bech32::encode("bbn", bbn_addr_bytes.to_base32(), bech32::Variant::Bech32).unwrap();
+    let bbn_addr = bbn_addr(del.bbn_key);
 
     let pop = proto::ProofOfPossession {
         babylon_sig: del.pop_bbn_sig.unwrap().to_vec(),
@@ -231,7 +243,7 @@ pub async fn maybe_relay_create_delegation(
             mode_info: ModeInfo::Single(Single {
                 mode: SignMode::Direct,
             }),
-            sequence: 0,
+            sequence: 7,
         }],
         fee: cosmrs::tx::Fee {
             gas_limit: 200_000,
@@ -244,7 +256,7 @@ pub async fn maybe_relay_create_delegation(
         },
     };
 
-    let sign_doc = SignDoc::new(&body, &auth_info, &"bbn-test-3".parse().unwrap(), 224180).unwrap();
+    let sign_doc = SignDoc::new(&body, &auth_info, &"bbn-test-3".parse().unwrap(), 224774).unwrap();
     let signing_key = SigningKey::from_slice(&bbn_privkey.secret_bytes()).unwrap();
     let tx_signed = sign_doc.sign(&signing_key).unwrap().to_bytes().unwrap();
 
@@ -260,5 +272,68 @@ pub async fn maybe_relay_create_delegation(
             .unwrap()
     );
 
+    // let cmd = format!("curl https://lcd.testnet3.babylonchain.io/cosmos/tx/v1beta1/simulate -d '{{\"tx_bytes\":\"{}\",\"mode\":\"BROADCAST_MODE_SYNC\"}}'", base64::encode(&tx_signed));
+    // let output = std::process::Command::new("sh")
+    //     .arg("-c")
+    //     .arg(cmd)
+    //     .output()
+    //     .expect("failed to execute process");
+    // println!("output: {:?}", String::from_utf8(output.stdout).unwrap());
+
     Ok(true)
+}
+
+impl TypeUrl for MsgCreateBtcDelegation {
+    const TYPE_URL: &'static str = "/babylon.btcstaking.v1.MsgCreateBTCDelegation";
+}
+
+fn tree_hash(left: Option<[u8; 32]>, right: Option<[u8; 32]>) -> Option<[u8; 32]> {
+    if left.is_none() && right.is_none() {
+        return None;
+    }
+
+    let mut first = Sha256::new();
+    first.update(left.unwrap());
+    first.update(right.unwrap_or(left.unwrap()));
+
+    let mut second = Sha256::new();
+    second.update(first.finalize());
+    Some(second.finalize().into())
+}
+
+fn tree_node(hashes: &[[u8; 32]], index: u32, level: u32) -> Option<[u8; 32]> {
+    if level == 0 {
+        return hashes.get(index as usize).map(|h| *h);
+    }
+
+    let left = tree_node(hashes, index << 1, level - 1)?;
+    let right = tree_node(hashes, index << 1 | 1, level - 1);
+    tree_hash(Some(left), right)
+}
+
+pub fn create_proof(
+    txids: &[Txid],
+    target_txid: Txid,
+    root: Option<TxMerkleNode>,
+) -> (u32, Vec<u8>) {
+    let index = txids.iter().position(|txid| *txid == target_txid).unwrap() as u32;
+    let hashes: Vec<_> = txids.iter().map(|txid| txid.into_inner()).collect();
+    let levels = 0usize.leading_zeros() - hashes.len().leading_zeros();
+
+    let mut proof_bytes = vec![];
+    let mut idx = index;
+    let mut size = hashes.len() as u32;
+    for level in 0..levels {
+        let sibling = tree_node(&hashes, idx ^ 1, level)
+            .unwrap_or(tree_node(&hashes, size - 1, level).unwrap());
+        proof_bytes.extend_from_slice(&sibling);
+        idx >>= 1;
+        size = (size + 1) / 2;
+    }
+
+    if let Some(root) = root {
+        assert_eq!(root.as_ref(), tree_node(&hashes, 0, levels).unwrap());
+    }
+
+    (index, proof_bytes)
 }

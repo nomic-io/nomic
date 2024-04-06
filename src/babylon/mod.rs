@@ -832,57 +832,10 @@ impl Delegation {
     }
 }
 
-impl TypeUrl for MsgCreateBtcDelegation {
-    const TYPE_URL: &'static str = "/babylon.btcstaking.v1.MsgCreateBTCDelegation";
-}
-
-fn tree_hash(left: Option<[u8; 32]>, right: Option<[u8; 32]>) -> Option<[u8; 32]> {
-    if left.is_none() && right.is_none() {
-        return None;
-    }
-
-    let mut first = Sha256::new();
-    first.update(left.unwrap());
-    first.update(right.unwrap_or(left.unwrap()));
-
-    let mut second = Sha256::new();
-    second.update(first.finalize());
-    Some(second.finalize().into())
-}
-
-fn tree_node(hashes: &[[u8; 32]], index: u32, level: u32) -> Option<[u8; 32]> {
-    if level == 0 {
-        return hashes.get(index as usize).map(|h| *h);
-    }
-
-    let left = tree_node(hashes, index * 2, level - 1)?;
-    let right = tree_node(hashes, index * 2 + 1, level - 1);
-    tree_hash(Some(left), right)
-}
-
-pub fn create_proof(txids: &[Txid], target_txid: Txid) -> (u32, Vec<u8>) {
-    let index = txids.iter().position(|txid| *txid == target_txid).unwrap() as u32;
-    let hashes: Vec<_> = txids.iter().map(|txid| txid.into_inner()).collect();
-
-    let mut proof_bytes = vec![];
-    let mut level = 0;
-    let mut idx = index;
-    loop {
-        let sibling = tree_node(&hashes, idx ^ 1, level);
-        if sibling.is_none() {
-            break;
-        }
-        proof_bytes.extend_from_slice(&sibling.unwrap());
-        level += 1;
-        idx >>= 1;
-    }
-
-    (index, proof_bytes)
-}
-
 #[cfg(test)]
 mod tests {
-    use bitcoin::{psbt::serialize::Deserialize, Network};
+    use bitcoin::{psbt::serialize::Deserialize, util::bip32::ExtendedPrivKey, KeyPair, Network};
+    use tests::signer::{sign_bbn_pop, sign_btc};
 
     use super::*;
 
@@ -1051,6 +1004,60 @@ mod tests {
         );
         assert_eq!(babylon.unstaked.balance(addr(2))?, 20_000_000_000);
         assert_eq!(babylon.stake.balance(addr(3))?, 4_000_000_000);
+
+        Ok(())
+    }
+
+    #[test]
+    fn delegation() -> Result<()> {
+        let secp = Secp256k1::new();
+        let xpriv = ExtendedPrivKey::new_master(Network::Signet, b"foo")?;
+        let keypair = xpriv.to_keypair(&secp);
+        let privkey = keypair.secret_key();
+
+        // tb1p7aunqrcsrr0vrh7w9jcsm82w7c8xlrgererrfc5zae9ejxfupl3st6lal6
+        let btc_pubkey = keypair.x_only_public_key().0;
+        // bbn1t56n5tkdkf3ywutjs5k40gl3rhsvry5xh45ln9
+        let bbn_pubkey = keypair.public_key();
+
+        let mut del = Delegation::new(
+            0,
+            btc_pubkey,
+            0,
+            bbn_pubkey,
+            vec![super::DEFAULT_FP.parse().unwrap()],
+            1_008,
+            101,
+            Nbtc::mint(20_000_000_000),
+            0,
+        )?;
+        assert_eq!(del.status()?, DelegationStatus::Created);
+
+        // TODO: test verifying merkle proof
+        del.staking_outpoint = Some(
+            OutPoint {
+                txid: "a09ea4943670c1988b962aad002e400adf7e3baff62ecf37a9508474a266f51d"
+                    .parse()
+                    .unwrap(),
+                vout: 0,
+            }
+            .into(),
+        );
+        del.staking_height = Some(190_065);
+        assert_eq!(del.status()?, DelegationStatus::SigningBbn);
+
+        let bbn_sig = sign_bbn_pop(&del, privkey);
+        del.sign_bbn(bbn_sig, None)?;
+        assert!(del
+            .sign_bbn(bbn_sig, None)
+            .unwrap_err()
+            .to_string()
+            .contains("Already signed"));
+        assert_eq!(del.status()?, DelegationStatus::SigningBtc);
+
+        let btc_sigs = sign_btc(&del, keypair)?;
+        del.sign_btc(btc_sigs.0, btc_sigs.1, btc_sigs.2)?;
+        assert_eq!(del.status()?, DelegationStatus::Signed);
 
         Ok(())
     }
