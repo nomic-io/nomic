@@ -54,6 +54,13 @@ impl Signing {
         }
     }
 
+    pub fn advance_with_timeout(&mut self, now: i64, timeout: i64) -> Result<()> {
+        if now > self.iteration_start_seconds + timeout && self.state() == SigningState::Round2 {
+            self.next_iteration()?;
+        }
+        Ok(())
+    }
+
     pub fn next_iteration(&mut self) -> Result<()> {
         self.iteration += 1;
         self.commitments_len = 0;

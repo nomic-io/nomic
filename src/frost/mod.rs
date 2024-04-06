@@ -230,6 +230,19 @@ impl FrostGroup {
 
         Ok(())
     }
+
+    pub fn advance_with_timeout(&mut self, timeout: i64) -> Result<()> {
+        let now = self.now()?;
+        for i in 0..self.signing.len() {
+            let mut sig = self
+                .signing
+                .get_mut(i)?
+                .ok_or(Error::App("Signing not found".into()))?;
+            sig.advance_with_timeout(now, timeout)?;
+        }
+
+        Ok(())
+    }
 }
 
 #[orga]
@@ -487,6 +500,18 @@ impl Frost {
         }
 
         Ok(None)
+    }
+
+    pub fn advance_with_timeout(&mut self, timeout: i64) -> Result<()> {
+        for i in 0..self.groups.len() {
+            let mut group = self
+                .groups
+                .get_mut(i)?
+                .ok_or(Error::App("Group not found".into()))?;
+
+            group.advance_with_timeout(timeout)?;
+        }
+        Ok(())
     }
 }
 

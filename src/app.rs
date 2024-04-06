@@ -559,10 +559,12 @@ mod abci {
             let ip_reward = self.incentive_pool_rewards.mint()?;
             self.incentive_pool.give(ip_reward)?;
 
+            self.frost.advance_with_timeout(5 * 60)?;
+
             if !self.bitcoin.checkpoints.is_empty()? {
                 let last_frost_group_time =
                     self.frost.groups.back()?.map(|g| g.created_at).unwrap_or(0);
-                if now > last_frost_group_time + 60 * 60 {
+                if now > last_frost_group_time + 4 * 60 * 60 {
                     let frost_config = FrostConfig::from_staking(&self.staking, 10, 8)?;
 
                     let group = FrostGroup::with_config(frost_config, now)?;
