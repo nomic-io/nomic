@@ -1,15 +1,24 @@
+use std::path::Path;
+
 use bitcoin::{
     secp256k1::{self, hashes::Hash, KeyPair, Secp256k1},
     util::bip32::{ChildNumber, ExtendedPrivKey},
 };
 use orga::{
     call::build_call,
-    client::{wallet::Unsigned, AppClient, Client},
+    client::{
+        wallet::{SimpleWallet, Unsigned},
+        AppClient, Client, Wallet,
+    },
+    coins::Address,
+    merk::MerkStore,
+    store::{DefaultBackingStore, Read, Shared, Store, Write},
     tendermint::client::HttpClient,
 };
 
 use crate::{
     app::{InnerApp, Nom},
+    app_client,
     babylon::DelegationStatus,
     bitcoin::threshold_sig::{Pubkey, Signature},
     error::Result,
@@ -17,6 +26,7 @@ use crate::{
 
 use super::Delegation;
 
+// pub async fn step(address: Address) -> Result<()> {}
 // TODO: scan loop
 // TODO: sign and submit pops
 // TODO: sign and submit slashing sigs
