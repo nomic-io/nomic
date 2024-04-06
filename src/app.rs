@@ -433,7 +433,7 @@ impl InnerApp {
             .delegations
             .get_mut(del_index)?
             .ok_or_else(|| Error::App("Delegation not found".to_string()))?
-            .sign_bbn(bbn_sig, &mut self.frost)?)
+            .sign_bbn(bbn_sig, Some(&mut self.frost))?)
     }
 
     #[call]

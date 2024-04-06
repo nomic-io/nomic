@@ -7,7 +7,8 @@ use bitcoin::{
         sighash::SighashCache,
         taproot::{TapLeafHash, TapSighashHash, TaprootBuilder},
     },
-    LockTime, OutPoint, Script, Sequence, Transaction, TxIn, TxOut, Txid, Witness, XOnlyPublicKey,
+    LockTime, OutPoint, Script, Sequence, Transaction, TxIn, TxMerkleNode, TxOut, Txid, Witness,
+    XOnlyPublicKey,
 };
 use bitcoin_script::bitcoin_script as script;
 use cosmos_sdk_proto::traits::TypeUrl;
@@ -42,7 +43,7 @@ pub mod signer;
 
 const MIN_DELEGATION: u64 = 20_000;
 const DEFAULT_FP: &str = "bd17e43d349d10f4ff4c1e3591427a8e65197d9a859930def60af21b0ec7b3ce";
-const BBN_PUBKEY: &str = "TODO";
+const BBN_PUBKEY: &str = "03f9082781f6119a6863cae036d6a766f24e0b321f80df4dea5b49f2980ae76665"; // bbn1vn8s0khjy4mg3g6py9hljzcsjcknvcm0crld7f
 
 /// The symbol for stBTC, a BTC liquid staking token.
 #[derive(State, Debug, Clone, Encode, Decode, Default, Migrate, Serialize)]
@@ -92,6 +93,7 @@ impl Babylon {
                 self.delegations.len(),
                 PublicKey::from_slice(&group_pubkey.inner.verifying_key().serialize())?.into(),
                 frost_index,
+                PublicKey::from_slice(&hex::decode(BBN_PUBKEY).unwrap())?,
                 vec![DEFAULT_FP.parse().unwrap()], // TODO: choose dynamically
                 1_008,
                 101,
@@ -481,7 +483,7 @@ fn bytes_to_pubkey(bytes: XOnlyPubkey) -> Result<XOnlyPublicKey> {
     Ok(XOnlyPublicKey::from_slice(&bytes)?)
 }
 
-#[derive(PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DelegationStatus {
     Created,
     SigningBbn,
@@ -521,6 +523,7 @@ impl Delegation {
         index: u64,
         btc_key: XOnlyPublicKey,
         frost_group: u64,
+        bbn_key: PublicKey,
         fp_keys: Vec<XOnlyPublicKey>,
         staking_period: u16,
         unbonding_period: u16,
@@ -530,8 +533,8 @@ impl Delegation {
         Ok(Self {
             index,
             btc_key: btc_key.serialize(),
-            bbn_key: Pubkey::try_from_slice(&hex::decode(BBN_PUBKEY).unwrap())?,
             frost_group,
+            bbn_key: Pubkey::try_from_slice(&bbn_key.serialize())?,
             fp_keys: fp_keys
                 .iter()
                 .map(|k| k.serialize())
@@ -560,9 +563,7 @@ impl Delegation {
         stake_amount / 1_000_000 // TODO: get covnersion from bitcoin config
     }
 
-    pub fn sign_bbn(&mut self, sig: Signature, frost: &mut Frost) -> Result<()> {
-        exempt_from_fee()?;
-
+    pub fn sign_bbn(&mut self, sig: Signature, frost: Option<&mut Frost>) -> Result<()> {
         if self.pop_bbn_sig.is_some() {
             return Err(Error::Orga(orga::Error::App("Already signed".to_string())));
         }
@@ -578,6 +579,14 @@ impl Delegation {
 
         self.pop_bbn_sig = Some(sig.serialize_compact().into());
 
+        if let Some(frost) = frost {
+            self.push_frost_messages(frost)?;
+        }
+
+        Ok(())
+    }
+
+    fn push_frost_messages(&mut self, frost: &mut Frost) -> Result<()> {
         let mut group = frost.groups.get_mut(self.frost_group)?.unwrap();
         self.frost_sig_offset.replace(group.signing.len());
         group.push_message(self.pop_btc_sighash()?.to_vec().try_into()?)?;
