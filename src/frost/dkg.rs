@@ -160,8 +160,8 @@ impl Dkg {
     pub fn requires_action_from(&self, participant: u16) -> Result<bool> {
         match self.state() {
             DkgState::Round1 => self.absent(participant),
-            DkgState::Round2 => self.round2.contains_key(participant),
-            DkgState::Attesting => self.attested.contains_key(participant),
+            DkgState::Round2 => Ok(!self.round2.contains_key(participant)?),
+            DkgState::Attesting => Ok(!self.attested.contains_key(participant)?),
             DkgState::Complete => Ok(false),
         }
     }
