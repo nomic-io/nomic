@@ -264,7 +264,6 @@ impl FrostGroup {
 impl Frost {
     #[call]
     pub fn noop_call(&mut self) -> Result<()> {
-        disable_fee(); // TODO: remove
         Ok(())
     }
 
