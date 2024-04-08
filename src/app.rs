@@ -72,9 +72,9 @@ const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhq
 const IBC_FEE_USATS: u64 = 1_000_000;
 const CALL_FEE_USATS: u64 = 100_000_000;
 
-const FROST_GROUP_INTERVAL: i64 = 60;
-const FROST_TOP_N: u16 = 3;
-const FROST_THRESHOLD: u16 = 2;
+const FROST_GROUP_INTERVAL: i64 = 4 * 60 * 60; // 4 hours
+const FROST_TOP_N: u16 = 5;
+const FROST_THRESHOLD: u16 = 3;
 
 #[orga(version = 6)]
 pub struct InnerApp {
@@ -461,7 +461,7 @@ impl InnerApp {
     }
 
     fn step_frost(&mut self, now: i64) -> Result<()> {
-        self.frost.advance_with_timeout(5 * 60)?;
+        self.frost.advance_with_timeout(10 * 60)?;
 
         let last_frost_group = self.frost.groups.back()?;
         let last_frost_group_time = last_frost_group.as_ref().map(|g| g.created_at).unwrap_or(0);
@@ -483,7 +483,7 @@ impl InnerApp {
                 frost_config.participants = participants.try_into()?;
             }
 
-            if frost_config.participants.len() < FROST_THRESHOLD as usize {
+            if frost_config.participants.len() < 2 {
                 return Ok(());
             }
             let group = FrostGroup::with_config(frost_config, now)?;

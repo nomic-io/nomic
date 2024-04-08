@@ -37,7 +37,6 @@ impl Config {
         threshold: u16,
     ) -> Result<Self> {
         let mut validators = staking.all_validators()?;
-        // TODO: check order
         validators.sort_by_key(|v| v.amount_staked);
 
         let threshold = std::cmp::min(threshold, validators.len() as u16);
@@ -432,6 +431,11 @@ impl Frost {
     pub fn dkg_action_required(&self, address: Address) -> Result<Vec<u64>> {
         let mut res = vec![];
         for i in 0..self.groups.len() {
+            if i != self.groups.len() - 1 {
+                // Temporary constraint to only participate in the most recent
+                // group's DKG
+                continue;
+            }
             let group = self
                 .groups
                 .get(i)?
