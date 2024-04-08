@@ -440,6 +440,8 @@ impl InnerApp {
     // TODO: we shouldn't need this once we can do subclient calls
     #[call]
     pub fn sign_bbn(&mut self, del_index: u64, bbn_sig: Signature) -> Result<()> {
+        exempt_from_fee()?;
+
         Ok(self
             .babylon
             .delegations
