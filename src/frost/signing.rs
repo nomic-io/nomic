@@ -69,6 +69,20 @@ impl Signing {
         Ok(())
     }
 
+    pub fn requires_action_from(&self, participant: u16) -> Result<bool> {
+        if self.state() == SigningState::Round1 {
+            return Ok(!self
+                .commitments
+                .contains_key((self.iteration, participant))?);
+        }
+        if self.state() == SigningState::Round2 {
+            return Ok(!self
+                .sig_shares
+                .contains_key((self.iteration, participant))?);
+        }
+        Ok(false)
+    }
+
     pub fn state(&self) -> SigningState {
         if self.commitments_len < self.config.threshold {
             return SigningState::Round1;

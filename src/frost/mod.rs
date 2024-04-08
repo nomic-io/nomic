@@ -437,8 +437,13 @@ impl Frost {
                 .get(i)?
                 .ok_or(Error::App("Sig not found".into()))?;
 
-            if group.dkg.state() != DkgState::Complete && group.config.contains(address) {
-                res.push(i);
+            if group.config.contains(address) {
+                for participant in group.config.share_range(address)? {
+                    if group.dkg.requires_action_from(participant)? {
+                        res.push(i);
+                        break;
+                    }
+                }
             }
         }
 
@@ -457,10 +462,17 @@ impl Frost {
                 continue;
             }
 
+            if !group.config.contains(address) {
+                continue;
+            }
+
             for j in 0..group.signing.len() {
                 if let Some(signing) = group.signing.get(j)? {
-                    if signing.state() != SigningState::Complete {
-                        res.push((i, j));
+                    for participant in group.config.share_range(address)? {
+                        if signing.requires_action_from(participant)? {
+                            res.push((i, j));
+                            break;
+                        }
                     }
                 }
             }
