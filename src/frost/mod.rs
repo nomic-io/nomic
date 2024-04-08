@@ -12,6 +12,7 @@ use orga::{orga, Error};
 
 pub mod dkg;
 pub mod encoding;
+#[cfg(feature = "full")]
 pub mod signer;
 pub mod signing;
 pub use encoding::Adapter;

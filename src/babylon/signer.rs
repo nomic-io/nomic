@@ -56,6 +56,7 @@ pub fn sign_btc(del: &Delegation, privkey: KeyPair) -> Result<(Signature, Signat
     ))
 }
 
+#[cfg(feature = "full")]
 pub async fn maybe_sign(
     del_client: AppClient<InnerApp, Delegation, HttpClient, Nom, Unsigned>,
     app_client: AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned>,

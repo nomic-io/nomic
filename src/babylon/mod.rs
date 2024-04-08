@@ -11,7 +11,6 @@ use bitcoin::{
     XOnlyPublicKey,
 };
 use bitcoin_script::bitcoin_script as script;
-use cosmos_sdk_proto::traits::TypeUrl;
 use ed::{Decode, Encode};
 use orga::{
     coins::{Accounts, Address, Amount, Coin, Give, Symbol, Take, Transfer},
@@ -35,10 +34,11 @@ use crate::{
 
 use crate::bitcoin::threshold_sig::{Pubkey, Signature};
 
-use self::proto::MsgCreateBtcDelegation;
-
+#[cfg(feature = "full")]
 pub mod proto;
+#[cfg(feature = "full")]
 pub mod relayer;
+#[cfg(feature = "full")]
 pub mod signer;
 
 const MIN_DELEGATION: u64 = 20_000;
