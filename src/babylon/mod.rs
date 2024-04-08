@@ -95,7 +95,7 @@ impl Babylon {
                 frost_index,
                 PublicKey::from_slice(&hex::decode(BBN_PUBKEY).unwrap())?,
                 vec![DEFAULT_FP.parse().unwrap()], // TODO: choose dynamically
-                1_008,
+                3_024,
                 101,
                 self.pending_stake.take_all()?,
                 btc.checkpoints.index,
