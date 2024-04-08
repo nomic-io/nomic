@@ -458,7 +458,7 @@ impl Frost {
             }
 
             for j in 0..group.signing.len() {
-                if let Some(signing) = group.signing.get(i)? {
+                if let Some(signing) = group.signing.get(j)? {
                     if signing.state() != SigningState::Complete {
                         res.push((i, j));
                     }
