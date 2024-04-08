@@ -65,6 +65,7 @@ impl Signing {
         self.iteration += 1;
         self.commitments_len = 0;
         self.sig_shares_len = 0;
+        self.signing_package = None;
         Ok(())
     }
 
