@@ -402,6 +402,14 @@ impl InnerApp {
         Ok(())
     }
 
+    #[call]
+    pub fn withdraw_unstaked_nbtc(&mut self, amount: Amount) -> Result<()> {
+        let signer = self.signer()?;
+        let unstaked = self.babylon.unstaked.withdraw(signer, amount)?;
+        self.bitcoin.accounts.deposit(signer, unstaked)?;
+        Ok(())
+    }
+
     // TODO: move into babylon module, get HeaderQueue via context
     #[call]
     pub fn relay_btc_staking_tx(

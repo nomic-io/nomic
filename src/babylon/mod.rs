@@ -247,6 +247,24 @@ impl Babylon {
 
         Ok(())
     }
+
+    #[query]
+    pub fn pending_stake(&self, addr: Address) -> Result<Amount> {
+        Ok(self
+            .pending_stake_by_addr
+            .get(addr)?
+            .map(|v| *v)
+            .unwrap_or_default())
+    }
+
+    #[query]
+    pub fn pending_unstake(&self, addr: Address) -> Result<Amount> {
+        Ok(self
+            .pending_unstake_by_addr
+            .get(addr)?
+            .map(|v| *v)
+            .unwrap_or_default())
+    }
 }
 
 pub fn multisig_script(pks: &[XOnlyPublicKey], threshold: u32, verify: bool) -> Result<Script> {
