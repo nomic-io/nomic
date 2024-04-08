@@ -2304,8 +2304,11 @@ pub struct FrostSignerCmd {
 impl FrostSignerCmd {
     async fn run(&self) -> Result<()> {
         let store = Store::with_map_store();
-        let mut signer =
-            crate::frost::signer::Signer::new(store, || self.config.client(), my_address());
+        let mut signer = crate::frost::signer::Signer::new(
+            store,
+            || self.config.client().with_wallet(wallet()),
+            my_address(),
+        );
         loop {
             signer.step().await?;
             std::thread::sleep(std::time::Duration::from_secs(5));
