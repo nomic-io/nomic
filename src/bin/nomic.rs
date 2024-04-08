@@ -34,6 +34,7 @@ use nomic::bitcoin::Nbtc;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::cosmos::tmhash;
 use nomic::error::Result;
+use nomic::frost::signer::SecretStore;
 use nomic::utils::load_bitcoin_key;
 use nomic::utils::load_or_generate;
 use nomic::{babylon, frost};
@@ -2303,7 +2304,11 @@ pub struct FrostSignerCmd {
 
 impl FrostSignerCmd {
     async fn run(&self) -> Result<()> {
-        let store = Store::with_map_store();
+        let signer_dir_path = self.config.home_expect()?.join("frost");
+        if !signer_dir_path.exists() {
+            std::fs::create_dir(&signer_dir_path)?;
+        }
+        let store = SecretStore::new_store(signer_dir_path);
         let mut signer = crate::frost::signer::Signer::new(
             store,
             || self.config.client().with_wallet(wallet()),

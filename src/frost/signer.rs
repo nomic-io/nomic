@@ -1,10 +1,12 @@
 use std::collections::HashMap;
+use std::path::Path;
 
 use frost_secp256k1_tr::round1::{commit, SigningCommitments, SigningNonces};
 use frost_secp256k1_tr::round2;
 use frost_secp256k1_tr::round2::SignatureShare;
 use orga::call::build_call;
 use orga::client::{AppClient, Wallet};
+use orga::merk::MerkStore;
 use orga::tendermint::client::HttpClient;
 use rand::thread_rng;
 
@@ -19,8 +21,64 @@ use orga::coins::Address;
 use orga::collections::Map;
 use orga::encoding::LengthVec;
 use orga::state::State;
-use orga::store::Store;
+use orga::store::{DefaultBackingStore, Read, Shared, Store, Write};
 use orga::{Error, Result};
+
+pub struct SecretStore {
+    merk_store: MerkStore,
+}
+
+impl SecretStore {
+    fn new<P: AsRef<Path>>(path: P) -> Self {
+        let merk_store: MerkStore = MerkStore::new(path);
+
+        Self { merk_store }
+    }
+
+    pub fn new_store<P: AsRef<Path>>(path: P) -> Store {
+        let secret_store = Self::new(path);
+
+        Store::new(DefaultBackingStore::Other(Shared::new(Box::new(
+            secret_store,
+        ))))
+    }
+}
+
+impl Read for SecretStore {
+    fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        self.merk_store.get(key)
+    }
+
+    fn get_next(&self, key: &[u8]) -> Result<Option<orga::store::KV>> {
+        self.merk_store.get_next(key)
+    }
+
+    fn get_prev(&self, key: Option<&[u8]>) -> Result<Option<orga::store::KV>> {
+        self.merk_store.get_prev(key)
+    }
+}
+
+impl Write for SecretStore {
+    fn delete(&mut self, key: &[u8]) -> Result<()> {
+        self.merk_store.delete(key)?;
+
+        self.flush()
+    }
+
+    fn put(&mut self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
+        self.merk_store.put(key, value)?;
+
+        self.flush()
+    }
+}
+
+impl SecretStore {
+    fn flush(&mut self) -> Result<()> {
+        self.merk_store.write(vec![])?;
+
+        Ok(())
+    }
+}
 
 pub struct Signer<W, C> {
     client: C,
