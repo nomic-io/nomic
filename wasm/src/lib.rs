@@ -617,6 +617,103 @@ pub async fn withdraw(address: String, dest_addr: String, amount: u64) -> Result
     .await
 }
 
+#[wasm_bindgen(js_name = stakeNbtc)]
+pub async fn stake_nbtc(address: String, amount: u64) -> Result<String, JsError> {
+    let mut value = serde_json::Map::new();
+    value.insert("amount".to_string(), amount.to_string().into());
+    let address = address
+        .parse()
+        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+
+    gen_call_bytes(
+        address,
+        sdk::Msg {
+            type_: "nomic/MsgStakeNbtc".to_string(),
+            value: value.into(),
+        },
+    )
+    .await
+}
+
+#[wasm_bindgen(js_name = unstakeNbtc)]
+pub async fn unstake_nbtc(address: String, amount: u64) -> Result<String, JsError> {
+    let mut value = serde_json::Map::new();
+    value.insert("amount".to_string(), amount.to_string().into());
+    let address = address
+        .parse()
+        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+
+    gen_call_bytes(
+        address,
+        sdk::Msg {
+            type_: "nomic/MsgUnstakeNbtc".to_string(),
+            value: value.into(),
+        },
+    )
+    .await
+}
+
+#[wasm_bindgen(js_name = claimUnbondedstBTC)]
+pub async fn claim_unbonded_stbtc(amount: u64, address: String) -> Result<String, JsError> {
+    let mut value = serde_json::Map::new();
+    value.insert("amount".to_string(), amount.to_string().into());
+
+    let address = address
+        .parse()
+        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+
+    gen_call_bytes(
+        address,
+        sdk::Msg {
+            type_: "nomic/MsgWithdrawUnstakedNbtc".to_string(),
+            value: serde_json::Map::new().into(),
+        },
+    )
+    .await
+}
+
+#[wasm_bindgen(js_name = unbondingStBTC)]
+pub async fn unbonding_stbtc(addr: String) -> Result<u64, JsError> {
+    let client = app_client();
+    let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+
+    Ok(client
+        .query(|app: InnerApp| Ok(app.babylon.pending_unstake(address)?))
+        .await?
+        .into())
+}
+
+#[wasm_bindgen(js_name = pendingStBTC)]
+pub async fn pending_stbtc(addr: String) -> Result<u64, JsError> {
+    let client = app_client();
+    let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+
+    Ok(client
+        .query(|app: InnerApp| Ok(app.babylon.pending_stake(address)?))
+        .await?
+        .into())
+}
+
+#[wasm_bindgen(js_name = stakedStBtcBalance)]
+pub async fn staked_stbtc_balance(addr: String) -> Result<u64, JsError> {
+    let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+
+    Ok(app_client()
+        .query(|app| app.babylon.stake.balance(address))
+        .await?
+        .into())
+}
+
+#[wasm_bindgen(js_name = unStakedStBtcBalance)]
+pub async fn unstaked_stbtc_balance(addr: String) -> Result<u64, JsError> {
+    let address = addr.parse().map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+
+    Ok(app_client()
+        .query(|app| app.babylon.unstaked.balance(address))
+        .await?
+        .into())
+}
+
 #[wasm_bindgen(js_name = payToFeePool)]
 pub async fn pay_to_fee_pool(address: String, amount: u64) -> Result<String, JsError> {
     let mut value = serde_json::Map::new();
