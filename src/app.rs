@@ -499,6 +499,19 @@ impl InnerApp {
 
         Ok(())
     }
+
+    #[call]
+    pub fn pay_stbtc_fee(&mut self) -> Result<()> {
+        self.deduct_stbtc_fee(CALL_FEE_USATS.into())
+    }
+
+    fn deduct_stbtc_fee(&mut self, amount: Amount) -> Result<()> {
+        disable_fee();
+        let signer = self.signer()?;
+        let fee = self.babylon.stake.withdraw(signer, amount)?;
+        // TODO: pay to a stBTC reward pool
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1153,7 +1166,7 @@ impl ConvertSdkTx for InnerApp {
                             .parse()
                             .map_err(|e: std::num::ParseIntError| Error::App(e.to_string()))?;
 
-                        let payer = build_call!(self.pay_nbtc_fee());
+                        let payer = build_call!(self.pay_stbtc_fee());
                         let paid = build_call!(self.unstake_nbtc(amount.into()));
 
                         Ok(PaidCall { payer, paid })
