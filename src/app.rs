@@ -403,9 +403,15 @@ impl InnerApp {
     }
 
     #[call]
-    pub fn withdraw_unstaked_nbtc(&mut self, amount: Amount) -> Result<()> {
+    pub fn withdraw_unstaked_nbtc(&mut self) -> Result<()> {
+        exempt_from_fee()?;
+
         let signer = self.signer()?;
-        let unstaked = self.babylon.unstaked.withdraw(signer, amount)?;
+        let balance = self.babylon.unstaked.balance(signer)?;
+        if balance == Amount::new(0) {
+            return Err(Error::App("No unstaked balance".into()));
+        }
+        let unstaked = self.babylon.unstaked.withdraw(signer, balance)?;
         self.bitcoin.accounts.deposit(signer, unstaked)?;
         Ok(())
     }
@@ -1158,17 +1164,12 @@ impl ConvertSdkTx for InnerApp {
                             .value
                             .as_object()
                             .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
+                        if !msg.is_empty() {
+                            return Err(Error::App("Message should be empty".to_string()));
+                        }
 
-                        let amount: u64 = msg
-                            .get("amount")
-                            .ok_or_else(|| Error::App("Invalid amount".to_string()))?
-                            .as_str()
-                            .ok_or_else(|| Error::App("Invalid amount".to_string()))?
-                            .parse()
-                            .map_err(|e: std::num::ParseIntError| Error::App(e.to_string()))?;
-
-                        let payer = build_call!(self.pay_nbtc_fee());
-                        let paid = build_call!(self.withdraw_unstaked_nbtc(amount.into()));
+                        let payer = build_call!(self.withdraw_unstaked_nbtc());
+                        let paid = build_call!(self.app_noop());
 
                         Ok(PaidCall { payer, paid })
                     }
