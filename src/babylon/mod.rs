@@ -86,7 +86,16 @@ impl Babylon {
         let mut pending_outputs = vec![];
         let frost_index = frost.most_recent_with_key()?;
 
-        if self.pending_stake_sats() >= MIN_DELEGATION && frost_index.is_some() {
+        let prev_del_cp = self
+            .delegations
+            .back()?
+            .map(|del| del.checkpoint_index)
+            .unwrap_or_default();
+
+        if self.pending_stake_sats() >= MIN_DELEGATION
+            && frost_index.is_some()
+            && btc.checkpoints.index > prev_del_cp
+        {
             let frost_index = frost_index.unwrap();
             let group_pubkey = frost.group_pubkey(frost_index)?.unwrap();
             let del = Delegation::new(
