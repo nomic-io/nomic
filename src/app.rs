@@ -1127,8 +1127,8 @@ impl ConvertSdkTx for InnerApp {
                             .parse()
                             .map_err(|e: std::num::ParseIntError| Error::App(e.to_string()))?;
 
-                        let payer = build_call!(self.stake_nbtc(amount.into()));
-                        let paid = build_call!(self.app_noop());
+                        let payer = build_call!(self.pay_nbtc_fee());
+                        let paid = build_call!(self.stake_nbtc(amount.into()));
 
                         Ok(PaidCall { payer, paid })
                     }
@@ -1147,8 +1147,8 @@ impl ConvertSdkTx for InnerApp {
                             .parse()
                             .map_err(|e: std::num::ParseIntError| Error::App(e.to_string()))?;
 
-                        let payer = build_call!(self.unstake_nbtc(amount.into()));
-                        let paid = build_call!(self.app_noop());
+                        let payer = build_call!(self.pay_nbtc_fee());
+                        let paid = build_call!(self.unstake_nbtc(amount.into()));
 
                         Ok(PaidCall { payer, paid })
                     }
@@ -1167,8 +1167,8 @@ impl ConvertSdkTx for InnerApp {
                             .parse()
                             .map_err(|e: std::num::ParseIntError| Error::App(e.to_string()))?;
 
-                        let payer = build_call!(self.withdraw_unstaked_nbtc(amount.into()));
-                        let paid = build_call!(self.app_noop());
+                        let payer = build_call!(self.pay_nbtc_fee());
+                        let paid = build_call!(self.withdraw_unstaked_nbtc(amount.into()));
 
                         Ok(PaidCall { payer, paid })
                     }
