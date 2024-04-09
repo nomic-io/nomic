@@ -246,6 +246,8 @@ where
         self.call(|app| build_call!(app.frost.submit_dkg_round1(index, packages.clone())))
             .await?;
 
+        log::info!("Submitted DKG round 1 for group {}", index);
+
         Ok(())
     }
 
@@ -280,6 +282,8 @@ where
         let round2_packages: LengthVec<u16, _> = round2_packages.try_into()?;
         self.call(|app| build_call!(app.frost.submit_dkg_round2(index, round2_packages.clone())))
             .await?;
+
+        log::info!("Submitted DKG round 2 for group {}", index);
 
         Ok(())
     }
@@ -335,6 +339,8 @@ where
                 let pubkey = Adapter { inner: pubkey };
                 self.call(|app| build_call!(app.frost.attest_dkg_pubkey(index, pubkey.clone())))
                     .await?;
+
+                log::info!("Submitted DKG pubkey attestation for group {}", index);
             }
         }
 
@@ -384,6 +390,8 @@ where
             ))
         })
         .await?;
+
+        log::info!("Submitted commitment for group {} signature {} iteration {}", group_index, sig_index, iteration);
 
         Ok(())
     }
@@ -442,6 +450,8 @@ where
             ))
         })
         .await?;
+
+        log::info!("Submitted signature share for group {} signature {} iteration {}", group_index, sig_index, iteration);
 
         Ok(())
     }
