@@ -1,26 +1,14 @@
-use std::path::Path;
-
-use bitcoin::{
-    secp256k1::{self, hashes::Hash, KeyPair, Secp256k1},
-    util::bip32::{ChildNumber, ExtendedPrivKey},
-};
+use bitcoin::secp256k1::{self, KeyPair, Secp256k1};
 use orga::{
     call::build_call,
-    client::{
-        wallet::{SimpleWallet, Unsigned},
-        AppClient, Client, Wallet,
-    },
-    coins::Address,
-    merk::MerkStore,
-    store::{DefaultBackingStore, Read, Shared, Store, Write},
+    client::{wallet::Unsigned, AppClient},
     tendermint::client::HttpClient,
 };
 
 use crate::{
     app::{InnerApp, Nom},
-    app_client,
     babylon::DelegationStatus,
-    bitcoin::threshold_sig::{Pubkey, Signature},
+    bitcoin::threshold_sig::Signature,
     error::Result,
 };
 

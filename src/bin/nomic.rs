@@ -4,35 +4,21 @@
 #![feature(async_closure)]
 #![feature(never_type)]
 
-use bech32::ToBase32;
 use bitcoin::consensus::{Decodable, Encodable};
-use bitcoin::psbt::Prevouts;
+use bitcoin::secp256k1;
 use bitcoin::secp256k1::SecretKey;
 use bitcoin::util::bip32::ExtendedPubKey;
-use bitcoin::util::sighash::SighashCache;
-use bitcoin::util::taproot::TapLeafHash;
-use bitcoin::{secp256k1, BlockHash, OutPoint, TxMerkleNode, TxOut, Txid, XOnlyPublicKey};
 use bitcoincore_rpc_async::RpcApi;
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
-use cosmos_sdk_proto::cosmos::crypto::secp256k1::PubKey;
-use cosmos_sdk_proto::traits::MessageExt;
-use cosmrs::crypto::secp256k1::SigningKey;
-use cosmrs::crypto::PublicKey;
-use cosmrs::tendermint::block::Height;
-use cosmrs::tx::mode_info::Single;
-use cosmrs::tx::{ModeInfo, SignDoc, SignMode};
 use nomic::app::Dest;
 use nomic::app::IbcDest;
 use nomic::app::InnerApp;
 use nomic::app::Nom;
-use nomic::babylon::proto::btccheckpoint::TransactionInfo;
 use nomic::bitcoin::adapter::Adapter;
 use nomic::bitcoin::signatory::SignatorySet;
-use nomic::bitcoin::threshold_sig::Pubkey;
 use nomic::bitcoin::Nbtc;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
-use nomic::cosmos::tmhash;
 use nomic::error::Result;
 use nomic::frost::signer::SecretStore;
 use nomic::utils::load_bitcoin_key;
@@ -40,9 +26,8 @@ use nomic::utils::load_or_generate;
 use nomic::{babylon, frost};
 use orga::abci::Node;
 use orga::client::wallet::{SimpleWallet, Wallet};
-use orga::coins::{Address, Coin, Commission, Decimal, Declaration, Symbol};
+use orga::coins::{Address, Commission, Decimal, Declaration, Symbol};
 use orga::collections::Ref;
-use orga::ibc::ibc_rs::clients::AsAny;
 use orga::ibc::ibc_rs::core::{
     ics24_host::identifier::{ChannelId, PortId},
     timestamp::Timestamp,
@@ -51,7 +36,6 @@ use orga::macros::build_call;
 use orga::merk::MerkStore;
 use orga::plugins::MIN_FEE;
 use orga::prelude::*;
-use orga::secp256k1::Secp256k1;
 use orga::{client::AppClient, tendermint::client::HttpClient};
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
@@ -2185,7 +2169,7 @@ pub struct BabylonRelayerCmd {
 }
 
 impl BabylonRelayerCmd {
-    async fn btc_client(&self) -> Result<BtcClient> {
+    async fn _btc_client(&self) -> Result<BtcClient> {
         let rpc_url = format!("http://localhost:{}", self.rpc_port);
         let auth = match (self.rpc_user.clone(), self.rpc_pass.clone()) {
             (Some(user), Some(pass)) => Auth::UserPass(user, pass),
@@ -2200,50 +2184,7 @@ impl BabylonRelayerCmd {
     }
 
     async fn run(&self) -> Result<()> {
-        let bbn_privkey = SecretKey::from_slice(&[124; 32]).unwrap();
-        let mut sha = sha2::Sha256::new();
-        sha.update(
-            &bbn_privkey
-                .public_key(&bitcoin::secp256k1::Secp256k1::new())
-                .serialize(),
-        );
-        let hash = sha.finalize();
-        use ripemd::Digest as _;
-        let mut ripemd = ripemd::Ripemd160::new();
-        ripemd.update(hash);
-        let hash = ripemd.finalize();
-        let mut bbn_addr_bytes = [0; orga::coins::Address::LENGTH];
-        bbn_addr_bytes.copy_from_slice(hash.as_slice());
-        let bbn_addr =
-            bech32::encode("bbn", bbn_addr_bytes.to_base32(), bech32::Variant::Bech32).unwrap();
-        dbg!(&bbn_addr);
-
-        let app_client = self.config.client();
-        let del = app_client
-            .query(|app| {
-                let r = app.babylon.delegations.back()?.unwrap();
-                // TODO
-                if let Ref::Owned(d) = r {
-                    Ok(d)
-                } else {
-                    panic!();
-                }
-            })
-            .await?;
-
-        let btc_client = self.btc_client().await?;
-        dbg!(
-            babylon::relayer::maybe_relay_staking_conf(self.config.client(), btc_client, &del)
-                .await?
-        );
-
-        let btc_client = self.btc_client().await?;
-        let bbn_privkey = SecretKey::from_slice(&[124; 32]).unwrap();
-        dbg!(
-            babylon::relayer::maybe_relay_create_delegation(&btc_client, bbn_privkey, &del).await?
-        );
-
-        Ok(())
+        todo!()
     }
 }
 

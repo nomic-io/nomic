@@ -7,27 +7,23 @@ use bitcoin::{
         sighash::SighashCache,
         taproot::{TapLeafHash, TapSighashHash, TaprootBuilder},
     },
-    LockTime, OutPoint, Script, Sequence, Transaction, TxIn, TxMerkleNode, TxOut, Txid, Witness,
-    XOnlyPublicKey,
+    OutPoint, Script, Sequence, Transaction, TxIn, TxOut, Witness, XOnlyPublicKey,
 };
 use bitcoin_script::bitcoin_script as script;
 use ed::{Decode, Encode};
 use orga::{
     coins::{Accounts, Address, Amount, Coin, Give, Symbol, Take, Transfer},
     collections::{Deque, Map},
-    context::Context,
     encoding::LengthVec,
     macros::Migrate,
     orga,
-    plugins::Signer,
     state::State,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::{
-    bitcoin::{adapter::Adapter, exempt_from_fee, header_queue::HeaderQueue, Nbtc},
-    cosmos::tmhash,
+    bitcoin::{header_queue::HeaderQueue, Nbtc},
     error::{Error, Result},
     frost::Frost,
 };
@@ -293,7 +289,7 @@ pub fn multisig_script(pks: &[XOnlyPublicKey], threshold: u32, verify: bool) -> 
         return Ok(single_key_script(pks[0], verify));
     }
 
-    let pks = sort_keys(&pks)?;
+    let pks = sort_keys(pks)?;
 
     let mut bytes = vec![];
     for (i, pk) in pks.iter().enumerate() {
@@ -323,7 +319,7 @@ pub fn sort_keys(pks: &[XOnlyPublicKey]) -> Result<Vec<XOnlyPublicKey>> {
     }
 
     let mut pks = pks.to_vec();
-    pks.sort_by(|a, b| a.serialize().cmp(&b.serialize()));
+    pks.sort_by_key(|pk| pk.serialize());
 
     for i in 0..pks.len() - 1 {
         if pks[i] == pks[i + 1] {
@@ -766,16 +762,16 @@ impl Delegation {
     }
 
     pub fn staking_script(&self) -> Result<Script> {
-        Ok(staking_script(
+        staking_script(
             self.btc_key()?,
             &self.fp_keys()?,
             self.staking_period,
             &Params::bbn_test_3(),
-        )?)
+        )
     }
 
     pub fn unbonding_tx(&self) -> Result<Transaction> {
-        Ok(unbonding_tx(
+        unbonding_tx(
             self.btc_key()?,
             &self.fp_keys()?,
             *self.staking_outpoint.ok_or_else(|| {
@@ -784,11 +780,11 @@ impl Delegation {
             self.stake_sats(),
             self.unbonding_period,
             &Params::bbn_test_3(),
-        )?)
+        )
     }
 
     pub fn slashing_tx(&self) -> Result<Transaction> {
-        Ok(slashing_tx(
+        slashing_tx(
             self.btc_key()?,
             *self.staking_outpoint.ok_or_else(|| {
                 Error::Orga(orga::Error::App("Missing staking outpoint".to_string()))
@@ -796,11 +792,11 @@ impl Delegation {
             self.stake_sats(),
             self.unbonding_period,
             &Params::bbn_test_3(),
-        )?)
+        )
     }
 
     pub fn unbonding_slashing_tx(&self) -> Result<Transaction> {
-        Ok(slashing_tx(
+        slashing_tx(
             self.btc_key()?,
             OutPoint {
                 txid: self.unbonding_tx()?.txid(),
@@ -809,7 +805,7 @@ impl Delegation {
             self.unbonding_tx()?.output[0].value,
             self.unbonding_period,
             &Params::bbn_test_3(),
-        )?)
+        )
     }
 
     pub fn slashing_sighash(&self) -> Result<TapSighashHash> {
@@ -861,7 +857,7 @@ impl Delegation {
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::{psbt::serialize::Deserialize, util::bip32::ExtendedPrivKey, KeyPair, Network};
+    use bitcoin::{psbt::serialize::Deserialize, util::bip32::ExtendedPrivKey, Network};
     use tests::signer::{sign_bbn_pop, sign_btc};
 
     use super::*;

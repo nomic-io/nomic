@@ -6,28 +6,26 @@ use bech32::ToBase32;
 use bitcoin::{
     consensus::{Decodable, Encodable},
     psbt::serialize::Serialize,
-    secp256k1::{self, hashes::Hash, KeyPair, Secp256k1},
+    secp256k1::{self, hashes::Hash},
     Block, BlockHash, TxMerkleNode, TxOut, Txid,
 };
-use bitcoincore_rpc_async::{json::GetBlockHeaderResult, Client as BitcoinRpcClient, RpcApi};
+use bitcoincore_rpc_async::{Client as BitcoinRpcClient, RpcApi};
 use cosmos_sdk_proto::{cosmos::crypto::secp256k1::PubKey, traits::TypeUrl};
 use cosmrs::{
     crypto::secp256k1::SigningKey,
     tx::{mode_info::Single, MessageExt, ModeInfo, SignDoc, SignMode},
 };
-use orga::ibc::ibc_rs::clients::AsAny;
 use orga::{
     call::build_call,
-    client::{wallet::Unsigned, AppClient, Client},
+    client::{wallet::Unsigned, AppClient},
     tendermint::client::HttpClient,
 };
-use prost::Message;
 use sha2::{Digest, Sha256};
 
 use crate::{
     app::{InnerApp, Nom},
     babylon::DelegationStatus,
-    bitcoin::{adapter::Adapter, checkpoint::CheckpointStatus, threshold_sig::Pubkey},
+    bitcoin::{adapter::Adapter, checkpoint::CheckpointStatus},
     error::{Error, Result},
 };
 
@@ -36,17 +34,92 @@ use super::{
     Delegation,
 };
 
-// TODO: scan loop
-// TODO: sign and submit pops
-// TODO: sign and submit slashing sigs
+pub async fn relay_staking_confs(
+    app_client: &AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned>,
+    btc_client: &BitcoinRpcClient,
+) -> Result<()> {
+    let delegations = app_client
+        .query(|app| {
+            for del in app.babylon.delegations.iter()? {
+                del?;
+            }
+
+            Ok(app.babylon.delegations)
+        })
+        .await?;
+
+    let delegations = delegations
+        .iter()?
+        .filter_map(|del| match del {
+            Err(err) => Some(Err(err)),
+            Ok(del) => {
+                if del.staking_outpoint.is_some() {
+                    return None;
+                }
+                Some(Ok(del))
+            }
+        })
+        .collect::<orga::Result<Vec<_>>>()?;
+
+    if delegations.is_empty() {
+        return Ok(());
+    }
+
+    log::info!("Found {} unconfirmed delegations", delegations.len());
+
+    for del in delegations {
+        maybe_relay_staking_conf(app_client, btc_client, &del).await?;
+    }
+
+    Ok(())
+}
+
+pub async fn relay_create_msgs(
+    app_client: &AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned>,
+    btc_client: &BitcoinRpcClient,
+    relayer_privkey: secp256k1::SecretKey,
+) -> Result<()> {
+    let delegations = app_client
+        .query(|app| {
+            for del in app.babylon.delegations.iter()? {
+                del?;
+            }
+
+            Ok(app.babylon.delegations)
+        })
+        .await?;
+
+    let delegations = delegations
+        .iter()?
+        .filter_map(|del| match del {
+            Err(err) => Some(Err(err)),
+            Ok(del) => {
+                if del.status().unwrap() != DelegationStatus::Signed {
+                    return None;
+                }
+                Some(Ok(del))
+            }
+        })
+        .collect::<orga::Result<Vec<_>>>()?;
+
+    if delegations.is_empty() {
+        return Ok(());
+    }
+
+    log::info!("Found {} signed delegations", delegations.len());
+
+    for del in delegations {
+        maybe_relay_create_delegation(btc_client, relayer_privkey, &del).await?;
+    }
+
+    todo!()
+}
 
 pub async fn maybe_relay_staking_conf(
-    app_client: AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned>,
-    btc_client: BitcoinRpcClient,
+    app_client: &AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned>,
+    btc_client: &BitcoinRpcClient,
     del: &Delegation,
 ) -> Result<bool> {
-    dbg!(&del);
-
     if del.staking_outpoint.is_some() {
         log::debug!("Staking tx relayed, continuing");
         return Ok(true);
@@ -63,7 +136,7 @@ pub async fn maybe_relay_staking_conf(
         return Ok(false);
     }
 
-    let maybe_conf = scan_for_txid(&btc_client, tx.txid(), 100).await?;
+    let maybe_conf = scan_for_txid(btc_client, tx.txid(), 100).await?;
     if let Some((height, block_hash)) = maybe_conf {
         let proof_bytes = btc_client
             .get_tx_out_proof(&[tx.txid()], Some(&block_hash))
@@ -154,9 +227,9 @@ pub async fn last_n_blocks(
     Ok(blocks)
 }
 
-pub fn bbn_addr(pubkey: Pubkey) -> String {
+pub fn bbn_addr(pubkey: secp256k1::PublicKey) -> String {
     let mut sha = Sha256::new();
-    sha.update(pubkey.as_slice());
+    sha.update(pubkey.serialize());
     let hash = sha.finalize();
 
     use ripemd::Digest as _;
@@ -170,15 +243,58 @@ pub fn bbn_addr(pubkey: Pubkey) -> String {
     bech32::encode("bbn", bbn_addr_bytes.to_base32(), bech32::Variant::Bech32).unwrap()
 }
 
+impl Delegation {
+    pub fn to_create_msg(&self, relayer_addr: String) -> Result<proto::MsgCreateBtcDelegation> {
+        let pop = proto::ProofOfPossession {
+            babylon_sig: self.pop_bbn_sig.unwrap().to_vec(),
+            btc_sig: self.pop_btc_sig.unwrap().to_vec(),
+            btc_sig_type: proto::BtcSigType::Bip322.into(),
+        };
+
+        Ok(proto::MsgCreateBtcDelegation {
+            babylon_pk: Some(PubKey {
+                key: self.bbn_key.as_slice().to_vec(),
+            }),
+            btc_pk: self.btc_key.to_vec(),
+            fp_btc_pk_list: self.fp_keys.iter().map(|k| k.to_vec()).collect(),
+            pop: Some(pop),
+            staking_time: self.staking_period as u32,
+            staking_tx: None,
+            staking_value: self.stake_sats() as i64,
+            unbonding_time: self.unbonding_period as u32,
+            unbonding_value: (self.stake_sats() - 1_000) as i64, // TODO: get from config
+            delegator_slashing_sig: self.slashing_tx_sig.unwrap().to_vec(),
+            delegator_unbonding_slashing_sig: self.unbonding_slashing_tx_sig.unwrap().to_vec(),
+            signer: relayer_addr.to_string(),
+            slashing_tx: self.slashing_tx()?.serialize(),
+            unbonding_tx: self.unbonding_tx()?.serialize(),
+            unbonding_slashing_tx: self.unbonding_slashing_tx()?.serialize(),
+        })
+    }
+}
+
 pub async fn maybe_relay_create_delegation(
     btc_client: &BitcoinRpcClient,
-    bbn_privkey: secp256k1::SecretKey,
+    relayer_privkey: secp256k1::SecretKey,
     del: &Delegation,
 ) -> Result<bool> {
     if del.status()? != DelegationStatus::Signed {
         log::debug!("Delegation not yet signed");
         return Ok(false);
     }
+
+    if del.index == 4 {
+        return Ok(true);
+    }
+    dbg!(del.index, del.staking_outpoint);
+
+    let secp = secp256k1::Secp256k1::new();
+
+    let relayer_pubkey = relayer_privkey.public_key(&secp);
+    let relayer_addr = bbn_addr(relayer_pubkey);
+    dbg!(&relayer_addr);
+
+    let mut msg = del.to_create_msg(relayer_addr)?;
 
     let block_hash = btc_client
         .get_block_hash(del.staking_height.unwrap() as u64)
@@ -189,53 +305,25 @@ pub async fn maybe_relay_create_delegation(
         del.staking_outpoint.unwrap().txid,
         Some(block.merkleroot),
     );
-
     let staking_tx_bytes = btc_client
         .get_raw_transaction(&del.staking_outpoint.unwrap().txid, Some(&block_hash))
         .await?
         .serialize();
-
-    let bbn_addr = bbn_addr(del.bbn_key);
-
-    let pop = proto::ProofOfPossession {
-        babylon_sig: del.pop_bbn_sig.unwrap().to_vec(),
-        btc_sig: del.pop_btc_sig.unwrap().to_vec(),
-        btc_sig_type: proto::BtcSigType::Bip322.into(),
-    };
-
-    let msg = proto::MsgCreateBtcDelegation {
-        babylon_pk: Some(PubKey {
-            key: del.bbn_key.as_slice().to_vec(),
+    msg.staking_tx = Some(proto::btccheckpoint::TransactionInfo {
+        key: Some(proto::btccheckpoint::TransactionKey {
+            index: block_index,
+            hash: block_hash.as_ref().to_vec(),
         }),
-        btc_pk: del.btc_key.to_vec(),
-        fp_btc_pk_list: del.fp_keys.iter().map(|k| k.to_vec()).collect(),
-        pop: Some(pop),
-        staking_time: del.staking_period as u32,
-        staking_tx: Some(proto::btccheckpoint::TransactionInfo {
-            key: Some(proto::btccheckpoint::TransactionKey {
-                index: block_index,
-                hash: block_hash.as_ref().to_vec(),
-            }),
-            transaction: staking_tx_bytes,
-            proof: proof_bytes,
-        }),
-        staking_value: del.stake_sats() as i64,
-        unbonding_time: del.unbonding_period as u32,
-        unbonding_value: (del.stake_sats() - 1_000) as i64, // TODO: get from config
-        delegator_slashing_sig: del.slashing_tx_sig.unwrap().to_vec(),
-        delegator_unbonding_slashing_sig: del.unbonding_slashing_tx_sig.unwrap().to_vec(),
-        signer: bbn_addr,
-        slashing_tx: del.slashing_tx()?.serialize(),
-        unbonding_tx: del.unbonding_tx()?.serialize(),
-        unbonding_slashing_tx: del.unbonding_slashing_tx()?.serialize(),
-    };
+        transaction: staking_tx_bytes,
+        proof: proof_bytes,
+    });
 
     let body = cosmrs::tx::Body::new([msg.to_any().unwrap()], "", u32::MAX);
     let auth_info = cosmrs::tx::AuthInfo {
         signer_infos: vec![cosmrs::tx::SignerInfo {
             public_key: Some(cosmrs::tx::SignerPublicKey::Single(
                 cosmrs::tendermint::public_key::PublicKey::from_raw_secp256k1(
-                    del.bbn_key.as_slice(),
+                    relayer_pubkey.serialize().as_slice(),
                 )
                 .unwrap()
                 .into(),
@@ -243,7 +331,7 @@ pub async fn maybe_relay_create_delegation(
             mode_info: ModeInfo::Single(Single {
                 mode: SignMode::Direct,
             }),
-            sequence: 7,
+            sequence: 4,
         }],
         fee: cosmrs::tx::Fee {
             gas_limit: 200_000,
@@ -256,11 +344,11 @@ pub async fn maybe_relay_create_delegation(
         },
     };
 
-    let sign_doc = SignDoc::new(&body, &auth_info, &"bbn-test-3".parse().unwrap(), 224774).unwrap();
-    let signing_key = SigningKey::from_slice(&bbn_privkey.secret_bytes()).unwrap();
+    let sign_doc = SignDoc::new(&body, &auth_info, &"bbn-test-3".parse().unwrap(), 224180).unwrap();
+    let signing_key = SigningKey::from_slice(&relayer_privkey.secret_bytes()).unwrap();
     let tx_signed = sign_doc.sign(&signing_key).unwrap().to_bytes().unwrap();
 
-    dbg!(hex::encode(&del.btc_key));
+    dbg!(hex::encode(del.btc_key));
 
     log::info!("Broadcasting MsgCreateBtcDelegation to Babylon");
     use tendermint_rpc::Client;
@@ -271,14 +359,6 @@ pub async fn maybe_relay_create_delegation(
             .await
             .unwrap()
     );
-
-    // let cmd = format!("curl https://lcd.testnet3.babylonchain.io/cosmos/tx/v1beta1/simulate -d '{{\"tx_bytes\":\"{}\",\"mode\":\"BROADCAST_MODE_SYNC\"}}'", base64::encode(&tx_signed));
-    // let output = std::process::Command::new("sh")
-    //     .arg("-c")
-    //     .arg(cmd)
-    //     .output()
-    //     .expect("failed to execute process");
-    // println!("output: {:?}", String::from_utf8(output.stdout).unwrap());
 
     Ok(true)
 }
@@ -303,7 +383,7 @@ fn tree_hash(left: Option<[u8; 32]>, right: Option<[u8; 32]>) -> Option<[u8; 32]
 
 fn tree_node(hashes: &[[u8; 32]], index: u32, level: u32) -> Option<[u8; 32]> {
     if level == 0 {
-        return hashes.get(index as usize).map(|h| *h);
+        return hashes.get(index as usize).copied();
     }
 
     let left = tree_node(hashes, index << 1, level - 1)?;
@@ -318,12 +398,14 @@ pub fn create_proof(
 ) -> (u32, Vec<u8>) {
     let index = txids.iter().position(|txid| *txid == target_txid).unwrap() as u32;
     let hashes: Vec<_> = txids.iter().map(|txid| txid.into_inner()).collect();
-    let levels = 0usize.leading_zeros() - hashes.len().leading_zeros();
+    let levels = 0usize.leading_zeros() - (hashes.len() - 1).leading_zeros();
+    dbg!(hashes.len(), levels);
 
     let mut proof_bytes = vec![];
     let mut idx = index;
     let mut size = hashes.len() as u32;
     for level in 0..levels {
+        dbg!(level, size, idx);
         let sibling = tree_node(&hashes, idx ^ 1, level)
             .unwrap_or(tree_node(&hashes, size - 1, level).unwrap());
         proof_bytes.extend_from_slice(&sibling);
