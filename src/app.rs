@@ -5,9 +5,9 @@
 
 use crate::airdrop::Airdrop;
 use crate::bitcoin::adapter::Adapter;
+use crate::bitcoin::matches_bitcoin_network;
 use crate::bitcoin::{Bitcoin, Nbtc};
 use crate::cosmos::{Chain, Cosmos, Proof};
-use crate::utils::matches_bitcoin_network;
 
 use crate::incentives::Incentives;
 use bitcoin::util::merkleblock::PartialMerkleTree;

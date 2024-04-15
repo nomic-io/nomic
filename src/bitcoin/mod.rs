@@ -4,7 +4,6 @@ use self::threshold_sig::Signature;
 use crate::app::Dest;
 use crate::bitcoin::checkpoint::BatchType;
 use crate::error::{Error, Result};
-use crate::utils::matches_bitcoin_network;
 use adapter::Adapter;
 use bitcoin::hashes::Hash;
 use bitcoin::util::bip32::ChildNumber;
@@ -250,6 +249,18 @@ impl Default for Config {
             bitcoin::Network::Regtest => Config::regtest(),
             bitcoin::Network::Testnet | bitcoin::Network::Bitcoin => Config::bitcoin(),
             _ => unimplemented!(),
+        }
+    }
+}
+
+pub fn matches_bitcoin_network(network: &bitcoin::Network) -> bool {
+    match crate::bitcoin::NETWORK {
+        bitcoin::Network::Bitcoin => network == &crate::bitcoin::NETWORK,
+        bitcoin::Network::Regtest => {
+            network == &bitcoin::Network::Regtest || network == &bitcoin::Network::Testnet
+        }
+        bitcoin::Network::Testnet | bitcoin::Network::Signet => {
+            network == &bitcoin::Network::Testnet || network == &bitcoin::Network::Signet
         }
     }
 }

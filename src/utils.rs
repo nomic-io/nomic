@@ -201,18 +201,6 @@ pub fn load_consensus_key(dir: &Path) -> Result<[u8; 32]> {
         .map_err(|_| orga::Error::App("invalid consensus key".to_string()))?)
 }
 
-pub fn matches_bitcoin_network(network: &bitcoin::Network) -> bool {
-    match crate::bitcoin::NETWORK {
-        bitcoin::Network::Bitcoin => network == &crate::bitcoin::NETWORK,
-        bitcoin::Network::Regtest => {
-            network == &bitcoin::Network::Regtest || network == &bitcoin::Network::Testnet
-        }
-        bitcoin::Network::Testnet | bitcoin::Network::Signet => {
-            network == &bitcoin::Network::Testnet || network == &bitcoin::Network::Signet
-        }
-    }
-}
-
 pub fn set_time<T: Into<Time>>(time: T) {
     Context::add(time.into());
 }
