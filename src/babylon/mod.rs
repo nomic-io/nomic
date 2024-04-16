@@ -441,8 +441,8 @@ pub fn slashing_tx(
         witness: Witness::default(),
     };
 
-    let slashing_rate = (1, 10); // TODO: parameterize
-    let slashing_value = stake_value * slashing_rate.0 / slashing_rate.1;
+    let slashing_rate = (11, 100); // TODO: parameterize
+    let slashing_value = (stake_value as u128 * slashing_rate.0 / slashing_rate.1) as u64;
     let slashing_out = TxOut {
         value: slashing_value,
         script_pubkey: params.slashing_addr.script_pubkey(),
