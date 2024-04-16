@@ -467,8 +467,6 @@ impl InnerApp {
     }
 
     fn step_frost(&mut self, now: i64) -> Result<()> {
-        self.frost.advance_with_timeout(10 * 60)?;
-
         let last_frost_group = self.frost.groups.back()?;
         let last_frost_group_time = last_frost_group.as_ref().map(|g| g.created_at).unwrap_or(0);
         let absent = last_frost_group
