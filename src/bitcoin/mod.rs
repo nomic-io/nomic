@@ -543,6 +543,7 @@ impl Bitcoin {
     /// current `Building` checkpoint to be spent as an input. The deposit's
     /// committed destination will be credited once the checkpoint is fully
     /// signed.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn relay_deposit(
         &mut self,
         btc_tx: Adapter<Transaction>,
