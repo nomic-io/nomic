@@ -2014,6 +2014,7 @@ impl CheckpointQueue {
         Ok(BuildingCheckpointMut(last))
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn building_mut_or_insert(
         &mut self,
         deposit: bool,
@@ -2068,6 +2069,7 @@ impl CheckpointQueue {
         Ok(())
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn insert_pending_deposit(
         &mut self,
         dest: Dest,

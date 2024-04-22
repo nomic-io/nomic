@@ -242,20 +242,26 @@ impl InnerApp {
         sigset_index: u32,
         dest: Dest,
     ) -> Result<()> {
-        if let Dest::Ibc(dest) = dest.clone() {
-            dest.source_port()?;
-            dest.source_channel()?;
-            dest.sender_address()?;
-        }
+        #[cfg(target_arch = "wasm32")]
+        unimplemented!();
 
-        Ok(self.bitcoin.relay_deposit(
-            btc_tx,
-            btc_height,
-            btc_proof,
-            btc_vout,
-            sigset_index,
-            dest,
-        )?)
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if let Dest::Ibc(dest) = dest.clone() {
+                dest.source_port()?;
+                dest.source_channel()?;
+                dest.sender_address()?;
+            }
+
+            Ok(self.bitcoin.relay_deposit(
+                btc_tx,
+                btc_height,
+                btc_proof,
+                btc_vout,
+                sigset_index,
+                dest,
+            )?)
+        }
     }
 
     #[call]
