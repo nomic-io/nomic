@@ -22,7 +22,7 @@ use orga::context::GetContext;
 use orga::plugins::Time;
 use orga::{
     call::Call,
-    collections::{map::ReadOnly, ChildMut, Deque, Map, Ref},
+    collections::{ChildMut, Deque, Map, Ref},
     encoding::{Decode, Encode, LengthVec},
     migrate::{Migrate, MigrateFrom},
     orga,
@@ -1620,6 +1620,7 @@ impl<'a> BuildingCheckpointMut<'a> {
     /// transactions contained within have a known transaction id which will not
     /// change.
     #[allow(unused_variables)]
+    #[allow(clippy::too_many_arguments)]
     pub fn advance(
         mut self,
         nbtc_accounts: &Accounts<Nbtc>,
@@ -1876,7 +1877,7 @@ impl CheckpointQueue {
             Err(Error::Orga(OrgaError::App(err))) if err == "No completed checkpoints yet" => {
                 Ok(false)
             }
-            Err(err) => return Err(err),
+            Err(err) => Err(err),
         }
     }
 
@@ -1983,7 +1984,7 @@ impl CheckpointQueue {
 
     pub fn next_building_mut(&mut self) -> Result<ChildMut<u64, Checkpoint>> {
         let index = self.next_building_index()?;
-        Ok(self.get_mut(index)?)
+        self.get_mut(index)
     }
 
     pub fn all_building(&self) -> Result<Vec<BuildingCheckpoint>> {
@@ -2520,19 +2521,17 @@ impl CheckpointQueue {
             if miners_excluded_cps && block_was_mined {
                 // Blocks were mined since a signed checkpoint, but it was
                 // not included.
-                adjust_fee_rate(prev_fee_rate, true, &config)
+                adjust_fee_rate(prev_fee_rate, true, config)
             } else {
                 prev_fee_rate
             }
+        } else if self.has_completed_checkpoint()? {
+            // No unconfirmed checkpoints.
+            adjust_fee_rate(prev_fee_rate, false, config)
         } else {
-            if self.has_completed_checkpoint()? {
-                // No unconfirmed checkpoints.
-                adjust_fee_rate(prev_fee_rate, false, &config)
-            } else {
-                // This case only happens at start of chain - having no
-                // unconfs doesn't mean anything.
-                prev_fee_rate
-            }
+            // This case only happens at start of chain - having no
+            // unconfs doesn't mean anything.
+            prev_fee_rate
         };
 
         Ok(fee_rate)
