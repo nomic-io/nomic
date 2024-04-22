@@ -845,15 +845,8 @@ impl Bitcoin {
         let dest = Dest::Address(to);
         let coins = self.accounts.withdraw(signer, amount)?;
 
-        let under_capacity = self.checkpoints.has_completed_checkpoint()?
-            && self.value_locked()? < self.config.capacity_limit;
-
-        self.checkpoints.insert_pending_deposit(
-            dest,
-            coins,
-            self.signatory_keys.map(),
-            under_capacity,
-        )?;
+        let mut building = self.checkpoints.building_mut()?;
+        building.insert_pending(dest, coins)?;
 
         Ok(())
     }
