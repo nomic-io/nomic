@@ -503,7 +503,7 @@ pub async fn fee_info() -> Result<FeeInfo, JsError> {
 
     Ok(app_client()
         .query(|app: InnerApp| {
-            let building = app.bitcoin.checkpoints.building()?;
+            let building = app.bitcoin.checkpoints.current_building()?;
             let est_miner_fee = building.fee_rate
                 * app.bitcoin.checkpoints.active_sigset()?.est_witness_vsize()
                 * user_fee_factor
