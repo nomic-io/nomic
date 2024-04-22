@@ -182,14 +182,8 @@ impl InnerApp {
         self.bitcoin.give_rewards(fee)?;
 
         let dest = Dest::Ibc(dest);
-        let under_capacity = self.bitcoin.checkpoints.has_completed_checkpoint()?
-            && self.bitcoin.value_locked()? < self.bitcoin.config.capacity_limit;
-        self.bitcoin.checkpoints.insert_pending_deposit(
-            dest,
-            coins,
-            self.bitcoin.signatory_keys.map(),
-            under_capacity,
-        )?;
+        let mut building = self.bitcoin.checkpoints.building_mut()?;
+        building.insert_pending(dest, coins)?;
 
         Ok(())
     }
