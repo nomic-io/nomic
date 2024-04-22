@@ -1073,7 +1073,6 @@ impl Bitcoin {
         }
 
         // TODO: drain iter
-        let mut removed_deposits = 0;
         let pending = &mut self.checkpoints.last_completed_mut()?.pending;
         let keys = pending
             .iter()?
@@ -1082,7 +1081,6 @@ impl Bitcoin {
         let mut dests = vec![];
         for dest in keys {
             let coins = pending.remove(dest.clone())?.unwrap().into_inner();
-            removed_deposits += 1;
             dests.push((dest, coins));
         }
         Ok(dests)
