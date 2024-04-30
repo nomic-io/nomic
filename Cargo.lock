@@ -8,7 +8,7 @@ version = "0.1.3"
 source = "git+https://github.com/nomic-io/abci2?rev=26b345ed839123f33596a2f3b5640f621c233797#26b345ed839123f33596a2f3b5640f621c233797"
 dependencies = [
  "log",
- "prost",
+ "prost 0.11.9",
  "tendermint-proto 0.32.0",
  "thiserror",
 ]
@@ -718,6 +718,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cmake"
+version = "0.1.50"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a31c789563b815f77f4250caee12365734369f942439b7defd71e18a48197130"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "colored"
 version = "2.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -805,8 +814,8 @@ version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73c9d2043a9e617b0d602fbc0a0ecd621568edbf3a9774890a6d562389bd8e1c"
 dependencies = [
- "prost",
- "prost-types",
+ "prost 0.11.9",
+ "prost-types 0.11.9",
  "tendermint-proto 0.32.0",
 ]
 
@@ -1345,6 +1354,12 @@ dependencies = [
  "rand_core 0.6.4",
  "subtle",
 ]
+
+[[package]]
+name = "ffi-opaque"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec54ac60a7f2ee9a97cad9946f9bf629a3bc6a7ae59e68983dc9318f5a54b81a"
 
 [[package]]
 name = "filetime"
@@ -1891,7 +1906,7 @@ dependencies = [
  "ics23",
  "num-traits",
  "primitive-types",
- "prost",
+ "prost 0.11.9",
  "safe-regex",
  "serde",
  "serde_derive",
@@ -1929,7 +1944,7 @@ dependencies = [
  "bytes",
  "flex-error",
  "ics23",
- "prost",
+ "prost 0.11.9",
  "serde",
  "subtle-encoding",
  "tendermint-proto 0.32.0",
@@ -1946,7 +1961,7 @@ dependencies = [
  "bytes",
  "hex",
  "pbjson",
- "prost",
+ "prost 0.11.9",
  "ripemd",
  "serde",
  "sha2 0.10.7",
@@ -2172,6 +2187,18 @@ name = "lazycell"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "830d08ce1d1d941e6b30645f1a0eb5643013d835ce3779a5fc208261dbe10f55"
+
+[[package]]
+name = "leveldb-sys"
+version = "2.0.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9dd94a4d0242a437e5e41a27c782b69a624469ca1c4d1e5cb3c337f74a8031d4"
+dependencies = [
+ "cmake",
+ "ffi-opaque",
+ "libc",
+ "num_cpus",
+]
 
 [[package]]
 name = "libc"
@@ -2408,8 +2435,10 @@ dependencies = [
  "mutagen",
  "orga",
  "pretty_env_logger",
+ "prost 0.12.4",
  "rand 0.8.5",
  "reqwest",
+ "rs-leveldb",
  "semver 1.0.18",
  "serde",
  "serde-big-array",
@@ -2418,6 +2447,7 @@ dependencies = [
  "sha2 0.10.7",
  "split-iter",
  "tempfile",
+ "tendermint-proto 0.36.0",
  "tendermint-rpc 0.30.0",
  "thiserror",
  "tokio",
@@ -2589,8 +2619,8 @@ dependencies = [
  "num-traits",
  "orga-macros",
  "paste",
- "prost",
- "prost-types",
+ "prost 0.11.9",
+ "prost-types 0.11.9",
  "rand 0.8.5",
  "reqwest",
  "ripemd",
@@ -2906,7 +2936,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b82eaa1d779e9a4bc1c3217db8ffbeabaae1dca241bf70183242128d48681cd"
 dependencies = [
  "bytes",
- "prost-derive",
+ "prost-derive 0.11.9",
+]
+
+[[package]]
+name = "prost"
+version = "0.12.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0f5d036824e4761737860779c906171497f6d55681139d8312388f8fe398922"
+dependencies = [
+ "bytes",
+ "prost-derive 0.12.4",
 ]
 
 [[package]]
@@ -2923,12 +2963,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "prost-derive"
+version = "0.12.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "19de2de2a00075bf566bee3bd4db014b11587e84184d3f7a791bc17f1a8e9e48"
+dependencies = [
+ "anyhow",
+ "itertools",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.26",
+]
+
+[[package]]
 name = "prost-types"
 version = "0.11.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "213622a1460818959ac1181aaeb2dc9c7f63df720db7d788b3e24eacd1983e13"
 dependencies = [
- "prost",
+ "prost 0.11.9",
+]
+
+[[package]]
+name = "prost-types"
+version = "0.12.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3235c33eb02c1f1e212abdbe34c78b264b038fb58ca612664343271e36e55ffe"
+dependencies = [
+ "prost 0.12.4",
 ]
 
 [[package]]
@@ -3219,6 +3281,16 @@ checksum = "bb6f170a4041d50a0ce04b0d2e14916d6ca863ea2e422689a5b694395d299ffe"
 dependencies = [
  "libc",
  "librocksdb-sys",
+]
+
+[[package]]
+name = "rs-leveldb"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d45bd5782e78f9c4dd1e232c3439c2db9ec4c73075e5dd6fb65fb7daae33812d"
+dependencies = [
+ "leveldb-sys",
+ "libc",
 ]
 
 [[package]]
@@ -4003,8 +4075,8 @@ dependencies = [
  "futures",
  "num-traits",
  "once_cell",
- "prost",
- "prost-types",
+ "prost 0.11.9",
+ "prost-types 0.11.9",
  "serde",
  "serde_bytes",
  "serde_json",
@@ -4033,8 +4105,8 @@ dependencies = [
  "k256",
  "num-traits",
  "once_cell",
- "prost",
- "prost-types",
+ "prost 0.11.9",
+ "prost-types 0.11.9",
  "ripemd",
  "serde",
  "serde_bytes",
@@ -4100,8 +4172,8 @@ dependencies = [
  "flex-error",
  "num-derive",
  "num-traits",
- "prost",
- "prost-types",
+ "prost 0.11.9",
+ "prost-types 0.11.9",
  "serde",
  "serde_bytes",
  "subtle-encoding",
@@ -4118,8 +4190,24 @@ dependencies = [
  "flex-error",
  "num-derive",
  "num-traits",
- "prost",
- "prost-types",
+ "prost 0.11.9",
+ "prost-types 0.11.9",
+ "serde",
+ "serde_bytes",
+ "subtle-encoding",
+ "time 0.3.22",
+]
+
+[[package]]
+name = "tendermint-proto"
+version = "0.36.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "46f193d04afde6592c20fd70788a10b8cb3823091c07456db70d8a93f5fb99c1"
+dependencies = [
+ "bytes",
+ "flex-error",
+ "prost 0.12.4",
+ "prost-types 0.12.4",
  "serde",
  "serde_bytes",
  "subtle-encoding",
@@ -4493,7 +4581,7 @@ dependencies = [
  "hyper-timeout",
  "percent-encoding",
  "pin-project",
- "prost",
+ "prost 0.11.9",
  "tokio",
  "tokio-stream",
  "tower",
