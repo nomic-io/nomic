@@ -12,13 +12,14 @@ use orga::call::Call;
 use orga::call::Item;
 use orga::encoding::Decode;
 use orga::plugins::sdk_compat::sdk::Tx;
+use orga::plugins::sdk_compat::ConvertSdkTx;
 use orga::plugins::PayableCall;
 use orga::plugins::{FeePlugin, NoncePlugin, PayablePlugin};
 use prost::Message;
 use std::ops::Deref;
 use std::path::PathBuf;
 use tendermint_proto::abci::TxResult;
-
+//6.0.6 height range: 9357000+
 #[derive(Parser, Debug)]
 pub struct Opts {
     address: Address,
@@ -87,106 +88,56 @@ pub async fn main() {
 
         let tx_res = TxResult::decode(value.deref()).unwrap();
         let height = tx_res.height;
-        let call_res = BaseCall::decode(tx_res.tx.as_ref());
-
+        if height <= 9356996 || height >= 10493516 {
+            return;
+        }
+        let call_res = <App as Call>::Call::decode(tx_res.tx.as_ref());
         let call = call_res.unwrap();
-        if let BaseCall::Sdk(tx) = call {
-            match tx {
-                Tx::Amino(amino_tx) => {
-                    let msgs = amino_tx.msg.clone();
-                    if msgs.len() < 1 {
-                        return;
-                    }
-                    let msg = &msgs[0];
-                    let pubkey = amino_tx.signatures[0].pub_key.value.clone();
-                    let pubkey_bytes = base64::decode(pubkey).unwrap();
-                    let address = Address::from_pubkey(pubkey_bytes.as_slice().try_into().unwrap());
-                    if address != opts.address {
-                        return;
-                    }
-                    if let Some(value_map) = msg.value.as_object() {
-                        match msg.type_.as_str() {
-                            "cosmos-sdk/MsgDelegate" => {
-                                delegation_data.push(Delegation {
-                                    hash: key.to_vec(),
-                                    height,
-                                    validator_address: value_map["validator_address"].to_string(),
-                                    amount: value_map["amount"].to_string(),
-                                });
-                            }
-                            "cosmos-sdk/MsgUndelegate" => {
-                                undelegation_data.push(Delegation {
-                                    hash: key.to_vec(),
-                                    height,
-                                    validator_address: value_map["validator_address"].to_string(),
-                                    amount: value_map["amount"].to_string(),
-                                });
-                            }
-                            "cosmos-sdk/MsgBeginRedelegate" => {
-                                redelegation_data.push(Redelegation {
-                                    hash: key.to_vec(),
-                                    height,
-                                    validator_src_address: value_map["validator_src_address"]
-                                        .to_string(),
-                                    validator_dst_address: value_map["validator_dst_address"]
-                                        .to_string(),
-                                    amount: value_map["amount"].to_string(),
-                                });
-                            }
-                            "cosmos-sdk/MsgClaimRewards" => {
-                                claim_data.push(RewardClaim {
-                                    hash: key.to_vec(),
-                                    height,
-                                });
-                            }
-                            "cosmos-sdk/MsgSend" => {
-                                send_data.push(Send {
-                                    hash: key.to_vec(),
-                                    height,
-                                    to: value_map["to_address"].to_string(),
-                                    amount: value_map["amount"].to_string(),
-                                });
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                _ => {}
+        let mut app = App::default();
+        app.inner.borrow_mut().inner.inner.chain_id =
+            b"nomic-stakenet-3".to_vec().try_into().unwrap();
+        let converter = app.inner.into_inner().inner;
+
+        let native_call = match call {
+            BaseCall::Sdk(tx) => converter.convert(&tx).unwrap(),
+            BaseCall::Native(call) => call,
+        };
+
+        if let Some(pubkey) = native_call.pubkey {
+            let address = Address::from_pubkey(pubkey.as_slice().try_into().unwrap());
+            if address != opts.address {
+                return;
             }
-        } else if let BaseCall::Native(call) = call {
-            if let Some(pubkey) = call.pubkey {
-                let address = Address::from_pubkey(pubkey.as_slice().try_into().unwrap());
-                if address != opts.address {
-                    return;
-                }
-                let bytes = &call.call_bytes["nomic-stakenet-3".len()..];
-                let inner: <NoncePluginWrapper as Call>::Call = Decode::decode(bytes).unwrap();
-                if let PayableCall::Paid(inner) = inner.inner_call {
-                    match inner.paid {
-                        Item::Field(inner) => match inner {
-                            InnerAppFieldCall::Staking(_) => {}
-                            InnerAppFieldCall::Accounts(call) => {
-                                if let Item::Method(method_call) = call {
-                                    match method_call {
-                                        AccountsMethodCall::Transfer(address, amount) => {
-                                            send_data.push(Send {
-                                                hash: key.to_vec(),
-                                                height,
-                                                to: address.to_string(),
-                                                amount: amount.to_string(),
-                                            });
-                                        }
-                                        _ => {}
+
+            let bytes = &native_call.call_bytes["nomic-stakenet-3".len()..];
+            let inner: <NoncePluginWrapper as Call>::Call = Decode::decode(bytes).unwrap();
+            if let PayableCall::Paid(inner) = inner.inner_call {
+                match inner.paid {
+                    Item::Field(inner) => match inner {
+                        InnerAppFieldCall::Staking(_) => {}
+                        InnerAppFieldCall::Accounts(call) => {
+                            if let Item::Method(method_call) = call {
+                                match method_call {
+                                    AccountsMethodCall::Transfer(address, amount) => {
+                                        send_data.push(Send {
+                                            hash: key.to_vec(),
+                                            height,
+                                            to: address.to_string(),
+                                            amount: amount.to_string(),
+                                        });
                                     }
+                                    _ => {}
                                 }
                             }
-                            InnerAppFieldCall::Bitcoin(_) => {}
-                            InnerAppFieldCall::Incentives(_) => {}
-                            InnerAppFieldCall::Airdrop(_) => {}
-                            InnerAppFieldCall::Noop(_) => {}
-                        },
-                        Item::Method(_) => {}
-                    }
+                        }
+                        InnerAppFieldCall::Bitcoin(_) => {}
+                        InnerAppFieldCall::Incentives(_) => {}
+                        InnerAppFieldCall::Airdrop(_) => {}
+                        InnerAppFieldCall::Noop(_) => {}
+                        #[cfg(feature = "testnet")]
+                        InnerAppFieldCall::Ibc(_) => {}
+                    },
+                    Item::Method(_) => {}
                 }
             }
         }
