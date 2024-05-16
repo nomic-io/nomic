@@ -53,7 +53,6 @@ pub enum Command {
     Edit(EditCmd),
     Claim(ClaimCmd),
     ClaimAirdrop(ClaimAirdropCmd),
-    Legacy(LegacyCmd),
 }
 
 impl Command {
@@ -76,7 +75,6 @@ impl Command {
             Edit(cmd) => cmd.run().await,
             Claim(cmd) => cmd.run().await,
             ClaimAirdrop(cmd) => cmd.run().await,
-            Legacy(cmd) => cmd.run().await,
         }
     }
 }
@@ -86,12 +84,6 @@ pub struct InitCmd {}
 
 impl InitCmd {
     async fn run(&self) -> Result<()> {
-        tokio::task::spawn_blocking(|| {
-            // TODO: add cfg defaults
-            nomicv1::orga::abci::Node::<nomicv1::app::App>::new(nomicv1::app::CHAIN_ID);
-        })
-        .await
-        .map_err(|err| orga::Error::App(err.to_string()))?;
         Ok(())
     }
 }
@@ -106,93 +98,6 @@ impl StartCmd {
     async fn run(&self) -> Result<()> {
         let state_sync = self.state_sync;
 
-        tokio::task::spawn_blocking(move || {
-            let old_name = nomicv1::app::CHAIN_ID;
-            let new_name = nomic::app::CHAIN_ID;
-
-            let has_old_node = Node::home(old_name).exists();
-            let has_new_node = Node::home(new_name).exists();
-            let started_new_node = Node::height(old_name).unwrap() >= STOP_HEIGHT
-                || Node::height(new_name).unwrap() > 0;
-            if has_old_node {
-                println!("Legacy node height: {}", Node::height(old_name).unwrap());
-            }
-
-            let new_home = Node::home(new_name);
-            let config_path = new_home.join("tendermint/config/config.toml");
-
-            if !has_new_node {
-                println!("Initializing node at {}...", new_home.display());
-                // TODO: configure default seeds
-                Node::<nomic::app::App>::new(new_name, Default::default());
-
-                if has_old_node {
-                    let old_home = Node::home(old_name);
-                    println!(
-                        "Legacy network data detected, copying keys and config from {}...",
-                        old_home.display(),
-                    );
-
-                    let copy = |file: &str| {
-                        std::fs::copy(old_home.join(file), new_home.join(file)).unwrap();
-                    };
-
-                    copy("tendermint/config/priv_validator_key.json");
-                    copy("tendermint/config/node_key.json");
-                    copy("tendermint/config/config.toml");
-                }
-
-                edit_block_time(&config_path, "3s");
-            }
-
-            if !has_old_node || state_sync {
-                println!("Configuring node for state sync...");
-
-                // TODO: set default seeds
-                set_p2p_seeds(
-                    &config_path,
-                    &["238120dfe716082754048057c1fdc3d6f09609b5@161.35.51.124:26656"],
-                );
-
-                // TODO: set default RPC boostrap nodes
-                configure_for_statesync(
-                    &config_path,
-                    &["http://161.35.51.124:27657", "http://161.35.51.124:28657"],
-                );
-            }
-
-            if has_old_node && !started_new_node && !state_sync {
-                println!("Starting legacy node for migration...");
-
-                let res = nomicv1::orga::abci::Node::<nomicv1::app::App>::new(old_name)
-                    .with_genesis(include_bytes!("../../genesis/stakenet.json"))
-                    .stdout(std::process::Stdio::inherit())
-                    .stderr(std::process::Stdio::inherit())
-                    .stop_height(STOP_HEIGHT)
-                    .run();
-
-                if let Err(nomicv1::orga::Error::ABCI(msg)) = res {
-                    if &msg != "Reached stop height" {
-                        panic!("{}", msg);
-                    }
-                } else {
-                    res.unwrap();
-                }
-            }
-
-            println!("Starting node...");
-            // TODO: add cfg defaults
-            Node::<nomic::app::App>::new(new_name, Default::default())
-                .with_genesis(include_bytes!(
-                    "../../genesis/stakenet-2.json"
-                ))
-                .stdout(std::process::Stdio::inherit())
-                .stderr(std::process::Stdio::inherit())
-                .run()
-                .unwrap();
-        })
-        .await
-        .map_err(|err| orga::Error::App(err.to_string()))?;
         Ok(())
     }
 }
@@ -573,20 +478,6 @@ impl ClaimAirdropCmd {
             .accounts
             .give_from_funding_all()
             .await?)
-    }
-}
-
-#[derive(Parser, Debug)]
-pub struct LegacyCmd {
-    #[clap(subcommand)]
-    cmd: nomicv1::command::Command,
-}
-
-impl LegacyCmd {
-    async fn run(&self) -> Result<()> {
-        self.cmd.run().await.unwrap();
-
-        Ok(())
     }
 }
 

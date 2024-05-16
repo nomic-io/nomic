@@ -9,7 +9,7 @@ default-run = "nomic"
 bitcoin = { version = "0.27.1", features = ["use-serde"] }
 bitcoind = { version = "0.21.0", features = ["22_0"], optional = true }
 bitcoincore-rpc = { version = "0.14.0", optional = true }
-orga = { git = "https://github.com/nomic-io/orga.git", rev = "8a638bb69ecab4e6e7c815dd079eca3f4992c442", features = ["merk-verify"] }
+orga = { git = "https://github.com/turbofish-org/orga.git", rev = "b7c9c6b7229726ab36c1b6f4d421cf7330cf8629", features = ["merk-verify"] }
 thiserror = "1.0.30"
 ed = "0.3.0"
 clap = { version = "3.0.0-rc.4", features = ["derive"], optional = true }
@@ -22,20 +22,21 @@ csv = { version = "1.1.6", optional = true }
 bech32 = { version = "0.8.1" }
 secp256k1 = "0.21.2"
 futures = "0.3.21"
-nomicv1 = { git = "https://github.com/nomic-io/nomic.git", branch = "stakenet2-legacy", package = "nomic", optional = true }
 toml_edit = "0.13.4"
 tendermint-rpc = "0.23.5"
+hex = "0.4.3"
+rs-leveldb = "0.1.5"
+prost = "0.11.9"
+tendermint-proto = "0.23.5"
 
 [dev-dependencies]
 chrono = "0.4.0"
 bitcoin_hashes = "0.10.0"
-serde_json = "1.0.68"
-serde = "1.0.130"
 mutagen = "0.1.2"
 
 [features]
 default = ["full"]
-full = ["bitcoind", "bitcoincore-rpc", "clap", "tokio", "orga/merk-full", "orga/abci", "orga/state-sync", "csv", "nomicv1"]
+full = ["bitcoind", "bitcoincore-rpc", "clap", "tokio", "orga/merk-full", "orga/abci", "orga/state-sync", "csv"]
 
 [[bin]]
 name = "nomic"
