@@ -37,8 +37,8 @@ pub mod relayer;
 #[cfg(feature = "full")]
 pub mod signer;
 
-const MIN_DELEGATION: u64 = 20_000;
-const DEFAULT_FP: &str = "bd17e43d349d10f4ff4c1e3591427a8e65197d9a859930def60af21b0ec7b3ce";
+const MIN_DELEGATION: u64 = 50_000;
+const DEFAULT_FP: &str = "e4889630fa8695dae630c41cd9b85ef165ccc2dc5e5935d5a24393a9defee9ef";
 const BBN_PUBKEY: &str = "03f9082781f6119a6863cae036d6a766f24e0b321f80df4dea5b49f2980ae76665"; // bbn1vn8s0khjy4mg3g6py9hljzcsjcknvcm0crld7f
 
 /// The symbol for stBTC, a BTC liquid staking token.
@@ -100,7 +100,7 @@ impl Babylon {
                 frost_index,
                 PublicKey::from_slice(&hex::decode(BBN_PUBKEY).unwrap())?,
                 vec![DEFAULT_FP.parse().unwrap()], // TODO: choose dynamically
-                3_024,
+                64_000,
                 101,
                 self.pending_stake.take_all()?,
                 btc.checkpoints.index,
@@ -375,6 +375,31 @@ impl Params {
 
         let slashing_addr = "tb1qv03wm7hxhag6awldvwacy0z42edtt6kwljrhd9";
         let slashing_min_fee = 1_000;
+
+        Self {
+            covenant_keys: covenant_keys.iter().map(|k| k.parse().unwrap()).collect(),
+            covenant_quorum,
+            slashing_addr: slashing_addr.parse().unwrap(),
+            slashing_min_fee,
+        }
+    }
+
+    pub fn bbn_test_4() -> Self {
+        let covenant_keys = [
+            "49766ccd9e3cd94343e2040474a77fb37cdfd30530d05f9f1e96ae1e2102c86e",
+            "76d1ae01f8fb6bf30108731c884cddcf57ef6eef2d9d9559e130894e0e40c62c",
+            "17921cf156ccb4e73d428f996ed11b245313e37e27c978ac4d2cc21eca4672e4",
+            "113c3a32a9d320b72190a04a020a0db3976ef36972673258e9a38a364f3dc3b0",
+            "79a71ffd71c503ef2e2f91bccfc8fcda7946f4653cef0d9f3dde20795ef3b9f0",
+            "3bb93dfc8b61887d771f3630e9a63e97cbafcfcc78556a474df83a31a0ef899c",
+            "d21faf78c6751a0d38e6bd8028b907ff07e9a869a43fc837d6b3f8dff6119a36",
+            "40afaf47c4ffa56de86410d8e47baa2bb6f04b604f4ea24323737ddc3fe092df",
+            "f5199efae3f28bb82476163a7e458c7ad445d9bffb0682d10d3bdb2cb41f8e8e",
+        ];
+        let covenant_quorum = 6;
+
+        let slashing_addr = "tb1qv03wm7hxhag6awldvwacy0z42edtt6kwljrhd9";
+        let slashing_min_fee = 2_000;
 
         Self {
             covenant_keys: covenant_keys.iter().map(|k| k.parse().unwrap()).collect(),
@@ -766,7 +791,7 @@ impl Delegation {
             self.btc_key()?,
             &self.fp_keys()?,
             self.staking_period,
-            &Params::bbn_test_3(),
+            &Params::bbn_test_4(),
         )
     }
 
@@ -779,7 +804,7 @@ impl Delegation {
             })?,
             self.stake_sats(),
             self.unbonding_period,
-            &Params::bbn_test_3(),
+            &Params::bbn_test_4(),
         )
     }
 
@@ -791,7 +816,7 @@ impl Delegation {
             })?,
             self.stake_sats(),
             self.unbonding_period,
-            &Params::bbn_test_3(),
+            &Params::bbn_test_4(),
         )
     }
 
@@ -804,7 +829,7 @@ impl Delegation {
             },
             self.unbonding_tx()?.output[0].value,
             self.unbonding_period,
-            &Params::bbn_test_3(),
+            &Params::bbn_test_4(),
         )
     }
 
@@ -818,7 +843,7 @@ impl Delegation {
                 value: self.stake_sats(),
             }]),
             TapLeafHash::from_script(
-                &slashing_script(self.btc_key()?, &self.fp_keys()?, &Params::bbn_test_3())?,
+                &slashing_script(self.btc_key()?, &self.fp_keys()?, &Params::bbn_test_4())?,
                 bitcoin::util::taproot::LeafVersion::TapScript,
             ),
             bitcoin::SchnorrSighashType::Default,
@@ -833,7 +858,7 @@ impl Delegation {
             0,
             &Prevouts::All(&[&unbonding_tx.output[0]]),
             TapLeafHash::from_script(
-                &slashing_script(self.btc_key()?, &self.fp_keys()?, &Params::bbn_test_3())?,
+                &slashing_script(self.btc_key()?, &self.fp_keys()?, &Params::bbn_test_4())?,
                 bitcoin::util::taproot::LeafVersion::TapScript,
             ),
             bitcoin::SchnorrSighashType::Default,
@@ -1049,24 +1074,28 @@ mod tests {
             0,
             bbn_pubkey,
             vec![super::DEFAULT_FP.parse().unwrap()],
-            1_008,
+            64_000,
             101,
-            Nbtc::mint(20_000_000_000),
+            Nbtc::mint(50_000_000_000),
             0,
         )?;
         assert_eq!(del.status()?, DelegationStatus::Created);
 
+        let script = del.staking_script().unwrap();
+        let addr = bitcoin::Address::from_script(&script, Network::Signet).unwrap();
+        dbg!(addr);
+
         // TODO: test verifying merkle proof
         del.staking_outpoint = Some(
             OutPoint {
-                txid: "a09ea4943670c1988b962aad002e400adf7e3baff62ecf37a9508474a266f51d"
+                txid: "2d635625af2cfbe69f78f65865fa1fd948fd677deadc8b5a60039a08bbb1f3d0"
                     .parse()
                     .unwrap(),
                 vout: 0,
             }
             .into(),
         );
-        del.staking_height = Some(190_065);
+        del.staking_height = Some(197_574);
         assert_eq!(del.status()?, DelegationStatus::SigningBbn);
 
         let bbn_sig = sign_bbn_pop(&del, privkey);

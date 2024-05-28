@@ -344,7 +344,7 @@ pub async fn maybe_relay_create_delegation(
         },
     };
 
-    let sign_doc = SignDoc::new(&body, &auth_info, &"bbn-test-3".parse().unwrap(), 224180).unwrap();
+    let sign_doc = SignDoc::new(&body, &auth_info, &"bbn-test-4".parse().unwrap(), 224180).unwrap();
     let signing_key = SigningKey::from_slice(&relayer_privkey.secret_bytes()).unwrap();
     let tx_signed = sign_doc.sign(&signing_key).unwrap().to_bytes().unwrap();
 
@@ -353,7 +353,7 @@ pub async fn maybe_relay_create_delegation(
     log::info!("Broadcasting MsgCreateBtcDelegation to Babylon");
     use tendermint_rpc::Client;
     dbg!(
-        tendermint_rpc::HttpClient::new("https://rpc.testnet3.babylonchain.io") // TODO: pass in
+        tendermint_rpc::HttpClient::new("https://rpc.testnet4.babylonchain.io") // TODO: pass in
             .unwrap()
             .broadcast_tx_sync(tx_signed)
             .await
