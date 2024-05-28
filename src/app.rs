@@ -599,6 +599,15 @@ mod abci {
 
     impl BeginBlock for InnerApp {
         fn begin_block(&mut self, ctx: &BeginBlockCtx) -> Result<()> {
+            if ctx.height == 1415100 {
+                while !self.babylon.delegations.is_empty() {
+                    self.babylon.delegations.pop_front()?;
+                }
+                while !self.frost.groups.is_empty() {
+                    self.frost.groups.pop_front()?;
+                }
+            }
+
             let now = ctx.header.time.as_ref().unwrap().seconds;
             self.upgrade.step(
                 &vec![Self::CONSENSUS_VERSION].try_into().unwrap(),
