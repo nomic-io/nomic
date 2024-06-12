@@ -28,11 +28,11 @@ use ibc_proto::ibc::core::client::v1::IdentifiedClientState;
 use ibc_proto::ibc::core::connection::v1::ConnectionEnd as RawConnectionEnd;
 use ibc_proto::ibc::lightclients::tendermint::v1::ClientState as RawTmClientState;
 
+use bech32::ToBase32;
+use sha2::Digest;
 use tendermint_proto::types::CommitSig as RawCommitSig;
 use tendermint_rpc as tm;
 use tm::Client as _;
-use bech32::ToBase32;
-use sha2::Digest;
 
 lazy_static::lazy_static! {
     static ref QUERY_CACHE: Arc<RwLock<HashMap<String, (u64, String)>>> = Arc::new(RwLock::new(HashMap::new()));
@@ -1034,8 +1034,9 @@ async fn get_signing_infos() -> Vec<Value> {
         let address = bech32::encode(
             "nomicvalcons",
             hash.to_vec().to_base32(),
-            bech32::Variant::Bech32
-        ).unwrap();
+            bech32::Variant::Bech32,
+        )
+        .unwrap();
 
         let last_signed_block: u64 = last_signed_blocks
             .iter()
@@ -1159,7 +1160,9 @@ async fn block(height: u32) -> Value {
 }
 
 fn parse_validator_set(res: tendermint_rpc::endpoint::validators::Response) -> Value {
-    let validators: Vec<_> = res.validators.iter()
+    let validators: Vec<_> = res
+        .validators
+        .iter()
         .map(|validator| -> Value {
             json!({
                 "address": validator.address,
@@ -1187,10 +1190,7 @@ fn parse_validator_set(res: tendermint_rpc::endpoint::validators::Response) -> V
 async fn latest_validator_set() -> Value {
     let client = tm::HttpClient::new(app_host()).unwrap();
 
-    let block = client
-        .latest_block()
-        .await
-        .unwrap();
+    let block = client.latest_block().await.unwrap();
 
     let res = client
         .validators(block.block.header.height, tendermint_rpc::Paging::All)
