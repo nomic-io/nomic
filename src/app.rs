@@ -18,19 +18,21 @@ use orga::context::GetContext;
 use orga::cosmrs::bank::MsgSend;
 use orga::describe::{Describe, Descriptor};
 use orga::encoding::{Decode, Encode, LengthVec};
-use orga::ibc::ibc_rs::applications::transfer::Memo;
+use orga::ibc::ibc_rs::apps::transfer::types::Memo;
+use orga::ibc::ClientIdKey as ClientId;
+
 use std::str::FromStr;
 use std::time::Duration;
 
-use orga::ibc::ibc_rs::applications::transfer::context::TokenTransferExecutionContext;
-use orga::ibc::ibc_rs::applications::transfer::msgs::transfer::MsgTransfer;
-use orga::ibc::ibc_rs::applications::transfer::packet::PacketData;
-use orga::ibc::ibc_rs::core::ics04_channel::timeout::TimeoutHeight;
-use orga::ibc::ibc_rs::core::ics24_host::identifier::{ChannelId, PortId};
-use orga::ibc::ibc_rs::core::timestamp::Timestamp;
-use orga::ibc::{ClientId, Ibc, IbcTx};
+use orga::ibc::ibc_rs::apps::transfer::context::TokenTransferExecutionContext;
+use orga::ibc::ibc_rs::apps::transfer::types::msgs::transfer::MsgTransfer;
+use orga::ibc::ibc_rs::apps::transfer::types::packet::PacketData;
+use orga::ibc::ibc_rs::core::channel::types::timeout::TimeoutHeight;
+use orga::ibc::ibc_rs::core::host::types::identifiers::{ChannelId, PortId};
+use orga::ibc::ibc_rs::core::primitives::Timestamp;
+use orga::ibc::{Ibc, IbcTx};
 
-use orga::ibc::ibc_rs::Signer as IbcSigner;
+use orga::ibc::ibc_rs::core::primitives::Signer as IbcSigner;
 
 use orga::coins::Declaration;
 use orga::encoding::Adapter as EdAdapter;
@@ -196,7 +198,7 @@ impl InnerApp {
         let coins: Coin<Nbtc> = amount.into();
         self.ibc
             .transfer_mut()
-            .burn_coins_execute(&signer, &coins.into())?;
+            .burn_coins_execute(&signer, &coins.into(), &"".parse().unwrap())?;
         self.bitcoin.accounts.deposit(signer, amount.into())?;
 
         Ok(())
@@ -329,9 +331,11 @@ impl InnerApp {
                     .parse()
                     .map_err(|_| Error::Coins("Invalid address".to_string()))?;
                 let coins = Coin::<Nbtc>::mint(amount);
-                self.ibc
-                    .transfer_mut()
-                    .burn_coins_execute(&receiver, &coins.into())?;
+                self.ibc.transfer_mut().burn_coins_execute(
+                    &receiver,
+                    &coins.into(),
+                    &"".parse().unwrap(),
+                )?;
                 if self.bitcoin.add_withdrawal(script, amount.into()).is_err() {
                     let coins = Coin::<Nbtc>::mint(amount);
                     self.ibc
@@ -443,6 +447,44 @@ mod abci {
 
             self.configure_faucets()?;
 
+            self.accounts
+                .deposit(
+                    "nomic1v2etn3ttwvra63m7esgmpqd3n2tf62nu5xgj5l"
+                        .parse()
+                        .unwrap(),
+                    Coin::mint(1_000_000_000_000),
+                )
+                .unwrap();
+
+            self.bitcoin
+                .accounts
+                .deposit(
+                    "nomic1v2etn3ttwvra63m7esgmpqd3n2tf62nu5xgj5l"
+                        .parse()
+                        .unwrap(),
+                    Coin::mint(1_000_000_000_000),
+                )
+                .unwrap();
+
+            self.accounts
+                .deposit(
+                    "nomic18qkwnqufr50054el3zt3fjp8du9f8jr2t9jpnw"
+                        .parse()
+                        .unwrap(),
+                    Coin::mint(1_000_000_000_000),
+                )
+                .unwrap();
+
+            self.bitcoin
+                .accounts
+                .deposit(
+                    "nomic18qkwnqufr50054el3zt3fjp8du9f8jr2t9jpnw"
+                        .parse()
+                        .unwrap(),
+                    Coin::mint(1_000_000_000_000),
+                )
+                .unwrap();
+
             self.upgrade
                 .current_version
                 .insert((), vec![Self::CONSENSUS_VERSION].try_into().unwrap())?;
@@ -465,6 +507,7 @@ mod abci {
 
     impl BeginBlock for InnerApp {
         fn begin_block(&mut self, ctx: &BeginBlockCtx) -> Result<()> {
+            self.bitcoin.checkpoints.config.max_unconfirmed_checkpoints = 100;
             let now = ctx.header.time.as_ref().unwrap().seconds;
             self.upgrade.step(
                 &vec![Self::CONSENSUS_VERSION].try_into().unwrap(),
@@ -1043,7 +1086,7 @@ impl IbcDest {
         bitcoin: &mut Bitcoin,
         ibc: &mut Ibc,
     ) -> Result<()> {
-        use orga::ibc::ibc_rs::applications::transfer::msgs::transfer::MsgTransfer;
+        use orga::ibc::ibc_rs::apps::transfer::types::msgs::transfer::MsgTransfer;
 
         let fee_amount = ibc_fee(coins.amount)?;
         let fee = coins.take(fee_amount)?;
