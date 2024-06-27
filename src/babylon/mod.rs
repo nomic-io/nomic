@@ -917,7 +917,7 @@ mod tests {
         };
         let staking_value = 20_000;
         let unbonding_time = 101;
-        let expected_slashing_tx = Transaction::deserialize(&hex::decode("0200000001237aade8b8a56a47e30ed80a6102e5fdc1acd46373dcf640efd8d36940d2f6560000000000ffffffff02d00700000000000016001463e2edfae6bf51aebbed63bb823c55565ab5eace6842000000000000225120e9f60075bdb745bb352fee26ee981fd55573652a928c8e6b19db29e00f32646000000000").unwrap()).unwrap();
+        let expected_slashing_tx = Transaction::deserialize(&hex::decode("0200000001237aade8b8a56a47e30ed80a6102e5fdc1acd46373dcf640efd8d36940d2f6560000000000ffffffff02980800000000000016001463e2edfae6bf51aebbed63bb823c55565ab5eacea041000000000000225120e9f60075bdb745bb352fee26ee981fd55573652a928c8e6b19db29e00f32646000000000").unwrap()).unwrap();
 
         let slashing_tx = slashing_tx(
             staker_btc_pk.parse().unwrap(),
@@ -943,7 +943,7 @@ mod tests {
         let staking_value = 20_000;
         let unbonding_time = 101;
         let expected_unbonding_tx = Transaction::deserialize(&hex::decode("0200000001237aade8b8a56a47e30ed80a6102e5fdc1acd46373dcf640efd8d36940d2f6560000000000ffffffff01384a00000000000022512019d293a8610a102e8d62c1ed6c054b759e4361d5352e268ad0c39582734ea50b00000000").unwrap()).unwrap();
-        let expected_unbonding_slashing_tx = Transaction::deserialize(&hex::decode("02000000017285541c7b224b952f32eb16a815db378fc338502edcd64e09cf0eb9417f5deb0000000000ffffffff026c0700000000000016001463e2edfae6bf51aebbed63bb823c55565ab5eacee43e000000000000225120e9f60075bdb745bb352fee26ee981fd55573652a928c8e6b19db29e00f32646000000000").unwrap()).unwrap();
+        let expected_unbonding_slashing_tx = Transaction::deserialize(&hex::decode("02000000017285541c7b224b952f32eb16a815db378fc338502edcd64e09cf0eb9417f5deb0000000000ffffffff022a0800000000000016001463e2edfae6bf51aebbed63bb823c55565ab5eace263e000000000000225120e9f60075bdb745bb352fee26ee981fd55573652a928c8e6b19db29e00f32646000000000").unwrap()).unwrap();
 
         let unbonding_tx = unbonding_tx(
             staker_btc_pk.parse().unwrap(),
