@@ -106,6 +106,7 @@ impl Babylon {
                 btc.checkpoints.index,
             )?;
             pending_outputs.push(del.staking_output()?);
+            pending_outputs.push(del.op_return_output()?);
             self.delegations.push_back(del)?;
 
             // TODO: use draining iterator
@@ -360,6 +361,7 @@ pub struct Params {
     pub covenant_quorum: u32,
     pub slashing_addr: bitcoin::Address,
     pub slashing_min_fee: u64,
+    pub op_return_tag: [u8; 4],
 }
 
 impl Params {
@@ -376,11 +378,14 @@ impl Params {
         let slashing_addr = "tb1qv03wm7hxhag6awldvwacy0z42edtt6kwljrhd9";
         let slashing_min_fee = 1_000;
 
+        let op_return_tag = *b"bbb3";
+
         Self {
             covenant_keys: covenant_keys.iter().map(|k| k.parse().unwrap()).collect(),
             covenant_quorum,
             slashing_addr: slashing_addr.parse().unwrap(),
             slashing_min_fee,
+            op_return_tag,
         }
     }
 
@@ -401,11 +406,14 @@ impl Params {
         let slashing_addr = "tb1qv03wm7hxhag6awldvwacy0z42edtt6kwljrhd9";
         let slashing_min_fee = 2_000;
 
+        let op_return_tag = *b"bbb4";
+
         Self {
             covenant_keys: covenant_keys.iter().map(|k| k.parse().unwrap()).collect(),
             covenant_quorum,
             slashing_addr: slashing_addr.parse().unwrap(),
             slashing_min_fee,
+            op_return_tag,
         }
     }
 }
@@ -786,6 +794,13 @@ impl Delegation {
         })
     }
 
+    pub fn op_return_output(&self) -> Result<TxOut> {
+        Ok(TxOut {
+            value: 0,
+            script_pubkey: Script::new_op_return(self.op_return_bytes()?.as_slice()),
+        })
+    }
+
     pub fn staking_script(&self) -> Result<Script> {
         staking_script(
             self.btc_key()?,
@@ -878,11 +893,40 @@ impl Delegation {
 
         Ok(hash.to_vec())
     }
+
+    pub fn op_return_bytes(&self) -> Result<Vec<u8>> {
+        let data = OpReturnData {
+            magic_byes: Params::bbn_test_4().op_return_tag,
+            version: 0,
+            staker_btc_pk: self.btc_key,
+            // TODO: support multiple fp's?
+            fp_pk: *self
+                .fp_keys
+                .first()
+                .ok_or_else(|| Error::Orga(orga::Error::App("Missing first FP key".to_string())))?,
+            staking_time: self.staking_period,
+        };
+
+        Ok(data.encode()?)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+pub struct OpReturnData {
+    pub magic_byes: [u8; 4],
+    pub version: u8,
+    pub staker_btc_pk: [u8; 32],
+    pub fp_pk: [u8; 32],
+    pub staking_time: u16,
 }
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::{psbt::serialize::Deserialize, util::bip32::ExtendedPrivKey, Network};
+    use bitcoin::{
+        psbt::serialize::{Deserialize, Serialize},
+        util::bip32::ExtendedPrivKey,
+        Network,
+    };
     use tests::signer::{sign_bbn_pop, sign_btc};
 
     use super::*;
@@ -1112,5 +1156,26 @@ mod tests {
         assert_eq!(del.status()?, DelegationStatus::Signed);
 
         Ok(())
+    }
+
+    #[test]
+    fn op_return_fixture() {
+        let bytes = hex::decode("62626234008c0d21a8dd59a2a50f7ab8cb94d3034eb2b3d130589168bf7876a30b22c876d803d5a0bb72d71993e435d6c5a70e2aa4db500a62cfaae33c56050deefee64ec00096").unwrap();
+        let data = OpReturnData::decode(bytes.as_slice()).unwrap();
+        assert_eq!(&data.magic_byes, b"bbb4");
+        assert_eq!(data.version, 0);
+        assert_eq!(
+            data.staker_btc_pk.as_slice(),
+            hex::decode("8c0d21a8dd59a2a50f7ab8cb94d3034eb2b3d130589168bf7876a30b22c876d8")
+                .unwrap()
+                .as_slice()
+        );
+        assert_eq!(
+            data.fp_pk.as_slice(),
+            hex::decode("03d5a0bb72d71993e435d6c5a70e2aa4db500a62cfaae33c56050deefee64ec0")
+                .unwrap()
+                .as_slice()
+        );
+        assert_eq!(data.staking_time, 150);
     }
 }
