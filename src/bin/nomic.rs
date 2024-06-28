@@ -53,6 +53,7 @@ use orga::plugins::MIN_FEE;
 use orga::prelude::*;
 use orga::{client::AppClient, tendermint::client::HttpClient};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fs::Permissions;
 use std::os::unix::fs::PermissionsExt;
@@ -136,6 +137,8 @@ pub enum Command {
     /// Edits the description of the validator associated with the wallet's
     /// operator address.
     Edit(EditCmd),
+    /// Casts a vote on a governance proposal.
+    Vote(VoteCmd),
     /// Claims the rewards earned by the wallet.
     Claim(ClaimCmd),
     /// Shows the wallet's available airdrop balances which can be claimed.
@@ -241,6 +244,7 @@ impl Command {
                 Redelegate(cmd) => cmd.run().await,
                 Unjail(cmd) => cmd.run().await,
                 Edit(cmd) => cmd.run().await,
+                Vote(cmd) => cmd.run().await,
                 Claim(cmd) => cmd.run().await,
                 ClaimAirdrop(cmd) => cmd.run().await,
                 Airdrop(cmd) => cmd.run().await,
@@ -1035,6 +1039,7 @@ pub struct DeclareInfo {
     pub identity: String,
     /// Description text about the validator.
     pub details: String,
+    pub proposals: Option<HashMap<String, bool>>,
 }
 
 impl DeclareCmd {
@@ -1050,6 +1055,7 @@ impl DeclareCmd {
             website: self.website.clone(),
             identity: self.identity.clone(),
             details: self.details.clone(),
+            proposals: None,
         };
         let info_json = serde_json::to_string(&info)
             .map_err(|_| orga::Error::App("invalid json".to_string()))?;
@@ -1118,11 +1124,27 @@ pub struct EditCmd {
 impl EditCmd {
     /// Runs the `edit` command.
     async fn run(&self) -> Result<()> {
+        let wallet = wallet();
+        let client = self.config.client();
+
+        let addr = wallet.address()?.unwrap();
+        let vals = client.query(|app| app.staking.all_validators()).await?;
+        let val = vals.iter().find(|val| Address::from(val.address) == addr);
+
+        let existing_info: Option<DeclareInfo> = val
+            .map(|v| {
+                serde_json::from_slice(v.info.as_slice())
+                    .map_err(|err| orga::Error::App(format!("invalid json: {}", err)))
+            })
+            .transpose()?;
+
+        // TODO: auto-populate from existing values
         let info = DeclareInfo {
             moniker: self.moniker.clone(),
             website: self.website.clone(),
             identity: self.identity.clone(),
             details: self.details.clone(),
+            proposals: existing_info.map_or(None, |i| i.proposals),
         };
         let info_json = serde_json::to_string(&info)
             .map_err(|_| orga::Error::App("invalid json".to_string()))?;
@@ -1131,7 +1153,7 @@ impl EditCmd {
         Ok(self
             .config
             .client()
-            .with_wallet(wallet())
+            .with_wallet(wallet)
             .call(
                 |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
                 |app| {
@@ -1143,6 +1165,94 @@ impl EditCmd {
                 },
             )
             .await?)
+    }
+}
+
+#[derive(clap::ArgEnum, Debug, Clone, PartialEq, Eq)]
+pub enum Vote {
+    Yes,
+    No,
+    None,
+}
+
+impl FromStr for Vote {
+    type Err = nomic::error::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        match s.to_lowercase().as_str() {
+            "yes" => Ok(Vote::Yes),
+            "no" => Ok(Vote::No),
+            "none" => Ok(Vote::None),
+            _ => Err(orga::Error::App("invalid vote".to_string()).into()),
+        }
+    }
+}
+
+/// Casts a vote on a governance proposal.
+#[derive(Parser, Debug)]
+pub struct VoteCmd {
+    proposal: String,
+    vote: Vote,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
+}
+
+impl VoteCmd {
+    async fn run(&self) -> Result<()> {
+        if self.proposal.len() != 64 {
+            return Err(orga::Error::App("invalid proposal".to_string()).into());
+        }
+
+        let wallet = wallet();
+        let client = self.config.client();
+
+        let addr = wallet.address()?.unwrap();
+        let vals = client.query(|app| app.staking.all_validators()).await?;
+        let val = vals
+            .iter()
+            .find(|val| Address::from(val.address) == addr)
+            .ok_or_else(|| orga::Error::App("validator not found".to_string()))?;
+
+        let mut info: DeclareInfo = serde_json::from_slice(val.info.as_slice())
+            .map_err(|err| orga::Error::App(format!("invalid json: {}", err)))?;
+
+        info.proposals = Some(info.proposals.unwrap_or_default());
+        let props = info.proposals.as_mut().unwrap();
+        if self.vote == Vote::Yes {
+            props.insert(self.proposal.clone(), true);
+        } else if self.vote == Vote::No {
+            props.insert(self.proposal.clone(), false);
+        } else {
+            props.remove(&self.proposal);
+        }
+
+        let info_json = serde_json::to_string(&info)
+            .map_err(|err| orga::Error::App(format!("failed to serialize to json: {}", err)))?;
+        let info_bytes = info_json.as_bytes().to_vec();
+
+        log::info!(
+            "Submitting updated vote map... {}",
+            serde_json::to_string_pretty(&info.proposals).unwrap()
+        );
+
+        let res = client
+            .with_wallet(wallet)
+            .call(
+                |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
+                |app| {
+                    build_call!(app.staking.edit_validator_self(
+                        val.commission.rate,
+                        val.min_self_delegation.into(),
+                        info_bytes.clone().try_into().unwrap()
+                    ))
+                },
+            )
+            .await?;
+
+        log::info!("Vote submitted.");
+
+        Ok(res)
     }
 }
 
