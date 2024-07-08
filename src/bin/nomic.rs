@@ -948,7 +948,7 @@ impl EditCmd {
             website: self.website.clone(),
             identity: self.identity.clone(),
             details: self.details.clone(),
-            proposals: existing_info.map_or(None, |i| i.proposals),
+            proposals: existing_info.and_then(|i| i.proposals),
         };
         let info_json = serde_json::to_string(&info)
             .map_err(|_| orga::Error::App("invalid json".to_string()))?;
@@ -1039,14 +1039,14 @@ impl VoteCmd {
             serde_json::to_string_pretty(&info.proposals).unwrap()
         );
 
-        let res = client
+        client
             .with_wallet(wallet)
             .call(
                 |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
                 |app| {
                     build_call!(app.staking.edit_validator_self(
                         val.commission.rate,
-                        val.min_self_delegation.into(),
+                        val.min_self_delegation,
                         info_bytes.clone().try_into().unwrap()
                     ))
                 },
@@ -1055,7 +1055,7 @@ impl VoteCmd {
 
         log::info!("Vote submitted.");
 
-        Ok(res)
+        Ok(())
     }
 }
 
@@ -1700,7 +1700,7 @@ impl UpgradeStatusCmd {
     async fn run(&self) -> Result<()> {
         use orga::coins::staking::ValidatorQueryInfo;
         use orga::coins::VersionedAddress;
-        use std::collections::{HashMap, HashSet};
+        use std::collections::HashSet;
         let client = self.config.client();
         let tm_client =
             tendermint_rpc::HttpClient::new(self.config.node.as_ref().unwrap().as_str()).unwrap();
