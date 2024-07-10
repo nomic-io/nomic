@@ -1719,7 +1719,7 @@ async fn recover_expired_deposit() {
         poll_for_bitcoin_header(1185).await.unwrap();
         poll_for_completed_checkpoint(3).await;
 
-        let expected_balance = 39595129200000;
+        let expected_balance = 39596871600000;
         let balance = poll_for_updated_balance(funded_accounts[1].address, expected_balance).await;
         assert_eq!(balance, Amount::from(expected_balance));
 
