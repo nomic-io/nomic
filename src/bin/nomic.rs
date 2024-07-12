@@ -57,7 +57,14 @@ const BANNER: &str = r#"
 "#;
 
 fn wallet() -> SimpleWallet {
-    let path = home::home_dir().unwrap().join(".orga-wallet");
+    let path = std::env::var("ORGA_WALLET").unwrap_or_else(|_| {
+        home::home_dir()
+            .unwrap()
+            .join(".orga-wallet")
+            .to_str()
+            .unwrap()
+            .to_string()
+    });
     SimpleWallet::open(path).unwrap()
 }
 
