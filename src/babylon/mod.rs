@@ -5,7 +5,7 @@ use bitcoin::{
     util::{
         merkleblock::PartialMerkleTree,
         sighash::SighashCache,
-        taproot::{TapLeafHash, TapSighashHash, TaprootBuilder},
+        taproot::{TapLeafHash, TapSighashHash, TaprootBuilder, TaprootSpendInfo},
     },
     OutPoint, Script, Sequence, Transaction, TxIn, TxOut, Witness, XOnlyPublicKey,
 };
@@ -441,25 +441,23 @@ pub fn slashing_script(
 
 const UNSPENDABLE_KEY: &str = "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
 
-pub fn staking_script(
+pub fn staking_taproot(
     staker_key: XOnlyPublicKey,
     fp_keys: &[XOnlyPublicKey],
     staking_time: u16,
     params: &Params,
-) -> Result<Script> {
+) -> Result<TaprootSpendInfo> {
     let timelock_script = timelock_script(staker_key, staking_time as u64);
     let unbonding_script = unbonding_script(staker_key, params)?;
     let slashing_script = slashing_script(staker_key, fp_keys, params)?;
 
     let internal_key = UNSPENDABLE_KEY.parse()?;
-    let spend_info = TaprootBuilder::new()
+    TaprootBuilder::new()
         .add_leaf(2, timelock_script)?
         .add_leaf(2, unbonding_script)?
         .add_leaf(1, slashing_script)?
         .finalize(&Secp256k1::new(), internal_key)
-        .map_err(|_| Error::Orga(orga::Error::App("Failed to finalize taproot".to_string())))?;
-
-    Ok(Script::new_v1_p2tr_tweaked(spend_info.output_key()))
+        .map_err(|_| Error::Orga(orga::Error::App("Failed to finalize taproot".to_string())))
 }
 
 pub fn slashing_tx(
@@ -803,13 +801,18 @@ impl Delegation {
         })
     }
 
-    pub fn staking_script(&self) -> Result<Script> {
-        staking_script(
+    pub fn staking_taproot(&self) -> Result<TaprootSpendInfo> {
+        staking_taproot(
             self.btc_key()?,
             &self.fp_keys()?,
             self.staking_period,
             &Params::bbn_test_4(),
         )
+    }
+
+    pub fn staking_script(&self) -> Result<Script> {
+        let spend_info = self.staking_taproot()?;
+        Ok(Script::new_v1_p2tr_tweaked(spend_info.output_key()))
     }
 
     pub fn unbonding_tx(&self) -> Result<Transaction> {
@@ -848,6 +851,26 @@ impl Delegation {
             self.unbonding_period,
             &Params::bbn_test_4(),
         )
+    }
+
+    pub fn withdrawal_sighash(
+        &self,
+        withdrawal_tx: &Transaction,
+        input_index: u32,
+    ) -> Result<TapSighashHash> {
+        let mut sc = SighashCache::new(withdrawal_tx);
+        Ok(sc.taproot_script_spend_signature_hash(
+            input_index as usize,
+            &Prevouts::All(&[&TxOut {
+                script_pubkey: self.staking_script()?,
+                value: self.stake_sats(),
+            }]),
+            TapLeafHash::from_script(
+                &timelock_script(self.btc_key()?, self.staking_period as u64),
+                bitcoin::util::taproot::LeafVersion::TapScript,
+            ),
+            bitcoin::SchnorrSighashType::Default,
+        )?)
     }
 
     pub fn slashing_sighash(&self) -> Result<TapSighashHash> {
@@ -924,10 +947,13 @@ pub struct OpReturnData {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use bitcoin::{
         psbt::serialize::{Deserialize, Serialize},
+        secp256k1::Message,
         util::bip32::ExtendedPrivKey,
-        Network,
+        Network, PackedLockTime,
     };
     use tests::signer::{sign_bbn_pop, sign_btc};
 
@@ -939,15 +965,18 @@ mod tests {
         let fp_pk = "14102e9fedd4a93e0955c07ba06a598309e75371b7bb8645717abb37b5fde939";
         let staking_time = 1_008;
         let expected_staking_addr =
-            "tb1p9e7vhkuskwfzyt8wz4v2769p9wd0et3gz78y39hawpm2ekeqjawqakm862";
+            "tb1pw3nfdjxrdy5u258m0tr9mggywc3avdpgaud7v3g06cx63wm3gjzs2glaz8";
 
-        let staking_script = staking_script(
-            staker_btc_pk.parse().unwrap(),
-            &[fp_pk.parse().unwrap()],
-            staking_time,
-            &Params::bbn_test_3(),
-        )
-        .unwrap();
+        let staking_script = Script::new_v1_p2tr_tweaked(
+            staking_taproot(
+                staker_btc_pk.parse().unwrap(),
+                &[fp_pk.parse().unwrap()],
+                staking_time,
+                &Params::bbn_test_3(),
+            )
+            .unwrap()
+            .output_key(),
+        );
         let staking_addr = bitcoin::Address::from_script(&staking_script, Network::Signet).unwrap();
         assert_eq!(staking_addr.to_string(), expected_staking_addr);
     }
@@ -988,8 +1017,8 @@ mod tests {
         };
         let staking_value = 20_000;
         let unbonding_time = 101;
-        let expected_unbonding_tx = Transaction::deserialize(&hex::decode("0200000001237aade8b8a56a47e30ed80a6102e5fdc1acd46373dcf640efd8d36940d2f6560000000000ffffffff01384a00000000000022512019d293a8610a102e8d62c1ed6c054b759e4361d5352e268ad0c39582734ea50b00000000").unwrap()).unwrap();
-        let expected_unbonding_slashing_tx = Transaction::deserialize(&hex::decode("02000000017285541c7b224b952f32eb16a815db378fc338502edcd64e09cf0eb9417f5deb0000000000ffffffff022a0800000000000016001463e2edfae6bf51aebbed63bb823c55565ab5eace263e000000000000225120e9f60075bdb745bb352fee26ee981fd55573652a928c8e6b19db29e00f32646000000000").unwrap()).unwrap();
+        let expected_unbonding_tx = Transaction::deserialize(&hex::decode("0200000001237aade8b8a56a47e30ed80a6102e5fdc1acd46373dcf640efd8d36940d2f6560000000000ffffffff01384a000000000000225120c60d4710421700778d000fe5d618710b3c529aff1db293f9771a718207166b0800000000").unwrap()).unwrap();
+        let expected_unbonding_slashing_tx = Transaction::deserialize(&hex::decode("0200000001a92722fb4e58cae7d03e2445ccb2a6201de1603773a5cb2e730136e95d6eabc60000000000ffffffff022a0800000000000016001463e2edfae6bf51aebbed63bb823c55565ab5eace263e000000000000225120e9f60075bdb745bb352fee26ee981fd55573652a928c8e6b19db29e00f32646000000000").unwrap()).unwrap();
 
         let unbonding_tx = unbonding_tx(
             staker_btc_pk.parse().unwrap(),
@@ -1105,7 +1134,7 @@ mod tests {
     #[test]
     fn delegation() -> Result<()> {
         let secp = Secp256k1::new();
-        let xpriv = ExtendedPrivKey::new_master(Network::Signet, b"foo")?;
+        let xpriv = ExtendedPrivKey::new_master(Network::Bitcoin, b"foo")?;
         let keypair = xpriv.to_keypair(&secp);
         let privkey = keypair.secret_key();
 
@@ -1120,16 +1149,88 @@ mod tests {
             0,
             bbn_pubkey,
             vec![super::DEFAULT_FP.parse().unwrap()],
-            64_000,
-            101,
+            150,
+            5,
             Nbtc::mint(50_000_000_000),
             0,
         )?;
         assert_eq!(del.status()?, DelegationStatus::Created);
 
         let script = del.staking_script().unwrap();
-        let addr = bitcoin::Address::from_script(&script, Network::Signet).unwrap();
+        let addr = bitcoin::Address::from_script(&script, Network::Bitcoin).unwrap();
         dbg!(addr);
+
+        let tx = Transaction {
+            input: vec![TxIn {
+                previous_output: OutPoint {
+                    txid: "c5f1c4d0355eff69637efedb7ea62d10efcfe11a053728ac58a5b20d78913ccb"
+                        .parse()
+                        .unwrap(),
+                    vout: 2,
+                },
+                script_sig: Script::default(),
+                sequence: Sequence::MAX,
+                witness: Witness::default(),
+            }],
+            output: vec![
+                del.staking_output().unwrap(),
+                del.op_return_output().unwrap(),
+                TxOut {
+                    value: 107_135 - 50_000 - (16 * 200),
+                    // addr: bc1q7nqxt2rq0tqzt6x3h54hrvw8pfr4s0uuwyfgvq
+                    script_pubkey: bitcoin::Address::from_str(
+                        "bc1q7nqxt2rq0tqzt6x3h54hrvw8pfr4s0uuwyfgvq",
+                    )
+                    .unwrap()
+                    .script_pubkey(),
+                },
+            ],
+            lock_time: PackedLockTime::ZERO,
+            version: 2,
+        };
+        println!("staking: {}", hex::encode(tx.serialize()));
+
+        let spend_info = del.staking_taproot().unwrap();
+        let withdraw_script = timelock_script(del.btc_key()?, del.staking_period as u64);
+        let leaf_ver = bitcoin::util::taproot::LeafVersion::TapScript;
+        let witness = spend_info
+            .control_block(&(withdraw_script.clone(), leaf_ver))
+            .unwrap()
+            .serialize();
+
+        let mut tx = Transaction {
+            input: vec![TxIn {
+                previous_output: OutPoint {
+                    txid: tx.txid(),
+                    vout: 0,
+                },
+                script_sig: Script::default(),
+                sequence: Sequence(150),
+                witness: Witness::default(),
+            }],
+            output: vec![TxOut {
+                value: 50_000,
+                script_pubkey: bitcoin::Address::from_str(
+                    "bc1q7nqxt2rq0tqzt6x3h54hrvw8pfr4s0uuwyfgvq",
+                )
+                .unwrap()
+                .script_pubkey(),
+            }],
+            lock_time: PackedLockTime::ZERO,
+            version: 2,
+        };
+        tx.output[0].value -= tx.size() as u64 * 16;
+
+        let sighash = del.withdrawal_sighash(&tx, 0).unwrap();
+        let message = Message::from_slice(&sighash).unwrap();
+        let sig = secp.sign_schnorr(&message, &keypair);
+        let mut sig_bytes = [0; 64];
+        sig_bytes.copy_from_slice(&sig.as_ref()[..]);
+        tx.input[0].witness =
+            Witness::from_vec(vec![sig_bytes.into(), withdraw_script.to_bytes(), witness]);
+
+        println!("withdrawal: {}", hex::encode(tx.serialize()));
+        println!("withdrawal txid: {}", tx.txid());
 
         // TODO: test verifying merkle proof
         del.staking_outpoint = Some(
@@ -1179,5 +1280,43 @@ mod tests {
                 .as_slice()
         );
         assert_eq!(data.staking_time, 150);
+    }
+
+    #[test]
+    fn delegation_fixture() {
+        let btc_key = XOnlyPublicKey::from_slice(
+            &hex::decode("8c0d21a8dd59a2a50f7ab8cb94d3034eb2b3d130589168bf7876a30b22c876d8")
+                .unwrap(),
+        )
+        .unwrap();
+        let bbn_key = PublicKey::from_slice(
+            &hex::decode("0203d5a0bb72d71993e435d6c5a70e2aa4db500a62cfaae33c56050deefee64ec0")
+                .unwrap(),
+        )
+        .unwrap();
+        let fp_keys = vec![XOnlyPublicKey::from_slice(
+            &hex::decode("03d5a0bb72d71993e435d6c5a70e2aa4db500a62cfaae33c56050deefee64ec0")
+                .unwrap(),
+        )
+        .unwrap()];
+        let del = Delegation::new(
+            0,
+            btc_key,
+            0,
+            bbn_key,
+            fp_keys,
+            150,
+            5,
+            Coin::mint(50_000_000_000),
+            0,
+        )
+        .unwrap();
+
+        assert_eq!(del.op_return_bytes().unwrap(), hex::decode("62626234008c0d21a8dd59a2a50f7ab8cb94d3034eb2b3d130589168bf7876a30b22c876d803d5a0bb72d71993e435d6c5a70e2aa4db500a62cfaae33c56050deefee64ec00096").unwrap());
+        assert_eq!(
+            del.staking_script().unwrap().to_bytes(),
+            hex::decode("51202552bc9fe84a0e05f156d127e7d2460bff26541ba56e9f761d2029ee09f3859f")
+                .unwrap(),
+        );
     }
 }
