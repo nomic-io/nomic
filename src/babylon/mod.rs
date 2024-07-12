@@ -304,9 +304,11 @@ pub fn multisig_script(pks: &[XOnlyPublicKey], threshold: u32, verify: bool) -> 
             .into_bytes(),
         );
     }
-    bytes.extend(script! { <threshold as i64> OP_GREATERTHANOREQUAL }.into_bytes());
+    bytes.extend(script! { <threshold as i64> }.into_bytes());
     if verify {
-        bytes.extend(script! { OP_VERIFY }.into_bytes());
+        bytes.extend(script! { OP_NUMEQUALVERIFY }.into_bytes());
+    } else {
+        bytes.extend(script! { OP_NUMEQUAL }.into_bytes());
     }
 
     Ok(bytes.into())
