@@ -853,12 +853,12 @@ impl Delegation {
         )
     }
 
-    pub fn withdrawal_sighash(
+    pub fn timelock_withdrawal_sighash(
         &self,
-        withdrawal_tx: &Transaction,
+        spending_tx: &Transaction,
         input_index: u32,
     ) -> Result<TapSighashHash> {
-        let mut sc = SighashCache::new(withdrawal_tx);
+        let mut sc = SighashCache::new(spending_tx);
         Ok(sc.taproot_script_spend_signature_hash(
             input_index as usize,
             &Prevouts::All(&[&TxOut {
@@ -890,12 +890,15 @@ impl Delegation {
         )?)
     }
 
-    pub fn unbonding_slashing_sighash(&self) -> Result<TapSighashHash> {
+    pub fn unbonding_sighash(
+        &self,
+        spending_tx: &Transaction,
+        input_index: u32,
+    ) -> Result<TapSighashHash> {
         let unbonding_tx = self.unbonding_tx()?;
-        let slashing_tx = self.unbonding_slashing_tx()?;
-        let mut sc = SighashCache::new(&slashing_tx);
+        let mut sc = SighashCache::new(spending_tx);
         Ok(sc.taproot_script_spend_signature_hash(
-            0,
+            input_index as usize,
             &Prevouts::All(&[&unbonding_tx.output[0]]),
             TapLeafHash::from_script(
                 &slashing_script(self.btc_key()?, &self.fp_keys()?, &Params::bbn_test_4())?,
@@ -903,6 +906,10 @@ impl Delegation {
             ),
             bitcoin::SchnorrSighashType::Default,
         )?)
+    }
+
+    pub fn unbonding_slashing_sighash(&self) -> Result<TapSighashHash> {
+        self.unbonding_sighash(&self.unbonding_slashing_tx()?, 0)
     }
 
     pub fn pop_btc_sighash(&self) -> Result<Vec<u8>> {
@@ -1043,16 +1050,6 @@ mod tests {
         )
         .unwrap();
         assert_eq!(unbonding_slashing_tx, expected_unbonding_slashing_tx);
-    }
-
-    #[test]
-    fn pop_fixture() {
-        let btc_key = "";
-        let bbn_key = "";
-        let bbn_sig = "";
-        let btc_sig = "";
-
-        // TODO
     }
 
     #[test]
@@ -1221,14 +1218,13 @@ mod tests {
         };
         tx.output[0].value -= tx.size() as u64 * 16;
 
-        let sighash = del.withdrawal_sighash(&tx, 0).unwrap();
+        let sighash = del.timelock_withdrawal_sighash(&tx, 0).unwrap();
         let message = Message::from_slice(&sighash).unwrap();
         let sig = secp.sign_schnorr(&message, &keypair);
         let mut sig_bytes = [0; 64];
         sig_bytes.copy_from_slice(&sig.as_ref()[..]);
         tx.input[0].witness =
             Witness::from_vec(vec![sig_bytes.into(), withdraw_script.to_bytes(), witness]);
-
         println!("withdrawal: {}", hex::encode(tx.serialize()));
         println!("withdrawal txid: {}", tx.txid());
 
