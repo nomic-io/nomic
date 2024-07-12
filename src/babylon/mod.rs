@@ -34,12 +34,9 @@ use crate::bitcoin::threshold_sig::{Pubkey, Signature};
 pub mod proto;
 #[cfg(feature = "full")]
 pub mod relayer;
-#[cfg(feature = "full")]
-pub mod signer;
 
 const MIN_DELEGATION: u64 = 50_000;
-const DEFAULT_FP: &str = "e4889630fa8695dae630c41cd9b85ef165ccc2dc5e5935d5a24393a9defee9ef";
-const BBN_PUBKEY: &str = "03f9082781f6119a6863cae036d6a766f24e0b321f80df4dea5b49f2980ae76665"; // bbn1vn8s0khjy4mg3g6py9hljzcsjcknvcm0crld7f
+const DEFAULT_FP: &str = "03d5a0bb72d71993e435d6c5a70e2aa4db500a62cfaae33c56050deefee64ec0";
 
 /// The symbol for stBTC, a BTC liquid staking token.
 #[derive(State, Debug, Clone, Encode, Decode, Default, Migrate, Serialize)]
@@ -98,7 +95,6 @@ impl Babylon {
                 self.delegations.len(),
                 PublicKey::from_slice(&group_pubkey.inner.verifying_key().serialize())?.into(),
                 frost_index,
-                PublicKey::from_slice(&hex::decode(BBN_PUBKEY).unwrap())?,
                 vec![DEFAULT_FP.parse().unwrap()], // TODO: choose dynamically
                 64_000,
                 101,
@@ -128,27 +124,6 @@ impl Babylon {
 
         //  TODO: process matured delegations, lock in tx which spends the stake and redeposits(?)
         //  TODO: process matured+signed delegations, pay unbonding queue
-
-        for i in 0..self.delegations.len() {
-            let del = self.delegations.get(i)?.unwrap();
-            if del.status()? != DelegationStatus::SigningBtc {
-                continue;
-            }
-
-            let offset = del.frost_sig_offset.unwrap();
-            let mut sigs = vec![];
-            for sig_index in offset..offset + 3 {
-                if let Some(sig) = frost.signature(del.frost_group, sig_index)? {
-                    sigs.push(Signature(sig.inner.serialize()[1..].try_into().unwrap()));
-                } else {
-                    break;
-                }
-            }
-            let mut del = self.delegations.get_mut(i)?.unwrap();
-            if sigs.len() == 3 {
-                del.sign_btc(sigs[0], sigs[1], sigs[2])?;
-            }
-        }
 
         Ok(pending_outputs)
     }
@@ -393,17 +368,11 @@ impl Params {
 
     pub fn bbn_test_4() -> Self {
         let covenant_keys = [
-            "49766ccd9e3cd94343e2040474a77fb37cdfd30530d05f9f1e96ae1e2102c86e",
-            "76d1ae01f8fb6bf30108731c884cddcf57ef6eef2d9d9559e130894e0e40c62c",
-            "17921cf156ccb4e73d428f996ed11b245313e37e27c978ac4d2cc21eca4672e4",
-            "113c3a32a9d320b72190a04a020a0db3976ef36972673258e9a38a364f3dc3b0",
-            "79a71ffd71c503ef2e2f91bccfc8fcda7946f4653cef0d9f3dde20795ef3b9f0",
-            "3bb93dfc8b61887d771f3630e9a63e97cbafcfcc78556a474df83a31a0ef899c",
-            "d21faf78c6751a0d38e6bd8028b907ff07e9a869a43fc837d6b3f8dff6119a36",
-            "40afaf47c4ffa56de86410d8e47baa2bb6f04b604f4ea24323737ddc3fe092df",
-            "f5199efae3f28bb82476163a7e458c7ad445d9bffb0682d10d3bdb2cb41f8e8e",
+            "a10a06bb3bae360db3aef0326413b55b9e46bf20b9a96fc8a806a99e644fe277",
+            "6f13a6d104446520d1757caec13eaf6fbcf29f488c31e0107e7351d4994cd068",
+            "a5e21514682b87e37fb5d3c9862055041d1e6f4cc4f3034ceaf3d90f86b230a6",
         ];
-        let covenant_quorum = 6;
+        let covenant_quorum = 2;
 
         let slashing_addr = "tb1qv03wm7hxhag6awldvwacy0z42edtt6kwljrhd9";
         let slashing_min_fee = 2_000;
@@ -499,6 +468,23 @@ pub fn slashing_tx(
     })
 }
 
+pub fn unbonding_taproot(
+    staker_key: XOnlyPublicKey,
+    fp_keys: &[XOnlyPublicKey],
+    unbonding_time: u16,
+    params: &Params,
+) -> Result<TaprootSpendInfo> {
+    let timelock_script = timelock_script(staker_key, unbonding_time as u64);
+    let slashing_script = slashing_script(staker_key, fp_keys, params)?;
+
+    let internal_key = UNSPENDABLE_KEY.parse()?;
+    TaprootBuilder::new()
+        .add_leaf(1, timelock_script)?
+        .add_leaf(1, slashing_script)?
+        .finalize(&Secp256k1::new(), internal_key)
+        .map_err(|_| Error::Orga(orga::Error::App("Failed to finalize taproot".to_string())))
+}
+
 pub fn unbonding_tx(
     staker_key: XOnlyPublicKey,
     fp_keys: &[XOnlyPublicKey],
@@ -514,15 +500,12 @@ pub fn unbonding_tx(
         witness: Witness::default(),
     };
 
-    let out_key = TaprootBuilder::new()
-        .add_leaf(1, timelock_script(staker_key, unbonding_time as u64))?
-        .add_leaf(1, slashing_script(staker_key, fp_keys, params)?)?
-        .finalize(&Secp256k1::new(), UNSPENDABLE_KEY.parse().unwrap())
-        .unwrap()
-        .output_key();
+    let script_pubkey = Script::new_v1_p2tr_tweaked(
+        unbonding_taproot(staker_key, fp_keys, unbonding_time, params)?.output_key(),
+    );
     let out = TxOut {
         value: staking_value - 1_000, // TODO: parameterize
-        script_pubkey: Script::new_v1_p2tr_tweaked(out_key),
+        script_pubkey,
     };
 
     Ok(Transaction {
@@ -542,9 +525,7 @@ fn bytes_to_pubkey(bytes: XOnlyPubkey) -> Result<XOnlyPublicKey> {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DelegationStatus {
     Created,
-    SigningBbn,
-    SigningBtc,
-    Signed,
+    Staked,
 }
 
 #[orga]
@@ -553,8 +534,6 @@ pub struct Delegation {
     pub index: u64,
     pub btc_key: XOnlyPubkey,
     pub frost_group: u64,
-    // TODO: don't use basic pubkey, use Interchain Accounts
-    pub bbn_key: Pubkey,
     pub fp_keys: LengthVec<u8, XOnlyPubkey>,
     pub staking_period: u16,
     pub unbonding_period: u16,
@@ -563,14 +542,6 @@ pub struct Delegation {
 
     pub staking_outpoint: Option<crate::bitcoin::adapter::Adapter<OutPoint>>,
     pub staking_height: Option<u32>,
-
-    pub(crate) pop_bbn_sig: Option<Signature>,
-
-    pub(crate) frost_sig_offset: Option<u64>,
-    pub(crate) pop_btc_sig: Option<Signature>,
-    pub(crate) slashing_tx_sig: Option<Signature>,
-    pub(crate) unbonding_slashing_tx_sig: Option<Signature>,
-    // TODO: tx to spend mature stake
 }
 
 #[orga]
@@ -579,7 +550,6 @@ impl Delegation {
         index: u64,
         btc_key: XOnlyPublicKey,
         frost_group: u64,
-        bbn_key: PublicKey,
         fp_keys: Vec<XOnlyPublicKey>,
         staking_period: u16,
         unbonding_period: u16,
@@ -590,7 +560,6 @@ impl Delegation {
             index,
             btc_key: btc_key.serialize(),
             frost_group,
-            bbn_key: Pubkey::try_from_slice(&bbn_key.serialize())?,
             fp_keys: fp_keys
                 .iter()
                 .map(|k| k.serialize())
@@ -617,75 +586,6 @@ impl Delegation {
     pub fn stake_sats(&self) -> u64 {
         let stake_amount: u64 = self.stake.amount.into();
         stake_amount / 1_000_000 // TODO: get covnersion from bitcoin config
-    }
-
-    pub fn sign_bbn(&mut self, sig: Signature, frost: Option<&mut Frost>) -> Result<()> {
-        if self.pop_bbn_sig.is_some() {
-            return Err(Error::Orga(orga::Error::App("Already signed".to_string())));
-        }
-
-        // TODO: reuse secp instance
-        let secp = Secp256k1::verification_only();
-
-        let key = PublicKey::from_slice(self.bbn_key.as_slice())?;
-        let msg = bitcoin::secp256k1::Message::from_slice(&self.btc_key)?;
-        let sig = ecdsa::Signature::from_compact(sig.as_slice())?;
-        #[cfg(not(fuzzing))]
-        secp.verify_ecdsa(&msg, &sig, &key)?;
-
-        self.pop_bbn_sig = Some(sig.serialize_compact().into());
-
-        if let Some(frost) = frost {
-            self.push_frost_messages(frost)?;
-        }
-
-        Ok(())
-    }
-
-    fn push_frost_messages(&mut self, frost: &mut Frost) -> Result<()> {
-        let mut group = frost.groups.get_mut(self.frost_group)?.unwrap();
-        self.frost_sig_offset.replace(group.signing.len());
-        group.push_message(self.pop_btc_sighash()?.to_vec().try_into()?)?;
-        group.push_message(self.slashing_sighash()?.to_vec().try_into()?)?;
-        group.push_message(self.unbonding_slashing_sighash()?.to_vec().try_into()?)?;
-
-        Ok(())
-    }
-
-    pub fn sign_btc(
-        &mut self,
-        pop_btc_sig: Signature,
-        slashing_sig: Signature,
-        unbonding_slashing_sig: Signature,
-    ) -> Result<()> {
-        // TODO: reuse secp instance
-        let secp = Secp256k1::verification_only();
-
-        let key = self.btc_key()?;
-        let verify = |msg: &[u8], sig: &Signature| -> Result<()> {
-            let msg = bitcoin::secp256k1::Message::from_slice(msg)?;
-            let sig = schnorr::Signature::from_slice(sig.as_slice())?;
-            #[cfg(not(fuzzing))]
-            secp.verify_schnorr(&sig, &msg, &key)?;
-            Ok(())
-        };
-
-        let pop_btc_msg = self.pop_btc_sighash()?;
-        verify(&pop_btc_msg, &pop_btc_sig)?;
-        self.pop_btc_sig = Some(pop_btc_sig);
-
-        let slashing_sighash = self.slashing_sighash()?;
-        verify(&slashing_sighash.into_inner(), &slashing_sig)?;
-        self.slashing_tx_sig = Some(slashing_sig);
-
-        let unbonding_slashing_sighash = self.unbonding_slashing_sighash()?;
-        verify(
-            &unbonding_slashing_sighash.into_inner(),
-            &unbonding_slashing_sig,
-        )?;
-        self.unbonding_slashing_tx_sig = Some(unbonding_slashing_sig);
-
-        Ok(())
     }
 
     pub fn relay_staking_tx(
@@ -769,22 +669,11 @@ impl Delegation {
             self.staking_height.is_none()
         );
 
-        assert_eq!(self.pop_btc_sig.is_none(), self.slashing_tx_sig.is_none());
-        assert_eq!(
-            self.pop_btc_sig.is_none(),
-            self.unbonding_slashing_tx_sig.is_none()
-        );
-
         if self.staking_outpoint.is_none() {
             return Ok(DelegationStatus::Created);
+        } else {
+            return Ok(DelegationStatus::Staked);
         }
-        if self.pop_bbn_sig.is_none() {
-            return Ok(DelegationStatus::SigningBbn);
-        }
-        if self.pop_btc_sig.is_none() {
-            return Ok(DelegationStatus::SigningBtc);
-        }
-        Ok(DelegationStatus::Signed)
     }
 
     pub fn staking_output(&self) -> Result<TxOut> {
@@ -890,7 +779,7 @@ impl Delegation {
         )?)
     }
 
-    pub fn unbonding_sighash(
+    pub fn unbonding_spend_sighash(
         &self,
         spending_tx: &Transaction,
         input_index: u32,
@@ -909,21 +798,7 @@ impl Delegation {
     }
 
     pub fn unbonding_slashing_sighash(&self) -> Result<TapSighashHash> {
-        self.unbonding_sighash(&self.unbonding_slashing_tx()?, 0)
-    }
-
-    pub fn pop_btc_sighash(&self) -> Result<Vec<u8>> {
-        let bbn_sig = self.pop_bbn_sig.ok_or_else(|| {
-            Error::Orga(orga::Error::App("Missing BBN PoP signature".to_string()))
-        })?;
-
-        let bbn_sig_hex = hex::encode(bbn_sig.as_slice());
-
-        let mut hasher = Sha256::new();
-        hasher.update(bbn_sig_hex.as_bytes());
-        let hash = hasher.finalize();
-
-        Ok(hash.to_vec())
+        self.unbonding_spend_sighash(&self.unbonding_slashing_tx()?, 0)
     }
 
     pub fn op_return_bytes(&self) -> Result<Vec<u8>> {
@@ -962,7 +837,6 @@ mod tests {
         util::bip32::ExtendedPrivKey,
         Network, PackedLockTime,
     };
-    use tests::signer::{sign_bbn_pop, sign_btc};
 
     use super::*;
 
@@ -1137,14 +1011,11 @@ mod tests {
 
         // tb1p7aunqrcsrr0vrh7w9jcsm82w7c8xlrgererrfc5zae9ejxfupl3st6lal6
         let btc_pubkey = keypair.x_only_public_key().0;
-        // bbn1t56n5tkdkf3ywutjs5k40gl3rhsvry5xh45ln9
-        let bbn_pubkey = keypair.public_key();
 
         let mut del = Delegation::new(
             0,
             btc_pubkey,
             0,
-            bbn_pubkey,
             vec![super::DEFAULT_FP.parse().unwrap()],
             150,
             5,
@@ -1239,20 +1110,7 @@ mod tests {
             .into(),
         );
         del.staking_height = Some(197_574);
-        assert_eq!(del.status()?, DelegationStatus::SigningBbn);
-
-        let bbn_sig = sign_bbn_pop(&del, privkey);
-        del.sign_bbn(bbn_sig, None)?;
-        assert!(del
-            .sign_bbn(bbn_sig, None)
-            .unwrap_err()
-            .to_string()
-            .contains("Already signed"));
-        assert_eq!(del.status()?, DelegationStatus::SigningBtc);
-
-        let btc_sigs = sign_btc(&del, keypair)?;
-        del.sign_btc(btc_sigs.0, btc_sigs.1, btc_sigs.2)?;
-        assert_eq!(del.status()?, DelegationStatus::Signed);
+        assert_eq!(del.status()?, DelegationStatus::Staked);
 
         Ok(())
     }
@@ -1285,11 +1143,6 @@ mod tests {
                 .unwrap(),
         )
         .unwrap();
-        let bbn_key = PublicKey::from_slice(
-            &hex::decode("0203d5a0bb72d71993e435d6c5a70e2aa4db500a62cfaae33c56050deefee64ec0")
-                .unwrap(),
-        )
-        .unwrap();
         let fp_keys = vec![XOnlyPublicKey::from_slice(
             &hex::decode("03d5a0bb72d71993e435d6c5a70e2aa4db500a62cfaae33c56050deefee64ec0")
                 .unwrap(),
@@ -1299,7 +1152,6 @@ mod tests {
             0,
             btc_key,
             0,
-            bbn_key,
             fp_keys,
             150,
             5,

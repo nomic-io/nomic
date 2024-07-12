@@ -120,7 +120,6 @@ pub enum Command {
     RecoverDeposit(RecoverDepositCmd),
     PayToFeePool(PayToFeePoolCmd),
     BabylonRelayer(BabylonRelayerCmd),
-    BabylonSigner(BabylonSignerCmd),
     StakeNbtc(StakeNbtcCmd),
     FrostSigner(FrostSignerCmd),
 }
@@ -187,7 +186,6 @@ impl Command {
                 RecoverDeposit(cmd) => cmd.run().await,
                 PayToFeePool(cmd) => cmd.run().await,
                 BabylonRelayer(cmd) => cmd.run().await,
-                BabylonSigner(cmd) => cmd.run().await,
                 StakeNbtc(cmd) => cmd.run().await,
                 FrostSigner(cmd) => cmd.run().await,
             }
@@ -2192,33 +2190,6 @@ impl BabylonRelayerCmd {
 
     async fn run(&self) -> Result<()> {
         todo!()
-    }
-}
-
-#[derive(Parser, Debug)]
-pub struct BabylonSignerCmd {
-    #[clap(flatten)]
-    config: nomic::network::Config,
-}
-
-impl BabylonSignerCmd {
-    async fn run(&self) -> Result<()> {
-        let app_client = self.config.client();
-        let del_client = self.config.client().sub(|app| {
-            let r = app.babylon.delegations.get(0)?.unwrap();
-            // TODO
-            if let Ref::Owned(d) = r {
-                Ok(d)
-            } else {
-                panic!();
-            }
-        });
-
-        let bbn_privkey = SecretKey::from_slice(&[124; 32]).unwrap();
-
-        babylon::signer::maybe_sign(del_client, app_client, bbn_privkey).await?;
-
-        Ok(())
     }
 }
 

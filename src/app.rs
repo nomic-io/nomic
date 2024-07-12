@@ -443,19 +443,6 @@ impl InnerApp {
         Ok(())
     }
 
-    // TODO: we shouldn't need this once we can do subclient calls
-    #[call]
-    pub fn sign_bbn(&mut self, del_index: u64, bbn_sig: Signature) -> Result<()> {
-        exempt_from_fee()?;
-
-        Ok(self
-            .babylon
-            .delegations
-            .get_mut(del_index)?
-            .ok_or_else(|| Error::App("Delegation not found".to_string()))?
-            .sign_bbn(bbn_sig, Some(&mut self.frost))?)
-    }
-
     #[call]
     pub fn app_noop(&mut self) -> Result<()> {
         Ok(())
