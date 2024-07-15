@@ -7,7 +7,7 @@ use bitcoin::{
         sighash::SighashCache,
         taproot::{TapLeafHash, TapSighashHash, TaprootBuilder, TaprootSpendInfo},
     },
-    OutPoint, Script, Sequence, Transaction, TxIn, TxOut, Witness, XOnlyPublicKey,
+    OutPoint, PackedLockTime, Script, Sequence, Transaction, TxIn, TxOut, Witness, XOnlyPublicKey,
 };
 use bitcoin_script::bitcoin_script as script;
 use ed::{Decode, Encode};
@@ -526,6 +526,8 @@ fn bytes_to_pubkey(bytes: XOnlyPubkey) -> Result<XOnlyPublicKey> {
 pub enum DelegationStatus {
     Created,
     Staked,
+    SigningUnbond,
+    SignedUnbond,
 }
 
 #[orga]
@@ -542,6 +544,12 @@ pub struct Delegation {
 
     pub staking_outpoint: Option<crate::bitcoin::adapter::Adapter<OutPoint>>,
     pub staking_height: Option<u32>,
+
+    // TODO: handle different types of spends (timelock vs unbonding vs slashed)
+    pub withdrawal_script_pubkey: Option<crate::bitcoin::adapter::Adapter<Script>>,
+    pub frost_sig_offset: Option<u64>,
+    pub(crate) staking_unbonding_sig: Option<Signature>,
+    pub(crate) unbonding_withdrawal_sig: Option<Signature>,
 }
 
 #[orga]
@@ -663,6 +671,55 @@ impl Delegation {
         Ok(())
     }
 
+    pub fn unbond(&mut self, frost: &mut Frost, dest: Script) -> Result<()> {
+        assert_eq!(self.status()?, DelegationStatus::Staked);
+
+        self.withdrawal_script_pubkey = Some(dest.into());
+
+        let mut group = frost.groups.get_mut(self.frost_group)?.unwrap();
+        self.frost_sig_offset.replace(group.signing.len());
+        group.push_message(self.unbonding_withdrawal_sighash()?.to_vec().try_into()?)?;
+        group.push_message(self.staking_unbonding_sighash()?.to_vec().try_into()?)?;
+
+        Ok(())
+    }
+
+    pub fn sign_unbond(
+        &mut self,
+        staking_unbonding_sig: Signature,
+        unbonding_withdrawal_sig: Signature,
+    ) -> Result<()> {
+        assert_eq!(self.status()?, DelegationStatus::SigningUnbond);
+
+        // TODO: reuse secp instance
+        let secp = Secp256k1::verification_only();
+
+        let key = self.btc_key()?;
+        let verify = |msg: &[u8], sig: &Signature| -> Result<()> {
+            let msg = bitcoin::secp256k1::Message::from_slice(msg)?;
+            let sig = schnorr::Signature::from_slice(sig.as_slice())?;
+            #[cfg(not(fuzzing))]
+            secp.verify_schnorr(&sig, &msg, &key)?;
+            Ok(())
+        };
+
+        let staking_unbonding_sighash = self.staking_unbonding_sighash()?;
+        verify(
+            &staking_unbonding_sighash.into_inner(),
+            &staking_unbonding_sig,
+        )?;
+        self.staking_unbonding_sig = Some(staking_unbonding_sig);
+
+        let unbonding_withdrawal_sighash = self.unbonding_withdrawal_sighash()?;
+        verify(
+            &unbonding_withdrawal_sighash.into_inner(),
+            &unbonding_withdrawal_sig,
+        )?;
+        self.unbonding_withdrawal_sig = Some(unbonding_withdrawal_sig);
+
+        Ok(())
+    }
+
     pub fn status(&self) -> Result<DelegationStatus> {
         assert_eq!(
             self.staking_outpoint.is_none(),
@@ -742,7 +799,7 @@ impl Delegation {
         )
     }
 
-    pub fn timelock_withdrawal_sighash(
+    pub fn staking_timelock_sighash(
         &self,
         spending_tx: &Transaction,
         input_index: u32,
@@ -762,7 +819,24 @@ impl Delegation {
         )?)
     }
 
-    pub fn slashing_sighash(&self) -> Result<TapSighashHash> {
+    pub fn staking_unbonding_sighash(&self) -> Result<TapSighashHash> {
+        let unbonding_tx = self.unbonding_tx()?;
+        let mut sc = SighashCache::new(&unbonding_tx);
+        Ok(sc.taproot_script_spend_signature_hash(
+            0,
+            &Prevouts::All(&[&TxOut {
+                script_pubkey: self.staking_script()?,
+                value: self.stake_sats(),
+            }]),
+            TapLeafHash::from_script(
+                &unbonding_script(self.btc_key()?, &Params::bbn_test_4())?,
+                bitcoin::util::taproot::LeafVersion::TapScript,
+            ),
+            bitcoin::SchnorrSighashType::Default,
+        )?)
+    }
+
+    pub fn staking_slashing_sighash(&self) -> Result<TapSighashHash> {
         let slashing_tx = self.slashing_tx()?;
         let mut sc = SighashCache::new(&slashing_tx);
         Ok(sc.taproot_script_spend_signature_hash(
@@ -779,26 +853,19 @@ impl Delegation {
         )?)
     }
 
-    pub fn unbonding_spend_sighash(
-        &self,
-        spending_tx: &Transaction,
-        input_index: u32,
-    ) -> Result<TapSighashHash> {
+    pub fn unbonding_withdrawal_sighash(&self) -> Result<TapSighashHash> {
         let unbonding_tx = self.unbonding_tx()?;
-        let mut sc = SighashCache::new(spending_tx);
+        let withdrawal_tx = self.unbonding_withdrawal_tx()?;
+        let mut sc = SighashCache::new(&withdrawal_tx);
         Ok(sc.taproot_script_spend_signature_hash(
-            input_index as usize,
+            0,
             &Prevouts::All(&[&unbonding_tx.output[0]]),
             TapLeafHash::from_script(
-                &slashing_script(self.btc_key()?, &self.fp_keys()?, &Params::bbn_test_4())?,
+                &timelock_script(self.btc_key()?, self.unbonding_period as u64),
                 bitcoin::util::taproot::LeafVersion::TapScript,
             ),
             bitcoin::SchnorrSighashType::Default,
         )?)
-    }
-
-    pub fn unbonding_slashing_sighash(&self) -> Result<TapSighashHash> {
-        self.unbonding_spend_sighash(&self.unbonding_slashing_tx()?, 0)
     }
 
     pub fn op_return_bytes(&self) -> Result<Vec<u8>> {
@@ -806,7 +873,6 @@ impl Delegation {
             magic_byes: Params::bbn_test_4().op_return_tag,
             version: 0,
             staker_btc_pk: self.btc_key,
-            // TODO: support multiple fp's?
             fp_pk: *self
                 .fp_keys
                 .first()
@@ -815,6 +881,38 @@ impl Delegation {
         };
 
         Ok(data.encode()?)
+    }
+
+    pub fn unbonding_withdrawal_tx(&self) -> Result<Transaction> {
+        let unbonding_tx = self.unbonding_tx()?;
+        let unbonding_txid = unbonding_tx.txid();
+        let unbonding_vout = 0;
+        let unbonding_value = unbonding_tx.output[0].value;
+        let unbonding_script = self.withdrawal_script_pubkey.clone().ok_or_else(|| {
+            Error::Orga(orga::Error::App(
+                "Missing withdrawal script pubkey".to_string(),
+            ))
+        })?;
+
+        let unbonding_tx = Transaction {
+            version: 2,
+            lock_time: PackedLockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint {
+                    txid: unbonding_txid,
+                    vout: unbonding_vout,
+                },
+                script_sig: Script::default(),
+                sequence: Sequence::MAX,
+                witness: Witness::default(),
+            }],
+            output: vec![TxOut {
+                value: unbonding_value - 1_000, // TODO: parameterize fee
+                script_pubkey: unbonding_script.into_inner(),
+            }],
+        };
+
+        Ok(unbonding_tx)
     }
 }
 
@@ -1089,7 +1187,7 @@ mod tests {
         };
         tx.output[0].value -= tx.size() as u64 * 16;
 
-        let sighash = del.timelock_withdrawal_sighash(&tx, 0).unwrap();
+        let sighash = del.staking_timelock_sighash(&tx, 0).unwrap();
         let message = Message::from_slice(&sighash).unwrap();
         let sig = secp.sign_schnorr(&message, &keypair);
         let mut sig_bytes = [0; 64];
