@@ -22,7 +22,11 @@ use orga::{
 use serde::Serialize;
 
 use crate::{
-    bitcoin::{header_queue::HeaderQueue, Nbtc, SIGSET_THRESHOLD},
+    bitcoin::{
+        checkpoint::{BatchType, Input},
+        header_queue::HeaderQueue,
+        Bitcoin, Nbtc, SIGSET_THRESHOLD,
+    },
     error::{Error, Result},
     frost::Frost,
 };
@@ -57,7 +61,7 @@ pub struct Babylon {
     pub(crate) pending_unstake: Coin<Stbtc>,
     pub(crate) pending_unstake_queue: Deque<(Address, Amount)>,
     pub(crate) pending_unstake_by_addr: Map<Address, Amount>,
-    pub unstaking_delegations: Deque<(u64, u32)>,
+    pub unstaking_delegations: Map<u64, u32>,
     pub unstaked: Accounts<Nbtc>,
     // TODO: config
 }
@@ -130,7 +134,7 @@ impl Babylon {
                 let dest = sigset.output_script(&[0], SIGSET_THRESHOLD)?;
                 oldest_del.unbond(frost, dest)?;
                 self.unstaking_delegations
-                    .push_back((oldest_del.index, sigset.index))?;
+                    .insert(oldest_del.index, sigset.index)?;
                 // TODO: count unbonding amount
             }
         }
@@ -156,12 +160,6 @@ impl Babylon {
             let mut del = self.delegations.get_mut(i)?.unwrap();
             if sigs.len() == 2 {
                 del.sign_unbond(sigs[1], sigs[0])?;
-                let amount_to_pay = self.pending_unstake.amount.min(del.stake.amount);
-                let to_pay = del.stake.take(amount_to_pay)?;
-                let to_restake = del.stake.take_all()?;
-                self.pay_off_unbond_queue(to_pay)?;
-                // TODO: spend into checkpoint
-                // TODO: stake remaining amount
             }
         }
 
@@ -265,6 +263,55 @@ impl Babylon {
                 .push_back((addr, st_coins.amount))?;
             self.pending_unstake.give(st_coins)?;
         }
+
+        Ok(())
+    }
+
+    // TODO: include unbonding tx proof
+    pub fn confirm_unbond(&mut self, index: u64, btc: &mut Bitcoin) -> Result<()> {
+        let mut del = self.delegations.get_mut(index)?.unwrap();
+
+        if del.status() != DelegationStatus::SignedUnbond {
+            return Err(Error::Orga(orga::Error::App(
+                "Delegation not in SignedUnbond state".into(),
+            )));
+        }
+
+        let unbonding_period = 5; // TODO
+        if btc.headers.height()? < del.unbonding_height.unwrap() + unbonding_period {
+            return Err(Error::Orga(orga::Error::App(
+                "Unbonding period has not passed".into(),
+            )));
+        }
+
+        // TODO: verify proof of unbonding tx inclusion
+
+        let amount_to_pay = self.pending_unstake.amount.min(del.stake.amount);
+        let to_pay = del.stake.take(amount_to_pay)?;
+        let to_renew = del.stake.take_all()?;
+
+        let cp_index = self.unstaking_delegations.remove(index)?.unwrap();
+        let sigset = btc.checkpoints.get(*cp_index)?.sigset.clone();
+
+        let mut cp = btc.checkpoints.building_mut()?;
+        let mut batch = cp.batches.get_mut(BatchType::Checkpoint as u64)?.unwrap();
+        let mut tx = batch.back_mut()?.unwrap();
+        let withdrawal_tx = del.unbonding_withdrawal_tx()?;
+        tx.input.push_back(Input::new(
+            OutPoint {
+                txid: withdrawal_tx.txid(),
+                vout: 0,
+            },
+            &sigset,
+            &[0],
+            withdrawal_tx.output[0].value,
+            SIGSET_THRESHOLD, // TODO: get from sigset
+        )?)?;
+
+        // TODO: will this be handled correctly?
+        self.pending_stake.give(to_renew)?;
+
+        self.pay_off_unbond_queue(to_pay)?.burn();
 
         Ok(())
     }
@@ -580,6 +627,7 @@ pub enum DelegationStatus {
     Staked,
     SigningUnbond,
     SignedUnbond,
+    ConfirmedUnbond,
 }
 
 #[orga]
@@ -602,6 +650,8 @@ pub struct Delegation {
     pub frost_sig_offset: Option<u64>,
     pub(crate) staking_unbonding_sig: Option<Signature>,
     pub(crate) unbonding_withdrawal_sig: Option<Signature>,
+
+    pub unbonding_height: Option<u32>,
 }
 
 #[orga]
@@ -778,10 +828,16 @@ impl Delegation {
             self.staking_height.is_none()
         );
 
-        if self.staking_outpoint.is_none() {
-            return DelegationStatus::Created;
-        } else {
+        if self.unbonding_height.is_some() {
+            return DelegationStatus::ConfirmedUnbond;
+        } else if self.unbonding_withdrawal_sig.is_some() {
+            return DelegationStatus::SignedUnbond;
+        } else if self.withdrawal_script_pubkey.is_some() {
+            return DelegationStatus::SigningUnbond;
+        } else if self.staking_outpoint.is_some() {
             return DelegationStatus::Staked;
+        } else {
+            return DelegationStatus::Created;
         }
     }
 
