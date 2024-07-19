@@ -1,7 +1,7 @@
 use bitcoin::{
     hashes::Hash,
     psbt::Prevouts,
-    secp256k1::{ecdsa, schnorr, PublicKey, Secp256k1},
+    secp256k1::{schnorr, PublicKey, Secp256k1},
     util::{
         merkleblock::PartialMerkleTree,
         sighash::SighashCache,
@@ -20,15 +20,14 @@ use orga::{
     state::State,
 };
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 
 use crate::{
-    bitcoin::{header_queue::HeaderQueue, Nbtc},
+    bitcoin::{header_queue::HeaderQueue, Nbtc, SIGSET_THRESHOLD},
     error::{Error, Result},
     frost::Frost,
 };
 
-use crate::bitcoin::threshold_sig::{Pubkey, Signature};
+use crate::bitcoin::threshold_sig::Signature;
 
 #[cfg(feature = "full")]
 pub mod proto;
@@ -58,9 +57,8 @@ pub struct Babylon {
     pub(crate) pending_unstake: Coin<Stbtc>,
     pub(crate) pending_unstake_queue: Deque<(Address, Amount)>,
     pub(crate) pending_unstake_by_addr: Map<Address, Amount>,
+    pub unstaking_delegations: Deque<(u64, u32)>,
     pub unstaked: Accounts<Nbtc>,
-    // TODO: spendable outputs to renew
-    // TODO: spendable outputs (w/ info for ~relay_deposit) to redeposit as nbtc, and dests
     // TODO: config
 }
 
@@ -122,8 +120,50 @@ impl Babylon {
             }
         }
 
-        //  TODO: process matured delegations, lock in tx which spends the stake and redeposits(?)
-        //  TODO: process matured+signed delegations, pay unbonding queue
+        // TODO: refine unbond trigger condition (age of del, age and amounts of unbond reqs, etc)
+        let oldest_index = self.oldest_active_delegation_index()?;
+        if let Some(index) = oldest_index {
+            let mut oldest_del = self.delegations.get_mut(index)?.unwrap();
+            // TODO: configure max age
+            if btc.headers.height()? + 1_008 <= oldest_del.staking_height.unwrap() {
+                let sigset = btc.checkpoints.active_sigset()?;
+                let dest = sigset.output_script(&[0], SIGSET_THRESHOLD)?;
+                oldest_del.unbond(frost, dest)?;
+                self.unstaking_delegations
+                    .push_back((oldest_del.index, sigset.index))?;
+                // TODO: count unbonding amount
+            }
+        }
+
+        // TODO: index to prevent full iteration
+        for i in 0..self.delegations.len() {
+            let del = self.delegations.get(i)?.unwrap();
+            if del.status() != DelegationStatus::SigningUnbond {
+                continue;
+            }
+
+            // TODO: wait for unbonding period to pass
+
+            let offset = del.frost_sig_offset.unwrap();
+            let mut sigs = vec![];
+            for sig_index in offset..offset + 2 {
+                if let Some(sig) = frost.signature(del.frost_group, sig_index)? {
+                    sigs.push(Signature(sig.inner.serialize()[1..].try_into().unwrap()));
+                } else {
+                    break;
+                }
+            }
+            let mut del = self.delegations.get_mut(i)?.unwrap();
+            if sigs.len() == 2 {
+                del.sign_unbond(sigs[1], sigs[0])?;
+                let amount_to_pay = self.pending_unstake.amount.min(del.stake.amount);
+                let to_pay = del.stake.take(amount_to_pay)?;
+                let to_restake = del.stake.take_all()?;
+                self.pay_off_unbond_queue(to_pay)?;
+                // TODO: spend into checkpoint
+                // TODO: stake remaining amount
+            }
+        }
 
         Ok(pending_outputs)
     }
@@ -227,6 +267,18 @@ impl Babylon {
         }
 
         Ok(())
+    }
+
+    fn oldest_active_delegation_index(&self) -> Result<Option<u64>> {
+        // TODO: store index to do minimal iteration
+
+        for (i, del) in self.delegations.iter()?.enumerate() {
+            if del?.status() == DelegationStatus::Staked {
+                return Ok(Some(i as u64));
+            }
+        }
+
+        Ok(None)
     }
 
     #[query]
@@ -604,7 +656,7 @@ impl Delegation {
         tx: Transaction,
         vout: u32,
     ) -> Result<()> {
-        if self.status()? != DelegationStatus::Created {
+        if self.status() != DelegationStatus::Created {
             return Err(Error::Orga(orga::Error::App(
                 "Staking tx already relayed".to_string(),
             )));
@@ -672,7 +724,7 @@ impl Delegation {
     }
 
     pub fn unbond(&mut self, frost: &mut Frost, dest: Script) -> Result<()> {
-        assert_eq!(self.status()?, DelegationStatus::Staked);
+        assert_eq!(self.status(), DelegationStatus::Staked);
 
         self.withdrawal_script_pubkey = Some(dest.into());
 
@@ -689,7 +741,7 @@ impl Delegation {
         staking_unbonding_sig: Signature,
         unbonding_withdrawal_sig: Signature,
     ) -> Result<()> {
-        assert_eq!(self.status()?, DelegationStatus::SigningUnbond);
+        assert_eq!(self.status(), DelegationStatus::SigningUnbond);
 
         // TODO: reuse secp instance
         let secp = Secp256k1::verification_only();
@@ -720,16 +772,16 @@ impl Delegation {
         Ok(())
     }
 
-    pub fn status(&self) -> Result<DelegationStatus> {
+    pub fn status(&self) -> DelegationStatus {
         assert_eq!(
             self.staking_outpoint.is_none(),
             self.staking_height.is_none()
         );
 
         if self.staking_outpoint.is_none() {
-            return Ok(DelegationStatus::Created);
+            return DelegationStatus::Created;
         } else {
-            return Ok(DelegationStatus::Staked);
+            return DelegationStatus::Staked;
         }
     }
 
@@ -1120,7 +1172,7 @@ mod tests {
             Nbtc::mint(50_000_000_000),
             0,
         )?;
-        assert_eq!(del.status()?, DelegationStatus::Created);
+        assert_eq!(del.status(), DelegationStatus::Created);
 
         let script = del.staking_script().unwrap();
         let addr = bitcoin::Address::from_script(&script, Network::Bitcoin).unwrap();
@@ -1208,7 +1260,7 @@ mod tests {
             .into(),
         );
         del.staking_height = Some(197_574);
-        assert_eq!(del.status()?, DelegationStatus::Staked);
+        assert_eq!(del.status(), DelegationStatus::Staked);
 
         Ok(())
     }
