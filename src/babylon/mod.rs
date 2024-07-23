@@ -267,12 +267,12 @@ impl Babylon {
         Ok(())
     }
 
-    pub fn relay_unbond(
+    pub fn relay_unbonding_tx(
         &mut self,
         index: u64,
         btc: &mut Bitcoin,
         height: u32,
-        proof: crate::bitcoin::Adapter<PartialMerkleTree>,
+        proof: PartialMerkleTree,
     ) -> Result<()> {
         let mut del = self.delegations.get_mut(index)?.unwrap();
 

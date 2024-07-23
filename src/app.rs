@@ -443,6 +443,26 @@ impl InnerApp {
         Ok(())
     }
 
+    // TODO: move into babylon module, get Bitcoin via context
+    #[call]
+    pub fn relay_btc_unbonding_tx(
+        &mut self,
+        del_index: u64,
+        height: u32,
+        proof: Adapter<PartialMerkleTree>,
+    ) -> Result<()> {
+        exempt_from_fee()?;
+
+        self.babylon.relay_unbonding_tx(
+            del_index,
+            &mut self.bitcoin,
+            height,
+            proof.into_inner(),
+        )?;
+
+        Ok(())
+    }
+
     #[call]
     pub fn app_noop(&mut self) -> Result<()> {
         Ok(())
