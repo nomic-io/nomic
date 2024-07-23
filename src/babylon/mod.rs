@@ -267,8 +267,13 @@ impl Babylon {
         Ok(())
     }
 
-    // TODO: include unbonding tx proof
-    pub fn confirm_unbond(&mut self, index: u64, btc: &mut Bitcoin) -> Result<()> {
+    pub fn relay_unbond(
+        &mut self,
+        index: u64,
+        btc: &mut Bitcoin,
+        height: u32,
+        proof: crate::bitcoin::Adapter<PartialMerkleTree>,
+    ) -> Result<()> {
         let mut del = self.delegations.get_mut(index)?.unwrap();
 
         if del.status() != DelegationStatus::SignedUnbond {
@@ -284,7 +289,39 @@ impl Babylon {
             )));
         }
 
-        // TODO: verify proof of unbonding tx inclusion
+        // TODO: move to config
+        if btc.headers.height()?.saturating_sub(height) < 1 {
+            return Err(Error::Orga(orga::Error::App(
+                "Staking tx is not confirmed".to_string(),
+            )));
+        }
+
+        // TODO: dedupe this with other proof verification calls
+        let header = btc
+            .headers
+            .get_by_height(height)?
+            .ok_or_else(|| Error::Orga(orga::Error::App("Header not found".to_string())))?;
+        let mut txids = vec![];
+        let mut block_indexes = vec![];
+        let proof_merkle_root = proof
+            .extract_matches(&mut txids, &mut block_indexes)
+            .map_err(|_| Error::BitcoinMerkleBlockError)?;
+        if proof_merkle_root != header.merkle_root() {
+            return Err(orga::Error::App(
+                "Bitcoin merkle proof does not match header".to_string(),
+            ))?;
+        }
+        if txids.len() != 1 {
+            return Err(orga::Error::App(
+                "Bitcoin merkle proof contains an invalid number of txids".to_string(),
+            ))?;
+        }
+        let unbonding_txid = del.unbonding_tx()?.txid();
+        if txids[0] != unbonding_txid {
+            return Err(orga::Error::App(
+                "Bitcoin merkle proof does not match transaction".to_string(),
+            ))?;
+        }
 
         let amount_to_pay = self.pending_unstake.amount.min(del.stake.amount);
         let to_pay = del.stake.take(amount_to_pay)?;
