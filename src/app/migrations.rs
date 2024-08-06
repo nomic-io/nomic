@@ -156,6 +156,7 @@ impl MigrateFrom<InnerAppV4> for InnerAppV5 {
             incentives: other.incentives,
             ibc: other.ibc,
             cosmos: other.cosmos,
+            ethereum: Default::default(), // TODO
         })
     }
 }

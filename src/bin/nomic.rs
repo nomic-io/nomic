@@ -1375,7 +1375,7 @@ impl DepositCmd {
         let dest_addr = self.address.unwrap_or_else(my_address);
 
         deposit(
-            Dest::Address(dest_addr),
+            Dest::NativeAccount(dest_addr),
             self.config.client(),
             self.config.btc_relayer.clone(),
         )
@@ -2102,7 +2102,7 @@ impl RecoverDepositCmd {
             }
         }
 
-        let dest = Dest::Address(self.nomic_addr);
+        let dest = Dest::NativeAccount(self.nomic_addr);
         let dest_bytes = dest.commitment_bytes().unwrap();
 
         for (sigset_index, sigset) in sigsets.iter() {

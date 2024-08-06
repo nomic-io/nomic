@@ -825,7 +825,7 @@ impl Bitcoin {
             .withdraw(signer, self.config.transfer_fee.into())?;
         self.give_rewards(transfer_fee)?;
 
-        let dest = Dest::Address(to);
+        let dest = Dest::NativeAccount(to);
         let coins = self.accounts.withdraw(signer, amount)?;
         self.checkpoints
             .building_mut()?
@@ -1289,7 +1289,7 @@ mod tests {
                 Adapter::new(PartialMerkleTree::from_txids(&[Txid::all_zeros()], &[true])),
                 0,
                 0,
-                Dest::Address(Address::NULL),
+                Dest::NativeAccount(Address::NULL),
             )
         };
 

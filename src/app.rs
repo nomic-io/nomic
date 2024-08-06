@@ -8,6 +8,7 @@ use crate::bitcoin::adapter::Adapter;
 use crate::bitcoin::{Bitcoin, Nbtc};
 use crate::cosmos::{Chain, Cosmos, Proof};
 
+use crate::ethereum::{ContractCall, Ethereum};
 use crate::incentives::Incentives;
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::{Script, Transaction, TxOut};
@@ -107,6 +108,10 @@ pub struct InnerApp {
     #[cfg(not(feature = "testnet"))]
     #[orga(version(V4, V5))]
     pub cosmos: Cosmos,
+
+    // TODO: migrate in, testnet flag
+    #[orga(version(V5))]
+    ethereum: Ethereum,
 }
 
 #[orga]
@@ -276,9 +281,13 @@ impl InnerApp {
 
     pub fn credit_transfer(&mut self, dest: Dest, nbtc: Coin<Nbtc>) -> Result<()> {
         match dest {
-            Dest::Address(addr) => self.bitcoin.accounts.deposit(addr, nbtc),
-            Dest::Ibc(dest) => dest.transfer(nbtc, &mut self.bitcoin, &mut self.ibc),
-        }
+            Dest::NativeAccount(addr) => self.bitcoin.accounts.deposit(addr, nbtc)?,
+            Dest::Ibc(dest) => dest.transfer(nbtc, &mut self.bitcoin, &mut self.ibc)?,
+            Dest::EthAccount(addr) => self.ethereum.transfer(addr, nbtc)?,
+            Dest::EthCall(call, _) => self.ethereum.call(call, nbtc)?,
+        };
+
+        Ok(())
     }
 
     #[call]
@@ -1007,21 +1016,6 @@ pub struct MsgIbcTransfer {
     pub memo: String,
 }
 
-#[derive(Encode, Decode, Debug, Clone, Serialize)]
-pub enum Dest {
-    Address(Address),
-    Ibc(IbcDest),
-}
-
-impl Dest {
-    pub fn to_receiver_addr(&self) -> String {
-        match self {
-            Dest::Address(addr) => addr.to_string(),
-            Dest::Ibc(dest) => dest.receiver.0.to_string(),
-        }
-    }
-}
-
 use orga::ibc::{IbcMessage, PortChannel, RawIbcTx};
 
 #[derive(Clone, Debug, Encode, Decode, Serialize)]
@@ -1102,13 +1096,32 @@ impl IbcDest {
     }
 }
 
+#[derive(Encode, Decode, Debug, Clone, Serialize)]
+pub enum Dest {
+    NativeAccount(Address),
+    Ibc(IbcDest),
+    EthAccount(Address), // TODO: id for network, optional native fallback addr
+    EthCall(ContractCall, Address),
+}
+
 impl Dest {
+    pub fn to_receiver_addr(&self) -> String {
+        match self {
+            Dest::NativeAccount(addr) => addr.to_string(),
+            Dest::Ibc(dest) => dest.receiver.0.to_string(),
+            Dest::EthAccount(addr) => addr.to_string(),
+            Dest::EthCall(_, addr) => addr.to_string(),
+        }
+    }
+
     pub fn commitment_bytes(&self) -> Result<Vec<u8>> {
         use sha2::{Digest, Sha256};
         use Dest::*;
         let bytes = match self {
-            Address(addr) => addr.bytes().into(),
+            NativeAccount(addr) => addr.bytes().into(),
             Ibc(dest) => Sha256::digest(dest.encode()?).to_vec(),
+            EthAccount(addr) => addr.bytes().into(),
+            EthCall(call, addr) => Sha256::digest((call.clone(), *addr).encode()?).to_vec(),
         };
 
         Ok(bytes)
@@ -1130,7 +1143,7 @@ impl Dest {
         recovery_scripts: &orga::collections::Map<Address, Adapter<Script>>,
     ) -> Result<Option<Script>> {
         match self {
-            Dest::Address(addr) => Ok(recovery_scripts
+            Dest::NativeAccount(addr) => Ok(recovery_scripts
                 .get(*addr)?
                 .map(|script| script.clone().into_inner())),
             _ => Ok(None),
