@@ -9,6 +9,7 @@ use ed::{Decode, Encode};
 use orga::{
     coins::{Address, Coin, Give},
     collections::{ChildMut, Deque, Ref},
+    describe::Describe,
     encoding::LengthVec,
     migrate::Migrate,
     orga,
@@ -17,7 +18,7 @@ use orga::{
     store::Store,
     Error,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     bitcoin::{
@@ -28,8 +29,10 @@ use crate::{
     error::Result,
 };
 
+pub mod relayer;
+pub mod signer;
+
 // TODO: message ttl/pruning
-// TODO: message signing
 // TODO: multi-token support
 
 pub const VALSET_INTERVAL: u64 = 60 * 60 * 24;
@@ -68,6 +71,17 @@ pub struct Ethereum {
 
 #[orga]
 impl Ethereum {
+    pub fn new(id: &[u8], token_contract: Address, valset: SignatorySet) -> Self {
+        Self {
+            id: bytes32(id).unwrap(),
+            token_contract,
+            outbox: Deque::new(),
+            outbox_index: 0,
+            coins: Coin::default(),
+            valset,
+        }
+    }
+
     pub fn step(&mut self, active_sigset: &SignatorySet) -> Result<()> {
         if active_sigset.create_time - self.valset.create_time >= VALSET_INTERVAL {
             let mut new_valset = active_sigset.clone();
@@ -79,43 +93,46 @@ impl Ethereum {
         Ok(())
     }
 
-    pub fn transfer(&mut self, _to: Address, coins: Coin<Nbtc>) -> Result<()> {
+    pub fn transfer(&mut self, dest: Address, coins: Coin<Nbtc>) -> Result<()> {
+        // TODO: validation (min amount, etc)
+
+        // TODO: batch transfers
+        let transfer = Transfer {
+            dest,
+            amount: coins.amount.into(),
+            fee_amount: 0, // TODO: deduct fee
+        };
+        let transfers = vec![transfer].try_into().unwrap();
+        let timeout = u64::MAX; // TODO: set based on current height
+
         self.coins.give(coins)?;
-
-        // TODO: push to building transfer batch
-
-        todo!()
+        self.push_outbox(OutMessageArgs::Batch { transfers, timeout })
     }
 
-    pub fn logic_call(
-        &mut self,
-        _contract: Address,
-        coins: Coin<Nbtc>,
-        _payload: LengthVec<u16, u8>,
-    ) -> Result<()> {
+    pub fn call(&mut self, call: ContractCall, coins: Coin<Nbtc>) -> Result<()> {
+        // TODO: validation (amount in call vs coins supplied, etc)
+
         self.coins.give(coins)?;
-
-        // TODO: push logic call to outbox
-
-        todo!()
+        self.push_outbox(OutMessageArgs::LogicCall(call))
     }
 
     fn update_valset(&mut self, new_valset: SignatorySet) -> Result<()> {
         assert_eq!(new_valset.index, self.valset.index + 1);
 
-        self.push_outbox(OutMessage {
-            sigs: ThresholdSig::from_sigset(&self.valset)?,
-            msg: OutMessageArgs::UpdateValset(new_valset.clone()),
-        })?;
-
+        self.push_outbox(OutMessageArgs::UpdateValset(new_valset.clone()))?;
         self.valset = new_valset;
 
         Ok(())
     }
 
-    fn push_outbox(&mut self, msg: OutMessage) -> Result<()> {
-        self.outbox.push_back(msg)?;
+    fn push_outbox(&mut self, msg: OutMessageArgs) -> Result<()> {
+        let hash = msg.hash(self.id, self.outbox_index, self.token_contract);
+        let mut sigs = ThresholdSig::from_sigset(&self.valset)?;
+        sigs.set_message(hash);
+
+        self.outbox.push_back(OutMessage { sigs, msg })?;
         self.outbox_index += 1;
+
         Ok(())
     }
 
@@ -161,7 +178,7 @@ pub enum OutMessageArgs {
         transfers: LengthVec<u16, Transfer>,
         timeout: u64,
     },
-    LogicCall(LogicCall),
+    LogicCall(ContractCall),
     UpdateValset(SignatorySet),
 }
 
@@ -174,6 +191,12 @@ impl OutMessageArgs {
             OutMessageArgs::LogicCall(call) => call.hash(id, token_contract),
             OutMessageArgs::UpdateValset(valset) => checkpoint_hash(id, valset),
         }
+    }
+}
+
+impl Describe for OutMessageArgs {
+    fn describe() -> orga::describe::Descriptor {
+        <()>::describe()
     }
 }
 
@@ -215,10 +238,9 @@ impl Default for OutMessageArgs {
     }
 }
 
-#[orga]
-#[derive(Debug, Clone)]
-pub struct LogicCall {
-    pub logic_contract: Address,
+#[derive(Debug, Clone, Encode, Decode, Default, Serialize, Deserialize)]
+pub struct ContractCall {
+    pub contract: Address,
     pub transfer_amount: u64,
     pub fee_amount: u64,
     pub payload: LengthVec<u16, u8>,
@@ -227,12 +249,12 @@ pub struct LogicCall {
     pub invalidation_nonce: [u8; 32],
 }
 
-impl LogicCall {
+impl ContractCall {
     pub fn hash(&self, id: [u8; 32], token_contract: Address) -> [u8; 32] {
         let bytes = (
             id,
             bytes32(b"logicCall").unwrap(),
-            self.logic_contract.bytes(),
+            self.contract.bytes(),
             vec![self.transfer_amount],
             vec![token_contract.bytes()],
             vec![self.fee_amount],
