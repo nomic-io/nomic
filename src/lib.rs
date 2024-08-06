@@ -19,6 +19,7 @@ pub mod app;
 pub mod bitcoin;
 pub mod cosmos;
 pub mod error;
+pub mod ethereum;
 pub mod incentives;
 #[cfg(feature = "full")]
 pub mod network;

@@ -47,6 +47,7 @@ ics23 = "0.10.2"
 cosmos-sdk-proto = {version = "0.19.0", optional = true }
 prometheus_exporter = "0.8.5"
 lazy_static = "1.4.0"
+alloy-core = { version = "0.7.7", features = ["sol-types"] }
 
 [dev-dependencies]
 bitcoind = { version = "0.27.0", features = ["22_0"] }
