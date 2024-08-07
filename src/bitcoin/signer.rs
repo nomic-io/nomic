@@ -74,7 +74,7 @@ pub struct Signer<W, F> {
     max_sigset_change_rate: f64,
     min_blocks_per_checkpoint: u64,
     reset_index: Option<u32>,
-    app_client: F,
+    pub app_client: F,
     exporter_addr: Option<SocketAddr>,
     _phantom: PhantomData<W>,
 }
@@ -233,8 +233,9 @@ where
         }
 
         let checkpoint_signing = self.start_checkpoint_signing(key_pairs.clone());
-        let recovery_signing = self.start_recovery_signing(key_pairs);
-        try_join!(checkpoint_signing, recovery_signing)?;
+        let recovery_signing = self.start_recovery_signing(key_pairs.clone());
+        let eth_signing = self.start_ethereum_signing(key_pairs);
+        try_join!(checkpoint_signing, recovery_signing, eth_signing)?;
 
         Ok(())
     }
@@ -308,7 +309,7 @@ where
     }
 
     /// Get a new app client.
-    fn client(&self) -> AppClient<InnerApp, InnerApp, HttpClient, Nom, W> {
+    pub fn client(&self) -> AppClient<InnerApp, InnerApp, HttpClient, Nom, W> {
         (self.app_client)()
     }
 
@@ -386,7 +387,7 @@ where
             }
         }
 
-        info!("Signing checkpoint ({} inputs)...", to_sign.len());
+        info!("Signing Bitcoin checkpoint ({} inputs)...", to_sign.len());
 
         let sigs = sign(&secp, xpriv, &to_sign)?;
 
@@ -399,7 +400,7 @@ where
 
         SIG_BATCH_COUNTER.inc();
         SIG_COUNTER.inc_by(to_sign.len() as u64);
-        info!("Submitted signatures");
+        info!("Submitted Bitcoin signatures");
 
         Ok(false)
     }

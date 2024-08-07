@@ -111,7 +111,8 @@ pub struct InnerApp {
 
     // TODO: migrate in, testnet flag
     #[orga(version(V5))]
-    ethereum: Ethereum,
+    #[call]
+    pub ethereum: Ethereum,
 }
 
 #[orga]
@@ -524,6 +525,11 @@ mod abci {
                 let reward_amount = (self.bitcoin.reward_pool.amount * reward_rate)?.amount()?;
                 let reward = self.bitcoin.reward_pool.take(reward_amount)?;
                 self.staking.give(reward)?;
+            }
+
+            if !self.bitcoin.checkpoints.is_empty()? {
+                self.ethereum
+                    .step(&self.bitcoin.checkpoints.active_sigset()?)?;
             }
 
             Ok(())

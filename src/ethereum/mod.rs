@@ -22,6 +22,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     bitcoin::{
+        exempt_from_fee,
         signatory::SignatorySet,
         threshold_sig::{Pubkey, Signature, ThresholdSig},
         Nbtc,
@@ -29,43 +30,24 @@ use crate::{
     error::Result,
 };
 
-pub mod relayer;
-pub mod signer;
-
 // TODO: message ttl/pruning
 // TODO: multi-token support
 
+pub mod relayer;
+pub mod signer;
+
 pub const VALSET_INTERVAL: u64 = 60 * 60 * 24;
-
-fn bytes32(bytes: &[u8]) -> Result<[u8; 32]> {
-    if bytes.len() > 32 {
-        return Err(Error::App("bytes too long".to_string()).into());
-    }
-
-    let mut padded = [0; 32];
-    padded[..bytes.len()].copy_from_slice(bytes);
-    Ok(padded)
-}
-
-fn uint256(n: u64) -> [u8; 32] {
-    let mut bytes = [0; 32];
-    bytes[24..].copy_from_slice(&n.to_be_bytes());
-    bytes
-}
-
-fn addr_to_bytes32(addr: Address) -> [u8; 32] {
-    let mut bytes = [0; 32];
-    bytes[12..].copy_from_slice(&addr.bytes());
-    bytes
-}
 
 #[orga]
 pub struct Ethereum {
     pub id: [u8; 32],
     pub token_contract: Address,
     pub outbox: Deque<OutMessage>,
-    pub outbox_index: u64,
+    pub message_index: u64,
+    pub batch_index: u64,
+    pub valset_index: u64,
     pub coins: Coin<Nbtc>,
+    pub valset_interval: u64,
     pub valset: SignatorySet,
 }
 
@@ -76,17 +58,21 @@ impl Ethereum {
             id: bytes32(id).unwrap(),
             token_contract,
             outbox: Deque::new(),
-            outbox_index: 0,
+            message_index: 1,
+            batch_index: 0,
+            valset_index: 0,
             coins: Coin::default(),
+            valset_interval: VALSET_INTERVAL,
             valset,
         }
     }
 
     pub fn step(&mut self, active_sigset: &SignatorySet) -> Result<()> {
-        if active_sigset.create_time - self.valset.create_time >= VALSET_INTERVAL {
+        if active_sigset.create_time - self.valset.create_time >= self.valset_interval
+            && self.valset.index != active_sigset.index
+        {
             let mut new_valset = active_sigset.clone();
             new_valset.normalize_vp(u32::MAX as u64);
-            new_valset.index = self.valset.index + 1;
             self.update_valset(new_valset)?;
         }
 
@@ -103,7 +89,7 @@ impl Ethereum {
             fee_amount: 0, // TODO: deduct fee
         };
         let transfers = vec![transfer].try_into().unwrap();
-        let timeout = u64::MAX; // TODO: set based on current height
+        let timeout = u64::MAX; // TODO: set based on current ethereum height, or let user specify
 
         self.coins.give(coins)?;
         self.push_outbox(OutMessageArgs::Batch { transfers, timeout })
@@ -117,26 +103,36 @@ impl Ethereum {
     }
 
     fn update_valset(&mut self, new_valset: SignatorySet) -> Result<()> {
-        assert_eq!(new_valset.index, self.valset.index + 1);
-
         self.push_outbox(OutMessageArgs::UpdateValset(new_valset.clone()))?;
         self.valset = new_valset;
+        self.valset_index += 1;
 
         Ok(())
     }
 
     fn push_outbox(&mut self, msg: OutMessageArgs) -> Result<()> {
-        let hash = msg.hash(self.id, self.outbox_index, self.token_contract);
+        let hash = self.message_hash(&msg);
         let mut sigs = ThresholdSig::from_sigset(&self.valset)?;
+        sigs.threshold = u32::MAX as u64 * 2 / 3;
         sigs.set_message(hash);
+        let sigset_index = self.valset.index;
 
-        self.outbox.push_back(OutMessage { sigs, msg })?;
-        self.outbox_index += 1;
+        if !self.outbox.is_empty() {
+            self.message_index += 1;
+        }
+        self.outbox.push_back(OutMessage {
+            sigs,
+            msg,
+            sigset_index,
+        })?;
 
         Ok(())
     }
 
+    #[call]
     pub fn sign(&mut self, msg_index: u64, pubkey: Pubkey, sig: Signature) -> Result<()> {
+        exempt_from_fee()?;
+
         let mut msg = self.get_mut(msg_index)?;
         msg.sigs.sign(pubkey, sig)?;
         Ok(())
@@ -153,21 +149,40 @@ impl Ethereum {
     }
 
     fn abs_index(&self, msg_index: u64) -> Result<u64> {
-        if msg_index > self.outbox_index {
+        if msg_index > self.message_index {
             return Err(Error::App("message index out of bounds".to_string()).into());
         }
 
-        let index = self.outbox_index - msg_index;
+        let index = self.message_index - msg_index;
         if index >= self.outbox.len() {
             return Err(Error::App("message index out of bounds".to_string()).into());
         }
 
         Ok(index)
     }
+
+    pub fn message_hash(&self, msg: &OutMessageArgs) -> [u8; 32] {
+        match msg {
+            OutMessageArgs::Batch { transfers, timeout } => batch_hash(
+                self.id,
+                self.batch_index,
+                transfers,
+                self.token_contract,
+                timeout,
+            ),
+            OutMessageArgs::LogicCall(call) => {
+                call.hash(self.id, self.token_contract, self.message_index)
+            }
+            OutMessageArgs::UpdateValset(valset) => {
+                checkpoint_hash(self.id, valset, self.valset_index)
+            }
+        }
+    }
 }
 
 #[orga]
 pub struct OutMessage {
+    pub sigset_index: u32,
     pub sigs: ThresholdSig,
     pub msg: OutMessageArgs,
 }
@@ -180,18 +195,6 @@ pub enum OutMessageArgs {
     },
     LogicCall(ContractCall),
     UpdateValset(SignatorySet),
-}
-
-impl OutMessageArgs {
-    pub fn hash(&self, id: [u8; 32], nonce: u64, token_contract: Address) -> [u8; 32] {
-        match self {
-            OutMessageArgs::Batch { transfers, timeout } => {
-                batch_hash(id, nonce, transfers, token_contract, timeout)
-            }
-            OutMessageArgs::LogicCall(call) => call.hash(id, token_contract),
-            OutMessageArgs::UpdateValset(valset) => checkpoint_hash(id, valset),
-        }
-    }
 }
 
 impl Describe for OutMessageArgs {
@@ -245,12 +248,10 @@ pub struct ContractCall {
     pub fee_amount: u64,
     pub payload: LengthVec<u16, u8>,
     pub timeout: u64,
-    pub invalidation_id: [u8; 32],
-    pub invalidation_nonce: [u8; 32],
 }
 
 impl ContractCall {
-    pub fn hash(&self, id: [u8; 32], token_contract: Address) -> [u8; 32] {
+    pub fn hash(&self, id: [u8; 32], token_contract: Address, nonce_id: u64) -> [u8; 32] {
         let bytes = (
             id,
             bytes32(b"logicCall").unwrap(),
@@ -261,8 +262,8 @@ impl ContractCall {
             vec![token_contract.bytes()],
             self.payload.as_slice(),
             self.timeout,
-            self.invalidation_id,
-            self.invalidation_nonce,
+            uint256(nonce_id),
+            uint256(0),
         )
             .abi_encode_params();
 
@@ -278,7 +279,7 @@ pub struct Transfer {
     pub fee_amount: u64,
 }
 
-pub fn checkpoint_hash(id: [u8; 32], valset: &SignatorySet) -> [u8; 32] {
+pub fn checkpoint_hash(id: [u8; 32], valset: &SignatorySet, valset_index: u64) -> [u8; 32] {
     let powers = valset
         .signatories
         .iter()
@@ -288,7 +289,7 @@ pub fn checkpoint_hash(id: [u8; 32], valset: &SignatorySet) -> [u8; 32] {
     let bytes = (
         id,
         bytes32(b"checkpoint").unwrap(),
-        uint256(valset.index as u64),
+        uint256(valset_index),
         valset
             .eth_addresses()
             .iter()
@@ -305,7 +306,7 @@ pub fn checkpoint_hash(id: [u8; 32], valset: &SignatorySet) -> [u8; 32] {
 
 pub fn batch_hash(
     id: [u8; 32],
-    nonce: u64,
+    batch_index: u64,
     transfers: &LengthVec<u16, Transfer>,
     token_contract: Address,
     timeout: &u64,
@@ -320,7 +321,7 @@ pub fn batch_hash(
         amounts,
         dests,
         fees,
-        nonce,
+        batch_index,
         token_contract.bytes(),
         timeout,
     )
@@ -365,6 +366,28 @@ pub fn to_eth_sig(
     (v, r, s)
 }
 
+fn bytes32(bytes: &[u8]) -> Result<[u8; 32]> {
+    if bytes.len() > 32 {
+        return Err(Error::App("bytes too long".to_string()).into());
+    }
+
+    let mut padded = [0; 32];
+    padded[..bytes.len()].copy_from_slice(bytes);
+    Ok(padded)
+}
+
+fn uint256(n: u64) -> [u8; 32] {
+    let mut bytes = [0; 32];
+    bytes[24..].copy_from_slice(&n.to_be_bytes());
+    bytes
+}
+
+fn addr_to_bytes32(addr: Address) -> [u8; 32] {
+    let mut bytes = [0; 32];
+    bytes[12..].copy_from_slice(&addr.bytes());
+    bytes
+}
+
 impl SignatorySet {
     pub fn eth_addresses(&self) -> Vec<Address> {
         self.signatories
@@ -391,9 +414,16 @@ impl SignatorySet {
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::secp256k1::{Message, Secp256k1, SecretKey};
+    use bitcoin::{
+        secp256k1::{Message, Secp256k1, SecretKey},
+        util::bip32::{ExtendedPrivKey, ExtendedPubKey},
+    };
+    use orga::{context::Context, plugins::Paid};
 
-    use crate::bitcoin::{signatory::Signatory, threshold_sig::Pubkey};
+    use crate::bitcoin::{
+        signatory::{derive_pubkey, Signatory},
+        threshold_sig::Pubkey,
+    };
 
     use super::*;
 
@@ -418,12 +448,12 @@ mod tests {
         let id = bytes32(b"test").unwrap();
 
         assert_eq!(
-            hex::encode(checkpoint_hash(id, &valset)),
+            hex::encode(checkpoint_hash(id, &valset, 0)),
             "61fe378d7a8aac20d5882ff4696d9c14c0db93b583fcd25f0616ce5187efae69",
         );
 
         let valset2 = SignatorySet {
-            index: 1,
+            index: 0,
             signatories: vec![Signatory {
                 pubkey: pubkey.into(),
                 voting_power: 10_000_000_001,
@@ -433,7 +463,7 @@ mod tests {
             possible_vp: 10_000_000_001,
         };
 
-        let updated_checkpoint = checkpoint_hash(id, &valset2);
+        let updated_checkpoint = checkpoint_hash(id, &valset2, 1);
         assert_eq!(
             hex::encode(updated_checkpoint),
             "0b73bc9926c210f36673973a0ecb0a5f337ca1c7f99ba44ecf3624c891a8ab2b",
@@ -456,7 +486,7 @@ mod tests {
     }
 
     #[test]
-    fn normalize_vp() {
+    fn ss_normalize_vp() {
         let mut valset = SignatorySet {
             index: 0,
             signatories: vec![
@@ -491,5 +521,50 @@ mod tests {
         assert_eq!(valset.signatories[2].voting_power, 2_147_483_647);
         assert_eq!(valset.possible_vp, u32::MAX as u64);
         assert_eq!(valset.present_vp, u32::MAX as u64);
+    }
+
+    #[test]
+    fn signing() {
+        Context::add(Paid::default());
+
+        let secp = Secp256k1::new();
+
+        let xpriv = ExtendedPrivKey::new_master(bitcoin::Network::Regtest, &[0]).unwrap();
+        let xpub = ExtendedPubKey::from_priv(&secp, &xpriv);
+
+        let valset = SignatorySet {
+            index: 0,
+            signatories: vec![Signatory {
+                pubkey: derive_pubkey(&secp, xpub.into(), 0).unwrap().into(),
+                voting_power: 10_000_000_000,
+            }],
+            create_time: 0,
+            present_vp: 10_000_000_000,
+            possible_vp: 10_000_000_000,
+        };
+
+        let mut ethereum = Ethereum::new(b"test", Address::NULL, valset);
+
+        let new_valset = SignatorySet {
+            index: 1,
+            signatories: vec![Signatory {
+                pubkey: derive_pubkey(&secp, xpub.into(), 1).unwrap().into(),
+                voting_power: 10_000_000_000,
+            }],
+            create_time: 1_000_000_000,
+            present_vp: 10_000_000_000,
+            possible_vp: 10_000_000_000,
+        };
+        ethereum.step(&new_valset).unwrap();
+        assert_eq!(ethereum.outbox.len(), 1);
+
+        let msg = ethereum.get(1).unwrap().sigs.message;
+        let sig = crate::bitcoin::signer::sign(&Secp256k1::signing_only(), &xpriv, &[(msg, 0)])
+            .unwrap()[0];
+        let pubkey = derive_pubkey(&secp, xpub.into(), 0).unwrap();
+        ethereum.sign(1, pubkey.into(), sig).unwrap();
+        assert!(ethereum.get(1).unwrap().sigs.signed());
+
+        Context::remove::<Paid>();
     }
 }
