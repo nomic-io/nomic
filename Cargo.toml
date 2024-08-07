@@ -13,7 +13,7 @@ orga = { git = "https://github.com/nomic-io/orga.git", rev = "c879e1fbf9df4133ca
 thiserror = "1.0.30"
 ed = { git = "https://github.com/nomic-io/ed", rev = "9c0e206ffdb59dacb90f083e004e8080713e6ad8" }
 clap = { version = "3.2.16", features = ["derive"], optional = true }
-tokio = { version = "1.14.0", features = ["full"], optional = true }
+tokio = { version = "1.39.2", features = ["full"], optional = true }
 base64 = "0.13.0"
 js-sys = { version = "0.3.55" }
 serde = "1.0.133"
@@ -44,10 +44,13 @@ tempfile = "3"
 home = { version = "0.5.5", optional = true }
 semver = "1.0.18"
 ics23 = "0.10.2"
-cosmos-sdk-proto = {version = "0.19.0", optional = true }
+cosmos-sdk-proto = { version = "0.19.0", optional = true }
 prometheus_exporter = "0.8.5"
 lazy_static = "1.4.0"
 alloy-core = { version = "0.7.7", features = ["sol-types"] }
+alloy = { version = "0.2.1", features = ["full", "node-bindings"] }
+alloy-sol-types = "0.7.7"
+alloy-contract = "0.2.1"
 
 [dev-dependencies]
 bitcoind = { version = "0.27.0", features = ["22_0"] }
@@ -60,7 +63,7 @@ urlencoding = "2.1.2"
 crossbeam-channel = "0.5.8"
 chrono = "0.4.19"
 serial_test = "2.0.0"
-tempfile = "3.6.0"
+tempfile = "3.12.0"
 
 [build-dependencies]
 toml = { version = "0.7.2", features = ["parse"] }
