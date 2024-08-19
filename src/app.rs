@@ -27,7 +27,7 @@ use std::time::Duration;
 use orga::ibc::ibc_rs::apps::transfer::context::TokenTransferExecutionContext;
 use orga::ibc::ibc_rs::apps::transfer::types::msgs::transfer::MsgTransfer;
 use orga::ibc::ibc_rs::apps::transfer::types::packet::PacketData;
-use orga::ibc::ibc_rs::core::channel::types::timeout::TimeoutHeight;
+use orga::ibc::ibc_rs::core::channel::types::timeout::{TimeoutHeight, TimeoutTimestamp};
 use orga::ibc::ibc_rs::core::host::types::identifiers::{ChannelId, PortId};
 use orga::ibc::ibc_rs::core::primitives::Timestamp;
 use orga::ibc::{Ibc, IbcTx};
@@ -1106,8 +1106,7 @@ impl IbcDest {
                 memo: self.memo()?,
             },
             timeout_height_on_b: TimeoutHeight::Never,
-            timeout_timestamp_on_b: Timestamp::from_nanoseconds(self.timeout_timestamp)
-                .map_err(|e| Error::App(e.to_string()))?,
+            timeout_timestamp_on_b: TimeoutTimestamp::from_nanoseconds(self.timeout_timestamp),
         };
         if let Err(err) = ibc.deliver_message(IbcMessage::Ics20(msg_transfer)) {
             log::debug!("Failed IBC transfer: {}", err);

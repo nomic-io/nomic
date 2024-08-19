@@ -183,16 +183,14 @@ impl Cosmos {
             .into());
         }
 
-        let any = proto::Any::decode(acc.value()?.as_slice())
-            .map_err(|_| OrgaError::App("Failed to decode account protobuf".to_string()))?;
-        let acc = proto::cosmos::auth::v1beta1::BaseAccount::from_any(&any)
+        let acc = proto::cosmos::auth::v1beta1::BaseAccount::decode(acc.value()?.as_slice())
             .map_err(|_| OrgaError::App("Invalid account".to_string()))?;
 
         let op_key_any = acc
             .pub_key
             .ok_or_else(|| OrgaError::App("Expected public key".to_string()))?;
         let op_key = Pubkey::try_from_slice(
-            proto::cosmos::crypto::secp256k1::PubKey::from_any(&op_key_any)
+            proto::cosmos::crypto::secp256k1::PubKey::decode(op_key_any.value.as_slice())
                 .map_err(|_| OrgaError::App("Invalid public key".to_string()))?
                 .key
                 .as_slice(),
