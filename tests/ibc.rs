@@ -1,9 +1,6 @@
 #![feature(async_closure)]
-use bech32::ToBase32;
-use bech32::Variant;
-use bitcoin::blockdata::transaction::EcdsaSighashType;
-use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
-use bitcoin::{secp256k1, Script};
+use bitcoin::secp256k1;
+use bitcoin::util::bip32::ExtendedPubKey;
 use bitcoincore_rpc_async::RpcApi as AsyncRpcApi;
 use bitcoind::bitcoincore_rpc::json::{
     ImportMultiRequest, ImportMultiRequestScriptPubkey, ImportMultiRescanSince,
@@ -17,21 +14,15 @@ use nomic::app::Dest;
 use nomic::app::IbcDest;
 use nomic::app::{InnerApp, Nom};
 use nomic::bitcoin::adapter::Adapter;
-use nomic::bitcoin::checkpoint::CheckpointStatus;
-use nomic::bitcoin::checkpoint::Config as CheckpointConfig;
-use nomic::bitcoin::deposit_index::{Deposit, DepositInfo};
 use nomic::bitcoin::header_queue::Config as HeaderQueueConfig;
 use nomic::bitcoin::relayer::DepositAddress;
 use nomic::bitcoin::relayer::Relayer;
-use nomic::bitcoin::signer::Signer;
-use nomic::bitcoin::threshold_sig::Pubkey;
-use nomic::bitcoin::Config as BitcoinConfig;
 use nomic::error::{Error, Result};
 use nomic::utils::*;
 use nomic::utils::{
     declare_validator, poll_for_active_sigset, poll_for_blocks, poll_for_updated_balance,
     populate_bitcoin_block, retry, set_time, setup_test_app, setup_test_signer,
-    test_bitcoin_client, NomicTestWallet,
+    test_bitcoin_client,
 };
 use orga::abci::Node;
 use orga::client::{
@@ -46,23 +37,15 @@ use orga::ibc::IbcTimestamp as Timestamp;
 use orga::macros::build_call;
 use orga::plugins::{load_privkey, Time, MIN_FEE};
 use orga::tendermint::client::HttpClient;
-use rand::Rng;
 use reqwest::StatusCode;
 use serial_test::serial;
-use std::collections::HashMap;
 use std::fs;
-use std::fs::read_to_string;
-use std::fs::File;
-use std::io::Write;
-use std::process::Stdio;
 use std::str::FromStr;
 use std::sync::Once;
 use std::time::Duration;
 use std::time::SystemTime;
 use tempfile::tempdir;
 use tokio::process::Command;
-use tokio::sync::mpsc;
-use toml_edit::{value, Document};
 
 static INIT: Once = Once::new();
 const TEST_CHAIN_ID: &str = "nomic-e2e";
@@ -123,24 +106,6 @@ pub async fn broadcast_deposit_addr(
         StatusCode::OK => Ok(()),
         _ => Err(Error::Relayer(format!("{}", res.text().await.unwrap()))),
     }
-}
-
-async fn set_recovery_address(nomic_account: NomicTestWallet) -> Result<()> {
-    info!("Setting recovery address...");
-
-    app_client()
-        .with_wallet(nomic_account.wallet)
-        .call(
-            move |app| build_call!(app.accounts.take_as_funding((MIN_FEE).into())),
-            move |app| {
-                build_call!(app
-                    .bitcoin
-                    .set_recovery_script(Adapter::new(nomic_account.script.clone())))
-            },
-        )
-        .await?;
-    info!("Validator declared");
-    Ok(())
 }
 
 async fn direct_deposit_bitcoin(
@@ -234,32 +199,6 @@ async fn deposit_bitcoin(
         .unwrap();
 
     Ok(())
-}
-
-async fn withdraw_bitcoin(
-    nomic_account: &NomicTestWallet,
-    amount: bitcoin::Amount,
-    dest_address: &bitcoin::Address,
-) -> Result<()> {
-    let dest_script = nomic::bitcoin::adapter::Adapter::new(dest_address.script_pubkey());
-    let usats = amount.to_sat() * 1_000_000;
-    app_client()
-        .with_wallet(nomic_account.wallet.clone())
-        .call(
-            move |app| build_call!(app.withdraw_nbtc(dest_script, Amount::from(usats))),
-            |app| build_call!(app.app_noop()),
-        )
-        .await?;
-    Ok(())
-}
-
-async fn get_signatory_script() -> Result<Script> {
-    Ok(app_client()
-        .query(|app: InnerApp| {
-            let tx = app.bitcoin.checkpoints.emergency_disbursal_txs()?;
-            Ok(tx[0].output[1].script_pubkey.clone())
-        })
-        .await?)
 }
 
 fn client_provider() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, DerivedKey> {
@@ -374,7 +313,6 @@ async fn ibc_test() {
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
         rpc_addr.clone(),
     );
-    let disbursal = relayer.start_emergency_disbursal_transaction_relay();
 
     let signer = async {
         tokio::time::sleep(Duration::from_secs(10)).await;

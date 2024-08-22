@@ -530,7 +530,7 @@ pub fn setup_test_app(
 
         keys.iter()
             .map(|key| key.address)
-            .chain(funded_addresses.unwrap_or(vec![]))
+            .chain(funded_addresses.unwrap_or_default())
             .for_each(|address| {
                 inner_app
                     .accounts

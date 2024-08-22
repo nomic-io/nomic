@@ -21,7 +21,6 @@ use bitcoin::{
 };
 use ibc::{
     apps::transfer::context::TokenTransferValidationContext, clients::tendermint,
-    clients::tendermint::consensus_state::ConsensusState,
     core::commitment_types::commitment::CommitmentRoot,
 };
 use ics23::ExistenceProof;
@@ -40,7 +39,7 @@ use orga::{
     },
     orga, Error as OrgaError,
 };
-use proto::traits::{Message, MessageExt};
+use proto::traits::Message;
 #[cfg(feature = "full")]
 use tendermint_rpc::HttpClient;
 
