@@ -447,44 +447,6 @@ mod abci {
 
             self.configure_faucets()?;
 
-            self.accounts
-                .deposit(
-                    "nomic1v2etn3ttwvra63m7esgmpqd3n2tf62nu5xgj5l"
-                        .parse()
-                        .unwrap(),
-                    Coin::mint(1_000_000_000_000),
-                )
-                .unwrap();
-
-            self.bitcoin
-                .accounts
-                .deposit(
-                    "nomic1v2etn3ttwvra63m7esgmpqd3n2tf62nu5xgj5l"
-                        .parse()
-                        .unwrap(),
-                    Coin::mint(1_000_000_000_000),
-                )
-                .unwrap();
-
-            self.accounts
-                .deposit(
-                    "nomic18qkwnqufr50054el3zt3fjp8du9f8jr2t9jpnw"
-                        .parse()
-                        .unwrap(),
-                    Coin::mint(1_000_000_000_000),
-                )
-                .unwrap();
-
-            self.bitcoin
-                .accounts
-                .deposit(
-                    "nomic18qkwnqufr50054el3zt3fjp8du9f8jr2t9jpnw"
-                        .parse()
-                        .unwrap(),
-                    Coin::mint(1_000_000_000_000),
-                )
-                .unwrap();
-
             self.upgrade
                 .current_version
                 .insert((), vec![Self::CONSENSUS_VERSION].try_into().unwrap())?;

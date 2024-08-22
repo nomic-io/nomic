@@ -29,7 +29,7 @@ async fn node_shutdown() {
 
         std::env::set_var("NOMIC_HOME_DIR", &path);
 
-        let _ = setup_test_app(&path, 4, None, None, None);
+        let _ = setup_test_app(&path, 4, None, None, None, None);
 
         info!("Starting Nomic node...");
         let _child = Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"), Default::default())
