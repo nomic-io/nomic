@@ -11,10 +11,10 @@ crate-type = ["cdylib"]
 lto = true
 
 [dependencies]
-wasm-bindgen = "0.2.78"
+wasm-bindgen = "0.2.84"
 nomic = { path = "..", default-features = false, features = ["feat-ibc", "csv", "rand", "clap"] }
 async-trait = "0.1.52"
-wasm-bindgen-futures = "0.4.28"
+wasm-bindgen-futures = "0.4.34"
 console_error_panic_hook = "0.1.7"
 base64 = "0.13.0"
 js-sys = "0.3.55"
