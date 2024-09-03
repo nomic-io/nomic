@@ -2702,7 +2702,6 @@ checksum = "78ca9ab1a0babb1e7d5695e3530886289c18cf2f87ec19a575a0abdce112e3a3"
 [[package]]
 name = "merk"
 version = "2.0.0"
-source = "git+https://github.com/nomic-io/merk?rev=0906a5a2b9a3cf99de12ea0726bb5e5167a7fa81#0906a5a2b9a3cf99de12ea0726bb5e5167a7fa81"
 dependencies = [
  "colored",
  "ed 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2991,7 +2990,6 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.3.1"
-source = "git+https://github.com/nomic-io/orga.git?rev=3bdef34ea2fc7d1991d698398242bf260821bc2b#3bdef34ea2fc7d1991d698398242bf260821bc2b"
 dependencies = [
  "abci2",
  "async-trait",
@@ -3052,7 +3050,6 @@ dependencies = [
 [[package]]
 name = "orga-macros"
 version = "0.3.1"
-source = "git+https://github.com/nomic-io/orga.git?rev=3bdef34ea2fc7d1991d698398242bf260821bc2b#3bdef34ea2fc7d1991d698398242bf260821bc2b"
 dependencies = [
  "darling",
  "heck 0.3.3",
