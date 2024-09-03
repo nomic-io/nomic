@@ -428,7 +428,8 @@ fn legacy_bin(config: &nomic::network::Config) -> Result<Option<PathBuf>> {
             }
         };
 
-        // TODO: handle case where node is not initialized, but network is upgraded (can skip legacy binary)
+        // TODO: handle case where node is not initialized, but network is upgraded (can
+        // skip legacy binary)
 
         if up_to_date {
             log::debug!("Node version matches network version, no need to run legacy binary");
@@ -1229,11 +1230,14 @@ pub struct SignerCmd {
     #[clap(long, default_value_t = 0.1)]
     max_sigset_change_rate: f64,
 
-    /// The minimum number of Bitcoin blocks that must be mined before the signer will contribute its
-    /// signature to the current signing checkpoint. This setting can be used to change the rate at which the
-    /// network produces checkpoints (higher values cause less frequent checkpoints).
+    /// The minimum number of Bitcoin blocks that must be mined before the
+    /// signer will contribute its signature to the current signing
+    /// checkpoint. This setting can be used to change the rate at which the
+    /// network produces checkpoints (higher values cause less frequent
+    /// checkpoints).
     ///
-    /// Signatures will always be contributed to previously completed checkpoints.
+    /// Signatures will always be contributed to previously completed
+    /// checkpoints.
     #[clap(long, default_value_t = 6)]
     min_blocks_per_checkpoint: u64,
 
