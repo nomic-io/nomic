@@ -95,9 +95,6 @@ overflow-checks = true
 name = "nomic"
 
 [[bin]]
-name = "store-diff"
-
-[[bin]]
 name = "create-checkpoint"
 
 [[test]]
