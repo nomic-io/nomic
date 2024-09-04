@@ -32,7 +32,7 @@ Nomic is an open-source project spearheaded by contributors. Anyone is able to c
 
 Nomic is currently undergoing security audits.
 
-Vulnerabilities should not be reported through public channels, including GitHub Issues. You can report a vunerability via GitHub's Private Vunerability Reporting or via the Nomic DAO Foundation at `foundation@nomic.io`.
+Vulnerabilities should not be reported through public channels, including GitHub Issues. You can report a vulnerability via GitHub's Private Vulnerability Reporting or via the Nomic DAO Foundation at `foundation@nomic.io`.
 
 [Report a Vulnerability](https://github.com/nomic-io/nomic/security/advisories/new)
 
