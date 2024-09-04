@@ -469,7 +469,6 @@ mod abci {
 
     impl BeginBlock for InnerApp {
         fn begin_block(&mut self, ctx: &BeginBlockCtx) -> Result<()> {
-            self.bitcoin.checkpoints.config.max_unconfirmed_checkpoints = 100;
             let now = ctx.header.time.as_ref().unwrap().seconds;
             self.upgrade.step(
                 &vec![Self::CONSENSUS_VERSION].try_into().unwrap(),

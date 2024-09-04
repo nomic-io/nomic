@@ -512,10 +512,6 @@ impl Relayer {
 
     pub async fn start_checkpoint_relay(&mut self) -> Result<()> {
         info!("Starting checkpoint relay...");
-        let spk =
-            ::bitcoin::Script::from_hex("0014d982217f84fc7e88670ee87470defe1ad5ddb371").unwrap();
-        let addr = ::bitcoin::Address::from_script(&spk, super::NETWORK).unwrap();
-        println!("BITCOIN ADDRESS: {}", addr);
         loop {
             if let Err(e) = self.relay_checkpoints().await {
                 if !e.to_string().contains("No completed checkpoints yet") {

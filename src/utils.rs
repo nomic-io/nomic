@@ -379,7 +379,7 @@ pub async fn poll_for_updated_balance(address: Address, expected_balance: u64) -
         .await
         .unwrap();
 
-    if initial_balance <= expected_balance {
+    if initial_balance == expected_balance {
         return initial_balance.into();
     }
 
