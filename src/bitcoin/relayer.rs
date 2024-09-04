@@ -10,7 +10,6 @@ use crate::error::Result;
 use crate::orga::encoding::Encode;
 use crate::utils::time_now;
 use bitcoin::consensus::{Decodable, Encodable};
-use bitcoin::hashes::hex::FromHex;
 use bitcoin::Txid;
 use bitcoin::{hashes::Hash, Block, BlockHash, Transaction};
 use bitcoincore_rpc_async::{json::GetBlockHeaderResult, Client as BitcoinRpcClient, RpcApi};
