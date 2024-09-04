@@ -28,6 +28,8 @@ use ibc_proto::ibc::core::client::v1::IdentifiedClientState;
 use ibc_proto::ibc::core::connection::v1::ConnectionEnd as RawConnectionEnd;
 use ibc_proto::ibc::lightclients::tendermint::v1::ClientState as RawTmClientState;
 
+use bech32::ToBase32;
+use sha2::Digest;
 use tendermint_proto::types::CommitSig as RawCommitSig;
 use tendermint_rpc as tm;
 use tm::Client as _;
@@ -995,6 +997,99 @@ async fn slashing_params() -> Value {
     })
 }
 
+async fn get_signing_infos() -> Vec<Value> {
+    let client = tm::HttpClient::new(app_host()).unwrap();
+
+    let all_validators: Vec<ValidatorQueryInfo> = app_client()
+        .query(|app: InnerApp| app.staking.all_validators())
+        .await
+        .unwrap();
+
+    let all_keys: Vec<_> = app_client()
+        .query(|app: InnerApp| app.staking.consensus_keys())
+        .await
+        .unwrap();
+
+    let last_signed_blocks = app_client()
+        .query(|app: InnerApp| app.staking.last_signed_blocks())
+        .await
+        .unwrap();
+
+    let latest_block_response = client.latest_block().await.unwrap();
+    let latest_block: u64 = latest_block_response.block.header.height.value();
+
+    let mut signing_infos = vec![];
+
+    for validator in all_validators {
+        let cons_key = all_keys
+            .iter()
+            .find(|entry| (**entry).0 == validator.address.into())
+            .map(|entry| (*entry).1)
+            .unwrap();
+
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(cons_key);
+        let hash = hasher.finalize().to_vec()[..20].to_vec();
+
+        let address = bech32::encode(
+            "nomicvalcons",
+            hash.to_vec().to_base32(),
+            bech32::Variant::Bech32,
+        )
+        .unwrap();
+
+        let last_signed_block: u64 = last_signed_blocks
+            .iter()
+            .find(|entry| (**entry).0 == validator.address.into())
+            .map(|entry| (*entry).1)
+            .unwrap()
+            .unwrap_or(latest_block);
+
+        let skipped_blocks: u64 = latest_block - last_signed_block;
+
+        signing_infos.push(json!({
+            "address": address,
+            "start_height": "0", // TODO: fix,
+            "index_offset": "0", // TODO: fix,
+            "jailed_until": Utc.timestamp_opt(validator.jailed_until.unwrap_or(0), 0)
+                .unwrap()
+                .format("%Y-%m-%dT%H:%M:%SZ")
+                .to_string(),
+            "tombstoned": validator.tombstoned,
+            "missed_blocks_counter": skipped_blocks.to_string(),
+        }))
+    }
+
+    signing_infos
+}
+
+#[get("/cosmos/slashing/v1beta1/signing_infos")]
+async fn signing_infos() -> Value {
+    let signing_infos: Vec<_> = get_signing_infos().await;
+
+    json!({
+        "info": signing_infos,
+        "pagination": {
+            "next_key": null,
+            "total": signing_infos.len().to_string(),
+        }
+    })
+}
+
+#[get("/cosmos/slashing/v1beta1/signing_infos/<cons_addr>")]
+async fn signing_info(cons_addr: &str) -> Value {
+    let signing_infos: Vec<_> = get_signing_infos().await;
+
+    let signing_info = signing_infos
+        .iter()
+        .find(|value| (**value).get("address").unwrap() == cons_addr)
+        .unwrap();
+
+    json!({
+        "val_signing_info": signing_info
+    })
+}
+
 fn parse_block(res: tendermint_rpc::endpoint::block::Response) -> Value {
     let last_commit = res.block.last_commit.unwrap();
     let signatures: Vec<_> = last_commit
@@ -1005,7 +1100,12 @@ fn parse_block(res: tendermint_rpc::endpoint::block::Response) -> Value {
 
             json!({
                 "validator_address": base64::encode(signature_raw.validator_address),
-                "block_id_flag": signature_raw.block_id_flag,
+                "block_id_flag": match signature_raw.block_id_flag {
+                    1 => "BLOCK_ID_FLAG_ABSENT",
+                    2 => "BLOCK_ID_FLAG_COMMIT",
+                    3 => "BLOCK_ID_FLAG_NIL",
+                    i32::MIN..=0_i32 | 4_i32..=i32::MAX => "BLOCK_ID_FLAG_UNKNOWN"
+                },
                 "timestamp": signature_raw.timestamp,
                 "signature": base64::encode(signature_raw.signature),
             })
@@ -1065,7 +1165,9 @@ async fn block(height: u32) -> Value {
 }
 
 fn parse_validator_set(res: tendermint_rpc::endpoint::validators::Response) -> Value {
-    let validators: Vec<_> = res.validators.iter()
+    let validators: Vec<_> = res
+        .validators
+        .iter()
         .map(|validator| -> Value {
             json!({
                 "address": validator.address,
@@ -1093,10 +1195,7 @@ fn parse_validator_set(res: tendermint_rpc::endpoint::validators::Response) -> V
 async fn latest_validator_set() -> Value {
     let client = tm::HttpClient::new(app_host()).unwrap();
 
-    let block = client
-        .latest_block()
-        .await
-        .unwrap();
+    let block = client.latest_block().await.unwrap();
 
     let res = client
         .validators(block.block.header.height, tendermint_rpc::Paging::All)
@@ -1387,6 +1486,8 @@ fn rocket() -> _ {
             validator,
             staking_params,
             slashing_params,
+            signing_infos,
+            signing_info,
             latest_block,
             block,
             latest_validator_set,
