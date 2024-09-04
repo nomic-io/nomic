@@ -1,3 +1,9 @@
+//! This module adds the [Error] type, which is used throughout the library to
+//! represent the various ways that operations can fail, including from foreign
+//! crates.
+
+/// The error type, which is used throughout the library to represent the
+/// various ways that operations can fail, including from foreign crates.
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("{0}")]

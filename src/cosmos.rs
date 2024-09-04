@@ -1,3 +1,10 @@
+//! The Cosmos state, allowing for relaying data about remote Cosmos chains
+//! which is not available in the IBC module. Namely, this module keeps track of
+//! the operator keys associated with the validators within the validator sets
+//! of the remote chains, which is used in the Bitcoin module to build a
+//! multisig wallet for the remote chain to be paid to in the event of an
+//! Emergency Disbursal.
+
 use crate::{
     bitcoin::{
         signatory::{derive_pubkey, Signatory, SignatorySet},

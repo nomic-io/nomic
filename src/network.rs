@@ -1,3 +1,10 @@
+//! Network configuration, for setting defaults configured for Nomic Stakenet,
+//! Nomic Testnet, or a local network. This is largely used in the command line
+//! interface.
+//!
+//! Predefined network configuration is stored in TOML within the
+//! `nomic/networks` directory.
+
 use crate::{
     app::{InnerApp, Nom},
     error::{Error, Result},
