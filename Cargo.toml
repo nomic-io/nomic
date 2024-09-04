@@ -2,7 +2,7 @@
 name = "nomic"
 version = "8.0.0"
 authors = ["Nomic DAO Foundation <foundation@nomic.io>"]
-edition = "2024"
+edition = "2021"
 default-run = "nomic"
 
 [dependencies]
