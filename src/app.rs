@@ -1,5 +1,5 @@
 //! The top-level application state and logic of the Nomic protocol. The main
-//! state type is [InnerApp] struct.
+//! state type is the [InnerApp] struct.
 
 #![allow(clippy::too_many_arguments)]
 // TODO: remove after switching from "testnet" feature flag to orga channels
