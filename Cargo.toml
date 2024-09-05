@@ -7,7 +7,7 @@ default-run = "nomic"
 
 [dependencies]
 bitcoin = { version = "0.29.2", features = ["serde", "rand"] }
-orga = { git = "https://github.com/nomic-io/orga.git", rev = "c879e1fbf9df4133ca9df062f177aea6c32ea2c5", features = [
+orga = { git = "https://github.com/nomic-io/orga.git", rev = "3bdef34ea2fc7d1991d698398242bf260821bc2b", features = [
     "merk-verify",
 ] }
 thiserror = "1.0.30"
@@ -16,13 +16,13 @@ clap = { version = "3.2.16", features = ["derive"], optional = true }
 tokio = { version = "1.14.0", features = ["full"], optional = true }
 base64 = "0.13.0"
 js-sys = { version = "0.3.55" }
-serde = "1.0.133"
-serde_json = "1.0.74"
+serde = "1.0.208"
+serde_json = "1.0.125"
 csv = { version = "1.1.6", optional = true }
 bech32 = { version = "0.9.1" }
 futures = "0.3.21"
 toml_edit = "0.13.4"
-tendermint-rpc = { version = "=0.32.0", features = [
+tendermint-rpc = { version = "0.38.0", features = [
     "http-client",
 ], optional = true }
 bitcoincore-rpc-async = { package = "bitcoincore-rpc-async2", version = "4.0.2", optional = true }
@@ -43,8 +43,8 @@ chrono = "0.4.19"
 tempfile = "3"
 home = { version = "0.5.5", optional = true }
 semver = "1.0.18"
-ics23 = "0.10.2"
-cosmos-sdk-proto = {version = "0.19.0", optional = true }
+ics23 = "0.12.0"
+cosmos-sdk-proto = {version = "0.23.0", optional = true }
 prometheus_exporter = "0.8.5"
 lazy_static = "1.4.0"
 
@@ -66,7 +66,7 @@ toml = { version = "0.7.2", features = ["parse"] }
 semver = "1.0.18"
 
 [features]
-default = ["full", "feat-ibc"]
+default = ["full", "feat-ibc", "testnet"]
 full = [
     "bitcoincore-rpc-async",
     "clap",
