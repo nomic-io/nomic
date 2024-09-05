@@ -21,8 +21,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use ibc::clients::ics07_tendermint::client_state::ClientState;
-use ibc::core::ics24_host::identifier::ConnectionId as IbcConnectionId;
+use ibc::clients::tendermint::types::ClientState;
+use ibc::core::host::types::identifiers::ConnectionId as IbcConnectionId;
 use ibc_proto::google::protobuf::Any;
 use ibc_proto::ibc::core::client::v1::IdentifiedClientState;
 use ibc_proto::ibc::core::connection::v1::ConnectionEnd as RawConnectionEnd;
@@ -883,10 +883,7 @@ async fn staking_pool() -> Value {
 
 #[get("/cosmos/bank/v1beta1/supply/unom")]
 async fn bank_supply_unom() -> Value {
-    let supply = app_client()
-        .query(|app| app.total_supply())
-        .await
-        .unwrap();
+    let supply = app_client().query(|app| app.total_supply()).await.unwrap();
 
     json!({
         "amount": {
@@ -898,10 +895,7 @@ async fn bank_supply_unom() -> Value {
 
 #[get("/cosmos/bank/v1beta1/supply")]
 async fn bank_supply() -> Value {
-    let supply = app_client()
-        .query(|app| app.total_supply())
-        .await
-        .unwrap();
+    let supply = app_client().query(|app| app.total_supply()).await.unwrap();
 
     json!({
         "supply": [
@@ -1256,8 +1250,7 @@ async fn ibc_connection_client_state(connection: &str) -> Value {
         })
         .await
         .unwrap()
-        .unwrap()
-        .inner;
+        .unwrap();
 
     let states: Vec<IdentifiedClientState> = app_client()
         .query(|app| app.ibc.ctx.query_client_states())

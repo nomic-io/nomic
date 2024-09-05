@@ -486,6 +486,7 @@ pub fn setup_test_app(
     header_queue_config: Option<HeaderQueueConfig>,
     checkpoint_queue_config: Option<CheckpointQueueConfig>,
     bitcoin_config: Option<BitcoinConfig>,
+    funded_addresses: Option<Vec<Address>>,
 ) -> Vec<NomicTestWallet> {
     let mut app = ABCIPlugin::<App>::default();
     let mut store = Store::new(BackingStore::Merk(Shared::new(MerkStore::new(
@@ -523,17 +524,19 @@ pub fn setup_test_app(
             .accounts
             .deposit(address, Coin::mint(1000000000))
             .unwrap();
-
         let keys: Vec<NomicTestWallet> = (0..num_accounts)
             .map(|_| NomicTestWallet::new_rand())
             .collect();
 
-        keys.iter().for_each(|key| {
-            inner_app
-                .accounts
-                .deposit(key.address, Coin::mint(1000000000))
-                .unwrap();
-        });
+        keys.iter()
+            .map(|key| key.address)
+            .chain(funded_addresses.unwrap_or_default())
+            .for_each(|address| {
+                inner_app
+                    .accounts
+                    .deposit(address, Coin::mint(1000000000))
+                    .unwrap();
+            });
 
         keys
     };
