@@ -1,7 +1,7 @@
 [package]
 name = "nomic"
 version = "8.0.0"
-authors = ["The Turbofish Team <hello@turbofish.org>"]
+authors = ["Nomic DAO Foundation <foundation@nomic.io>"]
 edition = "2021"
 default-run = "nomic"
 
