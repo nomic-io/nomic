@@ -1,3 +1,6 @@
+//! State and logic for verifying and processing Bitcoin transactions, as well
+//! as managing the checkpointing process and decentralized custody of BTC.
+
 use self::checkpoint::Input;
 use self::recovery::{RecoveryTxInput, RecoveryTxs};
 use self::threshold_sig::Signature;

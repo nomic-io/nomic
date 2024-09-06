@@ -437,7 +437,8 @@ impl Batch {
     }
 }
 
-/// The default fee rate to be used to pay miner fees, in satoshis per virtual byte.
+/// The default fee rate to be used to pay miner fees, in satoshis per virtual
+/// byte.
 pub const DEFAULT_FEE_RATE: u64 = 10;
 
 /// `Checkpoint` is the main structure which coordinates the network's
@@ -926,9 +927,9 @@ pub struct Config {
     /// This is used to prevent the checkpoint transaction from being too large
     /// to be accepted by the Bitcoin network.
     ///
-    /// If a checkpoint has more outputs than this when advancing from `Building`
-    /// to `Signing`, the excess outputs will be moved to the suceeding,
-    /// newly-created `Building` checkpoint.∑
+    /// If a checkpoint has more outputs than this when advancing from
+    /// `Building` to `Signing`, the excess outputs will be moved to the
+    /// suceeding, newly-created `Building` checkpoint.∑
     pub max_outputs: u64,
 
     /// The default fee rate to use when creating the first checkpoint of the

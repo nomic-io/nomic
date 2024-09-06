@@ -1,3 +1,8 @@
+//! This binary provides the command-line interface for running a Nomic full
+//! node, as well as client commands for querying and broadcasting transactions.
+
+#![warn(missing_docs)]
+#![warn(clippy::missing_docs_in_private_items)]
 #![feature(trivial_bounds)]
 #![allow(incomplete_features)]
 #![feature(specialization)]
@@ -52,65 +57,115 @@ const BANNER: &str = r#"
 ╚═╝  ╚═══╝  ╚═════╝  ╚═╝     ╚═╝ ╚═╝  ╚═════╝
 "#;
 
+/// Builds a wallet to be used with the client based on storing a private key in
+/// the `~/.orga-wallet` directory.
 fn wallet() -> SimpleWallet {
     let path = home::home_dir().unwrap().join(".orga-wallet");
     SimpleWallet::open(path).unwrap()
 }
 
+/// Returns the address associated with the default client wallet defined in
+/// [wallet].
 fn my_address() -> Address {
     wallet().address().unwrap().unwrap()
 }
 
+/// Command line options for the `nomic` binary.
 #[derive(Parser, Debug)]
 #[clap(
     version = env!("CARGO_PKG_VERSION"),
     author = "The Nomic Developers <hello@nomic.io>"
 )]
 pub struct Opts {
+    /// Top-level subcommands.
     #[clap(subcommand)]
     cmd: Command,
 
+    /// Command-line options common to all subcommands.
     #[clap(flatten)]
     config: nomic::network::Config,
 }
 
+/// Top-level subcommands for the `nomic` binary.
 #[derive(Parser, Debug)]
 pub enum Command {
+    /// Start a Nomic full node.
     Start(StartCmd),
+    /// Transfers NOM to the specified destination.
     Send(SendCmd),
+    /// Transfers nBTC to the specified destination.
     SendNbtc(SendNbtcCmd),
+    /// Shows the wallet balance.
     Balance(BalanceCmd),
+    /// Shows a list of the wallet's stake delegations.
     Delegations(DelegationsCmd),
+    /// Shows a list of all network validators.
     Validators(ValidatorsCmd),
+    /// Delegates stake to the given validator.
     Delegate(DelegateCmd),
+    /// Declares a new validator.
     Declare(DeclareCmd),
+    /// Unbonds a stake delegation.
     Unbond(UnbondCmd),
+    /// Redelegates a stake delegation to a new validator without unbonding.
     Redelegate(RedelegateCmd),
+    /// Unjails the jailed validator associated with the wallet's operator
+    /// address.
     Unjail(UnjailCmd),
+    /// Edits the description of the validator associated with the wallet's
+    /// operator address.
     Edit(EditCmd),
+    /// Claims the rewards earned by the wallet.
     Claim(ClaimCmd),
+    /// Shows the wallet's available airdrop balances which can be claimed.
     Airdrop(AirdropCmd),
+    /// Claims the airdrop balances associated with the wallet.
     ClaimAirdrop(ClaimAirdropCmd),
+    /// Relays data between the Bitcoin and Nomic networks.
     Relayer(RelayerCmd),
+    /// Signs Bitcoin transactions if the validator associated with the wallet's
+    /// operator address is in a network signatory set.
     Signer(SignerCmd),
+    /// Sets the key to use for signing Bitcoin transactions if the validator
+    /// associated with the wallet's operator address is in a network signatory
+    /// set.
     SetSignatoryKey(SetSignatoryKeyCmd),
+    /// Shows a Bitcoin address for depositing Bitcoin to the Nomic network.
     Deposit(DepositCmd),
+    /// Shows a Bitcoin address for depositing Bitcoin to a remote chain.
     InterchainDeposit(InterchainDepositCmd),
+    /// Withdraws Bitcoin from the Nomic network to a Bitcoin address.
     Withdraw(WithdrawCmd),
     // IbcDepositNbtc(IbcDepositNbtcCmd),
+    /// Withdraws nBTC from the wallet's IBC escrow account into its main nBTC
+    /// account.
     IbcWithdrawNbtc(IbcWithdrawNbtcCmd),
+    /// Runs a gRPC server for querying data from a Nomic full node.
     Grpc(GrpcCmd),
+    /// Transfers tokens to a remote IBC chain.
     IbcTransfer(IbcTransferCmd),
+    /// Dumps the application state as JSON.
     Export(ExportCmd),
+    /// Shows the status of a pending network upgrade, if any.
     UpgradeStatus(UpgradeStatusCmd),
+    /// Runs a process which scans a remote IBC chain for new validators and
+    /// broadcasts them to the Nomic network.
     RelayOpKeys(RelayOpKeysCmd),
+    /// Sets the Bitcoin recovery address for the wallet, used to recover funds
+    /// in the event of an Emergency Disbursal.
     SetRecoveryAddress(SetRecoveryAddressCmd),
+    /// Shows the network's Bitcoin checkpoint signing status.
     SigningStatus(SigningStatusCmd),
+    /// Attempts to recover a deposit which has not yet been processed by the
+    /// Nomic network by relaying a proof of its confirmation on the Bitcoin
+    /// network.
     RecoverDeposit(RecoverDepositCmd),
+    /// Pays nBTC into the network fee pool.
     PayToFeePool(PayToFeePoolCmd),
 }
 
 impl Command {
+    /// Runs the command with the given configuration.
     fn run(&self, config: &nomic::network::Config) -> Result<()> {
         use Command::*;
         let rt = tokio::runtime::Runtime::new().unwrap();
@@ -176,36 +231,60 @@ impl Command {
     }
 }
 
+/// Start a Nomic full node.
 #[derive(Parser, Clone, Debug, Serialize, Deserialize)]
 pub struct StartCmd {
     #[clap(flatten)]
     config: nomic::network::Config,
 
+    /// Display all logs output by the Tendermint node.
     #[clap(long)]
     pub tendermint_logs: bool,
+    /// Initializes a store by cloning one at the given path. The path may be
+    /// either a network home, e.g. `~/.nomic-stakenet-3`, or a store path, e.g.
+    /// `~/.nomic-stakenet-3/merk`.
     #[clap(long)]
     pub clone_store: Option<String>,
+    /// Resets the store height to 0 when initializing the node. This is useful
+    /// when cloning state from another network to initialize a new network
+    /// which is starting from genesis.
     #[clap(long)]
     pub reset_store_height: bool,
+    /// Removes all block and state data before initializing the node. Use
+    /// caution as this action cannot be undone.
     #[clap(long)]
     pub unsafe_reset: bool,
+    /// Skips the ABCI `init_chain` step when starting the node.
     #[clap(long)]
     pub skip_init_chain: bool,
+    /// Attempts to migrate the store from a legacy encoding version to the
+    /// latest encoding version.
     #[clap(long)]
     pub migrate: bool,
+    /// The path to the legacy binary to run until the on-chain network upgrade
+    /// mechanism triggers a transition to the new binary.
     #[clap(long)]
     pub legacy_home: Option<String>,
+    /// Disables changes to the validator set. This is useful for ignoring the
+    /// distribution of stake when running a local testing network.
     #[clap(long)]
     pub freeze_valset: bool,
+    /// Publicly signals onchain that the node is ready to upgrade to the
+    /// version specified by the given string.
     #[clap(long)]
     pub signal_version: Option<String>,
+    /// Copies the validator private key at the specified path to the node's
+    /// home directory when initializing.
     #[clap(long)]
     pub validator_key: Option<String>,
+    /// Copies the P2P privaete key at the specified path to the node's home
+    /// directory when initializing.
     #[clap(long)]
     pub node_key: Option<String>,
 }
 
 impl StartCmd {
+    /// Run the `start` command.
     async fn run(&self) -> orga::Result<()> {
         let cmd = self.clone();
         let home = cmd.config.home_expect()?;
@@ -390,6 +469,11 @@ impl StartCmd {
 }
 
 // TODO: move to config/nodehome?
+/// Returns the path to the legacy binary if it exists.
+///
+/// If the `NOMIC_LEGACY_VERSION` environment variable is set, it will be used.
+/// Otherwise, this will search for a binary with the configured legacy version
+/// in the network home's `bin` subdirectory.
 fn legacy_bin(config: &nomic::network::Config) -> Result<Option<PathBuf>> {
     let home = match config.home() {
         Some(home) => home,
@@ -428,7 +512,8 @@ fn legacy_bin(config: &nomic::network::Config) -> Result<Option<PathBuf>> {
             }
         };
 
-        // TODO: handle case where node is not initialized, but network is upgraded (can skip legacy binary)
+        // TODO: handle case where node is not initialized, but network is upgraded (can
+        // skip legacy binary)
 
         if up_to_date {
             log::debug!("Node version matches network version, no need to run legacy binary");
@@ -520,6 +605,8 @@ fn legacy_bin(config: &nomic::network::Config) -> Result<Option<PathBuf>> {
     Ok(None)
 }
 
+/// Watches for the on-chain upgrade mechanism to signal a transition to a new
+/// version, then exits the process.
 async fn relaunch_on_migrate(config: &nomic::network::Config) -> Result<()> {
     let mut initial_ver = None;
     loop {
@@ -546,6 +633,7 @@ async fn relaunch_on_migrate(config: &nomic::network::Config) -> Result<()> {
     }
 }
 
+/// Writes changes to the network's Tendermint `config.toml` file.
 fn configure_node<P, F>(cfg_path: &P, configure: F)
 where
     P: AsRef<std::path::Path>,
@@ -562,12 +650,15 @@ where
     std::fs::write(cfg_path, toml.to_string()).expect("Failed to write config.toml");
 }
 
+/// Edits the `timeout_commit` value in the network's Tendermint `config.toml`
+/// file.
 fn edit_block_time(cfg_path: &PathBuf, timeout_commit: &str) {
     configure_node(cfg_path, |cfg| {
         cfg["consensus"]["timeout_commit"] = toml_edit::value(timeout_commit);
     });
 }
 
+/// Edits the `statesync` values in the network's Tendermint `config.toml` file.
 async fn configure_for_statesync(cfg_path: &PathBuf, rpc_servers: &[&str]) {
     log::info!("Getting bootstrap state for Tendermint light client...");
 
@@ -592,6 +683,8 @@ async fn configure_for_statesync(cfg_path: &PathBuf, rpc_servers: &[&str]) {
     });
 }
 
+/// Gets the latest block height and hash from a set of Tendermint RPC servers
+/// in order to initialize for state sync.
 async fn get_bootstrap_state(rpc_servers: &[&str]) -> Result<(i64, String)> {
     let rpc_clients: Vec<_> = rpc_servers
         .iter()
@@ -644,9 +737,14 @@ async fn get_bootstrap_state(rpc_servers: &[&str]) -> Result<(i64, String)> {
     Ok((height as i64, hash.unwrap().to_string()))
 }
 
+/// Transfers a given amount of native tokens to a given address.
 #[derive(Parser, Debug)]
 pub struct SendCmd {
+    /// The address to send the tokens to.
     to_addr: Address,
+
+    /// The amount of tokens to send (as an integer denominated in the
+    /// smallest units).
     amount: u64,
 
     #[clap(flatten)]
@@ -654,6 +752,7 @@ pub struct SendCmd {
 }
 
 impl SendCmd {
+    /// Runs the `send` command.
     async fn run(&self) -> Result<()> {
         Ok(self
             .config
@@ -667,9 +766,14 @@ impl SendCmd {
     }
 }
 
+/// Transfers a given amount of nBTC to a given address.
 #[derive(Parser, Debug)]
 pub struct SendNbtcCmd {
+    /// The address to send the tokens to.
     to_addr: Address,
+
+    /// The amount of tokens to send (as an integer denominated in the smallest
+    /// units).
     amount: u64,
 
     #[clap(flatten)]
@@ -677,6 +781,7 @@ pub struct SendNbtcCmd {
 }
 
 impl SendNbtcCmd {
+    /// Runs the `send-nbtc` command.
     async fn run(&self) -> Result<()> {
         Ok(self
             .config
@@ -690,8 +795,12 @@ impl SendNbtcCmd {
     }
 }
 
+/// Shows the balance of the given address, or the current wallet address if
+/// none is provided.
 #[derive(Parser, Debug)]
 pub struct BalanceCmd {
+    /// The address to show the balance of. If not provided, the balance of the
+    /// current wallet address is shown.
     address: Option<Address>,
 
     #[clap(flatten)]
@@ -699,6 +808,7 @@ pub struct BalanceCmd {
 }
 
 impl BalanceCmd {
+    /// Runs the `balance` command.
     async fn run(&self) -> Result<()> {
         let address = self.address.unwrap_or_else(my_address);
         println!("address: {}", address);
@@ -720,6 +830,7 @@ impl BalanceCmd {
     }
 }
 
+/// Shows the stake delegations of the current wallet address.
 #[derive(Parser, Debug)]
 pub struct DelegationsCmd {
     #[clap(flatten)]
@@ -727,6 +838,7 @@ pub struct DelegationsCmd {
 }
 
 impl DelegationsCmd {
+    /// Runs the `delegations` command.
     async fn run(&self) -> Result<()> {
         let address = my_address();
         let delegations = self
@@ -773,6 +885,7 @@ impl DelegationsCmd {
     }
 }
 
+/// Shows a list of the validators of the network.
 #[derive(Parser, Debug)]
 pub struct ValidatorsCmd {
     #[clap(flatten)]
@@ -780,6 +893,7 @@ pub struct ValidatorsCmd {
 }
 
 impl ValidatorsCmd {
+    /// Runs the `validators` command.
     async fn run(&self) -> Result<()> {
         let mut validators = self
             .config
@@ -802,9 +916,14 @@ impl ValidatorsCmd {
     }
 }
 
+/// Delegates stake to the given validator.
 #[derive(Parser, Debug)]
 pub struct DelegateCmd {
+    /// The address of the validator to delegate to.
     validator_addr: Address,
+
+    /// The amount of tokens to delegate (as an integer denominated in the
+    /// smallest units).
     amount: u64,
 
     #[clap(flatten)]
@@ -812,6 +931,7 @@ pub struct DelegateCmd {
 }
 
 impl DelegateCmd {
+    /// Runs the `delegate` command.
     async fn run(&self) -> Result<()> {
         Ok(self
             .config
@@ -829,6 +949,7 @@ impl DelegateCmd {
     }
 }
 
+/// Declares a new validator.
 #[derive(Parser, Debug)]
 pub struct DeclareCmd {
     consensus_key: String,
@@ -846,15 +967,22 @@ pub struct DeclareCmd {
     config: nomic::network::Config,
 }
 
+/// Infomation to be posted on-chain when declaring a new validator.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DeclareInfo {
+    /// The validator's name.
     pub moniker: String,
+    /// The URL of the validator's website.
     pub website: String,
+    /// The validator's Keybase fingerprint, to be used for verification and
+    /// fetching an avatar.
     pub identity: String,
+    /// Description text about the validator.
     pub details: String,
 }
 
 impl DeclareCmd {
+    /// Runs the `declare` command.
     async fn run(&self) -> Result<()> {
         let consensus_key: [u8; 32] = base64::decode(&self.consensus_key)
             .map_err(|_| orga::Error::App("invalid consensus key".to_string()))?
@@ -908,13 +1036,23 @@ impl DeclareCmd {
     }
 }
 
+/// Edits the on-chain information of a validator.
 #[derive(Parser, Debug)]
 pub struct EditCmd {
+    /// The commission rate the validator takes from rewards earned by
+    /// delegators.
     commission_rate: Decimal,
+    /// The minimum self-delegation required for the validator to remain active,
+    /// useful to guarantee to delegators that the validator has stake at risk.
     min_self_delegation: u64,
+    /// The validator's name.
     moniker: String,
+    /// The URL of the validator's website.
     website: String,
+    /// The validator's Keybase fingerprint, to be used for verification and
+    /// fetching an avatar.
     identity: String,
+    /// Description text about the validator.
     details: String,
 
     #[clap(flatten)]
@@ -922,6 +1060,7 @@ pub struct EditCmd {
 }
 
 impl EditCmd {
+    /// Runs the `edit` command.
     async fn run(&self) -> Result<()> {
         let info = DeclareInfo {
             moniker: self.moniker.clone(),
@@ -951,9 +1090,14 @@ impl EditCmd {
     }
 }
 
+/// Unbonds a validator's stake.
 #[derive(Parser, Debug)]
 pub struct UnbondCmd {
+    /// The address of the validator which the wallet is currently delegated to
+    /// which will be unbonded from.
     validator_addr: Address,
+    /// The amount of stake to unbond (as an integer denominated in the smallest
+    /// unit).
     amount: u64,
 
     #[clap(flatten)]
@@ -961,6 +1105,7 @@ pub struct UnbondCmd {
 }
 
 impl UnbondCmd {
+    /// Runs the `unbond` command.
     async fn run(&self) -> Result<()> {
         Ok(self
             .config
@@ -978,10 +1123,16 @@ impl UnbondCmd {
     }
 }
 
+/// Redelegates a validator's stake to another validator without unbonding.
 #[derive(Parser, Debug)]
 pub struct RedelegateCmd {
+    /// The address of the validator which the wallet is currently delegated to
+    /// which will be re-delegated from.
     src_validator_addr: Address,
+    /// The address of the validator which the wallet will re-delegate to.
     dest_validator_addr: Address,
+    /// The amount of stake to redelegate (as an integer denominated in the
+    /// smallest unit).
     amount: u64,
 
     #[clap(flatten)]
@@ -989,6 +1140,7 @@ pub struct RedelegateCmd {
 }
 
 impl RedelegateCmd {
+    /// Runs the `redelegate` command.
     async fn run(&self) -> Result<()> {
         Ok(self
             .config
@@ -1008,6 +1160,7 @@ impl RedelegateCmd {
     }
 }
 
+/// Unjails the jailed validator associated with the wallet's operator address.
 #[derive(Parser, Debug)]
 pub struct UnjailCmd {
     #[clap(flatten)]
@@ -1015,6 +1168,7 @@ pub struct UnjailCmd {
 }
 
 impl UnjailCmd {
+    /// Runs the `unjail` command.
     async fn run(&self) -> Result<()> {
         Ok(self
             .config
@@ -1028,6 +1182,7 @@ impl UnjailCmd {
     }
 }
 
+/// Claims the rewards earned by the wallet.
 #[derive(Parser, Debug)]
 pub struct ClaimCmd {
     #[clap(flatten)]
@@ -1035,6 +1190,7 @@ pub struct ClaimCmd {
 }
 
 impl ClaimCmd {
+    /// Runs the `claim` command.
     async fn run(&self) -> Result<()> {
         Ok(self
             .config
@@ -1048,8 +1204,11 @@ impl ClaimCmd {
     }
 }
 
+/// Shows the wallet's available airdrop balances which can be claimed.
 #[derive(Parser, Debug)]
 pub struct AirdropCmd {
+    /// The address to check for airdrop eligibility. If not provided, the
+    /// current wallet address is used.
     address: Option<Address>,
 
     #[clap(flatten)]
@@ -1057,6 +1216,7 @@ pub struct AirdropCmd {
 }
 
 impl AirdropCmd {
+    /// Runs the `airdrop` command.
     async fn run(&self) -> Result<()> {
         let client = self.config.client();
 
@@ -1075,8 +1235,10 @@ impl AirdropCmd {
     }
 }
 
+/// Claims the airdrop balances associated with the wallet.
 #[derive(Parser, Debug)]
 pub struct ClaimAirdropCmd {
+    // TODO: why is this an option?
     address: Option<Address>,
 
     #[clap(flatten)]
@@ -1084,6 +1246,7 @@ pub struct ClaimAirdropCmd {
 }
 
 impl ClaimAirdropCmd {
+    /// Runs the `claim-airdrop` command.
     async fn run(&self) -> Result<()> {
         let client = self.config.client();
 
@@ -1132,14 +1295,19 @@ impl ClaimAirdropCmd {
     }
 }
 
+/// Relays data between the Bitcoin and Nomic networks.
 #[derive(Parser, Debug)]
 pub struct RelayerCmd {
+    /// The port of the Bitcoin RPC server.
+    // TODO: get the default based on the network
     #[clap(short = 'p', long, default_value_t = 8332)]
     rpc_port: u16,
 
+    /// The username for the Bitcoin RPC server.
     #[clap(short = 'u', long)]
     rpc_user: Option<String>,
 
+    /// The password for the Bitcoin RPC server.
     #[clap(short = 'P', long)]
     rpc_pass: Option<String>,
 
@@ -1148,6 +1316,7 @@ pub struct RelayerCmd {
 }
 
 impl RelayerCmd {
+    /// Builds Bitcoin RPC client.
     async fn btc_client(&self) -> Result<BtcClient> {
         let rpc_url = format!("http://localhost:{}", self.rpc_port);
         let auth = match (self.rpc_user.clone(), self.rpc_pass.clone()) {
@@ -1162,6 +1331,7 @@ impl RelayerCmd {
         Ok(btc_client)
     }
 
+    /// Runs the `relayer` command.
     async fn run(&self) -> Result<()> {
         let create_relayer = async || {
             let btc_client = self.btc_client().await.unwrap();
@@ -1209,11 +1379,16 @@ impl RelayerCmd {
     }
 }
 
+/// Signs Bitcoin transactions if the validator associated with the wallet's
+/// operator address is in a network signatory set.
 #[derive(Parser, Debug)]
 pub struct SignerCmd {
     #[clap(flatten)]
     config: nomic::network::Config,
 
+    /// Clears the rate limiting mechanism at the given checkpoint index. This
+    /// can be used to manually override rate limiting at a certain point in
+    /// time which has been verified to be legitimate.
     #[clap(long)]
     reset_limits_at_index: Option<u32>,
 
@@ -1229,22 +1404,33 @@ pub struct SignerCmd {
     #[clap(long, default_value_t = 0.1)]
     max_sigset_change_rate: f64,
 
-    /// The minimum number of Bitcoin blocks that must be mined before the signer will contribute its
-    /// signature to the current signing checkpoint. This setting can be used to change the rate at which the
-    /// network produces checkpoints (higher values cause less frequent checkpoints).
+    /// The minimum number of Bitcoin blocks that must be mined before the
+    /// signer will contribute its signature to the current signing
+    /// checkpoint. This setting can be used to change the rate at which the
+    /// network produces checkpoints (higher values cause less frequent
+    /// checkpoints).
     ///
-    /// Signatures will always be contributed to previously completed checkpoints.
+    /// Signatures will always be contributed to previously completed
+    /// checkpoints.
     #[clap(long, default_value_t = 6)]
     min_blocks_per_checkpoint: u64,
 
+    /// The address of the Prometheus server to which metrics will be sent.
     #[clap(long)]
     prometheus_addr: Option<std::net::SocketAddr>,
 
+    /// The paths to the extended private keys used to sign Bitcoin
+    /// transactions.
+    ///
+    /// Multiple may be specified, e.g. if the node has set a new key via the
+    /// `set-signatory-key` command and the old key is still present in recent
+    /// signatory sets.
     #[clap(long)]
     xpriv_paths: Vec<PathBuf>,
 }
 
 impl SignerCmd {
+    /// Runs the `signer` command.
     async fn run(&self) -> Result<()> {
         let signer_dir_path = self.config.home_expect()?.join("signer");
         if !signer_dir_path.exists() {
@@ -1275,8 +1461,13 @@ impl SignerCmd {
     }
 }
 
+/// Sets the key to use for signing Bitcoin transactions if the validator
+/// associated with the wallet's operator address is in a network signatory set.
 #[derive(Parser, Debug)]
 pub struct SetSignatoryKeyCmd {
+    /// The paths to the extended private keys used to sign Bitcoin
+    /// transactions.
+    // TODO: why can we specify multiple here?
     xpriv_path: Option<PathBuf>,
 
     #[clap(flatten)]
@@ -1284,6 +1475,7 @@ pub struct SetSignatoryKeyCmd {
 }
 
 impl SetSignatoryKeyCmd {
+    /// Runs the `set-signatory-key` command.
     async fn run(&self) -> Result<()> {
         let xpriv = match self.xpriv_path.clone() {
             Some(xpriv_path) => load_bitcoin_key(xpriv_path)?,
@@ -1308,6 +1500,8 @@ impl SetSignatoryKeyCmd {
     }
 }
 
+/// Shows a Bitcoin address for depositing Bitcoin to the wallet's nBTC account
+/// on the Nomic network.
 async fn deposit(
     dest: Dest,
     client: AppClient<InnerApp, InnerApp, HttpClient, Nom, orga::client::wallet::Unsigned>,
@@ -1363,8 +1557,12 @@ async fn deposit(
     Ok(())
 }
 
+/// Shows a Bitcoin address for depositing Bitcoin to the wallet's nBTC account
+/// on the Nomic network.
 #[derive(Parser, Debug)]
 pub struct DepositCmd {
+    /// The Bitcoin address to deposit to. If not provided, the current wallet
+    /// address will be used.
     address: Option<Address>,
 
     #[clap(flatten)]
@@ -1372,6 +1570,7 @@ pub struct DepositCmd {
 }
 
 impl DepositCmd {
+    /// Runs the `deposit` command.
     async fn run(&self) -> Result<()> {
         let dest_addr = self.address.unwrap_or_else(my_address);
 
@@ -1384,10 +1583,16 @@ impl DepositCmd {
     }
 }
 
+/// Shows a Bitcoin address for depositing Bitcoin to a remote chain.
 #[derive(Parser, Debug)]
 pub struct InterchainDepositCmd {
+    /// The destination address to deposit to (e.g. a Cosmos bech32 wallet
+    /// address).
     address: String,
+    /// The IBC channel to transfer the deposit through. Should be a string like
+    /// "channel-123".
     channel: String,
+    /// A memo to include with the deposit. This may be an empty string.
     memo: String,
 
     #[clap(flatten)]
@@ -1396,6 +1601,7 @@ pub struct InterchainDepositCmd {
 
 const ONE_DAY_NS: u64 = 86400 * 1_000_000_000;
 impl InterchainDepositCmd {
+    /// Runs the `interchain-deposit` command.
     async fn run(&self) -> Result<()> {
         use orga::encoding::Adapter;
 
@@ -1417,9 +1623,12 @@ impl InterchainDepositCmd {
     }
 }
 
+/// Withdraws Bitcoin from the Nomic network to a Bitcoin address.
 #[derive(Parser, Debug)]
 pub struct WithdrawCmd {
+    /// The destination Bitcoin address to withdraw to.
     dest: bitcoin::Address,
+    /// The amount of Bitcoin to withdraw, in micro-satoshis.
     amount: u64,
 
     #[clap(flatten)]
@@ -1427,6 +1636,7 @@ pub struct WithdrawCmd {
 }
 
 impl WithdrawCmd {
+    /// Runs the `withdraw` command.
     async fn run(&self) -> Result<()> {
         let script = self.dest.script_pubkey();
         if !matches_bitcoin_network(&self.dest.network) {
@@ -1473,8 +1683,10 @@ impl WithdrawCmd {
 //     }
 // }
 
+/// Withdraws nBTC from the wallet's IBC escrow account into its main account.
 #[derive(Parser, Debug)]
 pub struct IbcWithdrawNbtcCmd {
+    /// The amount of nBTC to withdraw, in micro-satoshis.
     amount: u64,
 
     #[clap(flatten)]
@@ -1482,6 +1694,7 @@ pub struct IbcWithdrawNbtcCmd {
 }
 
 impl IbcWithdrawNbtcCmd {
+    /// Runs the `ibc-withdraw-nbtc` command.
     async fn run(&self) -> Result<()> {
         Ok(self
             .config
@@ -1495,8 +1708,10 @@ impl IbcWithdrawNbtcCmd {
     }
 }
 
+/// Rusns a gRPC server for querying data from a Nomic full node.
 #[derive(Parser, Debug)]
 pub struct GrpcCmd {
+    /// The port to listen on.
     #[clap(default_value_t = 9001)]
     port: u16,
 
@@ -1505,6 +1720,7 @@ pub struct GrpcCmd {
 }
 
 impl GrpcCmd {
+    /// Runs the `grpc` command.
     async fn run(&self) -> Result<()> {
         use orga::ibc::GrpcOpts;
         std::panic::set_hook(Box::new(|_| {}));
@@ -1523,19 +1739,31 @@ impl GrpcCmd {
     }
 }
 
+/// Transfers nBTC to a remote chain using IBC.
 #[derive(Parser, Debug)]
 pub struct IbcTransferCmd {
+    /// The address of the receiver on the remote chain (e.g. a Cosmos bech32
+    /// wallet address).
     receiver: String,
+    /// The amount of nBTC to transfer, in micro-satoshis.
     amount: u64,
+    /// The IBC channel to transfer through. Should be a string like
+    /// "channel-123".
     channel_id: ChannelId,
+    /// The IBC port to transfer through. This is usually a string like
+    /// "transfer".
     port_id: PortId,
+    /// A memo to attach to the transfer. This can be an empty string.
     memo: String,
+    /// The number of seconds in which the transfer must be completed before
+    /// becoming invalid.
     timeout_seconds: u64,
     #[clap(flatten)]
     config: nomic::network::Config,
 }
 
 impl IbcTransferCmd {
+    /// Runs the `ibc-transfer` command.
     async fn run(&self) -> Result<()> {
         use orga::encoding::Adapter as EdAdapter;
 
@@ -1565,6 +1793,7 @@ impl IbcTransferCmd {
     }
 }
 
+/// Outputs the current network application state as JSON.
 #[derive(Parser, Debug)]
 pub struct ExportCmd {
     #[clap(flatten)]
@@ -1572,6 +1801,7 @@ pub struct ExportCmd {
 }
 
 impl ExportCmd {
+    /// Runs the `export` command.
     async fn run(&self) -> Result<()> {
         let home = self.config.home_expect()?;
 
@@ -1590,6 +1820,7 @@ impl ExportCmd {
     }
 }
 
+/// Shows the status of a pending network upgrade, if any.
 #[derive(Parser, Debug)]
 pub struct UpgradeStatusCmd {
     #[clap(flatten)]
@@ -1597,6 +1828,7 @@ pub struct UpgradeStatusCmd {
 }
 
 impl UpgradeStatusCmd {
+    /// Runs the `upgrade-status` command.
     async fn run(&self) -> Result<()> {
         use orga::coins::staking::ValidatorQueryInfo;
         use orga::coins::VersionedAddress;
@@ -1774,13 +2006,19 @@ impl UpgradeStatusCmd {
     }
 }
 
+/// Runs a process which scans a remote IBC chain for new validators and
+/// broadcasts them to the Nomic network. This is used to populate the remote
+/// chain's Emergency Disbursal multisig wallet.
 #[derive(Parser, Debug)]
 pub struct RelayOpKeysCmd {
+    /// The ID of the IBC client which is connected to the remote chain.
     client_id: String,
+    /// The URL of the remote chain's Tendermint RPC server.
     rpc_url: String,
 }
 
 impl RelayOpKeysCmd {
+    /// Runs the `relay-op-keys` command.
     async fn run(&self) -> Result<()> {
         use nomic::cosmos::relay_op_keys;
         log::info!("Relaying operator keys for client {}", self.client_id);
@@ -1799,8 +2037,14 @@ impl RelayOpKeysCmd {
     }
 }
 
+/// Sets the Bitcoin recovery address for the wallet, used to recover funds in
+/// the event of an Emergency Disbursal.
+///
+/// If an Emergency Disbursal happens, the nBTC held in the wallet's account
+/// will be automatically paid to this recovery address.
 #[derive(Parser, Debug)]
 pub struct SetRecoveryAddressCmd {
+    /// The Bitcoin address to set as the recovery address.
     address: bitcoin::Address,
 
     #[clap(flatten)]
@@ -1808,6 +2052,7 @@ pub struct SetRecoveryAddressCmd {
 }
 
 impl SetRecoveryAddressCmd {
+    /// Runs the `set-recovery-address` command.
     async fn run(&self) -> Result<()> {
         let script = self.address.script_pubkey();
         if !matches_bitcoin_network(&self.address.network) {
@@ -1834,6 +2079,7 @@ impl SetRecoveryAddressCmd {
     }
 }
 
+/// Shows the network's Bitcoin checkpoint signing status.
 #[derive(Parser, Debug)]
 pub struct SigningStatusCmd {
     #[clap(flatten)]
@@ -1841,6 +2087,7 @@ pub struct SigningStatusCmd {
 }
 
 impl SigningStatusCmd {
+    /// Runs the `signing-status` command.
     async fn run(&self) -> Result<()> {
         use bitcoin::util::bip32::ChildNumber;
         let home = self.config.home_expect()?;
@@ -1925,33 +2172,65 @@ impl SigningStatusCmd {
     }
 }
 
+/// Attempts to recover a deposit which has not yet been processed by the
+/// Nomic network by relaying a proof of its confirmation on the Bitcoin
+/// network.
+///
+/// This command is useful when a deposit has been made to the network and
+/// confirmed on Bitcoin, but has not yet been relayed.
 #[derive(Parser, Debug)]
 pub struct RecoverDepositCmd {
+    /// The port of the Bitcoin RPC server.
+    // TODO: get default based on network
     #[clap(short = 'p', long, default_value_t = 8332)]
     rpc_port: u16,
+    /// The username for the Bitcoin RPC server.
     #[clap(short = 'u', long)]
     rpc_user: Option<String>,
+    /// The password for the Bitcoin RPC server.
     #[clap(short = 'P', long)]
     rpc_pass: Option<String>,
 
+    /// The IBC channel ID (e.g. "channel-123") which the deposit was sent to,
+    /// if it is an interchain deposit.
     #[clap(long)]
     channel: Option<String>,
+    /// The remote address the deposit was made to, if it is an interchain
+    /// deposit.
+    ///
+    /// For convenience, the `--remote-prefix` flag can be used instead
+    /// to derive the remote address from the current wallet's address.
     #[clap(long)]
     remote_addr: Option<String>,
+    /// The remote prefix of the deposit address (e.g. "osmo"), if it is an
+    /// interchain deposit. The remote address will be derived from the current
+    /// wallet's address but with the given prefix.
+    ///
+    /// If the remote address is not based on the current wallet's address, use
+    /// the `--remote-addr` flag instead.
     #[clap(long)]
     remote_prefix: Option<String>,
 
+    /// The Nomic bech32 wallet address associated with the deposit.
     #[clap(long)]
     nomic_addr: Address,
+    /// The Bitcoin address the deposit was made to.
     #[clap(long)]
     deposit_addr: bitcoin::Address,
+    /// The Bitcoin block hash the deposit transaction was confirmed in.
     #[clap(long)]
     block_hash: bitcoin::BlockHash,
+    /// The Bitcoin transaction ID of the deposit transaction.
     #[clap(long)]
     txid: bitcoin::Txid,
+    /// The output index within the deposit transaction, associated with the
+    /// output which deposits to the Nomic signatory set.
     #[clap(long)]
     vout: u32,
 
+    /// The path to a file containig the indexes and reserve scripts of
+    /// signatories to search. This can be generated with the
+    /// `get-reserve-scripts` binary.
     #[clap(long)]
     reserve_script_path: PathBuf,
 
@@ -1960,6 +2239,7 @@ pub struct RecoverDepositCmd {
 }
 
 impl RecoverDepositCmd {
+    /// Builds a Bitcoin RPC client.
     async fn btc_client(&self) -> Result<BtcClient> {
         let rpc_url = format!("http://localhost:{}", self.rpc_port);
         let auth = match (self.rpc_user.clone(), self.rpc_pass.clone()) {
@@ -1974,6 +2254,7 @@ impl RecoverDepositCmd {
         Ok(btc_client)
     }
 
+    /// Relays a deposit to the Nomic network.
     async fn relay_deposit(&self, dest: Dest, sigset_index: u32) -> Result<()> {
         let nomic_client = self.config.client();
         let btc_client = self.btc_client().await?;
@@ -2022,6 +2303,7 @@ impl RecoverDepositCmd {
         Ok(())
     }
 
+    /// Runs the `recover-deposit` command.
     async fn run(&self) -> Result<()> {
         let mut remote_addr = self.remote_addr.clone();
         if let Some(remote_prefix) = &self.remote_prefix {
@@ -2136,8 +2418,10 @@ impl RecoverDepositCmd {
     }
 }
 
+/// Pays nBTC into the network fee pool.
 #[derive(Parser, Debug)]
 pub struct PayToFeePoolCmd {
+    /// The amount of nBTC to pay into the fee pool, in micro-satoshis.
     amount: u64,
 
     #[clap(flatten)]
@@ -2145,6 +2429,7 @@ pub struct PayToFeePoolCmd {
 }
 
 impl PayToFeePoolCmd {
+    /// Runs the `pay-to-fee-pool` command.
     async fn run(&self) -> Result<()> {
         Ok(self
             .config
@@ -2158,6 +2443,7 @@ impl PayToFeePoolCmd {
     }
 }
 
+/// The entry point to the Nomic command line interface.
 pub fn main() {
     if std::env::var("NOMIC_LOG_SIMPLE").is_ok() {
         pretty_env_logger::formatted_builder()
