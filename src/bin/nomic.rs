@@ -1327,7 +1327,8 @@ async fn deposit(
             ))
         })
         .await?;
-    let script = sigset.output_script(dest.commitment_bytes()?.as_slice(), threshold)?;
+    let commitment_bytes = dest.commitment_bytes()?;
+    let script = sigset.output_script(&commitment_bytes, threshold)?;
     let btc_addr = bitcoin::Address::from_script(&script, nomic::bitcoin::NETWORK).unwrap();
 
     let mut successes = 0;

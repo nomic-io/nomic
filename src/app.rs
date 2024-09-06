@@ -280,6 +280,7 @@ impl InnerApp {
         match dest {
             Dest::Address(addr) => self.bitcoin.accounts.deposit(addr, nbtc),
             Dest::Ibc(dest) => dest.transfer(nbtc, &mut self.bitcoin, &mut self.ibc),
+            Dest::Fee => Ok(self.bitcoin.give_rewards(nbtc)?),
         }
     }
 
@@ -1015,13 +1016,15 @@ pub struct MsgIbcTransfer {
 pub enum Dest {
     Address(Address),
     Ibc(IbcDest),
+    Fee,
 }
 
 impl Dest {
-    pub fn to_receiver_addr(&self) -> String {
+    pub fn to_receiver_addr(&self) -> Option<String> {
         match self {
-            Dest::Address(addr) => addr.to_string(),
-            Dest::Ibc(dest) => dest.receiver.0.to_string(),
+            Dest::Address(addr) => Some(addr.to_string()),
+            Dest::Ibc(dest) => Some(dest.receiver.0.to_string()),
+            Dest::Fee => None,
         }
     }
 }
@@ -1112,6 +1115,7 @@ impl Dest {
         let bytes = match self {
             Address(addr) => addr.bytes().into(),
             Ibc(dest) => Sha256::digest(dest.encode()?).to_vec(),
+            Fee => vec![1],
         };
 
         Ok(bytes)

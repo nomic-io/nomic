@@ -591,7 +591,6 @@ impl Bitcoin {
 
         let checkpoint = self.checkpoints.get(sigset_index)?;
         let sigset = checkpoint.sigset.clone();
-
         let dest_bytes = dest.commitment_bytes()?;
         let expected_script =
             sigset.output_script(&dest_bytes, self.checkpoints.config.sigset_threshold)?;
@@ -662,7 +661,9 @@ impl Bitcoin {
         // TODO: keep in excess queue if full
 
         let deposit_fee = nbtc.take(calc_deposit_fee(nbtc.amount.into()))?;
-        self.give_rewards(deposit_fee)?;
+        self.checkpoints
+            .building_mut()?
+            .insert_pending(Dest::Fee, deposit_fee)?;
 
         self.checkpoints
             .building_mut()?
