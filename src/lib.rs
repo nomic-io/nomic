@@ -4,8 +4,6 @@
 //! This crate provides the core logic for both full nodes and clients of the
 //! Nomic protocol.
 
-#![warn(missing_docs)]
-#![warn(clippy::missing_docs_in_private_items)]
 #![feature(trivial_bounds)]
 #![feature(never_type)]
 #![allow(incomplete_features)]
