@@ -253,6 +253,18 @@ impl Default for Config {
     }
 }
 
+pub fn matches_bitcoin_network(network: &bitcoin::Network) -> bool {
+    match crate::bitcoin::NETWORK {
+        bitcoin::Network::Bitcoin => network == &crate::bitcoin::NETWORK,
+        bitcoin::Network::Regtest => {
+            network == &bitcoin::Network::Regtest || network == &bitcoin::Network::Testnet
+        }
+        bitcoin::Network::Testnet | bitcoin::Network::Signet => {
+            network == &bitcoin::Network::Testnet || network == &bitcoin::Network::Signet
+        }
+    }
+}
+
 /// Calculates the bridge fee for a deposit of the given amount of BTC, in
 /// satoshis.
 pub fn calc_deposit_fee(amount: u64) -> u64 {
@@ -475,10 +487,7 @@ impl Bitcoin {
                 ))
             })?;
 
-            let regtest_mode = self.network() == bitcoin::Network::Regtest
-                && _signatory_key.network == bitcoin::Network::Testnet;
-
-            if !regtest_mode && _signatory_key.network != self.network() {
+            if !matches_bitcoin_network(&_signatory_key.network) {
                 return Err(Error::Orga(orga::Error::App(
                     "Signatory key network does not match network".to_string(),
                 )));
@@ -591,7 +600,6 @@ impl Bitcoin {
 
         let checkpoint = self.checkpoints.get(sigset_index)?;
         let sigset = checkpoint.sigset.clone();
-
         let dest_bytes = dest.commitment_bytes()?;
         let expected_script =
             sigset.output_script(&dest_bytes, self.checkpoints.config.sigset_threshold)?;
@@ -662,7 +670,9 @@ impl Bitcoin {
         // TODO: keep in excess queue if full
 
         let deposit_fee = nbtc.take(calc_deposit_fee(nbtc.amount.into()))?;
-        self.give_rewards(deposit_fee)?;
+        self.checkpoints
+            .building_mut()?
+            .insert_pending(Dest::Fee, deposit_fee)?;
 
         self.checkpoints
             .building_mut()?

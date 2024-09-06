@@ -5,7 +5,7 @@ use bitcoin::secp256k1::{
     Message, PublicKey, Secp256k1,
 };
 use std::u64;
-use Gravity::{LogicCallArgs, ValsetArgs};
+use NomicContract::{LogicCallArgs, ValsetArgs};
 
 use ed::{Decode, Encode};
 use orga::{
@@ -35,14 +35,13 @@ use crate::{
 sol!(
     #[allow(missing_docs)]
     #[sol(rpc)]
-    Gravity,
-    "src/ethereum/Gravity.json"
+    NomicContract,
+    "src/ethereum/Nomic.json"
 );
 
 // TODO: message ttl/pruning
 // TODO: multi-token support
 
-pub mod relayer;
 pub mod signer;
 
 pub const VALSET_INTERVAL: u64 = 60 * 60 * 24;
@@ -485,7 +484,7 @@ mod tests {
         util::bip32::{ExtendedPrivKey, ExtendedPubKey},
     };
     use orga::{coins::Symbol, context::Context, plugins::Paid};
-    use Gravity::ValsetArgs;
+    use NomicContract::ValsetArgs;
 
     use crate::bitcoin::{
         signatory::{derive_pubkey, Signatory},

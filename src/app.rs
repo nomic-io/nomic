@@ -5,6 +5,7 @@
 
 use crate::airdrop::Airdrop;
 use crate::bitcoin::adapter::Adapter;
+use crate::bitcoin::matches_bitcoin_network;
 use crate::bitcoin::{Bitcoin, Nbtc};
 use crate::cosmos::{Chain, Cosmos, Proof};
 
@@ -19,19 +20,21 @@ use orga::context::GetContext;
 use orga::cosmrs::bank::MsgSend;
 use orga::describe::{Describe, Descriptor};
 use orga::encoding::{Decode, Encode, LengthVec};
-use orga::ibc::ibc_rs::applications::transfer::Memo;
+use orga::ibc::ibc_rs::apps::transfer::types::Memo;
+use orga::ibc::ClientIdKey as ClientId;
+
 use std::str::FromStr;
 use std::time::Duration;
 
-use orga::ibc::ibc_rs::applications::transfer::context::TokenTransferExecutionContext;
-use orga::ibc::ibc_rs::applications::transfer::msgs::transfer::MsgTransfer;
-use orga::ibc::ibc_rs::applications::transfer::packet::PacketData;
-use orga::ibc::ibc_rs::core::ics04_channel::timeout::TimeoutHeight;
-use orga::ibc::ibc_rs::core::ics24_host::identifier::{ChannelId, PortId};
-use orga::ibc::ibc_rs::core::timestamp::Timestamp;
-use orga::ibc::{ClientId, Ibc, IbcTx};
+use orga::ibc::ibc_rs::apps::transfer::context::TokenTransferExecutionContext;
+use orga::ibc::ibc_rs::apps::transfer::types::msgs::transfer::MsgTransfer;
+use orga::ibc::ibc_rs::apps::transfer::types::packet::PacketData;
+use orga::ibc::ibc_rs::core::channel::types::timeout::{TimeoutHeight, TimeoutTimestamp};
+use orga::ibc::ibc_rs::core::host::types::identifiers::{ChannelId, PortId};
+use orga::ibc::ibc_rs::core::primitives::Timestamp;
+use orga::ibc::{Ibc, IbcTx};
 
-use orga::ibc::ibc_rs::Signer as IbcSigner;
+use orga::ibc::ibc_rs::core::primitives::Signer as IbcSigner;
 
 use orga::coins::Declaration;
 use orga::encoding::Adapter as EdAdapter;
@@ -202,7 +205,7 @@ impl InnerApp {
         let coins: Coin<Nbtc> = amount.into();
         self.ibc
             .transfer_mut()
-            .burn_coins_execute(&signer, &coins.into())?;
+            .burn_coins_execute(&signer, &coins.into(), &"".parse().unwrap())?;
         self.bitcoin.accounts.deposit(signer, amount.into())?;
 
         Ok(())
@@ -284,6 +287,7 @@ impl InnerApp {
         match dest {
             Dest::NativeAccount(addr) => self.bitcoin.accounts.deposit(addr, nbtc)?,
             Dest::Ibc(dest) => dest.transfer(nbtc, &mut self.bitcoin, &mut self.ibc)?,
+            Dest::Fee => self.bitcoin.give_rewards(nbtc)?,
             Dest::EthAccount(addr) => self.ethereum.transfer(addr, nbtc)?,
             Dest::EthCall(call, _) => self.ethereum.call(call, nbtc)?,
         };
@@ -339,9 +343,11 @@ impl InnerApp {
                     .parse()
                     .map_err(|_| Error::Coins("Invalid address".to_string()))?;
                 let coins = Coin::<Nbtc>::mint(amount);
-                self.ibc
-                    .transfer_mut()
-                    .burn_coins_execute(&receiver, &coins.into())?;
+                self.ibc.transfer_mut().burn_coins_execute(
+                    &receiver,
+                    &coins.into(),
+                    &"".parse().unwrap(),
+                )?;
                 if self.bitcoin.add_withdrawal(script, amount.into()).is_err() {
                     let coins = Coin::<Nbtc>::mint(amount);
                     self.ibc
@@ -411,6 +417,13 @@ impl FromStr for NbtcMemo {
             }
             let dest = parts[1];
             let script = if let Ok(addr) = bitcoin::Address::from_str(dest) {
+                if !matches_bitcoin_network(&addr.network) {
+                    return Err(Error::App(format!(
+                        "Invalid network for nBTC memo. Got {}, Expected {}",
+                        addr.network,
+                        crate::bitcoin::NETWORK
+                    )));
+                }
                 addr.script_pubkey()
             } else {
                 bitcoin::Script::from_str(parts[1]).map_err(|e| Error::App(e.to_string()))?
@@ -843,6 +856,14 @@ impl ConvertSdkTx for InnerApp {
                         let dest_addr: bitcoin::Address = msg.dst_address.parse().map_err(
                             |e: bitcoin::util::address::Error| Error::App(e.to_string()),
                         )?;
+                        if !matches_bitcoin_network(&dest_addr.network) {
+                            return Err(Error::App(format!(
+                                "Invalid network for destination address. Got {}, Expected {}",
+                                dest_addr.network,
+                                crate::bitcoin::NETWORK
+                            )));
+                        }
+
                         let dest_script =
                             crate::bitcoin::adapter::Adapter::new(dest_addr.script_pubkey());
 
@@ -969,6 +990,14 @@ impl ConvertSdkTx for InnerApp {
                             .parse()
                             .map_err(|_| Error::App("Invalid recovery address".to_string()))?;
 
+                        if !matches_bitcoin_network(&recovery_addr.network) {
+                            return Err(Error::App(format!(
+                                "Invalid network for recovery address. Got {}, Expected {}",
+                                recovery_addr.network,
+                                crate::bitcoin::NETWORK
+                            )));
+                        }
+
                         let script =
                             crate::bitcoin::adapter::Adapter::new(recovery_addr.script_pubkey());
 
@@ -1043,7 +1072,7 @@ impl IbcDest {
         bitcoin: &mut Bitcoin,
         ibc: &mut Ibc,
     ) -> Result<()> {
-        use orga::ibc::ibc_rs::applications::transfer::msgs::transfer::MsgTransfer;
+        use orga::ibc::ibc_rs::apps::transfer::types::msgs::transfer::MsgTransfer;
 
         let fee_amount = ibc_fee(coins.amount)?;
         let fee = coins.take(fee_amount)?;
@@ -1063,8 +1092,7 @@ impl IbcDest {
                 memo: self.memo()?,
             },
             timeout_height_on_b: TimeoutHeight::Never,
-            timeout_timestamp_on_b: Timestamp::from_nanoseconds(self.timeout_timestamp)
-                .map_err(|e| Error::App(e.to_string()))?,
+            timeout_timestamp_on_b: TimeoutTimestamp::from_nanoseconds(self.timeout_timestamp),
         };
         if let Err(err) = ibc.deliver_message(IbcMessage::Ics20(msg_transfer)) {
             log::debug!("Failed IBC transfer: {}", err);
@@ -1106,17 +1134,19 @@ impl IbcDest {
 pub enum Dest {
     NativeAccount(Address),
     Ibc(IbcDest),
+    Fee,
     EthAccount(Address), // TODO: id for network, optional native fallback addr
     EthCall(ContractCall, Address),
 }
 
 impl Dest {
-    pub fn to_receiver_addr(&self) -> String {
+    pub fn to_receiver_addr(&self) -> Option<String> {
         match self {
-            Dest::NativeAccount(addr) => addr.to_string(),
-            Dest::Ibc(dest) => dest.receiver.0.to_string(),
-            Dest::EthAccount(addr) => addr.to_string(),
-            Dest::EthCall(_, addr) => addr.to_string(),
+            Dest::NativeAccount(addr) => Some(addr.to_string()),
+            Dest::Ibc(dest) => Some(dest.receiver.0.to_string()),
+            Dest::Fee => None,
+            Dest::EthAccount(addr) => Some(addr.to_string()),
+            Dest::EthCall(_, addr) => Some(addr.to_string()),
         }
     }
 
@@ -1126,6 +1156,7 @@ impl Dest {
         let bytes = match self {
             NativeAccount(addr) => addr.bytes().into(),
             Ibc(dest) => Sha256::digest(dest.encode()?).to_vec(),
+            Fee => vec![1],
             EthAccount(addr) => addr.bytes().into(),
             EthCall(call, addr) => Sha256::digest((call.clone(), *addr).encode()?).to_vec(),
         };

@@ -15,18 +15,18 @@ use nomic::app::IbcDest;
 use nomic::app::InnerApp;
 use nomic::app::Nom;
 use nomic::bitcoin::adapter::Adapter;
+use nomic::bitcoin::matches_bitcoin_network;
 use nomic::bitcoin::signatory::SignatorySet;
 use nomic::bitcoin::Nbtc;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
-use nomic::utils::load_bitcoin_key;
-use nomic::utils::load_or_generate;
+use nomic::utils::{load_bitcoin_key, load_or_generate};
 use orga::abci::Node;
 use orga::client::wallet::{SimpleWallet, Wallet};
 use orga::coins::{Address, Commission, Decimal, Declaration, Symbol};
 use orga::ibc::ibc_rs::core::{
-    ics24_host::identifier::{ChannelId, PortId},
-    timestamp::Timestamp,
+    host::types::identifiers::{ChannelId, PortId},
+    primitives::Timestamp,
 };
 use orga::macros::build_call;
 use orga::merk::MerkStore;
@@ -1327,7 +1327,8 @@ async fn deposit(
             ))
         })
         .await?;
-    let script = sigset.output_script(dest.commitment_bytes()?.as_slice(), threshold)?;
+    let commitment_bytes = dest.commitment_bytes()?;
+    let script = sigset.output_script(&commitment_bytes, threshold)?;
     let btc_addr = bitcoin::Address::from_script(&script, nomic::bitcoin::NETWORK).unwrap();
 
     let mut successes = 0;
@@ -1428,6 +1429,13 @@ pub struct WithdrawCmd {
 impl WithdrawCmd {
     async fn run(&self) -> Result<()> {
         let script = self.dest.script_pubkey();
+        if !matches_bitcoin_network(&self.dest.network) {
+            return Err(nomic::error::Error::Address(format!(
+                "Invalid network for destination address. Got {}, Expected {}",
+                self.dest.network,
+                nomic::bitcoin::NETWORK
+            )));
+        }
 
         self.config
             .client()
@@ -1802,6 +1810,14 @@ pub struct SetRecoveryAddressCmd {
 impl SetRecoveryAddressCmd {
     async fn run(&self) -> Result<()> {
         let script = self.address.script_pubkey();
+        if !matches_bitcoin_network(&self.address.network) {
+            return Err(nomic::error::Error::Address(format!(
+                "Invalid network for recovery address. Got {}, Expected {}",
+                self.address.network,
+                nomic::bitcoin::NETWORK
+            )));
+        }
+
         Ok(self
             .config
             .client()
