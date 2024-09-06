@@ -240,7 +240,7 @@ async fn bitcoin_test() {
         max_length: 59,
         ..Default::default()
     };
-    let funded_accounts = setup_test_app(&path, 4, Some(headers_config), None, None);
+    let funded_accounts = setup_test_app(&path, 4, Some(headers_config), None, None, None);
 
     let node = Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"), Default::default());
     let _node_child = node.await.run().await.unwrap();
@@ -541,7 +541,7 @@ async fn bitcoin_test() {
                 }
             }
         }
-        assert_eq!(signatory_balance, 49994239);
+        assert_eq!(signatory_balance, 49993057);
 
         let funded_account_balances: Vec<_> = funded_accounts
             .iter()
@@ -556,7 +556,7 @@ async fn bitcoin_test() {
             })
             .collect();
 
-        let expected_account_balances: Vec<u64> = vec![989980029, 0, 0, 0];
+        let expected_account_balances: Vec<u64> = vec![989976483, 0, 0, 0];
         assert_eq!(funded_account_balances, expected_account_balances);
 
         for (i, account) in funded_accounts[0..1].iter().enumerate() {
@@ -699,8 +699,14 @@ async fn signing_completed_checkpoint_test() {
         max_offline_checkpoints: 20,
         ..Default::default()
     };
-    let funded_accounts =
-        setup_test_app(&path, 4, Some(headers_config), None, Some(bitcoin_config));
+    let funded_accounts = setup_test_app(
+        &path,
+        4,
+        Some(headers_config),
+        None,
+        Some(bitcoin_config),
+        None,
+    );
 
     info!("Starting Nomic node...");
     let node = Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"), Default::default()).await;
@@ -975,8 +981,14 @@ async fn pending_deposits() {
         min_confirmations: 3,
         ..Default::default()
     };
-    let funded_accounts =
-        setup_test_app(&path, 4, Some(headers_config), None, Some(bitcoin_config));
+    let funded_accounts = setup_test_app(
+        &path,
+        4,
+        Some(headers_config),
+        None,
+        Some(bitcoin_config),
+        None,
+    );
 
     let node = Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"), Default::default());
     let node_child = node.await.run().await.unwrap();
@@ -1178,7 +1190,7 @@ async fn signer_key_updating() {
         max_length: 59,
         ..Default::default()
     };
-    let funded_accounts = setup_test_app(&path, 4, Some(headers_config), None, None);
+    let funded_accounts = setup_test_app(&path, 4, Some(headers_config), None, None, None);
 
     let node = Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"), Default::default());
     let _node_child = node.await.run().await.unwrap();
@@ -1535,6 +1547,7 @@ async fn recover_expired_deposit() {
         Some(headers_config),
         Some(checkpoint_config),
         None,
+        None,
     );
 
     let node = Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"), Default::default());
@@ -1773,8 +1786,14 @@ async fn generate_deposit_expired() {
         ..Default::default()
     };
 
-    let funded_accounts =
-        setup_test_app(&path, 4, Some(headers_config), None, Some(bitcoin_config));
+    let funded_accounts = setup_test_app(
+        &path,
+        4,
+        Some(headers_config),
+        None,
+        Some(bitcoin_config),
+        None,
+    );
 
     let node = Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"), Default::default());
     let node_child = node.await.run().await.unwrap();

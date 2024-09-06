@@ -515,7 +515,6 @@ impl Relayer {
 
     pub async fn start_checkpoint_relay(&mut self) -> Result<()> {
         info!("Starting checkpoint relay...");
-
         loop {
             if let Err(e) = self.relay_checkpoints().await {
                 if !e.to_string().contains("No completed checkpoints yet") {
@@ -532,7 +531,6 @@ impl Relayer {
             .query(|app| Ok(app.bitcoin.checkpoints.last_completed_tx()?))
             .await?;
         info!("Last checkpoint tx: {}", last_checkpoint.txid());
-
         let mut relayed = HashSet::new();
 
         loop {

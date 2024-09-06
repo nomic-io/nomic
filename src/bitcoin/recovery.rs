@@ -75,7 +75,7 @@ impl RecoveryTxs {
         tx.input.push_back(input)?;
         tx.output.push_back(Adapter::new(output))?;
 
-        tx.deduct_fee(args.fee_rate * tx.vsize()?)?;
+        tx.deduct_fee(args.fee_rate * tx.est_vsize()?)?;
 
         tx.populate_input_sig_message(0)?;
 
