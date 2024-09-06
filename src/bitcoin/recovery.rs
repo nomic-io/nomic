@@ -54,17 +54,18 @@ impl RecoveryTxs {
             .output
             .get(args.vout as usize)
             .ok_or_else(|| Error::Signer("Invalid recovery tx vout".to_string()))?;
+        let commitment_bytes = args.dest.commitment_bytes()?;
 
         let input = Input::new(
             OutPoint::new(args.expired_tx.txid(), args.vout),
             args.old_sigset,
-            &args.dest.commitment_bytes()?,
+            &commitment_bytes,
             expired_output.value,
             args.threshold,
         )?;
         let script_pubkey = args
             .new_sigset
-            .output_script(args.dest.commitment_bytes()?.as_slice(), args.threshold)?;
+            .output_script(&commitment_bytes, args.threshold)?;
         let output = TxOut {
             value: expired_output.value,
             script_pubkey,
