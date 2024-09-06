@@ -1955,6 +1955,7 @@ async fn multi_building_checkpoints() {
         Some(headers_config),
         Some(checkpoint_config),
         Some(bitcoin_config),
+        None,
     );
 
     let node = Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"), Default::default());
