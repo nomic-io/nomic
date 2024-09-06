@@ -26,8 +26,8 @@ use orga::abci::Node;
 use orga::client::wallet::{SimpleWallet, Wallet};
 use orga::coins::{Address, Commission, Decimal, Declaration, Symbol};
 use orga::ibc::ibc_rs::core::{
-    ics24_host::identifier::{ChannelId, PortId},
-    timestamp::Timestamp,
+    host::types::identifiers::{ChannelId, PortId},
+    primitives::Timestamp,
 };
 use orga::macros::build_call;
 use orga::merk::MerkStore;

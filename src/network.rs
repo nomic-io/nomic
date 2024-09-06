@@ -190,11 +190,13 @@ impl FromArgMatches for Config {
                 net_config.upgrade_height = arg_config.upgrade_height;
             }
             if arg_config.home.is_some() {
-                net_config.home = arg_config.home.clone();
+                net_config.home.clone_from(&arg_config.home)
             }
 
             if !arg_config.state_sync_rpc.is_empty() {
-                net_config.state_sync_rpc = arg_config.state_sync_rpc.clone();
+                net_config
+                    .state_sync_rpc
+                    .clone_from(&arg_config.state_sync_rpc);
             }
 
             // TODO: should all built-in tmflags get shadowed by user-specified tmflags?
