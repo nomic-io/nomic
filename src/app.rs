@@ -5,6 +5,7 @@
 
 use crate::airdrop::Airdrop;
 use crate::bitcoin::adapter::Adapter;
+use crate::bitcoin::matches_bitcoin_network;
 use crate::bitcoin::{Bitcoin, Nbtc};
 use crate::cosmos::{Chain, Cosmos, Proof};
 
@@ -406,6 +407,13 @@ impl FromStr for NbtcMemo {
             }
             let dest = parts[1];
             let script = if let Ok(addr) = bitcoin::Address::from_str(dest) {
+                if !matches_bitcoin_network(&addr.network) {
+                    return Err(Error::App(format!(
+                        "Invalid network for nBTC memo. Got {}, Expected {}",
+                        addr.network,
+                        crate::bitcoin::NETWORK
+                    )));
+                }
                 addr.script_pubkey()
             } else {
                 bitcoin::Script::from_str(parts[1]).map_err(|e| Error::App(e.to_string()))?
@@ -833,6 +841,14 @@ impl ConvertSdkTx for InnerApp {
                         let dest_addr: bitcoin::Address = msg.dst_address.parse().map_err(
                             |e: bitcoin::util::address::Error| Error::App(e.to_string()),
                         )?;
+                        if !matches_bitcoin_network(&dest_addr.network) {
+                            return Err(Error::App(format!(
+                                "Invalid network for destination address. Got {}, Expected {}",
+                                dest_addr.network,
+                                crate::bitcoin::NETWORK
+                            )));
+                        }
+
                         let dest_script =
                             crate::bitcoin::adapter::Adapter::new(dest_addr.script_pubkey());
 
@@ -958,6 +974,14 @@ impl ConvertSdkTx for InnerApp {
                             .ok_or_else(|| Error::App("Invalid recovery address".to_string()))?
                             .parse()
                             .map_err(|_| Error::App("Invalid recovery address".to_string()))?;
+
+                        if !matches_bitcoin_network(&recovery_addr.network) {
+                            return Err(Error::App(format!(
+                                "Invalid network for recovery address. Got {}, Expected {}",
+                                recovery_addr.network,
+                                crate::bitcoin::NETWORK
+                            )));
+                        }
 
                         let script =
                             crate::bitcoin::adapter::Adapter::new(recovery_addr.script_pubkey());
