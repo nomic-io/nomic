@@ -184,8 +184,8 @@ impl InnerApp {
         let fee = coins.take(fee)?;
         self.bitcoin.give_rewards(fee)?;
 
-        let building = &mut self.bitcoin.checkpoints.building_mut()?;
         let dest = Dest::Ibc(dest);
+        let mut building = self.bitcoin.checkpoints.building_mut()?;
         building.insert_pending(dest, coins)?;
 
         Ok(())
@@ -245,20 +245,26 @@ impl InnerApp {
         sigset_index: u32,
         dest: Dest,
     ) -> Result<()> {
-        if let Dest::Ibc(dest) = dest.clone() {
-            dest.source_port()?;
-            dest.source_channel()?;
-            dest.sender_address()?;
-        }
+        #[cfg(target_arch = "wasm32")]
+        unimplemented!();
 
-        Ok(self.bitcoin.relay_deposit(
-            btc_tx,
-            btc_height,
-            btc_proof,
-            btc_vout,
-            sigset_index,
-            dest,
-        )?)
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if let Dest::Ibc(dest) = dest.clone() {
+                dest.source_port()?;
+                dest.source_channel()?;
+                dest.sender_address()?;
+            }
+
+            Ok(self.bitcoin.relay_deposit(
+                btc_tx,
+                btc_height,
+                btc_proof,
+                btc_vout,
+                sigset_index,
+                dest,
+            )?)
+        }
     }
 
     #[call]
@@ -508,12 +514,9 @@ mod abci {
                 self.credit_transfer(dest, coins)?;
             }
 
-            let external_outputs = if self.bitcoin.should_push_checkpoint()? {
-                self.cosmos
-                    .build_outputs(&self.ibc, self.bitcoin.checkpoints.index)?
-            } else {
-                vec![]
-            };
+            let external_outputs = self
+                .cosmos
+                .build_outputs(&self.ibc, self.bitcoin.checkpoints.index)?;
             let offline_signers = self
                 .bitcoin
                 .begin_block_step(external_outputs.into_iter().map(Ok), ctx.hash.clone())?;
