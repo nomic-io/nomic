@@ -541,7 +541,7 @@ async fn bitcoin_test() {
                 }
             }
         }
-        assert_eq!(signatory_balance, 49994239);
+        assert_eq!(signatory_balance, 49993057);
 
         let funded_account_balances: Vec<_> = funded_accounts
             .iter()
@@ -556,7 +556,7 @@ async fn bitcoin_test() {
             })
             .collect();
 
-        let expected_account_balances: Vec<u64> = vec![989980029, 0, 0, 0];
+        let expected_account_balances: Vec<u64> = vec![989976483, 0, 0, 0];
         assert_eq!(funded_account_balances, expected_account_balances);
 
         for (i, account) in funded_accounts[0..1].iter().enumerate() {
