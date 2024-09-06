@@ -10,7 +10,6 @@ use crate::error::Result;
 use crate::orga::encoding::Encode;
 use crate::utils::time_now;
 use bitcoin::consensus::{Decodable, Encodable};
-use bitcoin::hashes::hex::FromHex;
 use bitcoin::Txid;
 use bitcoin::{hashes::Hash, Block, BlockHash, Transaction};
 use bitcoincore_rpc_async::{json::GetBlockHeaderResult, Client as BitcoinRpcClient, RpcApi};
@@ -434,8 +433,12 @@ impl Relayer {
                     )?;
 
                     let mut index = index.lock().await;
+                    let receiver_addr = match dest.to_receiver_addr() {
+                        Some(addr) => addr,
+                        None => continue,
+                    };
                     index.insert_deposit(
-                        dest.to_receiver_addr(),
+                        receiver_addr,
                         bitcoin_address,
                         Deposit::new(txid, vout as u32, output.value, None),
                     )
@@ -512,10 +515,6 @@ impl Relayer {
 
     pub async fn start_checkpoint_relay(&mut self) -> Result<()> {
         info!("Starting checkpoint relay...");
-        let spk =
-            ::bitcoin::Script::from_hex("0014d982217f84fc7e88670ee87470defe1ad5ddb371").unwrap();
-        let addr = ::bitcoin::Address::from_script(&spk, super::NETWORK).unwrap();
-        println!("BITCOIN ADDRESS: {}", addr);
         loop {
             if let Err(e) = self.relay_checkpoints().await {
                 if !e.to_string().contains("No completed checkpoints yet") {
@@ -870,6 +869,10 @@ impl Relayer {
         let txid = tx.txid();
         let outpoint = (txid.into_inner(), output.vout);
         let dest = output.dest.clone();
+        if dest.to_receiver_addr().is_none() {
+            return Ok(());
+        }
+        let receiver_addr = dest.to_receiver_addr().unwrap();
         let vout = output.vout;
         let contains_outpoint = app_client(&self.app_client_addr)
             .query(|app| app.bitcoin.processed_outpoints.contains(outpoint))
@@ -882,13 +885,13 @@ impl Relayer {
 
         if contains_outpoint {
             let mut index = index.lock().await;
-            index.remove_deposit(dest.to_receiver_addr(), deposit_address, txid, vout)?;
+            index.remove_deposit(receiver_addr, deposit_address, txid, vout)?;
             return Ok(());
         }
 
         let mut index_guard = index.lock().await;
         index_guard.insert_deposit(
-            dest.to_receiver_addr(),
+            receiver_addr,
             deposit_address.clone(),
             Deposit::new(
                 txid,
@@ -1193,7 +1196,7 @@ impl WatchedScripts {
         sigset: &SignatorySet,
         threshold: (u64, u64),
     ) -> Result<::bitcoin::Script> {
-        sigset.output_script(dest.commitment_bytes()?.as_slice(), threshold)
+        sigset.output_script(&dest.commitment_bytes()?, threshold)
     }
 }
 

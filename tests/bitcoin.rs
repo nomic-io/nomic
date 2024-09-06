@@ -458,14 +458,6 @@ async fn bitcoin_test() {
         let balance = poll_for_updated_balance(funded_accounts[1].address, expected_balance).await;
         assert_eq!(balance, Amount::from(expected_balance));
 
-        withdraw_bitcoin(
-            &funded_accounts[0],
-            bitcoin::Amount::from_sat(7000),
-            &withdraw_address,
-        )
-        .await
-        .unwrap();
-
         app_client()
             .with_wallet(funded_accounts[0].wallet.clone())
             .call(
@@ -473,6 +465,14 @@ async fn bitcoin_test() {
                 move |app| build_call!(app.bitcoin.transfer_to_fee_pool(8000000000.into())),
             )
             .await?;
+
+        withdraw_bitcoin(
+            &funded_accounts[0],
+            bitcoin::Amount::from_sat(7000),
+            &withdraw_address,
+        )
+        .await
+        .unwrap();
 
         btc_client
             .generate_to_address(4, &async_wallet_address)
@@ -541,7 +541,7 @@ async fn bitcoin_test() {
                 }
             }
         }
-        assert_eq!(signatory_balance, 49994239);
+        assert_eq!(signatory_balance, 49993057);
 
         let funded_account_balances: Vec<_> = funded_accounts
             .iter()
@@ -556,7 +556,7 @@ async fn bitcoin_test() {
             })
             .collect();
 
-        let expected_account_balances: Vec<u64> = vec![989980029, 0, 0, 0];
+        let expected_account_balances: Vec<u64> = vec![989976483, 0, 0, 0];
         assert_eq!(funded_account_balances, expected_account_balances);
 
         for (i, account) in funded_accounts[0..1].iter().enumerate() {

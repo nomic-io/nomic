@@ -131,10 +131,11 @@ pub fn make_std_tx(
 pub fn generate_bitcoin_key(network: bitcoin::Network) -> Result<ExtendedPrivKey> {
     let seed: [u8; 32] = rand::thread_rng().gen();
 
-    let network = if network == bitcoin::Network::Regtest {
-        bitcoin::Network::Testnet
-    } else {
-        network
+    let network = match network {
+        bitcoin::Network::Bitcoin => bitcoin::Network::Bitcoin,
+        bitcoin::Network::Testnet | bitcoin::Network::Signet | bitcoin::Network::Regtest => {
+            bitcoin::Network::Testnet
+        }
     };
 
     Ok(ExtendedPrivKey::new_master(network, seed.as_slice())?)
@@ -381,7 +382,7 @@ pub async fn poll_for_updated_balance(address: Address, expected_balance: u64) -
         .await
         .unwrap();
 
-    if initial_balance <= expected_balance {
+    if initial_balance == expected_balance {
         return initial_balance.into();
     }
 
