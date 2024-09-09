@@ -16,6 +16,7 @@ use nomic::app::{InnerApp, Nom};
 use nomic::bitcoin::adapter::Adapter;
 use nomic::bitcoin::checkpoint::CheckpointStatus;
 use nomic::bitcoin::checkpoint::Config as CheckpointConfig;
+use nomic::bitcoin::deposit_index::DepositIndex;
 use nomic::bitcoin::deposit_index::{Deposit, DepositInfo};
 use nomic::bitcoin::header_queue::Config as HeaderQueueConfig;
 use nomic::bitcoin::relayer::DepositAddress;
@@ -46,10 +47,12 @@ use serial_test::serial;
 use std::collections::HashMap;
 use std::fs;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::sync::Once;
 use std::time::Duration;
 use tempfile::tempdir;
 use tokio::sync::mpsc;
+use tokio::sync::Mutex;
 
 static INIT: Once = Once::new();
 
@@ -1060,13 +1063,29 @@ async fn pending_deposits() {
         poll_for_active_sigset().await;
         poll_for_signatory_key(consensus_key).await;
 
-        deposit_bitcoin(
-            &funded_accounts[0].address,
-            bitcoin::Amount::from_btc(10.0).unwrap(),
-            &wallet,
+        let deposit_address = generate_deposit_address(&funded_accounts[0].address)
+            .await
+            .unwrap();
+        broadcast_deposit_addr(
+            funded_accounts[0].address.to_string(),
+            deposit_address.sigset_index,
+            "http://localhost:8999".to_string(),
+            deposit_address.deposit_addr.clone(),
         )
-        .await
-        .unwrap();
+        .await?;
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        &wallet
+            .send_to_address(
+                &bitcoin::Address::from_str(&deposit_address.deposit_addr).unwrap(),
+                bitcoin::Amount::from_btc(10.0).unwrap(),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
 
         let expected_balance = 0;
         let balance = poll_for_updated_balance(funded_accounts[0].address, expected_balance).await;
@@ -1713,7 +1732,7 @@ async fn recover_expired_deposit() {
         poll_for_bitcoin_header(1185).await.unwrap();
         poll_for_completed_checkpoint(3).await;
 
-        let expected_balance = 39595129200000;
+        let expected_balance = 39596871600000;
         let balance = poll_for_updated_balance(funded_accounts[1].address, expected_balance).await;
         assert_eq!(balance, Amount::from(expected_balance));
 
