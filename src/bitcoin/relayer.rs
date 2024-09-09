@@ -452,8 +452,12 @@ impl Relayer {
                     )?;
 
                     let mut index = index.lock().await;
+                    let receiver_addr = match dest.to_receiver_addr() {
+                        Some(addr) => addr,
+                        None => continue,
+                    };
                     index.insert_deposit(
-                        dest.to_receiver_addr(),
+                        receiver_addr,
                         bitcoin_address,
                         Deposit::new(txid, vout as u32, output.value, None),
                     )
@@ -870,6 +874,10 @@ impl Relayer {
         let txid = tx.txid();
         let outpoint = (txid.into_inner(), output.vout);
         let dest = output.dest.clone();
+        if dest.to_receiver_addr().is_none() {
+            return Ok(());
+        }
+        let receiver_addr = dest.to_receiver_addr().unwrap();
         let vout = output.vout;
         let contains_outpoint = app_client(&self.app_client_addr)
             .query(|app| app.bitcoin.processed_outpoints.contains(outpoint))
@@ -882,13 +890,13 @@ impl Relayer {
 
         if contains_outpoint {
             let mut index = index.lock().await;
-            index.remove_deposit(dest.to_receiver_addr(), deposit_address, txid, vout)?;
+            index.remove_deposit(receiver_addr, deposit_address, txid, vout)?;
             return Ok(());
         }
 
         let mut index_guard = index.lock().await;
         index_guard.insert_deposit(
-            dest.to_receiver_addr(),
+            receiver_addr,
             deposit_address.clone(),
             Deposit::new(
                 txid,
@@ -1193,7 +1201,7 @@ impl WatchedScripts {
         sigset: &SignatorySet,
         threshold: (u64, u64),
     ) -> Result<::bitcoin::Script> {
-        sigset.output_script(dest.commitment_bytes()?.as_slice(), threshold)
+        sigset.output_script(&dest.commitment_bytes()?, threshold)
     }
 }
 

@@ -5,6 +5,7 @@
 
 use crate::airdrop::Airdrop;
 use crate::bitcoin::adapter::Adapter;
+use crate::bitcoin::matches_bitcoin_network;
 use crate::bitcoin::{Bitcoin, Nbtc};
 use crate::cosmos::{Chain, Cosmos, Proof};
 
@@ -280,6 +281,7 @@ impl InnerApp {
         match dest {
             Dest::Address(addr) => self.bitcoin.accounts.deposit(addr, nbtc),
             Dest::Ibc(dest) => dest.transfer(nbtc, &mut self.bitcoin, &mut self.ibc),
+            Dest::Fee => Ok(self.bitcoin.give_rewards(nbtc)?),
         }
     }
 
@@ -405,6 +407,13 @@ impl FromStr for NbtcMemo {
             }
             let dest = parts[1];
             let script = if let Ok(addr) = bitcoin::Address::from_str(dest) {
+                if !matches_bitcoin_network(&addr.network) {
+                    return Err(Error::App(format!(
+                        "Invalid network for nBTC memo. Got {}, Expected {}",
+                        addr.network,
+                        crate::bitcoin::NETWORK
+                    )));
+                }
                 addr.script_pubkey()
             } else {
                 bitcoin::Script::from_str(parts[1]).map_err(|e| Error::App(e.to_string()))?
@@ -832,6 +841,14 @@ impl ConvertSdkTx for InnerApp {
                         let dest_addr: bitcoin::Address = msg.dst_address.parse().map_err(
                             |e: bitcoin::util::address::Error| Error::App(e.to_string()),
                         )?;
+                        if !matches_bitcoin_network(&dest_addr.network) {
+                            return Err(Error::App(format!(
+                                "Invalid network for destination address. Got {}, Expected {}",
+                                dest_addr.network,
+                                crate::bitcoin::NETWORK
+                            )));
+                        }
+
                         let dest_script =
                             crate::bitcoin::adapter::Adapter::new(dest_addr.script_pubkey());
 
@@ -958,6 +975,14 @@ impl ConvertSdkTx for InnerApp {
                             .parse()
                             .map_err(|_| Error::App("Invalid recovery address".to_string()))?;
 
+                        if !matches_bitcoin_network(&recovery_addr.network) {
+                            return Err(Error::App(format!(
+                                "Invalid network for recovery address. Got {}, Expected {}",
+                                recovery_addr.network,
+                                crate::bitcoin::NETWORK
+                            )));
+                        }
+
                         let script =
                             crate::bitcoin::adapter::Adapter::new(recovery_addr.script_pubkey());
 
@@ -1015,13 +1040,15 @@ pub struct MsgIbcTransfer {
 pub enum Dest {
     Address(Address),
     Ibc(IbcDest),
+    Fee,
 }
 
 impl Dest {
-    pub fn to_receiver_addr(&self) -> String {
+    pub fn to_receiver_addr(&self) -> Option<String> {
         match self {
-            Dest::Address(addr) => addr.to_string(),
-            Dest::Ibc(dest) => dest.receiver.0.to_string(),
+            Dest::Address(addr) => Some(addr.to_string()),
+            Dest::Ibc(dest) => Some(dest.receiver.0.to_string()),
+            Dest::Fee => None,
         }
     }
 }
@@ -1112,6 +1139,7 @@ impl Dest {
         let bytes = match self {
             Address(addr) => addr.bytes().into(),
             Ibc(dest) => Sha256::digest(dest.encode()?).to_vec(),
+            Fee => vec![1],
         };
 
         Ok(bytes)
