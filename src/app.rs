@@ -70,6 +70,7 @@ const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhq
 
 const IBC_FEE_USATS: u64 = 1_000_000;
 const CALL_FEE_USATS: u64 = 100_000_000;
+const OSMOSIS_CHANNEL_ID: &str = "channel-1";
 
 #[orga(version = 5)]
 pub struct InnerApp {
@@ -180,7 +181,11 @@ impl InnerApp {
         let signer = self.signer()?;
         let mut coins = self.bitcoin.accounts.withdraw(signer, amount)?;
 
-        let fee = ibc_fee(amount)?;
+        let fee = if dest.is_fee_exempt() {
+            IBC_FEE_USATS.into()
+        } else {
+            ibc_fee(amount)?
+        };
         let fee = coins.take(fee)?;
         self.bitcoin.give_rewards(fee)?;
 
@@ -326,24 +331,47 @@ impl InnerApp {
                 continue;
             }
             let memo: NbtcMemo = transfer.memo.parse().unwrap_or_default();
-            if let NbtcMemo::Withdraw(script) = memo {
-                let amount = transfer.amount;
-                let receiver: Address = transfer
-                    .receiver
-                    .parse()
-                    .map_err(|_| Error::Coins("Invalid address".to_string()))?;
-                let coins = Coin::<Nbtc>::mint(amount);
-                self.ibc.transfer_mut().burn_coins_execute(
-                    &receiver,
-                    &coins.into(),
-                    &"".parse().unwrap(),
-                )?;
-                if self.bitcoin.add_withdrawal(script, amount.into()).is_err() {
+            match memo {
+                NbtcMemo::Withdraw(script) => {
+                    let amount = transfer.amount;
+                    let receiver: Address = transfer
+                        .receiver
+                        .parse()
+                        .map_err(|_| Error::Coins("Invalid address".to_string()))?;
                     let coins = Coin::<Nbtc>::mint(amount);
-                    self.ibc
-                        .transfer_mut()
-                        .mint_coins_execute(&receiver, &coins.into())?;
+                    self.ibc.transfer_mut().burn_coins_execute(
+                        &receiver,
+                        &coins.into(),
+                        &"".parse().unwrap(),
+                    )?;
+                    if self.bitcoin.add_withdrawal(script, amount.into()).is_err() {
+                        let coins = Coin::<Nbtc>::mint(amount);
+                        self.ibc
+                            .transfer_mut()
+                            .mint_coins_execute(&receiver, &coins.into())?;
+                    }
                 }
+                NbtcMemo::Donate => {
+                    let amount = transfer.amount;
+                    let receiver: Address = transfer
+                        .receiver
+                        .parse()
+                        .map_err(|_| Error::Coins("Invalid address".to_string()))?;
+                    let coins = Coin::<Nbtc>::mint(amount);
+                    self.ibc.transfer_mut().burn_coins_execute(
+                        &receiver,
+                        &coins.into(),
+                        &"".parse().unwrap(),
+                    )?;
+
+                    let coins = Coin::<Nbtc>::mint(amount);
+                    self.bitcoin
+                        .checkpoints
+                        .building_mut()?
+                        .insert_pending(Dest::Fee, coins)?;
+                }
+
+                NbtcMemo::Empty => {}
             }
         }
 
@@ -389,6 +417,7 @@ impl InnerApp {
 #[derive(Debug, Clone, Default)]
 pub enum NbtcMemo {
     Withdraw(Adapter<bitcoin::Script>),
+    Donate,
     #[default]
     Empty,
 }
@@ -397,6 +426,8 @@ impl FromStr for NbtcMemo {
     fn from_str(s: &str) -> Result<Self> {
         if s.is_empty() {
             Ok(NbtcMemo::Empty)
+        } else if s == "donate" {
+            Ok(NbtcMemo::Donate)
         } else {
             let parts = s.split(':').collect::<Vec<_>>();
             if parts.len() != 2 {
@@ -1051,6 +1082,14 @@ impl Dest {
             Dest::Fee => None,
         }
     }
+
+    pub fn is_fee_exempt(&self) -> bool {
+        if let Dest::Ibc(dest) = self {
+            return dest.is_fee_exempt();
+        }
+
+        false
+    }
 }
 
 use orga::ibc::{IbcMessage, PortChannel, RawIbcTx};
@@ -1076,9 +1115,11 @@ impl IbcDest {
     ) -> Result<()> {
         use orga::ibc::ibc_rs::apps::transfer::types::msgs::transfer::MsgTransfer;
 
-        let fee_amount = ibc_fee(coins.amount)?;
-        let fee = coins.take(fee_amount)?;
-        bitcoin.give_rewards(fee)?;
+        if !self.is_fee_exempt() {
+            let fee_amount = ibc_fee(coins.amount)?;
+            let fee = coins.take(fee_amount)?;
+            bitcoin.give_rewards(fee)?;
+        }
         let nbtc_amount = coins.amount;
 
         ibc.transfer_mut()
@@ -1129,6 +1170,11 @@ impl IbcDest {
         let memo: String = self.memo.clone().try_into()?;
 
         Ok(memo.into())
+    }
+
+    pub fn is_fee_exempt(&self) -> bool {
+        self.source_channel()
+            .map_or(false, |channel| channel.to_string() == OSMOSIS_CHANNEL_ID)
     }
 }
 

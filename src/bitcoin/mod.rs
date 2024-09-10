@@ -669,10 +669,12 @@ impl Bitcoin {
         checkpoint_tx.input.push_back(input)?;
         // TODO: keep in excess queue if full
 
-        let deposit_fee = nbtc.take(calc_deposit_fee(nbtc.amount.into()))?;
-        self.checkpoints
-            .building_mut()?
-            .insert_pending(Dest::Fee, deposit_fee)?;
+        if !dest.is_fee_exempt() {
+            let deposit_fee = nbtc.take(calc_deposit_fee(nbtc.amount.into()))?;
+            self.checkpoints
+                .building_mut()?
+                .insert_pending(Dest::Fee, deposit_fee)?;
+        }
 
         self.checkpoints
             .building_mut()?
