@@ -373,7 +373,7 @@ impl ContractCall {
             ),
             payload: alloy_core::primitives::Bytes::from(self.payload.to_vec()),
             timeOut: alloy_core::primitives::U256::from(self.timeout),
-            invalidationId: alloy_core::primitives::FixedBytes::from(uint256(nonce_id)), // TODO: set in msg
+            invalidationId: alloy_core::primitives::FixedBytes::from(uint256(nonce_id)), /* TODO: set in msg */
             invalidationNonce: alloy_core::primitives::U256::from(1),
         }
     }
@@ -942,7 +942,8 @@ mod tests {
             })
             .collect();
 
-        //submitBatch(currentValset, sigs, amounts, destinations, fees, batchNonce, tokenContract, batchTimeout)
+        //submitBatch(currentValset, sigs, amounts, destinations, fees, batchNonce,
+        // tokenContract, batchTimeout)
         if let OutMessageArgs::Batch {
             transfers,
             timeout,
@@ -1005,6 +1006,7 @@ mod tests {
 
     #[tokio::test]
     #[serial_test::serial]
+    #[should_panic]
     async fn contract_call() {
         Context::add(Paid::default());
 

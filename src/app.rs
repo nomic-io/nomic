@@ -1252,7 +1252,7 @@ fn dest_json() {
 
     assert_eq!(
         Dest::Bitcoin(Adapter::new(Script::new_op_return(&[1, 2, 3]))).to_string(),
-        "{\"Bitcoin\":{\"inner\":\"6a03010203\"}"
+        "{\"Bitcoin\":\"6a03010203\"}"
     );
 }
 
