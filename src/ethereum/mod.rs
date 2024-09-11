@@ -549,8 +549,8 @@ sol!(
 
 #[cfg(test)]
 mod tests {
+    use alloy::sol_types::SolEvent;
     use alloy::{node_bindings::Anvil, providers::ProviderBuilder};
-    use alloy_sol_types::SolEvent;
     use bitcoin::{
         secp256k1::{Message, Secp256k1, SecretKey},
         util::bip32::{ExtendedPrivKey, ExtendedPubKey},
