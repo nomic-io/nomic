@@ -130,7 +130,7 @@ pub struct InnerConfig {
     /// The options will be added to the end of the invocation of
     /// `tendermint start`, and should be an option known to Tendermint such as
     /// "--p2p.laddr http://localhost:26657".
-    #[clap(global = true)]
+    #[clap(long, global = true)]
     pub tendermint_flags: Vec<String>,
 }
 
