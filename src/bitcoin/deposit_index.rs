@@ -30,7 +30,7 @@ pub struct DepositInfo {
 
 type ReceiverIndex = HashMap<String, HashMap<Address, HashMap<(Txid, u32), Deposit>>>;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct DepositIndex {
     pub receiver_index: ReceiverIndex,
 }

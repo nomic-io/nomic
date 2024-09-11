@@ -17,6 +17,7 @@ use nomic::app::IbcDest;
 use nomic::app::InnerApp;
 use nomic::app::Nom;
 use nomic::bitcoin::adapter::Adapter;
+use nomic::bitcoin::deposit_index::DepositIndex;
 use nomic::bitcoin::matches_bitcoin_network;
 use nomic::bitcoin::signatory::SignatorySet;
 use nomic::bitcoin::Nbtc;
@@ -41,9 +42,11 @@ use std::fs::Permissions;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 use tendermint_rpc::Client as _;
+use tokio::sync::Mutex;
 
 const BANNER: &str = r#"
 ███╗   ██╗  ██████╗  ███╗   ███╗ ██╗  ██████╗
