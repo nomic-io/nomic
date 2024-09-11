@@ -564,6 +564,9 @@ mod abci {
             #[cfg(feature = "testnet")]
             {
                 self.upgrade.activation_delay_seconds = 20 * 60;
+                self.bitcoin.config.min_confirmations = 0;
+                self.bitcoin.config.min_withdrawal_checkpoints = 0;
+                self.bitcoin.checkpoints.config.min_checkpoint_interval = 60;
 
                 include_str!("../testnet_addresses.csv")
                     .lines()
