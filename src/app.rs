@@ -16,7 +16,7 @@ use crate::cosmos::{Chain, Cosmos, Proof};
 use crate::ethereum::{ContractCall, Ethereum};
 use crate::incentives::Incentives;
 use bitcoin::util::merkleblock::PartialMerkleTree;
-use bitcoin::{Script, Transaction, TxOut};
+use bitcoin::{PublicKey, Script, Transaction, TxOut};
 use orga::coins::{
     Accounts, Address, Amount, Coin, Faucet, FaucetOptions, Give, Staking, Symbol, Take,
 };
