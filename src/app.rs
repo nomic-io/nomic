@@ -87,6 +87,7 @@ const IBC_FEE_USATS: u64 = 1_000_000;
 /// The fixed amount of nBTC fee required to make any application call, in
 /// micro-satoshis.
 const CALL_FEE_USATS: u64 = 100_000_000;
+const OSMOSIS_CHANNEL_ID: &str = "channel-1";
 
 /// The top-level application state type and logic. This contains the major
 /// state types for the various subsystems of the Nomic protocol.
@@ -243,7 +244,11 @@ impl InnerApp {
         let signer = self.signer()?;
         let mut coins = self.bitcoin.accounts.withdraw(signer, amount)?;
 
-        let fee = ibc_fee(amount)?;
+        let fee = if dest.is_fee_exempt() {
+            IBC_FEE_USATS.into()
+        } else {
+            ibc_fee(amount)?
+        };
         let fee = coins.take(fee)?;
         self.bitcoin.give_rewards(fee)?;
 
@@ -1149,9 +1154,11 @@ impl IbcDest {
     ) -> Result<()> {
         use orga::ibc::ibc_rs::apps::transfer::types::msgs::transfer::MsgTransfer;
 
-        let fee_amount = ibc_fee(coins.amount)?;
-        let fee = coins.take(fee_amount)?;
-        bitcoin.give_rewards(fee)?;
+        if !self.is_fee_exempt() {
+            let fee_amount = ibc_fee(coins.amount)?;
+            let fee = coins.take(fee_amount)?;
+            bitcoin.give_rewards(fee)?;
+        }
         let nbtc_amount = coins.amount;
 
         ibc.transfer_mut()
@@ -1207,6 +1214,11 @@ impl IbcDest {
 
     pub fn memo(&self) -> Result<Memo> {
         Ok(self.memo.to_string().into())
+    }
+
+    pub fn is_fee_exempt(&self) -> bool {
+        self.source_channel()
+            .map_or(false, |channel| channel.to_string() == OSMOSIS_CHANNEL_ID)
     }
 }
 
@@ -1301,6 +1313,14 @@ impl Dest {
                 .map(|script| script.clone().into_inner())),
             // TODO
             _ => Ok(None),
+        }
+    }
+
+    pub fn is_fee_exempt(&self) -> bool {
+        if let Dest::Ibc(dest) = self {
+            dest.is_fee_exempt()
+        } else {
+            false
         }
     }
 }
