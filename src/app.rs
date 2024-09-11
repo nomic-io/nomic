@@ -1,3 +1,6 @@
+//! The top-level application state and logic of the Nomic protocol. The main
+//! state type is the [InnerApp] struct.
+
 #![allow(clippy::too_many_arguments)]
 // TODO: remove after switching from "testnet" feature flag to orga channels
 #![allow(unused_variables)]
@@ -53,61 +56,111 @@ use std::fmt::Debug;
 
 mod migrations;
 
-pub type AppV0 = DefaultPlugins<Nom, InnerAppV0>;
+/// The top-level application state type, wrapped with the Orga default plugins.
 pub type App = DefaultPlugins<Nom, InnerApp>;
 
+/// The symbol for the NOM token.
 #[derive(State, Debug, Clone, Encode, Decode, Default, Migrate, Serialize)]
 pub struct Nom(());
 impl Symbol for Nom {
     const INDEX: u8 = 69;
     const NAME: &'static str = "unom";
 }
+
+/// The recipient address for the NOM developer rewards faucet on Nomic
+/// Stakenet.
 #[cfg(feature = "full")]
 const DEV_ADDRESS: &str = "nomic14z79y3yrghqx493mwgcj0qd2udy6lm26lmduah";
+/// The recipient address for the NOM strategic reserve tokens on Nomic
+/// Stakenet.
 #[cfg(feature = "full")]
 const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1d5n325zrf4elfu0heqd59gna5j6xyunhev23cj";
+/// An address to receive a small portion of the strategic reserve tokens in
+/// order to send a small portion of tokens to validators for declaration fees
+/// on Nomic Stakenet.
 #[cfg(feature = "full")]
 const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhqd8dcqeq";
 
+/// The fixed amount of nBTC fee required to relay IBC messages, in
+/// micro-satoshis.
 const IBC_FEE_USATS: u64 = 1_000_000;
+/// The fixed amount of nBTC fee required to make any application call, in
+/// micro-satoshis.
 const CALL_FEE_USATS: u64 = 100_000_000;
 
+/// The top-level application state type and logic. This contains the major
+/// state types for the various subsystems of the Nomic protocol.
 #[orga(version = 5)]
 pub struct InnerApp {
+    /// Account state for the NOM token.
     #[call]
     pub accounts: Accounts<Nom>,
+    /// Staking and validator state, including the validator set and staking
+    /// rewards. This ultimately sets the voting power of Tendermint consensus
+    /// based on the amount staked to each validator.
     #[call]
     pub staking: Staking<Nom>,
+    /// Airdrop state, which can be claimed by eligible accounts.
     #[call]
     pub airdrop: Airdrop,
 
+    /// A balance of NOM tokens that are reserved for the protocol community
+    /// pool.
     pub community_pool: Coin<Nom>,
+    /// A balance of NOM tokens that are reserved for the protocol incentive
+    /// pool.
     incentive_pool: Coin<Nom>,
 
+    /// A stream of tokens that pays out over time to NOM stakers, based on a
+    /// defined inflation schedule.
     staking_rewards: Faucet<Nom>,
+    /// A stream of tokens that pays out over time to the NOM developer wallet,
+    /// based on a defined inflation schedule.
     dev_rewards: Faucet<Nom>,
+    /// A stream of tokens that pays out over time to the NOM community pool,
+    /// based on a defined inflation schedule.
     community_pool_rewards: Faucet<Nom>,
+    /// A stream of tokens that pays out over time to the NOM incentive pool,
+    /// based on a defined inflation schedule.
     incentive_pool_rewards: Faucet<Nom>,
 
+    /// The Bitcoin state, including a chain of verified Bitcoin headers and
+    /// logic for processing Bitcoin transactions.
     #[call]
     pub bitcoin: Bitcoin,
+    /// A timer to support paying out accumulated Bitcoin rewards periodically.
     pub reward_timer: RewardTimer,
 
+    /// The IBC state, including the IBC client, connection, and channel
+    /// states. This is used to relay messages between Nomic and other IBC
+    /// enabled blockchains.
     #[cfg(feature = "testnet")]
     #[call]
     pub ibc: Ibc,
+    /// The IBC state, including the IBC client, connection, and channel
+    /// states. This is used to relay messages between Nomic and other IBC
+    /// enabled blockchains.
     #[cfg(not(feature = "testnet"))]
     #[orga(version(V4, V5))]
     #[call]
     pub ibc: Ibc,
 
+    /// The upgrade state, including the current version of the application and
+    /// logic for upgrading to a new version of the protocol once sufficient
+    /// network voting power has signaled readiness.
     pub upgrade: Upgrade,
 
+    /// Incentive state, allowing eligible users to claim tokens based on
+    /// participation in the Nomic ecosystem.
     #[call]
     pub incentives: Incentives,
 
+    /// The Cosmos state, allowing for relaying data about remote Cosmos chains
+    /// which is not available in the IBC module.
     #[cfg(feature = "testnet")]
     pub cosmos: Cosmos,
+    /// The Cosmos state, allowing for relaying data about remote Cosmos chains
+    /// which is not available in the IBC module.
     #[cfg(not(feature = "testnet"))]
     #[orga(version(V4, V5))]
     pub cosmos: Cosmos,
@@ -120,6 +173,10 @@ pub struct InnerApp {
 
 #[orga]
 impl InnerApp {
+    /// The current version of the Nomic protocol. This is incremented when
+    /// breaking changes are made to either the state encoding or logic of the
+    /// protocol, and requires a network upgrade to be coordinated via the
+    /// upgrade module.
     pub const CONSENSUS_VERSION: u8 = 11;
 
     #[cfg(feature = "full")]

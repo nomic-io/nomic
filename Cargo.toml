@@ -98,14 +98,7 @@ overflow-checks = true
 name = "nomic"
 
 [[bin]]
-name = "store-diff"
-
-[[bin]]
 name = "create-checkpoint"
-
-[[bin]]
-name = "append-airdrop-snapshot"
-required-features = ["testnet"]
 
 [[test]]
 name = "bitcoin"

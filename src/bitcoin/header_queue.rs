@@ -689,8 +689,8 @@ impl HeaderQueue {
     /// If the header queue does not contain a header at the passed height,
     /// `None` will be returned.
     ///
-    /// If the passed height is less than the initial height of the header queue,
-    /// an error will be returned.
+    /// If the passed height is less than the initial height of the header
+    /// queue, an error will be returned.
     #[query]
     pub fn get_by_height(&self, height: u32) -> Result<Option<WorkHeader>> {
         let initial_height = match self.deque.front()? {

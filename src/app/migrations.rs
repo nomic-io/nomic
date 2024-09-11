@@ -106,7 +106,8 @@ impl MigrateFrom<InnerAppV4> for InnerAppV5 {
             other.bitcoin.checkpoints.config.max_age = 60 * 60 * 24 * 30 * 4;
             other.bitcoin.headers.config.max_length = 24_192;
 
-            // remove headers and revert to checkpoint so we can regain history which was pruned
+            // remove headers and revert to checkpoint so we can regain history which was
+            // pruned
             other
                 .bitcoin
                 .headers
