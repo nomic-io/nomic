@@ -5,11 +5,10 @@ use bitcoin::secp256k1::{
     Message, PublicKey, Secp256k1,
 };
 use std::u64;
-use NomicContract::{LogicCallArgs, ValsetArgs};
 
 use ed::{Decode, Encode};
 use orga::{
-    coins::{Address, Coin, Give},
+    coins::{Address, Coin, Give, Take},
     collections::{ChildMut, Deque, Ref},
     describe::Describe,
     encoding::LengthVec,
@@ -23,6 +22,7 @@ use orga::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    app::Dest,
     bitcoin::{
         exempt_from_fee,
         signatory::SignatorySet,
@@ -35,12 +35,18 @@ use crate::{
 sol!(
     #[allow(missing_docs)]
     #[sol(rpc)]
-    NomicContract,
-    "src/ethereum/Nomic.json"
+    bridge_contract,
+    "src/ethereum/Nomic.json",
 );
+use bridge_contract::{LogicCallArgs, ValsetArgs};
 
 // TODO: message ttl/pruning
 // TODO: multi-token support
+// TODO: network muxing
+// TODO: remote contract muxing
+// TODO: call fees
+// TODO: bounceback on failed transfers
+// TODO: fallback to address on failed contract calls
 
 pub mod signer;
 
@@ -51,12 +57,16 @@ pub struct Ethereum {
     pub id: [u8; 32],
     pub bridge_contract: Address,
     pub token_contract: Address,
-    pub outbox: Deque<OutMessage>,
+    pub valset_interval: u64,
+
     pub message_index: u64,
     pub batch_index: u64,
     pub valset_index: u64,
+    pub return_index: u64,
+
+    pub outbox: Deque<OutMessage>,
+    pub pending: Deque<(Dest, Coin<Nbtc>)>,
     pub coins: Coin<Nbtc>,
-    pub valset_interval: u64,
     pub valset: SignatorySet,
 }
 
@@ -77,11 +87,15 @@ impl Ethereum {
             message_index: 1,
             batch_index: 0,
             valset_index: 0,
+            return_index: 0,
             coins: Coin::default(),
             valset_interval: VALSET_INTERVAL,
             valset,
+            pending: Deque::new(),
         }
     }
+
+    // TODO: method to return pending nbtc transfers
 
     pub fn step(&mut self, active_sigset: &SignatorySet) -> Result<()> {
         if active_sigset.create_time - self.valset.create_time >= self.valset_interval
@@ -106,24 +120,29 @@ impl Ethereum {
         let timeout = u64::MAX; // TODO: set based on current ethereum height, or let user specify
 
         self.coins.give(coins)?;
-        self.push_outbox(OutMessageArgs::Batch { transfers, timeout })?;
         self.batch_index += 1;
+        self.push_outbox(OutMessageArgs::Batch {
+            transfers,
+            timeout,
+            batch_index: self.batch_index,
+        })?;
 
         Ok(())
     }
 
     pub fn call(&mut self, call: ContractCall, coins: Coin<Nbtc>) -> Result<()> {
-        // TODO: validation (amount in call vs coins supplied, etc)
-
         self.coins.give(coins)?;
-        self.push_outbox(OutMessageArgs::LogicCall(call))
+        self.push_outbox(OutMessageArgs::LogicCall(self.message_index + 1, call))
     }
 
     fn update_valset(&mut self, mut new_valset: SignatorySet) -> Result<()> {
         new_valset.normalize_vp(u32::MAX as u64);
-        self.push_outbox(OutMessageArgs::UpdateValset(new_valset.clone()))?;
-        self.valset = new_valset;
         self.valset_index += 1;
+        self.push_outbox(OutMessageArgs::UpdateValset(
+            self.valset_index,
+            new_valset.clone(),
+        ))?;
+        self.valset = new_valset;
 
         Ok(())
     }
@@ -147,6 +166,14 @@ impl Ethereum {
         Ok(())
     }
 
+    pub fn take_pending(&mut self) -> Result<Vec<(Dest, Coin<Nbtc>)>> {
+        let mut pending = Vec::new();
+        while let Some(entry) = self.pending.pop_front()? {
+            pending.push(entry.into_inner());
+        }
+        Ok(pending)
+    }
+
     #[call]
     pub fn sign(&mut self, msg_index: u64, pubkey: Pubkey, sig: Signature) -> Result<()> {
         exempt_from_fee()?;
@@ -156,6 +183,38 @@ impl Ethereum {
         Ok(())
     }
 
+    #[call]
+    pub fn relay_return(
+        &mut self,
+        consensus_proof: (),
+        account_proof: (),
+        // TODO: storage_proofs: LengthVec<u16, (LengthVec<u8, u8>, u64)>,
+        returns: LengthVec<u16, (u64, Dest, u64)>, // TODO: don't include data, just state proof
+    ) -> Result<()> {
+        exempt_from_fee()?;
+
+        // TODO: whitelist return relaying until proper proof verification
+
+        if returns.len() == 0 {
+            return Err(orga::Error::App("Returns must not be empty".to_string()).into());
+        }
+
+        // TODO: validate consensus proof
+        // TODO: validate state proofs (account proof, storage proofs)
+
+        // TODO: validate return entry indexes
+        for (_, dest, amount) in returns.iter().cloned() {
+            let coins = self.coins.take(amount)?;
+            self.pending.push_back((dest, coins))?;
+            self.return_index += 1;
+        }
+
+        // TODO: push return queue clear message
+
+        Ok(())
+    }
+
+    #[query]
     pub fn get(&self, msg_index: u64) -> Result<Ref<OutMessage>> {
         let index = self.abs_index(msg_index)?;
         Ok(self.outbox.get(index)?.unwrap())
@@ -167,34 +226,43 @@ impl Ethereum {
     }
 
     fn abs_index(&self, msg_index: u64) -> Result<u64> {
-        if msg_index > self.message_index {
+        let start_index = self.message_index + 1 - self.outbox.len();
+        if self.outbox.is_empty() || msg_index > self.message_index || msg_index < start_index {
             return Err(Error::App("message index out of bounds".to_string()).into());
         }
 
-        let index = self.message_index - msg_index;
-        if index >= self.outbox.len() {
-            return Err(Error::App("message index out of bounds".to_string()).into());
-        }
-
-        Ok(index)
+        Ok(msg_index - start_index)
     }
 
     fn message_hash(&self, msg: &OutMessageArgs) -> [u8; 32] {
         sighash(match msg {
-            OutMessageArgs::Batch { transfers, timeout } => batch_hash(
+            OutMessageArgs::Batch {
+                transfers,
+                timeout,
+                batch_index,
+            } => batch_hash(
                 self.id,
-                self.batch_index + 1,
+                *batch_index,
                 transfers,
                 self.token_contract,
                 timeout,
             ),
-            OutMessageArgs::LogicCall(call) => {
-                call.hash(self.id, self.token_contract, self.message_index + 1)
+            OutMessageArgs::LogicCall(index, call) => {
+                call.hash(self.id, self.token_contract, *index)
             }
-            OutMessageArgs::UpdateValset(valset) => {
-                checkpoint_hash(self.id, valset, self.valset_index + 1)
-            }
+            OutMessageArgs::UpdateValset(index, valset) => checkpoint_hash(self.id, valset, *index),
         })
+    }
+
+    // TODO: remove, this is a hack due to enum state issues in client
+    #[query]
+    pub fn needs_sig(&self, msg_index: u64, pubkey: Pubkey) -> Result<bool> {
+        Ok(self.get(msg_index)?.sigs.needs_sig(pubkey)?)
+    }
+    // TODO: remove, this is a hack due to enum state issues in client
+    #[query]
+    pub fn get_sigs(&self, msg_index: u64) -> Result<Vec<(Pubkey, Signature)>> {
+        Ok(self.get(msg_index)?.sigs.sigs()?)
     }
 }
 
@@ -210,9 +278,10 @@ pub enum OutMessageArgs {
     Batch {
         transfers: LengthVec<u16, Transfer>,
         timeout: u64,
+        batch_index: u64,
     },
-    LogicCall(ContractCall),
-    UpdateValset(SignatorySet),
+    LogicCall(u64, ContractCall),
+    UpdateValset(u64, SignatorySet),
 }
 
 impl Describe for OutMessageArgs {
@@ -255,6 +324,7 @@ impl Default for OutMessageArgs {
         OutMessageArgs::Batch {
             transfers: LengthVec::default(),
             timeout: u64::MAX,
+            batch_index: 0,
         }
     }
 }
@@ -319,20 +389,20 @@ pub struct Transfer {
 
 pub fn checkpoint_hash(id: [u8; 32], valset: &SignatorySet, valset_index: u64) -> [u8; 32] {
     let bytes = (
-        dbg!(id),
+        id,
         bytes32(b"checkpoint").unwrap(),
-        uint256(dbg!(valset_index)),
-        dbg!(valset
+        uint256(valset_index),
+        valset
             .eth_addresses()
             .iter()
             .cloned()
             .map(addr_to_bytes32)
-            .collect::<Vec<_>>()),
-        dbg!(valset
+            .collect::<Vec<_>>(),
+        valset
             .signatories
             .iter()
             .map(|s| s.voting_power)
-            .collect::<Vec<_>>()),
+            .collect::<Vec<_>>(),
         [0u8; 20],
         [0u8; 32],
     )
@@ -406,7 +476,7 @@ pub fn to_eth_sig(
     (v, r, s)
 }
 
-fn bytes32(bytes: &[u8]) -> Result<[u8; 32]> {
+pub fn bytes32(bytes: &[u8]) -> Result<[u8; 32]> {
     if bytes.len() > 32 {
         return Err(Error::App("bytes too long".to_string()).into());
     }
@@ -416,13 +486,13 @@ fn bytes32(bytes: &[u8]) -> Result<[u8; 32]> {
     Ok(padded)
 }
 
-fn uint256(n: u64) -> [u8; 32] {
+pub fn uint256(n: u64) -> [u8; 32] {
     let mut bytes = [0; 32];
     bytes[24..].copy_from_slice(&n.to_be_bytes());
     bytes
 }
 
-fn addr_to_bytes32(addr: Address) -> [u8; 32] {
+pub fn addr_to_bytes32(addr: Address) -> [u8; 32] {
     let mut bytes = [0; 32];
     bytes[12..].copy_from_slice(&addr.bytes());
     bytes
@@ -470,21 +540,22 @@ impl SignatorySet {
     }
 }
 
+sol!(
+    #[allow(missing_docs)]
+    #[sol(rpc)]
+    token_contract,
+    "src/ethereum/CosmosERC20.json",
+);
+
 #[cfg(test)]
 mod tests {
-    use alloy::{
-        network::EthereumWallet,
-        node_bindings::Anvil,
-        providers::{Provider, ProviderBuilder},
-        signers::local::PrivateKeySigner,
-    };
+    use alloy::{node_bindings::Anvil, providers::ProviderBuilder};
     use alloy_sol_types::SolEvent;
     use bitcoin::{
         secp256k1::{Message, Secp256k1, SecretKey},
         util::bip32::{ExtendedPrivKey, ExtendedPubKey},
     };
     use orga::{coins::Symbol, context::Context, plugins::Paid};
-    use NomicContract::ValsetArgs;
 
     use crate::bitcoin::{
         signatory::{derive_pubkey, Signatory},
@@ -552,6 +623,64 @@ mod tests {
     }
 
     #[test]
+    fn indices() {
+        let secp = Secp256k1::new();
+
+        let privkey = SecretKey::from_slice(&bytes32(b"test").unwrap()).unwrap();
+        let pubkey = privkey.public_key(&secp);
+
+        let valset = SignatorySet {
+            index: 10,
+            signatories: vec![Signatory {
+                pubkey: pubkey.into(),
+                voting_power: 10_000_000_000,
+            }],
+            create_time: 0,
+            present_vp: 10_000_000_000,
+            possible_vp: 10_000_000_000,
+        };
+
+        let id = bytes32(b"test").unwrap();
+        let mut ethereum = Ethereum::new(b"test", Address::NULL, Address::NULL, valset);
+        assert_eq!(ethereum.batch_index, 0);
+        assert_eq!(ethereum.valset_index, 0);
+        assert_eq!(ethereum.message_index, 1);
+        assert_eq!(ethereum.outbox.len(), 0);
+
+        let valset2 = SignatorySet {
+            index: 11,
+            signatories: vec![Signatory {
+                pubkey: pubkey.into(),
+                voting_power: 10_000_000_001,
+            }],
+            create_time: 1_000_000_000,
+            present_vp: 10_000_000_001,
+            possible_vp: 10_000_000_001,
+        };
+        ethereum.step(&valset2).unwrap();
+        assert_eq!(ethereum.batch_index, 0);
+        assert_eq!(ethereum.valset_index, 1);
+        assert_eq!(ethereum.message_index, 1);
+        assert_eq!(ethereum.outbox.len(), 1);
+
+        let valset2 = SignatorySet {
+            index: 12,
+            signatories: vec![Signatory {
+                pubkey: pubkey.into(),
+                voting_power: 10_000_000_002,
+            }],
+            create_time: 2_000_000_000,
+            present_vp: 10_000_000_002,
+            possible_vp: 10_000_000_002,
+        };
+        ethereum.step(&valset2).unwrap();
+        assert_eq!(ethereum.batch_index, 0);
+        assert_eq!(ethereum.valset_index, 2);
+        assert_eq!(ethereum.message_index, 2);
+        assert_eq!(ethereum.outbox.len(), 2);
+    }
+
+    #[test]
     fn ss_normalize_vp() {
         let mut valset = SignatorySet {
             index: 0,
@@ -590,6 +719,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn valset_update() {
         Context::add(Paid::default());
 
@@ -645,7 +775,7 @@ mod tests {
         let rpc_url = anvil.endpoint().parse().unwrap();
         let provider = ProviderBuilder::new().on_http(rpc_url);
 
-        let contract = Gravity::deploy(
+        let contract = bridge_contract::deploy(
             provider,
             ethereum.id.into(),
             valset
@@ -675,7 +805,7 @@ mod tests {
                     &bitcoin::secp256k1::PublicKey::from_slice(pk.as_slice()).unwrap(),
                     &Message::from_slice(&msg).unwrap(),
                 );
-                Gravity::Signature {
+                bridge_contract::Signature {
                     v,
                     r: r.into(),
                     s: s.into(),
@@ -699,6 +829,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn transfer() {
         Context::add(Paid::default());
 
@@ -724,7 +855,7 @@ mod tests {
             .with_recommended_fillers()
             .on_anvil_with_wallet();
 
-        let contract = Gravity::deploy(
+        let contract = bridge_contract::deploy(
             provider,
             bytes32(b"test").unwrap().into(),
             valset
@@ -754,11 +885,11 @@ mod tests {
             .get_receipt()
             .await
             .unwrap());
-        let mut token_contract = None;
+        let mut token_contract_addr = None;
         for log in receipt.inner.logs().into_iter() {
-            let res = Gravity::ERC20DeployedEvent::decode_log_data(log.data(), true);
+            let res = bridge_contract::ERC20DeployedEvent::decode_log_data(log.data(), true);
             if let Ok(e) = res {
-                token_contract = Some(e._tokenContract);
+                token_contract_addr = Some(e._tokenContract);
                 println!("{}", e._tokenContract);
             }
         }
@@ -766,7 +897,7 @@ mod tests {
         let mut ethereum = Ethereum::new(
             b"test",
             contract.address().0 .0.into(),
-            token_contract.unwrap().0 .0.into(),
+            token_contract_addr.unwrap().0 .0.into(),
             valset,
         );
         println!(
@@ -803,7 +934,7 @@ mod tests {
                     &bitcoin::secp256k1::PublicKey::from_slice(pk.as_slice()).unwrap(),
                     &Message::from_slice(&msg).unwrap(),
                 );
-                Gravity::Signature {
+                bridge_contract::Signature {
                     v,
                     r: r.into(),
                     s: s.into(),
@@ -812,7 +943,12 @@ mod tests {
             .collect();
 
         //submitBatch(currentValset, sigs, amounts, destinations, fees, batchNonce, tokenContract, batchTimeout)
-        if let OutMessageArgs::Batch { transfers, timeout } = data {
+        if let OutMessageArgs::Batch {
+            transfers,
+            timeout,
+            batch_index,
+        } = data
+        {
             dbg!(contract
                 .submitBatch(
                     ethereum.valset.to_abi(ethereum.valset_index),
@@ -829,7 +965,7 @@ mod tests {
                         .iter()
                         .map(|t| alloy_core::primitives::U256::from(t.fee_amount))
                         .collect(),
-                    alloy_core::primitives::U256::from(dbg!(ethereum.batch_index)), // TODO: set in msg
+                    alloy_core::primitives::U256::from(batch_index),
                     alloy_core::primitives::Address::from_slice(&ethereum.token_contract.bytes()),
                     alloy_core::primitives::U256::from(timeout),
                 )
@@ -850,7 +986,7 @@ mod tests {
                         .iter()
                         .map(|t| alloy_core::primitives::U256::from(t.fee_amount))
                         .collect(),
-                    alloy_core::primitives::U256::from(ethereum.batch_index), // TODO: set in msg
+                    alloy_core::primitives::U256::from(batch_index),
                     alloy_core::primitives::Address::from_slice(&ethereum.token_contract.bytes()),
                     alloy_core::primitives::U256::from(timeout),
                 )
@@ -868,6 +1004,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn contract_call() {
         Context::add(Paid::default());
 
@@ -893,7 +1030,7 @@ mod tests {
             .with_recommended_fillers()
             .on_anvil_with_wallet();
 
-        let contract = Gravity::deploy(
+        let contract = bridge_contract::deploy(
             provider,
             bytes32(b"test").unwrap().into(),
             valset
@@ -923,25 +1060,25 @@ mod tests {
             .get_receipt()
             .await
             .unwrap());
-        let mut token_contract = None;
+        let mut token_contract_addr = None;
         for log in receipt.inner.logs().into_iter() {
-            let res = Gravity::ERC20DeployedEvent::decode_log_data(log.data(), true);
+            let res = bridge_contract::ERC20DeployedEvent::decode_log_data(log.data(), true);
             if let Ok(e) = res {
-                token_contract = Some(e._tokenContract);
+                token_contract_addr = Some(e._tokenContract);
                 println!("{}", e._tokenContract);
             }
         }
-        let token_contract = token_contract.unwrap().0 .0.into();
+        let token_contract_addr = token_contract_addr.unwrap().0 .0.into();
 
         let mut ethereum = Ethereum::new(
             b"test",
             contract.address().0 .0.into(),
-            token_contract,
+            token_contract_addr,
             valset,
         );
 
         let call = ContractCall {
-            contract: token_contract,
+            contract: token_contract_addr,
             fee_amount: 0,
             timeout: u64::MAX,
             transfer_amount: 1_000_000,
@@ -976,7 +1113,7 @@ mod tests {
                     &bitcoin::secp256k1::PublicKey::from_slice(pk.as_slice()).unwrap(),
                     &Message::from_slice(&msg).unwrap(),
                 );
-                Gravity::Signature {
+                bridge_contract::Signature {
                     v,
                     r: r.into(),
                     s: s.into(),
@@ -984,19 +1121,12 @@ mod tests {
             })
             .collect();
 
-        if let OutMessageArgs::LogicCall(call) = data {
-            dbg!(contract
-                .submitLogicCall(
-                    ethereum.valset.to_abi(ethereum.valset_index),
-                    sigs.clone(),
-                    call.to_abi(ethereum.token_contract, ethereum.message_index + 1), // TODO: get nonce from message
-                )
-                .into_transaction_request());
+        if let OutMessageArgs::LogicCall(index, call) = data {
             dbg!(contract
                 .submitLogicCall(
                     ethereum.valset.to_abi(ethereum.valset_index),
                     sigs,
-                    call.to_abi(ethereum.token_contract, ethereum.message_index + 1), // TODO: get nonce from message
+                    call.to_abi(ethereum.token_contract, index),
                 )
                 .send()
                 .await
@@ -1007,6 +1137,204 @@ mod tests {
         } else {
             unreachable!();
         };
+
+        Context::remove::<Paid>();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn return_queue() {
+        Context::add(Paid::default());
+
+        let secp = Secp256k1::new();
+
+        let xpriv = ExtendedPrivKey::new_master(bitcoin::Network::Regtest, &[0]).unwrap();
+        let xpub = ExtendedPubKey::from_priv(&secp, &xpriv);
+
+        let mut valset = SignatorySet {
+            index: 0,
+            signatories: vec![Signatory {
+                pubkey: derive_pubkey(&secp, xpub.into(), 0).unwrap().into(),
+                voting_power: 10_000_000_000,
+            }],
+            create_time: 0,
+            present_vp: 10_000_000_000,
+            possible_vp: 10_000_000_000,
+        };
+        valset.normalize_vp(u32::MAX as u64);
+
+        let anvil = Anvil::new().try_spawn().unwrap();
+        let provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .on_anvil_with_wallet();
+
+        let contract = bridge_contract::deploy(
+            &provider,
+            bytes32(b"test").unwrap().into(),
+            valset
+                .eth_addresses()
+                .iter()
+                .map(|a| alloy_core::primitives::Address::from_slice(&a.bytes()))
+                .collect(),
+            valset
+                .signatories
+                .iter()
+                .map(|s| alloy_core::primitives::U256::from(s.voting_power))
+                .collect(),
+        )
+        .await
+        .unwrap();
+
+        let receipt = dbg!(contract
+            .deployERC20(
+                "usat".to_string(),
+                "nBTC".to_string(),
+                "nBTC".to_string(),
+                14,
+            )
+            .send()
+            .await
+            .unwrap()
+            .get_receipt()
+            .await
+            .unwrap());
+        let mut token_contract_addr = None;
+        for log in receipt.inner.logs().into_iter() {
+            let res = bridge_contract::ERC20DeployedEvent::decode_log_data(log.data(), true);
+            if let Ok(e) = res {
+                token_contract_addr = Some(e._tokenContract);
+                println!("{}", e._tokenContract);
+            }
+        }
+        let token_contract_addr = token_contract_addr.unwrap().0 .0.into();
+
+        let mut ethereum = Ethereum::new(
+            b"test",
+            contract.address().0 .0.into(),
+            token_contract_addr,
+            valset,
+        );
+
+        ethereum
+            .transfer(anvil.addresses()[0].0 .0.into(), Nbtc::mint(1_000_000))
+            .unwrap();
+        assert_eq!(ethereum.outbox.len(), 1);
+        assert_eq!(ethereum.batch_index, 1);
+        assert_eq!(ethereum.message_index, 1);
+        assert_eq!(ethereum.coins.amount, 1_000_000);
+
+        let msg = ethereum.get(1).unwrap().sigs.message;
+        let data = ethereum.get(1).unwrap().msg.clone();
+        let sig = crate::bitcoin::signer::sign(&Secp256k1::signing_only(), &xpriv, &[(msg, 0)])
+            .unwrap()[0];
+        let pubkey = derive_pubkey(&secp, xpub.into(), 0).unwrap();
+        ethereum.sign(1, pubkey.into(), sig).unwrap();
+        assert!(ethereum.get(1).unwrap().sigs.signed());
+
+        let sigs: Vec<_> = ethereum
+            .get(1)
+            .unwrap()
+            .sigs
+            .sigs()
+            .unwrap()
+            .into_iter()
+            .map(|(pk, sig)| {
+                let (v, r, s) = to_eth_sig(
+                    &bitcoin::secp256k1::ecdsa::Signature::from_compact(&sig.0).unwrap(),
+                    &bitcoin::secp256k1::PublicKey::from_slice(pk.as_slice()).unwrap(),
+                    &Message::from_slice(&msg).unwrap(),
+                );
+                bridge_contract::Signature {
+                    v,
+                    r: r.into(),
+                    s: s.into(),
+                }
+            })
+            .collect();
+
+        if let OutMessageArgs::Batch {
+            transfers,
+            timeout,
+            batch_index,
+        } = data
+        {
+            dbg!(contract
+                .submitBatch(
+                    ethereum.valset.to_abi(ethereum.valset_index),
+                    sigs,
+                    transfers
+                        .iter()
+                        .map(|t| alloy_core::primitives::U256::from(t.amount))
+                        .collect(),
+                    transfers
+                        .iter()
+                        .map(|t| alloy_core::primitives::Address::from_slice(&t.dest.bytes()))
+                        .collect(),
+                    transfers
+                        .iter()
+                        .map(|t| alloy_core::primitives::U256::from(t.fee_amount))
+                        .collect(),
+                    alloy_core::primitives::U256::from(batch_index),
+                    alloy_core::primitives::Address::from_slice(&ethereum.token_contract.bytes()),
+                    alloy_core::primitives::U256::from(timeout),
+                )
+                .send()
+                .await
+                .unwrap()
+                .get_receipt()
+                .await
+                .unwrap());
+        } else {
+            unreachable!();
+        };
+
+        let token_contract_client = token_contract::new(
+            alloy_core::primitives::Address::from_slice(&token_contract_addr.bytes()),
+            &provider,
+        );
+
+        dbg!(token_contract_client
+            .approve(
+                alloy_core::primitives::Address::from_slice(&ethereum.bridge_contract.bytes()),
+                alloy_core::primitives::U256::from(u64::MAX),
+            )
+            .send()
+            .await
+            .unwrap()
+            .get_receipt()
+            .await
+            .unwrap());
+
+        dbg!(contract
+            .sendToNomic(
+                alloy_core::primitives::Address::from_slice(&ethereum.token_contract.bytes()),
+                Address::from_pubkey([0; 33]).to_string(),
+                alloy_core::primitives::U256::from(500_000),
+            )
+            .send()
+            .await
+            .unwrap()
+            .get_receipt()
+            .await
+            .unwrap());
+
+        assert_eq!(ethereum.return_index, 0);
+        // TODO
+        ethereum
+            .relay_return(
+                (),
+                (),
+                vec![(
+                    0,
+                    Dest::NativeAccount(Address::from_pubkey([0; 33])),
+                    500_000,
+                )]
+                .try_into()
+                .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(ethereum.return_index, 1);
+        assert_eq!(ethereum.coins.amount, 500_000);
 
         Context::remove::<Paid>();
     }

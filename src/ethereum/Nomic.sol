@@ -14,7 +14,7 @@ error InvalidBatchNonce(uint256 newNonce, uint256 currentNonce);
 error InvalidLogicCallNonce(uint256 newNonce, uint256 currentNonce);
 error InvalidLogicCallTransfers();
 error InvalidLogicCallFees();
-error InvalidSendToCosmos();
+error InvalidSendToNomic();
 error IncorrectCheckpoint();
 error MalformedNewValidatorSet();
 error MalformedCurrentValidatorSet();
@@ -85,7 +85,7 @@ contract Nomic is ReentrancyGuard {
     // This is set once at initialization
     bytes32 public immutable state_gravityId;
 
-    // TransactionBatchExecutedEvent and SendToCosmosEvent both include the field _eventNonce.
+    // TransactionBatchExecutedEvent and SendToNomicEvent both include the field _eventNonce.
     // This is incremented every time one of these events is emitted. It is checked by the
     // Cosmos module to ensure that all events are received in order, and that none are lost.
     //
@@ -96,7 +96,7 @@ contract Nomic is ReentrancyGuard {
         address indexed _token,
         uint256 _eventNonce
     );
-    event SendToCosmosEvent(
+    event SendToNomicEvent(
         address indexed _tokenContract,
         address indexed _sender,
         string _destination,
@@ -593,7 +593,7 @@ contract Nomic is ReentrancyGuard {
         }
     }
 
-    function sendToCosmos(
+    function sendToNomic(
         address _tokenContract,
         string calldata _destination,
         uint256 _amount
@@ -606,8 +606,6 @@ contract Nomic is ReentrancyGuard {
         );
 
         // attempt to transfer the user specified amount
-
-        IERC20(_tokenContract).approve(address(this), _amount); // ?
         IERC20(_tokenContract).safeTransferFrom(
             msg.sender,
             address(this),
@@ -624,7 +622,7 @@ contract Nomic is ReentrancyGuard {
         // a very strange ERC20 may trigger this condition, if we didn't have this we would
         // underflow, so it's mostly just an error message printer
         if (ourEndingBalance <= ourStartingBalance) {
-            revert InvalidSendToCosmos();
+            revert InvalidSendToNomic();
         }
 
         uint256 i = state_lastReturnNonce;
@@ -635,7 +633,7 @@ contract Nomic is ReentrancyGuard {
         // emit to Cosmos the actual amount our balance has changed, rather than the user
         // provided amount. This protects against a small set of wonky ERC20 behavior, like
         // burning on send but not tokens that for example change every users balance every day.
-        emit SendToCosmosEvent(
+        emit SendToNomicEvent(
             _tokenContract,
             msg.sender,
             _destination,

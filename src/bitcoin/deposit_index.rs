@@ -96,10 +96,13 @@ impl DepositIndex {
                         None => 0,
                     };
 
-                    deposits.push(DepositInfo {
-                        deposit: deposit.clone(),
-                        confirmations,
-                    });
+                    // TODO
+                    if confirmations == 0 {
+                        deposits.push(DepositInfo {
+                            deposit: deposit.clone(),
+                            confirmations,
+                        });
+                    }
                 }
             }
         }

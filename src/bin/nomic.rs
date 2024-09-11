@@ -4,8 +4,10 @@
 #![feature(async_closure)]
 #![feature(never_type)]
 
+use alloy::network::EthereumWallet;
+use alloy::signers::local::LocalSigner;
 use bitcoin::consensus::{Decodable, Encodable};
-use bitcoin::secp256k1;
+use bitcoin::secp256k1::{self, Message};
 use bitcoin::util::bip32::ExtendedPubKey;
 use bitcoincore_rpc_async::RpcApi;
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
@@ -108,6 +110,8 @@ pub enum Command {
     SigningStatus(SigningStatusCmd),
     RecoverDeposit(RecoverDepositCmd),
     PayToFeePool(PayToFeePoolCmd),
+    RelayEthereum(RelayEthereumCmd),
+    EthTransferNbtc(EthTransferNbtcCmd),
 }
 
 impl Command {
@@ -171,6 +175,8 @@ impl Command {
                 SigningStatus(cmd) => cmd.run().await,
                 RecoverDeposit(cmd) => cmd.run().await,
                 PayToFeePool(cmd) => cmd.run().await,
+                RelayEthereum(cmd) => cmd.run().await,
+                EthTransferNbtc(cmd) => cmd.run().await,
             }
         })
     }
@@ -1365,7 +1371,7 @@ async fn deposit(
 
 #[derive(Parser, Debug)]
 pub struct DepositCmd {
-    address: Option<Address>,
+    dest: Option<Dest>,
 
     #[clap(flatten)]
     config: nomic::network::Config,
@@ -1373,14 +1379,12 @@ pub struct DepositCmd {
 
 impl DepositCmd {
     async fn run(&self) -> Result<()> {
-        let dest_addr = self.address.unwrap_or_else(my_address);
+        let dest = self
+            .dest
+            .clone()
+            .unwrap_or_else(|| Dest::NativeAccount(my_address()));
 
-        deposit(
-            Dest::NativeAccount(dest_addr),
-            self.config.client(),
-            self.config.btc_relayer.clone(),
-        )
-        .await
+        deposit(dest, self.config.client(), self.config.btc_relayer.clone()).await
     }
 }
 
@@ -1397,20 +1401,18 @@ pub struct InterchainDepositCmd {
 const ONE_DAY_NS: u64 = 86400 * 1_000_000_000;
 impl InterchainDepositCmd {
     async fn run(&self) -> Result<()> {
-        use orga::encoding::Adapter;
-
         let now_ns = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
             .as_secs()
             * 1_000_000_000;
         let dest = Dest::Ibc(nomic::app::IbcDest {
-            source_port: "transfer".try_into().unwrap(),
-            source_channel: self.channel.clone().try_into().unwrap(),
-            sender: Adapter(my_address().to_string().into()),
-            receiver: Adapter(self.address.clone().into()),
+            source_port: "transfer".try_into()?,
+            source_channel: self.channel.clone().try_into()?,
+            sender: my_address().to_string().try_into()?,
+            receiver: self.address.to_string().try_into()?,
             timeout_timestamp: now_ns + ONE_DAY_NS,
-            memo: self.memo.clone().try_into().unwrap(),
+            memo: self.memo.to_string().try_into()?,
         });
 
         deposit(dest, self.config.client(), self.config.btc_relayer.clone()).await
@@ -1496,6 +1498,30 @@ impl IbcWithdrawNbtcCmd {
 }
 
 #[derive(Parser, Debug)]
+pub struct EthTransferNbtcCmd {
+    to: alloy::primitives::Address,
+    amount: u64,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
+}
+
+impl EthTransferNbtcCmd {
+    async fn run(&self) -> Result<()> {
+        let to = self.to.0 .0.into();
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
+            .call(
+                |app| build_call!(app.eth_transfer_nbtc(to, self.amount.into())),
+                |app| build_call!(app.app_noop()),
+            )
+            .await?)
+    }
+}
+
+#[derive(Parser, Debug)]
 pub struct GrpcCmd {
     #[clap(default_value_t = 9001)]
     port: u16,
@@ -1537,8 +1563,6 @@ pub struct IbcTransferCmd {
 
 impl IbcTransferCmd {
     async fn run(&self) -> Result<()> {
-        use orga::encoding::Adapter as EdAdapter;
-
         let my_address = my_address();
         let amount = self.amount;
         let now_ns = Timestamp::now().nanoseconds();
@@ -1547,10 +1571,10 @@ impl IbcTransferCmd {
         let ibc_dest = IbcDest {
             source_port: self.port_id.to_string().try_into()?,
             source_channel: self.channel_id.to_string().try_into()?,
-            receiver: EdAdapter(self.receiver.clone().into()),
-            sender: EdAdapter(my_address.to_string().into()),
+            receiver: self.receiver.to_string().try_into()?,
+            sender: my_address.to_string().try_into()?,
             timeout_timestamp,
-            memo: self.memo.clone().try_into()?,
+            memo: self.memo.to_string().try_into()?,
         };
 
         Ok(self
@@ -2066,12 +2090,12 @@ impl RecoverDepositCmd {
                 .as_secs();
             let start = (now + 60 * 60 * 24 * 7 - (now % (60 * 60))) * 1_000_000_000;
             let mut dest = Dest::Ibc(IbcDest {
-                source_port: "transfer".to_string().try_into().unwrap(),
-                source_channel: channel.bytes().collect::<Vec<_>>().try_into().unwrap(),
-                receiver: orga::encoding::Adapter(remote_addr.to_string().into()),
-                sender: orga::encoding::Adapter(self.nomic_addr.to_string().into()),
+                source_port: "transfer".to_string().try_into()?,
+                source_channel: channel.to_string().try_into()?,
+                receiver: remote_addr.to_string().try_into()?,
+                sender: self.nomic_addr.to_string().try_into()?,
                 timeout_timestamp: start,
-                memo: "".to_string().try_into().unwrap(),
+                memo: "".to_string().try_into()?,
             });
 
             dbg!(&dest);
@@ -2155,6 +2179,274 @@ impl PayToFeePoolCmd {
                 |app| build_call!(app.app_noop()),
             )
             .await?)
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct RelayEthereumCmd {
+    #[clap(long)]
+    private_key: String, // TODO: use type that validates length, format (optional 0x)
+
+    #[clap(long)]
+    eth_rpc_url: String,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
+}
+
+impl RelayEthereumCmd {
+    async fn run(&self) -> Result<()> {
+        let mut privkey_hex = self.private_key.as_str();
+        if privkey_hex.starts_with("0x") {
+            privkey_hex = &privkey_hex[2..];
+        }
+        let privkey = hex::decode(privkey_hex).unwrap(); // TODO
+        if privkey.len() != 32 {
+            return Err(nomic::error::Error::Orga(orga::Error::App(
+                "Invalid private key".to_string(),
+            )));
+        }
+
+        let try_relay_msg = || async {
+            let client = self.config.clone().client();
+            let (token_contract, bridge_contract) = client
+                .query(|app| Ok((app.ethereum.token_contract, app.ethereum.bridge_contract)))
+                .await?;
+
+            let signer = LocalSigner::from_slice(privkey.as_slice()).unwrap(); // TODO
+            let wallet = EthereumWallet::new(signer);
+            let provider = alloy::providers::ProviderBuilder::new()
+                .with_recommended_fillers()
+                .wallet(wallet)
+                .on_http(self.eth_rpc_url.parse().unwrap());
+            let contract = nomic::ethereum::bridge_contract::new(
+                alloy_core::primitives::Address::from_slice(&bridge_contract.bytes()),
+                provider,
+            );
+
+            let msg_index: u64 = contract
+                .state_lastEventNonce()
+                .call()
+                .await
+                .unwrap()
+                ._0
+                .to();
+            dbg!(msg_index);
+
+            let Some((msg, sigs, data)) = client
+                .query(|app| {
+                    if app.ethereum.message_index < msg_index {
+                        return Ok(None);
+                    }
+
+                    if !app.ethereum.get(msg_index)?.sigs.signed() {
+                        log::debug!("Message {msg_index} is still being signed");
+                        return Ok(None);
+                    }
+
+                    Ok(Some((
+                        app.ethereum.get(msg_index)?.sigs.message,
+                        app.ethereum.get_sigs(msg_index)?,
+                        app.ethereum.get(msg_index)?.msg.clone(),
+                    )))
+                })
+                .await?
+            else {
+                return Ok(());
+            };
+
+            let (ss_index, valset_index) = client
+                .query(|app| {
+                    for i in 1..msg_index {
+                        let msg = app.ethereum.get(msg_index - i)?;
+                        if let nomic::ethereum::OutMessageArgs::UpdateValset(
+                            valset_index,
+                            ref valset,
+                        ) = msg.msg
+                        {
+                            return Ok((valset.index, valset_index));
+                        }
+                    }
+
+                    Ok((0, 0))
+                })
+                .await?;
+            let mut valset = client
+                .query(|app| Ok(app.bitcoin.checkpoints.get(ss_index)?.sigset.clone()))
+                .await?;
+            valset.normalize_vp(u32::MAX as u64);
+
+            let sigs = sigs
+                .into_iter()
+                .map(|(pk, sig)| {
+                    let (v, r, s) = nomic::ethereum::to_eth_sig(
+                        &bitcoin::secp256k1::ecdsa::Signature::from_compact(&sig.0).unwrap(),
+                        &bitcoin::secp256k1::PublicKey::from_slice(pk.as_slice()).unwrap(),
+                        &Message::from_slice(&msg).unwrap(),
+                    );
+                    nomic::ethereum::bridge_contract::Signature {
+                        v,
+                        r: r.into(),
+                        s: s.into(),
+                    }
+                })
+                .collect();
+
+            match data {
+                nomic::ethereum::OutMessageArgs::Batch {
+                    transfers,
+                    timeout,
+                    batch_index,
+                } => {
+                    dbg!(contract
+                        .submitBatch(
+                            valset.to_abi(valset_index),
+                            sigs,
+                            transfers
+                                .iter()
+                                .map(|t| alloy_core::primitives::U256::from(t.amount))
+                                .collect(),
+                            transfers
+                                .iter()
+                                .map(|t| alloy_core::primitives::Address::from_slice(
+                                    &t.dest.bytes()
+                                ))
+                                .collect(),
+                            transfers
+                                .iter()
+                                .map(|t| alloy_core::primitives::U256::from(t.fee_amount))
+                                .collect(),
+                            alloy_core::primitives::U256::from(batch_index),
+                            alloy_core::primitives::Address::from_slice(&token_contract.bytes()),
+                            alloy_core::primitives::U256::from(timeout),
+                        )
+                        .send()
+                        .await
+                        .unwrap()
+                        .get_receipt()
+                        .await
+                        .unwrap());
+                }
+                nomic::ethereum::OutMessageArgs::LogicCall(_, _) => todo!(),
+                nomic::ethereum::OutMessageArgs::UpdateValset(index, new_valset) => {
+                    dbg!(contract
+                        .updateValset(new_valset.to_abi(index), valset.to_abi(valset_index), sigs)
+                        .send()
+                        .await
+                        .unwrap()
+                        .get_receipt()
+                        .await
+                        .unwrap());
+                }
+            };
+
+            Ok::<_, nomic::error::Error>(())
+        };
+
+        let try_relay_return = || async {
+            let client = self.config.clone().client();
+            let bridge_contract_addr = client.query(|app| Ok(app.ethereum.bridge_contract)).await?;
+
+            let signer = LocalSigner::from_slice(privkey.as_slice()).unwrap(); // TODO
+            let wallet = EthereumWallet::new(signer);
+            let provider = alloy::providers::ProviderBuilder::new()
+                .with_recommended_fillers()
+                .wallet(wallet)
+                .on_http(self.eth_rpc_url.parse().unwrap());
+            let contract = nomic::ethereum::bridge_contract::new(
+                alloy_core::primitives::Address::from_slice(&bridge_contract_addr.bytes()),
+                provider,
+            );
+
+            let has_contract_index = !contract
+                .state_lastReturnNonce()
+                .call_raw()
+                .await
+                .unwrap()
+                .is_empty();
+            if !has_contract_index {
+                dbg!("No return nonce");
+                return Ok(());
+            }
+
+            let contract_index: u64 = contract
+                .state_lastReturnNonce()
+                .call()
+                .await
+                .unwrap()
+                ._0
+                .to();
+            let nomic_index = client.query(|app| Ok(app.ethereum.return_index)).await?;
+
+            if nomic_index == contract_index {
+                return Ok(());
+            }
+            dbg!(contract_index, nomic_index);
+
+            let dest_str = contract
+                .state_returnDests(alloy_core::primitives::U256::from(nomic_index))
+                .call()
+                .await
+                .unwrap()
+                ._0;
+            let amount: u64 = contract
+                .state_returnAmounts(alloy_core::primitives::U256::from(nomic_index))
+                .call()
+                .await
+                .unwrap()
+                ._0
+                .to();
+            dbg!(&dest_str, amount);
+
+            let dest: Dest = dest_str.parse().unwrap();
+            // TODO: build proofs
+            client
+                .call(
+                    move |app| {
+                        build_call!(app.ethereum.relay_return(
+                            (),
+                            (),
+                            vec![(nomic_index, dest.clone(), amount)]
+                                .try_into()
+                                .unwrap()
+                        ))
+                    },
+                    |app| build_call!(app.app_noop()),
+                )
+                .await?;
+
+            Ok::<_, nomic::error::Error>(())
+        };
+
+        let relay_to_eth = async {
+            loop {
+                if let Err(e) = try_relay_msg().await {
+                    log::error!("Ethereum relayer error: {:?}", e);
+                };
+
+                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+            }
+
+            #[allow(unreachable_code)]
+            Ok::<_, nomic::error::Error>(())
+        };
+
+        let relay_to_nomic = async {
+            loop {
+                if let Err(e) = try_relay_return().await {
+                    log::error!("Nomic relayer error: {:?}", e);
+                };
+
+                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+            }
+
+            #[allow(unreachable_code)]
+            Ok::<_, nomic::error::Error>(())
+        };
+
+        futures::try_join!(relay_to_eth, relay_to_nomic)?;
+
+        Ok(())
     }
 }
 

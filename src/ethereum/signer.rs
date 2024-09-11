@@ -41,7 +41,7 @@ where
             };
 
             for (xpub, xpriv) in key_pairs.iter() {
-                self.try_sign_eth_message(xpub, xpriv, sigset_index as u64)
+                self.try_sign_eth_message(xpub, xpriv, index, sigset_index as u64)
                     .await?;
             }
 
@@ -53,39 +53,43 @@ where
         &self,
         xpub: &ExtendedPubKey,
         xpriv: &ExtendedPrivKey,
-        index: u64,
+        msg_index: u64,
+        ss_index: u64,
     ) -> Result<()> {
         let secp = Secp256k1::new();
-        let pubkey = derive_pubkey(&secp, xpub.into(), index as u32)?;
+        let pubkey = derive_pubkey(&secp, xpub.into(), ss_index as u32)?;
 
         let res = self
             .client()
             .query(|app: InnerApp| {
-                let msg = app.ethereum.get(index)?;
-                if msg.sigs.needs_sig(pubkey.into())? {
+                let msg = app.ethereum.get(msg_index)?;
+                if app.ethereum.needs_sig(msg_index, pubkey.into())? {
                     Ok(Some((msg.msg.clone(), msg.sigs.message)))
                 } else {
                     Ok(None)
                 }
             })
             .await?;
+        dbg!();
 
         let (msg, hash) = match res {
             Some(res) => res,
             None => return Ok(()),
         };
+        dbg!();
 
         info!("Signing outgoing Ethereum message ({:?})...", msg);
 
         let sig = crate::bitcoin::signer::sign(
             &Secp256k1::signing_only(),
             xpriv,
-            &[(hash, index as u32)],
+            &[(hash, ss_index as u32)],
         )?[0];
 
+        dbg!();
         (self.app_client)()
             .call(
-                move |app| build_call!(app.ethereum.sign(index, pubkey.into(), sig)),
+                move |app| build_call!(app.ethereum.sign(msg_index, pubkey.into(), sig)),
                 |app| build_call!(app.app_noop()),
             )
             .await?;

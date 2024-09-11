@@ -5,7 +5,7 @@
 
 use crate::airdrop::Airdrop;
 use crate::bitcoin::adapter::Adapter;
-use crate::bitcoin::matches_bitcoin_network;
+use crate::bitcoin::{matches_bitcoin_network, NETWORK};
 use crate::bitcoin::{Bitcoin, Nbtc};
 use crate::cosmos::{Chain, Cosmos, Proof};
 
@@ -19,7 +19,7 @@ use orga::coins::{
 use orga::context::GetContext;
 use orga::cosmrs::bank::MsgSend;
 use orga::describe::{Describe, Descriptor};
-use orga::encoding::{Decode, Encode, LengthVec};
+use orga::encoding::{Decode, Encode, LengthString, LengthVec};
 use orga::ibc::ibc_rs::apps::transfer::types::Memo;
 use orga::ibc::ClientIdKey as ClientId;
 
@@ -211,6 +211,22 @@ impl InnerApp {
         Ok(())
     }
 
+    #[call]
+    pub fn eth_transfer_nbtc(&mut self, dest: Address, amount: Amount) -> Result<()> {
+        crate::bitcoin::exempt_from_fee()?;
+
+        // TODO: fee
+
+        let signer = self.signer()?;
+        let coins = self.bitcoin.accounts.withdraw(signer, amount)?;
+
+        let building = &mut self.bitcoin.checkpoints.building_mut()?;
+        let dest = Dest::EthAccount(dest);
+        building.insert_pending(dest, coins)?;
+
+        Ok(())
+    }
+
     #[query]
     pub fn total_supply(&self) -> Result<Amount> {
         let initial_supply: u64 = 17_500_000_000_000;
@@ -289,7 +305,8 @@ impl InnerApp {
             Dest::Ibc(dest) => dest.transfer(nbtc, &mut self.bitcoin, &mut self.ibc)?,
             Dest::Fee => self.bitcoin.give_rewards(nbtc)?,
             Dest::EthAccount(addr) => self.ethereum.transfer(addr, nbtc)?,
-            Dest::EthCall(call, _) => self.ethereum.call(call, nbtc)?,
+            // Dest::EthCall(call, _) => self.ethereum.call(call, nbtc)?,
+            Dest::Bitcoin(script) => self.bitcoin.add_withdrawal(script, nbtc)?,
         };
 
         Ok(())
@@ -543,6 +560,9 @@ mod abci {
             if !self.bitcoin.checkpoints.is_empty()? {
                 self.ethereum
                     .step(&self.bitcoin.checkpoints.active_sigset()?)?;
+            }
+            for (dest, coins) in self.ethereum.take_pending()? {
+                self.credit_transfer(dest, coins)?;
             }
 
             Ok(())
@@ -933,8 +953,8 @@ impl ConvertSdkTx for InnerApp {
                         let dest = IbcDest {
                             source_port: port_id.to_string().try_into()?,
                             source_channel: channel_id.to_string().try_into()?,
-                            sender: EdAdapter(msg.sender.into()),
-                            receiver: EdAdapter(msg.receiver.into()),
+                            sender: msg.sender.try_into()?,
+                            receiver: msg.receiver.try_into()?,
                             timeout_timestamp,
                             memo: msg.memo.try_into()?,
                         };
@@ -1053,16 +1073,14 @@ pub struct MsgIbcTransfer {
 
 use orga::ibc::{IbcMessage, PortChannel, RawIbcTx};
 
-#[derive(Clone, Debug, Encode, Decode, Serialize)]
+#[derive(Clone, Debug, Encode, Decode, Serialize, Deserialize)]
 pub struct IbcDest {
-    pub source_port: LengthVec<u8, u8>,
-    pub source_channel: LengthVec<u8, u8>,
-    #[serde(skip)]
-    pub receiver: EdAdapter<IbcSigner>,
-    #[serde(skip)]
-    pub sender: EdAdapter<IbcSigner>,
+    pub source_port: LengthString<u8>,
+    pub source_channel: LengthString<u8>,
+    pub receiver: LengthString<u8>,
+    pub sender: LengthString<u8>,
     pub timeout_timestamp: u64,
-    pub memo: LengthVec<u8, u8>,
+    pub memo: LengthString<u8>,
 }
 
 impl IbcDest {
@@ -1087,8 +1105,8 @@ impl IbcDest {
             chan_id_on_a: self.source_channel()?,
             packet_data: PacketData {
                 token: Nbtc::mint(nbtc_amount).into(),
-                receiver: self.receiver.0.clone(),
-                sender: self.sender.0.clone(),
+                receiver: self.receiver_signer()?,
+                sender: self.sender_signer()?,
                 memo: self.memo()?,
             },
             timeout_height_on_b: TimeoutHeight::Never,
@@ -1103,64 +1121,105 @@ impl IbcDest {
 
     pub fn sender_address(&self) -> Result<Address> {
         self.sender
-            .0
             .to_string()
             .parse()
             .map_err(|e: bech32::Error| Error::Coins(e.to_string()))
     }
 
+    pub fn sender_signer(&self) -> Result<IbcSigner> {
+        Ok(self.sender.to_string().into())
+    }
+
+    pub fn receiver_signer(&self) -> Result<IbcSigner> {
+        Ok(self.receiver.to_string().into())
+    }
+
     pub fn source_channel(&self) -> Result<ChannelId> {
-        let channel_id: String = self.source_channel.clone().try_into()?;
-        channel_id
+        self.source_channel
+            .to_string()
             .parse()
             .map_err(|_| Error::Ibc("Invalid channel id".into()))
     }
 
     pub fn source_port(&self) -> Result<PortId> {
-        let port_id: String = self.source_port.clone().try_into()?;
-        port_id
+        self.source_port
+            .to_string()
             .parse()
             .map_err(|_| Error::Ibc("Invalid port id".into()))
     }
 
     pub fn memo(&self) -> Result<Memo> {
-        let memo: String = self.memo.clone().try_into()?;
-
-        Ok(memo.into())
+        Ok(self.memo.to_string().into())
     }
 }
 
-#[derive(Encode, Decode, Debug, Clone, Serialize)]
+#[derive(Encode, Decode, Debug, Clone, Serialize, Deserialize)]
 pub enum Dest {
     NativeAccount(Address),
     Ibc(IbcDest),
     Fee,
     EthAccount(Address), // TODO: id for network, optional native fallback addr
-    EthCall(ContractCall, Address),
+    // EthCall(ContractCall, Address),
+    Bitcoin(Adapter<Script>),
+}
+
+#[test]
+fn dest_json() {
+    assert_eq!(
+        Dest::NativeAccount(Address::NULL).to_string(),
+        "{\"NativeAccount\":\"nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h\"}"
+    );
+
+    assert_eq!(
+        Dest::Ibc(IbcDest {
+            source_port: "transfer".try_into().unwrap(),
+            source_channel: "channel-0".try_into().unwrap(),
+            sender:
+                "nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h".try_into().unwrap()
+            ,
+            receiver:
+                "nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h".try_into().unwrap()
+            ,
+            timeout_timestamp: 123_456_789,
+            memo: "memo".try_into().unwrap(),
+        })
+        .to_string(),
+        "{\"Ibc\":{\"source_port\":\"transfer\",\"source_channel\":\"channel-0\",\"receiver\":\"nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h\",\"sender\":\"nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h\",\"timeout_timestamp\":123456789,\"memo\":\"memo\"}}"
+    );
+
+    // TODO: use an eth address type
+    assert_eq!(
+        Dest::EthAccount(Address::NULL).to_string(),
+        "{\"EthAccount\":\"nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h\"}"
+    );
+
+    assert_eq!(
+        Dest::Bitcoin(Adapter::new(Script::new_op_return(&[1, 2, 3]))).to_string(),
+        "{\"Bitcoin\":{\"inner\":\"6a03010203\"}"
+    );
 }
 
 impl Dest {
     pub fn to_receiver_addr(&self) -> Option<String> {
-        match self {
-            Dest::NativeAccount(addr) => Some(addr.to_string()),
-            Dest::Ibc(dest) => Some(dest.receiver.0.to_string()),
-            Dest::Fee => None,
-            Dest::EthAccount(addr) => Some(addr.to_string()),
-            Dest::EthCall(_, addr) => Some(addr.to_string()),
-        }
+        Some(match self {
+            Dest::NativeAccount(addr) => addr.to_string(),
+            Dest::Ibc(dest) => dest.receiver.to_string(),
+            Dest::Fee => return None,
+            Dest::EthAccount(addr) => addr.to_string(),
+            // Dest::EthCall(_, addr) => addr.to_string(),
+            Dest::Bitcoin(script) => return None,
+        })
     }
 
     pub fn commitment_bytes(&self) -> Result<Vec<u8>> {
         use sha2::{Digest, Sha256};
-        use Dest::*;
-        let bytes = match self {
-            NativeAccount(addr) => addr.bytes().into(),
-            Ibc(dest) => Sha256::digest(dest.encode()?).to_vec(),
-            Fee => vec![1],
-            EthAccount(addr) => addr.bytes().into(),
-            EthCall(call, addr) => Sha256::digest((call.clone(), *addr).encode()?).to_vec(),
-        };
 
+        let json = self.to_string();
+        let hash = Sha256::digest(json.as_bytes());
+
+        let mut bytes = Vec::with_capacity(hash.len() + 1);
+        bytes.push(0); // version byte
+        bytes.extend_from_slice(&hash);
         Ok(bytes)
     }
 
@@ -1183,8 +1242,23 @@ impl Dest {
             Dest::NativeAccount(addr) => Ok(recovery_scripts
                 .get(*addr)?
                 .map(|script| script.clone().into_inner())),
+            // TODO
             _ => Ok(None),
         }
+    }
+}
+
+impl ToString for Dest {
+    fn to_string(&self) -> String {
+        serde_json::to_string(self).unwrap()
+    }
+}
+
+impl FromStr for Dest {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        serde_json::from_str(s).map_err(|e| Error::App(e.to_string()))
     }
 }
 
