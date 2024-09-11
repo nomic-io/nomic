@@ -157,6 +157,7 @@ impl MigrateFrom<InnerAppV4> for InnerAppV5 {
             incentives: other.incentives,
             ibc: other.ibc,
             cosmos: other.cosmos,
+            #[cfg(feature = "ethereum")]
             ethereum: Default::default(), // TODO
         })
     }

@@ -9,8 +9,13 @@
 #![feature(async_closure)]
 #![feature(never_type)]
 
+#[cfg(feature = "ethereum")]
 use alloy::network::EthereumWallet;
+#[cfg(feature = "ethereum")]
 use alloy::signers::local::LocalSigner;
+#[cfg(feature = "ethereum")]
+use nomic::bitcoin::deposit_index::DepositIndex;
+
 use bitcoin::consensus::{Decodable, Encodable};
 use bitcoin::secp256k1::{self, Message};
 use bitcoin::util::bip32::ExtendedPubKey;
@@ -22,7 +27,6 @@ use nomic::app::IbcDest;
 use nomic::app::InnerApp;
 use nomic::app::Nom;
 use nomic::bitcoin::adapter::Adapter;
-use nomic::bitcoin::deposit_index::DepositIndex;
 use nomic::bitcoin::matches_bitcoin_network;
 use nomic::bitcoin::signatory::SignatorySet;
 use nomic::bitcoin::Nbtc;
@@ -167,7 +171,9 @@ pub enum Command {
     RecoverDeposit(RecoverDepositCmd),
     /// Pays nBTC into the network fee pool.
     PayToFeePool(PayToFeePoolCmd),
+    #[cfg(feature = "ethereum")]
     RelayEthereum(RelayEthereumCmd),
+    #[cfg(feature = "ethereum")]
     EthTransferNbtc(EthTransferNbtcCmd),
 }
 
@@ -233,7 +239,9 @@ impl Command {
                 SigningStatus(cmd) => cmd.run().await,
                 RecoverDeposit(cmd) => cmd.run().await,
                 PayToFeePool(cmd) => cmd.run().await,
+                #[cfg(feature = "ethereum")]
                 RelayEthereum(cmd) => cmd.run().await,
+                #[cfg(feature = "ethereum")]
                 EthTransferNbtc(cmd) => cmd.run().await,
             }
         })
@@ -1714,6 +1722,7 @@ impl IbcWithdrawNbtcCmd {
 }
 
 /// Rusns a gRPC server for querying data from a Nomic full node.
+#[cfg(feature = "ethereum")]
 #[derive(Parser, Debug)]
 pub struct EthTransferNbtcCmd {
     to: alloy::primitives::Address,
@@ -1723,6 +1732,7 @@ pub struct EthTransferNbtcCmd {
     config: nomic::network::Config,
 }
 
+#[cfg(feature = "ethereum")]
 impl EthTransferNbtcCmd {
     async fn run(&self) -> Result<()> {
         let to = self.to.0 .0.into();
@@ -2470,6 +2480,7 @@ impl PayToFeePoolCmd {
     }
 }
 
+#[cfg(feature = "ethereum")]
 #[derive(Parser, Debug)]
 pub struct RelayEthereumCmd {
     #[clap(long)]
@@ -2482,6 +2493,7 @@ pub struct RelayEthereumCmd {
     config: nomic::network::Config,
 }
 
+#[cfg(feature = "ethereum")]
 impl RelayEthereumCmd {
     async fn run(&self) -> Result<()> {
         let mut privkey_hex = self.private_key.as_str();
@@ -2508,7 +2520,7 @@ impl RelayEthereumCmd {
                 .wallet(wallet)
                 .on_http(self.eth_rpc_url.parse().unwrap());
             let contract = nomic::ethereum::bridge_contract::new(
-                alloy_core::primitives::Address::from_slice(&bridge_contract.bytes()),
+                alloy::core::primitives::Address::from_slice(&bridge_contract.bytes()),
                 provider,
             );
 
@@ -2592,21 +2604,21 @@ impl RelayEthereumCmd {
                             sigs,
                             transfers
                                 .iter()
-                                .map(|t| alloy_core::primitives::U256::from(t.amount))
+                                .map(|t| alloy::core::primitives::U256::from(t.amount))
                                 .collect(),
                             transfers
                                 .iter()
-                                .map(|t| alloy_core::primitives::Address::from_slice(
+                                .map(|t| alloy::core::primitives::Address::from_slice(
                                     &t.dest.bytes()
                                 ))
                                 .collect(),
                             transfers
                                 .iter()
-                                .map(|t| alloy_core::primitives::U256::from(t.fee_amount))
+                                .map(|t| alloy::core::primitives::U256::from(t.fee_amount))
                                 .collect(),
-                            alloy_core::primitives::U256::from(batch_index),
-                            alloy_core::primitives::Address::from_slice(&token_contract.bytes()),
-                            alloy_core::primitives::U256::from(timeout),
+                            alloy::core::primitives::U256::from(batch_index),
+                            alloy::core::primitives::Address::from_slice(&token_contract.bytes()),
+                            alloy::core::primitives::U256::from(timeout),
                         )
                         .send()
                         .await
@@ -2642,7 +2654,7 @@ impl RelayEthereumCmd {
                 .wallet(wallet)
                 .on_http(self.eth_rpc_url.parse().unwrap());
             let contract = nomic::ethereum::bridge_contract::new(
-                alloy_core::primitives::Address::from_slice(&bridge_contract_addr.bytes()),
+                alloy::core::primitives::Address::from_slice(&bridge_contract_addr.bytes()),
                 provider,
             );
 
@@ -2672,13 +2684,13 @@ impl RelayEthereumCmd {
             dbg!(contract_index, nomic_index);
 
             let dest_str = contract
-                .state_returnDests(alloy_core::primitives::U256::from(nomic_index))
+                .state_returnDests(alloy::core::primitives::U256::from(nomic_index))
                 .call()
                 .await
                 .unwrap()
                 ._0;
             let amount: u64 = contract
-                .state_returnAmounts(alloy_core::primitives::U256::from(nomic_index))
+                .state_returnAmounts(alloy::core::primitives::U256::from(nomic_index))
                 .call()
                 .await
                 .unwrap()

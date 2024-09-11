@@ -25,6 +25,7 @@ pub mod app;
 pub mod bitcoin;
 pub mod cosmos;
 pub mod error;
+#[cfg(feature = "ethereum")]
 pub mod ethereum;
 pub mod incentives;
 #[cfg(feature = "full")]

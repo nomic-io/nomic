@@ -12,6 +12,7 @@ use crate::bitcoin::{matches_bitcoin_network, NETWORK};
 use crate::bitcoin::{Bitcoin, Nbtc};
 use crate::cosmos::{Chain, Cosmos, Proof};
 
+#[cfg(feature = "ethereum")]
 use crate::ethereum::{ContractCall, Ethereum};
 use crate::incentives::Incentives;
 use bitcoin::util::merkleblock::PartialMerkleTree;
@@ -167,6 +168,7 @@ pub struct InnerApp {
     pub cosmos: Cosmos,
 
     // TODO: migrate in, testnet flag
+    #[cfg(feature = "ethereum")]
     #[orga(version(V5))]
     #[call]
     pub ethereum: Ethereum,
@@ -275,18 +277,26 @@ impl InnerApp {
 
     #[call]
     pub fn eth_transfer_nbtc(&mut self, dest: Address, amount: Amount) -> Result<()> {
-        crate::bitcoin::exempt_from_fee()?;
+        #[cfg(feature = "ethereum")]
+        {
+            crate::bitcoin::exempt_from_fee()?;
 
-        // TODO: fee
+            // TODO: fee
 
-        let signer = self.signer()?;
-        let coins = self.bitcoin.accounts.withdraw(signer, amount)?;
+            let signer = self.signer()?;
+            let coins = self.bitcoin.accounts.withdraw(signer, amount)?;
 
-        let building = &mut self.bitcoin.checkpoints.building_mut()?;
-        let dest = Dest::EthAccount(dest);
-        building.insert_pending(dest, coins)?;
+            let building = &mut self.bitcoin.checkpoints.building_mut()?;
+            let dest = Dest::EthAccount(dest);
+            building.insert_pending(dest, coins)?;
 
-        Ok(())
+            Ok(())
+        }
+
+        #[cfg(not(feature = "ethereum"))]
+        {
+            Err(Error::App("Ethereum feature not enabled".into()))
+        }
     }
 
     #[query]
@@ -366,7 +376,9 @@ impl InnerApp {
             Dest::NativeAccount(addr) => self.bitcoin.accounts.deposit(addr, nbtc)?,
             Dest::Ibc(dest) => dest.transfer(nbtc, &mut self.bitcoin, &mut self.ibc)?,
             Dest::Fee => self.bitcoin.give_rewards(nbtc)?,
+            #[cfg(feature = "ethereum")]
             Dest::EthAccount(addr) => self.ethereum.transfer(addr, nbtc)?,
+            // #[cfg(feature = "ethereum")]
             // Dest::EthCall(call, _) => self.ethereum.call(call, nbtc)?,
             Dest::Bitcoin(script) => self.bitcoin.add_withdrawal(script, nbtc)?,
         };
@@ -619,12 +631,15 @@ mod abci {
                 self.staking.give(reward)?;
             }
 
-            if !self.bitcoin.checkpoints.is_empty()? {
-                self.ethereum
-                    .step(&self.bitcoin.checkpoints.active_sigset()?)?;
-            }
-            for (dest, coins) in self.ethereum.take_pending()? {
-                self.credit_transfer(dest, coins)?;
+            #[cfg(feature = "ethereum")]
+            {
+                if !self.bitcoin.checkpoints.is_empty()? {
+                    self.ethereum
+                        .step(&self.bitcoin.checkpoints.active_sigset()?)?;
+                }
+                for (dest, coins) in self.ethereum.take_pending()? {
+                    self.credit_transfer(dest, coins)?;
+                }
             }
 
             Ok(())
@@ -1227,9 +1242,13 @@ pub enum Dest {
     NativeAccount(Address),
     Ibc(IbcDest),
     Fee,
-    EthAccount(Address), // TODO: id for network, optional native fallback addr
-    // EthCall(ContractCall, Address),
     Bitcoin(Adapter<Script>),
+    #[cfg(feature = "ethereum")]
+    EthAccount(
+        Address, /* TODO: id for network, optional native fallback addr */
+    ),
+    // #[cfg(feature = "ethereum")]
+    // EthCall(ContractCall, Address),
 }
 
 #[test]
@@ -1257,6 +1276,7 @@ fn dest_json() {
     );
 
     // TODO: use an eth address type
+    #[cfg(feature = "ethereum")]
     assert_eq!(
         Dest::EthAccount(Address::NULL).to_string(),
         "{\"EthAccount\":\"nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h\"}"
@@ -1274,7 +1294,9 @@ impl Dest {
             Dest::NativeAccount(addr) => addr.to_string(),
             Dest::Ibc(dest) => dest.receiver.to_string(),
             Dest::Fee => return None,
+            #[cfg(feature = "ethereum")]
             Dest::EthAccount(addr) => addr.to_string(),
+            // #[cfg(feature = "ethereum")]
             // Dest::EthCall(_, addr) => addr.to_string(),
             Dest::Bitcoin(script) => return None,
         })

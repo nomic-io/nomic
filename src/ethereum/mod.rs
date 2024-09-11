@@ -1,5 +1,5 @@
-use alloy_core::{primitives::keccak256, sol_types::SolValue};
-use alloy_sol_types::sol;
+use alloy::core::{primitives::keccak256, sol_types::SolValue};
+use alloy::sol;
 use bitcoin::secp256k1::{
     ecdsa::{RecoverableSignature, RecoveryId},
     Message, PublicKey, Secp256k1,
@@ -360,21 +360,21 @@ impl ContractCall {
 
     pub fn to_abi(&self, token_contract: Address, nonce_id: u64) -> LogicCallArgs {
         LogicCallArgs {
-            transferAmounts: vec![alloy_core::primitives::U256::from(self.transfer_amount)],
-            transferTokenContracts: vec![alloy_core::primitives::Address::from_slice(
+            transferAmounts: vec![alloy::core::primitives::U256::from(self.transfer_amount)],
+            transferTokenContracts: vec![alloy::core::primitives::Address::from_slice(
                 &token_contract.bytes(),
             )],
-            feeAmounts: vec![alloy_core::primitives::U256::from(self.fee_amount)],
-            feeTokenContracts: vec![alloy_core::primitives::Address::from_slice(
+            feeAmounts: vec![alloy::core::primitives::U256::from(self.fee_amount)],
+            feeTokenContracts: vec![alloy::core::primitives::Address::from_slice(
                 &token_contract.bytes(),
             )],
-            logicContractAddress: alloy_core::primitives::Address::from_slice(
+            logicContractAddress: alloy::core::primitives::Address::from_slice(
                 &self.contract.bytes(),
             ),
-            payload: alloy_core::primitives::Bytes::from(self.payload.to_vec()),
-            timeOut: alloy_core::primitives::U256::from(self.timeout),
-            invalidationId: alloy_core::primitives::FixedBytes::from(uint256(nonce_id)), /* TODO: set in msg */
-            invalidationNonce: alloy_core::primitives::U256::from(1),
+            payload: alloy::core::primitives::Bytes::from(self.payload.to_vec()),
+            timeOut: alloy::core::primitives::U256::from(self.timeout),
+            invalidationId: alloy::core::primitives::FixedBytes::from(uint256(nonce_id)), /* TODO: set in msg */
+            invalidationNonce: alloy::core::primitives::U256::from(1),
         }
     }
 }
@@ -523,19 +523,19 @@ impl SignatorySet {
 
     pub fn to_abi(&self, nonce: u64) -> ValsetArgs {
         ValsetArgs {
-            valsetNonce: alloy_core::primitives::U256::from(nonce),
+            valsetNonce: alloy::core::primitives::U256::from(nonce),
             validators: self
                 .eth_addresses()
                 .iter()
-                .map(|a| alloy_core::primitives::Address::from_slice(&a.bytes()))
+                .map(|a| alloy::core::primitives::Address::from_slice(&a.bytes()))
                 .collect(),
             powers: self
                 .signatories
                 .iter()
-                .map(|s| alloy_core::primitives::U256::from(s.voting_power))
+                .map(|s| alloy::core::primitives::U256::from(s.voting_power))
                 .collect(),
-            rewardToken: alloy_core::primitives::Address::default(),
-            rewardAmount: alloy_core::primitives::U256::default(),
+            rewardToken: alloy::core::primitives::Address::default(),
+            rewardAmount: alloy::core::primitives::U256::default(),
         }
     }
 }
@@ -781,12 +781,12 @@ mod tests {
             valset
                 .eth_addresses()
                 .iter()
-                .map(|a| alloy_core::primitives::Address::from_slice(&a.bytes()))
+                .map(|a| alloy::core::primitives::Address::from_slice(&a.bytes()))
                 .collect(),
             valset
                 .signatories
                 .iter()
-                .map(|s| alloy_core::primitives::U256::from(s.voting_power))
+                .map(|s| alloy::core::primitives::U256::from(s.voting_power))
                 .collect(),
         )
         .await
@@ -861,12 +861,12 @@ mod tests {
             valset
                 .eth_addresses()
                 .iter()
-                .map(|a| alloy_core::primitives::Address::from_slice(&a.bytes()))
+                .map(|a| alloy::core::primitives::Address::from_slice(&a.bytes()))
                 .collect(),
             valset
                 .signatories
                 .iter()
-                .map(|s| alloy_core::primitives::U256::from(s.voting_power))
+                .map(|s| alloy::core::primitives::U256::from(s.voting_power))
                 .collect(),
         )
         .await
@@ -956,19 +956,19 @@ mod tests {
                     sigs.clone(),
                     transfers
                         .iter()
-                        .map(|t| alloy_core::primitives::U256::from(t.amount))
+                        .map(|t| alloy::core::primitives::U256::from(t.amount))
                         .collect(),
                     transfers
                         .iter()
-                        .map(|t| alloy_core::primitives::Address::from_slice(&t.dest.bytes()))
+                        .map(|t| alloy::core::primitives::Address::from_slice(&t.dest.bytes()))
                         .collect(),
                     transfers
                         .iter()
-                        .map(|t| alloy_core::primitives::U256::from(t.fee_amount))
+                        .map(|t| alloy::core::primitives::U256::from(t.fee_amount))
                         .collect(),
-                    alloy_core::primitives::U256::from(batch_index),
-                    alloy_core::primitives::Address::from_slice(&ethereum.token_contract.bytes()),
-                    alloy_core::primitives::U256::from(timeout),
+                    alloy::core::primitives::U256::from(batch_index),
+                    alloy::core::primitives::Address::from_slice(&ethereum.token_contract.bytes()),
+                    alloy::core::primitives::U256::from(timeout),
                 )
                 .into_transaction_request());
             dbg!(contract
@@ -977,19 +977,19 @@ mod tests {
                     sigs,
                     transfers
                         .iter()
-                        .map(|t| alloy_core::primitives::U256::from(t.amount))
+                        .map(|t| alloy::core::primitives::U256::from(t.amount))
                         .collect(),
                     transfers
                         .iter()
-                        .map(|t| alloy_core::primitives::Address::from_slice(&t.dest.bytes()))
+                        .map(|t| alloy::core::primitives::Address::from_slice(&t.dest.bytes()))
                         .collect(),
                     transfers
                         .iter()
-                        .map(|t| alloy_core::primitives::U256::from(t.fee_amount))
+                        .map(|t| alloy::core::primitives::U256::from(t.fee_amount))
                         .collect(),
-                    alloy_core::primitives::U256::from(batch_index),
-                    alloy_core::primitives::Address::from_slice(&ethereum.token_contract.bytes()),
-                    alloy_core::primitives::U256::from(timeout),
+                    alloy::core::primitives::U256::from(batch_index),
+                    alloy::core::primitives::Address::from_slice(&ethereum.token_contract.bytes()),
+                    alloy::core::primitives::U256::from(timeout),
                 )
                 .send()
                 .await
@@ -1038,12 +1038,12 @@ mod tests {
             valset
                 .eth_addresses()
                 .iter()
-                .map(|a| alloy_core::primitives::Address::from_slice(&a.bytes()))
+                .map(|a| alloy::core::primitives::Address::from_slice(&a.bytes()))
                 .collect(),
             valset
                 .signatories
                 .iter()
-                .map(|s| alloy_core::primitives::U256::from(s.voting_power))
+                .map(|s| alloy::core::primitives::U256::from(s.voting_power))
                 .collect(),
         )
         .await
@@ -1176,12 +1176,12 @@ mod tests {
             valset
                 .eth_addresses()
                 .iter()
-                .map(|a| alloy_core::primitives::Address::from_slice(&a.bytes()))
+                .map(|a| alloy::core::primitives::Address::from_slice(&a.bytes()))
                 .collect(),
             valset
                 .signatories
                 .iter()
-                .map(|s| alloy_core::primitives::U256::from(s.voting_power))
+                .map(|s| alloy::core::primitives::U256::from(s.voting_power))
                 .collect(),
         )
         .await
@@ -1266,19 +1266,19 @@ mod tests {
                     sigs,
                     transfers
                         .iter()
-                        .map(|t| alloy_core::primitives::U256::from(t.amount))
+                        .map(|t| alloy::core::primitives::U256::from(t.amount))
                         .collect(),
                     transfers
                         .iter()
-                        .map(|t| alloy_core::primitives::Address::from_slice(&t.dest.bytes()))
+                        .map(|t| alloy::core::primitives::Address::from_slice(&t.dest.bytes()))
                         .collect(),
                     transfers
                         .iter()
-                        .map(|t| alloy_core::primitives::U256::from(t.fee_amount))
+                        .map(|t| alloy::core::primitives::U256::from(t.fee_amount))
                         .collect(),
-                    alloy_core::primitives::U256::from(batch_index),
-                    alloy_core::primitives::Address::from_slice(&ethereum.token_contract.bytes()),
-                    alloy_core::primitives::U256::from(timeout),
+                    alloy::core::primitives::U256::from(batch_index),
+                    alloy::core::primitives::Address::from_slice(&ethereum.token_contract.bytes()),
+                    alloy::core::primitives::U256::from(timeout),
                 )
                 .send()
                 .await
@@ -1291,14 +1291,14 @@ mod tests {
         };
 
         let token_contract_client = token_contract::new(
-            alloy_core::primitives::Address::from_slice(&token_contract_addr.bytes()),
+            alloy::core::primitives::Address::from_slice(&token_contract_addr.bytes()),
             &provider,
         );
 
         dbg!(token_contract_client
             .approve(
-                alloy_core::primitives::Address::from_slice(&ethereum.bridge_contract.bytes()),
-                alloy_core::primitives::U256::from(u64::MAX),
+                alloy::core::primitives::Address::from_slice(&ethereum.bridge_contract.bytes()),
+                alloy::core::primitives::U256::from(u64::MAX),
             )
             .send()
             .await
@@ -1309,9 +1309,9 @@ mod tests {
 
         dbg!(contract
             .sendToNomic(
-                alloy_core::primitives::Address::from_slice(&ethereum.token_contract.bytes()),
+                alloy::core::primitives::Address::from_slice(&ethereum.token_contract.bytes()),
                 Address::from_pubkey([0; 33]).to_string(),
-                alloy_core::primitives::U256::from(500_000),
+                alloy::core::primitives::U256::from(500_000),
             )
             .send()
             .await

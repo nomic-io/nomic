@@ -234,7 +234,13 @@ where
 
         let checkpoint_signing = self.start_checkpoint_signing(key_pairs.clone());
         let recovery_signing = self.start_recovery_signing(key_pairs.clone());
-        let eth_signing = self.start_ethereum_signing(key_pairs);
+
+        let eth_signing = async {
+            #[cfg(feature = "ethereum")]
+            self.start_ethereum_signing(key_pairs).await?;
+            Ok(())
+        };
+
         try_join!(checkpoint_signing, recovery_signing, eth_signing)?;
 
         Ok(())

@@ -3744,9 +3744,6 @@ name = "nomic"
 version = "8.0.0"
 dependencies = [
  "alloy",
- "alloy-contract",
- "alloy-core",
- "alloy-sol-types",
  "base64 0.13.1",
  "bech32",
  "bitcoin",
