@@ -72,7 +72,9 @@ async fn generate_deposit_address(address: &Address) -> Result<DepositAddress> {
         })
         .await?;
     let script = sigset.output_script(
-        Dest::NativeAccount(*address).commitment_bytes()?.as_slice(),
+        Dest::NativeAccount { address: *address }
+            .commitment_bytes()?
+            .as_slice(),
         threshold,
     )?;
 
@@ -93,7 +95,7 @@ pub async fn broadcast_deposit_addr(
     info!("Broadcasting deposit address to relayer...");
     let dest_addr = dest_addr.parse().unwrap();
 
-    let commitment = Dest::NativeAccount(dest_addr).encode()?;
+    let commitment = Dest::NativeAccount { address: dest_addr }.encode()?;
 
     let url = format!("{}/address", relayer,);
     let client = reqwest::Client::new();

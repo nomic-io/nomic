@@ -1589,10 +1589,9 @@ pub struct DepositCmd {
 impl DepositCmd {
     /// Runs the `deposit` command.
     async fn run(&self) -> Result<()> {
-        let dest = self
-            .dest
-            .clone()
-            .unwrap_or_else(|| Dest::NativeAccount(my_address()));
+        let dest = self.dest.clone().unwrap_or_else(|| Dest::NativeAccount {
+            address: my_address(),
+        });
 
         deposit(dest, self.config.client(), self.config.btc_relayer.clone()).await
     }
@@ -1623,14 +1622,16 @@ impl InterchainDepositCmd {
             .unwrap()
             .as_secs()
             * 1_000_000_000;
-        let dest = Dest::Ibc(nomic::app::IbcDest {
-            source_port: "transfer".try_into()?,
-            source_channel: self.channel.clone().try_into()?,
-            sender: my_address().to_string().try_into()?,
-            receiver: self.address.to_string().try_into()?,
-            timeout_timestamp: now_ns + ONE_DAY_NS,
-            memo: self.memo.to_string().try_into()?,
-        });
+        let dest = Dest::Ibc {
+            data: nomic::app::IbcDest {
+                source_port: "transfer".try_into()?,
+                source_channel: self.channel.clone().try_into()?,
+                sender: my_address().to_string().try_into()?,
+                receiver: self.address.to_string().try_into()?,
+                timeout_timestamp: now_ns + ONE_DAY_NS,
+                memo: self.memo.to_string().try_into()?,
+            },
+        };
 
         deposit(dest, self.config.client(), self.config.btc_relayer.clone()).await
     }
@@ -2384,14 +2385,16 @@ impl RecoverDepositCmd {
                 .unwrap()
                 .as_secs();
             let start = (now + 60 * 60 * 24 * 7 - (now % (60 * 60))) * 1_000_000_000;
-            let mut dest = Dest::Ibc(IbcDest {
-                source_port: "transfer".to_string().try_into()?,
-                source_channel: channel.to_string().try_into()?,
-                receiver: remote_addr.to_string().try_into()?,
-                sender: self.nomic_addr.to_string().try_into()?,
-                timeout_timestamp: start,
-                memo: "".to_string().try_into()?,
-            });
+            let mut dest = Dest::Ibc {
+                data: IbcDest {
+                    source_port: "transfer".to_string().try_into()?,
+                    source_channel: channel.to_string().try_into()?,
+                    receiver: remote_addr.to_string().try_into()?,
+                    sender: self.nomic_addr.to_string().try_into()?,
+                    timeout_timestamp: start,
+                    memo: "".to_string().try_into()?,
+                },
+            };
 
             dbg!(&dest);
 
@@ -2400,7 +2403,7 @@ impl RecoverDepositCmd {
             loop {
                 for (sigset_index, sigset) in sigsets.iter() {
                     if i % 10_000 == 0 {
-                        if let Dest::Ibc(dest) = &dest {
+                        if let Dest::Ibc { data: dest } = &dest {
                             println!("{} {}", i, dest.timeout_timestamp);
                         } else {
                             unreachable!()
@@ -2413,7 +2416,7 @@ impl RecoverDepositCmd {
                     if addr.to_string().to_lowercase()
                         == self.deposit_addr.to_string().to_lowercase()
                     {
-                        if let Dest::Ibc(ibc_dest) = &dest {
+                        if let Dest::Ibc { data: ibc_dest } = &dest {
                             println!(
                                 "Found at sigset index {}, timeout_timestamp {}",
                                 sigset_index, ibc_dest.timeout_timestamp,
@@ -2428,7 +2431,7 @@ impl RecoverDepositCmd {
                     i += 1;
                 }
 
-                if let Dest::Ibc(ibc_dest) = &mut dest {
+                if let Dest::Ibc { data: ibc_dest } = &mut dest {
                     ibc_dest.timeout_timestamp -= 60 * 60 * 1_000_000_000;
                     dest_bytes = dest.commitment_bytes().unwrap();
                 } else {
@@ -2437,7 +2440,9 @@ impl RecoverDepositCmd {
             }
         }
 
-        let dest = Dest::NativeAccount(self.nomic_addr);
+        let dest = Dest::NativeAccount {
+            address: self.nomic_addr,
+        };
         let dest_bytes = dest.commitment_bytes().unwrap();
 
         for (sigset_index, sigset) in sigsets.iter() {

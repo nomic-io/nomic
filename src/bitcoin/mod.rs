@@ -676,7 +676,7 @@ impl Bitcoin {
             let deposit_fee = nbtc.take(calc_deposit_fee(nbtc.amount.into()))?;
             self.checkpoints
                 .building_mut()?
-                .insert_pending(Dest::Fee, deposit_fee)?;
+                .insert_pending(Dest::RewardPool, deposit_fee)?;
         }
 
         self.checkpoints
@@ -840,7 +840,7 @@ impl Bitcoin {
             .withdraw(signer, self.config.transfer_fee.into())?;
         self.give_rewards(transfer_fee)?;
 
-        let dest = Dest::NativeAccount(to);
+        let dest = Dest::NativeAccount { address: to };
         let coins = self.accounts.withdraw(signer, amount)?;
         self.checkpoints
             .building_mut()?
@@ -1304,7 +1304,9 @@ mod tests {
                 Adapter::new(PartialMerkleTree::from_txids(&[Txid::all_zeros()], &[true])),
                 0,
                 0,
-                Dest::NativeAccount(Address::NULL),
+                Dest::NativeAccount {
+                    address: Address::NULL,
+                },
             )
         };
 

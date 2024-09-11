@@ -1343,7 +1343,9 @@ mod tests {
                 (),
                 vec![(
                     0,
-                    Dest::NativeAccount(Address::from_pubkey([0; 33])),
+                    Dest::NativeAccount {
+                        address: Address::from_pubkey([0; 33]),
+                    },
                     500_000,
                 )]
                 .try_into()

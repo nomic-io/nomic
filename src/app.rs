@@ -255,7 +255,7 @@ impl InnerApp {
         self.bitcoin.give_rewards(fee)?;
 
         let building = &mut self.bitcoin.checkpoints.building_mut()?;
-        let dest = Dest::Ibc(dest);
+        let dest = Dest::Ibc { data: dest };
         building.insert_pending(dest, coins)?;
 
         Ok(())
@@ -287,7 +287,7 @@ impl InnerApp {
             let coins = self.bitcoin.accounts.withdraw(signer, amount)?;
 
             let building = &mut self.bitcoin.checkpoints.building_mut()?;
-            let dest = Dest::EthAccount(dest);
+            let dest = Dest::EthAccount { address: dest };
             building.insert_pending(dest, coins)?;
 
             Ok(())
@@ -339,7 +339,7 @@ impl InnerApp {
         sigset_index: u32,
         dest: Dest,
     ) -> Result<()> {
-        if let Dest::Ibc(dest) = dest.clone() {
+        if let Dest::Ibc { data: dest } = dest.clone() {
             dest.source_port()?;
             dest.source_channel()?;
             dest.sender_address()?;
@@ -373,14 +373,14 @@ impl InnerApp {
 
     pub fn credit_transfer(&mut self, dest: Dest, nbtc: Coin<Nbtc>) -> Result<()> {
         match dest {
-            Dest::NativeAccount(addr) => self.bitcoin.accounts.deposit(addr, nbtc)?,
-            Dest::Ibc(dest) => dest.transfer(nbtc, &mut self.bitcoin, &mut self.ibc)?,
-            Dest::Fee => self.bitcoin.give_rewards(nbtc)?,
+            Dest::NativeAccount { address } => self.bitcoin.accounts.deposit(address, nbtc)?,
+            Dest::Ibc { data: dest } => dest.transfer(nbtc, &mut self.bitcoin, &mut self.ibc)?,
+            Dest::RewardPool => self.bitcoin.give_rewards(nbtc)?,
             #[cfg(feature = "ethereum")]
-            Dest::EthAccount(addr) => self.ethereum.transfer(addr, nbtc)?,
+            Dest::EthAccount { address } => self.ethereum.transfer(address, nbtc)?,
             // #[cfg(feature = "ethereum")]
             // Dest::EthCall(call, _) => self.ethereum.call(call, nbtc)?,
-            Dest::Bitcoin(script) => self.bitcoin.add_withdrawal(script, nbtc)?,
+            Dest::Bitcoin { data } => self.bitcoin.add_withdrawal(data, nbtc)?,
         };
 
         Ok(())
@@ -1238,67 +1238,143 @@ impl IbcDest {
 }
 
 #[derive(Encode, Decode, Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
 pub enum Dest {
-    NativeAccount(Address),
-    Ibc(IbcDest),
-    Fee,
-    Bitcoin(Adapter<Script>),
+    NativeAccount {
+        address: Address,
+    },
+    Ibc {
+        data: IbcDest,
+    },
+    RewardPool,
+    Bitcoin {
+        #[serde(with = "address_or_script")]
+        data: Adapter<Script>,
+    },
     #[cfg(feature = "ethereum")]
-    EthAccount(
-        Address, /* TODO: id for network, optional native fallback addr */
-    ),
+    EthAccount {
+        address: Address,
+    },
     // #[cfg(feature = "ethereum")]
     // EthCall(ContractCall, Address),
+}
+
+mod address_or_script {
+    use serde::{Deserializer, Serializer};
+    use std::result::Result;
+
+    use super::*;
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Adapter<Script>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let dest = String::deserialize(deserializer)?;
+        let script = if let Ok(addr) = bitcoin::Address::from_str(&dest) {
+            if !matches_bitcoin_network(&addr.network) {
+                return Err(serde::de::Error::custom(format!(
+                    "Invalid network for Bitcoin dest. Got {}, Expected {}",
+                    addr.network,
+                    crate::bitcoin::NETWORK
+                )));
+            }
+            addr.script_pubkey()
+        } else {
+            bitcoin::Script::from_str(&dest)
+                .map_err(|e| serde::de::Error::custom("Invalid Bitcoin script"))?
+        };
+
+        Ok(script.into())
+    }
+
+    pub fn serialize<S>(script: &Adapter<Script>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if let Ok(addr) =
+            bitcoin::Address::from_script(&script.clone().into_inner(), crate::bitcoin::NETWORK)
+        {
+            addr.serialize(serializer)
+        } else {
+            script.serialize(serializer)
+        }
+    }
 }
 
 #[test]
 fn dest_json() {
     assert_eq!(
-        Dest::NativeAccount(Address::NULL).to_string(),
-        "{\"NativeAccount\":\"nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h\"}"
+        Dest::NativeAccount {
+            address: Address::NULL
+        }
+        .to_string(),
+        "{\"type\":\"nativeAccount\",\"address\":\"nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h\"}"
     );
 
     assert_eq!(
-        Dest::Ibc(IbcDest {
-            source_port: "transfer".try_into().unwrap(),
-            source_channel: "channel-0".try_into().unwrap(),
-            sender:
-                "nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h".try_into().unwrap()
-            ,
-            receiver:
-                "nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h".try_into().unwrap()
-            ,
-            timeout_timestamp: 123_456_789,
-            memo: "memo".try_into().unwrap(),
-        })
+        Dest::Ibc { data: IbcDest{source_port:"transfer".try_into().unwrap(),source_channel:"channel-0".try_into().unwrap(),sender:"nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h".try_into().unwrap(),receiver:"nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h".try_into().unwrap(),timeout_timestamp:123_456_789,memo:"memo".try_into().unwrap(),} }
         .to_string(),
-        "{\"Ibc\":{\"source_port\":\"transfer\",\"source_channel\":\"channel-0\",\"receiver\":\"nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h\",\"sender\":\"nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h\",\"timeout_timestamp\":123456789,\"memo\":\"memo\"}}"
+        "{\"type\":\"ibc\",\"data\":{\"source_port\":\"transfer\",\"source_channel\":\"channel-0\",\"receiver\":\"nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h\",\"sender\":\"nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h\",\"timeout_timestamp\":123456789,\"memo\":\"memo\"}}"
     );
 
     // TODO: use an eth address type
     #[cfg(feature = "ethereum")]
     assert_eq!(
-        Dest::EthAccount(Address::NULL).to_string(),
-        "{\"EthAccount\":\"nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h\"}"
+        Dest::EthAccount {
+            address: Address::NULL
+        }
+        .to_string(),
+        "{\"type\":\"ethAccount\",\"address\":\"nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h\"}"
     );
 
+    assert_eq!(Dest::RewardPool.to_string(), "{\"type\":\"rewardPool\"}");
+
+    let out = "{\"type\":\"bitcoin\",\"data\":\"6a03010203\"}";
     assert_eq!(
-        Dest::Bitcoin(Adapter::new(Script::new_op_return(&[1, 2, 3]))).to_string(),
-        "{\"Bitcoin\":\"6a03010203\"}"
+        Dest::Bitcoin {
+            data: Adapter::new(Script::new_op_return(&[1, 2, 3]))
+        }
+        .to_string(),
+        out
     );
+    let Dest::Bitcoin { data } = Dest::from_str(out).unwrap() else {
+        unreachable!();
+    };
+    assert_eq!(*data, Script::new_op_return(&[1, 2, 3]));
+
+    let addr = bitcoin::Address::p2wpkh(
+        &bitcoin::PublicKey::from_slice(&[2; 33]).unwrap(),
+        bitcoin::Network::Bitcoin,
+    )
+    .unwrap();
+
+    let out = "{\"type\":\"bitcoin\",\"data\":\"tb1q2xq57yyxwzkw6tthcxq9mhtxxj7f63e3dgldfj\"}";
+    assert_eq!(
+        Dest::Bitcoin {
+            data: Adapter::new(addr.script_pubkey())
+        }
+        .to_string(),
+        out
+    );
+
+    let Dest::Bitcoin { data } = Dest::from_str(out).unwrap() else {
+        unreachable!();
+    };
+
+    assert_eq!(*data, addr.script_pubkey());
 }
 
 impl Dest {
     pub fn to_receiver_addr(&self) -> Option<String> {
         Some(match self {
-            Dest::NativeAccount(addr) => addr.to_string(),
-            Dest::Ibc(dest) => dest.receiver.to_string(),
-            Dest::Fee => return None,
+            Dest::NativeAccount { address: addr } => addr.to_string(),
+            Dest::Ibc { data: dest } => dest.receiver.to_string(),
+            Dest::RewardPool => return None,
             #[cfg(feature = "ethereum")]
-            Dest::EthAccount(addr) => addr.to_string(),
+            Dest::EthAccount { address: addr } => addr.to_string(),
             // #[cfg(feature = "ethereum")]
             // Dest::EthCall(_, addr) => addr.to_string(),
-            Dest::Bitcoin(script) => return None,
+            Dest::Bitcoin { data } => return None,
         })
     }
 
@@ -1330,7 +1406,7 @@ impl Dest {
         recovery_scripts: &orga::collections::Map<Address, Adapter<Script>>,
     ) -> Result<Option<Script>> {
         match self {
-            Dest::NativeAccount(addr) => Ok(recovery_scripts
+            Dest::NativeAccount { address: addr } => Ok(recovery_scripts
                 .get(*addr)?
                 .map(|script| script.clone().into_inner())),
             // TODO
@@ -1339,7 +1415,7 @@ impl Dest {
     }
 
     pub fn is_fee_exempt(&self) -> bool {
-        if let Dest::Ibc(dest) = self {
+        if let Dest::Ibc { data: dest } = self {
             dest.is_fee_exempt()
         } else {
             false
