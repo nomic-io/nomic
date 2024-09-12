@@ -135,10 +135,6 @@ impl MigrateFrom<InnerAppV4> for InnerAppV5 {
                 scripts,
                 other.bitcoin.checkpoints.config.sigset_threshold,
             )?;
-
-            other
-                .ibc
-                .update_client_from_header(0, 1, include_str!("../../kujira-header.json"))?;
         }
 
         Ok(Self {
