@@ -282,7 +282,7 @@ impl Airdrop {
     }
 }
 
-#[orga(version = 2)]
+#[orga(version = 1..=2)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Account {
     pub airdrop1: Part,
@@ -293,12 +293,6 @@ pub struct Account {
 impl Account {
     pub fn is_empty(&self) -> bool {
         self == &Self::default()
-    }
-}
-
-impl MigrateFrom<AccountV0> for AccountV1 {
-    fn migrate_from(_prev: AccountV0) -> Result<Self> {
-        unreachable!()
     }
 }
 

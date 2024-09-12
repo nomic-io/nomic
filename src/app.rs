@@ -52,7 +52,6 @@ use std::fmt::Debug;
 
 mod migrations;
 
-pub type AppV0 = DefaultPlugins<Nom, InnerAppV0>;
 pub type App = DefaultPlugins<Nom, InnerApp>;
 
 #[derive(State, Debug, Clone, Encode, Decode, Default, Migrate, Serialize)]
@@ -71,7 +70,7 @@ const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhq
 const IBC_FEE_USATS: u64 = 1_000_000;
 const CALL_FEE_USATS: u64 = 100_000_000;
 
-#[orga(version = 5)]
+#[orga(version = 4..=5)]
 pub struct InnerApp {
     #[call]
     pub accounts: Accounts<Nom>,
@@ -87,28 +86,14 @@ pub struct InnerApp {
     dev_rewards: Faucet<Nom>,
     community_pool_rewards: Faucet<Nom>,
     incentive_pool_rewards: Faucet<Nom>,
-
     #[call]
     pub bitcoin: Bitcoin,
     pub reward_timer: RewardTimer,
-
-    #[cfg(feature = "testnet")]
     #[call]
     pub ibc: Ibc,
-    #[cfg(not(feature = "testnet"))]
-    #[orga(version(V4, V5))]
-    #[call]
-    pub ibc: Ibc,
-
     pub upgrade: Upgrade,
-
     #[call]
     pub incentives: Incentives,
-
-    #[cfg(feature = "testnet")]
-    pub cosmos: Cosmos,
-    #[cfg(not(feature = "testnet"))]
-    #[orga(version(V4, V5))]
     pub cosmos: Cosmos,
 }
 

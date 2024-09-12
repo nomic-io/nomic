@@ -71,7 +71,7 @@ pub const SIGSET_THRESHOLD: (u64, u64) = (9, 10);
 pub const SIGSET_THRESHOLD: (u64, u64) = (2, 3);
 
 /// The configuration parameters for the Bitcoin module.
-#[orga(skip(Default), version = 4)]
+#[orga(skip(Default), version = 3..=4)]
 pub struct Config {
     /// The minimum number of checkpoints that must be produced before
     /// withdrawals are enabled.
@@ -96,27 +96,16 @@ pub struct Config {
     /// subdivisions of satoshis which nBTC accounting uses.
     pub units_per_sat: u64,
 
-    // (These fields were moved to `checkpoint::Config`)
-    #[orga(version(V0, V1))]
-    pub emergency_disbursal_min_tx_amt: u64,
-    #[orga(version(V0, V1))]
-    pub emergency_disbursal_lock_time_interval: u32,
-    #[orga(version(V0, V1))]
-    pub emergency_disbursal_max_tx_size: u64,
-
     /// If a signer does not submit signatures for this many consecutive
     /// checkpoints, they are considered offline and are removed from the
     /// signatory set (jailed) and slashed.
-    #[orga(version(V1, V2, V3, V4))]
     pub max_offline_checkpoints: u32,
     /// The minimum number of confirmations a checkpoint must have on the
     /// Bitcoin network before it is considered confirmed. Note that in the
     /// current implementation, the actual number of confirmations required is
     /// `min_checkpoint_confirmations + 1`.
-    #[orga(version(V2, V3, V4))]
     pub min_checkpoint_confirmations: u32,
     /// The maximum amount of BTC that can be held in the network, in satoshis.
-    #[orga(version(V2, V3, V4))]
     pub capacity_limit: u64,
 
     #[orga(version(V4))]
@@ -126,63 +115,6 @@ pub struct Config {
     pub fee_pool_target_balance: u64,
     #[orga(version(V4))]
     pub fee_pool_reward_split: (u64, u64),
-}
-
-impl MigrateFrom<ConfigV0> for ConfigV1 {
-    fn migrate_from(value: ConfigV0) -> OrgaResult<Self> {
-        Ok(Self {
-            min_withdrawal_checkpoints: value.min_withdrawal_checkpoints,
-            min_deposit_amount: value.min_deposit_amount,
-            min_withdrawal_amount: value.min_withdrawal_amount,
-            max_withdrawal_amount: value.max_withdrawal_amount,
-            max_withdrawal_script_length: value.max_withdrawal_script_length,
-            transfer_fee: value.transfer_fee,
-            min_confirmations: value.min_confirmations,
-            units_per_sat: value.units_per_sat,
-            emergency_disbursal_min_tx_amt: value.emergency_disbursal_min_tx_amt,
-            emergency_disbursal_lock_time_interval: value.emergency_disbursal_lock_time_interval,
-            emergency_disbursal_max_tx_size: value.emergency_disbursal_max_tx_size,
-            max_offline_checkpoints: Config::default().max_offline_checkpoints,
-        })
-    }
-}
-
-impl MigrateFrom<ConfigV1> for ConfigV2 {
-    fn migrate_from(value: ConfigV1) -> OrgaResult<Self> {
-        Ok(Self {
-            min_withdrawal_checkpoints: value.min_withdrawal_checkpoints,
-            min_deposit_amount: value.min_deposit_amount,
-            min_withdrawal_amount: value.min_withdrawal_amount,
-            max_withdrawal_amount: value.max_withdrawal_amount,
-            max_withdrawal_script_length: value.max_withdrawal_script_length,
-            transfer_fee: value.transfer_fee,
-            min_confirmations: value.min_confirmations,
-            units_per_sat: value.units_per_sat,
-            max_offline_checkpoints: value.max_offline_checkpoints,
-            min_checkpoint_confirmations: Config::default().min_checkpoint_confirmations,
-            capacity_limit: Config::bitcoin().capacity_limit,
-        })
-    }
-}
-
-impl MigrateFrom<ConfigV2> for ConfigV3 {
-    fn migrate_from(value: ConfigV2) -> OrgaResult<Self> {
-        // Migrating to set min_checkpoint_confirmations to 0 and testnet
-        // capacity limit to 100 BTC
-        Ok(Self {
-            min_withdrawal_checkpoints: value.min_withdrawal_checkpoints,
-            min_deposit_amount: value.min_deposit_amount,
-            min_withdrawal_amount: value.min_withdrawal_amount,
-            max_withdrawal_amount: value.max_withdrawal_amount,
-            max_withdrawal_script_length: value.max_withdrawal_script_length,
-            transfer_fee: value.transfer_fee,
-            min_confirmations: value.min_confirmations,
-            units_per_sat: value.units_per_sat,
-            max_offline_checkpoints: value.max_offline_checkpoints,
-            min_checkpoint_confirmations: 0,
-            capacity_limit: Config::default().capacity_limit,
-        })
-    }
 }
 
 impl MigrateFrom<ConfigV3> for ConfigV4 {
@@ -278,7 +210,7 @@ pub fn calc_deposit_fee(amount: u64) -> u64 {
 /// blockchain headers, relay deposit transactions, maintain nBTC accounts, and
 /// coordinate the checkpointing process to manage the BTC reserve on the
 /// Bitcoin blockchain.
-#[orga(version = 2)]
+#[orga(version = 1..=2)]
 pub struct Bitcoin {
     /// A light client of the Bitcoin blockchain, keeping track of the headers
     /// of the highest-work chain.
@@ -322,12 +254,6 @@ pub struct Bitcoin {
     #[orga(version(V2))]
     #[call]
     pub recovery_txs: RecoveryTxs,
-}
-
-impl MigrateFrom<BitcoinV0> for BitcoinV1 {
-    fn migrate_from(_value: BitcoinV0) -> OrgaResult<Self> {
-        unreachable!()
-    }
 }
 
 impl MigrateFrom<BitcoinV1> for BitcoinV2 {
