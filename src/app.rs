@@ -1349,8 +1349,8 @@ impl Dest {
     pub fn commitment_bytes(&self) -> Result<Vec<u8>> {
         use sha2::{Digest, Sha256};
 
-        let json = self.to_string();
-        let hash = Sha256::digest(json.as_bytes());
+        let bytes = self.encode()?;
+        let hash = Sha256::digest(bytes);
 
         let mut bytes = Vec::with_capacity(hash.len() + 1);
         bytes.push(0); // version byte
