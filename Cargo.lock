@@ -3923,7 +3923,7 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.3.1"
-source = "git+https://github.com/nomic-io/orga.git?rev=81bfcaaa384c0f8afe7e600b8bbb466b16030537#81bfcaaa384c0f8afe7e600b8bbb466b16030537"
+source = "git+https://github.com/nomic-io/orga.git?rev=4274220595a14f759e009a912ee96b6e8013e281#4274220595a14f759e009a912ee96b6e8013e281"
 dependencies = [
  "abci2",
  "async-trait",
@@ -3973,12 +3973,14 @@ dependencies = [
  "toml_edit 0.22.20",
  "tonic",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]
 name = "orga-macros"
 version = "0.3.1"
-source = "git+https://github.com/nomic-io/orga.git?rev=81bfcaaa384c0f8afe7e600b8bbb466b16030537#81bfcaaa384c0f8afe7e600b8bbb466b16030537"
+source = "git+https://github.com/nomic-io/orga.git?rev=4274220595a14f759e009a912ee96b6e8013e281#4274220595a14f759e009a912ee96b6e8013e281"
 dependencies = [
  "darling",
  "heck 0.3.3",
