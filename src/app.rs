@@ -423,29 +423,32 @@ impl InnerApp {
         let incoming_transfers = self.ibc.deliver(messages)?;
 
         for transfer in incoming_transfers {
-            if transfer.denom.to_string() != "usat" {
+            if transfer.denom.to_string() != "usat" || transfer.memo.is_empty() {
                 continue;
             }
-            let memo: NbtcMemo = transfer.memo.parse().unwrap_or_default();
-            if let NbtcMemo::Withdraw(script) = memo {
-                let amount = transfer.amount;
-                let receiver: Address = transfer
-                    .receiver
-                    .parse()
-                    .map_err(|_| Error::Coins("Invalid address".to_string()))?;
-                let coins = Coin::<Nbtc>::mint(amount);
-                self.ibc.transfer_mut().burn_coins_execute(
-                    &receiver,
-                    &coins.into(),
-                    &"".parse().unwrap(),
-                )?;
-                if self.bitcoin.add_withdrawal(script, amount.into()).is_err() {
-                    let coins = Coin::<Nbtc>::mint(amount);
-                    self.ibc
-                        .transfer_mut()
-                        .mint_coins_execute(&receiver, &coins.into())?;
-                }
-            }
+
+            let receiver: Address = transfer
+                .receiver
+                .parse()
+                .map_err(|_| Error::Coins("Invalid address".to_string()))?;
+            let amount = transfer.amount;
+
+            let Ok(dest) = transfer.memo.parse::<Dest>() else {
+                continue;
+            };
+
+            let coins = Coin::<Nbtc>::mint(amount);
+            self.ibc.transfer_mut().burn_coins_execute(
+                &receiver,
+                &coins.into(),
+                &"".parse().unwrap(),
+            )?;
+
+            let coins = Coin::<Nbtc>::mint(amount);
+            self.bitcoin
+                .checkpoints
+                .building_mut()?
+                .insert_pending(dest, coins)?;
         }
 
         Ok(())
@@ -484,44 +487,6 @@ impl InnerApp {
     #[query]
     pub fn app_noop_query(&self) -> Result<()> {
         Ok(())
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-pub enum NbtcMemo {
-    Withdraw(Adapter<bitcoin::Script>),
-    #[default]
-    Empty,
-}
-impl FromStr for NbtcMemo {
-    type Err = Error;
-    fn from_str(s: &str) -> Result<Self> {
-        if s.is_empty() {
-            Ok(NbtcMemo::Empty)
-        } else {
-            let parts = s.split(':').collect::<Vec<_>>();
-            if parts.len() != 2 {
-                return Err(Error::App("Invalid memo".into()));
-            }
-            if parts[0] != "withdraw" {
-                return Err(Error::App("Only withdraw memo action is supported".into()));
-            }
-            let dest = parts[1];
-            let script = if let Ok(addr) = bitcoin::Address::from_str(dest) {
-                if !matches_bitcoin_network(&addr.network) {
-                    return Err(Error::App(format!(
-                        "Invalid network for nBTC memo. Got {}, Expected {}",
-                        addr.network,
-                        crate::bitcoin::NETWORK
-                    )));
-                }
-                addr.script_pubkey()
-            } else {
-                bitcoin::Script::from_str(parts[1]).map_err(|e| Error::App(e.to_string()))?
-            };
-
-            Ok(NbtcMemo::Withdraw(script.into()))
-        }
     }
 }
 
