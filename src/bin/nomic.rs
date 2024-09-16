@@ -2399,6 +2399,7 @@ impl RecoverDepositCmd {
             dbg!(&dest);
 
             let mut i = 0;
+            // TODO: support legacy encoding
             let mut dest_bytes = dest.commitment_bytes().unwrap();
             loop {
                 for (sigset_index, sigset) in sigsets.iter() {
@@ -2433,6 +2434,7 @@ impl RecoverDepositCmd {
 
                 if let Dest::Ibc { data: ibc_dest } = &mut dest {
                     ibc_dest.timeout_timestamp -= 60 * 60 * 1_000_000_000;
+                    // TODO: support legacy encoding
                     dest_bytes = dest.commitment_bytes().unwrap();
                 } else {
                     unreachable!()
@@ -2443,6 +2445,7 @@ impl RecoverDepositCmd {
         let dest = Dest::NativeAccount {
             address: self.nomic_addr,
         };
+        // TODO: support legacy encoding
         let dest_bytes = dest.commitment_bytes().unwrap();
 
         for (sigset_index, sigset) in sigsets.iter() {

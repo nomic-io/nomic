@@ -607,10 +607,16 @@ impl Bitcoin {
         let expected_script =
             sigset.output_script(&dest_bytes, self.checkpoints.config.sigset_threshold)?;
         if output.script_pubkey != expected_script {
-            return Err(OrgaError::App(
-                "Output script does not match signature set".to_string(),
-            ))?;
+            let dest_bytes = dest.legacy_commitment_bytes()?;
+            let expected_script =
+                sigset.output_script(&dest_bytes, self.checkpoints.config.sigset_threshold)?;
+            if output.script_pubkey != expected_script {
+                return Err(OrgaError::App(
+                    "Output script does not match signature set".to_string(),
+                ))?;
+            }
         }
+
         let outpoint = (btc_tx.txid().into_inner(), btc_vout);
         if self.processed_outpoints.contains(outpoint)? {
             return Err(OrgaError::App(

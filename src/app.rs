@@ -1358,6 +1358,20 @@ impl Dest {
         Ok(bytes)
     }
 
+    // TODO: remove once there are no legacy commitments in-flight
+    pub fn legacy_commitment_bytes(&self) -> Result<Vec<u8>> {
+        use sha2::{Digest, Sha256};
+        use Dest::*;
+        let bytes = match self {
+            NativeAccount { address } => address.bytes().into(),
+            Ibc { data } => Sha256::digest(data.encode()?).to_vec(),
+            Fee => vec![1],
+            _ => return Err(Error::App("Invalid dest for legacy commitment".to_string())),
+        };
+
+        Ok(bytes)
+    }
+
     pub fn from_base64(s: &str) -> Result<Self> {
         let bytes =
             base64::decode(s).map_err(|_| Error::App("Failed to decode base64".to_string()))?;
