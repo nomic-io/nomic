@@ -780,6 +780,10 @@ impl Bitcoin {
             return Err(OrgaError::App("Script exceeds maximum length".to_string()).into());
         }
 
+        if script_pubkey.is_op_return() {
+            return Err(OrgaError::App("Script is an OP_RETURN".to_string()).into());
+        }
+
         if self.checkpoints.len()? < self.config.min_withdrawal_checkpoints {
             return Err(OrgaError::App(format!(
                 "Withdrawals are disabled until the network has produced at least {} checkpoints",
