@@ -92,7 +92,7 @@ const OSMOSIS_CHANNEL_ID: &str = "channel-1";
 
 /// The top-level application state type and logic. This contains the major
 /// state types for the various subsystems of the Nomic protocol.
-#[orga(version = 4..=5)]
+#[orga(version = 5..=6)]
 pub struct InnerApp {
     /// Account state for the NOM token.
     #[call]
@@ -154,8 +154,8 @@ pub struct InnerApp {
     pub cosmos: Cosmos,
 
     // TODO: migrate in, testnet flag
-    #[cfg(feature = "ethereum")]
-    #[orga(version(V5))]
+    #[cfg(all(feature = "ethereum", feature = "testnet"))]
+    #[orga(version(V5, V6))]
     #[call]
     pub ethereum: Ethereum,
 }
@@ -166,7 +166,7 @@ impl InnerApp {
     /// breaking changes are made to either the state encoding or logic of the
     /// protocol, and requires a network upgrade to be coordinated via the
     /// upgrade module.
-    pub const CONSENSUS_VERSION: u8 = 11;
+    pub const CONSENSUS_VERSION: u8 = 12;
 
     #[cfg(feature = "full")]
     fn configure_faucets(&mut self) -> Result<()> {
