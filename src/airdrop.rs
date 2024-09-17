@@ -307,7 +307,7 @@ impl Airdrop {
 }
 
 /// An airdrop account.
-#[orga(version = 2)]
+#[orga(version = 1..=2)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Account {
     /// The part of the airdrop received in airdrop I.
@@ -325,12 +325,6 @@ impl Account {
     /// Returns `true` if the account is empty.
     pub fn is_empty(&self) -> bool {
         self == &Self::default()
-    }
-}
-
-impl MigrateFrom<AccountV0> for AccountV1 {
-    fn migrate_from(_prev: AccountV0) -> Result<Self> {
-        unreachable!()
     }
 }
 

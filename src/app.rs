@@ -92,7 +92,7 @@ const OSMOSIS_CHANNEL_ID: &str = "channel-1";
 
 /// The top-level application state type and logic. This contains the major
 /// state types for the various subsystems of the Nomic protocol.
-#[orga(version = 5)]
+#[orga(version = 4..=5)]
 pub struct InnerApp {
     /// Account state for the NOM token.
     #[call]
@@ -136,14 +136,6 @@ pub struct InnerApp {
     /// The IBC state, including the IBC client, connection, and channel
     /// states. This is used to relay messages between Nomic and other IBC
     /// enabled blockchains.
-    #[cfg(feature = "testnet")]
-    #[call]
-    pub ibc: Ibc,
-    /// The IBC state, including the IBC client, connection, and channel
-    /// states. This is used to relay messages between Nomic and other IBC
-    /// enabled blockchains.
-    #[cfg(not(feature = "testnet"))]
-    #[orga(version(V4, V5))]
     #[call]
     pub ibc: Ibc,
 
@@ -159,12 +151,6 @@ pub struct InnerApp {
 
     /// The Cosmos state, allowing for relaying data about remote Cosmos chains
     /// which is not available in the IBC module.
-    #[cfg(feature = "testnet")]
-    pub cosmos: Cosmos,
-    /// The Cosmos state, allowing for relaying data about remote Cosmos chains
-    /// which is not available in the IBC module.
-    #[cfg(not(feature = "testnet"))]
-    #[orga(version(V4, V5))]
     pub cosmos: Cosmos,
 
     // TODO: migrate in, testnet flag
