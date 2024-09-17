@@ -1674,21 +1674,6 @@ impl<'a> BuildingCheckpointMut<'a> {
             excess_outputs,
         ))
     }
-
-    /// Insert a transfer to the pending transfer queue.
-    ///
-    /// Transfers will be processed once the containing checkpoint is finished
-    /// being signed, but will be represented in this checkpoint's emergency
-    /// disbursal before they are processed.
-    pub fn insert_pending(&mut self, dest: Dest, coins: Coin<Nbtc>) -> Result<()> {
-        let mut amount = self
-            .pending
-            .remove(dest.clone())?
-            .map_or(0.into(), |c| c.amount);
-        amount = (amount + coins.amount).result()?;
-        self.pending.insert(dest, Coin::mint(amount))?;
-        Ok(())
-    }
 }
 
 #[orga]

@@ -680,14 +680,18 @@ impl Bitcoin {
 
         if !dest.is_fee_exempt() {
             let deposit_fee = nbtc.take(calc_deposit_fee(nbtc.amount.into()))?;
-            self.checkpoints
-                .building_mut()?
-                .insert_pending(Dest::RewardPool, deposit_fee)?;
+            self.insert_pending(Dest::RewardPool, deposit_fee)?;
         }
 
-        self.checkpoints
-            .building_mut()?
-            .insert_pending(dest, nbtc)?;
+        let validation = dest.validate(self, nbtc.amount);
+        if validation.is_ok() {
+            self.insert_pending(dest, nbtc)?;
+        } else {
+            log::debug!(
+                "Skipped inserting deposit destination due to error: {:?}",
+                validation,
+            );
+        }
 
         Ok(())
     }
@@ -769,12 +773,18 @@ impl Bitcoin {
         self.add_withdrawal(script_pubkey, coins)
     }
 
-    /// Adds an output to the current `Building` checkpoint to be paid out once
-    /// the checkpoint is fully signed.
-    pub fn add_withdrawal(
-        &mut self,
-        script_pubkey: Adapter<Script>,
-        mut coins: Coin<Nbtc>,
+    pub fn withdrawal_fee_amount(&self, script_len: u64) -> Result<u64> {
+        Ok((9 + script_len)
+            * self.checkpoints.building()?.fee_rate
+            * self.checkpoints.config.user_fee_factor
+            / 10_000
+            * self.config.units_per_sat)
+    }
+
+    pub fn validate_withdrawal(
+        &self,
+        script_pubkey: &Adapter<Script>,
+        amount: Amount,
     ) -> Result<()> {
         if script_pubkey.len() as u64 > self.config.max_withdrawal_script_length {
             return Err(OrgaError::App("Script exceeds maximum length".to_string()).into());
@@ -792,11 +802,39 @@ impl Bitcoin {
             .into());
         }
 
-        let fee_amount = (9 + script_pubkey.len() as u64)
-            * self.checkpoints.building()?.fee_rate
-            * self.checkpoints.config.user_fee_factor
-            / 10_000
-            * self.config.units_per_sat;
+        let fee_amount = self.withdrawal_fee_amount(script_pubkey.len() as u64)?;
+        if fee_amount > amount {
+            return Err(
+                OrgaError::App("Withdrawal is too small to pay its miner fee".to_string()).into(),
+            );
+        }
+
+        let value = Into::<u64>::into(amount) / self.config.units_per_sat;
+        if value < self.config.min_withdrawal_amount {
+            return Err(OrgaError::App(
+                "Withdrawal is smaller than than the minimum amount".to_string(),
+            )
+            .into());
+        }
+        if bitcoin::Amount::from_sat(value) <= script_pubkey.dust_value() {
+            return Err(
+                OrgaError::App("Withdrawal is smaller than the dust limit".to_string()).into(),
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Adds an output to the current `Building` checkpoint to be paid out once
+    /// the checkpoint is fully signed.
+    pub fn add_withdrawal(
+        &mut self,
+        script_pubkey: Adapter<Script>,
+        mut coins: Coin<Nbtc>,
+    ) -> Result<()> {
+        self.validate_withdrawal(&script_pubkey, coins.amount)?;
+
+        let fee_amount = self.withdrawal_fee_amount(script_pubkey.len() as u64)?;
         let fee = coins.take(fee_amount).map_err(|_| {
             OrgaError::App("Withdrawal is too small to pay its miner fee".to_string())
         })?;
@@ -804,19 +842,6 @@ impl Bitcoin {
         // TODO: record as collected for excess if full
 
         let value = Into::<u64>::into(coins.amount) / self.config.units_per_sat;
-        if value < self.config.min_withdrawal_amount {
-            return Err(OrgaError::App(
-                "Withdrawal is smaller than than minimum amount".to_string(),
-            )
-            .into());
-        }
-        if bitcoin::Amount::from_sat(value) <= script_pubkey.dust_value() {
-            return Err(OrgaError::App(
-                "Withdrawal is too small to pay its dust limit".to_string(),
-            )
-            .into());
-        }
-
         let output = bitcoin::TxOut {
             script_pubkey: script_pubkey.into_inner(),
             value,
@@ -830,6 +855,25 @@ impl Bitcoin {
         let mut checkpoint_tx = building_checkpoint_batch.get_mut(0)?.unwrap();
         checkpoint_tx.output.push_back(Adapter::new(output))?;
         // TODO: push to excess if full
+
+        Ok(())
+    }
+
+    /// Insert a transfer to the pending transfer queue.
+    ///
+    /// Transfers will be processed once the containing checkpoint is finished
+    /// being signed, but will be represented in the checkpoint's emergency
+    /// disbursal before they are processed.
+    pub fn insert_pending(&mut self, dest: Dest, coins: Coin<Nbtc>) -> Result<()> {
+        dest.validate(self, coins.amount)?;
+
+        let building = &mut self.checkpoints.building_mut()?;
+        let mut amount = building
+            .pending
+            .remove(dest.clone())?
+            .map_or(0.into(), |c| c.amount);
+        amount = (amount + coins.amount).result()?;
+        building.pending.insert(dest, Coin::mint(amount))?;
 
         Ok(())
     }
@@ -852,9 +896,7 @@ impl Bitcoin {
 
         let dest = Dest::NativeAccount { address: to };
         let coins = self.accounts.withdraw(signer, amount)?;
-        self.checkpoints
-            .building_mut()?
-            .insert_pending(dest, coins)?;
+        self.insert_pending(dest, coins)?;
 
         Ok(())
     }

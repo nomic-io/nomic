@@ -239,9 +239,7 @@ impl InnerApp {
     pub fn ibc_transfer_nbtc(&mut self, dest: IbcDest, amount: Amount) -> Result<()> {
         crate::bitcoin::exempt_from_fee()?;
 
-        dest.source_port()?;
-        dest.source_channel()?;
-        dest.sender_address()?;
+        dest.validate()?;
 
         let signer = self.signer()?;
         let mut coins = self.bitcoin.accounts.withdraw(signer, amount)?;
@@ -254,9 +252,8 @@ impl InnerApp {
         let fee = coins.take(fee)?;
         self.bitcoin.give_rewards(fee)?;
 
-        let building = &mut self.bitcoin.checkpoints.building_mut()?;
         let dest = Dest::Ibc { data: dest };
-        building.insert_pending(dest, coins)?;
+        self.bitcoin.insert_pending(dest, coins)?;
 
         Ok(())
     }
@@ -286,9 +283,8 @@ impl InnerApp {
             let signer = self.signer()?;
             let coins = self.bitcoin.accounts.withdraw(signer, amount)?;
 
-            let building = &mut self.bitcoin.checkpoints.building_mut()?;
             let dest = Dest::EthAccount { address: dest };
-            building.insert_pending(dest, coins)?;
+            self.bitcoin.insert_pending(dest, coins)?;
 
             Ok(())
         }
@@ -339,12 +335,6 @@ impl InnerApp {
         sigset_index: u32,
         dest: Dest,
     ) -> Result<()> {
-        if let Dest::Ibc { data: dest } = dest.clone() {
-            dest.source_port()?;
-            dest.source_channel()?;
-            dest.sender_address()?;
-        }
-
         Ok(self.bitcoin.relay_deposit(
             btc_tx,
             btc_height,
@@ -371,7 +361,7 @@ impl InnerApp {
             .relay_op_key(&self.ibc, client_id, height, cons_key, op_addr, acc)?)
     }
 
-    pub fn credit_transfer(&mut self, dest: Dest, nbtc: Coin<Nbtc>) -> Result<()> {
+    pub fn credit_dest(&mut self, dest: Dest, nbtc: Coin<Nbtc>) -> Result<()> {
         match dest {
             Dest::NativeAccount { address } => self.bitcoin.accounts.deposit(address, nbtc)?,
             Dest::Ibc { data: dest } => dest.transfer(nbtc, &mut self.bitcoin, &mut self.ibc)?,
@@ -445,10 +435,7 @@ impl InnerApp {
             )?;
 
             let coins = Coin::<Nbtc>::mint(amount);
-            self.bitcoin
-                .checkpoints
-                .building_mut()?
-                .insert_pending(dest, coins)?;
+            self.bitcoin.insert_pending(dest, coins)?;
         }
 
         Ok(())
@@ -606,7 +593,7 @@ mod abci {
                         .step(&self.bitcoin.checkpoints.active_sigset()?)?;
                 }
                 for (dest, coins) in self.ethereum.take_pending()? {
-                    self.credit_transfer(dest, coins)?;
+                    self.credit_dest(dest, coins)?;
                 }
             }
 
@@ -1203,6 +1190,14 @@ impl IbcDest {
         self.source_channel()
             .map_or(false, |channel| channel.to_string() == OSMOSIS_CHANNEL_ID)
     }
+
+    pub fn validate(&self) -> Result<()> {
+        self.source_port()?;
+        self.source_channel()?;
+        self.sender_address()?;
+
+        Ok(())
+    }
 }
 
 #[derive(Encode, Decode, Debug, Clone, Serialize, Deserialize)]
@@ -1370,6 +1365,21 @@ impl Dest {
         };
 
         Ok(bytes)
+    }
+
+    pub fn validate(&self, bitcoin: &Bitcoin, amount: Amount) -> Result<()> {
+        match self {
+            Dest::NativeAccount { address } => {}
+            Dest::Ibc { data } => data.validate()?,
+            Dest::RewardPool => {}
+            #[cfg(feature = "ethereum")]
+            Dest::EthAccount { address } => {}
+            // #[cfg(feature = "ethereum")]
+            // Dest::EthCall(_, addr) => //TODO
+            Dest::Bitcoin { data } => bitcoin.validate_withdrawal(data, amount)?,
+        }
+
+        Ok(())
     }
 
     pub fn from_base64(s: &str) -> Result<Self> {
