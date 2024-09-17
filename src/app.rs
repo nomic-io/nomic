@@ -1382,11 +1382,9 @@ impl Dest {
     // TODO: remove once there are no legacy commitments in-flight
     pub fn legacy_commitment_bytes(&self) -> Result<Vec<u8>> {
         use sha2::{Digest, Sha256};
-        use Dest::*;
         let bytes = match self {
-            NativeAccount { address } => address.bytes().into(),
-            Ibc { data } => Sha256::digest(data.encode()?).to_vec(),
-            Fee => vec![1],
+            Dest::NativeAccount { address } => address.bytes().into(),
+            Dest::Ibc { data } => Sha256::digest(data.encode()?).to_vec(),
             _ => return Err(Error::App("Invalid dest for legacy commitment".to_string())),
         };
 
