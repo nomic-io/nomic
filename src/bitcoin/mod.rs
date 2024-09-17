@@ -941,7 +941,7 @@ impl Bitcoin {
             .signing()?
             .ok_or_else(|| OrgaError::App("No checkpoint to be signed".to_string()))?;
 
-        if now > interval && now - interval > signing.create_time()
+        if now > interval && now.saturating_sub(interval) > signing.create_time()
             || reset_index >= signing.sigset.index
         {
             return Ok(ChangeRates::default());

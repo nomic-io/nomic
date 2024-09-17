@@ -561,7 +561,7 @@ mod abci {
 
             let pending_nbtc_transfers = self.bitcoin.take_pending()?;
             for (dest, coins) in pending_nbtc_transfers {
-                self.credit_transfer(dest, coins)?;
+                self.credit_dest(dest, coins)?;
             }
 
             let external_outputs = if self.bitcoin.should_push_checkpoint()? {
@@ -669,7 +669,11 @@ impl ConvertSdkTx for InnerApp {
 
                     match msg.amount[0].denom.to_string().as_str() {
                         "unom" => {
-                            let amount: u64 = msg.amount[0].amount.to_string().parse().unwrap();
+                            let amount: u64 = msg.amount[0]
+                                .amount
+                                .to_string()
+                                .parse()
+                                .map_err(|_| Error::App("Invalid amount".to_string()))?;
 
                             let payer = build_call!(self.accounts.take_as_funding(MIN_FEE.into()));
                             let paid = build_call!(self.accounts.transfer(to, amount.into()));
@@ -677,7 +681,11 @@ impl ConvertSdkTx for InnerApp {
                             return Ok(PaidCall { payer, paid });
                         }
                         "usat" => {
-                            let amount: u64 = msg.amount[0].amount.to_string().parse().unwrap();
+                            let amount: u64 = msg.amount[0]
+                                .amount
+                                .to_string()
+                                .parse()
+                                .map_err(|_| Error::App("Invalid amount".to_string()))?;
 
                             let payer = build_call!(self.bitcoin.transfer(to, amount.into()));
                             let paid = build_call!(self.app_noop());
@@ -964,7 +972,10 @@ impl ConvertSdkTx for InnerApp {
                             return Err(Error::App("Unsupported denom for IBC transfer".into()));
                         }
 
-                        let amount = msg.amount.into();
+                        let amount: u64 = msg
+                            .amount
+                            .parse()
+                            .map_err(|e: std::num::ParseIntError| Error::App(e.to_string()))?;
 
                         let ibc_sender_addr = msg
                             .sender
@@ -991,7 +1002,7 @@ impl ConvertSdkTx for InnerApp {
                             memo: msg.memo.try_into()?,
                         };
 
-                        let payer = build_call!(self.ibc_transfer_nbtc(dest, amount));
+                        let payer = build_call!(self.ibc_transfer_nbtc(dest, amount.into()));
                         let paid = build_call!(self.app_noop());
 
                         Ok(PaidCall { payer, paid })
@@ -1003,7 +1014,9 @@ impl ConvertSdkTx for InnerApp {
                             .as_object()
                             .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
 
-                        let dest_addr: Address = msg["dest_address"]
+                        let dest_addr: Address = msg
+                            .get("dest_address")
+                            .ok_or_else(|| Error::App("Missing destination address".to_string()))?
                             .as_str()
                             .ok_or_else(|| Error::App("Invalid destination address".to_string()))?
                             .parse()
@@ -1036,7 +1049,9 @@ impl ConvertSdkTx for InnerApp {
                             .as_object()
                             .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
 
-                        let recovery_addr: bitcoin::Address = msg["recovery_address"]
+                        let recovery_addr: bitcoin::Address = msg
+                            .get("recovery_address")
+                            .ok_or_else(|| Error::App("Missing reovery address".to_string()))?
                             .as_str()
                             .ok_or_else(|| Error::App("Invalid recovery address".to_string()))?
                             .parse()
@@ -1066,7 +1081,9 @@ impl ConvertSdkTx for InnerApp {
                             .as_object()
                             .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
 
-                        let amount: u64 = msg["amount"]
+                        let amount: u64 = msg
+                            .get("amount")
+                            .ok_or_else(|| Error::App("Missing amount".to_string()))?
                             .as_str()
                             .ok_or_else(|| Error::App("Invalid amount".to_string()))?
                             .parse()
@@ -1095,7 +1112,7 @@ pub struct MsgWithdraw {
 pub struct MsgIbcTransfer {
     pub channel_id: String,
     pub port_id: String,
-    pub amount: u64,
+    pub amount: String,
     pub denom: String,
     pub receiver: String,
     pub sender: String,
