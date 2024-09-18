@@ -885,10 +885,6 @@ impl Relayer {
         let txid = tx.txid();
         let outpoint = (txid.into_inner(), output.vout);
         let dest = output.dest.clone();
-        if dest.to_receiver_addr().is_none() {
-            return Ok(());
-        }
-        let receiver_addr = dest.to_receiver_addr().unwrap();
         let vout = output.vout;
         let contains_outpoint = app_client(&self.app_client_addr)
             .query(|app| app.bitcoin.processed_outpoints.contains(outpoint))
@@ -899,23 +895,25 @@ impl Relayer {
             super::NETWORK,
         )?;
 
-        if contains_outpoint {
-            let mut index = index.lock().await;
-            index.remove_deposit(receiver_addr, deposit_address, txid, vout)?;
-            return Ok(());
-        }
+        if let Some(receiver_addr) = dest.to_receiver_addr() {
+            if contains_outpoint {
+                let mut index = index.lock().await;
+                index.remove_deposit(receiver_addr, deposit_address, txid, vout)?;
+                return Ok(());
+            }
 
-        let mut index_guard = index.lock().await;
-        index_guard.insert_deposit(
-            receiver_addr,
-            deposit_address.clone(),
-            Deposit::new(
-                txid,
-                vout,
-                tx.output.get(vout as usize).unwrap().value,
-                Some(height.into()),
-            ),
-        );
+            let mut index_guard = index.lock().await;
+            index_guard.insert_deposit(
+                receiver_addr,
+                deposit_address.clone(),
+                Deposit::new(
+                    txid,
+                    vout,
+                    tx.output.get(vout as usize).unwrap().value,
+                    Some(height.into()),
+                ),
+            );
+        }
 
         let proof_bytes = self
             .btc_client()
