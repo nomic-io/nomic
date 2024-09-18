@@ -529,11 +529,11 @@ impl Bitcoin {
 
         let checkpoint = self.checkpoints.get(sigset_index)?;
         let sigset = checkpoint.sigset.clone();
-        let dest_bytes = dest.commitment_bytes()?;
+        let mut dest_bytes = dest.commitment_bytes()?;
         let expected_script =
             sigset.output_script(&dest_bytes, self.checkpoints.config.sigset_threshold)?;
         if output.script_pubkey != expected_script {
-            let dest_bytes = dest.legacy_commitment_bytes()?;
+            dest_bytes = dest.legacy_commitment_bytes()?;
             let expected_script =
                 sigset.output_script(&dest_bytes, self.checkpoints.config.sigset_threshold)?;
             if output.script_pubkey != expected_script {
