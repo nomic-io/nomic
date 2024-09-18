@@ -960,8 +960,9 @@ impl Relayer {
         }
 
         info!(
-            "Relayed deposit: {} sats, {:?}",
-            tx.output[vout as usize].value, dest
+            "Relayed deposit: {} sats, {}",
+            tx.output[vout as usize].value,
+            dest.to_string(),
         );
 
         Ok(())
