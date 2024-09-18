@@ -3741,7 +3741,7 @@ dependencies = [
 
 [[package]]
 name = "nomic"
-version = "8.1.0"
+version = "9.0.0"
 dependencies = [
  "alloy",
  "base64 0.13.1",
