@@ -54,7 +54,7 @@ impl MigrateFrom<InnerAppV5> for InnerAppV6 {
                 })
                 .map(|script_hex| bitcoin::Script::from_hex(script_hex).unwrap());
             other.bitcoin.checkpoints.backfill(
-                todo!(),
+                5276,
                 scripts,
                 other.bitcoin.checkpoints.config.sigset_threshold,
             )?;
