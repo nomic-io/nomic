@@ -1224,6 +1224,18 @@ impl IbcDest {
 
         Ok(())
     }
+
+    pub fn legacy_encode(&self) -> Result<Vec<u8>> {
+        let mut bytes = vec![];
+        self.source_port.encode_into(&mut bytes)?;
+        self.source_channel.encode_into(&mut bytes)?;
+        EdAdapter(self.receiver_signer()?).encode_into(&mut bytes)?;
+        EdAdapter(self.sender_signer()?).encode_into(&mut bytes)?;
+        self.timeout_timestamp.encode_into(&mut bytes)?;
+        self.memo.encode_into(&mut bytes)?;
+
+        Ok(bytes)
+    }
 }
 
 #[derive(Encode, Decode, Debug, Clone, Serialize, Deserialize)]
@@ -1384,7 +1396,7 @@ impl Dest {
         use sha2::{Digest, Sha256};
         let bytes = match self {
             Dest::NativeAccount { address } => address.bytes().into(),
-            Dest::Ibc { data } => Sha256::digest(data.encode()?).to_vec(),
+            Dest::Ibc { data } => Sha256::digest(data.legacy_encode()?).to_vec(),
             _ => return Err(Error::App("Invalid dest for legacy commitment".to_string())),
         };
 
