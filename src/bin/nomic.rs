@@ -1,8 +1,6 @@
 //! This binary provides the command-line interface for running a Nomic full
 //! node, as well as client commands for querying and broadcasting transactions.
 
-#![warn(missing_docs)]
-#![warn(clippy::missing_docs_in_private_items)]
 #![feature(trivial_bounds)]
 #![allow(incomplete_features)]
 #![feature(specialization)]
@@ -13,11 +11,12 @@
 use alloy::network::EthereumWallet;
 #[cfg(feature = "ethereum")]
 use alloy::signers::local::LocalSigner;
-#[cfg(feature = "ethereum")]
-use nomic::bitcoin::deposit_index::DepositIndex;
 
 use bitcoin::consensus::{Decodable, Encodable};
-use bitcoin::secp256k1::{self, Message};
+#[cfg(feature = "ethereum")]
+use bitcoin::secp256k1::Message;
+use bitcoin::secp256k1::{self};
+
 use bitcoin::util::bip32::ExtendedPubKey;
 use bitcoincore_rpc_async::RpcApi;
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
@@ -51,11 +50,9 @@ use std::fs::Permissions;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::Arc;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 use tendermint_rpc::Client as _;
-use tokio::sync::Mutex;
 
 const BANNER: &str = r#"
 ███╗   ██╗  ██████╗  ███╗   ███╗ ██╗  ██████╗

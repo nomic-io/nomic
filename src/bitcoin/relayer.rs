@@ -1,4 +1,3 @@
-#![feature(async_closure)]
 use super::signatory::Signatory;
 use super::SignatorySet;
 use super::SIGSET_THRESHOLD;
@@ -11,7 +10,6 @@ use crate::error::Result;
 use crate::orga::encoding::Encode;
 use crate::utils::time_now;
 use bitcoin::consensus::{Decodable, Encodable};
-use bitcoin::TxOut;
 use bitcoin::Txid;
 use bitcoin::{hashes::Hash, Block, BlockHash, Transaction};
 use bitcoincore_rpc_async::{json::GetBlockHeaderResult, Client as BitcoinRpcClient, RpcApi};
@@ -853,7 +851,7 @@ impl Relayer {
         let mut matches = Vec::new();
         for (vout, output) in tx.output.iter().enumerate() {
             let mut script_bytes = vec![];
-            let encode: usize = output
+            let _encode: usize = output
                 .script_pubkey
                 .consensus_encode(&mut script_bytes)
                 .unwrap();
