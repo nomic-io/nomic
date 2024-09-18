@@ -357,7 +357,6 @@ impl Relayer {
         index: Arc<Mutex<DepositIndex>>,
     ) -> Result<!> {
         let mut prev_tip = None;
-        let mut seen_mempool_txids: HashSet<Txid> = HashSet::new();
 
         loop {
             self.insert_announced_addrs(recv).await?;
@@ -426,6 +425,8 @@ impl Relayer {
             if seen_mempool_txids.contains(&txid) {
                 continue;
             }
+
+            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
             let tx = self
                 .btc_client()
