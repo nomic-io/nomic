@@ -245,7 +245,12 @@ async fn bitcoin_test() {
         max_length: 59,
         ..Default::default()
     };
-    let funded_accounts = setup_test_app(&path, 4, Some(headers_config), None, None, None);
+    let cp_config = CheckpointConfig {
+        emergency_disbursal_lock_time_interval: 90,
+        ..Default::default()
+    };
+    let funded_accounts =
+        setup_test_app(&path, 4, Some(headers_config), Some(cp_config), None, None);
 
     let node = Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"), Default::default());
     let _node_child = node.await.run().await.unwrap();
@@ -546,7 +551,7 @@ async fn bitcoin_test() {
                 }
             }
         }
-        assert_eq!(signatory_balance, 49993057);
+        assert_eq!(signatory_balance, 49992973);
 
         let funded_account_balances: Vec<_> = funded_accounts
             .iter()
