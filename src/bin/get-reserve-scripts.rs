@@ -1,21 +1,37 @@
+//! This script is used to get the reserve scripts for the last N days by
+//! fetching the chain of checkpoint transactions confirmed on Bitcoin.
+//!
+//! This is useful for backfilling checkpoint data, or for recovering deposits
+//! against old checkpoints (e.g. in the `nomic recover-deposit` command).
+
+#![warn(missing_docs)]
+#![warn(clippy::missing_docs_in_private_items)]
+
 use bitcoincore_rpc_async::{Auth, Client, RpcApi};
 use clap::Parser;
 
+/// Command line options for the get-reserve-scripts command.
 #[derive(Parser, Debug)]
 pub struct Opts {
+    /// The number of days to look back.
     #[clap(default_value_t = 30)]
     lookback_days: u64,
 
+    /// The port of the Bitcoin RPC server.
+    // TODO: get default based on network
     #[clap(short = 'p', long, default_value_t = 8332)]
     rpc_port: u16,
 
+    /// The username for the Bitcoin RPC server.
     #[clap(short = 'u', long)]
     rpc_user: Option<String>,
 
+    /// The password for the Bitcoin RPC server.
     #[clap(short = 'P', long)]
     rpc_pass: Option<String>,
 }
 
+/// Outputs the reserve scripts for the last N days.
 #[tokio::main]
 pub async fn main() {
     let opts = Opts::parse();
@@ -72,6 +88,7 @@ pub async fn main() {
     }
 }
 
+/// Returns the current time as a Unix timestamp (in seconds).
 fn now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

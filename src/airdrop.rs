@@ -1,3 +1,5 @@
+//! State and logic for airdrop accounts which can be claimed by users.
+
 use orga::coins::Address;
 #[cfg(feature = "full")]
 use orga::coins::{Amount, Decimal};
@@ -12,11 +14,14 @@ use split_iter::Splittable;
 
 use super::app::Nom;
 
+/// The maximum units of stake counted when calculating airdrop II.
 #[cfg(feature = "full")]
 const MAX_STAKED: u64 = 1_000_000_000;
+/// The total amount of token units claimable by users in airdrop II.
 #[cfg(feature = "full")]
 const AIRDROP_II_TOTAL: u64 = 3_500_000_000_000;
 
+/// Airdrop account state.
 #[orga(version = 1)]
 pub struct Airdrop {
     accounts: Map<Address, Account>,
@@ -32,15 +37,19 @@ type Recipients = Vec<(Address, Vec<(u64, u64)>, u64)>;
 
 #[orga]
 impl Airdrop {
+    /// Gets the account at the given address.
     #[query]
     pub fn get(&self, address: Address) -> Result<Option<Account>> {
         Ok(self.accounts.get(address)?.map(|a| a.clone()))
     }
 
+    /// Gets a mutable reference to the account at the given address.
     pub fn get_mut(&mut self, address: Address) -> Result<Option<ChildMut<Address, Account>>> {
         self.accounts.get_mut(address)
     }
 
+    /// Gets a mutable reference to the account for the signer of the
+    /// transaction.
     pub fn signer_acct_mut(&mut self) -> Result<ChildMut<Address, Account>> {
         let signer = self
             .context::<Signer>()
@@ -53,6 +62,7 @@ impl Airdrop {
             .ok_or_else(|| Error::App("No airdrop account for signer".into()))
     }
 
+    /// Pays into the Paid context as funding.
     fn pay_as_funding(&mut self, amount: u64) -> Result<()> {
         let paid = self
             .context::<Paid>()
@@ -61,6 +71,7 @@ impl Airdrop {
         paid.give::<Nom, _>(amount)
     }
 
+    /// Claims the signer's airdrop I balance to the funding context.
     #[call]
     pub fn claim_airdrop1(&mut self) -> Result<()> {
         let mut acct = self.signer_acct_mut()?;
@@ -69,6 +80,7 @@ impl Airdrop {
         Ok(())
     }
 
+    /// Claims the signer's airdrop II balance to the funding context.
     #[call]
     pub fn claim_airdrop2(&mut self) -> Result<()> {
         let mut acct = self.signer_acct_mut()?;
@@ -77,6 +89,9 @@ impl Airdrop {
         Ok(())
     }
 
+    /// Joins the signer's account to a destination account (e.g. when the user
+    /// received the airdrop to multiple addresses but would like to consolidate
+    /// into one account).
     pub fn join_accounts(&mut self, dest_addr: Address) -> Result<()> {
         let mut acct = self.signer_acct_mut()?;
 
@@ -110,6 +125,7 @@ impl Airdrop {
         Ok(())
     }
 
+    /// Initializes unclaimed airdrop accounts from a CSV file.
     #[cfg(feature = "full")]
     pub fn init_from_airdrop2_csv(&mut self, data: &[u8]) -> Result<()> {
         log::info!("Initializing balances from airdrop 2 snapshot...");
@@ -178,6 +194,7 @@ impl Airdrop {
         Ok(())
     }
 
+    /// Initializes and pays into a new airdrop account.
     #[allow(unused_variables)]
     #[cfg(feature = "full")]
     fn airdrop_to(
@@ -193,11 +210,15 @@ impl Airdrop {
         Ok((0, 0))
     }
 
+    /// Returns the score for a given staked amount and delegation count. The
+    /// score is further used in the calculation of the amount of tokens to
+    /// receive.
     #[cfg(feature = "full")]
     fn score(staked: u64, _count: u64) -> u64 {
         staked.min(MAX_STAKED)
     }
 
+    /// Parses the CSV data into a list of recipients.
     #[cfg(feature = "full")]
     fn get_recipients_from_csv(data: &[u8]) -> Recipients {
         let mut reader = csv::Reader::from_reader(data);
@@ -227,6 +248,7 @@ impl Airdrop {
             .collect()
     }
 
+    /// Initializes the airdrop I balances for a given address.
     #[cfg(feature = "full")]
     fn init_airdrop1_amount(
         &mut self,
@@ -247,6 +269,8 @@ impl Airdrop {
         Ok(nom_amount)
     }
 
+    /// Initializes the airdrop I balances for all the accounts in the given
+    /// CSV.
     #[cfg(feature = "full")]
     pub fn init_from_airdrop1_csv(&mut self, data: &[u8]) -> Result<()> {
         let mut rdr = csv::Reader::from_reader(data);
@@ -282,23 +306,25 @@ impl Airdrop {
     }
 }
 
-#[orga(version = 2)]
+/// An airdrop account.
+#[orga(version = 1..=2)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Account {
+    /// The part of the airdrop received in airdrop I.
     pub airdrop1: Part,
+    /// The part of the airdrop received in airdrop II.
     pub airdrop2: Part,
+    /// Whether or not the account has been joined into from another account.
+    /// This is tracked to prevent a DoS vector where an attacker could spam
+    /// transactions by repeatedly joining into different accounts without
+    /// paying a fee.
     pub joined: bool,
 }
 
 impl Account {
+    /// Returns `true` if the account is empty.
     pub fn is_empty(&self) -> bool {
         self == &Self::default()
-    }
-}
-
-impl MigrateFrom<AccountV0> for AccountV1 {
-    fn migrate_from(_prev: AccountV0) -> Result<Self> {
-        unreachable!()
     }
 }
 
@@ -308,20 +334,31 @@ impl MigrateFrom<AccountV1> for AccountV2 {
     }
 }
 
+/// A part of an airdrop account, e.g. the balances from either airdrop I or
+/// airdrop II.
 #[orga]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Part {
+    /// A balance for the user which is locked and cannot be claimed. This will
+    /// typically be unlocked after some external event occurs.
     pub locked: u64,
+    /// A balance for the user which can be claimed by the user.
     pub claimable: u64,
+    /// The amount of balance which has already been claimed. This is not a
+    /// balance, since upon claiming the balance was moved elsewhere, e.g. the
+    /// user's normal balance.
     pub claimed: u64,
 }
 
 impl Part {
+    /// Unlocks the locked balance, making it claimable.
     pub fn unlock(&mut self) {
         self.claimable += self.locked;
         self.locked = 0;
     }
 
+    /// Claims the claimable balance, marking the amount as claimed and
+    /// returning the amount to be paid to the account's normal balance.
     pub fn claim(&mut self) -> Result<u64> {
         let amount = self.claimable;
         if amount == 0 {
@@ -333,10 +370,13 @@ impl Part {
         Ok(amount)
     }
 
+    /// Returns `true` if the part has no locked or claimable balances and has
+    /// not been claimed.
     pub fn is_empty(&self) -> bool {
         self == &Self::default()
     }
 
+    /// Returns the total balance across all states.
     pub fn total(&self) -> u64 {
         self.locked + self.claimable + self.claimed
     }

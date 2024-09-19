@@ -55,7 +55,7 @@ impl OutpointSet {
         for entry in self.expiration_queue.iter()? {
             let (entry, _) = entry?;
             let (expiration, outpoint) = *entry;
-            if expiration > now {
+            if expiration >= now {
                 break;
             }
             expired.push((expiration, outpoint));

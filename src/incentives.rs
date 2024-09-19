@@ -1,3 +1,6 @@
+//! This module creates incentive accounts, allowing eligible users to claim
+//! tokens based on participation in the Nomic ecosystem.
+
 use crate::airdrop::Part;
 use crate::{
     app::Nom,

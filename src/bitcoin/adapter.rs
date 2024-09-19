@@ -6,12 +6,13 @@ use orga::prelude::*;
 use orga::state::State;
 use orga::store::Store;
 use orga::Result as OrgaResult;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::ops::{Deref, DerefMut};
 
 /// A wrapper that adds core `orga` traits to types from the `bitcoin` crate.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct Adapter<T> {
     inner: T,
 }

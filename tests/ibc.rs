@@ -66,7 +66,9 @@ async fn generate_deposit_address(address: &Address) -> Result<DepositAddress> {
         })
         .await?;
     let script = sigset.output_script(
-        Dest::Address(*address).commitment_bytes()?.as_slice(),
+        Dest::NativeAccount { address: *address }
+            .commitment_bytes()?
+            .as_slice(),
         threshold,
     )?;
 
@@ -87,7 +89,7 @@ pub async fn broadcast_deposit_addr(
     info!("Broadcasting deposit address to relayer...");
     let dest_addr = dest_addr.parse().unwrap();
 
-    let commitment = Dest::Address(dest_addr).encode()?;
+    let commitment = Dest::NativeAccount { address: dest_addr }.encode()?;
 
     let url = format!("{}/address", relayer,);
     let client = reqwest::Client::new();
@@ -119,14 +121,16 @@ async fn direct_deposit_bitcoin(
         .unwrap()
         .as_secs()
         * 1_000_000_000;
-    let dest = Dest::Ibc(nomic::app::IbcDest {
-        source_port: "transfer".try_into().unwrap(),
-        source_channel: "channel-0".try_into().unwrap(),
-        sender: EdAdapter(sender.into()),
-        receiver: EdAdapter(receiver.into()),
-        timeout_timestamp: now_ns + 86400 * 1_000_000_000,
-        memo: "".to_string().try_into().unwrap(),
-    });
+    let dest = Dest::Ibc {
+        data: nomic::app::IbcDest {
+            source_port: "transfer".try_into().unwrap(),
+            source_channel: "channel-0".try_into().unwrap(),
+            sender: sender.try_into().unwrap(),
+            receiver: receiver.try_into().unwrap(),
+            timeout_timestamp: now_ns + 86400 * 1_000_000_000,
+            memo: "".to_string().try_into().unwrap(),
+        },
+    };
 
     let (sigset, threshold) = app_client()
         .query(|app| {
@@ -591,13 +595,11 @@ async fn ibc_test() {
         let ibc_dest = IbcDest {
             source_port: "transfer".try_into().unwrap(),
             source_channel: "channel-0".try_into().unwrap(),
-            receiver: EdAdapter(
-                "cosmos1vd0r7t04vnr36x6pydel9eacvn776psehknf74"
-                    .to_string()
-                    .try_into()
-                    .unwrap(),
-            ),
-            sender: EdAdapter(funded_accounts[0].address.to_string().into()),
+            receiver: "cosmos1vd0r7t04vnr36x6pydel9eacvn776psehknf74"
+                .to_string()
+                .try_into()
+                .unwrap(),
+            sender: funded_accounts[0].address.to_string().try_into().unwrap(),
             timeout_timestamp,
             memo: "".try_into().unwrap(),
         };

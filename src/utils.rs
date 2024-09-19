@@ -1,3 +1,5 @@
+//! Utility functions used by end-to-end tests.
+
 #![cfg(not(target_arch = "wasm32"))]
 #[cfg(feature = "full")]
 use crate::app::App;
