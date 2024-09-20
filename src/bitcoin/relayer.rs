@@ -1170,13 +1170,15 @@ impl WatchedScripts {
     }
 
     pub fn insert(&mut self, dest: Dest, sigset: &SignatorySet) -> Result<bool> {
-        let script = self.derive_script(&dest, sigset, SIGSET_THRESHOLD)?;
+        let scripts = self.derive_scripts(&dest, sigset, SIGSET_THRESHOLD)?;
 
-        if self.scripts.contains_key(&script) {
-            return Ok(false);
+        for script in scripts {
+            if self.scripts.contains_key(&script) {
+                return Ok(false);
+            }
+
+            self.scripts.insert(script, (dest.clone(), sigset.index()));
         }
-
-        self.scripts.insert(script, (dest.clone(), sigset.index()));
 
         let (_, dests) = self
             .sigsets
@@ -1196,21 +1198,26 @@ impl WatchedScripts {
             }
 
             for dest in dests {
-                let script = self.derive_script(dest, sigset, SIGSET_THRESHOLD)?; // TODO: get threshold from state
-                self.scripts.remove(&script);
+                let scripts = self.derive_scripts(dest, sigset, SIGSET_THRESHOLD)?; // TODO: get threshold from state
+                for script in scripts {
+                    self.scripts.remove(&script);
+                }
             }
         }
 
         Ok(())
     }
 
-    fn derive_script(
+    fn derive_scripts(
         &self,
         dest: &Dest,
         sigset: &SignatorySet,
         threshold: (u64, u64),
-    ) -> Result<::bitcoin::Script> {
-        sigset.output_script(&dest.commitment_bytes()?, threshold)
+    ) -> Result<Vec<::bitcoin::Script>> {
+        Ok(vec![
+            sigset.output_script(&dest.commitment_bytes()?, threshold)?,
+            sigset.output_script(&dest.legacy_commitment_bytes()?, threshold)?,
+        ])
     }
 }
 
