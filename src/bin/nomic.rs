@@ -2682,6 +2682,13 @@ impl RelayEthereumCmd {
             let sigs = sigs
                 .into_iter()
                 .map(|(pk, sig)| {
+                    let Some(sig) = sig else {
+                        return nomic::ethereum::bridge_contract::Signature {
+                            v: 0,
+                            r: [0; 32].into(),
+                            s: [0; 32].into(),
+                        };
+                    };
                     let (v, r, s) = nomic::ethereum::to_eth_sig(
                         &bitcoin::secp256k1::ecdsa::Signature::from_compact(&sig.unwrap().0)
                             .unwrap(),

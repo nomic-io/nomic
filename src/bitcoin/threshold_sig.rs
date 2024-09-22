@@ -374,5 +374,6 @@ impl Debug for ThresholdSig {
 #[derive(Clone)]
 pub struct Share {
     pub power: u64,
+    // TODO: should be pub, but causes weird compiler error
     pub(crate) sig: Option<Signature>,
 }
