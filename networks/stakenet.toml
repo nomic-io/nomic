@@ -1,6 +1,7 @@
 state_sync_rpc = [
   "http://161.35.51.124:26667",
-  "http://161.35.51.124:26667"
+  "http://161.35.51.124:26667",
+  "https://rpc.nomic.basementnodes.ca:443"
 ]
 tendermint_flags = [
     "--p2p.seeds",
@@ -9,7 +10,8 @@ tendermint_flags = [
     """,
 ]
 btc_relayer = [
-  "https://relayer.nomic.mappum.io:8443"
+  "https://relayer.nomic.mappum.io:8443",
+  "https://rly.nomic.basementnodes.ca:443"
 ]
 
 legacy_version = "8.0.x"
