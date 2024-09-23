@@ -45,7 +45,7 @@ pub struct Relayer {
     btc_client: Arc<RwLock<BitcoinRpcClient>>,
     app_client_addr: String,
 
-    scripts: Option<WatchedScriptStore>,
+    scripts: Arc<Mutex<Option<WatchedScriptStore>>>,
     deposit_buffer: Option<u64>,
 }
 
@@ -54,7 +54,7 @@ impl Relayer {
         Relayer {
             btc_client: Arc::new(RwLock::new(btc_client)),
             app_client_addr,
-            scripts: None,
+            scripts: Arc::new(Mutex::new(None)),
             deposit_buffer: None,
         }
     }
@@ -120,12 +120,12 @@ impl Relayer {
     ) -> Result<()> {
         info!("Starting deposit relay...");
 
+        let index = Arc::new(Mutex::new(DepositIndex::new()));
         let scripts = WatchedScriptStore::open(store_path, &self.app_client_addr).await?;
-        self.scripts = Some(scripts);
+        self.scripts = Arc::new(Mutex::new(Some(scripts)));
 
         self.deposit_buffer = Some(deposit_buffer);
 
-        let index = Arc::new(Mutex::new(DepositIndex::new()));
         let (server, mut recv) = self.create_address_server(index.clone())?;
 
         let deposit_relay = async {
@@ -138,7 +138,24 @@ impl Relayer {
             }
         };
 
-        join!(server, deposit_relay);
+        let mut seen_mempool_txids = HashSet::new();
+
+        let mempool_relay = async {
+            loop {
+                if let Err(e) = self
+                    .scan_for_mempool_deposits(index.clone(), &mut seen_mempool_txids)
+                    .await
+                {
+                    if !e.to_string().contains("No completed checkpoints yet") {
+                        error!("Mempool deposit relay error: {}", e);
+                    }
+                }
+
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            }
+        };
+
+        join!(server, deposit_relay, mempool_relay);
         Ok(())
     }
 
@@ -333,18 +350,13 @@ impl Relayer {
     }
 
     async fn relay_deposits(
-        &mut self,
+        &self,
         recv: &mut Receiver<(Dest, u32)>,
         index: Arc<Mutex<DepositIndex>>,
     ) -> Result<!> {
         let mut prev_tip = None;
-        let mut seen_mempool_txids = HashSet::new();
 
         loop {
-            self.scan_for_mempool_deposits(index.clone(), &mut seen_mempool_txids)
-                .await?;
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-
             self.insert_announced_addrs(recv).await?;
 
             let tip = self.sidechain_block_hash().await?;
@@ -369,7 +381,7 @@ impl Relayer {
     }
 
     async fn scan_for_deposits(
-        &mut self,
+        &self,
         num_blocks: usize,
         index: Arc<Mutex<DepositIndex>>,
     ) -> Result<BlockHash> {
@@ -384,7 +396,7 @@ impl Relayer {
 
         for (i, block) in blocks.into_iter().enumerate().rev() {
             let height = (base_height - i) as u32;
-            for (tx, matches) in self.relevant_txs(&block) {
+            for (tx, matches) in self.relevant_txs(&block).await? {
                 for output in matches {
                     if let Err(err) = self
                         .maybe_relay_deposit(tx, height, &block.block_hash(), output, index.clone())
@@ -412,6 +424,8 @@ impl Relayer {
                 continue;
             }
 
+            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
             let tx = self
                 .btc_client()
                 .await
@@ -421,20 +435,24 @@ impl Relayer {
                 let mut script_bytes = vec![];
                 output.script_pubkey.consensus_encode(&mut script_bytes)?;
                 let script = ::bitcoin::Script::consensus_decode(&mut script_bytes.as_slice())?;
-
-                if self.scripts.is_none() {
+                let script_guard = self.scripts.lock().await;
+                if script_guard.is_none() {
                     return Ok(());
                 }
 
-                if let Some((dest, _)) = self.scripts.as_ref().unwrap().scripts.get(&script) {
+                if let Some((dest, _)) = script_guard.as_ref().unwrap().scripts.get(&script) {
                     let bitcoin_address = bitcoin::Address::from_script(
                         &output.script_pubkey.clone(),
                         super::NETWORK,
                     )?;
 
                     let mut index = index.lock().await;
+                    let receiver_addr = match dest.to_receiver_addr() {
+                        Some(addr) => addr,
+                        None => continue,
+                    };
                     index.insert_deposit(
-                        dest.to_receiver_addr(),
+                        receiver_addr,
                         bitcoin_address,
                         Deposit::new(txid, vout as u32, output.value, None),
                     )
@@ -511,7 +529,6 @@ impl Relayer {
 
     pub async fn start_checkpoint_relay(&mut self) -> Result<()> {
         info!("Starting checkpoint relay...");
-
         loop {
             if let Err(e) = self.relay_checkpoints().await {
                 if !e.to_string().contains("No completed checkpoints yet") {
@@ -528,7 +545,6 @@ impl Relayer {
             .query(|app| Ok(app.bitcoin.checkpoints.last_completed_tx()?))
             .await?;
         info!("Last checkpoint tx: {}", last_checkpoint.txid());
-
         let mut relayed = HashSet::new();
 
         loop {
@@ -575,7 +591,7 @@ impl Relayer {
         info!("Starting recovery tx relay...");
 
         let scripts = WatchedScriptStore::open(store_path, &self.app_client_addr).await?;
-        self.scripts = Some(scripts);
+        self.scripts = Arc::new(Mutex::new(Some(scripts)));
 
         loop {
             if let Err(e) = self.relay_recovery_txs().await {
@@ -685,9 +701,9 @@ impl Relayer {
                         if err.to_string().contains("No completed checkpoints yet") {
                             tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
                             continue;
-                        } else {
-                            return Err(err.into());
                         }
+
+                        return Err(err.into());
                     }
                 }
             };
@@ -767,7 +783,7 @@ impl Relayer {
         Ok(None)
     }
 
-    async fn insert_announced_addrs(&mut self, recv: &mut Receiver<(Dest, u32)>) -> Result<()> {
+    async fn insert_announced_addrs(&self, recv: &mut Receiver<(Dest, u32)>) -> Result<()> {
         while let Ok((addr, sigset_index)) = recv.try_recv() {
             let sigset_res = app_client(&self.app_client_addr)
                 .query(|app| Ok(app.bitcoin.checkpoints.get(sigset_index)?.sigset.clone()))
@@ -779,15 +795,15 @@ impl Relayer {
                     continue;
                 }
             };
-
-            self.scripts.as_mut().unwrap().insert(addr, &sigset)?;
+            let mut script_guard = self.scripts.lock().await;
+            script_guard.as_mut().unwrap().insert(addr, &sigset)?;
         }
 
         let max_age = app_client(&self.app_client_addr)
             .query(|app| Ok(app.bitcoin.checkpoints.config.max_age))
             .await?;
-
-        self.scripts
+        let mut script_guard = self.scripts.lock().await;
+        script_guard
             .as_mut()
             .unwrap()
             .scripts
@@ -815,43 +831,44 @@ impl Relayer {
         Ok(blocks)
     }
 
-    pub fn relevant_txs<'a>(
+    pub async fn relevant_txs<'a>(
         &'a self,
         block: &'a Block,
-    ) -> impl Iterator<Item = (&'a Transaction, impl Iterator<Item = OutputMatch> + 'a)> + 'a {
-        block
-            .txdata
-            .iter()
-            .map(move |tx| (tx, self.relevant_outputs(tx)))
+    ) -> Result<impl Iterator<Item = (&'a Transaction, impl Iterator<Item = OutputMatch> + 'a)> + 'a>
+    {
+        let mut txs = Vec::new();
+        for tx in block.txdata.iter() {
+            txs.push((tx, self.relevant_outputs(tx).await?));
+        }
+
+        Ok(txs.into_iter())
     }
 
-    pub fn relevant_outputs<'a>(
+    pub async fn relevant_outputs<'a>(
         &'a self,
         tx: &'a Transaction,
-    ) -> impl Iterator<Item = OutputMatch> + 'a {
-        tx.output
-            .iter()
-            .enumerate()
-            .filter_map(move |(vout, output)| {
-                let mut script_bytes = vec![];
-                output
-                    .script_pubkey
-                    .consensus_encode(&mut script_bytes)
-                    .unwrap();
-                let script =
-                    ::bitcoin::Script::consensus_decode(&mut script_bytes.as_slice()).unwrap();
+    ) -> Result<impl Iterator<Item = OutputMatch> + 'a> {
+        let mut matches = Vec::new();
+        for (vout, output) in tx.output.iter().enumerate() {
+            let mut script_bytes = vec![];
+            let _encode: usize = output
+                .script_pubkey
+                .consensus_encode(&mut script_bytes)
+                .unwrap();
+            let script = ::bitcoin::Script::consensus_decode(&mut script_bytes.as_slice()).unwrap();
 
-                self.scripts
-                    .as_ref()
-                    .unwrap()
-                    .scripts
-                    .get(&script)
-                    .map(|(dest, sigset_index)| OutputMatch {
-                        sigset_index,
-                        vout: vout as u32,
-                        dest,
-                    })
-            })
+            let script_guard = self.scripts.lock().await;
+            if let Some((dest, sigset_index)) = script_guard.as_ref().unwrap().scripts.get(&script)
+            {
+                matches.push(OutputMatch {
+                    sigset_index,
+                    vout: vout as u32,
+                    dest,
+                });
+            }
+        }
+
+        Ok(matches.into_iter())
     }
 
     async fn maybe_relay_deposit(
@@ -877,23 +894,25 @@ impl Relayer {
             super::NETWORK,
         )?;
 
-        if contains_outpoint {
-            let mut index = index.lock().await;
-            index.remove_deposit(dest.to_receiver_addr(), deposit_address, txid, vout)?;
-            return Ok(());
-        }
+        if let Some(receiver_addr) = dest.to_receiver_addr() {
+            if contains_outpoint {
+                let mut index = index.lock().await;
+                index.remove_deposit(receiver_addr, deposit_address, txid, vout)?;
+                return Ok(());
+            }
 
-        let mut index_guard = index.lock().await;
-        index_guard.insert_deposit(
-            dest.to_receiver_addr(),
-            deposit_address.clone(),
-            Deposit::new(
-                txid,
-                vout,
-                tx.output.get(vout as usize).unwrap().value,
-                Some(height.into()),
-            ),
-        );
+            let mut index_guard = index.lock().await;
+            index_guard.insert_deposit(
+                receiver_addr,
+                deposit_address.clone(),
+                Deposit::new(
+                    txid,
+                    vout,
+                    tx.output.get(vout as usize).unwrap().value,
+                    Some(height.into()),
+                ),
+            );
+        }
 
         let proof_bytes = self
             .btc_client()
@@ -939,8 +958,9 @@ impl Relayer {
         }
 
         info!(
-            "Relayed deposit: {} sats, {:?}",
-            tx.output[vout as usize].value, dest
+            "Relayed deposit: {} sats, {}",
+            tx.output[vout as usize].value,
+            dest.to_string(),
         );
 
         Ok(())
@@ -1190,7 +1210,7 @@ impl WatchedScripts {
         sigset: &SignatorySet,
         threshold: (u64, u64),
     ) -> Result<::bitcoin::Script> {
-        sigset.output_script(dest.commitment_bytes()?.as_slice(), threshold)
+        sigset.output_script(&dest.commitment_bytes()?, threshold)
     }
 }
 

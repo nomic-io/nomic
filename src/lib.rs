@@ -1,3 +1,9 @@
+//! Nomic is a protocol which enables decentralized custody of Bitcoin, to power
+//! bridging, L2's, Bitcoin staking, and more.
+//!
+//! This crate provides the core logic for both full nodes and clients of the
+//! Nomic protocol.
+
 #![feature(trivial_bounds)]
 #![feature(never_type)]
 #![allow(incomplete_features)]
@@ -21,6 +27,8 @@ pub mod babylon;
 pub mod bitcoin;
 pub mod cosmos;
 pub mod error;
+#[cfg(feature = "ethereum")]
+pub mod ethereum;
 pub mod frost;
 pub mod incentives;
 #[cfg(feature = "full")]

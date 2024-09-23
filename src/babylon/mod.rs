@@ -12,7 +12,7 @@ use bitcoin::{
 use bitcoin_script::bitcoin_script as script;
 use ed::{Decode, Encode};
 use orga::{
-    coins::{Accounts, Address, Amount, Coin, Give, Symbol, Take, Transfer},
+    coins::{Accounts, Address, Amount, Coin, Give, Symbol, Take},
     collections::{Deque, Map},
     encoding::LengthVec,
     macros::Migrate,
@@ -100,7 +100,7 @@ impl Babylon {
                 vec![DEFAULT_FP.parse().unwrap()], // TODO: choose dynamically
                 64_000,
                 101,
-                self.pending_stake.take_all()?,
+                self.pending_stake.take(self.pending_stake.amount)?,
                 btc.checkpoints.index,
             )?;
             pending_outputs.push(del.staking_output()?);
@@ -124,7 +124,8 @@ impl Babylon {
             }
         }
 
-        // TODO: refine unbond trigger condition (age of del, age and amounts of unbond reqs, etc)
+        // TODO: refine unbond trigger condition (age of del, age and amounts of unbond
+        // reqs, etc)
         let oldest_index = self.oldest_active_delegation_index()?;
         if let Some(index) = oldest_index {
             let mut oldest_del = self.delegations.get_mut(index)?.unwrap();
@@ -325,7 +326,8 @@ impl Babylon {
 
         let amount_to_pay = self.pending_unstake.amount.min(del.stake.amount);
         let to_pay = del.stake.take(amount_to_pay)?;
-        let to_renew = del.stake.take_all()?;
+        let to_renew_amount = del.stake.amount;
+        let to_renew = del.stake.take(to_renew_amount)?;
 
         let cp_index = self.unstaking_delegations.remove(index)?.unwrap();
         let sigset = btc.checkpoints.get(*cp_index)?.sigset.clone();

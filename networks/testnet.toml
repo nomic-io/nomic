@@ -1,16 +1,16 @@
 state_sync_rpc = [
-    "http://161.35.131.10:26657",
-    "http://161.35.131.10:26657",
+    "http://147.182.171.216:26657",
+    "http://147.182.171.216:26657",
 ]
 tendermint_flags = ["--p2p.seeds", """
-        8b5e053e378ee12ece425f63324054d7ed7ef73f@161.35.131.10:26656,\
-    """]
-btc_relayer = ["https://relayer.stbtc-testnet.mappum.io:8443"]
+    a07d56aa65e395c332a7bf226ec4e2f844519ffa@147.182.171.216:26656,\
+"""]
+btc_relayer = ["https://relayer.nomic-testnet.mappum.io:8443"]
 
 genesis = """
 {
   "app_hash": "",
-  "chain_id": "stbtc-testnet-0",
+  "chain_id": "nomic-testnet-6",
   "consensus_params": {
     "block": {
       "max_bytes": "22020096",
@@ -29,16 +29,16 @@ genesis = """
     },
     "version": {}
   },
-  "genesis_time": "2024-04-09T00:10:43.327809373Z",
+  "genesis_time": "2024-09-12T01:27:04.17850332Z",
   "initial_height": "0",
   "validators": [
     {
-      "address": "733FD15403CC8EFED0CE886F0F21366164DAF3A2",
+      "address": "563EAA34B8A607C49F0F89008A9542CD0F06D91C",
       "name": "",
       "power": "10",
       "pub_key": {
         "type": "tendermint/PubKeyEd25519",
-        "value": "ngphveLsJZ2GHtr2D42SA4zyapDWXA/ZomXr6ECMmEk="
+        "value": "H/uHaF1ZUTHzLRSmOY8g87Sgpmuh/Hz6Wdxpn09WFjo="
       }
     }
   ]

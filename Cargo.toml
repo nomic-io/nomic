@@ -1,28 +1,27 @@
 [package]
 name = "nomic"
-version = "8.0.0"
-authors = ["The Turbofish Team <hello@turbofish.org>"]
+version = "9.0.0"
+authors = ["Nomic DAO Foundation <foundation@nomic.io>"]
 edition = "2021"
 default-run = "nomic"
 
 [dependencies]
-bitcoin = { version = "0.29.2", features = ["serde", "rand"] }
-orga = { git = "https://github.com/nomic-io/orga.git", rev = "acf1b9af60af7e522a47abc6b260ae61e57c2829", features = [
+orga = { git = "https://github.com/nomic-io/orga.git", rev = "35988d76b58008e37794064c41f3d0ba102ca0c8", features = [
     "merk-verify",
 ] }
 thiserror = "1.0.30"
-ed = { git = "https://github.com/nomic-io/ed", rev = "9c0e206ffdb59dacb90f083e004e8080713e6ad8" }
+ed = { git = "https://github.com/nomic-io/ed", rev = "a657be856792039ff60c2f67e7920e38cd3acffc" }
 clap = { version = "3.2.16", features = ["derive"], optional = true }
-tokio = { version = "1.14.0", features = ["full"], optional = true }
+tokio = { version = "1.39.2", features = ["full"], optional = true }
 base64 = "0.13.0"
 js-sys = { version = "0.3.55" }
-serde = "1.0.133"
-serde_json = "1.0.74"
+serde = "1.0.208"
+serde_json = "1.0.125"
 csv = { version = "1.1.6", optional = true }
 bech32 = { version = "0.9.1" }
 futures = "0.3.21"
 toml_edit = "0.13.4"
-tendermint-rpc = { version = "=0.32.0", features = [
+tendermint-rpc = { version = "0.38.0", features = [
     "http-client",
 ], optional = true }
 bitcoincore-rpc-async = { package = "bitcoincore-rpc-async2", version = "4.0.2", optional = true }
@@ -43,14 +42,22 @@ chrono = "0.4.19"
 tempfile = "3"
 home = { version = "0.5.5", optional = true }
 semver = "1.0.18"
-ics23 = "0.10.2"
-cosmos-sdk-proto = {version = "0.19.0", optional = true }
+ics23 = "0.12.0"
+cosmos-sdk-proto = { version = "0.23.0", optional = true }
 prometheus_exporter = "0.8.5"
 lazy_static = "1.4.0"
-prost = "0.11.9"
+prost = "0.13.3"
 cosmrs = "0.14.0"
 ripemd = "0.1.3"
-frost-secp256k1-tr = {git = "https://github.com/ZcashFoundation/frost", rev = "20c2c98a931c564655e2a03719e19ba916e11545", features = ["nightly"] }
+frost-secp256k1-tr = { git = "https://github.com/ZcashFoundation/frost", rev = "20c2c98a931c564655e2a03719e19ba916e11545", features = [
+    "nightly",
+] }
+alloy = { version = "0.2.1", features = [
+    "full",
+    "node-bindings",
+    "sol-types",
+], optional = true }
+bitcoin = { version = "0.29.2", features = ["serde", "rand"] }
 
 [dev-dependencies]
 bitcoind = { version = "0.27.0", features = ["22_0"] }
@@ -63,7 +70,7 @@ urlencoding = "2.1.2"
 crossbeam-channel = "0.5.8"
 chrono = "0.4.19"
 serial_test = "2.0.0"
-tempfile = "3.6.0"
+tempfile = "3.12.0"
 
 [build-dependencies]
 toml = { version = "0.7.2", features = ["parse"] }
@@ -71,7 +78,7 @@ semver = "1.0.18"
 glob = "0.3.1"
 
 [features]
-default = ["full", "feat-ibc", "testnet", "signet"]
+default = ["full", "feat-ibc", "testnet", "ethereum"]
 full = [
     "bitcoincore-rpc-async",
     "clap",
@@ -92,6 +99,7 @@ testnet = []
 devnet = []
 legacy-bin = []
 signet = []
+ethereum = ["alloy"]
 
 [profile.release]
 overflow-checks = true
@@ -100,14 +108,7 @@ overflow-checks = true
 name = "nomic"
 
 [[bin]]
-name = "store-diff"
-
-[[bin]]
 name = "create-checkpoint"
-
-[[bin]]
-name = "append-airdrop-snapshot"
-required-features = ["testnet"]
 
 [[test]]
 name = "bitcoin"

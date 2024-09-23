@@ -1,3 +1,6 @@
+//! The top-level application state and logic of the Nomic protocol. The main
+//! state type is the [InnerApp] struct.
+
 #![allow(clippy::too_many_arguments)]
 // TODO: remove after switching from "testnet" feature flag to orga channels
 #![allow(unused_variables)]
@@ -8,33 +11,39 @@ use crate::babylon::Babylon;
 use crate::bitcoin::adapter::Adapter;
 use crate::bitcoin::threshold_sig::Signature;
 use crate::bitcoin::{exempt_from_fee, Bitcoin, Nbtc};
+use crate::bitcoin::{matches_bitcoin_network, NETWORK};
 use crate::cosmos::{Chain, Cosmos, Proof};
 use crate::frost::{Config as FrostConfig, FrostGroup};
 
+#[cfg(feature = "ethereum")]
+use crate::ethereum::{ContractCall, Ethereum};
 use crate::frost::Frost;
 use crate::incentives::Incentives;
 use bitcoin::util::merkleblock::PartialMerkleTree;
-use bitcoin::{Script, Transaction, TxOut};
+use bitcoin::{PublicKey, Script, Transaction, TxOut};
 use orga::coins::{
     Accounts, Address, Amount, Coin, Faucet, FaucetOptions, Give, Staking, Symbol, Take,
 };
 use orga::context::GetContext;
 use orga::cosmrs::bank::MsgSend;
 use orga::describe::{Describe, Descriptor};
-use orga::encoding::{Decode, Encode, LengthVec};
-use orga::ibc::ibc_rs::applications::transfer::Memo;
+use orga::encoding::{Decode, Encode, LengthString, LengthVec};
+use orga::ibc::ibc_rs::apps::transfer::types::Memo;
+use orga::ibc::ClientIdKey as ClientId;
+
+use std::io::Read;
 use std::str::FromStr;
 use std::time::Duration;
 
-use orga::ibc::ibc_rs::applications::transfer::context::TokenTransferExecutionContext;
-use orga::ibc::ibc_rs::applications::transfer::msgs::transfer::MsgTransfer;
-use orga::ibc::ibc_rs::applications::transfer::packet::PacketData;
-use orga::ibc::ibc_rs::core::ics04_channel::timeout::TimeoutHeight;
-use orga::ibc::ibc_rs::core::ics24_host::identifier::{ChannelId, PortId};
-use orga::ibc::ibc_rs::core::timestamp::Timestamp;
-use orga::ibc::{ClientId, Ibc, IbcTx};
+use orga::ibc::ibc_rs::apps::transfer::context::TokenTransferExecutionContext;
+use orga::ibc::ibc_rs::apps::transfer::types::msgs::transfer::MsgTransfer;
+use orga::ibc::ibc_rs::apps::transfer::types::packet::PacketData;
+use orga::ibc::ibc_rs::core::channel::types::timeout::{TimeoutHeight, TimeoutTimestamp};
+use orga::ibc::ibc_rs::core::host::types::identifiers::{ChannelId, PortId};
+use orga::ibc::ibc_rs::core::primitives::Timestamp;
+use orga::ibc::{Ibc, IbcTx};
 
-use orga::ibc::ibc_rs::Signer as IbcSigner;
+use orga::ibc::ibc_rs::core::primitives::Signer as IbcSigner;
 
 use orga::coins::Declaration;
 use orga::encoding::Adapter as EdAdapter;
@@ -53,83 +62,129 @@ use std::fmt::Debug;
 
 mod migrations;
 
-pub type AppV0 = DefaultPlugins<Nom, InnerAppV0>;
+/// The top-level application state type, wrapped with the Orga default plugins.
 pub type App = DefaultPlugins<Nom, InnerApp>;
 
+/// The symbol for the NOM token.
 #[derive(State, Debug, Clone, Encode, Decode, Default, Migrate, Serialize)]
 pub struct Nom(());
 impl Symbol for Nom {
     const INDEX: u8 = 69;
     const NAME: &'static str = "unom";
 }
+
+/// The recipient address for the NOM developer rewards faucet on Nomic
+/// Stakenet.
 #[cfg(feature = "full")]
 const DEV_ADDRESS: &str = "nomic14z79y3yrghqx493mwgcj0qd2udy6lm26lmduah";
+/// The recipient address for the NOM strategic reserve tokens on Nomic
+/// Stakenet.
 #[cfg(feature = "full")]
 const STRATEGIC_RESERVE_ADDRESS: &str = "nomic1d5n325zrf4elfu0heqd59gna5j6xyunhev23cj";
+/// An address to receive a small portion of the strategic reserve tokens in
+/// order to send a small portion of tokens to validators for declaration fees
+/// on Nomic Stakenet.
 #[cfg(feature = "full")]
 const VALIDATOR_BOOTSTRAP_ADDRESS: &str = "nomic1fd9mxxt84lw3jdcsmjh6jy8m6luafhqd8dcqeq";
 
+/// The fixed amount of nBTC fee required to relay IBC messages, in
+/// micro-satoshis.
 const IBC_FEE_USATS: u64 = 1_000_000;
+/// The fixed amount of nBTC fee required to make any application call, in
+/// micro-satoshis.
 const CALL_FEE_USATS: u64 = 100_000_000;
+const OSMOSIS_CHANNEL_ID: &str = "channel-1";
 
 const FROST_GROUP_INTERVAL: i64 = 4 * 60 * 60; // 4 hours
 const FROST_TOP_N: u16 = 5;
 const FROST_THRESHOLD: u16 = 3;
 
-#[orga(version = 6)]
+/// The top-level application state type and logic. This contains the major
+/// state types for the various subsystems of the Nomic protocol.
+#[orga(version = 5..=7)]
 pub struct InnerApp {
+    /// Account state for the NOM token.
     #[call]
     pub accounts: Accounts<Nom>,
+    /// Staking and validator state, including the validator set and staking
+    /// rewards. This ultimately sets the voting power of Tendermint consensus
+    /// based on the amount staked to each validator.
     #[call]
     pub staking: Staking<Nom>,
+    /// Airdrop state, which can be claimed by eligible accounts.
     #[call]
     pub airdrop: Airdrop,
 
+    /// A balance of NOM tokens that are reserved for the protocol community
+    /// pool.
     pub community_pool: Coin<Nom>,
+    /// A balance of NOM tokens that are reserved for the protocol incentive
+    /// pool.
     incentive_pool: Coin<Nom>,
 
+    /// A stream of tokens that pays out over time to NOM stakers, based on a
+    /// defined inflation schedule.
     staking_rewards: Faucet<Nom>,
+    /// A stream of tokens that pays out over time to the NOM developer wallet,
+    /// based on a defined inflation schedule.
     dev_rewards: Faucet<Nom>,
+    /// A stream of tokens that pays out over time to the NOM community pool,
+    /// based on a defined inflation schedule.
     community_pool_rewards: Faucet<Nom>,
+    /// A stream of tokens that pays out over time to the NOM incentive pool,
+    /// based on a defined inflation schedule.
     incentive_pool_rewards: Faucet<Nom>,
 
+    /// The Bitcoin state, including a chain of verified Bitcoin headers and
+    /// logic for processing Bitcoin transactions.
     #[call]
     pub bitcoin: Bitcoin,
+    /// A timer to support paying out accumulated Bitcoin rewards periodically.
     pub reward_timer: RewardTimer,
 
-    #[cfg(feature = "testnet")]
-    #[call]
-    pub ibc: Ibc,
-    #[cfg(not(feature = "testnet"))]
-    #[orga(version(V4, V5, V6))]
+    /// The IBC state, including the IBC client, connection, and channel
+    /// states. This is used to relay messages between Nomic and other IBC
+    /// enabled blockchains.
     #[call]
     pub ibc: Ibc,
 
+    /// The upgrade state, including the current version of the application and
+    /// logic for upgrading to a new version of the protocol once sufficient
+    /// network voting power has signaled readiness.
     pub upgrade: Upgrade,
 
+    /// Incentive state, allowing eligible users to claim tokens based on
+    /// participation in the Nomic ecosystem.
     #[call]
     pub incentives: Incentives,
 
-    #[cfg(feature = "testnet")]
-    pub cosmos: Cosmos,
-    #[cfg(not(feature = "testnet"))]
-    #[orga(version(V4, V5, V6))]
+    /// The Cosmos state, allowing for relaying data about remote Cosmos chains
+    /// which is not available in the IBC module.
     pub cosmos: Cosmos,
 
     #[cfg(feature = "testnet")]
-    #[orga(version(V6))]
+    #[orga(version(V7))]
     #[call]
     pub babylon: Babylon,
 
     #[cfg(feature = "testnet")]
-    #[orga(version(V6))]
+    #[orga(version(V7))]
     #[call]
     pub frost: Frost,
+
+    #[cfg(all(feature = "ethereum", feature = "testnet"))]
+    #[orga(version(V5, V6, V7))]
+    #[call]
+    pub ethereum: Ethereum,
 }
 
 #[orga]
 impl InnerApp {
-    pub const CONSENSUS_VERSION: u8 = 11;
+    /// The current version of the Nomic protocol. This is incremented when
+    /// breaking changes are made to either the state encoding or logic of the
+    /// protocol, and requires a network upgrade to be coordinated via the
+    /// upgrade module.
+    pub const CONSENSUS_VERSION: u8 = 12;
 
     #[cfg(feature = "full")]
     fn configure_faucets(&mut self) -> Result<()> {
@@ -188,20 +243,21 @@ impl InnerApp {
     pub fn ibc_transfer_nbtc(&mut self, dest: IbcDest, amount: Amount) -> Result<()> {
         crate::bitcoin::exempt_from_fee()?;
 
-        dest.source_port()?;
-        dest.source_channel()?;
-        dest.sender_address()?;
+        dest.validate()?;
 
         let signer = self.signer()?;
         let mut coins = self.bitcoin.accounts.withdraw(signer, amount)?;
 
-        let fee = ibc_fee(amount)?;
+        let fee = if dest.is_fee_exempt() {
+            IBC_FEE_USATS.into()
+        } else {
+            ibc_fee(amount)?
+        };
         let fee = coins.take(fee)?;
         self.bitcoin.give_rewards(fee)?;
 
-        let building = &mut self.bitcoin.checkpoints.building_mut()?;
-        let dest = Dest::Ibc(dest);
-        building.insert_pending(dest, coins)?;
+        let dest = Dest::Ibc { data: dest };
+        self.bitcoin.insert_pending(dest, coins)?;
 
         Ok(())
     }
@@ -214,10 +270,33 @@ impl InnerApp {
         let coins: Coin<Nbtc> = amount.into();
         self.ibc
             .transfer_mut()
-            .burn_coins_execute(&signer, &coins.into())?;
+            .burn_coins_execute(&signer, &coins.into(), &"".parse().unwrap())?;
         self.bitcoin.accounts.deposit(signer, amount.into())?;
 
         Ok(())
+    }
+
+    #[call]
+    pub fn eth_transfer_nbtc(&mut self, dest: Address, amount: Amount) -> Result<()> {
+        #[cfg(feature = "ethereum")]
+        {
+            crate::bitcoin::exempt_from_fee()?;
+
+            // TODO: fee
+
+            let signer = self.signer()?;
+            let coins = self.bitcoin.accounts.withdraw(signer, amount)?;
+
+            let dest = Dest::EthAccount { address: dest };
+            self.bitcoin.insert_pending(dest, coins)?;
+
+            Ok(())
+        }
+
+        #[cfg(not(feature = "ethereum"))]
+        {
+            Err(Error::App("Ethereum feature not enabled".into()))
+        }
     }
 
     #[query]
@@ -260,12 +339,6 @@ impl InnerApp {
         sigset_index: u32,
         dest: Dest,
     ) -> Result<()> {
-        if let Dest::Ibc(dest) = dest.clone() {
-            dest.source_port()?;
-            dest.source_channel()?;
-            dest.sender_address()?;
-        }
-
         Ok(self.bitcoin.relay_deposit(
             btc_tx,
             btc_height,
@@ -292,11 +365,19 @@ impl InnerApp {
             .relay_op_key(&self.ibc, client_id, height, cons_key, op_addr, acc)?)
     }
 
-    pub fn credit_transfer(&mut self, dest: Dest, nbtc: Coin<Nbtc>) -> Result<()> {
+    pub fn credit_dest(&mut self, dest: Dest, nbtc: Coin<Nbtc>) -> Result<()> {
         match dest {
-            Dest::Address(addr) => self.bitcoin.accounts.deposit(addr, nbtc),
-            Dest::Ibc(dest) => dest.transfer(nbtc, &mut self.bitcoin, &mut self.ibc),
-        }
+            Dest::NativeAccount { address } => self.bitcoin.accounts.deposit(address, nbtc)?,
+            Dest::Ibc { data: dest } => dest.transfer(nbtc, &mut self.bitcoin, &mut self.ibc)?,
+            Dest::RewardPool => self.bitcoin.give_rewards(nbtc)?,
+            #[cfg(feature = "ethereum")]
+            Dest::EthAccount { address } => self.ethereum.transfer(address, nbtc)?,
+            // #[cfg(feature = "ethereum")]
+            // Dest::EthCall(call, _) => self.ethereum.call(call, nbtc)?,
+            Dest::Bitcoin { data } => self.bitcoin.add_withdrawal(data, nbtc)?,
+        };
+
+        Ok(())
     }
 
     #[call]
@@ -336,27 +417,29 @@ impl InnerApp {
         let incoming_transfers = self.ibc.deliver(messages)?;
 
         for transfer in incoming_transfers {
-            if transfer.denom.to_string() != "usat" {
+            if transfer.denom.to_string() != "usat" || transfer.memo.is_empty() {
                 continue;
             }
-            let memo: NbtcMemo = transfer.memo.parse().unwrap_or_default();
-            if let NbtcMemo::Withdraw(script) = memo {
-                let amount = transfer.amount;
-                let receiver: Address = transfer
-                    .receiver
-                    .parse()
-                    .map_err(|_| Error::Coins("Invalid address".to_string()))?;
-                let coins = Coin::<Nbtc>::mint(amount);
-                self.ibc
-                    .transfer_mut()
-                    .burn_coins_execute(&receiver, &coins.into())?;
-                if self.bitcoin.add_withdrawal(script, amount.into()).is_err() {
-                    let coins = Coin::<Nbtc>::mint(amount);
-                    self.ibc
-                        .transfer_mut()
-                        .mint_coins_execute(&receiver, &coins.into())?;
-                }
-            }
+
+            let receiver: Address = transfer
+                .receiver
+                .parse()
+                .map_err(|_| Error::Coins("Invalid address".to_string()))?;
+            let amount = transfer.amount;
+
+            let Ok(dest) = transfer.memo.parse::<Dest>() else {
+                continue;
+            };
+
+            let coins = Coin::<Nbtc>::mint(amount);
+            self.ibc.transfer_mut().burn_coins_execute(
+                &receiver,
+                &coins.into(),
+                &"".parse().unwrap(),
+            )?;
+
+            let coins = Coin::<Nbtc>::mint(amount);
+            self.bitcoin.insert_pending(dest, coins)?;
         }
 
         Ok(())
@@ -473,6 +556,7 @@ impl InnerApp {
         Ok(())
     }
 
+    #[cfg(feature = "testnet")]
     fn step_frost(&mut self, now: i64) -> Result<()> {
         let last_frost_group = self.frost.groups.back()?;
         let last_frost_group_time = last_frost_group.as_ref().map(|g| g.created_at).unwrap_or(0);
@@ -519,37 +603,6 @@ impl InnerApp {
     }
 }
 
-#[derive(Debug, Clone, Default)]
-pub enum NbtcMemo {
-    Withdraw(Adapter<bitcoin::Script>),
-    #[default]
-    Empty,
-}
-impl FromStr for NbtcMemo {
-    type Err = Error;
-    fn from_str(s: &str) -> Result<Self> {
-        if s.is_empty() {
-            Ok(NbtcMemo::Empty)
-        } else {
-            let parts = s.split(':').collect::<Vec<_>>();
-            if parts.len() != 2 {
-                return Err(Error::App("Invalid memo".into()));
-            }
-            if parts[0] != "withdraw" {
-                return Err(Error::App("Only withdraw memo action is supported".into()));
-            }
-            let dest = parts[1];
-            let script = if let Ok(addr) = bitcoin::Address::from_str(dest) {
-                addr.script_pubkey()
-            } else {
-                bitcoin::Script::from_str(parts[1]).map_err(|e| Error::App(e.to_string()))?
-            };
-
-            Ok(NbtcMemo::Withdraw(script.into()))
-        }
-    }
-}
-
 #[cfg(feature = "full")]
 mod abci {
     use orga::{
@@ -591,6 +644,9 @@ mod abci {
             #[cfg(feature = "testnet")]
             {
                 self.upgrade.activation_delay_seconds = 20 * 60;
+                self.bitcoin.config.min_confirmations = 0;
+                self.bitcoin.config.min_withdrawal_checkpoints = 0;
+                self.bitcoin.checkpoints.config.min_checkpoint_interval = 60;
 
                 include_str!("../testnet_addresses.csv")
                     .lines()
@@ -606,15 +662,6 @@ mod abci {
 
     impl BeginBlock for InnerApp {
         fn begin_block(&mut self, ctx: &BeginBlockCtx) -> Result<()> {
-            if ctx.height == 1415100 {
-                while !self.babylon.delegations.is_empty() {
-                    self.babylon.delegations.pop_front()?;
-                }
-                while !self.frost.groups.is_empty() {
-                    self.frost.groups.pop_front()?;
-                }
-            }
-
             let now = ctx.header.time.as_ref().unwrap().seconds;
             self.upgrade.step(
                 &vec![Self::CONSENSUS_VERSION].try_into().unwrap(),
@@ -640,6 +687,7 @@ mod abci {
             let ip_reward = self.incentive_pool_rewards.mint()?;
             self.incentive_pool.give(ip_reward)?;
 
+            #[cfg(feature = "testnet")]
             if !self.bitcoin.checkpoints.is_empty()? {
                 self.step_frost(now)?;
                 let staking_outputs = self.babylon.step(&self.bitcoin, &mut self.frost)?;
@@ -656,7 +704,7 @@ mod abci {
 
             let pending_nbtc_transfers = self.bitcoin.take_pending()?;
             for (dest, coins) in pending_nbtc_transfers {
-                self.credit_transfer(dest, coins)?;
+                self.credit_dest(dest, coins)?;
             }
 
             let external_outputs = if self.bitcoin.should_push_checkpoint()? {
@@ -679,6 +727,17 @@ mod abci {
                 let reward_amount = (self.bitcoin.reward_pool.amount * reward_rate)?.amount()?;
                 let reward = self.bitcoin.reward_pool.take(reward_amount)?;
                 self.staking.give(reward)?;
+            }
+
+            #[cfg(feature = "ethereum")]
+            {
+                if !self.bitcoin.checkpoints.is_empty()? {
+                    self.ethereum
+                        .step(&self.bitcoin.checkpoints.active_sigset()?)?;
+                }
+                for (dest, coins) in self.ethereum.take_pending()? {
+                    self.credit_dest(dest, coins)?;
+                }
             }
 
             Ok(())
@@ -753,7 +812,11 @@ impl ConvertSdkTx for InnerApp {
 
                     match msg.amount[0].denom.to_string().as_str() {
                         "unom" => {
-                            let amount: u64 = msg.amount[0].amount.to_string().parse().unwrap();
+                            let amount: u64 = msg.amount[0]
+                                .amount
+                                .to_string()
+                                .parse()
+                                .map_err(|_| Error::App("Invalid amount".to_string()))?;
 
                             let payer = build_call!(self.accounts.take_as_funding(MIN_FEE.into()));
                             let paid = build_call!(self.accounts.transfer(to, amount.into()));
@@ -761,7 +824,11 @@ impl ConvertSdkTx for InnerApp {
                             return Ok(PaidCall { payer, paid });
                         }
                         "usat" => {
-                            let amount: u64 = msg.amount[0].amount.to_string().parse().unwrap();
+                            let amount: u64 = msg.amount[0]
+                                .amount
+                                .to_string()
+                                .parse()
+                                .map_err(|_| Error::App("Invalid amount".to_string()))?;
 
                             let payer = build_call!(self.bitcoin.transfer(to, amount.into()));
                             let paid = build_call!(self.app_noop());
@@ -992,6 +1059,14 @@ impl ConvertSdkTx for InnerApp {
                         let dest_addr: bitcoin::Address = msg.dst_address.parse().map_err(
                             |e: bitcoin::util::address::Error| Error::App(e.to_string()),
                         )?;
+                        if !matches_bitcoin_network(&dest_addr.network) {
+                            return Err(Error::App(format!(
+                                "Invalid network for destination address. Got {}, Expected {}",
+                                dest_addr.network,
+                                crate::bitcoin::NETWORK
+                            )));
+                        }
+
                         let dest_script =
                             crate::bitcoin::adapter::Adapter::new(dest_addr.script_pubkey());
 
@@ -1040,7 +1115,10 @@ impl ConvertSdkTx for InnerApp {
                             return Err(Error::App("Unsupported denom for IBC transfer".into()));
                         }
 
-                        let amount = msg.amount.into();
+                        let amount: u64 = msg
+                            .amount
+                            .parse()
+                            .map_err(|e: std::num::ParseIntError| Error::App(e.to_string()))?;
 
                         let ibc_sender_addr = msg
                             .sender
@@ -1061,13 +1139,13 @@ impl ConvertSdkTx for InnerApp {
                         let dest = IbcDest {
                             source_port: port_id.to_string().try_into()?,
                             source_channel: channel_id.to_string().try_into()?,
-                            sender: EdAdapter(msg.sender.into()),
-                            receiver: EdAdapter(msg.receiver.into()),
+                            sender: msg.sender.try_into()?,
+                            receiver: msg.receiver.try_into()?,
                             timeout_timestamp,
                             memo: msg.memo.try_into()?,
                         };
 
-                        let payer = build_call!(self.ibc_transfer_nbtc(dest, amount));
+                        let payer = build_call!(self.ibc_transfer_nbtc(dest, amount.into()));
                         let paid = build_call!(self.app_noop());
 
                         Ok(PaidCall { payer, paid })
@@ -1079,7 +1157,9 @@ impl ConvertSdkTx for InnerApp {
                             .as_object()
                             .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
 
-                        let dest_addr: Address = msg["dest_address"]
+                        let dest_addr: Address = msg
+                            .get("dest_address")
+                            .ok_or_else(|| Error::App("Missing destination address".to_string()))?
                             .as_str()
                             .ok_or_else(|| Error::App("Invalid destination address".to_string()))?
                             .parse()
@@ -1112,11 +1192,21 @@ impl ConvertSdkTx for InnerApp {
                             .as_object()
                             .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
 
-                        let recovery_addr: bitcoin::Address = msg["recovery_address"]
+                        let recovery_addr: bitcoin::Address = msg
+                            .get("recovery_address")
+                            .ok_or_else(|| Error::App("Missing reovery address".to_string()))?
                             .as_str()
                             .ok_or_else(|| Error::App("Invalid recovery address".to_string()))?
                             .parse()
                             .map_err(|_| Error::App("Invalid recovery address".to_string()))?;
+
+                        if !matches_bitcoin_network(&recovery_addr.network) {
+                            return Err(Error::App(format!(
+                                "Invalid network for recovery address. Got {}, Expected {}",
+                                recovery_addr.network,
+                                crate::bitcoin::NETWORK
+                            )));
+                        }
 
                         let script =
                             crate::bitcoin::adapter::Adapter::new(recovery_addr.script_pubkey());
@@ -1134,7 +1224,9 @@ impl ConvertSdkTx for InnerApp {
                             .as_object()
                             .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
 
-                        let amount: u64 = msg["amount"]
+                        let amount: u64 = msg
+                            .get("amount")
+                            .ok_or_else(|| Error::App("Missing amount".to_string()))?
                             .as_str()
                             .ok_or_else(|| Error::App("Invalid amount".to_string()))?
                             .parse()
@@ -1218,7 +1310,7 @@ pub struct MsgWithdraw {
 pub struct MsgIbcTransfer {
     pub channel_id: String,
     pub port_id: String,
-    pub amount: u64,
+    pub amount: String,
     pub denom: String,
     pub receiver: String,
     pub sender: String,
@@ -1226,33 +1318,38 @@ pub struct MsgIbcTransfer {
     pub memo: String,
 }
 
-#[derive(Encode, Decode, Debug, Clone, Serialize)]
-pub enum Dest {
-    Address(Address),
-    Ibc(IbcDest),
-}
-
-impl Dest {
-    pub fn to_receiver_addr(&self) -> String {
-        match self {
-            Dest::Address(addr) => addr.to_string(),
-            Dest::Ibc(dest) => dest.receiver.0.to_string(),
-        }
-    }
-}
-
 use orga::ibc::{IbcMessage, PortChannel, RawIbcTx};
 
-#[derive(Clone, Debug, Encode, Decode, Serialize)]
+#[derive(Clone, Debug, Encode, Decode, Serialize, Deserialize, State)]
 pub struct IbcDest {
-    pub source_port: LengthVec<u8, u8>,
-    pub source_channel: LengthVec<u8, u8>,
-    #[serde(skip)]
-    pub receiver: EdAdapter<IbcSigner>,
-    #[serde(skip)]
-    pub sender: EdAdapter<IbcSigner>,
+    pub source_port: LengthString<u8>,
+    pub source_channel: LengthString<u8>,
+    pub receiver: LengthString<u8>,
+    pub sender: LengthString<u8>,
     pub timeout_timestamp: u64,
-    pub memo: LengthVec<u8, u8>,
+    pub memo: LengthString<u8>,
+}
+
+impl Migrate for IbcDest {
+    fn migrate(_src: Store, _dest: Store, mut bytes: &mut &[u8]) -> Result<Self> {
+        let read_signer = |mut bytes: &mut &mut &[u8]| {
+            let len = u32::from_le_bytes(Decode::decode(&mut bytes)?);
+            let mut signer_bytes = vec![0; len as usize];
+            bytes.read_exact(&mut signer_bytes)?;
+            String::from_utf8(signer_bytes)
+                .map_err(|_| Error::App("Invalid address in IBC dest".to_string()))?
+                .try_into()
+        };
+
+        Ok(Self {
+            source_port: Decode::decode(&mut bytes)?,
+            source_channel: Decode::decode(&mut bytes)?,
+            receiver: read_signer(&mut bytes)?,
+            sender: read_signer(&mut bytes)?,
+            timeout_timestamp: Decode::decode(&mut bytes)?,
+            memo: Decode::decode(bytes)?,
+        })
+    }
 }
 
 impl IbcDest {
@@ -1262,11 +1359,13 @@ impl IbcDest {
         bitcoin: &mut Bitcoin,
         ibc: &mut Ibc,
     ) -> Result<()> {
-        use orga::ibc::ibc_rs::applications::transfer::msgs::transfer::MsgTransfer;
+        use orga::ibc::ibc_rs::apps::transfer::types::msgs::transfer::MsgTransfer;
 
-        let fee_amount = ibc_fee(coins.amount)?;
-        let fee = coins.take(fee_amount)?;
-        bitcoin.give_rewards(fee)?;
+        if !self.is_fee_exempt() {
+            let fee_amount = ibc_fee(coins.amount)?;
+            let fee = coins.take(fee_amount)?;
+            bitcoin.give_rewards(fee)?;
+        }
         let nbtc_amount = coins.amount;
 
         ibc.transfer_mut()
@@ -1277,13 +1376,12 @@ impl IbcDest {
             chan_id_on_a: self.source_channel()?,
             packet_data: PacketData {
                 token: Nbtc::mint(nbtc_amount).into(),
-                receiver: self.receiver.0.clone(),
-                sender: self.sender.0.clone(),
+                receiver: self.receiver_signer()?,
+                sender: self.sender_signer()?,
                 memo: self.memo()?,
             },
             timeout_height_on_b: TimeoutHeight::Never,
-            timeout_timestamp_on_b: Timestamp::from_nanoseconds(self.timeout_timestamp)
-                .map_err(|e| Error::App(e.to_string()))?,
+            timeout_timestamp_on_b: TimeoutTimestamp::from_nanoseconds(self.timeout_timestamp),
         };
         if let Err(err) = ibc.deliver_message(IbcMessage::Ics20(msg_transfer)) {
             log::debug!("Failed IBC transfer: {}", err);
@@ -1294,43 +1392,245 @@ impl IbcDest {
 
     pub fn sender_address(&self) -> Result<Address> {
         self.sender
-            .0
             .to_string()
             .parse()
             .map_err(|e: bech32::Error| Error::Coins(e.to_string()))
     }
 
+    pub fn sender_signer(&self) -> Result<IbcSigner> {
+        Ok(self.sender.to_string().into())
+    }
+
+    pub fn receiver_signer(&self) -> Result<IbcSigner> {
+        Ok(self.receiver.to_string().into())
+    }
+
     pub fn source_channel(&self) -> Result<ChannelId> {
-        let channel_id: String = self.source_channel.clone().try_into()?;
-        channel_id
+        self.source_channel
+            .to_string()
             .parse()
             .map_err(|_| Error::Ibc("Invalid channel id".into()))
     }
 
     pub fn source_port(&self) -> Result<PortId> {
-        let port_id: String = self.source_port.clone().try_into()?;
-        port_id
+        self.source_port
+            .to_string()
             .parse()
             .map_err(|_| Error::Ibc("Invalid port id".into()))
     }
 
     pub fn memo(&self) -> Result<Memo> {
-        let memo: String = self.memo.clone().try_into()?;
+        Ok(self.memo.to_string().into())
+    }
 
-        Ok(memo.into())
+    pub fn is_fee_exempt(&self) -> bool {
+        self.source_channel()
+            .map_or(false, |channel| channel.to_string() == OSMOSIS_CHANNEL_ID)
+    }
+
+    pub fn validate(&self) -> Result<()> {
+        self.source_port()?;
+        self.source_channel()?;
+        self.sender_address()?;
+
+        Ok(())
+    }
+
+    pub fn legacy_encode(&self) -> Result<Vec<u8>> {
+        let mut bytes = vec![];
+        self.source_port.encode_into(&mut bytes)?;
+        self.source_channel.encode_into(&mut bytes)?;
+        EdAdapter(self.receiver_signer()?).encode_into(&mut bytes)?;
+        EdAdapter(self.sender_signer()?).encode_into(&mut bytes)?;
+        self.timeout_timestamp.encode_into(&mut bytes)?;
+        self.memo.encode_into(&mut bytes)?;
+
+        Ok(bytes)
     }
 }
 
+#[derive(Encode, Decode, Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum Dest {
+    NativeAccount {
+        address: Address,
+    },
+    Ibc {
+        data: IbcDest,
+    },
+    RewardPool,
+    Bitcoin {
+        #[serde(with = "address_or_script")]
+        data: Adapter<Script>,
+    },
+    #[cfg(feature = "ethereum")]
+    EthAccount {
+        address: Address,
+    },
+    // #[cfg(feature = "ethereum")]
+    // EthCall(ContractCall, Address),
+}
+
+mod address_or_script {
+    use serde::{Deserializer, Serializer};
+    use std::result::Result;
+
+    use super::*;
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Adapter<Script>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let dest = String::deserialize(deserializer)?;
+        let script = if let Ok(addr) = bitcoin::Address::from_str(&dest) {
+            if !matches_bitcoin_network(&addr.network) {
+                return Err(serde::de::Error::custom(format!(
+                    "Invalid network for Bitcoin dest. Got {}, Expected {}",
+                    addr.network,
+                    crate::bitcoin::NETWORK
+                )));
+            }
+            addr.script_pubkey()
+        } else {
+            bitcoin::Script::from_str(&dest)
+                .map_err(|e| serde::de::Error::custom("Invalid Bitcoin script"))?
+        };
+
+        Ok(script.into())
+    }
+
+    pub fn serialize<S>(script: &Adapter<Script>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if let Ok(addr) =
+            bitcoin::Address::from_script(&script.clone().into_inner(), crate::bitcoin::NETWORK)
+        {
+            addr.serialize(serializer)
+        } else {
+            script.serialize(serializer)
+        }
+    }
+}
+
+#[test]
+fn dest_json() {
+    assert_eq!(
+        Dest::NativeAccount {
+            address: Address::NULL
+        }
+        .to_string(),
+        "{\"type\":\"nativeAccount\",\"address\":\"nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h\"}"
+    );
+
+    assert_eq!(
+        Dest::Ibc { data: IbcDest{source_port:"transfer".try_into().unwrap(),source_channel:"channel-0".try_into().unwrap(),sender:"nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h".try_into().unwrap(),receiver:"nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h".try_into().unwrap(),timeout_timestamp:123_456_789,memo:"memo".try_into().unwrap(),} }
+        .to_string(),
+        "{\"type\":\"ibc\",\"data\":{\"source_port\":\"transfer\",\"source_channel\":\"channel-0\",\"receiver\":\"nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h\",\"sender\":\"nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h\",\"timeout_timestamp\":123456789,\"memo\":\"memo\"}}"
+    );
+
+    // TODO: use an eth address type
+    #[cfg(feature = "ethereum")]
+    assert_eq!(
+        Dest::EthAccount {
+            address: Address::NULL
+        }
+        .to_string(),
+        "{\"type\":\"ethAccount\",\"address\":\"nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h\"}"
+    );
+
+    assert_eq!(Dest::RewardPool.to_string(), "{\"type\":\"rewardPool\"}");
+
+    let out = "{\"type\":\"bitcoin\",\"data\":\"6a03010203\"}";
+    assert_eq!(
+        Dest::Bitcoin {
+            data: Adapter::new(Script::new_op_return(&[1, 2, 3]))
+        }
+        .to_string(),
+        out
+    );
+    let Dest::Bitcoin { data } = Dest::from_str(out).unwrap() else {
+        unreachable!();
+    };
+    assert_eq!(*data, Script::new_op_return(&[1, 2, 3]));
+
+    let addr = bitcoin::Address::p2wpkh(
+        &bitcoin::PublicKey::from_slice(&[2; 33]).unwrap(),
+        bitcoin::Network::Bitcoin,
+    )
+    .unwrap();
+
+    #[cfg(all(feature = "testnet", not(feature = "devnet")))]
+    let out = "{\"type\":\"bitcoin\",\"data\":\"tb1q2xq57yyxwzkw6tthcxq9mhtxxj7f63e3dgldfj\"}";
+    #[cfg(all(not(feature = "testnet"), not(feature = "devnet")))]
+    let out = "{\"type\":\"bitcoin\",\"data\":\"bc1q2xq57yyxwzkw6tthcxq9mhtxxj7f63e38wy7jp\"}";
+    #[cfg(all(feature = "devnet", feature = "testnet"))]
+    let out = "{\"type\":\"bitcoin\",\"data\":\"bcrt1q2xq57yyxwzkw6tthcxq9mhtxxj7f63e30pxq7m\"}";
+    assert_eq!(
+        Dest::Bitcoin {
+            data: Adapter::new(addr.script_pubkey())
+        }
+        .to_string(),
+        out
+    );
+
+    let Dest::Bitcoin { data } = Dest::from_str(out).unwrap() else {
+        unreachable!();
+    };
+    assert_eq!(*data, addr.script_pubkey());
+}
+
 impl Dest {
+    pub fn to_receiver_addr(&self) -> Option<String> {
+        Some(match self {
+            Dest::NativeAccount { address: addr } => addr.to_string(),
+            Dest::Ibc { data: dest } => dest.receiver.to_string(),
+            Dest::RewardPool => return None,
+            #[cfg(feature = "ethereum")]
+            Dest::EthAccount { address: addr } => addr.to_string(),
+            // #[cfg(feature = "ethereum")]
+            // Dest::EthCall(_, addr) => addr.to_string(),
+            Dest::Bitcoin { data } => return None,
+        })
+    }
+
     pub fn commitment_bytes(&self) -> Result<Vec<u8>> {
         use sha2::{Digest, Sha256};
-        use Dest::*;
+
+        let bytes = self.encode()?;
+        let hash = Sha256::digest(bytes);
+
+        let mut bytes = Vec::with_capacity(hash.len() + 1);
+        bytes.push(0); // version byte
+        bytes.extend_from_slice(&hash);
+        Ok(bytes)
+    }
+
+    // TODO: remove once there are no legacy commitments in-flight
+    pub fn legacy_commitment_bytes(&self) -> Result<Vec<u8>> {
+        use sha2::{Digest, Sha256};
         let bytes = match self {
-            Address(addr) => addr.bytes().into(),
-            Ibc(dest) => Sha256::digest(dest.encode()?).to_vec(),
+            Dest::NativeAccount { address } => address.bytes().into(),
+            Dest::Ibc { data } => Sha256::digest(data.legacy_encode()?).to_vec(),
+            _ => return Err(Error::App("Invalid dest for legacy commitment".to_string())),
         };
 
         Ok(bytes)
+    }
+
+    pub fn validate(&self, bitcoin: &Bitcoin, amount: Amount) -> Result<()> {
+        match self {
+            Dest::NativeAccount { address } => {}
+            Dest::Ibc { data } => data.validate()?,
+            Dest::RewardPool => {}
+            #[cfg(feature = "ethereum")]
+            Dest::EthAccount { address } => {}
+            // #[cfg(feature = "ethereum")]
+            // Dest::EthCall(_, addr) => //TODO
+            Dest::Bitcoin { data } => bitcoin.validate_withdrawal(data, amount)?,
+        }
+
+        Ok(())
     }
 
     pub fn from_base64(s: &str) -> Result<Self> {
@@ -1349,11 +1649,34 @@ impl Dest {
         recovery_scripts: &orga::collections::Map<Address, Adapter<Script>>,
     ) -> Result<Option<Script>> {
         match self {
-            Dest::Address(addr) => Ok(recovery_scripts
+            Dest::NativeAccount { address: addr } => Ok(recovery_scripts
                 .get(*addr)?
                 .map(|script| script.clone().into_inner())),
+            // TODO
             _ => Ok(None),
         }
+    }
+
+    pub fn is_fee_exempt(&self) -> bool {
+        if let Dest::Ibc { data: dest } = self {
+            dest.is_fee_exempt()
+        } else {
+            false
+        }
+    }
+}
+
+impl std::fmt::Display for Dest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", serde_json::to_string(self).unwrap())
+    }
+}
+
+impl FromStr for Dest {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        serde_json::from_str(s).map_err(|e| Error::App(e.to_string()))
     }
 }
 
@@ -1381,7 +1704,17 @@ impl Query for Dest {
 }
 
 impl Migrate for Dest {
-    fn migrate(src: Store, _dest: Store, bytes: &mut &[u8]) -> Result<Self> {
+    fn migrate(src: Store, dest: Store, bytes: &mut &[u8]) -> Result<Self> {
+        // TODO: !!!!!!!! remove from here once there are no legacy IBC dests
+        // Migrate IBC dests
+        let mut maybe_ibc_bytes = &mut &**bytes;
+        let variant = u8::decode(&mut maybe_ibc_bytes)?;
+        if variant == 1 {
+            let ibc_dest = IbcDest::migrate(src, dest, maybe_ibc_bytes)?;
+            return Ok(Self::Ibc { data: ibc_dest });
+        }
+        // TODO: !!!!!!!! remove to here once there are no legacy IBC dests
+
         Self::load(src, bytes)
     }
 }

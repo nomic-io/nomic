@@ -1,3 +1,10 @@
+//! The Cosmos state, allowing for relaying data about remote Cosmos chains
+//! which is not available in the IBC module. Namely, this module keeps track of
+//! the operator keys associated with the validators within the validator sets
+//! of the remote chains, which is used in the Bitcoin module to build a
+//! multisig wallet for the remote chain to be paid to in the event of an
+//! Emergency Disbursal.
+
 use crate::{
     bitcoin::{
         signatory::{derive_pubkey, Signatory, SignatorySet},
@@ -20,11 +27,8 @@ use bitcoin::{
     util::bip32::{ChildNumber, ExtendedPubKey, Fingerprint},
 };
 use ibc::{
-    applications::transfer::context::TokenTransferValidationContext,
-    clients::ics07_tendermint,
-    core::{
-        ics02_client::consensus_state::ConsensusState, ics23_commitment::commitment::CommitmentRoot,
-    },
+    apps::transfer::context::TokenTransferValidationContext, clients::tendermint,
+    core::commitment_types::commitment::CommitmentRoot,
 };
 use ics23::ExistenceProof;
 use orga::{
@@ -34,12 +38,15 @@ use orga::{
     encoding::{Decode, Encode, LengthVec},
     ibc::ibc_rs::{self as ibc},
     ibc::{
-        ibc_rs::{core::ics24_host::identifier::PortId, Height},
-        Client, ClientId, Ibc,
+        ibc_rs::{
+            core::client::context::consensus_state::ConsensusState as ConsensusStateTrait,
+            core::client::context::types::Height, core::host::types::identifiers::PortId,
+        },
+        Client, ClientIdKey as ClientId, Ibc,
     },
     orga, Error as OrgaError,
 };
-use proto::traits::{Message, MessageExt};
+use proto::traits::Message;
 #[cfg(feature = "full")]
 use tendermint_rpc::HttpClient;
 
@@ -137,7 +144,7 @@ impl Cosmos {
             .get(client_id.clone())?
             .ok_or_else(|| OrgaError::Ibc("Client not found".to_string()))?;
 
-        if client.client_type()? != ics07_tendermint::client_type() {
+        if client.client_type()? != tendermint::types::client_type() {
             return Err(OrgaError::Ibc("Only supported for Tendermint clients".to_string()).into());
         }
 
@@ -182,16 +189,14 @@ impl Cosmos {
             .into());
         }
 
-        let any = proto::Any::decode(acc.value()?.as_slice())
-            .map_err(|_| OrgaError::App("Failed to decode account protobuf".to_string()))?;
-        let acc = proto::cosmos::auth::v1beta1::BaseAccount::from_any(&any)
+        let acc = proto::cosmos::auth::v1beta1::BaseAccount::decode(acc.value()?.as_slice())
             .map_err(|_| OrgaError::App("Invalid account".to_string()))?;
 
         let op_key_any = acc
             .pub_key
             .ok_or_else(|| OrgaError::App("Expected public key".to_string()))?;
         let op_key = Pubkey::try_from_slice(
-            proto::cosmos::crypto::secp256k1::PubKey::from_any(&op_key_any)
+            proto::cosmos::crypto::secp256k1::PubKey::decode(op_key_any.value.as_slice())
                 .map_err(|_| OrgaError::App("Invalid public key".to_string()))?
                 .key
                 .as_slice(),
@@ -410,6 +415,7 @@ pub async fn relay_op_keys<
                 .get(Default::default())?
                 .ok_or_else(|| OrgaError::Ibc("Client state not found".to_string()))?
                 .inner
+                .inner()
                 .latest_height)
         })
         .await?;
@@ -420,7 +426,8 @@ pub async fn relay_op_keys<
     let rpc_client = HttpClient::new(rpc_url).unwrap();
     let res = rpc_client
         .validators(latest_height, tendermint_rpc::Paging::All)
-        .await?;
+        .await
+        .map_err(|e| OrgaError::App(e.to_string()))?;
 
     for validator in res.validators.iter() {
         let client_id = client_id.clone();
@@ -448,7 +455,8 @@ pub async fn relay_op_keys<
                 Some((latest_height - 1).into()),
                 true,
             )
-            .await?;
+            .await
+            .map_err(|e| OrgaError::App(e.to_string()))?;
 
         if res.proof.is_none() {
             return Err(OrgaError::App("No proof".to_string()));
@@ -470,7 +478,8 @@ pub async fn relay_op_keys<
                 Some((latest_height - 1).into()),
                 true,
             )
-            .await?;
+            .await
+            .map_err(|e| OrgaError::App(e.to_string()))?;
 
         if res.proof.is_none() {
             return Err(OrgaError::App("No proof".to_string()));
@@ -509,27 +518,30 @@ pub async fn relay_op_keys<
 mod tests {
     use orga::{
         encoding::Decode,
-        ibc::{ibc_rs::core::ics24_host::identifier::ClientId, Client},
+        ibc::{ibc_rs::core::host::types::identifiers::ClientId, Client},
     };
 
     use super::*;
 
     #[test]
     fn proof_ok() {
-        let client_type = ibc::clients::ics07_tendermint::client_type();
-        let client_id = ClientId::new(client_type.clone(), 123).unwrap();
+        let client_type = ibc::clients::tendermint::types::client_type();
+        let client_id = ClientId::new(&client_type.clone().to_string(), 123).unwrap();
         let height = Height::new(1, 234).unwrap();
 
         let mut client = Client::default();
         client.set_client_type(client_type);
-        let cons_state = ibc::clients::ics07_tendermint::consensus_state::ConsensusState::new(
-            CommitmentRoot::from_bytes(
-                hex::decode("A692D537A95AC8B901044896E08767AACF441C0AD42AA08E770954787E108AB3")
-                    .unwrap()
-                    .as_slice(),
+
+        let cons_state = ibc::clients::tendermint::consensus_state::ConsensusState::from(
+            ibc::clients::tendermint::types::ConsensusState::new(
+                CommitmentRoot::from_bytes(
+                    hex::decode("A692D537A95AC8B901044896E08767AACF441C0AD42AA08E770954787E108AB3")
+                        .unwrap()
+                        .as_slice(),
+                ),
+                orga::cosmrs::tendermint::Time::now(),
+                Default::default(),
             ),
-            orga::cosmrs::tendermint::Time::now(),
-            Default::default(),
         );
         client
             .consensus_states

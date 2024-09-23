@@ -1,3 +1,5 @@
+//! Utility functions used by end-to-end tests.
+
 #![cfg(not(target_arch = "wasm32"))]
 #[cfg(feature = "full")]
 use crate::app::App;
@@ -129,10 +131,11 @@ pub fn make_std_tx(
 pub fn generate_bitcoin_key(network: bitcoin::Network) -> Result<ExtendedPrivKey> {
     let seed: [u8; 32] = rand::thread_rng().gen();
 
-    let network = if network == bitcoin::Network::Regtest {
-        bitcoin::Network::Testnet
-    } else {
-        network
+    let network = match network {
+        bitcoin::Network::Bitcoin => bitcoin::Network::Bitcoin,
+        bitcoin::Network::Testnet | bitcoin::Network::Signet | bitcoin::Network::Regtest => {
+            bitcoin::Network::Testnet
+        }
     };
 
     Ok(ExtendedPrivKey::new_master(network, seed.as_slice())?)
@@ -486,6 +489,7 @@ pub fn setup_test_app(
     header_queue_config: Option<HeaderQueueConfig>,
     checkpoint_queue_config: Option<CheckpointQueueConfig>,
     bitcoin_config: Option<BitcoinConfig>,
+    funded_addresses: Option<Vec<Address>>,
 ) -> Vec<NomicTestWallet> {
     let mut app = ABCIPlugin::<App>::default();
     let mut store = Store::new(BackingStore::Merk(Shared::new(MerkStore::new(
@@ -523,17 +527,19 @@ pub fn setup_test_app(
             .accounts
             .deposit(address, Coin::mint(1000000000))
             .unwrap();
-
         let keys: Vec<NomicTestWallet> = (0..num_accounts)
             .map(|_| NomicTestWallet::new_rand())
             .collect();
 
-        keys.iter().for_each(|key| {
-            inner_app
-                .accounts
-                .deposit(key.address, Coin::mint(1000000000))
-                .unwrap();
-        });
+        keys.iter()
+            .map(|key| key.address)
+            .chain(funded_addresses.unwrap_or_default())
+            .for_each(|address| {
+                inner_app
+                    .accounts
+                    .deposit(address, Coin::mint(1000000000))
+                    .unwrap();
+            });
 
         keys
     };

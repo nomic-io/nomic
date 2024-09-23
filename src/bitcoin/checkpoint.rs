@@ -267,8 +267,12 @@ impl BitcoinTx {
 
     /// The estimated size of the transaction, including the worst-case sizes of
     /// all input witnesses once fully signed, in virtual bytes.
-    pub fn vsize(&self) -> Result<u64> {
-        Ok(self.to_bitcoin_tx()?.vsize().try_into()?)
+    pub fn est_vsize(&self) -> Result<u64> {
+        let base_vsize: u64 = self.to_bitcoin_tx()?.vsize().try_into()?;
+        let est_witness_vsize = self.input.iter()?.try_fold(0, |sum: u64, input| {
+            Ok::<_, Error>(sum + input?.est_witness_vsize)
+        })?;
+        Ok(base_vsize + est_witness_vsize)
     }
 
     /// The hash of the transaction. Note that this will change if any inputs or
@@ -433,7 +437,8 @@ impl Batch {
     }
 }
 
-/// The default fee rate to be used to pay miner fees, in satoshis per virtual byte.
+/// The default fee rate to be used to pay miner fees, in satoshis per virtual
+/// byte.
 pub const DEFAULT_FEE_RATE: u64 = 10;
 
 /// `Checkpoint` is the main structure which coordinates the network's
@@ -459,7 +464,7 @@ pub const DEFAULT_FEE_RATE: u64 = 10;
 /// "intermediate emergency disbursal transaction" (in the second batch of the
 /// `batches` deque), and one or more "final emergency disbursal transactions"
 /// (in the first batch of the `batches` deque).
-#[orga(skip(Default), version = 4)]
+#[orga(skip(Default), version = 3..=4)]
 #[derive(Debug)]
 pub struct Checkpoint {
     /// The status of the checkpoint, either `Building`, `Signing`, or
@@ -479,7 +484,6 @@ pub struct Checkpoint {
     /// disbursal.
     ///
     /// These transfers can be initiated by a simple nBTC send or by a deposit.
-    #[orga(version(V2, V3, V4))]
     pub pending: Map<Dest, Coin<Nbtc>>,
 
     /// The fee rate to use when calculating the miner fee for the transactions
@@ -490,20 +494,17 @@ pub struct Checkpoint {
     /// faster than the target confirmation speed (implying the network is
     /// paying too low of a fee), and being decreased if checkpoints are
     /// confirmed faster than the target confirmation speed.
-    #[orga(version(V3, V4))]
     pub fee_rate: u64,
 
     /// The height of the Bitcoin block at which the checkpoint was fully signed
     /// and ready to be broadcast to the Bitcoin network, used by the fee
     /// adjustment algorithm to determine if the checkpoint was confirmed too
     /// fast or too slow.
-    #[orga(version(V3, V4))]
     pub signed_at_btc_height: Option<u32>,
 
     /// Whether or not to honor relayed deposits made against this signatory
     /// set. This can be used, for example, to enforce a cap on deposits into
     /// the system.
-    #[orga(version(V3, V4))]
     pub deposits_enabled: bool,
 
     #[orga(version(V4))]
@@ -513,37 +514,6 @@ pub struct Checkpoint {
     /// slightly older signatory sets can still be processed in this checkpoint,
     /// but the reserve output will be paid to the latest signatory set.
     pub sigset: SignatorySet,
-}
-
-impl MigrateFrom<CheckpointV0> for CheckpointV1 {
-    fn migrate_from(_value: CheckpointV0) -> OrgaResult<Self> {
-        unreachable!()
-    }
-}
-
-impl MigrateFrom<CheckpointV1> for CheckpointV2 {
-    fn migrate_from(value: CheckpointV1) -> OrgaResult<Self> {
-        Ok(Self {
-            status: value.status,
-            batches: value.batches,
-            pending: Map::new(),
-            sigset: value.sigset,
-        })
-    }
-}
-
-impl MigrateFrom<CheckpointV2> for CheckpointV3 {
-    fn migrate_from(value: CheckpointV2) -> OrgaResult<Self> {
-        Ok(Self {
-            status: value.status,
-            batches: value.batches,
-            pending: value.pending,
-            fee_rate: DEFAULT_FEE_RATE,
-            signed_at_btc_height: None,
-            sigset: value.sigset,
-            deposits_enabled: true,
-        })
-    }
 }
 
 impl MigrateFrom<CheckpointV3> for CheckpointV4 {
@@ -887,7 +857,7 @@ impl Checkpoint {
 }
 
 /// Configuration parameters used in processing checkpoints.
-#[orga(skip(Default), version = 4)]
+#[orga(skip(Default), version = 2..=4)]
 #[derive(Clone)]
 pub struct Config {
     /// The minimum amount of time between the creation of checkpoints, in
@@ -922,15 +892,10 @@ pub struct Config {
     /// This is used to prevent the checkpoint transaction from being too large
     /// to be accepted by the Bitcoin network.
     ///
-    /// If a checkpoint has more outputs than this when advancing from `Building`
-    /// to `Signing`, the excess outputs will be moved to the suceeding,
-    /// newly-created `Building` checkpoint.∑
+    /// If a checkpoint has more outputs than this when advancing from
+    /// `Building` to `Signing`, the excess outputs will be moved to the
+    /// suceeding, newly-created `Building` checkpoint.∑
     pub max_outputs: u64,
-
-    /// The default fee rate to use when creating the first checkpoint of the
-    /// network, in satoshis per virtual byte.
-    #[orga(version(V0))]
-    pub fee_rate: u64,
 
     /// The maximum age of a checkpoint to retain, in seconds.
     ///
@@ -946,17 +911,14 @@ pub struct Config {
     /// will be adjusted up if the checkpoint transaction is not confirmed
     /// within the target number of blocks, and will be adjusted down if the
     /// checkpoint transaction faster than the target.
-    #[orga(version(V1, V2, V3, V4))]
     pub target_checkpoint_inclusion: u32,
 
     /// The lower bound to use when adjusting the fee rate of the checkpoint
     /// transaction, in satoshis per virtual byte.
-    #[orga(version(V1, V2, V3, V4))]
     pub min_fee_rate: u64,
 
     /// The upper bound to use when adjusting the fee rate of the checkpoint
     /// transaction, in satoshis per virtual byte.
-    #[orga(version(V1, V2, V3, V4))]
     pub max_fee_rate: u64,
 
     /// The value (in basis points) to multiply by when calculating the miner
@@ -966,24 +928,20 @@ pub struct Config {
     /// The difference in the fee deducted and the fee paid in the checkpoint
     /// transaction is added to the fee pool, to help the network pay for
     /// its own miner fees.
-    #[orga(version(V3, V4))]
     pub user_fee_factor: u64,
 
     /// The threshold of signatures required to spend reserve scripts, as a
     /// ratio represented by a tuple, `(numerator, denominator)`.
     ///
     /// For example, `(9, 10)` means the threshold is 90% of the signatory set.
-    #[orga(version(V1, V2, V3, V4))]
     pub sigset_threshold: (u64, u64),
 
     /// The minimum amount of nBTC an account must hold to be eligible for an
     /// output in the emergency disbursal.
-    #[orga(version(V1, V2, V3, V4))]
     pub emergency_disbursal_min_tx_amt: u64,
 
     /// The amount of time between the creation of a checkpoint and when the
     /// associated emergency disbursal transactions can be spent, in seconds.
-    #[orga(version(V1, V2, V3, V4))]
     pub emergency_disbursal_lock_time_interval: u32,
 
     /// The maximum size of a final emergency disbursal transaction, in virtual
@@ -991,7 +949,6 @@ pub struct Config {
     ///
     /// The outputs to be included in final emergency disbursal transactions
     /// will be distributed across multiple transactions around this size.
-    #[orga(version(V1, V2, V3, V4))]
     pub emergency_disbursal_max_tx_size: u64,
 
     /// The maximum number of unconfirmed checkpoints before the network will
@@ -1007,51 +964,10 @@ pub struct Config {
     /// This will also stop the fee rate from being adjusted too high if the
     /// issue is simply with relayers failing to report the confirmation of the
     /// checkpoint transactions.
-    #[orga(version(V2, V3, V4))]
     pub max_unconfirmed_checkpoints: u32,
 
     #[orga(version(V4))]
     pub wait_to_collect_fees: bool,
-}
-
-impl MigrateFrom<ConfigV0> for ConfigV1 {
-    fn migrate_from(value: ConfigV0) -> OrgaResult<Self> {
-        Ok(Self {
-            min_checkpoint_interval: value.min_checkpoint_interval,
-            max_checkpoint_interval: value.max_checkpoint_interval,
-            max_inputs: value.max_inputs,
-            max_outputs: value.max_outputs,
-            max_age: value.max_age,
-            target_checkpoint_inclusion: Config::default().target_checkpoint_inclusion,
-            min_fee_rate: Config::default().min_fee_rate,
-            max_fee_rate: Config::default().max_fee_rate,
-            sigset_threshold: Config::default().sigset_threshold,
-            emergency_disbursal_min_tx_amt: Config::default().emergency_disbursal_min_tx_amt,
-            emergency_disbursal_lock_time_interval: Config::default()
-                .emergency_disbursal_lock_time_interval,
-            emergency_disbursal_max_tx_size: Config::default().emergency_disbursal_max_tx_size,
-        })
-    }
-}
-
-impl MigrateFrom<ConfigV1> for ConfigV2 {
-    fn migrate_from(value: ConfigV1) -> OrgaResult<Self> {
-        Ok(Self {
-            min_checkpoint_interval: value.min_checkpoint_interval,
-            max_checkpoint_interval: value.max_checkpoint_interval,
-            max_inputs: value.max_inputs,
-            max_outputs: value.max_outputs,
-            max_age: value.max_age,
-            target_checkpoint_inclusion: value.target_checkpoint_inclusion,
-            min_fee_rate: value.min_fee_rate,
-            max_fee_rate: value.max_fee_rate,
-            sigset_threshold: value.sigset_threshold,
-            emergency_disbursal_min_tx_amt: value.emergency_disbursal_min_tx_amt,
-            emergency_disbursal_lock_time_interval: value.emergency_disbursal_lock_time_interval,
-            emergency_disbursal_max_tx_size: value.emergency_disbursal_max_tx_size,
-            max_unconfirmed_checkpoints: Config::default().max_unconfirmed_checkpoints,
-        })
-    }
 }
 
 impl MigrateFrom<ConfigV2> for ConfigV3 {
@@ -1159,7 +1075,7 @@ impl Default for Config {
 /// broadcast to the Bitcoin network. The queue also maintains a counter
 /// (`confirmed_index`) to track which of these completed checkpoints have been
 /// confirmed in a Bitcoin block.
-#[orga(version = 2)]
+#[orga(version = 1..=2)]
 pub struct CheckpointQueue {
     /// The checkpoints in the queue, in order from oldest to newest. The last
     /// checkpoint is the checkpoint currently being built, and has the index
@@ -1178,12 +1094,6 @@ pub struct CheckpointQueue {
 
     /// Configuration parameters used in processing checkpoints.
     pub config: Config,
-}
-
-impl MigrateFrom<CheckpointQueueV0> for CheckpointQueueV1 {
-    fn migrate_from(_value: CheckpointQueueV0) -> OrgaResult<Self> {
-        unreachable!()
-    }
 }
 
 impl MigrateFrom<CheckpointQueueV1> for CheckpointQueueV2 {
@@ -1329,7 +1239,7 @@ impl<'a> BuildingCheckpointMut<'a> {
                 .get_mut(BatchType::IntermediateTx as u64)?
                 .unwrap();
             let mut intermediate_tx = intermediate_tx_batch.get_mut(0)?.unwrap();
-            let fee = intermediate_tx.vsize()? * fee_rate;
+            let fee = intermediate_tx.est_vsize()? * fee_rate;
             intermediate_tx.deduct_fee(fee)?;
             fee
         };
@@ -1392,7 +1302,9 @@ impl<'a> BuildingCheckpointMut<'a> {
                     // Deduct the final tx's miner fee from its outputs,
                     // removing any outputs which are too small to pay their
                     // share of the fee.
-                    let tx_size = tx.vsize().map_err(|err| OrgaError::App(err.to_string()))?;
+                    let tx_size = tx
+                        .est_vsize()
+                        .map_err(|err| OrgaError::App(err.to_string()))?;
                     let fee = intermediate_tx_fee / intermediate_tx_len + tx_size * fee_rate;
                     tx.deduct_fee(fee)
                         .map_err(|err| OrgaError::App(err.to_string()))?;
@@ -1505,7 +1417,7 @@ impl<'a> BuildingCheckpointMut<'a> {
                 // and add our output there instead.
                 // TODO: don't pop and repush, just get a mutable reference
                 let mut curr_tx = final_txs.pop().unwrap();
-                if curr_tx.vsize()? >= config.emergency_disbursal_max_tx_size {
+                if curr_tx.est_vsize()? >= config.emergency_disbursal_max_tx_size {
                     self.link_intermediate_tx(&mut curr_tx, config.sigset_threshold)?;
                     final_txs.push(curr_tx);
                     curr_tx = BitcoinTx::with_lock_time(lock_time);
@@ -1692,21 +1604,6 @@ impl<'a> BuildingCheckpointMut<'a> {
             excess_inputs,
             excess_outputs,
         ))
-    }
-
-    /// Insert a transfer to the pending transfer queue.
-    ///
-    /// Transfers will be processed once the containing checkpoint is finished
-    /// being signed, but will be represented in this checkpoint's emergency
-    /// disbursal before they are processed.
-    pub fn insert_pending(&mut self, dest: Dest, coins: Coin<Nbtc>) -> Result<()> {
-        let mut amount = self
-            .pending
-            .remove(dest.clone())?
-            .map_or(0.into(), |c| c.amount);
-        amount = (amount + coins.amount).result()?;
-        self.pending.insert(dest, Coin::mint(amount))?;
-        Ok(())
     }
 }
 

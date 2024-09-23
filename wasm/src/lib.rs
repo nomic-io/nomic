@@ -430,7 +430,7 @@ pub async fn gen_deposit_addr(dest_addr: String) -> Result<DepositAddress, JsErr
         })
         .await?;
     let script = sigset.output_script(
-        Dest::Address(dest_addr).commitment_bytes()?.as_slice(),
+        Dest::NativeAccount { address: dest_addr }.commitment_bytes()?.as_slice(),
         threshold,
     )?;
     // TODO: get network from somewhere
@@ -542,7 +542,7 @@ pub async fn broadcast_deposit_addr(
         .parse()
         .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
-    let commitment = Dest::Address(dest_addr);
+    let commitment = Dest::NativeAccount { address: dest_addr };
 
     let window = match web_sys::window() {
         Some(window) => window,

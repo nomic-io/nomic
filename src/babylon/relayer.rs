@@ -10,7 +10,7 @@ use bitcoin::{
     Block, BlockHash, TxMerkleNode, TxOut, Txid,
 };
 use bitcoincore_rpc_async::{Client as BitcoinRpcClient, RpcApi};
-use cosmos_sdk_proto::{cosmos::crypto::secp256k1::PubKey, traits::TypeUrl};
+use cosmos_sdk_proto::cosmos::crypto::secp256k1::PubKey;
 use cosmrs::{
     crypto::secp256k1::SigningKey,
     tx::{mode_info::Single, MessageExt, ModeInfo, SignDoc, SignMode},
