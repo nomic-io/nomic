@@ -4,6 +4,7 @@ use crate::{
         adapter::Adapter,
         header_queue::{WorkHeader, WrappedHeader},
     },
+    ethereum::{bytes32, Connection, Ethereum, Network},
     incentives::Incentives,
 };
 
@@ -14,6 +15,7 @@ use bitcoin::{
 };
 use orga::{
     coins::Take,
+    collections::Map,
     ibc::Ibc,
     migrate::{Migrate, MigrateFrom},
     state::State,
@@ -85,6 +87,23 @@ impl MigrateFrom<InnerAppV5> for InnerAppV6 {
 
 impl MigrateFrom<InnerAppV6> for InnerAppV7 {
     fn migrate_from(other: InnerAppV6) -> Result<Self> {
+        let mut ethereum = Ethereum::default();
+
+        #[cfg(all(feature = "testnet", feature = "ethereum"))]
+        {
+            let mut connections = Map::default();
+            connections.insert(other.ethereum.bridge_contract, other.ethereum);
+            ethereum.networks.insert(
+                11155111,
+                Network {
+                    id: 11155111, // Sepolia
+                    connections,
+                },
+            );
+
+            // TODO: add berachain bartio, holesky, and other testnets
+        }
+
         Ok(Self {
             accounts: other.accounts,
             staking: other.staking,
@@ -103,7 +122,7 @@ impl MigrateFrom<InnerAppV6> for InnerAppV7 {
             cosmos: other.cosmos,
             babylon: Default::default(),
             frost: Default::default(),
-            ethereum: other.ethereum,
+            ethereum,
         })
     }
 }

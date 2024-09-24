@@ -31,12 +31,13 @@ use nomic::bitcoin::signatory::SignatorySet;
 use nomic::bitcoin::Nbtc;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
+use nomic::ethereum::bridge_contract;
 use nomic::frost::signer::SecretStore;
 use nomic::utils::load_bitcoin_key;
 use nomic::utils::load_or_generate;
 use nomic::{babylon, frost};
 use orga::abci::Node;
-use orga::client::wallet::{SimpleWallet, Wallet};
+use orga::client::wallet::{DerivedKey, SimpleWallet, Wallet};
 use orga::coins::{Address, Commission, Decimal, Declaration, Symbol};
 use orga::collections::Ref;
 use orga::ibc::ibc_rs::core::{
@@ -47,6 +48,7 @@ use orga::macros::build_call;
 use orga::merk::MerkStore;
 use orga::plugins::MIN_FEE;
 use orga::prelude::*;
+use orga::secp256k1::SecretKey;
 use orga::{client::AppClient, tendermint::client::HttpClient};
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
@@ -1743,6 +1745,12 @@ pub struct EthTransferNbtcCmd {
     to: alloy::primitives::Address,
     amount: u64,
 
+    #[clap(long)]
+    eth_chainid: u32,
+
+    #[clap(long)]
+    eth_contract: String,
+
     #[clap(flatten)]
     config: nomic::network::Config,
 }
@@ -1750,13 +1758,30 @@ pub struct EthTransferNbtcCmd {
 #[cfg(feature = "ethereum")]
 impl EthTransferNbtcCmd {
     async fn run(&self) -> Result<()> {
+        if self.eth_contract.len() != 42 || !self.eth_contract.starts_with("0x") {
+            return Err(nomic::error::Error::Address(
+                "Invalid contract address".to_string(),
+            ));
+        }
+        let contract_addr_vec = hex::decode(&self.eth_contract[2..]).unwrap(); // TODO
+        let mut contract_addr = [0; 20];
+        contract_addr.copy_from_slice(&contract_addr_vec[..]);
+        let contract_addr = Address::from(contract_addr);
+
         let to = self.to.0 .0.into();
         Ok(self
             .config
             .client()
             .with_wallet(wallet())
             .call(
-                |app| build_call!(app.eth_transfer_nbtc(to, self.amount.into())),
+                |app| {
+                    build_call!(app.eth_transfer_nbtc(
+                        self.eth_chainid,
+                        contract_addr,
+                        to,
+                        self.amount.into()
+                    ))
+                },
                 |app| build_call!(app.app_noop()),
             )
             .await?)
@@ -2589,8 +2614,13 @@ pub struct RelayEthereumCmd {
     #[clap(long)]
     private_key: String, // TODO: use type that validates length, format (optional 0x)
 
+    // TODO: support multiple connections
     #[clap(long)]
     eth_rpc_url: String,
+    #[clap(long)]
+    eth_chainid: u32,
+    #[clap(long)]
+    eth_contract: String,
 
     #[clap(flatten)]
     config: nomic::network::Config,
@@ -2609,11 +2639,31 @@ impl RelayEthereumCmd {
                 "Invalid private key".to_string(),
             )));
         }
+        let secret_key = SecretKey::from_slice(&privkey).unwrap();
+
+        if !self.eth_contract.starts_with("0x") {
+            return Err(nomic::error::Error::Orga(orga::Error::App(
+                "Invalid contract address".to_string(),
+            )));
+        }
+        if self.eth_contract.len() != 42 {
+            return Err(nomic::error::Error::Orga(orga::Error::App(
+                "Invalid contract address".to_string(),
+            )));
+        }
+        let bridge_contract_vec = hex::decode(&self.eth_contract[2..]).unwrap();
+        let mut bridge_contract = [0u8; 20];
+        bridge_contract.copy_from_slice(&bridge_contract_vec);
+        let bridge_contract = Address::from(bridge_contract);
 
         let try_relay_msg = || async {
             let client = self.config.clone().client();
-            let (token_contract, bridge_contract) = client
-                .query(|app| Ok((app.ethereum.token_contract, app.ethereum.bridge_contract)))
+            let token_contract = client
+                .query(|app| {
+                    Ok(app
+                        .ethereum
+                        .token_contract(self.eth_chainid, bridge_contract)?)
+                })
                 .await?;
 
             let signer = LocalSigner::from_slice(privkey.as_slice()).unwrap(); // TODO
@@ -2638,20 +2688,27 @@ impl RelayEthereumCmd {
 
             let Some((msg, sigs, data)) = client
                 .query(|app| {
-                    if app.ethereum.message_index < msg_index {
+                    if app
+                        .ethereum
+                        .message_index(self.eth_chainid, bridge_contract)?
+                        < msg_index
+                    {
                         return Ok(None);
                     }
 
-                    if !app.ethereum.get(msg_index)?.sigs.signed() {
+                    if !app
+                        .ethereum
+                        .signed(self.eth_chainid, bridge_contract, msg_index)?
+                    {
                         log::debug!("Message {msg_index} is still being signed");
                         return Ok(None);
                     }
 
-                    Ok(Some((
-                        app.ethereum.get(msg_index)?.sigs.message,
-                        app.ethereum.get_sigs(msg_index)?,
-                        app.ethereum.get(msg_index)?.msg.clone(),
-                    )))
+                    Ok(Some(app.ethereum.msd(
+                        self.eth_chainid,
+                        bridge_contract,
+                        msg_index,
+                    )?))
                 })
                 .await?
             else {
@@ -2661,11 +2718,13 @@ impl RelayEthereumCmd {
             let (ss_index, valset_index) = client
                 .query(|app| {
                     for i in 1..msg_index {
-                        let msg = app.ethereum.get(msg_index - i)?;
+                        let (_, _, args) =
+                            app.ethereum
+                                .msd(self.eth_chainid, bridge_contract, msg_index - i)?;
                         if let nomic::ethereum::OutMessageArgs::UpdateValset(
                             valset_index,
                             ref valset,
-                        ) = msg.msg
+                        ) = args
                         {
                             return Ok((valset.index, valset_index));
                         }
@@ -2690,8 +2749,7 @@ impl RelayEthereumCmd {
                         };
                     };
                     let (v, r, s) = nomic::ethereum::to_eth_sig(
-                        &bitcoin::secp256k1::ecdsa::Signature::from_compact(&sig.unwrap().0)
-                            .unwrap(),
+                        &bitcoin::secp256k1::ecdsa::Signature::from_compact(&sig.0).unwrap(),
                         &bitcoin::secp256k1::PublicKey::from_slice(pk.as_slice()).unwrap(),
                         &Message::from_slice(&msg).unwrap(),
                     );
@@ -2755,8 +2813,11 @@ impl RelayEthereumCmd {
         };
 
         let try_relay_return = || async {
-            let client = self.config.clone().client();
-            let bridge_contract_addr = client.query(|app| Ok(app.ethereum.bridge_contract)).await?;
+            let client = self
+                .config
+                .clone()
+                .client()
+                .with_wallet(SimpleWallet::open(".").unwrap());
 
             let signer = LocalSigner::from_slice(privkey.as_slice()).unwrap(); // TODO
             let wallet = EthereumWallet::new(signer);
@@ -2765,7 +2826,7 @@ impl RelayEthereumCmd {
                 .wallet(wallet)
                 .on_http(self.eth_rpc_url.parse().unwrap());
             let contract = nomic::ethereum::bridge_contract::new(
-                alloy::core::primitives::Address::from_slice(&bridge_contract_addr.bytes()),
+                alloy::core::primitives::Address::from_slice(&bridge_contract.bytes()),
                 provider,
             );
 
@@ -2787,7 +2848,13 @@ impl RelayEthereumCmd {
                 .unwrap()
                 ._0
                 .to();
-            let nomic_index = client.query(|app| Ok(app.ethereum.return_index)).await?;
+            let nomic_index = client
+                .query(|app| {
+                    Ok(app
+                        .ethereum
+                        .return_index(self.eth_chainid, bridge_contract)?)
+                })
+                .await?;
 
             if nomic_index == contract_index {
                 return Ok(());
@@ -2809,12 +2876,19 @@ impl RelayEthereumCmd {
                 .to();
             dbg!(&dest_str, amount);
 
-            let dest: Dest = dest_str.parse().unwrap();
+            let dest = if let Ok(dest) = dest_str.parse() {
+                dest
+            } else if let Err(e) = dest_str.parse() {
+                log::debug!("Failed to parse dest: {:?}", e);
+                Dest::RewardPool
+            };
             // TODO: build proofs
             client
                 .call(
                     move |app| {
                         build_call!(app.ethereum.relay_return(
+                            self.eth_chainid,
+                            bridge_contract,
                             (),
                             (),
                             vec![(nomic_index, dest.clone(), amount)]

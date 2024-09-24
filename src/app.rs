@@ -13,10 +13,11 @@ use crate::bitcoin::threshold_sig::Signature;
 use crate::bitcoin::{exempt_from_fee, Bitcoin, Nbtc};
 use crate::bitcoin::{matches_bitcoin_network, NETWORK};
 use crate::cosmos::{Chain, Cosmos, Proof};
+use crate::ethereum::Ethereum;
 use crate::frost::{Config as FrostConfig, FrostGroup};
 
 #[cfg(feature = "ethereum")]
-use crate::ethereum::{ContractCall, Ethereum};
+use crate::ethereum::{Connection, ContractCall};
 use crate::frost::Frost;
 use crate::incentives::Incentives;
 use bitcoin::util::merkleblock::PartialMerkleTree;
@@ -162,6 +163,15 @@ pub struct InnerApp {
     /// which is not available in the IBC module.
     pub cosmos: Cosmos,
 
+    #[cfg(all(feature = "ethereum", feature = "testnet"))]
+    #[orga(version(V5, V6))]
+    #[call]
+    pub ethereum: Connection,
+    #[cfg(all(feature = "ethereum", feature = "testnet"))]
+    #[orga(version(V7))]
+    #[call]
+    pub ethereum: Ethereum,
+
     #[cfg(feature = "testnet")]
     #[orga(version(V7))]
     #[call]
@@ -171,11 +181,6 @@ pub struct InnerApp {
     #[orga(version(V7))]
     #[call]
     pub frost: Frost,
-
-    #[cfg(all(feature = "ethereum", feature = "testnet"))]
-    #[orga(version(V5, V6, V7))]
-    #[call]
-    pub ethereum: Ethereum,
 }
 
 #[orga]
@@ -277,7 +282,13 @@ impl InnerApp {
     }
 
     #[call]
-    pub fn eth_transfer_nbtc(&mut self, dest: Address, amount: Amount) -> Result<()> {
+    pub fn eth_transfer_nbtc(
+        &mut self,
+        network: u32,
+        connection: Address,
+        address: Address,
+        amount: Amount,
+    ) -> Result<()> {
         #[cfg(feature = "ethereum")]
         {
             crate::bitcoin::exempt_from_fee()?;
@@ -287,7 +298,11 @@ impl InnerApp {
             let signer = self.signer()?;
             let coins = self.bitcoin.accounts.withdraw(signer, amount)?;
 
-            let dest = Dest::EthAccount { address: dest };
+            let dest = Dest::EthAccount {
+                network,
+                connection: connection.into(),
+                address: address.into(),
+            };
             self.bitcoin.insert_pending(dest, coins)?;
 
             Ok(())
@@ -371,7 +386,19 @@ impl InnerApp {
             Dest::Ibc { data: dest } => dest.transfer(nbtc, &mut self.bitcoin, &mut self.ibc)?,
             Dest::RewardPool => self.bitcoin.give_rewards(nbtc)?,
             #[cfg(feature = "ethereum")]
-            Dest::EthAccount { address } => self.ethereum.transfer(address, nbtc)?,
+            Dest::EthAccount {
+                network,
+                connection,
+                address,
+            } => self
+                .ethereum
+                .networks
+                .get_mut(network)?
+                .ok_or_else(|| Error::App("Unknown network".to_string()))?
+                .connections
+                .get_mut(connection.into())?
+                .ok_or_else(|| Error::App("Unknown connection".to_string()))?
+                .transfer(address.into(), nbtc)?,
             // #[cfg(feature = "ethereum")]
             // Dest::EthCall(call, _) => self.ethereum.call(call, nbtc)?,
             Dest::Bitcoin { data } => self.bitcoin.add_withdrawal(data, nbtc)?,
@@ -612,7 +639,7 @@ mod abci {
         plugins::{BeginBlockCtx, EndBlockCtx, InitChainCtx, Validators},
     };
 
-    use crate::frost::FrostGroup;
+    use crate::{ethereum::bytes32, frost::FrostGroup};
 
     use super::*;
 
@@ -690,21 +717,20 @@ mod abci {
             #[cfg(feature = "testnet")]
             if !self.bitcoin.checkpoints.is_empty()? {
                 self.step_frost(now)?;
-                let staking_outputs = self.babylon.step(&self.bitcoin, &mut self.frost)?;
-                let mut checkpoint = self.bitcoin.checkpoints.building_mut()?;
-                let mut building_checkpoint_batch = checkpoint
-                    .batches
-                    .get_mut(crate::bitcoin::checkpoint::BatchType::Checkpoint as u64)?
-                    .unwrap();
-                let mut checkpoint_tx = building_checkpoint_batch.get_mut(0)?.unwrap();
-                for output in staking_outputs {
-                    checkpoint_tx.output.push_back(output.into())?;
-                }
             }
 
             let pending_nbtc_transfers = self.bitcoin.take_pending()?;
             for (dest, coins) in pending_nbtc_transfers {
-                self.credit_dest(dest, coins)?;
+                if dest.validate(&self.bitcoin, coins.amount).is_ok() {
+                    let amount = coins.amount;
+                    if let Err(e) = self.credit_dest(dest.clone(), coins) {
+                        // TODO: this will catch all errors, we only want to catch validation errors
+                        log::debug!("Failed to credit transfer to {}, {}", dest, amount);
+                        log::debug!("{:?}", e);
+                    }
+                } else {
+                    log::debug!("Invalid transfer to {}, {}", dest, coins.amount);
+                }
             }
 
             let external_outputs = if self.bitcoin.should_push_checkpoint()? {
@@ -736,7 +762,12 @@ mod abci {
                         .step(&self.bitcoin.checkpoints.active_sigset()?)?;
                 }
                 for (dest, coins) in self.ethereum.take_pending()? {
-                    self.credit_dest(dest, coins)?;
+                    let amount = coins.amount;
+                    if let Err(e) = self.credit_dest(dest.clone(), coins) {
+                        // TODO: this will catch all errors, we only want to catch validation errors
+                        log::debug!("Failed to credit transfer to {}, {}", dest, amount);
+                        log::debug!("{:?}", e);
+                    }
                 }
             }
 
@@ -1465,7 +1496,13 @@ pub enum Dest {
     },
     #[cfg(feature = "ethereum")]
     EthAccount {
-        address: Address,
+        network: u32,
+        // TODO: ethaddress type
+        #[serde(with = "SerHex::<StrictPfx>")]
+        connection: [u8; 20],
+        // TODO: ethaddress type
+        #[serde(with = "SerHex::<StrictPfx>")]
+        address: [u8; 20],
     },
     // #[cfg(feature = "ethereum")]
     // EthCall(ContractCall, Address),
@@ -1533,10 +1570,12 @@ fn dest_json() {
     #[cfg(feature = "ethereum")]
     assert_eq!(
         Dest::EthAccount {
+            network: 123,
+            connection: [0; 32],
             address: Address::NULL
         }
         .to_string(),
-        "{\"type\":\"ethAccount\",\"address\":\"nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h\"}"
+        "{\"type\":\"ethAccount\",\"address\":\"0x0000000000000000000000000000000000000000\"}"
     );
 
     assert_eq!(Dest::RewardPool.to_string(), "{\"type\":\"rewardPool\"}");
@@ -1583,11 +1622,15 @@ fn dest_json() {
 impl Dest {
     pub fn to_receiver_addr(&self) -> Option<String> {
         Some(match self {
-            Dest::NativeAccount { address: addr } => addr.to_string(),
-            Dest::Ibc { data: dest } => dest.receiver.to_string(),
+            Dest::NativeAccount { address } => address.to_string(),
+            Dest::Ibc { data } => data.receiver.to_string(),
             Dest::RewardPool => return None,
             #[cfg(feature = "ethereum")]
-            Dest::EthAccount { address: addr } => addr.to_string(),
+            Dest::EthAccount {
+                network,
+                connection,
+                address,
+            } => hex::encode(address),
             // #[cfg(feature = "ethereum")]
             // Dest::EthCall(_, addr) => addr.to_string(),
             Dest::Bitcoin { data } => return None,
