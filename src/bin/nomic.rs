@@ -2879,8 +2879,8 @@ impl RelayEthereumCmd {
 
             let dest = if let Ok(dest) = dest_str.parse() {
                 dest
-            } else if let Err(e) = dest_str.parse() {
-                log::debug!("Failed to parse dest: {:?}", e);
+            } else {
+                log::debug!("Failed to parse dest");
                 Dest::RewardPool
             };
             // TODO: build proofs
