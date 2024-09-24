@@ -2,6 +2,7 @@
 use super::ConsensusKey;
 use super::{
     adapter::Adapter,
+    outpoint_set::Outpoint,
     signatory::SignatorySet,
     threshold_sig::{Signature, ThresholdSig},
     Xpub,
@@ -670,10 +671,27 @@ impl Checkpoint {
             self.batches
                 .get(BatchType::Checkpoint as u64)?
                 .unwrap()
-                .back()?
+                .front()?
                 .unwrap()
                 .to_bitcoin_tx()?,
         ))
+    }
+
+    /// Gets the transactions in the checkpoint batch, as a `Vec` of
+    /// `bitcoin::Transaction`s.
+    #[query]
+    pub fn checkpoint_txs(&self) -> Result<Vec<Adapter<bitcoin::Transaction>>> {
+        let mut txs = Vec::new();
+        for tx in self
+            .batches
+            .get(BatchType::Checkpoint as u64)?
+            .unwrap()
+            .iter()?
+        {
+            let tx = tx?;
+            txs.push(Adapter::new(tx.to_bitcoin_tx()?));
+        }
+        Ok(txs)
     }
 
     /// Gets the output containing the reserve funds for the checkpoint, the
@@ -1525,85 +1543,147 @@ impl<'a> BuildingCheckpointMut<'a> {
         let outs = self.additional_outputs(config, &timestamping_commitment)?;
         let base_fee = self.base_fee(config, &timestamping_commitment)?;
 
-        let mut checkpoint_batch = self.batches.get_mut(BatchType::Checkpoint as u64)?.unwrap();
-        let mut checkpoint_tx = checkpoint_batch.get_mut(0)?.unwrap();
-        for out in outs.iter().rev() {
-            checkpoint_tx.output.push_front(Adapter::new(out.clone()))?;
-        }
-
-        // Remove excess inputs and outputs from the checkpoint tx, to be pushed
-        // onto the suceeding checkpoint while in its `Building` state.
-        let mut excess_inputs = vec![];
-        while checkpoint_tx.input.len() > config.max_inputs {
-            let removed_input = checkpoint_tx.input.pop_back()?.unwrap();
-            excess_inputs.push(removed_input);
-        }
-        let mut excess_outputs = vec![];
-        while checkpoint_tx.output.len() > config.max_outputs {
-            let removed_output = checkpoint_tx.output.pop_back()?.unwrap();
-            excess_outputs.push(removed_output);
-        }
-
-        // Sum the total input and output amounts.
-        // TODO: Input/Output sum functions
-        let mut in_amount = 0;
-        for i in 0..checkpoint_tx.input.len() {
-            let input = checkpoint_tx.input.get(i)?.unwrap();
-            in_amount += input.amount;
-        }
-        let mut out_amount = 0;
-        for i in 0..checkpoint_tx.output.len() {
-            let output = checkpoint_tx.output.get(i)?.unwrap();
-            out_amount += output.value;
-        }
-
-        // Deduct the outgoing amount and calculated fee amount from the reserve
-        // input amount, to set the resulting reserve output value.
-        let fee = base_fee + additional_fees;
-        let reserve_value = in_amount
-            .checked_sub(out_amount + fee)
-            .ok_or_else(|| OrgaError::App("Insufficient funds to cover fees".to_string()))?;
-        let mut reserve_out = checkpoint_tx.output.get_mut(0)?.unwrap();
-        reserve_out.value = reserve_value;
-
-        // Prepare the checkpoint tx's inputs to be signed by calculating their
-        // sighashes.
-        let bitcoin_tx = checkpoint_tx.to_bitcoin_tx()?;
-        let mut sc = bitcoin::util::sighash::SighashCache::new(&bitcoin_tx);
-        for i in 0..checkpoint_tx.input.len() {
-            let mut input = checkpoint_tx.input.get_mut(i)?.unwrap();
-            let sighash = sc.segwit_signature_hash(
-                i as usize,
-                &input.redeem_script,
-                input.amount,
-                EcdsaSighashType::All,
-            )?;
-            input.signatures.set_message(sighash.into_inner());
-        }
-
-        // Generate the emergency disbursal transactions, spending from the
-        // reserve output.
-        let reserve_outpoint = bitcoin::OutPoint {
-            txid: checkpoint_tx.txid()?,
-            vout: 0,
+        let checkpoint_outs = {
+            let mut checkpoint_batch = self.batches.get_mut(BatchType::Checkpoint as u64)?.unwrap();
+            let mut checkpoint_tx = checkpoint_batch.get_mut(0)?.unwrap();
+            for out in outs.iter().rev() {
+                checkpoint_tx.output.push_front(Adapter::new(out.clone()))?;
+            }
+            checkpoint_tx.output.len()
         };
-        self.generate_emergency_disbursal_txs(
-            nbtc_accounts,
-            recovery_scripts,
-            reserve_outpoint,
-            external_outputs,
-            self.fee_rate,
-            reserve_value,
-            config,
-        )?;
 
-        Ok((
-            reserve_outpoint,
-            reserve_value,
-            fee,
-            excess_inputs,
-            excess_outputs,
-        ))
+        // Handle other txs alongside the checkpoint tx.
+        {
+            let sigset = self.sigset.clone();
+            let fee_rate = self.fee_rate;
+            let mut checkpoint_batch = self.batches.get_mut(BatchType::Checkpoint as u64)?.unwrap();
+            for i in 1..checkpoint_batch.len() {
+                let mut tx = checkpoint_batch.get_mut(i)?.unwrap();
+                let value = tx.value()?;
+
+                // Add a funding input, to be populated once the checkpoint tx is finalized.
+                tx.input.push_back(Input::new(
+                    bitcoin::OutPoint {
+                        vout: checkpoint_outs as u32 + i as u32 - 1,
+                        ..Default::default()
+                    },
+                    &sigset,
+                    &[0],
+                    value,
+                    SIGSET_THRESHOLD,
+                )?)?;
+                let fee = tx.est_vsize()? * fee_rate;
+                tx.input.back_mut()?.unwrap().amount += fee;
+                // TODO: do accounting for fee, e.g. from fee pool
+
+                // Add the output to the checkpoint tx.
+                let out = bitcoin::TxOut {
+                    value: tx.value()?,
+                    script_pubkey: sigset.output_script(&[0], SIGSET_THRESHOLD)?,
+                };
+                checkpoint_batch
+                    .front_mut()?
+                    .unwrap()
+                    .output
+                    .push_back(Adapter::new(out))?;
+
+                // TODO: this breaks if the excess output limit is hit
+            }
+        }
+
+        let (res, checkpoint_txid) = {
+            // Remove excess inputs and outputs from the checkpoint tx, to be pushed
+            // onto the suceeding checkpoint while in its `Building` state.
+            let fee_rate = self.fee_rate;
+            let mut checkpoint_batch = self.batches.get_mut(BatchType::Checkpoint as u64)?.unwrap();
+            let mut checkpoint_tx = checkpoint_batch.get_mut(0)?.unwrap();
+            let mut excess_inputs = vec![];
+            while checkpoint_tx.input.len() > config.max_inputs {
+                let removed_input = checkpoint_tx.input.pop_back()?.unwrap();
+                excess_inputs.push(removed_input);
+            }
+            let mut excess_outputs = vec![];
+            while checkpoint_tx.output.len() > config.max_outputs {
+                let removed_output = checkpoint_tx.output.pop_back()?.unwrap();
+                excess_outputs.push(removed_output);
+            }
+
+            // Sum the total input and output amounts.
+            // TODO: Input/Output sum functions
+            let mut in_amount = 0;
+            for i in 0..checkpoint_tx.input.len() {
+                let input = checkpoint_tx.input.get(i)?.unwrap();
+                in_amount += input.amount;
+            }
+            let mut out_amount = 0;
+            for i in 0..checkpoint_tx.output.len() {
+                let output = checkpoint_tx.output.get(i)?.unwrap();
+                out_amount += output.value;
+            }
+
+            // Deduct the outgoing amount and calculated fee amount from the reserve
+            // input amount, to set the resulting reserve output value.
+            let fee = base_fee + additional_fees;
+            let reserve_value = in_amount
+                .checked_sub(out_amount + fee)
+                .ok_or_else(|| OrgaError::App("Insufficient funds to cover fees".to_string()))?;
+            let mut reserve_out = checkpoint_tx.output.get_mut(0)?.unwrap();
+            reserve_out.value = reserve_value;
+
+            // Prepare the checkpoint tx's inputs to be signed by calculating their
+            // sighashes.
+            let bitcoin_tx = checkpoint_tx.to_bitcoin_tx()?;
+            let mut sc = bitcoin::util::sighash::SighashCache::new(&bitcoin_tx);
+            for i in 0..checkpoint_tx.input.len() {
+                let mut input = checkpoint_tx.input.get_mut(i)?.unwrap();
+                let sighash = sc.segwit_signature_hash(
+                    i as usize,
+                    &input.redeem_script,
+                    input.amount,
+                    EcdsaSighashType::All,
+                )?;
+                input.signatures.set_message(sighash.into_inner());
+            }
+            drop(checkpoint_tx);
+
+            // Generate the emergency disbursal transactions, spending from the
+            // reserve output.
+            let reserve_outpoint = bitcoin::OutPoint {
+                txid: bitcoin_tx.txid(),
+                vout: 0,
+            };
+            self.generate_emergency_disbursal_txs(
+                nbtc_accounts,
+                recovery_scripts,
+                reserve_outpoint,
+                external_outputs,
+                fee_rate,
+                reserve_value,
+                config,
+            )?;
+
+            (
+                (
+                    reserve_outpoint,
+                    reserve_value,
+                    fee,
+                    excess_inputs,
+                    excess_outputs,
+                ),
+                bitcoin_tx.txid(),
+            )
+        };
+
+        // Set the outpoint txid in the inputs of any extra transactions.
+        {
+            let mut checkpoint_batch = self.batches.get_mut(BatchType::Checkpoint as u64)?.unwrap();
+            for i in 1..checkpoint_batch.len() {
+                let mut tx = checkpoint_batch.get_mut(i)?.unwrap();
+                tx.input.get_mut(0)?.unwrap().prevout.txid = checkpoint_txid;
+            }
+        }
+
+        Ok(res)
     }
 }
 
@@ -1773,10 +1853,14 @@ impl CheckpointQueue {
     /// All completed checkpoints, converted to Bitcoin transactions.
     #[query]
     pub fn completed_txs(&self, limit: u32) -> Result<Vec<Adapter<bitcoin::Transaction>>> {
-        self.completed(limit)?
+        Ok(self
+            .completed(limit)?
             .into_iter()
-            .map(|c| c.checkpoint_tx())
-            .collect()
+            .map(|c| c.checkpoint_txs())
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .collect())
     }
 
     /// The emergency disbursal transactions for the last completed checkpoint.

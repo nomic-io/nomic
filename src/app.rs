@@ -58,6 +58,7 @@ use orga::upgrade::Version;
 use orga::upgrade::{Upgrade, UpgradeV0};
 use orga::Error;
 use serde::{Deserialize, Serialize};
+use serde_hex::{SerHex, StrictPfx};
 use std::convert::TryInto;
 use std::fmt::Debug;
 
@@ -381,6 +382,7 @@ impl InnerApp {
     }
 
     pub fn credit_dest(&mut self, dest: Dest, nbtc: Coin<Nbtc>) -> Result<()> {
+        dbg!(dest.to_string());
         match dest {
             Dest::NativeAccount { address } => self.bitcoin.accounts.deposit(address, nbtc)?,
             Dest::Ibc { data: dest } => dest.transfer(nbtc, &mut self.bitcoin, &mut self.ibc)?,
@@ -402,6 +404,21 @@ impl InnerApp {
             // #[cfg(feature = "ethereum")]
             // Dest::EthCall(call, _) => self.ethereum.call(call, nbtc)?,
             Dest::Bitcoin { data } => self.bitcoin.add_withdrawal(data, nbtc)?,
+            Dest::Stake {
+                owner,
+                finality_provider,
+                staking_period,
+                unbonding_period,
+            } => {
+                self.babylon.stake(
+                    &mut self.bitcoin,
+                    &mut self.frost,
+                    finality_provider,
+                    staking_period,
+                    unbonding_period,
+                    nbtc,
+                )?;
+            }
         };
 
         Ok(())
@@ -498,31 +515,25 @@ impl InnerApp {
     }
 
     #[call]
-    pub fn stake_nbtc(&mut self, amount: Amount) -> Result<()> {
+    pub fn stake_nbtc(
+        &mut self,
+        amount: Amount,
+        finality_provider: [u8; 32],
+        staking_period: u16,
+        unbonding_period: u16,
+    ) -> Result<()> {
+        // TODO: validate staking/unbonding periods
         let signer = self.signer()?;
         let stake = self.bitcoin.accounts.withdraw(signer, amount)?;
-        self.babylon.stake(signer, stake)?;
-        Ok(())
-    }
+        self.babylon.stake(
+            &mut self.bitcoin,
+            &mut self.frost,
+            finality_provider,
+            staking_period,
+            unbonding_period,
+            stake,
+        )?;
 
-    #[call]
-    pub fn unstake_nbtc(&mut self, amount: Amount) -> Result<()> {
-        let signer = self.signer()?;
-        self.babylon.unstake(signer, amount)?;
-        Ok(())
-    }
-
-    #[call]
-    pub fn withdraw_unstaked_nbtc(&mut self) -> Result<()> {
-        exempt_from_fee()?;
-
-        let signer = self.signer()?;
-        let balance = self.babylon.unstaked.balance(signer)?;
-        if balance == Amount::new(0) {
-            return Err(Error::App("No unstaked balance".into()));
-        }
-        let unstaked = self.babylon.unstaked.withdraw(signer, balance)?;
-        self.bitcoin.accounts.deposit(signer, unstaked)?;
         Ok(())
     }
 
@@ -549,26 +560,6 @@ impl InnerApp {
                 tx.into_inner(),
                 vout,
             )?;
-
-        Ok(())
-    }
-
-    // TODO: move into babylon module, get Bitcoin via context
-    #[call]
-    pub fn relay_btc_unbonding_tx(
-        &mut self,
-        del_index: u64,
-        height: u32,
-        proof: Adapter<PartialMerkleTree>,
-    ) -> Result<()> {
-        exempt_from_fee()?;
-
-        self.babylon.relay_unbonding_tx(
-            del_index,
-            &mut self.bitcoin,
-            height,
-            proof.into_inner(),
-        )?;
 
         Ok(())
     }
@@ -613,19 +604,6 @@ impl InnerApp {
             self.frost.groups.push_back(group)?;
         }
 
-        Ok(())
-    }
-
-    #[call]
-    pub fn pay_stbtc_fee(&mut self) -> Result<()> {
-        self.deduct_stbtc_fee(CALL_FEE_USATS.into())
-    }
-
-    fn deduct_stbtc_fee(&mut self, amount: Amount) -> Result<()> {
-        disable_fee();
-        let signer = self.signer()?;
-        let fee = self.babylon.stake.withdraw(signer, amount)?;
-        // TODO: pay to a stBTC reward pool
         Ok(())
     }
 }
@@ -1283,43 +1261,44 @@ impl ConvertSdkTx for InnerApp {
                             .parse()
                             .map_err(|e: std::num::ParseIntError| Error::App(e.to_string()))?;
 
-                        let payer = build_call!(self.pay_nbtc_fee());
-                        let paid = build_call!(self.stake_nbtc(amount.into()));
+                        let fp_vec = hex::decode(
+                            msg.get("finality_provider")
+                                .ok_or_else(|| Error::App("Invalid finality provider".to_string()))?
+                                .as_str()
+                                .ok_or_else(|| {
+                                    Error::App("Invalid finality provider".to_string())
+                                })?,
+                        )
+                        .map_err(|e| Error::App(e.to_string()))?;
+                        if fp_vec.len() != 32 {
+                            return Err(Error::App("Invalid finality provider".to_string()));
+                        }
+                        let mut fp = [0; 32];
+                        fp.copy_from_slice(&fp_vec);
 
-                        Ok(PaidCall { payer, paid })
-                    }
-
-                    "nomic/MsgUnstakeNbtc" => {
-                        let msg = msg
-                            .value
-                            .as_object()
-                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
-
-                        let amount: u64 = msg
-                            .get("amount")
-                            .ok_or_else(|| Error::App("Invalid amount".to_string()))?
+                        let staking_period: u16 = msg
+                            .get("staking_period")
+                            .ok_or_else(|| Error::App("Invalid staking period".to_string()))?
                             .as_str()
-                            .ok_or_else(|| Error::App("Invalid amount".to_string()))?
+                            .ok_or_else(|| Error::App("Invalid staking period".to_string()))?
                             .parse()
                             .map_err(|e: std::num::ParseIntError| Error::App(e.to_string()))?;
 
-                        let payer = build_call!(self.pay_stbtc_fee());
-                        let paid = build_call!(self.unstake_nbtc(amount.into()));
+                        let unbonding_period: u16 = msg
+                            .get("unbonding_period")
+                            .ok_or_else(|| Error::App("Invalid unbonding period".to_string()))?
+                            .as_str()
+                            .ok_or_else(|| Error::App("Invalid unbonding period".to_string()))?
+                            .parse()
+                            .map_err(|e: std::num::ParseIntError| Error::App(e.to_string()))?;
 
-                        Ok(PaidCall { payer, paid })
-                    }
-
-                    "nomic/MsgWithdrawUnstakedNbtc" => {
-                        let msg = msg
-                            .value
-                            .as_object()
-                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
-                        if !msg.is_empty() {
-                            return Err(Error::App("Message should be empty".to_string()));
-                        }
-
-                        let payer = build_call!(self.withdraw_unstaked_nbtc());
-                        let paid = build_call!(self.app_noop());
+                        let payer = build_call!(self.pay_nbtc_fee());
+                        let paid = build_call!(self.stake_nbtc(
+                            amount.into(),
+                            fp,
+                            staking_period,
+                            unbonding_period
+                        ));
 
                         Ok(PaidCall { payer, paid })
                     }
@@ -1506,6 +1485,15 @@ pub enum Dest {
     },
     // #[cfg(feature = "ethereum")]
     // EthCall(ContractCall, Address),
+    Stake {
+        // TODO: ethaddress type
+        #[serde(with = "SerHex::<StrictPfx>")]
+        owner: [u8; 20],
+        #[serde(with = "SerHex::<StrictPfx>")]
+        finality_provider: [u8; 32],
+        staking_period: u16,
+        unbonding_period: u16,
+    },
 }
 
 mod address_or_script {
@@ -1617,6 +1605,8 @@ fn dest_json() {
         unreachable!();
     };
     assert_eq!(*data, addr.script_pubkey());
+
+    let dest = "{\"type\":\"stake\",\"owner\":\"0x4a11fc6fc4a62c0648afd5cf37d11f53aaf39ca7\",\"finality_provider\":\"0xbb0bceda25d82f10a69feca9c076d85f61d750c9a481b8105d8389325538fdd1\",\"staking_period\":64000,\"unbonding_period\":1008}".parse().unwrap();
 }
 
 impl Dest {
@@ -1634,6 +1624,7 @@ impl Dest {
             // #[cfg(feature = "ethereum")]
             // Dest::EthCall(_, addr) => addr.to_string(),
             Dest::Bitcoin { data } => return None,
+            Dest::Stake { owner, .. } => hex::encode(owner),
         })
     }
 
@@ -1667,10 +1658,24 @@ impl Dest {
             Dest::Ibc { data } => data.validate()?,
             Dest::RewardPool => {}
             #[cfg(feature = "ethereum")]
-            Dest::EthAccount { address } => {}
+            Dest::EthAccount {
+                network,
+                connection,
+                address,
+            } => {
+                // TODO
+            }
             // #[cfg(feature = "ethereum")]
             // Dest::EthCall(_, addr) => //TODO
             Dest::Bitcoin { data } => bitcoin.validate_withdrawal(data, amount)?,
+            Dest::Stake {
+                owner,
+                finality_provider,
+                staking_period,
+                unbonding_period,
+            } => {
+                // TODO
+            }
         }
 
         Ok(())

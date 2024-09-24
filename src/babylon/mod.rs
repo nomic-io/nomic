@@ -23,9 +23,9 @@ use serde::Serialize;
 
 use crate::{
     bitcoin::{
-        checkpoint::{BatchType, Input},
+        checkpoint::{BatchType, BitcoinTx, Input},
         header_queue::HeaderQueue,
-        Bitcoin, Nbtc, SIGSET_THRESHOLD,
+        Adapter, Bitcoin, Nbtc, SIGSET_THRESHOLD,
     },
     error::{Error, Result},
     frost::Frost,
@@ -39,12 +39,11 @@ pub mod proto;
 pub mod relayer;
 
 const MIN_DELEGATION: u64 = 50_000;
-const DEFAULT_FP: &str = "03d5a0bb72d71993e435d6c5a70e2aa4db500a62cfaae33c56050deefee64ec0";
 
-/// The symbol for stBTC, a BTC liquid staking token.
+/// The symbol for staked nBTC.
 #[derive(State, Debug, Clone, Encode, Decode, Default, Migrate, Serialize)]
-pub struct Stbtc(());
-impl Symbol for Stbtc {
+pub struct StakedNbtc(());
+impl Symbol for StakedNbtc {
     const INDEX: u8 = 22;
     const NAME: &'static str = "stusat";
 }
@@ -52,337 +51,57 @@ impl Symbol for Stbtc {
 #[orga]
 pub struct Babylon {
     pub delegations: Deque<Delegation>,
-
-    pub(crate) pending_stake: Coin<Nbtc>,
-    pub(crate) pending_stake_queue: Deque<(Address, Amount)>,
-    pub(crate) pending_stake_by_addr: Map<Address, Amount>,
-    pub stake: Accounts<Stbtc>,
-
-    pub(crate) pending_unstake: Coin<Stbtc>,
-    pub(crate) pending_unstake_queue: Deque<(Address, Amount)>,
-    pub(crate) pending_unstake_by_addr: Map<Address, Amount>,
-    pub unstaking_delegations: Map<u64, u32>,
-    pub unstaked: Accounts<Nbtc>,
     // TODO: config
 }
 
 #[orga]
 impl Babylon {
-    pub fn pending_stake_sats(&self) -> u64 {
-        let amount: u64 = self.pending_stake.amount.into();
-        amount / 1_000_000 // TODO: get conversion rate from btc config
-    }
-
-    pub fn step(
+    pub fn stake(
         &mut self,
-        btc: &crate::bitcoin::Bitcoin,
+        btc: &mut crate::bitcoin::Bitcoin,
         frost: &mut crate::frost::Frost,
-    ) -> Result<Vec<TxOut>> {
-        let mut pending_outputs = vec![];
-        let frost_index = frost.most_recent_with_key()?;
+        finality_provider: [u8; 32],
+        staking_time: u16,
+        unbonding_time: u16,
+        nbtc: Coin<Nbtc>,
+    ) -> Result<u64> {
+        // TODO: record owner
 
-        let prev_del_cp = self
-            .delegations
-            .back()?
-            .map(|del| del.checkpoint_index)
-            .unwrap_or_default();
-
-        if self.pending_stake_sats() >= MIN_DELEGATION
-            && frost_index.is_some()
-            && btc.checkpoints.index > prev_del_cp
-        {
-            let frost_index = frost_index.unwrap();
-            let group_pubkey = frost.group_pubkey(frost_index)?.unwrap();
-            let del = Delegation::new(
-                self.delegations.len(),
-                PublicKey::from_slice(&group_pubkey.inner.verifying_key().serialize())?.into(),
-                frost_index,
-                vec![DEFAULT_FP.parse().unwrap()], // TODO: choose dynamically
-                64_000,
-                101,
-                self.pending_stake.take(self.pending_stake.amount)?,
-                btc.checkpoints.index,
-            )?;
-            pending_outputs.push(del.staking_output()?);
-            pending_outputs.push(del.op_return_output()?);
-            self.delegations.push_back(del)?;
-
-            // TODO: use draining iterator
-            // TODO: pay stBTC after delegation is signed
-            let mut addrs = vec![];
-            for entry in self.pending_stake_by_addr.iter()? {
-                let (addr, _) = entry?;
-                addrs.push(*addr);
-            }
-            for addr in addrs {
-                self.pending_stake_by_addr.remove(addr)?;
-            }
-
-            while let Some(entry) = self.pending_stake_queue.pop_front()? {
-                let (addr, amount) = entry.into_inner();
-                self.stake.deposit(addr, Stbtc::mint(amount))?;
-            }
-        }
-
-        // TODO: refine unbond trigger condition (age of del, age and amounts of unbond
-        // reqs, etc)
-        let oldest_index = self.oldest_active_delegation_index()?;
-        if let Some(index) = oldest_index {
-            let mut oldest_del = self.delegations.get_mut(index)?.unwrap();
-            // TODO: configure max age
-            if btc.headers.height()? + 1_008 <= oldest_del.staking_height.unwrap() {
-                let sigset = btc.checkpoints.active_sigset()?;
-                let dest = sigset.output_script(&[0], SIGSET_THRESHOLD)?;
-                oldest_del.unbond(frost, dest)?;
-                self.unstaking_delegations
-                    .insert(oldest_del.index, sigset.index)?;
-                // TODO: count unbonding amount
-            }
-        }
-
-        // TODO: index to prevent full iteration
-        for i in 0..self.delegations.len() {
-            let del = self.delegations.get(i)?.unwrap();
-            if del.status() != DelegationStatus::SigningUnbond {
-                continue;
-            }
-
-            // TODO: wait for unbonding period to pass
-
-            let offset = del.frost_sig_offset.unwrap();
-            let mut sigs = vec![];
-            for sig_index in offset..offset + 2 {
-                if let Some(sig) = frost.signature(del.frost_group, sig_index)? {
-                    sigs.push(Signature(sig.inner.serialize()[1..].try_into().unwrap()));
-                } else {
-                    break;
-                }
-            }
-            let mut del = self.delegations.get_mut(i)?.unwrap();
-            if sigs.len() == 2 {
-                del.sign_unbond(sigs[1], sigs[0])?;
-            }
-        }
-
-        Ok(pending_outputs)
-    }
-
-    pub fn stake(&mut self, addr: Address, mut coins: Coin<Nbtc>) -> Result<()> {
-        let swap_amount = coins.amount.min(self.pending_unstake.amount);
-        if swap_amount > 0 {
-            let st_coins = self.pay_off_unbond_queue(coins.take(swap_amount)?)?;
-            self.stake.deposit(addr, st_coins)?;
-        }
-
-        if coins.amount > 0 {
-            let prev_amount = self.pending_stake_by_addr.get(addr)?.unwrap_or_default();
-            self.pending_stake_by_addr
-                .insert(addr, (*prev_amount + coins.amount).result()?)?;
-            self.pending_stake_queue.push_back((addr, coins.amount))?;
-            self.pending_stake.give(coins)?;
-        }
-
-        Ok(())
-    }
-
-    fn pay_off_unbond_queue(&mut self, mut coins: Coin<Nbtc>) -> Result<Coin<Stbtc>> {
-        if coins.amount > self.pending_unstake.amount {
+        let Some(frost_index) = frost.most_recent_with_key()? else {
             return Err(Error::Orga(orga::Error::App(
-                "Paying excess into unbond queue".into(),
+                "Frost not initialized".to_string(),
             )));
-        }
+        };
+        let group_pubkey = frost.group_pubkey(frost_index)?.unwrap();
 
-        let st_coins = self.pending_unstake.take(coins.amount)?;
+        let del = Delegation::new(
+            self.delegations.len(),
+            PublicKey::from_slice(&group_pubkey.inner.verifying_key().serialize())?.into(),
+            frost_index,
+            vec![XOnlyPublicKey::from_slice(&finality_provider)?],
+            staking_time,
+            unbonding_time,
+            nbtc,
+            btc.checkpoints.index,
+        )?;
 
-        while coins.amount > 0 {
-            let (addr, amount) = self
-                .pending_unstake_queue
-                .pop_front()?
-                .ok_or_else(|| Error::Orga(orga::Error::App("No pending unbonds".into())))?
-                .into_inner();
+        // Push staking tx to checkpoint.
+        let mut staking_tx = BitcoinTx::default();
+        staking_tx
+            .output
+            .push_back(Adapter::new(del.staking_output()?))?;
+        staking_tx
+            .output
+            .push_back(Adapter::new(del.op_return_output()?))?;
+        btc.checkpoints
+            .building_mut()?
+            .batches
+            .get_mut(BatchType::Checkpoint as u64)?
+            .unwrap()
+            .push_back(staking_tx)?;
 
-            let to_pay = amount.min(coins.amount);
-            self.unstaked.deposit(addr, coins.take(to_pay)?)?;
-            let prev_amount = self.pending_unstake_by_addr.get(addr)?.unwrap_or_default();
-            self.pending_unstake_by_addr
-                .insert(addr, (*prev_amount - to_pay).result()?)?;
-
-            let remaining = (amount - to_pay).result()?;
-            if remaining > 0 {
-                self.pending_unstake_queue.push_front((addr, remaining))?;
-            }
-        }
-
-        Ok(st_coins)
-    }
-
-    fn pay_off_stake_queue(&mut self, mut st_coins: Coin<Stbtc>) -> Result<Coin<Nbtc>> {
-        if st_coins.amount > self.pending_stake.amount {
-            return Err(Error::Orga(orga::Error::App(
-                "Paying excess into stake queue".into(),
-            )));
-        }
-
-        let coins = self.pending_stake.take(st_coins.amount)?;
-
-        while st_coins.amount > 0 {
-            let (addr, amount) = self
-                .pending_stake_queue
-                .pop_front()?
-                .ok_or_else(|| Error::Orga(orga::Error::App("No pending stake".into())))?
-                .into_inner();
-
-            let to_pay = amount.min(st_coins.amount);
-            self.stake.deposit(addr, st_coins.take(to_pay)?)?;
-            let prev_amount = self.pending_stake_by_addr.get(addr)?.unwrap_or_default();
-            self.pending_stake_by_addr
-                .insert(addr, (*prev_amount - to_pay).result()?)?;
-
-            let remaining = (amount - to_pay).result()?;
-            if remaining > 0 {
-                self.pending_stake_queue.push_front((addr, remaining))?;
-            }
-        }
-
-        Ok(coins)
-    }
-
-    pub fn unstake(&mut self, addr: Address, amount: Amount) -> Result<()> {
-        let mut st_coins = self.stake.withdraw(addr, amount)?;
-
-        let swap_amount = amount.min(self.pending_stake.amount);
-        if swap_amount > 0 {
-            let coins = self.pay_off_stake_queue(st_coins.take(swap_amount)?)?;
-            self.unstaked.deposit(addr, coins)?;
-        }
-
-        if st_coins.amount > 0 {
-            let prev_amount = self.pending_unstake_by_addr.get(addr)?.unwrap_or_default();
-            self.pending_unstake_by_addr
-                .insert(addr, (*prev_amount + st_coins.amount).result()?)?;
-            self.pending_unstake_queue
-                .push_back((addr, st_coins.amount))?;
-            self.pending_unstake.give(st_coins)?;
-        }
-
-        Ok(())
-    }
-
-    pub fn relay_unbonding_tx(
-        &mut self,
-        index: u64,
-        btc: &mut Bitcoin,
-        height: u32,
-        proof: PartialMerkleTree,
-    ) -> Result<()> {
-        let mut del = self.delegations.get_mut(index)?.unwrap();
-
-        if del.status() != DelegationStatus::SignedUnbond {
-            return Err(Error::Orga(orga::Error::App(
-                "Delegation not in SignedUnbond state".into(),
-            )));
-        }
-
-        let unbonding_period = 5; // TODO
-        if btc.headers.height()? < del.unbonding_height.unwrap() + unbonding_period {
-            return Err(Error::Orga(orga::Error::App(
-                "Unbonding period has not passed".into(),
-            )));
-        }
-
-        // TODO: move to config
-        if btc.headers.height()?.saturating_sub(height) < 1 {
-            return Err(Error::Orga(orga::Error::App(
-                "Staking tx is not confirmed".to_string(),
-            )));
-        }
-
-        // TODO: dedupe this with other proof verification calls
-        let header = btc
-            .headers
-            .get_by_height(height)?
-            .ok_or_else(|| Error::Orga(orga::Error::App("Header not found".to_string())))?;
-        let mut txids = vec![];
-        let mut block_indexes = vec![];
-        let proof_merkle_root = proof
-            .extract_matches(&mut txids, &mut block_indexes)
-            .map_err(|_| Error::BitcoinMerkleBlockError)?;
-        if proof_merkle_root != header.merkle_root() {
-            return Err(orga::Error::App(
-                "Bitcoin merkle proof does not match header".to_string(),
-            ))?;
-        }
-        if txids.len() != 1 {
-            return Err(orga::Error::App(
-                "Bitcoin merkle proof contains an invalid number of txids".to_string(),
-            ))?;
-        }
-        let unbonding_txid = del.unbonding_tx()?.txid();
-        if txids[0] != unbonding_txid {
-            return Err(orga::Error::App(
-                "Bitcoin merkle proof does not match transaction".to_string(),
-            ))?;
-        }
-
-        let amount_to_pay = self.pending_unstake.amount.min(del.stake.amount);
-        let to_pay = del.stake.take(amount_to_pay)?;
-        let to_renew_amount = del.stake.amount;
-        let to_renew = del.stake.take(to_renew_amount)?;
-
-        let cp_index = self.unstaking_delegations.remove(index)?.unwrap();
-        let sigset = btc.checkpoints.get(*cp_index)?.sigset.clone();
-
-        let mut cp = btc.checkpoints.building_mut()?;
-        let mut batch = cp.batches.get_mut(BatchType::Checkpoint as u64)?.unwrap();
-        let mut tx = batch.back_mut()?.unwrap();
-        let withdrawal_tx = del.unbonding_withdrawal_tx()?;
-        tx.input.push_back(Input::new(
-            OutPoint {
-                txid: withdrawal_tx.txid(),
-                vout: 0,
-            },
-            &sigset,
-            &[0],
-            withdrawal_tx.output[0].value,
-            SIGSET_THRESHOLD, // TODO: get from sigset
-        )?)?;
-
-        // TODO: will this be handled correctly?
-        self.pending_stake.give(to_renew)?;
-
-        self.pay_off_unbond_queue(to_pay)?.burn();
-
-        Ok(())
-    }
-
-    fn oldest_active_delegation_index(&self) -> Result<Option<u64>> {
-        // TODO: store index to do minimal iteration
-
-        for (i, del) in self.delegations.iter()?.enumerate() {
-            if del?.status() == DelegationStatus::Staked {
-                return Ok(Some(i as u64));
-            }
-        }
-
-        Ok(None)
-    }
-
-    #[query]
-    pub fn pending_stake(&self, addr: Address) -> Result<Amount> {
-        Ok(self
-            .pending_stake_by_addr
-            .get(addr)?
-            .map(|v| *v)
-            .unwrap_or_default())
-    }
-
-    #[query]
-    pub fn pending_unstake(&self, addr: Address) -> Result<Amount> {
-        Ok(self
-            .pending_unstake_by_addr
-            .get(addr)?
-            .map(|v| *v)
-            .unwrap_or_default())
+        self.delegations.push_back(del)?;
+        Ok(self.delegations.len())
     }
 }
 
@@ -1196,7 +915,7 @@ mod tests {
 
         babylon
             .stake
-            .deposit(addr(2), Stbtc::mint(20_000_000_000))?;
+            .deposit(addr(2), StakedNbtc::mint(20_000_000_000))?;
         babylon.unstake(addr(2), Amount::new(12_000_000_000))?;
 
         assert_eq!(babylon.pending_stake.amount, 4_000_000_000);

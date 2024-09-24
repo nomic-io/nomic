@@ -2571,15 +2571,16 @@ pub struct StakeNbtcCmd {
 
 impl StakeNbtcCmd {
     async fn run(&self) -> Result<()> {
-        Ok(self
-            .config
-            .client()
-            .with_wallet(wallet())
-            .call(
-                |app| build_call!(app.pay_nbtc_fee()),
-                |app| build_call!(app.stake_nbtc((self.amount).into())),
-            )
-            .await?)
+        todo!()
+        // Ok(self
+        //     .config
+        //     .client()
+        //     .with_wallet(wallet())
+        //     .call(
+        //         |app| build_call!(app.pay_nbtc_fee()),
+        //         |app| build_call!(app.stake_nbtc((self.amount).into())),
+        //     )
+        //     .await?)
     }
 }
 
