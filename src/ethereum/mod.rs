@@ -60,7 +60,7 @@ sol!(
 
 pub mod signer;
 
-pub const VALSET_INTERVAL: u64 = 120; //60 * 60 * 24;
+pub const VALSET_INTERVAL: u64 = 60 * 60 * 24;
 
 pub const WHITELISTED_RELAYER_ADDR: &str = "nomic124j0ky0luh9jzqh9w2dk77cze9v0ckdupk50ny";
 
