@@ -7,6 +7,8 @@ tendermint_flags = ["--p2p.seeds", """
 """]
 btc_relayer = ["https://relayer.nomic-testnet.mappum.io:8443"]
 
+legacy_version = "8.1.x"
+
 genesis = """
 {
   "app_hash": "",
