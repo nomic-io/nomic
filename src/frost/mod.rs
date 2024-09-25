@@ -36,9 +36,16 @@ impl Config {
         staking: &orga::coins::Staking<S>,
         top_n: u16,
         threshold: u16,
+        absent: &HashSet<Address>,
     ) -> Result<Self> {
         let mut validators = staking.all_validators()?;
-        validators.sort_by_key(|v| v.amount_staked);
+        validators.sort_by_key(|v| {
+            if absent.contains(&v.address.into()) {
+                0
+            } else {
+                v.amount_staked.into()
+            }
+        });
 
         let threshold = std::cmp::min(threshold, validators.len() as u16);
 

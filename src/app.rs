@@ -583,18 +583,8 @@ impl InnerApp {
             .unwrap_or_default();
 
         if now > last_frost_group_time + FROST_GROUP_INTERVAL {
-            let mut frost_config =
-                FrostConfig::from_staking(&self.staking, FROST_TOP_N, FROST_THRESHOLD)?;
-            if absent.len() as u16 <= FROST_TOP_N - FROST_THRESHOLD {
-                let participants: Vec<_> = frost_config
-                    .participants
-                    .iter()
-                    .filter(|p| !absent.contains(&p.address))
-                    .cloned()
-                    .collect();
-
-                frost_config.participants = participants.try_into()?;
-            }
+            let frost_config =
+                FrostConfig::from_staking(&self.staking, FROST_TOP_N, FROST_THRESHOLD, &absent)?;
 
             if frost_config.participants.len() < 2 {
                 return Ok(());
