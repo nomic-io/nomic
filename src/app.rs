@@ -1331,28 +1331,6 @@ pub struct IbcDest {
     pub memo: LengthString<u8>,
 }
 
-impl Migrate for IbcDest {
-    fn migrate(_src: Store, _dest: Store, mut bytes: &mut &[u8]) -> Result<Self> {
-        let read_signer = |mut bytes: &mut &mut &[u8]| {
-            let len = u32::from_le_bytes(Decode::decode(&mut bytes)?);
-            let mut signer_bytes = vec![0; len as usize];
-            bytes.read_exact(&mut signer_bytes)?;
-            String::from_utf8(signer_bytes)
-                .map_err(|_| Error::App("Invalid address in IBC dest".to_string()))?
-                .try_into()
-        };
-
-        Ok(Self {
-            source_port: Decode::decode(&mut bytes)?,
-            source_channel: Decode::decode(&mut bytes)?,
-            receiver: read_signer(&mut bytes)?,
-            sender: read_signer(&mut bytes)?,
-            timeout_timestamp: Decode::decode(&mut bytes)?,
-            memo: Decode::decode(bytes)?,
-        })
-    }
-}
-
 impl IbcDest {
     pub fn transfer(
         &self,
@@ -1744,16 +1722,6 @@ impl Query for Dest {
 
 impl Migrate for Dest {
     fn migrate(src: Store, dest: Store, bytes: &mut &[u8]) -> Result<Self> {
-        // TODO: !!!!!!!! remove from here once there are no legacy IBC dests
-        // Migrate IBC dests
-        let mut maybe_ibc_bytes = &mut &**bytes;
-        let variant = u8::decode(&mut maybe_ibc_bytes)?;
-        if variant == 1 {
-            let ibc_dest = IbcDest::migrate(src, dest, maybe_ibc_bytes)?;
-            return Ok(Self::Ibc { data: ibc_dest });
-        }
-        // TODO: !!!!!!!! remove to here once there are no legacy IBC dests
-
         Self::load(src, bytes)
     }
 }
