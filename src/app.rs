@@ -97,7 +97,7 @@ const IBC_FEE_USATS: u64 = 1_000_000;
 const CALL_FEE_USATS: u64 = 100_000_000;
 const OSMOSIS_CHANNEL_ID: &str = "channel-1";
 
-const FROST_GROUP_INTERVAL: i64 = 4 * 60 * 60; // 4 hours
+const FROST_GROUP_INTERVAL: i64 = 10 * 60;
 const FROST_TOP_N: u16 = 5;
 const FROST_THRESHOLD: u16 = 3;
 
