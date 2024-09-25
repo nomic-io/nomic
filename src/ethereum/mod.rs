@@ -171,7 +171,7 @@ impl Ethereum {
                             msg_index,
                             msg.sigset_index,
                             msg.sigs.message,
-                            msg.args()?,
+                            msg.msg.clone(),
                         ));
                     }
                 }
@@ -238,7 +238,7 @@ impl Ethereum {
         let net = self.networks.get(network)?.unwrap();
         let conn = net.connections.get(connection)?.unwrap();
         let msg = conn.get(msg_index)?;
-        Ok((msg.sigs.message, conn.get_sigs(msg_index)?, msg.args()?))
+        Ok((msg.sigs.message, conn.get_sigs(msg_index)?, msg.msg.clone()))
     }
 }
 
@@ -291,7 +291,6 @@ pub struct Connection {
     pub valset_index: u64,
     pub return_index: u64,
 
-    #[query]
     pub outbox: Deque<OutMessage>,
     pub pending: Deque<(Dest, Coin<Nbtc>)>,
     pub coins: Coin<Nbtc>,
@@ -387,7 +386,7 @@ impl Connection {
         }
         self.outbox.push_back(OutMessage {
             sigs,
-            msg: msg.encode()?.try_into()?,
+            msg,
             sigset_index,
         })?;
 
@@ -526,14 +525,7 @@ impl Connection {
 pub struct OutMessage {
     pub sigset_index: u32,
     pub sigs: ThresholdSig,
-    pub msg: LengthVec<u16, u8>,
-}
-
-#[orga]
-impl OutMessage {
-    pub fn args(&self) -> Result<OutMessageArgs> {
-        Ok(OutMessageArgs::decode(&mut self.msg.as_slice())?)
-    }
+    pub msg: OutMessageArgs,
 }
 
 #[derive(Encode, Decode, Debug, Clone, Serialize)]
@@ -555,6 +547,40 @@ impl FieldQuery for OutMessageArgs {
 impl MethodQuery for OutMessageArgs {
     fn method_query(&self, query: Self::MethodQuery) -> orga::Result<()> {
         Ok(())
+    }
+}
+impl Default for OutMessageArgs {
+    fn default() -> Self {
+        // TODO: shouldn't need default for all state types
+        Self::Batch {
+            transfers: Default::default(),
+            timeout: Default::default(),
+            batch_index: Default::default(),
+        }
+    }
+}
+impl State for OutMessageArgs {
+    fn attach(&mut self, store: Store) -> orga::Result<()> {
+        Ok(())
+    }
+    fn field_keyop(_field_name: &str) -> Option<orga::describe::KeyOp> {
+        None
+    }
+    fn flush<W: std::io::Write>(self, out: &mut W) -> orga::Result<()> {
+        Ok(self.encode_into(out)?)
+    }
+    fn load(store: Store, bytes: &mut &[u8]) -> orga::Result<Self> {
+        Ok(Self::decode(bytes)?)
+    }
+}
+impl Migrate for OutMessageArgs {
+    fn migrate(src: Store, dest: Store, bytes: &mut &[u8]) -> orga::Result<Self> {
+        Ok(Self::decode(bytes)?)
+    }
+}
+impl Describe for OutMessageArgs {
+    fn describe() -> orga::describe::Descriptor {
+        <()>::describe()
     }
 }
 
