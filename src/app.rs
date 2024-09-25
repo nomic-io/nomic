@@ -594,6 +594,7 @@ impl InnerApp {
             self.frost.groups.push_back(group)?;
         }
 
+        self.frost.advance_with_timeout(60 * 5)?;
         Ok(())
     }
 }

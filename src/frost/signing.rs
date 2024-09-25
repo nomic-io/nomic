@@ -55,17 +55,20 @@ impl Signing {
     }
 
     pub fn advance_with_timeout(&mut self, now: i64, timeout: i64) -> Result<()> {
-        if now > self.iteration_start_seconds + timeout && self.state() == SigningState::Round2 {
-            self.next_iteration()?;
+        if now > self.iteration_start_seconds + timeout && self.state() != SigningState::Complete {
+            self.next_iteration(now)?;
         }
+
         Ok(())
     }
 
-    pub fn next_iteration(&mut self) -> Result<()> {
+    pub fn next_iteration(&mut self, now: i64) -> Result<()> {
         self.iteration += 1;
         self.commitments_len = 0;
         self.sig_shares_len = 0;
         self.signing_package = None;
+        self.iteration_start_seconds = now;
+
         Ok(())
     }
 
@@ -80,6 +83,7 @@ impl Signing {
                 .sig_shares
                 .contains_key((self.iteration, participant))?);
         }
+
         Ok(false)
     }
 
