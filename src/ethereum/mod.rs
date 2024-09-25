@@ -159,6 +159,11 @@ impl Ethereum {
             for conn in net.connections.iter()? {
                 let (_, conn) = conn?;
 
+                // skip invalid connections
+                if conn.message_index == 0 {
+                    continue;
+                }
+
                 for (msg_index, msg) in conn.outbox.iter()?.enumerate() {
                     let msg = msg?;
                     let msg_index = (msg_index + 1) as u64;
