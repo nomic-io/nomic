@@ -95,6 +95,10 @@ const IBC_FEE_USATS: u64 = 1_000_000;
 /// The fixed amount of nBTC fee required to make any application call, in
 /// micro-satoshis.
 const CALL_FEE_USATS: u64 = 100_000_000;
+/// The fixed amount of nBTC fee required to create a new Ethereum connection,
+/// in micro-satoshis.
+const ETH_CREATE_CONNECTION_FEE_USATS: u64 = 10_000_000_000;
+
 const OSMOSIS_CHANNEL_ID: &str = "channel-1";
 
 const FROST_GROUP_INTERVAL: i64 = 10 * 60;
@@ -562,6 +566,22 @@ impl InnerApp {
             )?;
 
         Ok(())
+    }
+
+    #[call]
+    pub fn eth_create_connection(
+        &mut self,
+        chain_id: u32,
+        bridge_contract: Address,
+        token_contract: Address,
+    ) -> Result<()> {
+        self.deduct_nbtc_fee(ETH_CREATE_CONNECTION_FEE_USATS.into())?;
+        // TODO: confirm that this is the right valset to use
+        let valset = self.bitcoin.checkpoints.active_sigset()?;
+
+        Ok(self
+            .ethereum
+            .create_connection(chain_id, bridge_contract, token_contract, valset)?)
     }
 
     #[call]
