@@ -407,14 +407,17 @@ impl InnerApp {
             // Dest::EthCall(call, _) => self.ethereum.call(call, nbtc)?,
             Dest::Bitcoin { data } => self.bitcoin.add_withdrawal(data, nbtc)?,
             Dest::Stake {
-                owner,
+                return_dest,
                 finality_provider,
                 staking_period,
                 unbonding_period,
             } => {
+                let return_dest = return_dest.parse()?;
                 self.babylon.stake(
                     &mut self.bitcoin,
                     &mut self.frost,
+                    sender,
+                    return_dest,
                     finality_provider,
                     staking_period,
                     unbonding_period,
@@ -531,6 +534,8 @@ impl InnerApp {
         self.babylon.stake(
             &mut self.bitcoin,
             &mut self.frost,
+            Identity::from_signer()?,
+            Dest::NativeAccount { address: signer },
             finality_provider,
             staking_period,
             unbonding_period,
@@ -1469,10 +1474,10 @@ pub enum Dest {
     // #[cfg(feature = "ethereum")]
     // EthCall(ContractCall, Address),
     Stake {
-        // TODO: ethaddress type
-        #[serde(with = "SerHex::<StrictPfx>")]
-        owner: [u8; 20],
-        #[serde(with = "SerHex::<StrictPfx>")]
+        // TODO: this should be a Dest, but the cycle prevents the macro-generated Terminated impl
+        // from applying
+        return_dest: LengthString<u16>,
+        #[serde(with = "SerHex::<Strict>")]
         finality_provider: [u8; 32],
         staking_period: u16,
         unbonding_period: u16,
@@ -1607,7 +1612,10 @@ impl Dest {
             // #[cfg(feature = "ethereum")]
             // Dest::EthCall(_, addr) => addr.to_string(),
             Dest::Bitcoin { data } => return None,
-            Dest::Stake { owner, .. } => hex::encode(owner),
+            Dest::Stake { return_dest, .. } => {
+                let return_dest: Dest = return_dest.parse().ok()?;
+                return return_dest.to_receiver_addr();
+            }
         })
     }
 
@@ -1652,7 +1660,7 @@ impl Dest {
             // Dest::EthCall(_, addr) => //TODO
             Dest::Bitcoin { data } => bitcoin.validate_withdrawal(data, amount)?,
             Dest::Stake {
-                owner,
+                return_dest,
                 finality_provider,
                 staking_period,
                 unbonding_period,
