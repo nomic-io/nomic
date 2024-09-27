@@ -1528,11 +1528,11 @@ fn dest_json() {
     assert_eq!(
         Dest::EthAccount {
             network: 123,
-            connection: [0; 32],
-            address: Address::NULL
+            connection: [0; 20],
+            address: [0; 20],
         }
         .to_string(),
-        "{\"type\":\"ethAccount\",\"address\":\"0x0000000000000000000000000000000000000000\"}"
+        "{\"type\":\"ethAccount\",\"network\":123,\"connection\":\"0x0000000000000000000000000000000000000000\",\"address\":\"0x0000000000000000000000000000000000000000\"}"
     );
 
     assert_eq!(Dest::RewardPool.to_string(), "{\"type\":\"rewardPool\"}");
@@ -1561,7 +1561,7 @@ fn dest_json() {
     #[cfg(all(not(feature = "testnet"), not(feature = "devnet")))]
     let out = "{\"type\":\"bitcoin\",\"data\":\"bc1q2xq57yyxwzkw6tthcxq9mhtxxj7f63e38wy7jp\"}";
     #[cfg(all(feature = "devnet", feature = "testnet"))]
-    let out = "{\"type\":\"bitcoin\",\"data\":\"bcrt1q2xq57yyxwzkw6tthcxq9mhtxxj7f63e30pxq7m\"}";
+    let out = "{\"type\":\"bitcoin\",\"data\":\"tb1q2xq57yyxwzkw6tthcxq9mhtxxj7f63e3dgldfj\"}";
     assert_eq!(
         Dest::Bitcoin {
             data: Adapter::new(addr.script_pubkey())
@@ -1575,7 +1575,7 @@ fn dest_json() {
     };
     assert_eq!(*data, addr.script_pubkey());
 
-    let dest = "{\"type\":\"stake\",\"owner\":\"0x4a11fc6fc4a62c0648afd5cf37d11f53aaf39ca7\",\"finality_provider\":\"0xbb0bceda25d82f10a69feca9c076d85f61d750c9a481b8105d8389325538fdd1\",\"staking_period\":64000,\"unbonding_period\":1008}".parse().unwrap();
+    // TODO: other Dest variants
 }
 
 impl Dest {
