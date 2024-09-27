@@ -22,6 +22,7 @@ use orga::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::app::Identity;
 use crate::bitcoin::signatory::derive_pubkey;
 use crate::bitcoin::Xpub;
 use crate::{
@@ -84,7 +85,7 @@ impl Ethereum {
         Ok(())
     }
 
-    pub fn take_pending(&mut self) -> Result<Vec<(Dest, Coin<Nbtc>)>> {
+    pub fn take_pending(&mut self) -> Result<Vec<(Dest, Coin<Nbtc>, Identity)>> {
         let ids: Vec<_> = self
             .networks
             .iter()?
@@ -106,7 +107,8 @@ impl Ethereum {
         consensus_proof: (),
         account_proof: (),
         // TODO: storage_proofs: LengthVec<u16, (LengthVec<u8, u8>, u64)>,
-        returns: LengthVec<u16, (u64, Dest, u64)>, // TODO: don't include data, just state proof
+        returns: LengthVec<u16, (u64, Dest, u64, Identity)>, /* TODO: don't include data, just
+                                                              * state proof */
     ) -> Result<()> {
         exempt_from_fee()?;
 
@@ -267,7 +269,7 @@ impl Network {
         Ok(())
     }
 
-    pub fn take_pending(&mut self) -> Result<Vec<(Dest, Coin<Nbtc>)>> {
+    pub fn take_pending(&mut self) -> Result<Vec<(Dest, Coin<Nbtc>, Identity)>> {
         let addrs: Vec<_> = self
             .connections
             .iter()?
@@ -295,7 +297,7 @@ pub struct Connection {
     pub return_index: u64,
 
     pub outbox: Deque<OutMessage>,
-    pub pending: Deque<(Dest, Coin<Nbtc>)>,
+    pub pending: Deque<(Dest, Coin<Nbtc>, Identity)>,
     pub coins: Coin<Nbtc>,
     pub valset: SignatorySet,
 }
@@ -396,7 +398,7 @@ impl Connection {
         Ok(())
     }
 
-    pub fn take_pending(&mut self) -> Result<Vec<(Dest, Coin<Nbtc>)>> {
+    pub fn take_pending(&mut self) -> Result<Vec<(Dest, Coin<Nbtc>, Identity)>> {
         let mut pending = Vec::new();
         while let Some(entry) = self.pending.pop_front()? {
             pending.push(entry.into_inner());
@@ -419,7 +421,8 @@ impl Connection {
         _consensus_proof: (),
         _account_proof: (),
         // TODO: storage_proofs: LengthVec<u16, (LengthVec<u8, u8>, u64)>,
-        returns: LengthVec<u16, (u64, Dest, u64)>, // TODO: don't include data, just state proof
+        returns: LengthVec<u16, (u64, Dest, u64, Identity)>, /* TODO: don't include data, just
+                                                              * state proof */
     ) -> Result<()> {
         exempt_from_fee()?;
 
@@ -446,9 +449,9 @@ impl Connection {
         // TODO: validate state proofs (account proof, storage proofs)
 
         // TODO: validate return entry indexes
-        for (_, dest, amount) in returns.iter().cloned() {
+        for (_, dest, amount, sender) in returns.iter().cloned() {
             let coins = self.coins.take(amount)?;
-            self.pending.push_back((dest, coins))?;
+            self.pending.push_back((dest, coins, sender))?;
             self.return_index += 1;
         }
 
@@ -1594,6 +1597,7 @@ mod tests {
                         address: Address::from_pubkey([0; 33]),
                     },
                     500_000,
+                    Identity::None,
                 )]
                 .try_into()
                 .unwrap(),

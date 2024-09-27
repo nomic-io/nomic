@@ -25,7 +25,7 @@ use bitcoin::{PublicKey, Script, Transaction, TxOut};
 use orga::coins::{
     Accounts, Address, Amount, Coin, Faucet, FaucetOptions, Give, Staking, Symbol, Take,
 };
-use orga::context::GetContext;
+use orga::context::{Context, GetContext};
 use orga::cosmrs::bank::MsgSend;
 use orga::describe::{Describe, Descriptor};
 use orga::encoding::{Decode, Encode, LengthString, LengthVec};
@@ -58,7 +58,7 @@ use orga::upgrade::Version;
 use orga::upgrade::{Upgrade, UpgradeV0};
 use orga::Error;
 use serde::{Deserialize, Serialize};
-use serde_hex::{SerHex, StrictPfx};
+use serde_hex::{SerHex, Strict, StrictPfx};
 use std::convert::TryInto;
 use std::fmt::Debug;
 
@@ -263,7 +263,8 @@ impl InnerApp {
         self.bitcoin.give_rewards(fee)?;
 
         let dest = Dest::Ibc { data: dest };
-        self.bitcoin.insert_pending(dest, coins)?;
+        let sender = Identity::from_signer()?;
+        self.bitcoin.insert_pending(dest, coins, sender)?;
 
         Ok(())
     }
@@ -304,7 +305,8 @@ impl InnerApp {
                 connection: connection.into(),
                 address: address.into(),
             };
-            self.bitcoin.insert_pending(dest, coins)?;
+            let sender = Identity::from_signer()?;
+            self.bitcoin.insert_pending(dest, coins, sender)?;
 
             Ok(())
         }
@@ -381,7 +383,7 @@ impl InnerApp {
             .relay_op_key(&self.ibc, client_id, height, cons_key, op_addr, acc)?)
     }
 
-    pub fn credit_dest(&mut self, dest: Dest, nbtc: Coin<Nbtc>) -> Result<()> {
+    pub fn credit_dest(&mut self, dest: Dest, nbtc: Coin<Nbtc>, sender: Identity) -> Result<()> {
         dbg!(dest.to_string());
         match dest {
             Dest::NativeAccount { address } => self.bitcoin.accounts.deposit(address, nbtc)?,
@@ -483,7 +485,8 @@ impl InnerApp {
             )?;
 
             let coins = Coin::<Nbtc>::mint(amount);
-            self.bitcoin.insert_pending(dest, coins)?;
+            let sender = Identity::None; // TODO
+            self.bitcoin.insert_pending(dest, coins, sender)?;
         }
 
         Ok(())
@@ -689,12 +692,17 @@ mod abci {
             }
 
             let pending_nbtc_transfers = self.bitcoin.take_pending()?;
-            for (dest, coins) in pending_nbtc_transfers {
+            for (dest, coins, sender) in pending_nbtc_transfers {
                 if dest.validate(&self.bitcoin, coins.amount).is_ok() {
                     let amount = coins.amount;
-                    if let Err(e) = self.credit_dest(dest.clone(), coins) {
+                    if let Err(e) = self.credit_dest(dest.clone(), coins, sender) {
                         // TODO: this will catch all errors, we only want to catch validation errors
-                        log::debug!("Failed to credit transfer to {}, {}", dest, amount);
+                        log::debug!(
+                            "Failed to credit transfer to {} (amount: {}, sender: {})",
+                            dest,
+                            amount,
+                            sender,
+                        );
                         log::debug!("{:?}", e);
                     }
                 } else {
@@ -730,11 +738,17 @@ mod abci {
                     self.ethereum
                         .step(&self.bitcoin.checkpoints.active_sigset()?)?;
                 }
-                for (dest, coins) in self.ethereum.take_pending()? {
+                // TODO: push to pending
+                for (dest, coins, sender) in self.ethereum.take_pending()? {
                     let amount = coins.amount;
-                    if let Err(e) = self.credit_dest(dest.clone(), coins) {
+                    if let Err(e) = self.credit_dest(dest.clone(), coins, sender) {
                         // TODO: this will catch all errors, we only want to catch validation errors
-                        log::debug!("Failed to credit transfer to {}, {}", dest, amount);
+                        log::debug!(
+                            "Failed to credit transfer to {} (amount: {}, sender: {})",
+                            dest,
+                            amount,
+                            sender,
+                        );
                         log::debug!("{:?}", e);
                     }
                 }
@@ -1681,6 +1695,23 @@ impl Dest {
             false
         }
     }
+
+    pub fn to_identity(&self) -> Identity {
+        match self {
+            Dest::NativeAccount { address } => Identity::NativeAccount { address: *address },
+            #[cfg(feature = "ethereum")]
+            Dest::EthAccount {
+                network,
+                connection,
+                address,
+            } => Identity::EthAccount {
+                network: *network,
+                connection: *connection,
+                address: *address,
+            },
+            _ => Identity::None,
+        }
+    }
 }
 
 impl std::fmt::Display for Dest {
@@ -1731,6 +1762,100 @@ impl Describe for Dest {
         ::orga::describe::Builder::new::<Self>()
             .meta::<()>()
             .build()
+    }
+}
+
+impl Default for Dest {
+    fn default() -> Self {
+        Dest::NativeAccount {
+            address: Address::NULL,
+        }
+    }
+}
+
+#[derive(Encode, Decode, Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum Identity {
+    None,
+    NativeAccount {
+        address: Address,
+    },
+    #[cfg(feature = "ethereum")]
+    EthAccount {
+        network: u32,
+        // TODO: ethaddress type
+        #[serde(with = "SerHex::<StrictPfx>")]
+        connection: [u8; 20],
+        // TODO: ethaddress type
+        #[serde(with = "SerHex::<StrictPfx>")]
+        address: [u8; 20],
+    },
+}
+
+impl Identity {
+    pub fn from_signer() -> Result<Self> {
+        Ok(Context::resolve::<Signer>()
+            .ok_or_else(|| Error::Signer("No Signer context available".into()))?
+            .signer
+            .map(|address| Identity::NativeAccount { address })
+            .unwrap_or(Identity::None))
+    }
+}
+
+impl std::fmt::Display for Identity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", serde_json::to_string(self).unwrap())
+    }
+}
+
+impl FromStr for Identity {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        serde_json::from_str(s).map_err(|e| Error::App(e.to_string()))
+    }
+}
+
+impl State for Identity {
+    fn attach(&mut self, store: Store) -> Result<()> {
+        Ok(())
+    }
+
+    fn load(_store: Store, bytes: &mut &[u8]) -> Result<Self> {
+        Ok(Self::decode(bytes)?)
+    }
+
+    fn flush<W: std::io::Write>(self, out: &mut W) -> Result<()> {
+        self.encode_into(out)?;
+        Ok(())
+    }
+}
+
+impl Query for Identity {
+    type Query = ();
+
+    fn query(&self, query: Self::Query) -> Result<()> {
+        Ok(())
+    }
+}
+
+impl Migrate for Identity {
+    fn migrate(src: Store, dest: Store, bytes: &mut &[u8]) -> Result<Self> {
+        Self::load(src, bytes)
+    }
+}
+
+impl Describe for Identity {
+    fn describe() -> Descriptor {
+        ::orga::describe::Builder::new::<Self>()
+            .meta::<()>()
+            .build()
+    }
+}
+
+impl Default for Identity {
+    fn default() -> Self {
+        Identity::None
     }
 }
 

@@ -21,10 +21,10 @@ use bitcoin::util::bip32::ExtendedPubKey;
 use bitcoincore_rpc_async::RpcApi;
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
-use nomic::app::Dest;
 use nomic::app::IbcDest;
 use nomic::app::InnerApp;
 use nomic::app::Nom;
+use nomic::app::{Dest, Identity};
 use nomic::bitcoin::adapter::Adapter;
 use nomic::bitcoin::matches_bitcoin_network;
 use nomic::bitcoin::signatory::SignatorySet;
@@ -2888,9 +2888,14 @@ impl RelayEthereumCmd {
                             bridge_contract,
                             (),
                             (),
-                            vec![(nomic_index, dest.clone(), amount)]
-                                .try_into()
-                                .unwrap()
+                            vec![(
+                                nomic_index,
+                                dest.clone(),
+                                amount,
+                                Identity::None, // TODO
+                            )]
+                            .try_into()
+                            .unwrap()
                         ))
                     },
                     |app| build_call!(app.app_noop()),
