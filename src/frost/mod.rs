@@ -593,7 +593,8 @@ fn disassemble_by_identifier<T: Clone>(map: &BTreeMap<Identifier, T>) -> Vec<(u1
 //         app.attach(store.clone())?;
 
 //         {
-//             app.inner.inner.borrow_mut().inner.inner.chain_id = b"foo".to_vec().try_into()?;
+//             app.inner.inner.borrow_mut().inner.inner.chain_id =
+// b"foo".to_vec().try_into()?;
 
 //             let inner_app = &mut app
 //                 .inner
@@ -632,10 +633,10 @@ fn disassemble_by_identifier<T: Clone>(map: &BTreeMap<Identifier, T>) -> Vec<(u1
 //         Ok(())
 //     }
 
-//     fn with_app<F: FnMut(&mut TestApp) -> Result<()>>(mut store: Store, mut op: F) -> Result<()> {
-//         let bytes = store.get(&[])?.unwrap_or_default();
-//         let app: App = State::load(store.clone(), &mut bytes.as_slice())?;
-//         {
+//     fn with_app<F: FnMut(&mut TestApp) -> Result<()>>(mut store: Store, mut
+// op: F) -> Result<()> {         let bytes =
+// store.get(&[])?.unwrap_or_default();         let app: App =
+// State::load(store.clone(), &mut bytes.as_slice())?;         {
 //             let inner_app = &mut app
 //                 .inner
 //                 .inner
@@ -664,8 +665,8 @@ fn disassemble_by_identifier<T: Clone>(map: &BTreeMap<Identifier, T>) -> Vec<(u1
 
 //         let alice_secret_store = Store::with_map_store();
 //         let mock_client = MockClient::<App>::with_store(store.clone());
-//         let client: AppClient<TestApp, TestApp, MockClient<App>, Simp, DerivedKey> =
-//             AppClient::<TestApp, TestApp, _, _, _>::new(
+//         let client: AppClient<TestApp, TestApp, MockClient<App>, Simp,
+// DerivedKey> =             AppClient::<TestApp, TestApp, _, _, _>::new(
 //                 mock_client,
 //                 DerivedKey::new(b"alice").unwrap(),
 //             );
@@ -739,11 +740,11 @@ fn disassemble_by_identifier<T: Clone>(map: &BTreeMap<Identifier, T>) -> Vec<(u1
 //         bob.step().await?;
 
 //         with_app(store.clone(), |app| {
-//             assert_eq!(app.frost.signing_state(0, 0)?, SigningState::Complete);
-//             let signature = app.frost.signature(0, 0)?.unwrap().inner;
-//             let group_key = &app.frost.group_pubkey(0)?.unwrap().inner;
-//             let signing_params = SigningParameters {
-//                 tapscript_merkle_root: Some(vec![0]),
+//             assert_eq!(app.frost.signing_state(0, 0)?,
+// SigningState::Complete);             let signature = app.frost.signature(0,
+// 0)?.unwrap().inner;             let group_key =
+// &app.frost.group_pubkey(0)?.unwrap().inner;             let signing_params =
+// SigningParameters {                 tapscript_merkle_root: Some(vec![0]),
 //             };
 
 //             assert!(group_key

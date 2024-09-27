@@ -4,10 +4,8 @@ use bitcoin::secp256k1::{
     ecdsa::{RecoverableSignature, RecoveryId},
     Message, PublicKey, Secp256k1,
 };
-use orga::collections::EntryMap;
 use orga::query::MethodQuery;
-use std::collections::{BTreeSet, BinaryHeap};
-use std::u64;
+use std::collections::BTreeSet;
 
 use ed::{Decode, Encode};
 use orga::{
@@ -38,6 +36,7 @@ use crate::{
 };
 
 sol!(
+    #[allow(clippy::too_many_arguments)]
     #[allow(missing_docs)]
     #[sol(rpc)]
     bridge_contract,
@@ -147,10 +146,7 @@ impl Ethereum {
     }
 
     #[query]
-    pub fn to_sign(
-        &self,
-        xpub: Xpub,
-    ) -> Result<Vec<(u32, Address, u64, u32, [u8; 32], OutMessageArgs)>> {
+    pub fn to_sign(&self, xpub: Xpub) -> Result<ToSign> {
         let mut to_sign = vec![];
         let secp = Secp256k1::new();
 
@@ -168,7 +164,7 @@ impl Ethereum {
                     let msg = msg?;
                     let msg_index = (msg_index + 1) as u64;
 
-                    let pubkey = derive_pubkey(&secp, xpub.clone(), msg.sigset_index)?;
+                    let pubkey = derive_pubkey(&secp, xpub, msg.sigset_index)?;
                     if conn.needs_sig(msg_index, pubkey.into())? {
                         to_sign.push((
                             net.id,
@@ -239,13 +235,15 @@ impl Ethereum {
         network: u32,
         connection: Address,
         msg_index: u64,
-    ) -> Result<([u8; 32], Vec<(Pubkey, Option<Signature>)>, OutMessageArgs)> {
+    ) -> Result<([u8; 32], Sigs, OutMessageArgs)> {
         let net = self.networks.get(network)?.unwrap();
         let conn = net.connections.get(connection)?.unwrap();
         let msg = conn.get(msg_index)?;
         Ok((msg.sigs.message, conn.get_sigs(msg_index)?, msg.msg.clone()))
     }
 }
+type ToSign = Vec<(u32, Address, u64, u32, [u8; 32], OutMessageArgs)>;
+type Sigs = Vec<(Pubkey, Option<Signature>)>;
 
 #[orga]
 pub struct Network {
@@ -418,8 +416,8 @@ impl Connection {
     #[call]
     pub fn relay_return(
         &mut self,
-        consensus_proof: (),
-        account_proof: (),
+        _consensus_proof: (),
+        _account_proof: (),
         // TODO: storage_proofs: LengthVec<u16, (LengthVec<u8, u8>, u64)>,
         returns: LengthVec<u16, (u64, Dest, u64)>, // TODO: don't include data, just state proof
     ) -> Result<()> {
@@ -545,12 +543,12 @@ pub enum OutMessageArgs {
 }
 
 impl FieldQuery for OutMessageArgs {
-    fn field_query(&self, query: Self::FieldQuery) -> orga::Result<()> {
+    fn field_query(&self, _query: Self::FieldQuery) -> orga::Result<()> {
         Ok(())
     }
 }
 impl MethodQuery for OutMessageArgs {
-    fn method_query(&self, query: Self::MethodQuery) -> orga::Result<()> {
+    fn method_query(&self, _query: Self::MethodQuery) -> orga::Result<()> {
         Ok(())
     }
 }
@@ -565,7 +563,7 @@ impl Default for OutMessageArgs {
     }
 }
 impl State for OutMessageArgs {
-    fn attach(&mut self, store: Store) -> orga::Result<()> {
+    fn attach(&mut self, _store: Store) -> orga::Result<()> {
         Ok(())
     }
     fn field_keyop(_field_name: &str) -> Option<orga::describe::KeyOp> {
@@ -574,12 +572,12 @@ impl State for OutMessageArgs {
     fn flush<W: std::io::Write>(self, out: &mut W) -> orga::Result<()> {
         Ok(self.encode_into(out)?)
     }
-    fn load(store: Store, bytes: &mut &[u8]) -> orga::Result<Self> {
+    fn load(_store: Store, bytes: &mut &[u8]) -> orga::Result<Self> {
         Ok(Self::decode(bytes)?)
     }
 }
 impl Migrate for OutMessageArgs {
-    fn migrate(src: Store, dest: Store, bytes: &mut &[u8]) -> orga::Result<Self> {
+    fn migrate(_src: Store, _dest: Store, bytes: &mut &[u8]) -> orga::Result<Self> {
         Ok(Self::decode(bytes)?)
     }
 }

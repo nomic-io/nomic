@@ -391,7 +391,12 @@ where
         })
         .await?;
 
-        log::info!("Submitted commitment for group {} signature {} iteration {}", group_index, sig_index, iteration);
+        log::info!(
+            "Submitted commitment for group {} signature {} iteration {}",
+            group_index,
+            sig_index,
+            iteration
+        );
 
         Ok(())
     }
@@ -451,7 +456,12 @@ where
         })
         .await?;
 
-        log::info!("Submitted signature share for group {} signature {} iteration {}", group_index, sig_index, iteration);
+        log::info!(
+            "Submitted signature share for group {} signature {} iteration {}",
+            group_index,
+            sig_index,
+            iteration
+        );
 
         Ok(())
     }

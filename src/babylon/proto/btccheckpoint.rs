@@ -24,10 +24,10 @@ pub struct BtcSpvProof {
     /// currently hashed node is left or right.
     #[prost(uint32, tag = "2")]
     pub btc_transaction_index: u32,
-    /// List of concatenated intermediate merkle tree nodes, without root node and
-    /// leaf node against which we calculate the proof. Each node has 32 byte
-    /// length. Example proof can look like: 32_bytes_of_node1 || 32_bytes_of_node2
-    /// ||  32_bytes_of_node3 so the length of the proof will always be divisible
+    /// List of concatenated intermediate merkle tree nodes, without root node
+    /// and leaf node against which we calculate the proof. Each node has 32
+    /// byte length. Example proof can look like: 32_bytes_of_node1 ||
+    /// 32_bytes_of_node2 ||  32_bytes_of_node3 so the length of the proof will always be divisible
     /// by 32.
     #[prost(bytes = "vec", tag = "3")]
     pub merkle_nodes: ::prost::alloc::vec::Vec<u8>,
@@ -51,8 +51,8 @@ pub struct TransactionKey {
 /// Each submission can generally be identified by this list of (txIdx,
 /// blockHash) tuples. Note: this could possibly be optimized as if transactions
 /// were in one block they would have the same block hash and different indexes,
-/// but each blockhash is only 33 (1  byte for prefix encoding and 32 byte hash),
-/// so there should be other strong arguments for this optimization
+/// but each blockhash is only 33 (1  byte for prefix encoding and 32 byte
+/// hash), so there should be other strong arguments for this optimization
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SubmissionKey {
@@ -78,9 +78,9 @@ pub struct TransactionInfo {
     /// transaction is the full transaction in bytes
     #[prost(bytes = "vec", tag = "2")]
     pub transaction: ::prost::alloc::vec::Vec<u8>,
-    /// proof is the Merkle proof that this tx is included in the position in `key`
-    /// TODO: maybe it could use here better format as we already processed and
-    /// validated the proof?
+    /// proof is the Merkle proof that this tx is included in the position in
+    /// `key` TODO: maybe it could use here better format as we already
+    /// processed and validated the proof?
     #[prost(bytes = "vec", tag = "3")]
     pub proof: ::prost::alloc::vec::Vec<u8>,
 }
@@ -97,7 +97,8 @@ pub struct SubmissionData {
     /// txs_info is the two `TransactionInfo`s corresponding to the submission
     /// It is used for
     /// - recovering address of sender of btc transaction to payup the reward.
-    /// - allowing the ZoneConcierge module to prove the checkpoint is submitted to
+    /// - allowing the ZoneConcierge module to prove the checkpoint is submitted
+    ///   to
     /// BTC
     #[prost(message, repeated, tag = "2")]
     pub txs_info: ::prost::alloc::vec::Vec<TransactionInfo>,
@@ -110,22 +111,22 @@ pub struct SubmissionData {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct EpochData {
-    /// keys is the list of all received checkpoints during this epoch, sorted by
-    /// order of submission.
+    /// keys is the list of all received checkpoints during this epoch, sorted
+    /// by order of submission.
     #[prost(message, repeated, tag = "1")]
     pub keys: ::prost::alloc::vec::Vec<SubmissionKey>,
     /// status is the current btc status of the epoch
     #[prost(enumeration = "BtcStatus", tag = "2")]
     pub status: i32,
 }
-/// CheckpointAddresses contains the addresses of the submitter and reporter of a
-/// given checkpoint
+/// CheckpointAddresses contains the addresses of the submitter and reporter of
+/// a given checkpoint
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CheckpointAddresses {
     /// TODO: this could probably be better typed
-    /// submitter is the address of the checkpoint submitter to BTC, extracted from
-    /// the checkpoint itself.
+    /// submitter is the address of the checkpoint submitter to BTC, extracted
+    /// from the checkpoint itself.
     #[prost(bytes = "vec", tag = "1")]
     pub submitter: ::prost::alloc::vec::Vec<u8>,
     /// reporter is the address of the reporter who reported the submissions,
@@ -173,7 +174,8 @@ impl BtcStatus {
     /// String value of the enum field names used in the ProtoBuf definition.
     ///
     /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    /// (if the ProtoBuf definition does not change) and safe for programmatic
+    /// use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
             BtcStatus::EpochStatusSubmitted => "EPOCH_STATUS_SUBMITTED",
@@ -196,20 +198,20 @@ impl BtcStatus {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Params {
     /// btc_confirmation_depth is the confirmation depth in BTC.
-    /// A block is considered irreversible only when it is at least k-deep in BTC
-    /// (k in research paper)
+    /// A block is considered irreversible only when it is at least k-deep in
+    /// BTC (k in research paper)
     #[prost(uint64, tag = "1")]
     pub btc_confirmation_depth: u64,
-    /// checkpoint_finalization_timeout is the maximum time window (measured in BTC
-    /// blocks) between a checkpoint
+    /// checkpoint_finalization_timeout is the maximum time window (measured in
+    /// BTC blocks) between a checkpoint
     /// - being submitted to BTC, and
     /// - being reported back to BBN
     /// If a checkpoint has not been reported back within w BTC blocks, then BBN
     /// has dishonest majority and is stalling checkpoints (w in research paper)
     #[prost(uint64, tag = "2")]
     pub checkpoint_finalization_timeout: u64,
-    /// 4byte tag in hex format, required to be present in the OP_RETURN transaction
-    /// related to babylon
+    /// 4byte tag in hex format, required to be present in the OP_RETURN
+    /// transaction related to babylon
     #[prost(string, tag = "3")]
     pub checkpoint_tag: ::prost::alloc::string::String,
 }
@@ -290,8 +292,9 @@ pub struct QueryEpochSubmissionsResponse {
     #[prost(message, repeated, tag = "1")]
     pub keys: ::prost::alloc::vec::Vec<SubmissionKeyResponse>,
 }
-/// BTCCheckpointInfoResponse contains all data about best submission of checkpoint for
-/// given epoch. Best submission is the submission which is deeper in btc ledger.
+/// BTCCheckpointInfoResponse contains all data about best submission of
+/// checkpoint for given epoch. Best submission is the submission which is
+/// deeper in btc ledger.
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BtcCheckpointInfoResponse {
@@ -330,17 +333,18 @@ pub struct TransactionInfoResponse {
     /// transaction is the full transaction data as str hex.
     #[prost(string, tag = "3")]
     pub transaction: ::prost::alloc::string::String,
-    /// proof is the Merkle proof that this tx is included in the position in `key`
+    /// proof is the Merkle proof that this tx is included in the position in
+    /// `key`
     #[prost(string, tag = "4")]
     pub proof: ::prost::alloc::string::String,
 }
-/// CheckpointAddressesResponse contains the addresses of the submitter and reporter of a
-/// given checkpoint
+/// CheckpointAddressesResponse contains the addresses of the submitter and
+/// reporter of a given checkpoint
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CheckpointAddressesResponse {
-    /// submitter is the address of the checkpoint submitter to BTC, extracted from
-    /// the checkpoint itself.
+    /// submitter is the address of the checkpoint submitter to BTC, extracted
+    /// from the checkpoint itself.
     #[prost(string, tag = "1")]
     pub submitter: ::prost::alloc::string::String,
     /// reporter is the address of the reporter who reported the submissions,
@@ -353,8 +357,8 @@ pub struct CheckpointAddressesResponse {
 /// Each submission can generally be identified by this list of (txIdx,
 /// blockHash) tuples. Note: this could possibly be optimized as if transactions
 /// were in one block they would have the same block hash and different indexes,
-/// but each blockhash is only 33 (1  byte for prefix encoding and 32 byte hash),
-/// so there should be other strong arguments for this optimization
+/// but each blockhash is only 33 (1  byte for prefix encoding and 32 byte
+/// hash), so there should be other strong arguments for this optimization
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SubmissionKeyResponse {
@@ -389,9 +393,9 @@ pub struct MsgInsertBtcSpvProofResponse {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MsgUpdateParams {
     /// authority is the address of the governance account.
-    /// just FYI: cosmos.AddressString marks that this field should use type alias
-    /// for AddressString instead of string, but the functionality is not yet implemented
-    /// in cosmos-proto
+    /// just FYI: cosmos.AddressString marks that this field should use type
+    /// alias for AddressString instead of string, but the functionality is
+    /// not yet implemented in cosmos-proto
     #[prost(string, tag = "1")]
     pub authority: ::prost::alloc::string::String,
     /// params defines the btccheckpoint parameters to update.

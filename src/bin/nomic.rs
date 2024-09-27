@@ -31,15 +31,13 @@ use nomic::bitcoin::signatory::SignatorySet;
 use nomic::bitcoin::Nbtc;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
-use nomic::ethereum::bridge_contract;
+use nomic::frost;
 use nomic::frost::signer::SecretStore;
 use nomic::utils::load_bitcoin_key;
 use nomic::utils::load_or_generate;
-use nomic::{babylon, frost};
 use orga::abci::Node;
-use orga::client::wallet::{DerivedKey, SimpleWallet, Wallet};
+use orga::client::wallet::{SimpleWallet, Wallet};
 use orga::coins::{Address, Commission, Decimal, Declaration, Symbol};
-use orga::collections::Ref;
 use orga::ibc::ibc_rs::core::{
     host::types::identifiers::{ChannelId, PortId},
     primitives::Timestamp,
@@ -48,7 +46,6 @@ use orga::macros::build_call;
 use orga::merk::MerkStore;
 use orga::plugins::MIN_FEE;
 use orga::prelude::*;
-use orga::secp256k1::SecretKey;
 use orga::{client::AppClient, tendermint::client::HttpClient};
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
@@ -2640,7 +2637,6 @@ impl RelayEthereumCmd {
                 "Invalid private key".to_string(),
             )));
         }
-        let secret_key = SecretKey::from_slice(&privkey).unwrap();
 
         if !self.eth_contract.starts_with("0x") {
             return Err(nomic::error::Error::Orga(orga::Error::App(

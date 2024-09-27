@@ -2,7 +2,6 @@
 use super::ConsensusKey;
 use super::{
     adapter::Adapter,
-    outpoint_set::Outpoint,
     signatory::SignatorySet,
     threshold_sig::{Signature, ThresholdSig},
     Xpub,

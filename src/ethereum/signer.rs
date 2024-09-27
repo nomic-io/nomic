@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::app::{InnerApp, Nom};
 use crate::bitcoin::signatory::derive_pubkey;
 use crate::bitcoin::signer::Signer;
@@ -8,7 +6,6 @@ use bitcoin::secp256k1::Secp256k1;
 use bitcoin::util::bip32::{ExtendedPrivKey, ExtendedPubKey};
 use log::info;
 use orga::client::{AppClient, Wallet};
-use orga::coins::Address;
 use orga::macros::build_call;
 use orga::tendermint::client::HttpClient;
 

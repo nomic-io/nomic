@@ -12,8 +12,8 @@ use bitcoin::{
 use bitcoin_script::bitcoin_script as script;
 use ed::{Decode, Encode};
 use orga::{
-    coins::{Accounts, Address, Amount, Coin, Give, Symbol, Take},
-    collections::{Deque, Map},
+    coins::{Coin, Symbol},
+    collections::Deque,
     encoding::LengthVec,
     macros::Migrate,
     orga,
@@ -23,9 +23,9 @@ use serde::Serialize;
 
 use crate::{
     bitcoin::{
-        checkpoint::{BatchType, BitcoinTx, Input},
+        checkpoint::{BatchType, BitcoinTx},
         header_queue::HeaderQueue,
-        Adapter, Bitcoin, Nbtc, SIGSET_THRESHOLD,
+        Adapter, Nbtc,
     },
     error::{Error, Result},
     frost::Frost,
@@ -37,8 +37,6 @@ use crate::bitcoin::threshold_sig::Signature;
 pub mod proto;
 #[cfg(feature = "full")]
 pub mod relayer;
-
-const MIN_DELEGATION: u64 = 50_000;
 
 /// The symbol for staked nBTC.
 #[derive(State, Debug, Clone, Encode, Decode, Default, Migrate, Serialize)]
@@ -129,18 +127,38 @@ pub fn multisig_script(pks: &[XOnlyPublicKey], threshold: u32, verify: bool) -> 
         let pk = pk.serialize().to_vec();
         bytes.extend(
             if i == 0 {
-                script! { <pk> OP_CHECKSIG }
+                // TODO: put this allow in the bitcoin_script crate
+                #[allow(clippy::redundant_closure_call)]
+                {
+                    script! { <pk> OP_CHECKSIG }
+                }
             } else {
-                script! { <pk> OP_CHECKSIGADD }
+                // TODO: put this allow in the bitcoin_script crate
+                #[allow(clippy::redundant_closure_call)]
+                {
+                    script! { <pk> OP_CHECKSIGADD }
+                }
             }
             .into_bytes(),
         );
     }
-    bytes.extend(script! { <threshold as i64> }.into_bytes());
+    // TODO: put this allow in the bitcoin_script crate
+    #[allow(clippy::redundant_closure_call)]
+    {
+        bytes.extend(script! { <threshold as i64> }.into_bytes());
+    }
     if verify {
-        bytes.extend(script! { OP_NUMEQUALVERIFY }.into_bytes());
+        // TODO: put this allow in the bitcoin_script crate
+        #[allow(clippy::redundant_closure_call)]
+        {
+            bytes.extend(script! { OP_NUMEQUALVERIFY }.into_bytes());
+        }
     } else {
-        bytes.extend(script! { OP_NUMEQUAL }.into_bytes());
+        // TODO: put this allow in the bitcoin_script crate
+        #[allow(clippy::redundant_closure_call)]
+        {
+            bytes.extend(script! { OP_NUMEQUAL }.into_bytes());
+        }
     }
 
     Ok(bytes.into())
@@ -170,14 +188,24 @@ pub fn sort_keys(pks: &[XOnlyPublicKey]) -> Result<Vec<XOnlyPublicKey>> {
 pub fn single_key_script(pk: XOnlyPublicKey, verify: bool) -> Script {
     let pk = pk.serialize().to_vec();
     if verify {
-        script! { <pk> OP_CHECKSIGVERIFY }
+        // TODO: put this allow in the bitcoin_script crate
+        #[allow(clippy::redundant_closure_call)]
+        {
+            script! { <pk> OP_CHECKSIGVERIFY }
+        }
     } else {
-        script! { <pk> OP_CHECKSIG }
+        // TODO: put this allow in the bitcoin_script crate
+        #[allow(clippy::redundant_closure_call)]
+        {
+            script! { <pk> OP_CHECKSIG }
+        }
     }
 }
 
 pub fn timelock_script(pk: XOnlyPublicKey, timelock: u64) -> Script {
     let mut bytes = single_key_script(pk, true).into_bytes();
+    // TODO: put this allow in the bitcoin_script crate
+    #[allow(clippy::redundant_closure_call)]
     bytes.extend(script! { <timelock as i64> OP_CSV }.into_bytes());
     bytes.into()
 }
@@ -414,6 +442,7 @@ pub struct Delegation {
 
 #[orga]
 impl Delegation {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         index: u64,
         btc_key: XOnlyPublicKey,
@@ -587,15 +616,15 @@ impl Delegation {
         );
 
         if self.unbonding_height.is_some() {
-            return DelegationStatus::ConfirmedUnbond;
+            DelegationStatus::ConfirmedUnbond
         } else if self.unbonding_withdrawal_sig.is_some() {
-            return DelegationStatus::SignedUnbond;
+            DelegationStatus::SignedUnbond
         } else if self.withdrawal_script_pubkey.is_some() {
-            return DelegationStatus::SigningUnbond;
+            DelegationStatus::SigningUnbond
         } else if self.staking_outpoint.is_some() {
-            return DelegationStatus::Staked;
+            DelegationStatus::Staked
         } else {
-            return DelegationStatus::Created;
+            DelegationStatus::Created
         }
     }
 

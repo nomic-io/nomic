@@ -46,7 +46,8 @@ impl BtcSigType {
     /// String value of the enum field names used in the ProtoBuf definition.
     ///
     /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    /// (if the ProtoBuf definition does not change) and safe for programmatic
+    /// use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
             BtcSigType::Bip340 => "BIP340",
@@ -107,7 +108,8 @@ pub struct FinalityProviderWithMeta {
     /// height is the queried Babylon height
     #[prost(uint64, tag = "2")]
     pub height: u64,
-    /// voting_power is the voting power of this finality provider at the given height
+    /// voting_power is the voting power of this finality provider at the given
+    /// height
     #[prost(uint64, tag = "3")]
     pub voting_power: u64,
     /// slashed_babylon_height indicates the Babylon height when
@@ -174,21 +176,23 @@ pub struct BtcDelegation {
     /// It will be a part of the witness for the staking tx output.
     #[prost(message, repeated, tag = "12")]
     pub covenant_sigs: ::prost::alloc::vec::Vec<CovenantAdaptorSignatures>,
-    /// unbonding_time describes how long the funds will be locked either in unbonding output
-    /// or slashing change output
+    /// unbonding_time describes how long the funds will be locked either in
+    /// unbonding output or slashing change output
     #[prost(uint32, tag = "13")]
     pub unbonding_time: u32,
-    /// btc_undelegation is the information about the early unbonding path of the BTC delegation
+    /// btc_undelegation is the information about the early unbonding path of
+    /// the BTC delegation
     #[prost(message, optional, tag = "14")]
     pub btc_undelegation: ::core::option::Option<BtcUndelegation>,
 }
-/// BTCUndelegation contains the information about the early unbonding path of the BTC delegation
+/// BTCUndelegation contains the information about the early unbonding path of
+/// the BTC delegation
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BtcUndelegation {
-    /// unbonding_tx is the transaction which will transfer the funds from staking
-    /// output to unbonding output. Unbonding output will usually have lower timelock
-    /// than staking output.
+    /// unbonding_tx is the transaction which will transfer the funds from
+    /// staking output to unbonding output. Unbonding output will usually
+    /// have lower timelock than staking output.
     #[prost(bytes = "vec", tag = "1")]
     pub unbonding_tx: ::prost::alloc::vec::Vec<u8>,
     /// slashing_tx is the slashing tx for unbonding transactions
@@ -208,25 +212,27 @@ pub struct BtcUndelegation {
     /// It will be a part of the witness for the unbonding tx output.
     #[prost(bytes = "vec", tag = "4")]
     pub delegator_slashing_sig: ::prost::alloc::vec::Vec<u8>,
-    /// covenant_slashing_sigs is a list of adaptor signatures on the slashing tx
-    /// by each covenant member
+    /// covenant_slashing_sigs is a list of adaptor signatures on the slashing
+    /// tx by each covenant member
     /// It will be a part of the witness for the staking tx output.
     #[prost(message, repeated, tag = "5")]
     pub covenant_slashing_sigs: ::prost::alloc::vec::Vec<CovenantAdaptorSignatures>,
-    /// covenant_unbonding_sig_list is the list of signatures on the unbonding tx
-    /// by covenant members
+    /// covenant_unbonding_sig_list is the list of signatures on the unbonding
+    /// tx by covenant members
     /// It must be provided after processing undelegate message by Babylon
     #[prost(message, repeated, tag = "6")]
     pub covenant_unbonding_sig_list: ::prost::alloc::vec::Vec<SignatureInfo>,
 }
-/// BTCDelegatorDelegations is a collection of BTC delegations from the same delegator.
+/// BTCDelegatorDelegations is a collection of BTC delegations from the same
+/// delegator.
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BtcDelegatorDelegations {
     #[prost(message, repeated, tag = "1")]
     pub dels: ::prost::alloc::vec::Vec<BtcDelegation>,
 }
-/// BTCDelegatorDelegationIndex is a list of staking tx hashes of BTC delegations from the same delegator.
+/// BTCDelegatorDelegationIndex is a list of staking tx hashes of BTC
+/// delegations from the same delegator.
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BtcDelegatorDelegationIndex {
@@ -247,10 +253,12 @@ pub struct SignatureInfo {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CovenantAdaptorSignatures {
-    /// cov_pk is the public key of the covenant emulator, used as the public key of the adaptor signature
+    /// cov_pk is the public key of the covenant emulator, used as the public
+    /// key of the adaptor signature
     #[prost(bytes = "vec", tag = "1")]
     pub cov_pk: ::prost::alloc::vec::Vec<u8>,
-    /// adaptor_sigs is a list of adaptor signatures, each encrypted by a restaked BTC finality provider's public key
+    /// adaptor_sigs is a list of adaptor signatures, each encrypted by a
+    /// restaked BTC finality provider's public key
     #[prost(bytes = "vec", repeated, tag = "2")]
     pub adaptor_sigs: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
 }
@@ -277,20 +285,23 @@ pub struct SelectiveSlashingEvidence {
     #[prost(bytes = "vec", tag = "3")]
     pub recovered_fp_btc_sk: ::prost::alloc::vec::Vec<u8>,
 }
-/// BTCDelegationStatus is the status of a delegation. The state transition path is
-/// PENDING -> ACTIVE -> UNBONDED with two possibilities:
+/// BTCDelegationStatus is the status of a delegation. The state transition path
+/// is PENDING -> ACTIVE -> UNBONDED with two possibilities:
 /// 1. the typical path when timelock of staking transaction expires.
-/// 2. the path when staker requests early undelegation through MsgBTCUndelegate message.
+/// 2. the path when staker requests early undelegation through MsgBTCUndelegate
+///    message.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum BtcDelegationStatus {
-    /// PENDING defines a delegation that is waiting for covenant signatures to become active.
+    /// PENDING defines a delegation that is waiting for covenant signatures to
+    /// become active.
     Pending = 0,
     /// ACTIVE defines a delegation that has voting power
     Active = 1,
     /// UNBONDED defines a delegation no longer has voting power:
     /// - either reaching the end of staking transaction timelock
-    /// - or receiving unbonding tx with signatures from staker and covenant committee
+    /// - or receiving unbonding tx with signatures from staker and covenant
+    ///   committee
     Unbonded = 2,
     /// ANY is any of the above status
     Any = 3,
@@ -299,7 +310,8 @@ impl BtcDelegationStatus {
     /// String value of the enum field names used in the ProtoBuf definition.
     ///
     /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    /// (if the ProtoBuf definition does not change) and safe for programmatic
+    /// use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
             BtcDelegationStatus::Pending => "PENDING",
@@ -319,18 +331,20 @@ impl BtcDelegationStatus {
         }
     }
 }
-/// EventNewFinalityProvider is the event emitted when a finality provider is created
+/// EventNewFinalityProvider is the event emitted when a finality provider is
+/// created
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct EventNewFinalityProvider {
     #[prost(message, optional, tag = "1")]
     pub fp: ::core::option::Option<FinalityProvider>,
 }
-/// EventBTCDelegationStateUpdate is the event emitted when a BTC delegation's state is
-/// updated. There are the following possible state transitions:
+/// EventBTCDelegationStateUpdate is the event emitted when a BTC delegation's
+/// state is updated. There are the following possible state transitions:
 /// - non-existing -> pending, which happens upon `MsgCreateBTCDelegation`
 /// - pending -> active, which happens upon `MsgAddCovenantSigs`
-/// - active -> unbonded, which happens upon `MsgBTCUndelegate` or upon staking tx timelock expires
+/// - active -> unbonded, which happens upon `MsgBTCUndelegate` or upon staking
+///   tx timelock expires
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct EventBtcDelegationStateUpdate {
@@ -392,8 +406,8 @@ pub struct Params {
     /// each PK follows encoding in BIP-340 spec on Bitcoin
     #[prost(bytes = "vec", repeated, tag = "1")]
     pub covenant_pks: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
-    /// covenant_quorum is the minimum number of signatures needed for the covenant
-    /// multisignature
+    /// covenant_quorum is the minimum number of signatures needed for the
+    /// covenant multisignature
     #[prost(uint32, tag = "2")]
     pub covenant_quorum: u32,
     /// slashing address is the address that the slashed BTC goes to
@@ -405,39 +419,44 @@ pub struct Params {
     /// TODO: change to satoshi per byte?
     #[prost(int64, tag = "4")]
     pub min_slashing_tx_fee_sat: i64,
-    /// min_commission_rate is the chain-wide minimum commission rate that a finality provider can charge their delegators
+    /// min_commission_rate is the chain-wide minimum commission rate that a
+    /// finality provider can charge their delegators
     #[prost(string, tag = "5")]
     pub min_commission_rate: ::prost::alloc::string::String,
     /// slashing_rate determines the portion of the staked amount to be slashed,
     /// expressed as a decimal (e.g., 0.5 for 50%).
     #[prost(string, tag = "6")]
     pub slashing_rate: ::prost::alloc::string::String,
-    /// max_active_finality_providers is the maximum number of active finality providers in the BTC staking protocol
+    /// max_active_finality_providers is the maximum number of active finality
+    /// providers in the BTC staking protocol
     #[prost(uint32, tag = "7")]
     pub max_active_finality_providers: u32,
-    /// min_unbonding_time is the minimum time for unbonding transaction timelock in BTC blocks
+    /// min_unbonding_time is the minimum time for unbonding transaction
+    /// timelock in BTC blocks
     #[prost(uint32, tag = "8")]
     pub min_unbonding_time: u32,
-    /// min_unbonding_rate is the minimum amount of BTC that are required in unbonding
-    /// output, expressed as a fraction of staking output
+    /// min_unbonding_rate is the minimum amount of BTC that are required in
+    /// unbonding output, expressed as a fraction of staking output
     /// example: if min_unbonding_rate=0.9, then the unbonding output value
-    /// must be at least 90% of staking output, for staking request to be considered
-    /// valid
+    /// must be at least 90% of staking output, for staking request to be
+    /// considered valid
     #[prost(string, tag = "9")]
     pub min_unbonding_rate: ::prost::alloc::string::String,
 }
-/// VotingPowerDistCache is the cache for voting power distribution of finality providers
-/// and their BTC delegations at a height
+/// VotingPowerDistCache is the cache for voting power distribution of finality
+/// providers and their BTC delegations at a height
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VotingPowerDistCache {
     #[prost(uint64, tag = "1")]
     pub total_voting_power: u64,
-    /// finality_providers is a list of finality providers' voting power information
+    /// finality_providers is a list of finality providers' voting power
+    /// information
     #[prost(message, repeated, tag = "2")]
     pub finality_providers: ::prost::alloc::vec::Vec<FinalityProviderDistInfo>,
 }
-/// FinalityProviderDistInfo is the reward distribution of a finality provider and its BTC delegations
+/// FinalityProviderDistInfo is the reward distribution of a finality provider
+/// and its BTC delegations
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FinalityProviderDistInfo {
@@ -454,11 +473,13 @@ pub struct FinalityProviderDistInfo {
     /// total_voting_power is the total voting power of the finality provider
     #[prost(uint64, tag = "4")]
     pub total_voting_power: u64,
-    /// btc_dels is a list of BTC delegations' voting power information under this finality provider
+    /// btc_dels is a list of BTC delegations' voting power information under
+    /// this finality provider
     #[prost(message, repeated, tag = "5")]
     pub btc_dels: ::prost::alloc::vec::Vec<BtcDelDistInfo>,
 }
-/// BTCDelDistInfo contains the information related to reward distribution for a BTC delegation
+/// BTCDelDistInfo contains the information related to reward distribution for a
+/// BTC delegation
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BtcDelDistInfo {
@@ -488,20 +509,23 @@ pub struct GenesisState {
     /// btc_delegations all the btc delegations in the state.
     #[prost(message, repeated, tag = "3")]
     pub btc_delegations: ::prost::alloc::vec::Vec<BtcDelegation>,
-    /// voting_powers the voting power of every finality provider at every block height.
+    /// voting_powers the voting power of every finality provider at every block
+    /// height.
     #[prost(message, repeated, tag = "4")]
     pub voting_powers: ::prost::alloc::vec::Vec<VotingPowerFp>,
     /// block_height_chains the block height of babylon and bitcoin.
     #[prost(message, repeated, tag = "5")]
     pub block_height_chains: ::prost::alloc::vec::Vec<BlockHeightBbnToBtc>,
-    /// btc_delegators contains all the btc delegators with the associated finality provider.
+    /// btc_delegators contains all the btc delegators with the associated
+    /// finality provider.
     #[prost(message, repeated, tag = "6")]
     pub btc_delegators: ::prost::alloc::vec::Vec<BtcDelegator>,
     /// all the events and its indexes.
     #[prost(message, repeated, tag = "7")]
     pub events: ::prost::alloc::vec::Vec<EventIndex>,
-    /// vp_dst_cache is the table of all providers voting power with the total at one specific block.
-    /// TODO: remove this after not storing in the keeper store it anymore.
+    /// vp_dst_cache is the table of all providers voting power with the total
+    /// at one specific block. TODO: remove this after not storing in the
+    /// keeper store it anymore.
     #[prost(message, repeated, tag = "8")]
     pub vp_dst_cache: ::prost::alloc::vec::Vec<VotingPowerDistCacheBlkHeight>,
 }
@@ -516,18 +540,22 @@ pub struct VotingPowerFp {
     /// fp_btc_pk the finality provider btc public key.
     #[prost(bytes = "vec", tag = "2")]
     pub fp_btc_pk: ::prost::alloc::vec::Vec<u8>,
-    /// voting_power is the power of the finality provider at this specific block height.
+    /// voting_power is the power of the finality provider at this specific
+    /// block height.
     #[prost(uint64, tag = "3")]
     pub voting_power: u64,
 }
-/// VotingPowerDistCacheBlkHeight the total voting power of the finality providers at one specific block height
+/// VotingPowerDistCacheBlkHeight the total voting power of the finality
+/// providers at one specific block height
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VotingPowerDistCacheBlkHeight {
-    /// block_height is the height of the block the voting power distribution cached was stored.
+    /// block_height is the height of the block the voting power distribution
+    /// cached was stored.
     #[prost(uint64, tag = "1")]
     pub block_height: u64,
-    /// vp_distribution the finality providers distribution cache at that height.
+    /// vp_distribution the finality providers distribution cache at that
+    /// height.
     #[prost(message, optional, tag = "2")]
     pub vp_distribution: ::core::option::Option<VotingPowerDistCache>,
 }
@@ -542,7 +570,8 @@ pub struct BlockHeightBbnToBtc {
     #[prost(uint64, tag = "2")]
     pub block_height_btc: u64,
 }
-/// BTCDelegator BTC delegator information with the associated finality provider.
+/// BTCDelegator BTC delegator information with the associated finality
+/// provider.
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BtcDelegator {
@@ -609,7 +638,8 @@ pub struct QueryFinalityProvidersResponse {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryFinalityProviderRequest {
-    /// fp_btc_pk_hex is the hex str of Bitcoin secp256k1 PK of the finality provider
+    /// fp_btc_pk_hex is the hex str of Bitcoin secp256k1 PK of the finality
+    /// provider
     #[prost(string, tag = "1")]
     pub fp_btc_pk_hex: ::prost::alloc::string::String,
 }
@@ -639,7 +669,8 @@ pub struct QueryBtcDelegationsRequest {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryBtcDelegationsResponse {
-    /// btc_delegations contains all the queried BTC delegations under the given status
+    /// btc_delegations contains all the queried BTC delegations under the given
+    /// status
     #[prost(message, repeated, tag = "1")]
     pub btc_delegations: ::prost::alloc::vec::Vec<BtcDelegationResponse>,
     /// pagination defines the pagination in the response.
@@ -652,12 +683,13 @@ pub struct QueryBtcDelegationsResponse {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryFinalityProviderPowerAtHeightRequest {
-    /// fp_btc_pk_hex is the hex str of Bitcoin secp256k1 PK of the finality provider that
-    /// this BTC delegation delegates to
+    /// fp_btc_pk_hex is the hex str of Bitcoin secp256k1 PK of the finality
+    /// provider that this BTC delegation delegates to
     /// the PK follows encoding in BIP-340 spec
     #[prost(string, tag = "1")]
     pub fp_btc_pk_hex: ::prost::alloc::string::String,
-    /// height is used for querying the given finality provider's voting power at this height
+    /// height is used for querying the given finality provider's voting power
+    /// at this height
     #[prost(uint64, tag = "2")]
     pub height: u64,
 }
@@ -675,8 +707,8 @@ pub struct QueryFinalityProviderPowerAtHeightResponse {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryFinalityProviderCurrentPowerRequest {
-    /// fp_btc_pk_hex is the hex str of Bitcoin secp256k1 PK of the finality provider that
-    /// this BTC delegation delegates to
+    /// fp_btc_pk_hex is the hex str of Bitcoin secp256k1 PK of the finality
+    /// provider that this BTC delegation delegates to
     /// the PK follows encoding in BIP-340 spec
     #[prost(string, tag = "1")]
     pub fp_btc_pk_hex: ::prost::alloc::string::String,
@@ -698,7 +730,8 @@ pub struct QueryFinalityProviderCurrentPowerResponse {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryActiveFinalityProvidersAtHeightRequest {
-    /// height defines at which Babylon height to query the finality providers info.
+    /// height defines at which Babylon height to query the finality providers
+    /// info.
     #[prost(uint64, tag = "1")]
     pub height: u64,
     /// pagination defines an optional pagination for the request.
@@ -719,11 +752,13 @@ pub struct QueryActiveFinalityProvidersAtHeightResponse {
     pub pagination:
         ::core::option::Option<cosmos_sdk_proto::cosmos::base::query::v1beta1::PageResponse>,
 }
-/// QueryActivatedHeightRequest is the request type for the Query/ActivatedHeight RPC method.
+/// QueryActivatedHeightRequest is the request type for the
+/// Query/ActivatedHeight RPC method.
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryActivatedHeightRequest {}
-/// QueryActivatedHeightResponse is the response type for the Query/ActivatedHeight RPC method.
+/// QueryActivatedHeightResponse is the response type for the
+/// Query/ActivatedHeight RPC method.
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryActivatedHeightResponse {
@@ -735,8 +770,8 @@ pub struct QueryActivatedHeightResponse {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryFinalityProviderDelegationsRequest {
-    /// fp_btc_pk_hex is the hex str of Bitcoin secp256k1 PK of the finality providerthat
-    /// this BTC delegation delegates to
+    /// fp_btc_pk_hex is the hex str of Bitcoin secp256k1 PK of the finality
+    /// providerthat this BTC delegation delegates to
     /// the PK follows encoding in BIP-340 spec
     #[prost(string, tag = "1")]
     pub fp_btc_pk_hex: ::prost::alloc::string::String,
@@ -758,8 +793,8 @@ pub struct QueryFinalityProviderDelegationsResponse {
     pub pagination:
         ::core::option::Option<cosmos_sdk_proto::cosmos::base::query::v1beta1::PageResponse>,
 }
-/// QueryBTCDelegationRequest is the request type to retrieve a BTC delegation by
-/// staking tx hash
+/// QueryBTCDelegationRequest is the request type to retrieve a BTC delegation
+/// by staking tx hash
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryBtcDelegationRequest {
@@ -767,16 +802,18 @@ pub struct QueryBtcDelegationRequest {
     #[prost(string, tag = "1")]
     pub staking_tx_hash_hex: ::prost::alloc::string::String,
 }
-/// QueryBTCDelegationResponse is response type matching QueryBTCDelegationRequest
-/// and containing BTC delegation information
+/// QueryBTCDelegationResponse is response type matching
+/// QueryBTCDelegationRequest and containing BTC delegation information
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryBtcDelegationResponse {
-    /// BTCDelegation represents the client needed information of an BTCDelegation.
+    /// BTCDelegation represents the client needed information of an
+    /// BTCDelegation.
     #[prost(message, optional, tag = "1")]
     pub btc_delegation: ::core::option::Option<BtcDelegationResponse>,
 }
-/// BTCDelegationResponse is the client needed information from a BTCDelegation with the current status based on parameters.
+/// BTCDelegationResponse is the client needed information from a BTCDelegation
+/// with the current status based on parameters.
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BtcDelegationResponse {
@@ -825,8 +862,8 @@ pub struct BtcDelegationResponse {
     /// descriptive status of current delegation.
     #[prost(string, tag = "12")]
     pub status_desc: ::prost::alloc::string::String,
-    /// unbonding_time used in unbonding output timelock path and in slashing transactions
-    /// change outputs
+    /// unbonding_time used in unbonding output timelock path and in slashing
+    /// transactions change outputs
     #[prost(uint32, tag = "13")]
     pub unbonding_time: u32,
     /// undelegation_response is the undelegation info of this delegation.
@@ -837,20 +874,22 @@ pub struct BtcDelegationResponse {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BtcUndelegationResponse {
-    /// unbonding_tx is the transaction which will transfer the funds from staking
-    /// output to unbonding output. Unbonding output will usually have lower timelock
-    /// than staking output. The unbonding tx as string hex.
+    /// unbonding_tx is the transaction which will transfer the funds from
+    /// staking output to unbonding output. Unbonding output will usually
+    /// have lower timelock than staking output. The unbonding tx as string
+    /// hex.
     #[prost(string, tag = "1")]
     pub unbonding_tx_hex: ::prost::alloc::string::String,
     /// delegator_unbonding_sig is the signature on the unbonding tx
     /// by the delegator (i.e., SK corresponding to btc_pk).
     /// It effectively proves that the delegator wants to unbond and thus
     /// Babylon will consider this BTC delegation unbonded. Delegator's BTC
-    /// on Bitcoin will be unbonded after timelock. The unbonding delegator sig as string hex.
+    /// on Bitcoin will be unbonded after timelock. The unbonding delegator sig
+    /// as string hex.
     #[prost(string, tag = "2")]
     pub delegator_unbonding_sig_hex: ::prost::alloc::string::String,
-    /// covenant_unbonding_sig_list is the list of signatures on the unbonding tx
-    /// by covenant members
+    /// covenant_unbonding_sig_list is the list of signatures on the unbonding
+    /// tx by covenant members
     #[prost(message, repeated, tag = "3")]
     pub covenant_unbonding_sig_list: ::prost::alloc::vec::Vec<SignatureInfo>,
     /// slashingTxHex is the hex string of slashing tx
@@ -868,14 +907,16 @@ pub struct BtcUndelegationResponse {
     #[prost(message, repeated, tag = "6")]
     pub covenant_slashing_sigs: ::prost::alloc::vec::Vec<CovenantAdaptorSignatures>,
 }
-/// BTCDelegatorDelegationsResponse is a collection of BTC delegations responses from the same delegator.
+/// BTCDelegatorDelegationsResponse is a collection of BTC delegations responses
+/// from the same delegator.
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BtcDelegatorDelegationsResponse {
     #[prost(message, repeated, tag = "1")]
     pub dels: ::prost::alloc::vec::Vec<BtcDelegationResponse>,
 }
-/// FinalityProviderResponse defines a finality provider with voting power information.
+/// FinalityProviderResponse defines a finality provider with voting power
+/// information.
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FinalityProviderResponse {
@@ -909,7 +950,8 @@ pub struct FinalityProviderResponse {
     /// height is the queried Babylon height
     #[prost(uint64, tag = "8")]
     pub height: u64,
-    /// voting_power is the voting power of this finality provider at the given height
+    /// voting_power is the voting power of this finality provider at the given
+    /// height
     #[prost(uint64, tag = "9")]
     pub voting_power: u64,
 }
@@ -937,21 +979,25 @@ pub struct MsgCreateFinalityProvider {
     #[prost(message, optional, tag = "6")]
     pub pop: ::core::option::Option<ProofOfPossession>,
 }
-/// MsgCreateFinalityProviderResponse is the response for MsgCreateFinalityProvider
+/// MsgCreateFinalityProviderResponse is the response for
+/// MsgCreateFinalityProvider
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MsgCreateFinalityProviderResponse {}
-/// MsgEditFinalityProvider is the message for editing an existing finality provider
+/// MsgEditFinalityProvider is the message for editing an existing finality
+/// provider
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MsgEditFinalityProvider {
-    /// NOTE: this signer needs to correspond to babylon_pk of the finality provider
+    /// NOTE: this signer needs to correspond to babylon_pk of the finality
+    /// provider
     #[prost(string, tag = "1")]
     pub signer: ::prost::alloc::string::String,
     /// btc_pk is the Bitcoin secp256k1 PK of the finality provider to be edited
     #[prost(bytes = "vec", tag = "2")]
     pub btc_pk: ::prost::alloc::vec::Vec<u8>,
-    /// description defines the updated description terms for the finality provider
+    /// description defines the updated description terms for the finality
+    /// provider
     #[prost(message, optional, tag = "3")]
     pub description:
         ::core::option::Option<cosmos_sdk_proto::cosmos::staking::v1beta1::Description>,
@@ -978,8 +1024,9 @@ pub struct MsgCreateBtcDelegation {
     /// btc_pk is the Bitcoin secp256k1 PK of the BTC delegator
     #[prost(bytes = "vec", tag = "4")]
     pub btc_pk: ::prost::alloc::vec::Vec<u8>,
-    /// fp_btc_pk_list is the list of Bitcoin secp256k1 PKs of the finality providers, if there is more than one
-    /// finality provider pk it means that delegation is re-staked
+    /// fp_btc_pk_list is the list of Bitcoin secp256k1 PKs of the finality
+    /// providers, if there is more than one finality provider pk it means
+    /// that delegation is re-staked
     #[prost(bytes = "vec", repeated, tag = "5")]
     pub fp_btc_pk_list: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
     /// staking_time is the time lock used in staking transaction
@@ -988,40 +1035,48 @@ pub struct MsgCreateBtcDelegation {
     /// staking_value  is the amount of satoshis locked in staking output
     #[prost(int64, tag = "7")]
     pub staking_value: i64,
-    /// staking_tx is the staking tx along with the merkle proof of inclusion in btc block
+    /// staking_tx is the staking tx along with the merkle proof of inclusion in
+    /// btc block
     #[prost(message, optional, tag = "8")]
     pub staking_tx: ::core::option::Option<btccheckpoint::TransactionInfo>,
     /// slashing_tx is the slashing tx
-    /// Note that the tx itself does not contain signatures, which are off-chain.
+    /// Note that the tx itself does not contain signatures, which are
+    /// off-chain.
     #[prost(bytes = "vec", tag = "9")]
     pub slashing_tx: ::prost::alloc::vec::Vec<u8>,
-    /// delegator_slashing_sig is the signature on the slashing tx by the delegator (i.e., SK corresponding to btc_pk).
-    /// It will be a part of the witness for the staking tx output.
-    /// The staking tx output further needs signatures from covenant and finality provider in
-    /// order to be spendable.
+    /// delegator_slashing_sig is the signature on the slashing tx by the
+    /// delegator (i.e., SK corresponding to btc_pk). It will be a part of
+    /// the witness for the staking tx output. The staking tx output further
+    /// needs signatures from covenant and finality provider in order to be
+    /// spendable.
     #[prost(bytes = "vec", tag = "10")]
     pub delegator_slashing_sig: ::prost::alloc::vec::Vec<u8>,
-    /// unbonding_time is the time lock used when funds are being unbonded. It is be used in:
+    /// unbonding_time is the time lock used when funds are being unbonded. It
+    /// is be used in:
     /// - unbonding transaction, time lock spending path
     /// - staking slashing transaction, change output
     /// - unbonding slashing transaction, change output
-    /// It must be smaller than math.MaxUInt16 and larger that max(MinUnbondingTime, CheckpointFinalizationTimeout)
+    /// It must be smaller than math.MaxUInt16 and larger that
+    /// max(MinUnbondingTime, CheckpointFinalizationTimeout)
     #[prost(uint32, tag = "11")]
     pub unbonding_time: u32,
     /// fields related to unbonding transaction
-    /// unbonding_tx is a bitcoin unbonding transaction i.e transaction that spends
-    /// staking output and sends it to the unbonding output
+    /// unbonding_tx is a bitcoin unbonding transaction i.e transaction that
+    /// spends staking output and sends it to the unbonding output
     #[prost(bytes = "vec", tag = "12")]
     pub unbonding_tx: ::prost::alloc::vec::Vec<u8>,
     /// unbonding_value is amount of satoshis locked in unbonding output.
-    /// NOTE: staking_value and unbonding_value could be different because of the difference between the fee for staking tx and that for unbonding
+    /// NOTE: staking_value and unbonding_value could be different because of
+    /// the difference between the fee for staking tx and that for unbonding
     #[prost(int64, tag = "13")]
     pub unbonding_value: i64,
     /// unbonding_slashing_tx is the slashing tx which slash unbonding contract
-    /// Note that the tx itself does not contain signatures, which are off-chain.
+    /// Note that the tx itself does not contain signatures, which are
+    /// off-chain.
     #[prost(bytes = "vec", tag = "14")]
     pub unbonding_slashing_tx: ::prost::alloc::vec::Vec<u8>,
-    /// delegator_unbonding_slashing_sig is the signature on the slashing tx by the delegator (i.e., SK corresponding to btc_pk).
+    /// delegator_unbonding_slashing_sig is the signature on the slashing tx by
+    /// the delegator (i.e., SK corresponding to btc_pk).
     #[prost(bytes = "vec", tag = "15")]
     pub delegator_unbonding_slashing_sig: ::prost::alloc::vec::Vec<u8>,
 }
@@ -1029,7 +1084,8 @@ pub struct MsgCreateBtcDelegation {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MsgCreateBtcDelegationResponse {}
-/// MsgAddCovenantSigs is the message for handling signatures from a covenant member
+/// MsgAddCovenantSigs is the message for handling signatures from a covenant
+/// member
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MsgAddCovenantSigs {
@@ -1047,14 +1103,14 @@ pub struct MsgAddCovenantSigs {
     /// of the corresponding delegation
     #[prost(bytes = "vec", repeated, tag = "4")]
     pub slashing_tx_sigs: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
-    /// unbonding_tx_sig is the signature of the covenant on the unbonding tx submitted to babylon
-    /// the signature follows encoding in BIP-340 spec
+    /// unbonding_tx_sig is the signature of the covenant on the unbonding tx
+    /// submitted to babylon the signature follows encoding in BIP-340 spec
     #[prost(bytes = "vec", tag = "5")]
     pub unbonding_tx_sig: ::prost::alloc::vec::Vec<u8>,
-    /// slashing_unbonding_tx_sigs is a list of adaptor signatures of the covenant
-    /// on slashing tx corresponding to unbonding tx submitted to babylon
-    /// the order of sigs should respect the order of finality providers
-    /// of the corresponding delegation
+    /// slashing_unbonding_tx_sigs is a list of adaptor signatures of the
+    /// covenant on slashing tx corresponding to unbonding tx submitted to
+    /// babylon the order of sigs should respect the order of finality
+    /// providers of the corresponding delegation
     #[prost(bytes = "vec", repeated, tag = "6")]
     pub slashing_unbonding_tx_sigs: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
 }
@@ -1074,8 +1130,8 @@ pub struct MsgBtcUndelegate {
     /// It uniquely identifies a BTC delegation
     #[prost(string, tag = "2")]
     pub staking_tx_hash: ::prost::alloc::string::String,
-    /// unbonding_tx_sig is the signature of the staker on the unbonding tx submitted to babylon
-    /// the signature follows encoding in BIP-340 spec
+    /// unbonding_tx_sig is the signature of the staker on the unbonding tx
+    /// submitted to babylon the signature follows encoding in BIP-340 spec
     #[prost(bytes = "vec", tag = "3")]
     pub unbonding_tx_sig: ::prost::alloc::vec::Vec<u8>,
 }
@@ -1083,8 +1139,8 @@ pub struct MsgBtcUndelegate {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MsgBtcUndelegateResponse {}
-/// MsgSelectiveSlashingEvidence is the message for handling evidence of selective slashing
-/// launched by a finality provider
+/// MsgSelectiveSlashingEvidence is the message for handling evidence of
+/// selective slashing launched by a finality provider
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MsgSelectiveSlashingEvidence {
@@ -1101,7 +1157,8 @@ pub struct MsgSelectiveSlashingEvidence {
     #[prost(bytes = "vec", tag = "3")]
     pub recovered_fp_btc_sk: ::prost::alloc::vec::Vec<u8>,
 }
-/// MsgSelectiveSlashingEvidenceResponse is the response for MsgSelectiveSlashingEvidence
+/// MsgSelectiveSlashingEvidenceResponse is the response for
+/// MsgSelectiveSlashingEvidence
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MsgSelectiveSlashingEvidenceResponse {}
@@ -1110,9 +1167,9 @@ pub struct MsgSelectiveSlashingEvidenceResponse {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MsgUpdateParams {
     /// authority is the address of the governance account.
-    /// just FYI: cosmos.AddressString marks that this field should use type alias
-    /// for AddressString instead of string, but the functionality is not yet implemented
-    /// in cosmos-proto
+    /// just FYI: cosmos.AddressString marks that this field should use type
+    /// alias for AddressString instead of string, but the functionality is
+    /// not yet implemented in cosmos-proto
     #[prost(string, tag = "1")]
     pub authority: ::prost::alloc::string::String,
     /// params defines the finality parameters to update.

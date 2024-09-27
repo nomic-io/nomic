@@ -2,37 +2,25 @@
 // TODO: relay confirmed delegations to nomic
 // TODO: relay signed, confirmed delegations to babylon
 
-use bech32::ToBase32;
 use bitcoin::{
     consensus::{Decodable, Encodable},
-    psbt::serialize::Serialize,
-    secp256k1::{self, hashes::Hash},
-    Block, BlockHash, TxMerkleNode, TxOut, Txid,
+    secp256k1::hashes::Hash,
+    Block, BlockHash, TxOut,
 };
 use bitcoincore_rpc_async::{Client as BitcoinRpcClient, RpcApi};
-use cosmos_sdk_proto::cosmos::crypto::secp256k1::PubKey;
-use cosmrs::{
-    crypto::secp256k1::SigningKey,
-    tx::{mode_info::Single, MessageExt, ModeInfo, SignDoc, SignMode},
-};
 use orga::{
     call::build_call,
     client::{wallet::Unsigned, AppClient},
     tendermint::client::HttpClient,
 };
-use sha2::{Digest, Sha256};
 
 use crate::{
     app::{InnerApp, Nom},
-    babylon::DelegationStatus,
     bitcoin::{adapter::Adapter, checkpoint::CheckpointStatus},
     error::{Error, Result},
 };
 
-use super::{
-    proto::{self, MsgCreateBtcDelegation},
-    Delegation,
-};
+use super::Delegation;
 
 pub async fn relay_staking_confs(
     app_client: &AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned>,
