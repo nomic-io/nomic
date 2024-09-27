@@ -27,8 +27,8 @@ pub struct BtcSpvProof {
     /// List of concatenated intermediate merkle tree nodes, without root node
     /// and leaf node against which we calculate the proof. Each node has 32
     /// byte length. Example proof can look like: 32_bytes_of_node1 ||
-    /// 32_bytes_of_node2 ||  32_bytes_of_node3 so the length of the proof will always be divisible
-    /// by 32.
+    /// 32_bytes_of_node2 ||  32_bytes_of_node3 so the length of the proof will
+    /// always be divisible by 32.
     #[prost(bytes = "vec", tag = "3")]
     pub merkle_nodes: ::prost::alloc::vec::Vec<u8>,
     /// Valid btc header which confirms btc_transaction.
