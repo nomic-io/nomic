@@ -2826,6 +2826,7 @@ impl RelayEthereumCmd {
                     max_gas,
                     fallback_address,
                     transfer_amount,
+                    fee_amount,
                     message_index,
                 } => {
                     contract
@@ -2834,6 +2835,7 @@ impl RelayEthereumCmd {
                             sigs,
                             nomic::ethereum::logic_call_args(
                                 transfer_amount,
+                                fee_amount,
                                 token_contract.into(),
                                 contract_address,
                                 data.as_slice(),

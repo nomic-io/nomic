@@ -64,6 +64,9 @@ sol!(
 pub mod signer;
 
 pub const VALSET_INTERVAL: u64 = 60 * 60 * 24;
+pub const GAS_PRICE: u64 = 40;
+pub const APPROX_TRANSFER_GAS: u64 = 80_000;
+pub const APPROX_CALL_GAS: u64 = 200_000;
 
 pub const WHITELISTED_RELAYER_ADDR: &str = "nomic124j0ky0luh9jzqh9w2dk77cze9v0ckdupk50ny";
 
@@ -382,11 +385,18 @@ impl Connection {
     pub fn transfer(&mut self, dest: Address, coins: Coin<Nbtc>) -> Result<()> {
         // TODO: validation (min amount, etc)
 
+        let fee_amount = APPROX_TRANSFER_GAS * GAS_PRICE;
+        if coins.amount < fee_amount {
+            return Err(Error::App("insufficient funds for fee".to_string()).into());
+        }
+        let amount: u64 = coins.amount.into();
+        let amount = amount - fee_amount;
+
         // TODO: batch transfers
         let transfer = Transfer {
             dest,
-            amount: coins.amount.into(),
-            fee_amount: 0, // TODO: deduct fee
+            amount,
+            fee_amount,
         };
         let transfers = vec![transfer].try_into().unwrap();
         let timeout = u64::MAX; // TODO: set based on current ethereum height, or let user specify
@@ -412,7 +422,13 @@ impl Connection {
         fallback_address: [u8; 20],
         coins: Coin<Nbtc>,
     ) -> Result<()> {
-        let transfer_amount = coins.amount.into();
+        let transfer_amount: u64 = coins.amount.into();
+        let fee_amount = (APPROX_CALL_GAS + max_gas) * GAS_PRICE;
+        if transfer_amount < fee_amount {
+            return Err(Error::App("insufficient funds for fee".to_string()).into());
+        }
+        let transfer_amount = transfer_amount - fee_amount;
+
         self.coins.give(coins)?;
         self.push_outbox(OutMessageArgs::ContractCall {
             contract_address,
@@ -420,6 +436,7 @@ impl Connection {
             max_gas,
             fallback_address,
             transfer_amount,
+            fee_amount,
             message_index: self.message_index + if self.outbox.is_empty() { 0 } else { 1 },
         })
     }
@@ -569,6 +586,7 @@ impl Connection {
                 max_gas,
                 fallback_address,
                 transfer_amount,
+                fee_amount,
                 message_index,
             } => call_hash(
                 self.id,
@@ -577,6 +595,7 @@ impl Connection {
                 data,
                 *message_index,
                 *transfer_amount,
+                *fee_amount,
             ),
             OutMessageArgs::UpdateValset(index, valset) => checkpoint_hash(self.id, valset, *index),
         })
@@ -632,6 +651,7 @@ pub enum OutMessageArgs {
         #[serde(with = "SerHex::<StrictPfx>")]
         fallback_address: [u8; 20],
         transfer_amount: u64, // TODO: this shouldn't be necessary
+        fee_amount: u64,
         message_index: u64,
     },
     UpdateValset(u64, SignatorySet),
@@ -689,14 +709,15 @@ pub fn call_hash(
     data: &[u8],
     nonce_id: u64,
     transfer_amount: u64,
+    fee_amount: u64,
 ) -> [u8; 32] {
     let bytes = (
         id,
         bytes32(b"logicCall").unwrap(),
         vec![transfer_amount],
         vec![addr_to_bytes32(token_contract.into())],
-        Vec::<u64>::new(),
-        Vec::<[u8; 32]>::new(),
+        vec![fee_amount],
+        vec![addr_to_bytes32(token_contract.into())],
         addr_to_bytes32(dest_contract.into()),
         data,
         u64::MAX,
@@ -710,6 +731,7 @@ pub fn call_hash(
 
 pub fn logic_call_args(
     transfer_amount: u64,
+    fee_amount: u64,
     token_contract: [u8; 20],
     dest_contract: [u8; 20],
     data: &[u8],
@@ -721,8 +743,10 @@ pub fn logic_call_args(
         transferTokenContracts: vec![alloy::core::primitives::Address::from_slice(
             &token_contract,
         )],
-        feeAmounts: vec![],
-        feeTokenContracts: vec![],
+        feeAmounts: vec![alloy::core::primitives::U256::from(fee_amount)],
+        feeTokenContracts: vec![alloy::core::primitives::Address::from_slice(
+            &token_contract,
+        )],
         logicContractAddress: alloy::core::primitives::Address::from_slice(&dest_contract),
         maxGas: alloy::core::primitives::U256::from(max_gas),
         payload: alloy::core::primitives::Bytes::from(data.to_vec()),
@@ -1540,6 +1564,7 @@ mod tests {
             transfer_amount,
             message_index,
             max_gas,
+            fee_amount,
             ..
         } = data
         {
@@ -1549,6 +1574,7 @@ mod tests {
                     sigs,
                     logic_call_args(
                         transfer_amount,
+                        fee_amount,
                         token_contract_addr.into(),
                         contract_address,
                         data.as_slice(),
