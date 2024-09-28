@@ -180,7 +180,6 @@ pub enum Command {
     PayToFeePool(PayToFeePoolCmd),
     BabylonRelayer(BabylonRelayerCmd),
     StakeNbtc(StakeNbtcCmd),
-    FrostSigner(FrostSignerCmd),
     #[cfg(feature = "ethereum")]
     RelayEthereum(RelayEthereumCmd),
     #[cfg(feature = "ethereum")]
@@ -251,7 +250,6 @@ impl Command {
                 PayToFeePool(cmd) => cmd.run().await,
                 BabylonRelayer(cmd) => cmd.run().await,
                 StakeNbtc(cmd) => cmd.run().await,
-                FrostSigner(cmd) => cmd.run().await,
                 #[cfg(feature = "ethereum")]
                 RelayEthereum(cmd) => cmd.run().await,
                 #[cfg(feature = "ethereum")]
@@ -1485,7 +1483,12 @@ impl SignerCmd {
 
         let relaunch = relaunch_on_migrate(&self.config);
 
-        futures::try_join!(signer, relaunch).unwrap();
+        let frost_cmd = FrostSignerCmd {
+            config: self.config.clone(),
+        };
+        let frost_signer = frost_cmd.run();
+
+        futures::try_join!(signer, relaunch, frost_signer).unwrap();
 
         Ok(())
     }
