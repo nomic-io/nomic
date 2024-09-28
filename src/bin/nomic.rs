@@ -15,7 +15,7 @@ use alloy::signers::local::LocalSigner;
 use bitcoin::consensus::{Decodable, Encodable};
 #[cfg(feature = "ethereum")]
 use bitcoin::secp256k1::Message;
-use bitcoin::secp256k1::{self};
+use bitcoin::secp256k1::{self, SecretKey};
 
 use bitcoin::util::bip32::ExtendedPubKey;
 use bitcoincore_rpc_async::RpcApi;
@@ -31,10 +31,10 @@ use nomic::bitcoin::signatory::SignatorySet;
 use nomic::bitcoin::Nbtc;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
-use nomic::frost;
 use nomic::frost::signer::SecretStore;
 use nomic::utils::load_bitcoin_key;
 use nomic::utils::load_or_generate;
+use nomic::{babylon, frost};
 use orga::abci::Node;
 use orga::client::wallet::{SimpleWallet, Wallet};
 use orga::coins::{Address, Commission, Decimal, Declaration, Symbol};
@@ -2539,7 +2539,7 @@ pub struct BabylonRelayerCmd {
 }
 
 impl BabylonRelayerCmd {
-    async fn _btc_client(&self) -> Result<BtcClient> {
+    async fn btc_client(&self) -> Result<BtcClient> {
         let rpc_url = format!("http://localhost:{}", self.rpc_port);
         let auth = match (self.rpc_user.clone(), self.rpc_pass.clone()) {
             (Some(user), Some(pass)) => Auth::UserPass(user, pass),
@@ -2554,7 +2554,34 @@ impl BabylonRelayerCmd {
     }
 
     async fn run(&self) -> Result<()> {
-        todo!()
+        let app_client = self.config.client();
+        let btc_client = self.btc_client().await?;
+
+        let staking_confs = async {
+            loop {
+                babylon::relayer::relay_staking_confs(&app_client, &btc_client).await?;
+
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            }
+
+            #[allow(unreachable_code)]
+            Ok::<_, nomic::error::Error>(())
+        };
+
+        let unbonding_confs = async {
+            loop {
+                babylon::relayer::relay_unbonding_confs(&app_client, &btc_client).await?;
+
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            }
+
+            #[allow(unreachable_code)]
+            Ok::<_, nomic::error::Error>(())
+        };
+
+        futures::try_join!(staking_confs, unbonding_confs)?;
+
+        Ok(())
     }
 }
 
