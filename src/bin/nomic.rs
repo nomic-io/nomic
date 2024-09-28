@@ -2840,6 +2840,7 @@ impl RelayEthereumCmd {
                                 contract_address,
                                 data.as_slice(),
                                 max_gas,
+                                fallback_address,
                                 message_index,
                             ),
                         )
