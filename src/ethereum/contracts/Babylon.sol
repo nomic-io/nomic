@@ -49,6 +49,19 @@ contract Babylon is ReentrancyGuard {
         return 0;
     }
 
+    function unstake(uint256 index) external {
+        // TODO: verify that the index is valid
+        // TODO: verify call is being made by the owner of the delegation
+
+        string memory dest = string.concat(
+            '{"type":"unstake","index":"',
+            Strings.toString(index),
+            "}"
+        );
+
+        Nomic(state_nomicContract).sendToNomic(state_tokenContract, dest, 0);
+    }
+
     constructor(bytes32 _id, address _tokenContract, address _nomicContract) {
         state_id = _id;
         state_tokenContract = _tokenContract;
