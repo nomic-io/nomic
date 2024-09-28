@@ -28,7 +28,7 @@ pub async fn relay_staking_confs(
     app_client: &AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned>,
     btc_client: &BitcoinRpcClient,
 ) -> Result<()> {
-    let owners = app_client
+    let (owners, params) = app_client
         .query(|app| {
             let mut owners = vec![];
             for entry in app.babylon.delegations.iter()? {
@@ -37,7 +37,7 @@ pub async fn relay_staking_confs(
                 let owner = Identity::decode(&mut owner.as_slice())?;
                 owners.push(owner);
             }
-            Ok(owners)
+            Ok((owners, app.babylon.params.clone()))
         })
         .await?;
     for owner in owners {
@@ -62,7 +62,7 @@ pub async fn relay_staking_confs(
         );
 
         for del in unconf_dels {
-            maybe_relay_staking_conf(app_client, btc_client, &del).await?;
+            maybe_relay_staking_conf(app_client, btc_client, &del, &params).await?;
         }
     }
 
@@ -73,6 +73,7 @@ pub async fn maybe_relay_staking_conf(
     app_client: &AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned>,
     btc_client: &BitcoinRpcClient,
     del: &Delegation,
+    params: &crate::babylon::Params,
 ) -> Result<bool> {
     if del.staking_outpoint.is_some() {
         log::debug!("Staking tx relayed, continuing");
@@ -97,7 +98,7 @@ pub async fn maybe_relay_staking_conf(
             .await?;
         let proof = ::bitcoin::MerkleBlock::consensus_decode(&mut proof_bytes.as_slice())?.txn;
 
-        let staking_script = del.staking_script()?;
+        let staking_script = del.staking_script(params)?;
         let vout = tx
             .output
             .iter()

@@ -50,7 +50,7 @@ impl Symbol for StakedNbtc {
 #[orga]
 pub struct Babylon {
     pub delegations: Map<Identity, Deque<Delegation>>,
-    // TODO: config
+    pub params: Params,
 }
 
 #[orga]
@@ -92,7 +92,7 @@ impl Babylon {
         let mut staking_tx = BitcoinTx::default();
         staking_tx
             .output
-            .push_back(Adapter::new(del.staking_output()?))?;
+            .push_back(Adapter::new(del.staking_output(&self.params)?))?;
         staking_tx
             .output
             .push_back(Adapter::new(del.op_return_output()?))?;
@@ -122,7 +122,7 @@ impl Babylon {
             .ok_or_else(|| Error::Orga(orga::Error::App("Delegation not found".to_string())))?
             .get_mut(index)?
             .ok_or_else(|| Error::Orga(orga::Error::App("Delegation not found".to_string())))?
-            .unbond(frost, btc)
+            .unbond(frost, btc, &self.params)
     }
 }
 
@@ -241,12 +241,16 @@ pub fn aggregate_scripts(scripts: &[Script]) -> Script {
     bytes.into()
 }
 
+#[orga(skip(Default))]
+#[derive(Debug, Clone)]
 pub struct Params {
-    pub covenant_keys: Vec<XOnlyPublicKey>,
+    pub covenant_keys: LengthVec<u8, [u8; 32]>,
     pub covenant_quorum: u32,
-    pub slashing_addr: bitcoin::Address,
+    pub slashing_script: Adapter<Script>,
     pub slashing_min_fee: u64,
     pub op_return_tag: [u8; 4],
+    pub min_btc_confs: u32,
+    pub slashing_rate: (u32, u32),
 }
 
 impl Params {
@@ -263,14 +267,28 @@ impl Params {
         let slashing_addr = "tb1qv03wm7hxhag6awldvwacy0z42edtt6kwljrhd9";
         let slashing_min_fee = 1_000;
 
-        let op_return_tag = *b"bbb3";
-
         Self {
-            covenant_keys: covenant_keys.iter().map(|k| k.parse().unwrap()).collect(),
+            covenant_keys: covenant_keys
+                .iter()
+                .map(|k| {
+                    let mut key = [0; 32];
+                    let v = hex::decode(k).unwrap();
+                    key.copy_from_slice(&v);
+                    key
+                })
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
             covenant_quorum,
-            slashing_addr: slashing_addr.parse().unwrap(),
+            slashing_script: slashing_addr
+                .parse::<bitcoin::Address>()
+                .unwrap()
+                .script_pubkey()
+                .into(),
             slashing_min_fee,
-            op_return_tag,
+            op_return_tag: *b"bbb3",
+            min_btc_confs: 0,
+            slashing_rate: (11, 100),
         }
     }
 
@@ -285,22 +303,49 @@ impl Params {
         let slashing_addr = "tb1qv03wm7hxhag6awldvwacy0z42edtt6kwljrhd9";
         let slashing_min_fee = 2_000;
 
-        let op_return_tag = *b"bbb4";
-
         Self {
-            covenant_keys: covenant_keys.iter().map(|k| k.parse().unwrap()).collect(),
+            covenant_keys: covenant_keys
+                .iter()
+                .map(|k| {
+                    let mut key = [0; 32];
+                    let v = hex::decode(k).unwrap();
+                    key.copy_from_slice(&v);
+                    key
+                })
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
             covenant_quorum,
-            slashing_addr: slashing_addr.parse().unwrap(),
+            slashing_script: slashing_addr
+                .parse::<bitcoin::Address>()
+                .unwrap()
+                .script_pubkey()
+                .into(),
             slashing_min_fee,
-            op_return_tag,
+            op_return_tag: *b"bbb4",
+            min_btc_confs: 0,
+            slashing_rate: (11, 100),
         }
+    }
+
+    pub fn covenant_keys(&self) -> Vec<XOnlyPublicKey> {
+        self.covenant_keys
+            .iter()
+            .map(|k| XOnlyPublicKey::from_slice(k).unwrap())
+            .collect()
+    }
+}
+
+impl Default for Params {
+    fn default() -> Self {
+        Self::bbn_test_4()
     }
 }
 
 pub fn unbonding_script(staker_key: XOnlyPublicKey, params: &Params) -> Result<Script> {
     Ok(aggregate_scripts(&[
         single_key_script(staker_key, true),
-        multisig_script(&params.covenant_keys, params.covenant_quorum, false)?,
+        multisig_script(&params.covenant_keys(), params.covenant_quorum, false)?,
     ]))
 }
 
@@ -312,7 +357,7 @@ pub fn slashing_script(
     Ok(aggregate_scripts(&[
         single_key_script(staker_key, true),
         multisig_script(fp_keys, 1, true)?,
-        multisig_script(&params.covenant_keys, params.covenant_quorum, false)?,
+        multisig_script(&params.covenant_keys(), params.covenant_quorum, false)?,
     ]))
 }
 
@@ -351,11 +396,12 @@ pub fn slashing_tx(
         witness: Witness::default(),
     };
 
-    let slashing_rate = (11, 100); // TODO: parameterize
-    let slashing_value = (stake_value as u128 * slashing_rate.0 / slashing_rate.1) as u64;
+    let slashing_rate = params.slashing_rate;
+    let slashing_value =
+        (stake_value as u128 * slashing_rate.0 as u128 / slashing_rate.1 as u128) as u64;
     let slashing_out = TxOut {
         value: slashing_value,
-        script_pubkey: params.slashing_addr.script_pubkey(),
+        script_pubkey: (*params.slashing_script).clone(),
     };
 
     let change_key = TaprootBuilder::new()
@@ -525,6 +571,7 @@ impl Delegation {
         proof: PartialMerkleTree,
         tx: Transaction,
         vout: u32,
+        params: &Params,
     ) -> Result<()> {
         if self.status() != DelegationStatus::Created {
             return Err(Error::Orga(orga::Error::App(
@@ -532,8 +579,7 @@ impl Delegation {
             )));
         }
 
-        // TODO: move to config
-        if headers.height()?.saturating_sub(height) < 1 {
+        if headers.height()?.saturating_sub(height) < params.min_btc_confs {
             return Err(Error::Orga(orga::Error::App(
                 "Staking tx is not confirmed".to_string(),
             )));
@@ -577,7 +623,7 @@ impl Delegation {
                 "Staking amount does not match".to_string(),
             ))?;
         }
-        if output.script_pubkey != self.staking_script()? {
+        if output.script_pubkey != self.staking_script(params)? {
             return Err(orga::Error::App(
                 "Staking script pubkey does not match".to_string(),
             ))?;
@@ -593,7 +639,7 @@ impl Delegation {
         Ok(())
     }
 
-    pub fn unbond(&mut self, frost: &mut Frost, btc: &Bitcoin) -> Result<()> {
+    pub fn unbond(&mut self, frost: &mut Frost, btc: &Bitcoin, params: &Params) -> Result<()> {
         assert_eq!(self.status(), DelegationStatus::Staked);
 
         let sigset = btc.checkpoints.active_sigset()?;
@@ -603,8 +649,16 @@ impl Delegation {
 
         let mut group = frost.groups.get_mut(self.frost_group)?.unwrap();
         self.frost_sig_offset.replace(group.signing.len());
-        group.push_message(self.unbonding_withdrawal_sighash()?.to_vec().try_into()?)?;
-        group.push_message(self.staking_unbonding_sighash()?.to_vec().try_into()?)?;
+        group.push_message(
+            self.unbonding_withdrawal_sighash(params)?
+                .to_vec()
+                .try_into()?,
+        )?;
+        group.push_message(
+            self.staking_unbonding_sighash(params)?
+                .to_vec()
+                .try_into()?,
+        )?;
 
         Ok(())
     }
@@ -613,6 +667,7 @@ impl Delegation {
         &mut self,
         staking_unbonding_sig: Signature,
         unbonding_withdrawal_sig: Signature,
+        params: &Params,
     ) -> Result<()> {
         assert_eq!(self.status(), DelegationStatus::SigningUnbond);
 
@@ -628,14 +683,14 @@ impl Delegation {
             Ok(())
         };
 
-        let staking_unbonding_sighash = self.staking_unbonding_sighash()?;
+        let staking_unbonding_sighash = self.staking_unbonding_sighash(params)?;
         verify(
             &staking_unbonding_sighash.into_inner(),
             &staking_unbonding_sig,
         )?;
         self.staking_unbonding_sig = Some(staking_unbonding_sig);
 
-        let unbonding_withdrawal_sighash = self.unbonding_withdrawal_sighash()?;
+        let unbonding_withdrawal_sighash = self.unbonding_withdrawal_sighash(params)?;
         verify(
             &unbonding_withdrawal_sighash.into_inner(),
             &unbonding_withdrawal_sig,
@@ -652,6 +707,7 @@ impl Delegation {
         proof: PartialMerkleTree,
         tx: Transaction,
         vout: u32,
+        params: &Params,
     ) -> Result<()> {
         if self.status() != DelegationStatus::SignedUnbond {
             return Err(Error::Orga(orga::Error::App(
@@ -659,8 +715,7 @@ impl Delegation {
             )));
         }
 
-        // TODO: move to config
-        if headers.height()?.saturating_sub(height) < 1 {
+        if headers.height()?.saturating_sub(height) < params.min_btc_confs {
             return Err(Error::Orga(orga::Error::App(
                 "Unbonding tx is not confirmed".to_string(),
             )));
@@ -704,7 +759,7 @@ impl Delegation {
                 "Staking amount does not match".to_string(),
             ))?;
         }
-        if output.script_pubkey != self.staking_script()? {
+        if output.script_pubkey != self.staking_script(params)? {
             return Err(orga::Error::App(
                 "Staking script pubkey does not match".to_string(),
             ))?;
@@ -721,7 +776,7 @@ impl Delegation {
                 < self.unbonding_height.unwrap() + self.unbonding_period as u32)
     }
 
-    pub fn withdraw(&mut self, btc: &mut Bitcoin) -> Result<()> {
+    pub fn withdraw(&mut self, btc: &mut Bitcoin, params: &Params) -> Result<()> {
         if self.status() != DelegationStatus::ConfirmedUnbond {
             return Err(Error::Orga(orga::Error::App(
                 "Delegation not in ConfirmedUnbond state".to_string(),
@@ -734,7 +789,7 @@ impl Delegation {
             )));
         }
 
-        let withdrawal_tx = self.unbonding_withdrawal_tx()?;
+        let withdrawal_tx = self.unbonding_withdrawal_tx(params)?;
         let withdrawal_outpoint = OutPoint {
             txid: withdrawal_tx.txid(),
             vout: 0,
@@ -788,10 +843,10 @@ impl Delegation {
         }
     }
 
-    pub fn staking_output(&self) -> Result<TxOut> {
+    pub fn staking_output(&self, params: &Params) -> Result<TxOut> {
         Ok(TxOut {
             value: self.stake_sats(),
-            script_pubkey: self.staking_script()?,
+            script_pubkey: self.staking_script(params)?,
         })
     }
 
@@ -802,21 +857,21 @@ impl Delegation {
         })
     }
 
-    pub fn staking_taproot(&self) -> Result<TaprootSpendInfo> {
+    pub fn staking_taproot(&self, params: &Params) -> Result<TaprootSpendInfo> {
         staking_taproot(
             self.btc_key()?,
             &self.fp_keys()?,
             self.staking_period,
-            &Params::bbn_test_4(),
+            params,
         )
     }
 
-    pub fn staking_script(&self) -> Result<Script> {
-        let spend_info = self.staking_taproot()?;
+    pub fn staking_script(&self, params: &Params) -> Result<Script> {
+        let spend_info = self.staking_taproot(params)?;
         Ok(Script::new_v1_p2tr_tweaked(spend_info.output_key()))
     }
 
-    pub fn unbonding_tx(&self) -> Result<Transaction> {
+    pub fn unbonding_tx(&self, params: &Params) -> Result<Transaction> {
         unbonding_tx(
             self.btc_key()?,
             &self.fp_keys()?,
@@ -825,7 +880,7 @@ impl Delegation {
             })?,
             self.stake_sats(),
             self.unbonding_period,
-            &Params::bbn_test_4(),
+            params,
         )
     }
 
@@ -841,14 +896,15 @@ impl Delegation {
         )
     }
 
-    pub fn unbonding_slashing_tx(&self) -> Result<Transaction> {
+    pub fn unbonding_slashing_tx(&self, params: &Params) -> Result<Transaction> {
+        let unbonding_tx = self.unbonding_tx(params)?;
         slashing_tx(
             self.btc_key()?,
             OutPoint {
-                txid: self.unbonding_tx()?.txid(),
+                txid: unbonding_tx.txid(),
                 vout: 0,
             },
-            self.unbonding_tx()?.output[0].value,
+            unbonding_tx.output[0].value,
             self.unbonding_period,
             &Params::bbn_test_4(),
         )
@@ -858,12 +914,13 @@ impl Delegation {
         &self,
         spending_tx: &Transaction,
         input_index: u32,
+        params: &Params,
     ) -> Result<TapSighashHash> {
         let mut sc = SighashCache::new(spending_tx);
         Ok(sc.taproot_script_spend_signature_hash(
             input_index as usize,
             &Prevouts::All(&[&TxOut {
-                script_pubkey: self.staking_script()?,
+                script_pubkey: self.staking_script(params)?,
                 value: self.stake_sats(),
             }]),
             TapLeafHash::from_script(
@@ -874,13 +931,13 @@ impl Delegation {
         )?)
     }
 
-    pub fn staking_unbonding_sighash(&self) -> Result<TapSighashHash> {
-        let unbonding_tx = self.unbonding_tx()?;
+    pub fn staking_unbonding_sighash(&self, params: &Params) -> Result<TapSighashHash> {
+        let unbonding_tx = self.unbonding_tx(params)?;
         let mut sc = SighashCache::new(&unbonding_tx);
         Ok(sc.taproot_script_spend_signature_hash(
             0,
             &Prevouts::All(&[&TxOut {
-                script_pubkey: self.staking_script()?,
+                script_pubkey: self.staking_script(params)?,
                 value: self.stake_sats(),
             }]),
             TapLeafHash::from_script(
@@ -891,26 +948,26 @@ impl Delegation {
         )?)
     }
 
-    pub fn staking_slashing_sighash(&self) -> Result<TapSighashHash> {
+    pub fn staking_slashing_sighash(&self, params: &Params) -> Result<TapSighashHash> {
         let slashing_tx = self.slashing_tx()?;
         let mut sc = SighashCache::new(&slashing_tx);
         Ok(sc.taproot_script_spend_signature_hash(
             0,
             &Prevouts::All(&[&TxOut {
-                script_pubkey: self.staking_script()?,
+                script_pubkey: self.staking_script(params)?,
                 value: self.stake_sats(),
             }]),
             TapLeafHash::from_script(
-                &slashing_script(self.btc_key()?, &self.fp_keys()?, &Params::bbn_test_4())?,
+                &slashing_script(self.btc_key()?, &self.fp_keys()?, params)?,
                 bitcoin::util::taproot::LeafVersion::TapScript,
             ),
             bitcoin::SchnorrSighashType::Default,
         )?)
     }
 
-    pub fn unbonding_withdrawal_sighash(&self) -> Result<TapSighashHash> {
-        let unbonding_tx = self.unbonding_tx()?;
-        let withdrawal_tx = self.unbonding_withdrawal_tx()?;
+    pub fn unbonding_withdrawal_sighash(&self, params: &Params) -> Result<TapSighashHash> {
+        let unbonding_tx = self.unbonding_tx(params)?;
+        let withdrawal_tx = self.unbonding_withdrawal_tx(params)?;
         let mut sc = SighashCache::new(&withdrawal_tx);
         Ok(sc.taproot_script_spend_signature_hash(
             0,
@@ -938,8 +995,8 @@ impl Delegation {
         Ok(data.encode()?)
     }
 
-    pub fn unbonding_withdrawal_tx(&self) -> Result<Transaction> {
-        let unbonding_tx = self.unbonding_tx()?;
+    pub fn unbonding_withdrawal_tx(&self, params: &Params) -> Result<Transaction> {
+        let unbonding_tx = self.unbonding_tx(params)?;
         let unbonding_txid = unbonding_tx.txid();
         let unbonding_vout = 0;
         let unbonding_value = unbonding_tx.output[0].value;
@@ -1089,6 +1146,8 @@ mod tests {
         // tb1p7aunqrcsrr0vrh7w9jcsm82w7c8xlrgererrfc5zae9ejxfupl3st6lal6
         let btc_pubkey = keypair.x_only_public_key().0;
 
+        let params = Params::bbn_test_4();
+
         let mut del = Delegation::new(
             0,
             Identity::default(), // TODO
@@ -1103,7 +1162,7 @@ mod tests {
         )?;
         assert_eq!(del.status(), DelegationStatus::Created);
 
-        let script = del.staking_script().unwrap();
+        let script = del.staking_script(&params).unwrap();
         let addr = bitcoin::Address::from_script(&script, Network::Bitcoin).unwrap();
         dbg!(addr);
 
@@ -1120,7 +1179,7 @@ mod tests {
                 witness: Witness::default(),
             }],
             output: vec![
-                del.staking_output().unwrap(),
+                del.staking_output(&params).unwrap(),
                 del.op_return_output().unwrap(),
                 TxOut {
                     value: 107_135 - 50_000 - (16 * 200),
@@ -1137,7 +1196,7 @@ mod tests {
         };
         println!("staking: {}", hex::encode(tx.serialize()));
 
-        let spend_info = del.staking_taproot().unwrap();
+        let spend_info = del.staking_taproot(&params).unwrap();
         let withdraw_script = timelock_script(del.btc_key()?, del.staking_period as u64);
         let leaf_ver = bitcoin::util::taproot::LeafVersion::TapScript;
         let witness = spend_info
@@ -1168,7 +1227,7 @@ mod tests {
         };
         tx.output[0].value -= tx.size() as u64 * 16;
 
-        let sighash = del.staking_timelock_sighash(&tx, 0).unwrap();
+        let sighash = del.staking_timelock_sighash(&tx, 0, &params).unwrap();
         let message = Message::from_slice(&sighash).unwrap();
         let sig = secp.sign_schnorr(&message, &keypair);
         let mut sig_bytes = [0; 64];
@@ -1243,7 +1302,9 @@ mod tests {
 
         assert_eq!(del.op_return_bytes().unwrap(), hex::decode("62626234008c0d21a8dd59a2a50f7ab8cb94d3034eb2b3d130589168bf7876a30b22c876d803d5a0bb72d71993e435d6c5a70e2aa4db500a62cfaae33c56050deefee64ec00096").unwrap());
         assert_eq!(
-            del.staking_script().unwrap().to_bytes(),
+            del.staking_script(&Params::bbn_test_4())
+                .unwrap()
+                .to_bytes(),
             hex::decode("51202552bc9fe84a0e05f156d127e7d2460bff26541ba56e9f761d2029ee09f3859f")
                 .unwrap(),
         );

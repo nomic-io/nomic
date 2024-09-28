@@ -7,7 +7,7 @@
 #![allow(unused_imports)]
 
 use crate::airdrop::Airdrop;
-use crate::babylon::Babylon;
+use crate::babylon::{self, Babylon, Params};
 use crate::bitcoin::adapter::Adapter;
 use crate::bitcoin::threshold_sig::Signature;
 use crate::bitcoin::{exempt_from_fee, Bitcoin, Nbtc};
@@ -578,6 +578,7 @@ impl InnerApp {
                 proof.into_inner(),
                 tx.into_inner(),
                 vout,
+                &self.babylon.params,
             )?;
 
         Ok(())
