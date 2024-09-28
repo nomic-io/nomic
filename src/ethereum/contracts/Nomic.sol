@@ -22,6 +22,8 @@ error MalformedBatch();
 error InsufficientPower(uint256 cumulativePower, uint256 powerThreshold);
 error BatchTimedOut();
 error LogicCallTimedOut();
+error InvalidLogicCallAddress();
+error FailedLogicCall();
 
 // This is being used purely to avoid stack too deep errors
 struct LogicCallArgs {
@@ -39,6 +41,7 @@ struct LogicCallArgs {
     uint256 timeOut;
     bytes32 invalidationId;
     uint256 invalidationNonce;
+    address fallbackAddress;
 }
 
 // This is used purely to avoid stack too deep errors
@@ -561,34 +564,20 @@ contract Nomic is ReentrancyGuard {
         state_invalidationMapping[_args.invalidationId] = _args
             .invalidationNonce;
 
-        // Send tokens to the logic contract
-        for (uint256 i = 0; i < _args.transferAmounts.length; i++) {
-            IERC20(_args.transferTokenContracts[i]).safeTransfer(
-                _args.logicContractAddress,
-                _args.transferAmounts[i]
-            );
-        }
-
         // Make call to logic contract
-
-        bool success;
-        bytes memory returnData;
-
-        if (_args.logicContractAddress.code.length > 0) {
-            success = false;
-        } else {
-            (bool _success, bytes memory _returnData) = _args
-                .logicContractAddress
-                .call{gas: _args.maxGas}(_args.payload);
-            // TODO: fallback
-            // if (!success) {
-            // IERC20(_args.transferTokenContracts[0]).safeTransfer(
-            //     _args.fallbackAddress,
-            //     _args.transferAmounts[i]
-            // );
-            // }
-            success = _success;
-            returnData = _returnData;
+        (bool success, bytes memory returnData) = address(this).call(
+            abi.encodeWithSignature(
+                "submitLogicCall((address[],uint256[],uint256,uint256,address),(uint8,bytes32,bytes32)[],(uint256[],address[],uint256[],address[],address,bytes,uint256,uint256,bytes32,uint256,address))",
+                _args
+            )
+        );
+        if (!success) {
+            for (uint256 i = 0; i < _args.transferAmounts.length; i++) {
+                IERC20(_args.transferTokenContracts[i]).safeTransfer(
+                    _args.fallbackAddress,
+                    _args.transferAmounts[i]
+                );
+            }
         }
 
         // Send fees to msg.sender
@@ -608,6 +597,27 @@ contract Nomic is ReentrancyGuard {
                 returnData,
                 state_lastEventNonce
             );
+        }
+    }
+
+    function remoteCall(LogicCallArgs memory _args) internal {
+        // Send tokens to the logic contract
+        for (uint256 i = 0; i < _args.transferAmounts.length; i++) {
+            IERC20(_args.transferTokenContracts[i]).safeTransfer(
+                _args.logicContractAddress,
+                _args.transferAmounts[i]
+            );
+        }
+
+        if (_args.logicContractAddress.code.length > 0) {
+            revert InvalidLogicCallAddress();
+        }
+
+        (bool success, bytes memory returnData) = _args
+            .logicContractAddress
+            .call{gas: _args.maxGas}(_args.payload);
+        if (!success) {
+            revert FailedLogicCall();
         }
     }
 
