@@ -746,15 +746,37 @@ mod abci {
                 // TODO: push to pending
                 for (dest, coins, sender) in self.ethereum.take_pending()? {
                     let amount = coins.amount;
-                    if let Err(e) = self.credit_dest(dest.clone(), coins, sender) {
-                        // TODO: this will catch all errors, we only want to catch validation errors
-                        log::debug!(
-                            "Failed to credit transfer to {} (amount: {}, sender: {})",
-                            dest,
-                            amount,
-                            sender,
-                        );
-                        log::debug!("{:?}", e);
+                    if dest.validate(&self.bitcoin, amount).is_ok() {
+                        if let Err(e) = self.credit_dest(dest.clone(), coins, sender) {
+                            // TODO: this will catch all errors, we only want to catch validation
+                            // errors
+                            log::debug!(
+                                "Failed to credit transfer to {} (amount: {}, sender: {})",
+                                dest,
+                                amount,
+                                sender,
+                            );
+                            log::debug!("{:?}", e);
+                        }
+                    } else {
+                        log::debug!("Invalid transfer to {}, {}", dest, amount);
+                        if let Dest::EthAccount {
+                            network,
+                            connection,
+                            address,
+                        } = dest
+                        {
+                            self.ethereum
+                                .networks
+                                .get_mut(network)?
+                                .ok_or_else(|| Error::App("Unknown network".to_string()))?
+                                .connections
+                                .get_mut(connection.into())?
+                                .ok_or_else(|| Error::App("Unknown connection".to_string()))?
+                                .transfer(address.into(), coins)?;
+                        } else {
+                            unreachable!();
+                        }
                     }
                 }
             }

@@ -2879,17 +2879,6 @@ impl RelayEthereumCmd {
                 ._0;
             dbg!(&dest_str, amount, sender);
 
-            let dest = if let Ok(dest) = dest_str.parse() {
-                dest
-            } else {
-                log::debug!("Failed to parse dest");
-                Dest::RewardPool
-            };
-            let sender = Identity::EthAccount {
-                network: self.eth_chainid,
-                connection: bridge_contract.bytes(),
-                address: **sender,
-            };
             // TODO: build proofs
             client
                 .call(
@@ -2899,9 +2888,14 @@ impl RelayEthereumCmd {
                             bridge_contract,
                             (),
                             (),
-                            vec![(nomic_index, dest.clone(), amount, sender)]
-                                .try_into()
-                                .unwrap()
+                            vec![(
+                                nomic_index,
+                                dest_str.clone().try_into().unwrap(),
+                                amount,
+                                **sender
+                            )]
+                            .try_into()
+                            .unwrap()
                         ))
                     },
                     |app| build_call!(app.app_noop()),
