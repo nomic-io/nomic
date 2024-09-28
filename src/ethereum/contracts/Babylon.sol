@@ -15,6 +15,9 @@ contract Babylon is ReentrancyGuard {
     address public immutable state_tokenContract;
     address public immutable state_nomicContract;
 
+    uint256 public state_delegations = 0;
+    mapping(uint256 => address) public state_owners;
+
     function stake(
         uint256 amount,
         bytes32 finalityProvider,
@@ -45,13 +48,18 @@ contract Babylon is ReentrancyGuard {
             amount
         );
 
-        // TODO: return id
-        return 0;
+        uint256 index = state_delegations;
+        state_owners[index] = msg.sender;
+        state_delegations += 1;
+        return index;
     }
 
     function unstake(uint256 index) external {
-        // TODO: verify that the index is valid
-        // TODO: verify call is being made by the owner of the delegation
+        require(index <= state_delegations, "Invalid index");
+        require(
+            state_owners[index] == msg.sender,
+            "Not the owner of the delegation"
+        );
 
         string memory dest = string.concat(
             '{"type":"unstake","index":"',
