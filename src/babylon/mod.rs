@@ -12,7 +12,7 @@ use bitcoin::{
 use bitcoin_script::bitcoin_script as script;
 use ed::{Decode, Encode};
 use orga::{
-    coins::{Coin, Symbol},
+    coins::{Coin, Symbol, Take},
     collections::{Deque, Map},
     encoding::LengthVec,
     macros::Migrate,
@@ -24,7 +24,7 @@ use serde::Serialize;
 use crate::{
     app::{Dest, Identity},
     bitcoin::{
-        checkpoint::{BatchType, BitcoinTx},
+        checkpoint::{BatchType, BitcoinTx, Input},
         header_queue::HeaderQueue,
         Adapter, Bitcoin, Nbtc, SIGSET_THRESHOLD,
     },
@@ -437,6 +437,7 @@ pub enum DelegationStatus {
     SigningUnbond,
     SignedUnbond,
     ConfirmedUnbond,
+    Withdrawn,
 }
 
 #[orga]
@@ -464,6 +465,8 @@ pub struct Delegation {
     pub(crate) unbonding_withdrawal_sig: Option<Signature>,
 
     pub unbonding_height: Option<u32>,
+
+    pub withdraw_checkpoint_index: Option<u32>,
 }
 
 #[orga]
@@ -642,13 +645,137 @@ impl Delegation {
         Ok(())
     }
 
+    pub fn relay_unbonding_tx(
+        &mut self,
+        headers: &HeaderQueue,
+        height: u32,
+        proof: PartialMerkleTree,
+        tx: Transaction,
+        vout: u32,
+    ) -> Result<()> {
+        if self.status() != DelegationStatus::SignedUnbond {
+            return Err(Error::Orga(orga::Error::App(
+                "Delegation not in SignedUnbond state".to_string(),
+            )));
+        }
+
+        // TODO: move to config
+        if headers.height()?.saturating_sub(height) < 1 {
+            return Err(Error::Orga(orga::Error::App(
+                "Unbonding tx is not confirmed".to_string(),
+            )));
+        }
+
+        // TODO: dedupe this with other proof verification calls
+        let header = headers
+            .get_by_height(height)?
+            .ok_or_else(|| Error::Orga(orga::Error::App("Header not found".to_string())))?;
+        let mut txids = vec![];
+        let mut block_indexes = vec![];
+        let proof_merkle_root = proof
+            .extract_matches(&mut txids, &mut block_indexes)
+            .map_err(|_| Error::BitcoinMerkleBlockError)?;
+        if proof_merkle_root != header.merkle_root() {
+            return Err(orga::Error::App(
+                "Bitcoin merkle proof does not match header".to_string(),
+            ))?;
+        }
+        if txids.len() != 1 {
+            return Err(orga::Error::App(
+                "Bitcoin merkle proof contains an invalid number of txids".to_string(),
+            ))?;
+        }
+        if txids[0] != tx.txid() {
+            return Err(orga::Error::App(
+                "Bitcoin merkle proof does not match transaction".to_string(),
+            ))?;
+        }
+
+        if vout as usize >= tx.output.len() {
+            return Err(orga::Error::App(
+                "Output index is out of bounds".to_string(),
+            ))?;
+        }
+        let output = &tx.output[vout as usize];
+
+        if output.value != self.stake_sats() {
+            // TODO: get conversion from config
+            return Err(orga::Error::App(
+                "Staking amount does not match".to_string(),
+            ))?;
+        }
+        if output.script_pubkey != self.staking_script()? {
+            return Err(orga::Error::App(
+                "Staking script pubkey does not match".to_string(),
+            ))?;
+        }
+
+        self.unbonding_height = Some(height);
+
+        Ok(())
+    }
+
+    pub fn can_withdraw(&self, btc: &Bitcoin) -> Result<bool> {
+        Ok(self.status() == DelegationStatus::ConfirmedUnbond
+            && btc.headers.height()?
+                < self.unbonding_height.unwrap() + self.unbonding_period as u32)
+    }
+
+    pub fn withdraw(&mut self, btc: &mut Bitcoin) -> Result<()> {
+        if self.status() != DelegationStatus::ConfirmedUnbond {
+            return Err(Error::Orga(orga::Error::App(
+                "Delegation not in ConfirmedUnbond state".to_string(),
+            )));
+        }
+
+        if !self.can_withdraw(btc)? {
+            return Err(Error::Orga(orga::Error::App(
+                "Unbonding period not over".to_string(),
+            )));
+        }
+
+        let withdrawal_tx = self.unbonding_withdrawal_tx()?;
+        let withdrawal_outpoint = OutPoint {
+            txid: withdrawal_tx.txid(),
+            vout: 0,
+        };
+        let sigset = btc.checkpoints.active_sigset()?;
+        let input = Input::new(
+            withdrawal_outpoint,
+            &sigset,
+            &[0],
+            withdrawal_tx.output[0].value,
+            SIGSET_THRESHOLD,
+        )?;
+
+        let mut building_cp = btc.checkpoints.building_mut()?;
+        building_cp
+            .batches
+            .get_mut(BatchType::Checkpoint as u64)?
+            .unwrap()
+            .front_mut()?
+            .unwrap()
+            .input
+            .push_back(input)?;
+        building_cp.pending.insert(
+            (self.return_dest.clone(), self.owner),
+            self.stake.take(self.stake.amount)?,
+        )?;
+
+        self.withdraw_checkpoint_index = Some(sigset.index);
+
+        Ok(())
+    }
+
     pub fn status(&self) -> DelegationStatus {
         assert_eq!(
             self.staking_outpoint.is_none(),
             self.staking_height.is_none()
         );
 
-        if self.unbonding_height.is_some() {
+        if self.withdraw_checkpoint_index.is_some() {
+            DelegationStatus::Withdrawn
+        } else if self.unbonding_height.is_some() {
             DelegationStatus::ConfirmedUnbond
         } else if self.unbonding_withdrawal_sig.is_some() {
             DelegationStatus::SignedUnbond
