@@ -8,14 +8,16 @@ use bitcoin::{
     Block, BlockHash, TxOut,
 };
 use bitcoincore_rpc_async::{Client as BitcoinRpcClient, RpcApi};
+use ed::{Decode, Encode};
 use orga::{
     call::build_call,
     client::{wallet::Unsigned, AppClient},
+    merk::merk::owner,
     tendermint::client::HttpClient,
 };
 
 use crate::{
-    app::{InnerApp, Nom},
+    app::{Identity, InnerApp, Nom},
     bitcoin::{adapter::Adapter, checkpoint::CheckpointStatus},
     error::{Error, Result},
 };
@@ -26,37 +28,42 @@ pub async fn relay_staking_confs(
     app_client: &AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned>,
     btc_client: &BitcoinRpcClient,
 ) -> Result<()> {
-    let delegations = app_client
+    let owners = app_client
         .query(|app| {
-            for del in app.babylon.delegations.iter()? {
-                del?;
+            let mut owners = vec![];
+            for entry in app.babylon.delegations.iter()? {
+                let (owner, _) = entry?;
+                let owner = owner.encode()?;
+                let owner = Identity::decode(&mut owner.as_slice())?;
+                owners.push(owner);
             }
-
-            Ok(app.babylon.delegations)
+            Ok(owners)
         })
         .await?;
-
-    let delegations = delegations
-        .iter()?
-        .filter_map(|del| match del {
-            Err(err) => Some(Err(err)),
-            Ok(del) => {
-                if del.staking_outpoint.is_some() {
-                    return None;
+    for owner in owners {
+        let unconf_dels = app_client
+            .query(|app| {
+                let mut unconf_dels = vec![];
+                for entry in app.babylon.delegations.get(owner)?.unwrap().iter()? {
+                    let del = entry?.encode()?;
+                    let del = Delegation::decode(&mut del.as_slice())?;
+                    if del.staking_outpoint.is_none() {
+                        unconf_dels.push(del);
+                    }
                 }
-                Some(Ok(del))
-            }
-        })
-        .collect::<orga::Result<Vec<_>>>()?;
+                Ok(unconf_dels)
+            })
+            .await?;
 
-    if delegations.is_empty() {
-        return Ok(());
-    }
+        log::info!(
+            "Found {} unconfirmed delegations for owner {}",
+            unconf_dels.len(),
+            owner,
+        );
 
-    log::info!("Found {} unconfirmed delegations", delegations.len());
-
-    for del in delegations {
-        maybe_relay_staking_conf(app_client, btc_client, &del).await?;
+        for del in unconf_dels {
+            maybe_relay_staking_conf(app_client, btc_client, &del).await?;
+        }
     }
 
     Ok(())
@@ -113,6 +120,7 @@ pub async fn maybe_relay_staking_conf(
             .call(
                 |app| {
                     build_call!(app.relay_btc_staking_tx(
+                        del.owner,
                         del.index,
                         height,
                         Adapter::new(proof.clone()),

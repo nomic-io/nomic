@@ -13,7 +13,7 @@ use bitcoin_script::bitcoin_script as script;
 use ed::{Decode, Encode};
 use orga::{
     coins::{Coin, Symbol},
-    collections::Deque,
+    collections::{Deque, Map},
     encoding::LengthVec,
     macros::Migrate,
     orga,
@@ -49,12 +49,13 @@ impl Symbol for StakedNbtc {
 
 #[orga]
 pub struct Babylon {
-    pub delegations: Deque<Delegation>,
+    pub delegations: Map<Identity, Deque<Delegation>>,
     // TODO: config
 }
 
 #[orga]
 impl Babylon {
+    #[allow(clippy::too_many_arguments)]
     pub fn stake(
         &mut self,
         btc: &mut crate::bitcoin::Bitcoin,
@@ -66,17 +67,16 @@ impl Babylon {
         unbonding_time: u16,
         nbtc: Coin<Nbtc>,
     ) -> Result<u64> {
-        // TODO: record owner
-
         let Some(frost_index) = frost.most_recent_with_key()? else {
             return Err(Error::Orga(orga::Error::App(
                 "Frost not initialized".to_string(),
             )));
         };
         let group_pubkey = frost.group_pubkey(frost_index)?.unwrap();
+        let index = self.delegations.get(owner)?.unwrap_or_default().len();
 
         let del = Delegation::new(
-            self.delegations.len(),
+            index,
             owner,
             return_dest,
             PublicKey::from_slice(&group_pubkey.inner.verifying_key().serialize())?.into(),
@@ -103,8 +103,11 @@ impl Babylon {
             .unwrap()
             .push_back(staking_tx)?;
 
-        self.delegations.push_back(del)?;
-        Ok(self.delegations.len())
+        self.delegations
+            .entry(owner)?
+            .or_insert_default()?
+            .push_back(del)?;
+        Ok(index)
     }
 }
 

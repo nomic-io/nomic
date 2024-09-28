@@ -553,6 +553,7 @@ impl InnerApp {
     #[call]
     pub fn relay_btc_staking_tx(
         &mut self,
+        del_owner: Identity,
         del_index: u64,
         height: u32,
         proof: Adapter<PartialMerkleTree>,
@@ -563,6 +564,8 @@ impl InnerApp {
 
         self.babylon
             .delegations
+            .get_mut(del_owner)?
+            .ok_or_else(|| Error::App("No delegations found with given owner".into()))?
             .get_mut(del_index)?
             .ok_or_else(|| Error::App("Delegation not found".into()))?
             .relay_staking_tx(
