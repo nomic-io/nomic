@@ -713,6 +713,7 @@ pub fn logic_call_args(
     token_contract: [u8; 20],
     dest_contract: [u8; 20],
     data: &[u8],
+    max_gas: u64,
     nonce_id: u64,
 ) -> LogicCallArgs {
     LogicCallArgs {
@@ -723,6 +724,7 @@ pub fn logic_call_args(
         feeAmounts: vec![],
         feeTokenContracts: vec![],
         logicContractAddress: alloy::core::primitives::Address::from_slice(&dest_contract),
+        maxGas: alloy::core::primitives::U256::from(max_gas),
         payload: alloy::core::primitives::Bytes::from(data.to_vec()),
         timeOut: alloy::core::primitives::U256::from(u64::MAX),
         invalidationId: alloy::core::primitives::FixedBytes::from(uint256(nonce_id)), /* TODO: set in msg */
@@ -1415,7 +1417,6 @@ mod tests {
 
     #[tokio::test]
     #[serial_test::serial]
-    #[should_panic]
     async fn contract_call() {
         Context::add(Paid::default());
 
@@ -1436,7 +1437,7 @@ mod tests {
         };
         valset.normalize_vp(u32::MAX as u64);
 
-        let anvil = Anvil::new().try_spawn().unwrap();
+        let _anvil = Anvil::new().try_spawn().unwrap();
         let provider = ProviderBuilder::new()
             .with_recommended_fillers()
             .on_anvil_with_wallet();
@@ -1538,6 +1539,7 @@ mod tests {
             data,
             transfer_amount,
             message_index,
+            max_gas,
             ..
         } = data
         {
@@ -1550,6 +1552,7 @@ mod tests {
                         token_contract_addr.into(),
                         contract_address,
                         data.as_slice(),
+                        max_gas,
                         message_index
                     ),
                 )

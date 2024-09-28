@@ -2810,6 +2810,7 @@ impl RelayEthereumCmd {
                                 token_contract.into(),
                                 contract_address,
                                 data.as_slice(),
+                                max_gas,
                                 message_index,
                             ),
                         )
