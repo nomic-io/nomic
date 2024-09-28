@@ -431,6 +431,7 @@ impl InnerApp {
             Dest::Unstake { index } => {
                 self.babylon
                     .unstake(sender, index, &mut self.frost, &self.bitcoin)?;
+                nbtc.burn();
             }
         };
 

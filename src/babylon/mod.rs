@@ -640,7 +640,11 @@ impl Delegation {
     }
 
     pub fn unbond(&mut self, frost: &mut Frost, btc: &Bitcoin, params: &Params) -> Result<()> {
-        assert_eq!(self.status(), DelegationStatus::Staked);
+        if self.status() != DelegationStatus::Staked {
+            return Err(Error::Orga(orga::Error::App(
+                "Delegation not in Staked state".to_string(),
+            )));
+        }
 
         let sigset = btc.checkpoints.active_sigset()?;
         let script = sigset.output_script(&[0], SIGSET_THRESHOLD)?;
