@@ -21,10 +21,10 @@ use bitcoin::util::bip32::ExtendedPubKey;
 use bitcoincore_rpc_async::RpcApi;
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
-use nomic::app::Dest;
 use nomic::app::IbcDest;
 use nomic::app::InnerApp;
 use nomic::app::Nom;
+use nomic::app::{Dest, Identity};
 use nomic::bitcoin::adapter::Adapter;
 use nomic::bitcoin::matches_bitcoin_network;
 use nomic::bitcoin::signatory::SignatorySet;
@@ -2871,14 +2871,14 @@ impl RelayEthereumCmd {
                 .unwrap()
                 ._0
                 .to();
-            dbg!(&dest_str, amount);
+            let sender = contract
+                .state_returnSenders(alloy::core::primitives::U256::from(nomic_index))
+                .call()
+                .await
+                .unwrap()
+                ._0;
+            dbg!(&dest_str, amount, sender);
 
-            let dest = if let Ok(dest) = dest_str.parse() {
-                dest
-            } else {
-                log::debug!("Failed to parse dest");
-                Dest::RewardPool
-            };
             // TODO: build proofs
             client
                 .call(
@@ -2888,9 +2888,14 @@ impl RelayEthereumCmd {
                             bridge_contract,
                             (),
                             (),
-                            vec![(nomic_index, dest.clone(), amount)]
-                                .try_into()
-                                .unwrap()
+                            vec![(
+                                nomic_index,
+                                dest_str.clone().try_into().unwrap(),
+                                amount,
+                                **sender
+                            )]
+                            .try_into()
+                            .unwrap()
                         ))
                     },
                     |app| build_call!(app.app_noop()),

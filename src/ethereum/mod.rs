@@ -4,6 +4,7 @@ use bitcoin::secp256k1::{
     ecdsa::{RecoverableSignature, RecoveryId},
     Message, PublicKey, Secp256k1,
 };
+use orga::encoding::LengthString;
 use orga::query::MethodQuery;
 use std::collections::BTreeSet;
 
@@ -22,6 +23,7 @@ use orga::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::app::Identity;
 use crate::bitcoin::signatory::derive_pubkey;
 use crate::bitcoin::Xpub;
 use crate::{
@@ -84,7 +86,7 @@ impl Ethereum {
         Ok(())
     }
 
-    pub fn take_pending(&mut self) -> Result<Vec<(Dest, Coin<Nbtc>)>> {
+    pub fn take_pending(&mut self) -> Result<Vec<(Dest, Coin<Nbtc>, Identity)>> {
         let ids: Vec<_> = self
             .networks
             .iter()?
@@ -106,7 +108,9 @@ impl Ethereum {
         consensus_proof: (),
         account_proof: (),
         // TODO: storage_proofs: LengthVec<u16, (LengthVec<u8, u8>, u64)>,
-        returns: LengthVec<u16, (u64, Dest, u64)>, // TODO: don't include data, just state proof
+        returns: LengthVec<u16, (u64, LengthString<u16>, u64, [u8; 20])>, /* TODO: don't include
+                                                                           * data, just
+                                                                           * state proof */
     ) -> Result<()> {
         exempt_from_fee()?;
 
@@ -119,7 +123,7 @@ impl Ethereum {
             .get_mut(connection)?
             .ok_or_else(|| Error::App("connection not found".to_string()))?;
 
-        conn.relay_return(consensus_proof, account_proof, returns)
+        conn.relay_return(network, consensus_proof, account_proof, returns)
     }
 
     #[call]
@@ -267,7 +271,7 @@ impl Network {
         Ok(())
     }
 
-    pub fn take_pending(&mut self) -> Result<Vec<(Dest, Coin<Nbtc>)>> {
+    pub fn take_pending(&mut self) -> Result<Vec<(Dest, Coin<Nbtc>, Identity)>> {
         let addrs: Vec<_> = self
             .connections
             .iter()?
@@ -295,7 +299,7 @@ pub struct Connection {
     pub return_index: u64,
 
     pub outbox: Deque<OutMessage>,
-    pub pending: Deque<(Dest, Coin<Nbtc>)>,
+    pub pending: Deque<(Dest, Coin<Nbtc>, Identity)>,
     pub coins: Coin<Nbtc>,
     pub valset: SignatorySet,
 }
@@ -396,7 +400,7 @@ impl Connection {
         Ok(())
     }
 
-    pub fn take_pending(&mut self) -> Result<Vec<(Dest, Coin<Nbtc>)>> {
+    pub fn take_pending(&mut self) -> Result<Vec<(Dest, Coin<Nbtc>, Identity)>> {
         let mut pending = Vec::new();
         while let Some(entry) = self.pending.pop_front()? {
             pending.push(entry.into_inner());
@@ -413,13 +417,15 @@ impl Connection {
         Ok(())
     }
 
-    #[call]
     pub fn relay_return(
         &mut self,
+        network: u32,
         _consensus_proof: (),
         _account_proof: (),
         // TODO: storage_proofs: LengthVec<u16, (LengthVec<u8, u8>, u64)>,
-        returns: LengthVec<u16, (u64, Dest, u64)>, // TODO: don't include data, just state proof
+        returns: LengthVec<u16, (u64, LengthString<u16>, u64, [u8; 20])>, /* TODO: don't include
+                                                                           * data, just
+                                                                           * state proof */
     ) -> Result<()> {
         exempt_from_fee()?;
 
@@ -446,9 +452,20 @@ impl Connection {
         // TODO: validate state proofs (account proof, storage proofs)
 
         // TODO: validate return entry indexes
-        for (_, dest, amount) in returns.iter().cloned() {
+        for (_, dest, amount, sender_addr) in returns.iter().cloned() {
             let coins = self.coins.take(amount)?;
-            self.pending.push_back((dest, coins))?;
+            let sender_id = Identity::EthAccount {
+                network,
+                connection: self.bridge_contract.bytes(),
+                address: sender_addr,
+            };
+            match dest.parse() {
+                Ok(dest) => self.pending.push_back((dest, coins, sender_id))?,
+                Err(e) => {
+                    log::debug!("failed to parse dest: {}, {}", dest.as_str(), e);
+                    self.transfer(sender_addr.into(), coins)?;
+                }
+            }
             self.return_index += 1;
         }
 
@@ -1586,14 +1603,19 @@ mod tests {
         // TODO
         ethereum
             .relay_return(
+                123,
                 (),
                 (),
                 vec![(
                     0,
                     Dest::NativeAccount {
                         address: Address::from_pubkey([0; 33]),
-                    },
+                    }
+                    .to_string()
+                    .try_into()
+                    .unwrap(),
                     500_000,
+                    [0; 20],
                 )]
                 .try_into()
                 .unwrap(),

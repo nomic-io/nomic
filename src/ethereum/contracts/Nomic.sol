@@ -81,6 +81,7 @@ contract Nomic is ReentrancyGuard {
     uint256 public state_lastReturnNonce = 0;
     mapping(uint256 => string) public state_returnDests;
     mapping(uint256 => uint256) public state_returnAmounts;
+    mapping(uint256 => address) public state_returnSenders;
 
     // This is set once at initialization
     bytes32 public immutable state_gravityId;
@@ -628,6 +629,7 @@ contract Nomic is ReentrancyGuard {
         uint256 i = state_lastReturnNonce;
         state_returnAmounts[i] = transferredAmount;
         state_returnDests[i] = _destination;
+        state_returnSenders[i] = msg.sender;
         state_lastReturnNonce = state_lastReturnNonce + 1;
 
         // emit to Cosmos the actual amount our balance has changed, rather than the user

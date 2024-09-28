@@ -4,7 +4,7 @@
 use self::checkpoint::Input;
 use self::recovery::{RecoveryTxInput, RecoveryTxs};
 use self::threshold_sig::Signature;
-use crate::app::Dest;
+use crate::app::{Dest, Identity};
 use crate::bitcoin::checkpoint::BatchType;
 use crate::error::{Error, Result};
 use bitcoin::hashes::Hash;
@@ -613,12 +613,13 @@ impl Bitcoin {
 
         if !dest.is_fee_exempt() {
             let deposit_fee = nbtc.take(calc_deposit_fee(nbtc.amount.into()))?;
-            self.insert_pending(Dest::RewardPool, deposit_fee)?;
+            self.insert_pending(Dest::RewardPool, deposit_fee, Identity::None)?;
         }
 
         let validation = dest.validate(self, nbtc.amount);
         if validation.is_ok() {
-            self.insert_pending(dest, nbtc)?;
+            let sender = dest.to_identity();
+            self.insert_pending(dest, nbtc, sender)?;
         } else {
             log::debug!(
                 "Skipped inserting deposit destination due to error: {:?}",
@@ -797,16 +798,23 @@ impl Bitcoin {
     /// Transfers will be processed once the containing checkpoint is finished
     /// being signed, but will be represented in the checkpoint's emergency
     /// disbursal before they are processed.
-    pub fn insert_pending(&mut self, dest: Dest, coins: Coin<Nbtc>) -> Result<()> {
+    pub fn insert_pending(
+        &mut self,
+        dest: Dest,
+        coins: Coin<Nbtc>,
+        sender: Identity,
+    ) -> Result<()> {
         dest.validate(self, coins.amount)?;
 
         let building = &mut self.checkpoints.building_mut()?;
         let mut amount = building
             .pending
-            .remove(dest.clone())?
+            .remove((dest.clone(), sender))?
             .map_or(0.into(), |c| c.amount);
         amount = (amount + coins.amount).result()?;
-        building.pending.insert(dest, Coin::mint(amount))?;
+        building
+            .pending
+            .insert((dest, sender), Coin::mint(amount))?;
 
         Ok(())
     }
@@ -829,7 +837,8 @@ impl Bitcoin {
 
         let dest = Dest::NativeAccount { address: to };
         let coins = self.accounts.withdraw(signer, amount)?;
-        self.insert_pending(dest, coins)?;
+        let sender = dest.to_identity();
+        self.insert_pending(dest, coins, sender)?;
 
         Ok(())
     }
@@ -1047,7 +1056,7 @@ impl Bitcoin {
     ///
     /// This should be used to process the pending transfers, crediting each of
     /// them now that the checkpoint has been fully signed.
-    pub fn take_pending(&mut self) -> Result<Vec<(Dest, Coin<Nbtc>)>> {
+    pub fn take_pending(&mut self) -> Result<Vec<(Dest, Coin<Nbtc>, Identity)>> {
         if let Err(Error::Orga(OrgaError::App(err))) = self.checkpoints.last_completed_index() {
             if err == "No completed checkpoints yet" {
                 return Ok(vec![]);
@@ -1058,14 +1067,17 @@ impl Bitcoin {
         let pending = &mut self.checkpoints.last_completed_mut()?.pending;
         let keys = pending
             .iter()?
-            .map(|entry| entry.map(|(dest, _)| dest.clone()).map_err(Error::from))
-            .collect::<Result<Vec<Dest>>>()?;
-        let mut dests = vec![];
-        for dest in keys {
-            let coins = pending.remove(dest.clone())?.unwrap().into_inner();
-            dests.push((dest, coins));
+            .map(|entry| entry.map(|(k, _)| k.clone()).map_err(Error::from))
+            .collect::<Result<Vec<_>>>()?;
+        let mut transfers = vec![];
+        for (dest, sender) in keys {
+            let coins = pending
+                .remove((dest.clone(), sender))?
+                .unwrap()
+                .into_inner();
+            transfers.push((dest, coins, sender));
         }
-        Ok(dests)
+        Ok(transfers)
     }
 
     pub fn give_miner_fee(&mut self, coin: Coin<Nbtc>) -> Result<()> {

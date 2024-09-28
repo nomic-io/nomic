@@ -22,6 +22,7 @@ use orga::{
 use serde::Serialize;
 
 use crate::{
+    app::{Dest, Identity},
     bitcoin::{
         checkpoint::{BatchType, BitcoinTx},
         header_queue::HeaderQueue,
@@ -58,6 +59,8 @@ impl Babylon {
         &mut self,
         btc: &mut crate::bitcoin::Bitcoin,
         frost: &mut crate::frost::Frost,
+        owner: Identity,
+        return_dest: Dest,
         finality_provider: [u8; 32],
         staking_time: u16,
         unbonding_time: u16,
@@ -74,6 +77,8 @@ impl Babylon {
 
         let del = Delegation::new(
             self.delegations.len(),
+            owner,
+            return_dest,
             PublicKey::from_slice(&group_pubkey.inner.verifying_key().serialize())?.into(),
             frost_index,
             vec![XOnlyPublicKey::from_slice(&finality_provider)?],
@@ -420,6 +425,8 @@ pub enum DelegationStatus {
 #[derive(Debug)]
 pub struct Delegation {
     pub index: u64,
+    pub owner: Identity,
+    pub return_dest: Dest,
     pub btc_key: XOnlyPubkey,
     pub frost_group: u64,
     pub fp_keys: LengthVec<u8, XOnlyPubkey>,
@@ -445,6 +452,8 @@ impl Delegation {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         index: u64,
+        owner: Identity,
+        return_dest: Dest,
         btc_key: XOnlyPublicKey,
         frost_group: u64,
         fp_keys: Vec<XOnlyPublicKey>,
@@ -455,6 +464,8 @@ impl Delegation {
     ) -> Result<Self> {
         Ok(Self {
             index,
+            owner,
+            return_dest,
             btc_key: btc_key.serialize(),
             frost_group,
             fp_keys: fp_keys
@@ -931,6 +942,8 @@ mod tests {
 
         let mut del = Delegation::new(
             0,
+            Identity::default(), // TODO
+            Dest::default(),     // TODO
             btc_pubkey,
             0,
             vec![XOnlyPublicKey::from_keypair(&keypair).0],
@@ -1067,6 +1080,8 @@ mod tests {
         .unwrap()];
         let del = Delegation::new(
             0,
+            Identity::default(), // TODO
+            Dest::default(),     // TODO
             btc_key,
             0,
             fp_keys,

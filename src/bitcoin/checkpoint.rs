@@ -6,10 +6,13 @@ use super::{
     threshold_sig::{Signature, ThresholdSig},
     Xpub,
 };
-use crate::error::{Error, Result};
 use crate::{
     app::Dest,
     bitcoin::{signatory::derive_pubkey, Nbtc},
+};
+use crate::{
+    app::Identity,
+    error::{Error, Result},
 };
 use bitcoin::{blockdata::transaction::EcdsaSighashType, Sequence, Transaction, TxIn, TxOut};
 use bitcoin::{hashes::Hash, Script};
@@ -484,7 +487,7 @@ pub struct Checkpoint {
     /// disbursal.
     ///
     /// These transfers can be initiated by a simple nBTC send or by a deposit.
-    pub pending: Map<Dest, Coin<Nbtc>>,
+    pub pending: Map<(Dest, Identity), Coin<Nbtc>>,
 
     /// The fee rate to use when calculating the miner fee for the transactions
     /// in the checkpoint, in satoshis per virtual byte.
@@ -1399,10 +1402,11 @@ impl<'a> BuildingCheckpointMut<'a> {
                 .pending
                 .iter()?
                 .filter_map(|entry| {
-                    let (dest, coins) = match entry {
+                    let (dest_sender, coins) = match entry {
                         Err(err) => return Some(Err(err.into())),
                         Ok(entry) => entry,
                     };
+                    let (dest, _) = dest_sender.clone();
                     let script_pubkey = match dest.to_output_script(recovery_scripts) {
                         Err(err) => return Some(Err(err.into())),
                         Ok(maybe_script) => maybe_script,
