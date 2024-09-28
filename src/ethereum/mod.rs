@@ -729,6 +729,7 @@ pub fn call_hash(
     keccak256(bytes).0
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn logic_call_args(
     transfer_amount: u64,
     fee_amount: u64,
@@ -736,6 +737,7 @@ pub fn logic_call_args(
     dest_contract: [u8; 20],
     data: &[u8],
     max_gas: u64,
+    fallback_address: [u8; 20],
     nonce_id: u64,
 ) -> LogicCallArgs {
     LogicCallArgs {
@@ -748,6 +750,7 @@ pub fn logic_call_args(
             &token_contract,
         )],
         logicContractAddress: alloy::core::primitives::Address::from_slice(&dest_contract),
+        fallbackAddress: alloy::core::primitives::Address::from_slice(&fallback_address),
         maxGas: alloy::core::primitives::U256::from(max_gas),
         payload: alloy::core::primitives::Bytes::from(data.to_vec()),
         timeOut: alloy::core::primitives::U256::from(u64::MAX),
@@ -1521,9 +1524,9 @@ mod tests {
                     .to_vec()
                     .try_into()
                     .unwrap(),
-                100_000,
-                [0; 20],
-                Nbtc::mint(1_000_000),
+                10_000,
+                [123; 20],
+                Nbtc::mint(18_000_000_000),
             )
             .unwrap();
         assert_eq!(ethereum.outbox.len(), 1);
@@ -1565,7 +1568,7 @@ mod tests {
             message_index,
             max_gas,
             fee_amount,
-            ..
+            fallback_address,
         } = data
         {
             dbg!(contract
@@ -1579,6 +1582,7 @@ mod tests {
                         contract_address,
                         data.as_slice(),
                         max_gas,
+                        fallback_address,
                         message_index
                     ),
                 )
