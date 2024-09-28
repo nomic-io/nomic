@@ -710,7 +710,6 @@ impl Delegation {
         height: u32,
         proof: PartialMerkleTree,
         tx: Transaction,
-        vout: u32,
         params: &Params,
     ) -> Result<()> {
         if self.status() != DelegationStatus::SignedUnbond {
@@ -749,24 +748,10 @@ impl Delegation {
                 "Bitcoin merkle proof does not match transaction".to_string(),
             ))?;
         }
-
-        if vout as usize >= tx.output.len() {
-            return Err(orga::Error::App(
-                "Output index is out of bounds".to_string(),
-            ))?;
-        }
-        let output = &tx.output[vout as usize];
-
-        if output.value != self.stake_sats() {
-            // TODO: get conversion from config
-            return Err(orga::Error::App(
-                "Staking amount does not match".to_string(),
-            ))?;
-        }
-        if output.script_pubkey != self.staking_script(params)? {
-            return Err(orga::Error::App(
-                "Staking script pubkey does not match".to_string(),
-            ))?;
+        if tx.txid() != self.unbonding_tx(params)?.txid() {
+            return Err(Error::Orga(orga::Error::App(
+                "Proven tx is not expected unbonding tx".to_string(),
+            )));
         }
 
         self.unbonding_height = Some(height);

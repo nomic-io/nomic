@@ -600,6 +600,35 @@ impl InnerApp {
         Ok(())
     }
 
+    // TODO: move into babylon module, get HeaderQueue via context
+    #[call]
+    pub fn relay_btc_unbonding_tx(
+        &mut self,
+        del_owner: Identity,
+        del_index: u64,
+        height: u32,
+        proof: Adapter<PartialMerkleTree>,
+        tx: Adapter<Transaction>,
+    ) -> Result<()> {
+        exempt_from_fee()?;
+
+        self.babylon
+            .delegations
+            .get_mut(del_owner)?
+            .ok_or_else(|| Error::App("No delegations found with given owner".into()))?
+            .get_mut(del_index)?
+            .ok_or_else(|| Error::App("Delegation not found".into()))?
+            .relay_unbonding_tx(
+                &self.bitcoin.headers,
+                height,
+                proof.into_inner(),
+                tx.into_inner(),
+                &self.babylon.params,
+            )?;
+
+        Ok(())
+    }
+
     #[call]
     pub fn eth_create_connection(
         &mut self,

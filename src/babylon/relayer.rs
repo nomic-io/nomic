@@ -12,12 +12,12 @@ use ed::{Decode, Encode};
 use orga::{
     call::build_call,
     client::{wallet::Unsigned, AppClient},
-    merk::merk::owner,
     tendermint::client::HttpClient,
 };
 
 use crate::{
     app::{Identity, InnerApp, Nom},
+    babylon::DelegationStatus,
     bitcoin::{adapter::Adapter, checkpoint::CheckpointStatus},
     error::{Error, Result},
 };
@@ -127,6 +127,91 @@ pub async fn maybe_relay_staking_conf(
                         Adapter::new(proof.clone()),
                         tx.clone(),
                         vout
+                    ))
+                },
+                |app| build_call!(app.app_noop()),
+            )
+            .await?;
+    }
+
+    Ok(false)
+}
+
+pub async fn relay_unbonding_confs(
+    app_client: &AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned>,
+    btc_client: &BitcoinRpcClient,
+) -> Result<()> {
+    let (owners, params) = app_client
+        .query(|app| {
+            let mut owners = vec![];
+            for entry in app.babylon.delegations.iter()? {
+                let (owner, _) = entry?;
+                let owner = owner.encode()?;
+                let owner = Identity::decode(&mut owner.as_slice())?;
+                owners.push(owner);
+            }
+            Ok((owners, app.babylon.params.clone()))
+        })
+        .await?;
+    for owner in owners {
+        let unconf_dels = app_client
+            .query(|app| {
+                let mut unconf_dels = vec![];
+                for entry in app.babylon.delegations.get(owner)?.unwrap().iter()? {
+                    let del = entry?.encode()?;
+                    let del = Delegation::decode(&mut del.as_slice())?;
+                    if del.status() == DelegationStatus::SignedUnbond {
+                        unconf_dels.push(del);
+                    }
+                }
+                Ok(unconf_dels)
+            })
+            .await?;
+
+        log::info!(
+            "Found {} SignedUnbond delegations for owner {}",
+            unconf_dels.len(),
+            owner,
+        );
+
+        for del in unconf_dels {
+            maybe_relay_unbonding_conf(app_client, btc_client, &del, &params).await?;
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn maybe_relay_unbonding_conf(
+    app_client: &AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned>,
+    btc_client: &BitcoinRpcClient,
+    del: &Delegation,
+    params: &crate::babylon::Params,
+) -> Result<bool> {
+    if del.unbonding_height.is_some() {
+        log::debug!("Unbonding tx relayed, continuing");
+        return Ok(true);
+    }
+
+    let tx = del.unbonding_tx(params)?;
+
+    let maybe_conf = scan_for_txid(btc_client, tx.txid(), 100).await?;
+    if let Some((height, block_hash)) = maybe_conf {
+        let proof_bytes = btc_client
+            .get_tx_out_proof(&[tx.txid()], Some(&block_hash))
+            .await?;
+        let proof = ::bitcoin::MerkleBlock::consensus_decode(&mut proof_bytes.as_slice())?.txn;
+
+        log::info!("Submitting unbonding tx proof...");
+        app_client
+            .call(
+                |app| {
+                    build_call!(app.relay_btc_unbonding_tx(
+                        del.owner,
+                        del.index,
+                        height,
+                        Adapter::new(proof.clone()),
+                        Adapter::new(tx.clone())
                     ))
                 },
                 |app| build_call!(app.app_noop()),
