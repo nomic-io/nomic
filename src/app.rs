@@ -428,6 +428,10 @@ impl InnerApp {
                     nbtc,
                 )?;
             }
+            Dest::Unstake { index } => {
+                self.babylon
+                    .unstake(sender, index, &mut self.frost, &self.bitcoin)?;
+            }
         };
 
         Ok(())
@@ -1527,6 +1531,9 @@ pub enum Dest {
         staking_period: u16,
         unbonding_period: u16,
     },
+    Unstake {
+        index: u64,
+    },
 }
 
 mod address_or_script {
@@ -1656,11 +1663,12 @@ impl Dest {
             } => hex::encode(address),
             // #[cfg(feature = "ethereum")]
             // Dest::EthCall(_, addr) => addr.to_string(),
-            Dest::Bitcoin { data } => return None,
+            Dest::Bitcoin { .. } => return None,
             Dest::Stake { return_dest, .. } => {
                 let return_dest: Dest = return_dest.parse().ok()?;
                 return return_dest.to_receiver_addr();
             }
+            Dest::Unstake { .. } => return None,
         })
     }
 
@@ -1710,7 +1718,11 @@ impl Dest {
                 staking_period,
                 unbonding_period,
             } => {
-                // TODO
+                // TODO: check that the return_dest is valid and that periods
+                // are within bounds
+            }
+            Dest::Unstake { index } => {
+                // TODO: check that the index is valid
             }
         }
 

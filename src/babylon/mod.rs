@@ -26,7 +26,7 @@ use crate::{
     bitcoin::{
         checkpoint::{BatchType, BitcoinTx},
         header_queue::HeaderQueue,
-        Adapter, Nbtc,
+        Adapter, Bitcoin, Nbtc, SIGSET_THRESHOLD,
     },
     error::{Error, Result},
     frost::Frost,
@@ -108,6 +108,21 @@ impl Babylon {
             .or_insert_default()?
             .push_back(del)?;
         Ok(index)
+    }
+
+    pub fn unstake(
+        &mut self,
+        owner: Identity,
+        index: u64,
+        frost: &mut Frost,
+        btc: &Bitcoin,
+    ) -> Result<()> {
+        self.delegations
+            .get_mut(owner)?
+            .ok_or_else(|| Error::Orga(orga::Error::App("Delegation not found".to_string())))?
+            .get_mut(index)?
+            .ok_or_else(|| Error::Orga(orga::Error::App("Delegation not found".to_string())))?
+            .unbond(frost, btc)
     }
 }
 
@@ -442,6 +457,7 @@ pub struct Delegation {
     pub staking_height: Option<u32>,
 
     // TODO: handle different types of spends (timelock vs unbonding vs slashed)
+    pub withdrawal_sigset_index: Option<u32>,
     pub withdrawal_script_pubkey: Option<crate::bitcoin::adapter::Adapter<Script>>,
     pub frost_sig_offset: Option<u64>,
     pub(crate) staking_unbonding_sig: Option<Signature>,
@@ -574,10 +590,13 @@ impl Delegation {
         Ok(())
     }
 
-    pub fn unbond(&mut self, frost: &mut Frost, dest: Script) -> Result<()> {
+    pub fn unbond(&mut self, frost: &mut Frost, btc: &Bitcoin) -> Result<()> {
         assert_eq!(self.status(), DelegationStatus::Staked);
 
-        self.withdrawal_script_pubkey = Some(dest.into());
+        let sigset = btc.checkpoints.active_sigset()?;
+        let script = sigset.output_script(&[0], SIGSET_THRESHOLD)?;
+        self.withdrawal_sigset_index = Some(sigset.index);
+        self.withdrawal_script_pubkey = Some(script.into());
 
         let mut group = frost.groups.get_mut(self.frost_group)?.unwrap();
         self.frost_sig_offset.replace(group.signing.len());
