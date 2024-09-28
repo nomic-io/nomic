@@ -1,0 +1,50 @@
+syntax = "proto3";
+package babylon.btcstaking.v1;
+
+import "gogoproto/gogo.proto";
+import "babylon/btcstaking/v1/btcstaking.proto";
+
+option go_package = "github.com/babylonchain/babylon/x/btcstaking/types";
+
+// EventNewFinalityProvider is the event emitted when a finality provider is created
+message EventNewFinalityProvider { FinalityProvider fp = 1; }
+
+// EventBTCDelegationStateUpdate is the event emitted when a BTC delegation's state is
+// updated. There are the following possible state transitions:
+// - non-existing -> pending, which happens upon `MsgCreateBTCDelegation`
+// - pending -> active, which happens upon `MsgAddCovenantSigs`
+// - active -> unbonded, which happens upon `MsgBTCUndelegate` or upon staking tx timelock expires
+message EventBTCDelegationStateUpdate { 
+  // staking_tx_hash is the hash of the staking tx.
+  // It uniquely identifies a BTC delegation
+  string staking_tx_hash = 1;
+  // new_state is the new state of this BTC delegation
+  BTCDelegationStatus new_state = 2;
+}
+
+// EventSelectiveSlashing is the event emitted when an adversarial 
+// finality provider selectively slashes a BTC delegation. This will
+// result in slashing of all BTC delegations under this finality provider.
+message EventSelectiveSlashing {
+  // evidence is the evidence of selective slashing
+  SelectiveSlashingEvidence evidence = 1;
+}
+
+// EventPowerDistUpdate is an event that affects voting power distirbution
+// of BTC staking protocol
+message EventPowerDistUpdate {
+  // EventSlashedFinalityProvider defines an event that a finality provider
+  // is slashed
+  // TODO: unify with existing slashing events
+  message EventSlashedFinalityProvider {
+    bytes pk = 1 [ (gogoproto.customtype) = "github.com/babylonchain/babylon/types.BIP340PubKey" ];
+  }
+
+  // ev is the event that affects voting power distribution
+  oneof ev {
+    // slashed_fp means a finality provider is slashed
+    EventSlashedFinalityProvider slashed_fp = 1;
+    // btc_del_state_update means a BTC delegation's state is updated
+    EventBTCDelegationStateUpdate btc_del_state_update = 2;
+  }
+}

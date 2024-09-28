@@ -4,12 +4,13 @@ use bitcoin::secp256k1::{
     ecdsa::{RecoverableSignature, RecoveryId},
     Message, PublicKey, Secp256k1,
 };
-use std::u64;
+use orga::query::MethodQuery;
+use std::collections::BTreeSet;
 
 use ed::{Decode, Encode};
 use orga::{
     coins::{Address, Coin, Give, Take},
-    collections::{ChildMut, Deque, Ref},
+    collections::{ChildMut, Deque, Map, Ref},
     describe::Describe,
     encoding::LengthVec,
     migrate::Migrate,
@@ -21,6 +22,8 @@ use orga::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::bitcoin::signatory::derive_pubkey;
+use crate::bitcoin::Xpub;
 use crate::{
     app::Dest,
     bitcoin::{
@@ -33,17 +36,23 @@ use crate::{
 };
 
 sol!(
+    #[allow(clippy::too_many_arguments)]
     #[allow(missing_docs)]
     #[sol(rpc)]
     bridge_contract,
-    "src/ethereum/Nomic.json",
+    "src/ethereum/contracts/Nomic.json",
 );
 use bridge_contract::{LogicCallArgs, ValsetArgs};
 
+sol!(
+    #[allow(missing_docs)]
+    #[sol(rpc)]
+    babylon_contract,
+    "src/ethereum/contracts/Babylon.json",
+);
+
 // TODO: message ttl/pruning
 // TODO: multi-token support
-// TODO: network muxing
-// TODO: remote contract muxing
 // TODO: call fees
 // TODO: bounceback on failed transfers
 // TODO: fallback to address on failed contract calls
@@ -56,6 +65,225 @@ pub const WHITELISTED_RELAYER_ADDR: &str = "nomic124j0ky0luh9jzqh9w2dk77cze9v0ck
 
 #[orga]
 pub struct Ethereum {
+    pub networks: Map<u32, Network>,
+}
+
+#[orga]
+impl Ethereum {
+    pub fn step(&mut self, active_sigset: &SignatorySet) -> Result<()> {
+        let ids: Vec<_> = self
+            .networks
+            .iter()?
+            .map(|e| Ok(*e?.0))
+            .collect::<Result<_>>()?;
+        for id in ids {
+            let mut net = self.networks.get_mut(id)?.unwrap();
+            net.step(active_sigset)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn take_pending(&mut self) -> Result<Vec<(Dest, Coin<Nbtc>)>> {
+        let ids: Vec<_> = self
+            .networks
+            .iter()?
+            .map(|e| Ok(*e?.0))
+            .collect::<Result<_>>()?;
+        let mut pending = vec![];
+        for id in ids {
+            let mut net = self.networks.get_mut(id)?.unwrap();
+            pending.extend(net.take_pending()?);
+        }
+        Ok(pending)
+    }
+
+    #[call]
+    pub fn relay_return(
+        &mut self,
+        network: u32,
+        connection: Address,
+        consensus_proof: (),
+        account_proof: (),
+        // TODO: storage_proofs: LengthVec<u16, (LengthVec<u8, u8>, u64)>,
+        returns: LengthVec<u16, (u64, Dest, u64)>, // TODO: don't include data, just state proof
+    ) -> Result<()> {
+        exempt_from_fee()?;
+
+        let mut net = self
+            .networks
+            .get_mut(network)?
+            .ok_or_else(|| Error::App("network not found".to_string()))?;
+        let mut conn = net
+            .connections
+            .get_mut(connection)?
+            .ok_or_else(|| Error::App("connection not found".to_string()))?;
+
+        conn.relay_return(consensus_proof, account_proof, returns)
+    }
+
+    #[call]
+    pub fn sign(
+        &mut self,
+        network: u32,
+        connection: Address,
+        msg_index: u64,
+        pubkey: Pubkey,
+        sig: Signature,
+    ) -> Result<()> {
+        exempt_from_fee()?;
+
+        let mut net = self
+            .networks
+            .get_mut(network)?
+            .ok_or_else(|| Error::App("network not found".to_string()))?;
+        let mut conn = net
+            .connections
+            .get_mut(connection)?
+            .ok_or_else(|| Error::App("connection not found".to_string()))?;
+
+        conn.sign(msg_index, pubkey, sig)
+    }
+
+    #[query]
+    pub fn to_sign(&self, xpub: Xpub) -> Result<ToSign> {
+        let mut to_sign = vec![];
+        let secp = Secp256k1::new();
+
+        for net in self.networks.iter()? {
+            let (_, net) = net?;
+            for conn in net.connections.iter()? {
+                let (_, conn) = conn?;
+
+                // skip invalid connections
+                if conn.message_index != conn.outbox.len() {
+                    continue;
+                }
+
+                for (msg_index, msg) in conn.outbox.iter()?.enumerate() {
+                    let msg = msg?;
+                    let msg_index = (msg_index + 1) as u64;
+
+                    let pubkey = derive_pubkey(&secp, xpub, msg.sigset_index)?;
+                    if conn.needs_sig(msg_index, pubkey.into())? {
+                        to_sign.push((
+                            net.id,
+                            conn.bridge_contract,
+                            msg_index,
+                            msg.sigset_index,
+                            msg.sigs.message,
+                            msg.msg.clone(),
+                        ));
+                    }
+                }
+            }
+        }
+
+        Ok(to_sign)
+    }
+
+    // TODO: we shouldn't need these:
+    #[query]
+    pub fn token_contract(&self, network: u32, connection: Address) -> Result<Address> {
+        Ok(self
+            .networks
+            .get(network)?
+            .unwrap()
+            .connections
+            .get(connection)?
+            .unwrap()
+            .token_contract)
+    }
+    #[query]
+    pub fn message_index(&self, network: u32, connection: Address) -> Result<u64> {
+        Ok(self
+            .networks
+            .get(network)?
+            .unwrap()
+            .connections
+            .get(connection)?
+            .unwrap()
+            .message_index)
+    }
+    #[query]
+    pub fn return_index(&self, network: u32, connection: Address) -> Result<u64> {
+        Ok(self
+            .networks
+            .get(network)?
+            .unwrap()
+            .connections
+            .get(connection)?
+            .unwrap()
+            .return_index)
+    }
+    #[query]
+    pub fn signed(&self, network: u32, connection: Address, msg_index: u64) -> Result<bool> {
+        Ok(self
+            .networks
+            .get(network)?
+            .unwrap()
+            .connections
+            .get(connection)?
+            .unwrap()
+            .get(msg_index)?
+            .sigs
+            .signed())
+    }
+    #[query]
+    pub fn msd(
+        &self,
+        network: u32,
+        connection: Address,
+        msg_index: u64,
+    ) -> Result<([u8; 32], Sigs, OutMessageArgs)> {
+        let net = self.networks.get(network)?.unwrap();
+        let conn = net.connections.get(connection)?.unwrap();
+        let msg = conn.get(msg_index)?;
+        Ok((msg.sigs.message, conn.get_sigs(msg_index)?, msg.msg.clone()))
+    }
+}
+type ToSign = Vec<(u32, Address, u64, u32, [u8; 32], OutMessageArgs)>;
+type Sigs = Vec<(Pubkey, Option<Signature>)>;
+
+#[orga]
+pub struct Network {
+    pub id: u32,
+    pub connections: Map<Address, Connection>, // TODO: use an eth address type
+}
+
+#[orga]
+impl Network {
+    pub fn step(&mut self, active_sigset: &SignatorySet) -> Result<()> {
+        let addrs: Vec<_> = self
+            .connections
+            .iter()?
+            .map(|e| Ok(*e?.0))
+            .collect::<Result<_>>()?;
+        for addr in addrs {
+            let mut conn = self.connections.get_mut(addr)?.unwrap();
+            conn.step(active_sigset)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn take_pending(&mut self) -> Result<Vec<(Dest, Coin<Nbtc>)>> {
+        let addrs: Vec<_> = self
+            .connections
+            .iter()?
+            .map(|e| Ok(*e?.0))
+            .collect::<Result<_>>()?;
+        let mut pending = vec![];
+        for addr in addrs {
+            let mut conn = self.connections.get_mut(addr)?.unwrap();
+            pending.extend(conn.take_pending()?);
+        }
+        Ok(pending)
+    }
+}
+
+#[orga]
+pub struct Connection {
     pub id: [u8; 32],
     pub bridge_contract: Address,
     pub token_contract: Address,
@@ -73,7 +301,7 @@ pub struct Ethereum {
 }
 
 #[orga]
-impl Ethereum {
+impl Connection {
     pub fn new(
         id: &[u8],
         bridge_contract: Address,
@@ -188,8 +416,8 @@ impl Ethereum {
     #[call]
     pub fn relay_return(
         &mut self,
-        consensus_proof: (),
-        account_proof: (),
+        _consensus_proof: (),
+        _account_proof: (),
         // TODO: storage_proofs: LengthVec<u16, (LengthVec<u8, u8>, u64)>,
         returns: LengthVec<u16, (u64, Dest, u64)>, // TODO: don't include data, just state proof
     ) -> Result<()> {
@@ -240,7 +468,8 @@ impl Ethereum {
         Ok(self.outbox.get_mut(index)?.unwrap())
     }
 
-    fn abs_index(&self, msg_index: u64) -> Result<u64> {
+    #[query]
+    pub fn abs_index(&self, msg_index: u64) -> Result<u64> {
         let start_index = self.message_index + 1 - self.outbox.len();
         if self.outbox.is_empty() || msg_index > self.message_index || msg_index < start_index {
             return Err(Error::App("message index out of bounds".to_string()).into());
@@ -274,14 +503,28 @@ impl Ethereum {
     pub fn needs_sig(&self, msg_index: u64, pubkey: Pubkey) -> Result<bool> {
         Ok(self.get(msg_index)?.sigs.needs_sig(pubkey)?)
     }
-    // TODO: remove, this is a hack due to enum state issues in client
+
     #[query]
-    pub fn get_sigs(&self, msg_index: u64) -> Result<Vec<(Pubkey, Signature)>> {
-        Ok(self.get(msg_index)?.sigs.sigs()?)
+    pub fn get_sigs(&self, msg_index: u64) -> Result<Vec<(Pubkey, Option<Signature>)>> {
+        let sigs = &self.get(msg_index)?.sigs;
+        let data: BTreeSet<_> = sigs
+            .sigs
+            .iter()?
+            .map(|entry| {
+                let (pubkey, share) = entry?;
+                Ok((share.power, pubkey, share.sig))
+            })
+            .collect::<Result<_>>()?;
+        Ok(data
+            .into_iter()
+            .rev()
+            .map(|(_, pk, sig)| (*pk, sig))
+            .collect())
     }
 }
 
 #[orga]
+#[derive(Debug)]
 pub struct OutMessage {
     pub sigset_index: u32,
     pub sigs: ThresholdSig,
@@ -299,48 +542,48 @@ pub enum OutMessageArgs {
     UpdateValset(u64, SignatorySet),
 }
 
-impl Describe for OutMessageArgs {
-    fn describe() -> orga::describe::Descriptor {
-        <()>::describe()
-    }
-}
-
-impl State for OutMessageArgs {
-    fn load(_store: Store, bytes: &mut &[u8]) -> orga::Result<Self> {
-        Ok(Self::decode(bytes)?)
-    }
-
-    fn attach(&mut self, _store: Store) -> orga::Result<()> {
-        Ok(())
-    }
-
-    fn flush<W: std::io::Write>(self, out: &mut W) -> orga::Result<()> {
-        Ok(self.encode_into(out)?)
-    }
-
-    fn field_keyop(_field_name: &str) -> Option<orga::describe::KeyOp> {
-        todo!()
-    }
-}
-
 impl FieldQuery for OutMessageArgs {
-    type FieldQuery = ();
-
     fn field_query(&self, _query: Self::FieldQuery) -> orga::Result<()> {
         Ok(())
     }
 }
-
-impl Migrate for OutMessageArgs {}
-
-// TODO: we shouldn't require all orga types to have Default
+impl MethodQuery for OutMessageArgs {
+    fn method_query(&self, _query: Self::MethodQuery) -> orga::Result<()> {
+        Ok(())
+    }
+}
 impl Default for OutMessageArgs {
     fn default() -> Self {
-        OutMessageArgs::Batch {
-            transfers: LengthVec::default(),
-            timeout: u64::MAX,
-            batch_index: 0,
+        // TODO: shouldn't need default for all state types
+        Self::Batch {
+            transfers: Default::default(),
+            timeout: Default::default(),
+            batch_index: Default::default(),
         }
+    }
+}
+impl State for OutMessageArgs {
+    fn attach(&mut self, _store: Store) -> orga::Result<()> {
+        Ok(())
+    }
+    fn field_keyop(_field_name: &str) -> Option<orga::describe::KeyOp> {
+        None
+    }
+    fn flush<W: std::io::Write>(self, out: &mut W) -> orga::Result<()> {
+        Ok(self.encode_into(out)?)
+    }
+    fn load(_store: Store, bytes: &mut &[u8]) -> orga::Result<Self> {
+        Ok(Self::decode(bytes)?)
+    }
+}
+impl Migrate for OutMessageArgs {
+    fn migrate(_src: Store, _dest: Store, bytes: &mut &[u8]) -> orga::Result<Self> {
+        Ok(Self::decode(bytes)?)
+    }
+}
+impl Describe for OutMessageArgs {
+    fn describe() -> orga::describe::Descriptor {
+        <()>::describe()
     }
 }
 
@@ -559,7 +802,7 @@ sol!(
     #[allow(missing_docs)]
     #[sol(rpc)]
     token_contract,
-    "src/ethereum/CosmosERC20.json",
+    "src/ethereum/contracts/CosmosERC20.json",
 );
 
 #[cfg(test)]
@@ -656,7 +899,7 @@ mod tests {
         };
 
         let id = bytes32(b"test").unwrap();
-        let mut ethereum = Ethereum::new(b"test", Address::NULL, Address::NULL, valset);
+        let mut ethereum = Connection::new(b"test", Address::NULL, Address::NULL, valset);
         assert_eq!(ethereum.batch_index, 0);
         assert_eq!(ethereum.valset_index, 0);
         assert_eq!(ethereum.message_index, 1);
@@ -762,7 +1005,7 @@ mod tests {
             Address::from(data)
         };
         // TODO: token contract
-        let mut ethereum = Ethereum::new(b"test", bridge_addr, bridge_addr, valset);
+        let mut ethereum = Connection::new(b"test", bridge_addr, bridge_addr, valset);
         let valset = ethereum.valset.clone();
 
         let new_valset = SignatorySet {
@@ -911,7 +1154,7 @@ mod tests {
             }
         }
 
-        let mut ethereum = Ethereum::new(
+        let mut ethereum = Connection::new(
             b"test",
             contract.address().0 .0.into(),
             token_contract_addr.unwrap().0 .0.into(),
@@ -1090,7 +1333,7 @@ mod tests {
         }
         let token_contract_addr = token_contract_addr.unwrap().0 .0.into();
 
-        let mut ethereum = Ethereum::new(
+        let mut ethereum = Connection::new(
             b"test",
             contract.address().0 .0.into(),
             token_contract_addr,
@@ -1229,7 +1472,7 @@ mod tests {
         }
         let token_contract_addr = token_contract_addr.unwrap().0 .0.into();
 
-        let mut ethereum = Ethereum::new(
+        let mut ethereum = Connection::new(
             b"test",
             contract.address().0 .0.into(),
             token_contract_addr,

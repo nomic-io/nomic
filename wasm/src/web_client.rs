@@ -1,3 +1,4 @@
+use futures_lite::Future;
 use nomic::orga::abci::App;
 use nomic::orga::call::Call;
 use nomic::orga::client::Transport;
@@ -10,8 +11,10 @@ use nomic::orga::store::Store;
 use nomic::orga::store::{BackingStore, Shared};
 use nomic::orga::{Error, Result};
 use std::convert::TryInto;
+use std::pin::Pin;
 use std::sync::Mutex;
-use wasm_bindgen::JsCast;
+use std::task::{Context, Poll};
+use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 
 use web_sys::{Request, RequestInit, RequestMode, Response};
@@ -135,3 +138,16 @@ impl<F: Future> Future for UnsafeSendFuture<F> {
         inner.poll(cx)
     }
 }
+
+struct UnsafeSend<T>(pub T);
+
+impl<T: Unpin + Future<Output = std::result::Result<JsValue, JsValue>>> Future for UnsafeSend<T> {
+    type Output = std::result::Result<JsValue, JsValue>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<std::result::Result<JsValue, JsValue>> {
+        let inner = unsafe { Pin::new_unchecked(&mut self.get_mut().0) };
+        inner.poll(cx)
+    }
+}
+
+unsafe impl<T> Send for UnsafeSend<T> {}

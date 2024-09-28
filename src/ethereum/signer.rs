@@ -17,84 +17,61 @@ where
         &self,
         key_pairs: Vec<(ExtendedPubKey, &ExtendedPrivKey)>,
     ) -> Result<()> {
-        let mut index = (self.app_client)()
-            .query(|app| Ok(app.ethereum.message_index + 1 - app.ethereum.outbox.len()))
-            .await?;
-
         info!("Starting Ethereum signer...");
+
         loop {
-            let sigset_index = loop {
-                if let Some(sigset_index) = self
-                    .client()
-                    .query(|app: InnerApp| {
-                        if app.ethereum.message_index < index {
-                            return Ok(None);
-                        }
-                        Ok(Some(app.ethereum.get(index)?.sigset_index))
-                    })
-                    .await?
-                {
-                    break sigset_index;
-                }
+            for (xpub, xpriv) in key_pairs.iter() {
+                self.sign_eth_messages(xpub, xpriv).await?;
 
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-            };
-
-            for (xpub, xpriv) in key_pairs.iter() {
-                self.try_sign_eth_message(xpub, xpriv, index, sigset_index as u64)
-                    .await?;
             }
-
-            index += 1;
         }
     }
 
-    async fn try_sign_eth_message(
+    async fn sign_eth_messages(
         &self,
         xpub: &ExtendedPubKey,
         xpriv: &ExtendedPrivKey,
-        msg_index: u64,
-        ss_index: u64,
     ) -> Result<()> {
         let secp = Secp256k1::new();
-        let pubkey = derive_pubkey(&secp, xpub.into(), ss_index as u32)?;
 
-        let res = self
+        let to_sign = self
             .client()
-            .query(|app: InnerApp| {
-                let msg = app.ethereum.get(msg_index)?;
-                if app.ethereum.needs_sig(msg_index, pubkey.into())? {
-                    Ok(Some((msg.msg.clone(), msg.sigs.message)))
-                } else {
-                    Ok(None)
-                }
-            })
-            .await?;
-        dbg!();
-
-        let (msg, hash) = match res {
-            Some(res) => res,
-            None => return Ok(()),
-        };
-        dbg!();
-
-        info!("Signing outgoing Ethereum message ({:?})...", msg);
-
-        let sig = crate::bitcoin::signer::sign(
-            &Secp256k1::signing_only(),
-            xpriv,
-            &[(hash, ss_index as u32)],
-        )?[0];
-
-        dbg!();
-        (self.app_client)()
-            .call(
-                move |app| build_call!(app.ethereum.sign(msg_index, pubkey.into(), sig)),
-                |app| build_call!(app.app_noop()),
-            )
+            .query(|app: InnerApp| Ok(app.ethereum.to_sign(xpub.into())?))
             .await?;
 
-        info!("Submitted Ethereum signature");
+        for (net_id, bridge_contract, msg_index, ss_index, hash, msg) in to_sign {
+            info!(
+                "Signing outgoing Ethereum message ({} {:?})...",
+                net_id, msg,
+            );
+
+            let pubkey = derive_pubkey(&secp, xpub.into(), ss_index)?;
+
+            let sig = crate::bitcoin::signer::sign(
+                &Secp256k1::signing_only(),
+                xpriv,
+                &[(hash, ss_index)],
+            )?[0];
+
+            dbg!();
+            (self.app_client)()
+                .call(
+                    move |app| {
+                        build_call!(app.ethereum.sign(
+                            net_id,
+                            bridge_contract,
+                            msg_index,
+                            pubkey.into(),
+                            sig
+                        ))
+                    },
+                    |app| build_call!(app.app_noop()),
+                )
+                .await?;
+
+            info!("Submitted Ethereum signature");
+        }
 
         Ok(())
     }

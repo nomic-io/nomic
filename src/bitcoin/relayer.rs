@@ -250,7 +250,7 @@ impl Relayer {
                     tokio::sync::mpsc::Sender<_>,
                 )| {
                     async move {
-                        debug!("Received deposit commitment: {:?}, {}", dest, sigset_index);
+                        debug!("Received deposit commitment: {}, {}", dest, sigset_index);
                         send.send((dest, sigset_index)).await.unwrap();
                         let max_deposit_age = app_client(app_client_addr)
                             .query(|app| Ok(app.bitcoin.config.max_deposit_age))

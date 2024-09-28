@@ -7,13 +7,18 @@
 #![allow(unused_imports)]
 
 use crate::airdrop::Airdrop;
+use crate::babylon::Babylon;
 use crate::bitcoin::adapter::Adapter;
+use crate::bitcoin::threshold_sig::Signature;
+use crate::bitcoin::{exempt_from_fee, Bitcoin, Nbtc};
 use crate::bitcoin::{matches_bitcoin_network, NETWORK};
-use crate::bitcoin::{Bitcoin, Nbtc};
 use crate::cosmos::{Chain, Cosmos, Proof};
+use crate::ethereum::Ethereum;
+use crate::frost::{Config as FrostConfig, FrostGroup};
 
 #[cfg(feature = "ethereum")]
-use crate::ethereum::{ContractCall, Ethereum};
+use crate::ethereum::{Connection, ContractCall};
+use crate::frost::Frost;
 use crate::incentives::Incentives;
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::{PublicKey, Script, Transaction, TxOut};
@@ -53,6 +58,7 @@ use orga::upgrade::Version;
 use orga::upgrade::{Upgrade, UpgradeV0};
 use orga::Error;
 use serde::{Deserialize, Serialize};
+use serde_hex::{SerHex, StrictPfx};
 use std::convert::TryInto;
 use std::fmt::Debug;
 
@@ -91,9 +97,13 @@ const IBC_FEE_USATS: u64 = 1_000_000;
 const CALL_FEE_USATS: u64 = 100_000_000;
 const OSMOSIS_CHANNEL_ID: &str = "channel-1";
 
+const FROST_GROUP_INTERVAL: i64 = 10 * 60;
+const FROST_TOP_N: u16 = 5;
+const FROST_THRESHOLD: u16 = 3;
+
 /// The top-level application state type and logic. This contains the major
 /// state types for the various subsystems of the Nomic protocol.
-#[orga(version = 5..=6)]
+#[orga(version = 5..=7)]
 pub struct InnerApp {
     /// Account state for the NOM token.
     #[call]
@@ -154,11 +164,24 @@ pub struct InnerApp {
     /// which is not available in the IBC module.
     pub cosmos: Cosmos,
 
-    // TODO: migrate in, testnet flag
     #[cfg(all(feature = "ethereum", feature = "testnet"))]
     #[orga(version(V5, V6))]
     #[call]
+    pub ethereum: Connection,
+    #[cfg(all(feature = "ethereum", feature = "testnet"))]
+    #[orga(version(V7))]
+    #[call]
     pub ethereum: Ethereum,
+
+    #[cfg(feature = "testnet")]
+    #[orga(version(V7))]
+    #[call]
+    pub babylon: Babylon,
+
+    #[cfg(feature = "testnet")]
+    #[orga(version(V7))]
+    #[call]
+    pub frost: Frost,
 }
 
 #[orga]
@@ -167,7 +190,7 @@ impl InnerApp {
     /// breaking changes are made to either the state encoding or logic of the
     /// protocol, and requires a network upgrade to be coordinated via the
     /// upgrade module.
-    pub const CONSENSUS_VERSION: u8 = 12;
+    pub const CONSENSUS_VERSION: u8 = 13;
 
     #[cfg(feature = "full")]
     fn configure_faucets(&mut self) -> Result<()> {
@@ -260,7 +283,13 @@ impl InnerApp {
     }
 
     #[call]
-    pub fn eth_transfer_nbtc(&mut self, dest: Address, amount: Amount) -> Result<()> {
+    pub fn eth_transfer_nbtc(
+        &mut self,
+        network: u32,
+        connection: Address,
+        address: Address,
+        amount: Amount,
+    ) -> Result<()> {
         #[cfg(feature = "ethereum")]
         {
             crate::bitcoin::exempt_from_fee()?;
@@ -270,7 +299,11 @@ impl InnerApp {
             let signer = self.signer()?;
             let coins = self.bitcoin.accounts.withdraw(signer, amount)?;
 
-            let dest = Dest::EthAccount { address: dest };
+            let dest = Dest::EthAccount {
+                network,
+                connection: connection.into(),
+                address: address.into(),
+            };
             self.bitcoin.insert_pending(dest, coins)?;
 
             Ok(())
@@ -349,15 +382,43 @@ impl InnerApp {
     }
 
     pub fn credit_dest(&mut self, dest: Dest, nbtc: Coin<Nbtc>) -> Result<()> {
+        dbg!(dest.to_string());
         match dest {
             Dest::NativeAccount { address } => self.bitcoin.accounts.deposit(address, nbtc)?,
             Dest::Ibc { data: dest } => dest.transfer(nbtc, &mut self.bitcoin, &mut self.ibc)?,
             Dest::RewardPool => self.bitcoin.give_rewards(nbtc)?,
             #[cfg(feature = "ethereum")]
-            Dest::EthAccount { address } => self.ethereum.transfer(address, nbtc)?,
+            Dest::EthAccount {
+                network,
+                connection,
+                address,
+            } => self
+                .ethereum
+                .networks
+                .get_mut(network)?
+                .ok_or_else(|| Error::App("Unknown network".to_string()))?
+                .connections
+                .get_mut(connection.into())?
+                .ok_or_else(|| Error::App("Unknown connection".to_string()))?
+                .transfer(address.into(), nbtc)?,
             // #[cfg(feature = "ethereum")]
             // Dest::EthCall(call, _) => self.ethereum.call(call, nbtc)?,
             Dest::Bitcoin { data } => self.bitcoin.add_withdrawal(data, nbtc)?,
+            Dest::Stake {
+                owner,
+                finality_provider,
+                staking_period,
+                unbonding_period,
+            } => {
+                self.babylon.stake(
+                    &mut self.bitcoin,
+                    &mut self.frost,
+                    finality_provider,
+                    staking_period,
+                    unbonding_period,
+                    nbtc,
+                )?;
+            }
         };
 
         Ok(())
@@ -454,12 +515,86 @@ impl InnerApp {
     }
 
     #[call]
+    pub fn stake_nbtc(
+        &mut self,
+        amount: Amount,
+        finality_provider: [u8; 32],
+        staking_period: u16,
+        unbonding_period: u16,
+    ) -> Result<()> {
+        // TODO: validate staking/unbonding periods
+        let signer = self.signer()?;
+        let stake = self.bitcoin.accounts.withdraw(signer, amount)?;
+        self.babylon.stake(
+            &mut self.bitcoin,
+            &mut self.frost,
+            finality_provider,
+            staking_period,
+            unbonding_period,
+            stake,
+        )?;
+
+        Ok(())
+    }
+
+    // TODO: move into babylon module, get HeaderQueue via context
+    #[call]
+    pub fn relay_btc_staking_tx(
+        &mut self,
+        del_index: u64,
+        height: u32,
+        proof: Adapter<PartialMerkleTree>,
+        tx: Adapter<Transaction>,
+        vout: u32,
+    ) -> Result<()> {
+        exempt_from_fee()?;
+
+        self.babylon
+            .delegations
+            .get_mut(del_index)?
+            .ok_or_else(|| Error::App("Delegation not found".into()))?
+            .relay_staking_tx(
+                &self.bitcoin.headers,
+                height,
+                proof.into_inner(),
+                tx.into_inner(),
+                vout,
+            )?;
+
+        Ok(())
+    }
+
+    #[call]
     pub fn app_noop(&mut self) -> Result<()> {
         Ok(())
     }
 
     #[query]
     pub fn app_noop_query(&self) -> Result<()> {
+        Ok(())
+    }
+
+    #[cfg(feature = "testnet")]
+    fn step_frost(&mut self, now: i64) -> Result<()> {
+        let last_frost_group = self.frost.groups.back()?;
+        let last_frost_group_time = last_frost_group.as_ref().map(|g| g.created_at).unwrap_or(0);
+        let absent = last_frost_group
+            .map(|v| v.absent().unwrap_or_default())
+            .unwrap_or_default();
+
+        if now > last_frost_group_time + FROST_GROUP_INTERVAL {
+            let frost_config =
+                FrostConfig::from_staking(&self.staking, FROST_TOP_N, FROST_THRESHOLD, &absent)?;
+
+            if frost_config.participants.len() < 2 {
+                return Ok(());
+            }
+            let group = FrostGroup::with_config(frost_config, now)?;
+
+            self.frost.groups.push_back(group)?;
+        }
+
+        self.frost.advance_with_timeout(60 * 5)?;
         Ok(())
     }
 }
@@ -470,8 +605,10 @@ mod abci {
         abci::{messages, AbciQuery, BeginBlock, EndBlock, InitChain},
         coins::{Give, Take},
         collections::Map,
-        plugins::{BeginBlockCtx, EndBlockCtx, InitChainCtx},
+        plugins::{BeginBlockCtx, EndBlockCtx, InitChainCtx, Validators},
     };
+
+    use crate::{ethereum::bytes32, frost::FrostGroup};
 
     use super::*;
 
@@ -546,9 +683,23 @@ mod abci {
             let ip_reward = self.incentive_pool_rewards.mint()?;
             self.incentive_pool.give(ip_reward)?;
 
+            #[cfg(feature = "testnet")]
+            if !self.bitcoin.checkpoints.is_empty()? {
+                self.step_frost(now)?;
+            }
+
             let pending_nbtc_transfers = self.bitcoin.take_pending()?;
             for (dest, coins) in pending_nbtc_transfers {
-                self.credit_dest(dest, coins)?;
+                if dest.validate(&self.bitcoin, coins.amount).is_ok() {
+                    let amount = coins.amount;
+                    if let Err(e) = self.credit_dest(dest.clone(), coins) {
+                        // TODO: this will catch all errors, we only want to catch validation errors
+                        log::debug!("Failed to credit transfer to {}, {}", dest, amount);
+                        log::debug!("{:?}", e);
+                    }
+                } else {
+                    log::debug!("Invalid transfer to {}, {}", dest, coins.amount);
+                }
             }
 
             let external_outputs = if self.bitcoin.should_push_checkpoint()? {
@@ -580,7 +731,12 @@ mod abci {
                         .step(&self.bitcoin.checkpoints.active_sigset()?)?;
                 }
                 for (dest, coins) in self.ethereum.take_pending()? {
-                    self.credit_dest(dest, coins)?;
+                    let amount = coins.amount;
+                    if let Err(e) = self.credit_dest(dest.clone(), coins) {
+                        // TODO: this will catch all errors, we only want to catch validation errors
+                        log::debug!("Failed to credit transfer to {}, {}", dest, amount);
+                        log::debug!("{:?}", e);
+                    }
                 }
             }
 
@@ -1082,6 +1238,62 @@ impl ConvertSdkTx for InnerApp {
                         Ok(PaidCall { payer, paid })
                     }
 
+                    "nomic/MsgStakeNbtc" => {
+                        let msg = msg
+                            .value
+                            .as_object()
+                            .ok_or_else(|| Error::App("Invalid message value".to_string()))?;
+
+                        let amount: u64 = msg
+                            .get("amount")
+                            .ok_or_else(|| Error::App("Invalid amount".to_string()))?
+                            .as_str()
+                            .ok_or_else(|| Error::App("Invalid amount".to_string()))?
+                            .parse()
+                            .map_err(|e: std::num::ParseIntError| Error::App(e.to_string()))?;
+
+                        let fp_vec = hex::decode(
+                            msg.get("finality_provider")
+                                .ok_or_else(|| Error::App("Invalid finality provider".to_string()))?
+                                .as_str()
+                                .ok_or_else(|| {
+                                    Error::App("Invalid finality provider".to_string())
+                                })?,
+                        )
+                        .map_err(|e| Error::App(e.to_string()))?;
+                        if fp_vec.len() != 32 {
+                            return Err(Error::App("Invalid finality provider".to_string()));
+                        }
+                        let mut fp = [0; 32];
+                        fp.copy_from_slice(&fp_vec);
+
+                        let staking_period: u16 = msg
+                            .get("staking_period")
+                            .ok_or_else(|| Error::App("Invalid staking period".to_string()))?
+                            .as_str()
+                            .ok_or_else(|| Error::App("Invalid staking period".to_string()))?
+                            .parse()
+                            .map_err(|e: std::num::ParseIntError| Error::App(e.to_string()))?;
+
+                        let unbonding_period: u16 = msg
+                            .get("unbonding_period")
+                            .ok_or_else(|| Error::App("Invalid unbonding period".to_string()))?
+                            .as_str()
+                            .ok_or_else(|| Error::App("Invalid unbonding period".to_string()))?
+                            .parse()
+                            .map_err(|e: std::num::ParseIntError| Error::App(e.to_string()))?;
+
+                        let payer = build_call!(self.pay_nbtc_fee());
+                        let paid = build_call!(self.stake_nbtc(
+                            amount.into(),
+                            fp,
+                            staking_period,
+                            unbonding_period
+                        ));
+
+                        Ok(PaidCall { payer, paid })
+                    }
+
                     _ => Err(Error::App("Unsupported message type".into())),
                 }
             }
@@ -1117,28 +1329,6 @@ pub struct IbcDest {
     pub sender: LengthString<u8>,
     pub timeout_timestamp: u64,
     pub memo: LengthString<u8>,
-}
-
-impl Migrate for IbcDest {
-    fn migrate(_src: Store, _dest: Store, mut bytes: &mut &[u8]) -> Result<Self> {
-        let read_signer = |mut bytes: &mut &mut &[u8]| {
-            let len = u32::from_le_bytes(Decode::decode(&mut bytes)?);
-            let mut signer_bytes = vec![0; len as usize];
-            bytes.read_exact(&mut signer_bytes)?;
-            String::from_utf8(signer_bytes)
-                .map_err(|_| Error::App("Invalid address in IBC dest".to_string()))?
-                .try_into()
-        };
-
-        Ok(Self {
-            source_port: Decode::decode(&mut bytes)?,
-            source_channel: Decode::decode(&mut bytes)?,
-            receiver: read_signer(&mut bytes)?,
-            sender: read_signer(&mut bytes)?,
-            timeout_timestamp: Decode::decode(&mut bytes)?,
-            memo: Decode::decode(bytes)?,
-        })
-    }
 }
 
 impl IbcDest {
@@ -1254,10 +1444,25 @@ pub enum Dest {
     },
     #[cfg(feature = "ethereum")]
     EthAccount {
-        address: Address,
+        network: u32,
+        // TODO: ethaddress type
+        #[serde(with = "SerHex::<StrictPfx>")]
+        connection: [u8; 20],
+        // TODO: ethaddress type
+        #[serde(with = "SerHex::<StrictPfx>")]
+        address: [u8; 20],
     },
     // #[cfg(feature = "ethereum")]
     // EthCall(ContractCall, Address),
+    Stake {
+        // TODO: ethaddress type
+        #[serde(with = "SerHex::<StrictPfx>")]
+        owner: [u8; 20],
+        #[serde(with = "SerHex::<StrictPfx>")]
+        finality_provider: [u8; 32],
+        staking_period: u16,
+        unbonding_period: u16,
+    },
 }
 
 mod address_or_script {
@@ -1322,10 +1527,12 @@ fn dest_json() {
     #[cfg(feature = "ethereum")]
     assert_eq!(
         Dest::EthAccount {
-            address: Address::NULL
+            network: 123,
+            connection: [0; 20],
+            address: [0; 20],
         }
         .to_string(),
-        "{\"type\":\"ethAccount\",\"address\":\"nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h\"}"
+        "{\"type\":\"ethAccount\",\"network\":123,\"connection\":\"0x0000000000000000000000000000000000000000\",\"address\":\"0x0000000000000000000000000000000000000000\"}"
     );
 
     assert_eq!(Dest::RewardPool.to_string(), "{\"type\":\"rewardPool\"}");
@@ -1354,7 +1561,7 @@ fn dest_json() {
     #[cfg(all(not(feature = "testnet"), not(feature = "devnet")))]
     let out = "{\"type\":\"bitcoin\",\"data\":\"bc1q2xq57yyxwzkw6tthcxq9mhtxxj7f63e38wy7jp\"}";
     #[cfg(all(feature = "devnet", feature = "testnet"))]
-    let out = "{\"type\":\"bitcoin\",\"data\":\"bcrt1q2xq57yyxwzkw6tthcxq9mhtxxj7f63e30pxq7m\"}";
+    let out = "{\"type\":\"bitcoin\",\"data\":\"tb1q2xq57yyxwzkw6tthcxq9mhtxxj7f63e3dgldfj\"}";
     assert_eq!(
         Dest::Bitcoin {
             data: Adapter::new(addr.script_pubkey())
@@ -1367,19 +1574,26 @@ fn dest_json() {
         unreachable!();
     };
     assert_eq!(*data, addr.script_pubkey());
+
+    // TODO: other Dest variants
 }
 
 impl Dest {
     pub fn to_receiver_addr(&self) -> Option<String> {
         Some(match self {
-            Dest::NativeAccount { address: addr } => addr.to_string(),
-            Dest::Ibc { data: dest } => dest.receiver.to_string(),
+            Dest::NativeAccount { address } => address.to_string(),
+            Dest::Ibc { data } => data.receiver.to_string(),
             Dest::RewardPool => return None,
             #[cfg(feature = "ethereum")]
-            Dest::EthAccount { address: addr } => addr.to_string(),
+            Dest::EthAccount {
+                network,
+                connection,
+                address,
+            } => hex::encode(address),
             // #[cfg(feature = "ethereum")]
             // Dest::EthCall(_, addr) => addr.to_string(),
             Dest::Bitcoin { data } => return None,
+            Dest::Stake { owner, .. } => hex::encode(owner),
         })
     }
 
@@ -1413,10 +1627,24 @@ impl Dest {
             Dest::Ibc { data } => data.validate()?,
             Dest::RewardPool => {}
             #[cfg(feature = "ethereum")]
-            Dest::EthAccount { address } => {}
+            Dest::EthAccount {
+                network,
+                connection,
+                address,
+            } => {
+                // TODO
+            }
             // #[cfg(feature = "ethereum")]
             // Dest::EthCall(_, addr) => //TODO
             Dest::Bitcoin { data } => bitcoin.validate_withdrawal(data, amount)?,
+            Dest::Stake {
+                owner,
+                finality_provider,
+                staking_period,
+                unbonding_period,
+            } => {
+                // TODO
+            }
         }
 
         Ok(())
@@ -1494,16 +1722,6 @@ impl Query for Dest {
 
 impl Migrate for Dest {
     fn migrate(src: Store, dest: Store, bytes: &mut &[u8]) -> Result<Self> {
-        // TODO: !!!!!!!! remove from here once there are no legacy IBC dests
-        // Migrate IBC dests
-        let mut maybe_ibc_bytes = &mut &**bytes;
-        let variant = u8::decode(&mut maybe_ibc_bytes)?;
-        if variant == 1 {
-            let ibc_dest = IbcDest::migrate(src, dest, maybe_ibc_bytes)?;
-            return Ok(Self::Ibc { data: ibc_dest });
-        }
-        // TODO: !!!!!!!! remove to here once there are no legacy IBC dests
-
         Self::load(src, bytes)
     }
 }

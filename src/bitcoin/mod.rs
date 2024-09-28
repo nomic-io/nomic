@@ -7,7 +7,6 @@ use self::threshold_sig::Signature;
 use crate::app::Dest;
 use crate::bitcoin::checkpoint::BatchType;
 use crate::error::{Error, Result};
-use adapter::Adapter;
 use bitcoin::hashes::Hash;
 use bitcoin::util::bip32::ChildNumber;
 use bitcoin::util::bip32::ExtendedPubKey;
@@ -52,6 +51,8 @@ pub mod signatory;
 pub mod signer;
 pub mod threshold_sig;
 
+pub use adapter::Adapter;
+
 /// The symbol for nBTC, the network's native BTC token.
 #[derive(State, Debug, Clone, Encode, Decode, Default, Migrate, Serialize)]
 pub struct Nbtc(());
@@ -60,11 +61,18 @@ impl Symbol for Nbtc {
     const NAME: &'static str = "usat";
 }
 
-#[cfg(all(not(feature = "testnet"), not(feature = "devnet")))]
+// TODO: select via generics or at runtime
+#[cfg(all(
+    not(feature = "testnet"),
+    not(feature = "devnet"),
+    not(feature = "signet")
+))]
 pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Bitcoin;
-#[cfg(all(feature = "testnet", not(feature = "devnet")))]
+#[cfg(feature = "signet")]
+pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Signet;
+#[cfg(all(feature = "testnet", not(feature = "devnet"), not(feature = "signet")))]
 pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Testnet;
-#[cfg(all(feature = "devnet", feature = "testnet"))]
+#[cfg(all(feature = "devnet", feature = "testnet", not(feature = "signet")))]
 pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Regtest;
 
 // TODO: move to config
@@ -182,8 +190,7 @@ impl Default for Config {
     fn default() -> Self {
         match NETWORK {
             bitcoin::Network::Regtest => Config::regtest(),
-            bitcoin::Network::Testnet | bitcoin::Network::Bitcoin => Config::bitcoin(),
-            _ => unimplemented!(),
+            _ => Config::bitcoin(),
         }
     }
 }

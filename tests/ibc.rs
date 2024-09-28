@@ -329,7 +329,7 @@ async fn ibc_test() {
         tokio::time::sleep(Duration::from_secs(10)).await;
         dbg!("Starting gRPC server...");
         orga::ibc::start_grpc(
-            || app_client().sub(|app| app.ibc.ctx),
+            || app_client().sub(|app| Ok(app.ibc.ctx)),
             &GrpcOpts {
                 host: "127.0.0.1".to_string(),
                 port: 9001,

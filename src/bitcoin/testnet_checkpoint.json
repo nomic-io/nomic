@@ -1,11 +1,11 @@
 [
-  2901024,
+  2991744,
   {
-    "version": 536870912,
-    "prev_blockhash": "0000000000000031bdc46f3de83a4d5a9b164348aa33393ff74fb67c22f73dd9",
-    "merkle_root": "17e65fae390bb13fd9136485ec600cc7650c1feca868623ce1af672271dc868f",
-    "time": 1724874805,
-    "bits": 423624640,
-    "nonce": 723519750
+    "version": 690692096,
+    "prev_blockhash": "0000000000000f080e1a6f704a41308db272cde3db3ce7ecec09a95b41964e83",
+    "merkle_root": "f1de2eff5cb7c7a6284b695a530efbd5d18cc5d6037983b6045bdce20759b75e",
+    "time": 1727133677,
+    "bits": 457179072,
+    "nonce": 68279166
   }
 ]

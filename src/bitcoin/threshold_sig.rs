@@ -20,7 +20,23 @@ use serde::Serialize;
 pub type Message = [u8; MESSAGE_SIZE];
 
 /// A compact secp256k1 ECDSA signature.
-#[derive(Encode, Decode, State, Debug, Clone, Deref, From, Copy, Migrate, Serialize, Describe)]
+#[derive(
+    Encode,
+    Decode,
+    State,
+    Debug,
+    Clone,
+    Deref,
+    From,
+    Copy,
+    Migrate,
+    Serialize,
+    Describe,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+)]
 pub struct Signature(
     #[serde(serialize_with = "<[_]>::serialize")] pub [u8; COMPACT_SIGNATURE_SIZE],
 );
@@ -358,5 +374,6 @@ impl Debug for ThresholdSig {
 #[derive(Clone)]
 pub struct Share {
     pub power: u64,
-    pub(super) sig: Option<Signature>,
+    // TODO: should be pub, but causes weird compiler error
+    pub(crate) sig: Option<Signature>,
 }
