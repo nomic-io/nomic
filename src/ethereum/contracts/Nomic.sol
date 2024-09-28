@@ -34,6 +34,7 @@ struct LogicCallArgs {
     // The arbitrary logic call
     address logicContractAddress;
     bytes payload;
+    uint256 maxGas;
     // Invalidation metadata
     uint256 timeOut;
     bytes32 invalidationId;
@@ -569,10 +570,26 @@ contract Nomic is ReentrancyGuard {
         }
 
         // Make call to logic contract
-        bytes memory returnData = Address.functionCall(
-            _args.logicContractAddress,
-            _args.payload
-        );
+
+        bool success;
+        bytes memory returnData;
+
+        if (_args.logicContractAddress.code.length > 0) {
+            success = false;
+        } else {
+            (bool _success, bytes memory _returnData) = _args
+                .logicContractAddress
+                .call{gas: _args.maxGas}(_args.payload);
+            // TODO: fallback
+            // if (!success) {
+            // IERC20(_args.transferTokenContracts[0]).safeTransfer(
+            //     _args.fallbackAddress,
+            //     _args.transferAmounts[i]
+            // );
+            // }
+            success = _success;
+            returnData = _returnData;
+        }
 
         // Send fees to msg.sender
         for (uint256 i = 0; i < _args.feeAmounts.length; i++) {
