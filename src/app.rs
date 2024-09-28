@@ -7,7 +7,7 @@
 #![allow(unused_imports)]
 
 use crate::airdrop::Airdrop;
-use crate::babylon::Babylon;
+use crate::babylon::{self, Babylon, Params};
 use crate::bitcoin::adapter::Adapter;
 use crate::bitcoin::threshold_sig::Signature;
 use crate::bitcoin::{exempt_from_fee, Bitcoin, Nbtc};
@@ -428,6 +428,11 @@ impl InnerApp {
                     nbtc,
                 )?;
             }
+            Dest::Unstake { index } => {
+                self.babylon
+                    .unstake(sender, index, &mut self.frost, &self.bitcoin)?;
+                nbtc.burn();
+            }
         };
 
         Ok(())
@@ -553,6 +558,7 @@ impl InnerApp {
     #[call]
     pub fn relay_btc_staking_tx(
         &mut self,
+        del_owner: Identity,
         del_index: u64,
         height: u32,
         proof: Adapter<PartialMerkleTree>,
@@ -563,6 +569,8 @@ impl InnerApp {
 
         self.babylon
             .delegations
+            .get_mut(del_owner)?
+            .ok_or_else(|| Error::App("No delegations found with given owner".into()))?
             .get_mut(del_index)?
             .ok_or_else(|| Error::App("Delegation not found".into()))?
             .relay_staking_tx(
@@ -571,6 +579,7 @@ impl InnerApp {
                 proof.into_inner(),
                 tx.into_inner(),
                 vout,
+                &self.babylon.params,
             )?;
 
         Ok(())
@@ -1524,6 +1533,9 @@ pub enum Dest {
         staking_period: u16,
         unbonding_period: u16,
     },
+    Unstake {
+        index: u64,
+    },
 }
 
 mod address_or_script {
@@ -1653,11 +1665,12 @@ impl Dest {
             } => hex::encode(address),
             // #[cfg(feature = "ethereum")]
             // Dest::EthCall(_, addr) => addr.to_string(),
-            Dest::Bitcoin { data } => return None,
+            Dest::Bitcoin { .. } => return None,
             Dest::Stake { return_dest, .. } => {
                 let return_dest: Dest = return_dest.parse().ok()?;
                 return return_dest.to_receiver_addr();
             }
+            Dest::Unstake { .. } => return None,
         })
     }
 
@@ -1707,7 +1720,11 @@ impl Dest {
                 staking_period,
                 unbonding_period,
             } => {
-                // TODO
+                // TODO: check that the return_dest is valid and that periods
+                // are within bounds
+            }
+            Dest::Unstake { index } => {
+                // TODO: check that the index is valid
             }
         }
 
