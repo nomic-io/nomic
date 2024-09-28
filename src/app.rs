@@ -17,7 +17,7 @@ use crate::ethereum::Ethereum;
 use crate::frost::{Config as FrostConfig, FrostGroup};
 
 #[cfg(feature = "ethereum")]
-use crate::ethereum::{Connection, ContractCall};
+use crate::ethereum::Connection;
 use crate::frost::Frost;
 use crate::incentives::Incentives;
 use bitcoin::util::merkleblock::PartialMerkleTree;
@@ -407,8 +407,23 @@ impl InnerApp {
                 .get_mut(connection.into())?
                 .ok_or_else(|| Error::App("Unknown connection".to_string()))?
                 .transfer(address.into(), nbtc)?,
-            // #[cfg(feature = "ethereum")]
-            // Dest::EthCall(call, _) => self.ethereum.call(call, nbtc)?,
+            #[cfg(feature = "ethereum")]
+            Dest::EthCall {
+                network,
+                connection,
+                contract_address,
+                data,
+                max_gas,
+                fallback_address,
+            } => self
+                .ethereum
+                .networks
+                .get_mut(network)?
+                .ok_or_else(|| Error::App("Unknown network".to_string()))?
+                .connections
+                .get_mut(connection.into())?
+                .ok_or_else(|| Error::App("Unknown connection".to_string()))?
+                .call_contract(contract_address, data, max_gas, fallback_address, nbtc)?,
             Dest::Bitcoin { data } => self.bitcoin.add_withdrawal(data, nbtc)?,
             Dest::Stake {
                 return_dest,
@@ -1522,8 +1537,21 @@ pub enum Dest {
         #[serde(with = "SerHex::<StrictPfx>")]
         address: [u8; 20],
     },
-    // #[cfg(feature = "ethereum")]
-    // EthCall(ContractCall, Address),
+    #[cfg(feature = "ethereum")]
+    EthCall {
+        network: u32,
+        // TODO: ethaddress type
+        #[serde(with = "SerHex::<StrictPfx>")]
+        connection: [u8; 20],
+        // TODO: ethaddress type
+        #[serde(with = "SerHex::<StrictPfx>")]
+        contract_address: [u8; 20],
+        data: LengthVec<u16, u8>,
+        max_gas: u64,
+        // TODO: ethaddress type
+        #[serde(with = "SerHex::<StrictPfx>")]
+        fallback_address: [u8; 20],
+    },
     Stake {
         // TODO: this should be a Dest, but the cycle prevents the macro-generated Terminated impl
         // from applying
@@ -1658,13 +1686,11 @@ impl Dest {
             Dest::Ibc { data } => data.receiver.to_string(),
             Dest::RewardPool => return None,
             #[cfg(feature = "ethereum")]
-            Dest::EthAccount {
-                network,
-                connection,
-                address,
-            } => hex::encode(address),
-            // #[cfg(feature = "ethereum")]
-            // Dest::EthCall(_, addr) => addr.to_string(),
+            Dest::EthAccount { address, .. } => hex::encode(address),
+            #[cfg(feature = "ethereum")]
+            Dest::EthCall {
+                contract_address, ..
+            } => hex::encode(contract_address),
             Dest::Bitcoin { .. } => return None,
             Dest::Stake { return_dest, .. } => {
                 let return_dest: Dest = return_dest.parse().ok()?;
@@ -1711,8 +1737,10 @@ impl Dest {
             } => {
                 // TODO
             }
-            // #[cfg(feature = "ethereum")]
-            // Dest::EthCall(_, addr) => //TODO
+            #[cfg(feature = "ethereum")]
+            Dest::EthCall { .. } => {
+                // TODO
+            }
             Dest::Bitcoin { data } => bitcoin.validate_withdrawal(data, amount)?,
             Dest::Stake {
                 return_dest,

@@ -2793,7 +2793,33 @@ impl RelayEthereumCmd {
                         .await
                         .unwrap());
                 }
-                nomic::ethereum::OutMessageArgs::LogicCall(_, _) => todo!(),
+                nomic::ethereum::OutMessageArgs::ContractCall {
+                    contract_address,
+                    data,
+                    max_gas,
+                    fallback_address,
+                    transfer_amount,
+                    message_index,
+                } => {
+                    contract
+                        .submitLogicCall(
+                            valset.to_abi(valset_index),
+                            sigs,
+                            nomic::ethereum::logic_call_args(
+                                transfer_amount,
+                                token_contract.into(),
+                                contract_address,
+                                data.as_slice(),
+                                message_index,
+                            ),
+                        )
+                        .send()
+                        .await
+                        .unwrap()
+                        .get_receipt()
+                        .await
+                        .unwrap();
+                }
                 nomic::ethereum::OutMessageArgs::UpdateValset(index, new_valset) => {
                     dbg!(contract
                         .updateValset(new_valset.to_abi(index), valset.to_abi(valset_index), sigs)

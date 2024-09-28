@@ -7,6 +7,7 @@ use bitcoin::secp256k1::{
 use orga::encoding::LengthString;
 use orga::query::MethodQuery;
 use std::collections::BTreeSet;
+use std::u64;
 
 use ed::{Decode, Encode};
 use orga::{
@@ -22,6 +23,7 @@ use orga::{
     Error,
 };
 use serde::{Deserialize, Serialize};
+use serde_hex::{SerHex, StrictPfx};
 
 use crate::app::Identity;
 use crate::bitcoin::signatory::derive_pubkey;
@@ -400,9 +402,26 @@ impl Connection {
         Ok(())
     }
 
-    pub fn call(&mut self, call: ContractCall, coins: Coin<Nbtc>) -> Result<()> {
+    pub fn call_contract(
+        &mut self,
+        // TODO: ethaddress type
+        contract_address: [u8; 20],
+        data: LengthVec<u16, u8>,
+        max_gas: u64,
+        // TODO: ethaddress type
+        fallback_address: [u8; 20],
+        coins: Coin<Nbtc>,
+    ) -> Result<()> {
+        let transfer_amount = coins.amount.into();
         self.coins.give(coins)?;
-        self.push_outbox(OutMessageArgs::LogicCall(self.message_index + 1, call))
+        self.push_outbox(OutMessageArgs::ContractCall {
+            contract_address,
+            data,
+            max_gas,
+            fallback_address,
+            transfer_amount,
+            message_index: self.message_index + if self.outbox.is_empty() { 0 } else { 1 },
+        })
     }
 
     fn update_valset(&mut self, mut new_valset: SignatorySet) -> Result<()> {
@@ -544,9 +563,21 @@ impl Connection {
                 self.token_contract,
                 timeout,
             ),
-            OutMessageArgs::LogicCall(index, call) => {
-                call.hash(self.id, self.token_contract, *index)
-            }
+            OutMessageArgs::ContractCall {
+                contract_address,
+                data,
+                max_gas,
+                fallback_address,
+                transfer_amount,
+                message_index,
+            } => call_hash(
+                self.id,
+                self.token_contract.into(),
+                *contract_address,
+                data,
+                *message_index,
+                *transfer_amount,
+            ),
             OutMessageArgs::UpdateValset(index, valset) => checkpoint_hash(self.id, valset, *index),
         })
     }
@@ -591,7 +622,18 @@ pub enum OutMessageArgs {
         timeout: u64,
         batch_index: u64,
     },
-    LogicCall(u64, ContractCall),
+    ContractCall {
+        // TODO: ethaddress type
+        #[serde(with = "SerHex::<StrictPfx>")]
+        contract_address: [u8; 20],
+        data: LengthVec<u16, u8>,
+        max_gas: u64,
+        // TODO: ethaddress type
+        #[serde(with = "SerHex::<StrictPfx>")]
+        fallback_address: [u8; 20],
+        transfer_amount: u64, // TODO: this shouldn't be necessary
+        message_index: u64,
+    },
     UpdateValset(u64, SignatorySet),
 }
 
@@ -640,53 +682,51 @@ impl Describe for OutMessageArgs {
     }
 }
 
-#[derive(Debug, Clone, Encode, Decode, Default, Serialize, Deserialize)]
-pub struct ContractCall {
-    pub contract: Address,
-    pub transfer_amount: u64,
-    pub fee_amount: u64,
-    pub payload: LengthVec<u16, u8>,
-    pub timeout: u64,
+pub fn call_hash(
+    id: [u8; 32],
+    token_contract: [u8; 20],
+    dest_contract: [u8; 20],
+    data: &[u8],
+    nonce_id: u64,
+    transfer_amount: u64,
+) -> [u8; 32] {
+    let bytes = (
+        id,
+        bytes32(b"logicCall").unwrap(),
+        vec![transfer_amount],
+        vec![addr_to_bytes32(token_contract.into())],
+        Vec::<u64>::new(),
+        Vec::<[u8; 32]>::new(),
+        addr_to_bytes32(dest_contract.into()),
+        data,
+        u64::MAX,
+        uint256(nonce_id),
+        uint256(1),
+    )
+        .abi_encode_params();
+
+    keccak256(bytes).0
 }
 
-impl ContractCall {
-    pub fn hash(&self, id: [u8; 32], token_contract: Address, nonce_id: u64) -> [u8; 32] {
-        let bytes = (
-            id,
-            bytes32(b"logicCall").unwrap(),
-            vec![self.transfer_amount],
-            vec![addr_to_bytes32(token_contract)],
-            vec![self.fee_amount],
-            vec![addr_to_bytes32(token_contract)],
-            addr_to_bytes32(self.contract),
-            self.payload.as_slice(),
-            self.timeout,
-            uint256(nonce_id),
-            uint256(1),
-        )
-            .abi_encode_params();
-
-        keccak256(bytes).0
-    }
-
-    pub fn to_abi(&self, token_contract: Address, nonce_id: u64) -> LogicCallArgs {
-        LogicCallArgs {
-            transferAmounts: vec![alloy::core::primitives::U256::from(self.transfer_amount)],
-            transferTokenContracts: vec![alloy::core::primitives::Address::from_slice(
-                &token_contract.bytes(),
-            )],
-            feeAmounts: vec![alloy::core::primitives::U256::from(self.fee_amount)],
-            feeTokenContracts: vec![alloy::core::primitives::Address::from_slice(
-                &token_contract.bytes(),
-            )],
-            logicContractAddress: alloy::core::primitives::Address::from_slice(
-                &self.contract.bytes(),
-            ),
-            payload: alloy::core::primitives::Bytes::from(self.payload.to_vec()),
-            timeOut: alloy::core::primitives::U256::from(self.timeout),
-            invalidationId: alloy::core::primitives::FixedBytes::from(uint256(nonce_id)), /* TODO: set in msg */
-            invalidationNonce: alloy::core::primitives::U256::from(1),
-        }
+pub fn logic_call_args(
+    transfer_amount: u64,
+    token_contract: [u8; 20],
+    dest_contract: [u8; 20],
+    data: &[u8],
+    nonce_id: u64,
+) -> LogicCallArgs {
+    LogicCallArgs {
+        transferAmounts: vec![alloy::core::primitives::U256::from(transfer_amount)],
+        transferTokenContracts: vec![alloy::core::primitives::Address::from_slice(
+            &token_contract,
+        )],
+        feeAmounts: vec![],
+        feeTokenContracts: vec![],
+        logicContractAddress: alloy::core::primitives::Address::from_slice(&dest_contract),
+        payload: alloy::core::primitives::Bytes::from(data.to_vec()),
+        timeOut: alloy::core::primitives::U256::from(u64::MAX),
+        invalidationId: alloy::core::primitives::FixedBytes::from(uint256(nonce_id)), /* TODO: set in msg */
+        invalidationNonce: alloy::core::primitives::U256::from(1),
     }
 }
 
@@ -1373,7 +1413,6 @@ mod tests {
         Context::remove::<Paid>();
     }
 
-    #[ignore]
     #[tokio::test]
     #[serial_test::serial]
     #[should_panic]
@@ -1449,18 +1488,19 @@ mod tests {
             valset,
         );
 
-        let call = ContractCall {
-            contract: token_contract_addr,
-            fee_amount: 0,
-            timeout: u64::MAX,
-            transfer_amount: 1_000_000,
-            payload: bytes32(hex::decode("73b20547").unwrap().as_slice())
-                .unwrap()
-                .to_vec()
-                .try_into()
-                .unwrap(),
-        };
-        ethereum.call(call, Nbtc::mint(1_000_000)).unwrap();
+        ethereum
+            .call_contract(
+                token_contract_addr.into(),
+                bytes32(hex::decode("73b20547").unwrap().as_slice())
+                    .unwrap()
+                    .to_vec()
+                    .try_into()
+                    .unwrap(),
+                100_000,
+                [0; 20],
+                Nbtc::mint(1_000_000),
+            )
+            .unwrap();
         assert_eq!(ethereum.outbox.len(), 1);
         assert_eq!(ethereum.message_index, 1);
 
@@ -1493,12 +1533,25 @@ mod tests {
             })
             .collect();
 
-        if let OutMessageArgs::LogicCall(index, call) = data {
+        if let OutMessageArgs::ContractCall {
+            contract_address,
+            data,
+            transfer_amount,
+            message_index,
+            ..
+        } = data
+        {
             dbg!(contract
                 .submitLogicCall(
                     ethereum.valset.to_abi(ethereum.valset_index),
                     sigs,
-                    call.to_abi(ethereum.token_contract, index),
+                    logic_call_args(
+                        transfer_amount,
+                        token_contract_addr.into(),
+                        contract_address,
+                        data.as_slice(),
+                        message_index
+                    ),
                 )
                 .send()
                 .await
