@@ -64,9 +64,10 @@ sol!(
 pub mod signer;
 
 pub const VALSET_INTERVAL: u64 = 60 * 60 * 24;
-pub const GAS_PRICE: u64 = 40;
+/// Gas price in microsats.
+pub const GAS_PRICE: u64 = 160_000;
 pub const APPROX_TRANSFER_GAS: u64 = 80_000;
-pub const APPROX_CALL_GAS: u64 = 200_000;
+pub const APPROX_CALL_GAS: u64 = 100_000;
 
 pub const WHITELISTED_RELAYER_ADDR: &str = "nomic124j0ky0luh9jzqh9w2dk77cze9v0ckdupk50ny";
 
