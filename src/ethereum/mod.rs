@@ -149,6 +149,42 @@ impl Ethereum {
         conn.sign(msg_index, pubkey, sig)
     }
 
+    pub fn create_connection(
+        &mut self,
+        chain_id: u32,
+        bridge_contract: Address,
+        token_contract: Address,
+        valset: SignatorySet,
+    ) -> Result<()> {
+        let Some(mut network) = self.networks.get_mut(chain_id)? else {
+            return Err(Error::App(format!("network with chain ID {} not found", chain_id)).into());
+        };
+
+        if network.connections.contains_key(bridge_contract)? {
+            return Err(Error::App(format!(
+                "connection with bridge contract address {} already exists",
+                bridge_contract
+            ))
+            .into());
+        }
+
+        use sha2::{Digest, Sha256};
+
+        // TODO: connection id here is currently sha256(concat(chain_id,
+        // bridge_contract)), but connection ids may not need to be globally
+        // unique, so may not need to include chain id.
+        let id = {
+            let bytes = [chain_id.encode()?, bridge_contract.bytes().to_vec()].concat();
+            Sha256::digest(bytes).to_vec()
+        };
+
+        let connection = Connection::new(&id, bridge_contract, token_contract, valset);
+
+        network.connections.insert(bridge_contract, connection)?;
+
+        Ok(())
+    }
+
     #[query]
     pub fn to_sign(&self, xpub: Xpub) -> Result<ToSign> {
         let mut to_sign = vec![];
@@ -1102,6 +1138,62 @@ mod tests {
             .unwrap());
 
         Context::remove::<Paid>();
+    }
+
+    #[test]
+    fn create_connection() -> Result<()> {
+        let mut ethereum = Ethereum::default();
+
+        let secp = Secp256k1::new();
+
+        let xpriv = ExtendedPrivKey::new_master(bitcoin::Network::Regtest, &[0]).unwrap();
+        let xpub = ExtendedPubKey::from_priv(&secp, &xpriv);
+
+        let valset = SignatorySet {
+            index: 0,
+            signatories: vec![Signatory {
+                pubkey: derive_pubkey(&secp, xpub.into(), 0).unwrap().into(),
+                voting_power: 10_000_000_000,
+            }],
+            create_time: 0,
+            present_vp: 10_000_000_000,
+            possible_vp: 10_000_000_000,
+        };
+
+        let bridge_contract = Address::NULL;
+        let token_contract = Address::NULL;
+        let chain_id = 1337;
+
+        ethereum.networks.insert(
+            chain_id,
+            Network {
+                id: chain_id,
+                connections: Default::default(),
+            },
+        )?;
+
+        ethereum.create_connection(chain_id, bridge_contract, token_contract, valset.clone())?;
+
+        let network = ethereum.networks.get(chain_id)?.unwrap();
+
+        let connection = network.connections.get(bridge_contract)?.unwrap();
+
+        assert_eq!(
+            connection.id,
+            [
+                123, 72, 3, 32, 235, 251, 47, 68, 47, 142, 52, 47, 100, 168, 102, 9, 162, 101, 175,
+                100, 190, 57, 71, 128, 202, 242, 8, 223, 37, 6, 26, 109
+            ]
+        );
+
+        let other_token_contract = Address::from([123; 20]);
+
+        // a connection can't be created for the same chain id and bridge contract
+        assert!(ethereum
+            .create_connection(chain_id, bridge_contract, other_token_contract, valset)
+            .is_err());
+
+        Ok(())
     }
 
     #[ignore]
