@@ -229,6 +229,13 @@ impl Ethereum {
         Ok(to_sign)
     }
 
+    pub fn network_mut(&mut self, network: u32) -> Result<ChildMut<u32, Network>> {
+        Ok(self
+            .networks
+            .get_mut(network)?
+            .ok_or_else(|| Error::App("Unknown network".to_string()))?)
+    }
+
     // TODO: we shouldn't need these:
     #[query]
     pub fn token_contract(&self, network: u32, connection: Address) -> Result<Address> {
@@ -326,6 +333,13 @@ impl Network {
             pending.extend(conn.take_pending()?);
         }
         Ok(pending)
+    }
+
+    pub fn connection_mut(&mut self, connection: Address) -> Result<ChildMut<Address, Connection>> {
+        Ok(self
+            .connections
+            .get_mut(connection)?
+            .ok_or_else(|| Error::App("Unknown connection".to_string()))?)
     }
 }
 
