@@ -627,6 +627,7 @@ impl Delegation {
         stake_amount / 1_000_000 // TODO: get covnersion from bitcoin config
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn relay_staking_tx(
         &mut self,
         headers: &HeaderQueue,
@@ -717,6 +718,17 @@ impl Delegation {
         btc: &Bitcoin,
         params: &Params,
     ) -> Result<()> {
+        if self.requested_unbond {
+            return Err(Error::Orga(orga::Error::App(
+                "Delegation already requested unbond".to_string(),
+            )));
+        }
+        if self.status() == DelegationStatus::Withdrawn {
+            return Err(Error::Orga(orga::Error::App(
+                "Delegation already withdrawn".to_string(),
+            )));
+        }
+
         self.requested_unbond = true;
 
         match self.status() {
@@ -802,6 +814,7 @@ impl Delegation {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn relay_unbonding_tx(
         &mut self,
         headers: &HeaderQueue,
