@@ -624,6 +624,7 @@ impl InnerApp {
                 proof.into_inner(),
                 tx.into_inner(),
                 &self.babylon.params,
+                &mut self.babylon.unbonding,
             )?;
 
         Ok(())
@@ -809,6 +810,8 @@ mod abci {
                 let reward = self.bitcoin.reward_pool.take(reward_amount)?;
                 self.staking.give(reward)?;
             }
+
+            self.babylon.step(&mut self.bitcoin)?;
 
             #[cfg(feature = "ethereum")]
             {

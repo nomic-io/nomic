@@ -50,11 +50,42 @@ impl Symbol for StakedNbtc {
 #[orga]
 pub struct Babylon {
     pub delegations: Map<Identity, Deque<Delegation>>,
+    pub unbonding: Map<(u32, Identity, u64), ()>,
     pub params: Params,
 }
 
 #[orga]
 impl Babylon {
+    pub fn step(&mut self, btc: &mut Bitcoin) -> Result<()> {
+        let mut remove_keys = vec![];
+        let mut iter = self.unbonding.iter()?;
+        loop {
+            let Some(entry) = iter.next() else {
+                break;
+            };
+
+            let key = entry?.0;
+            let (maturity_height, owner, index) = *key;
+            if btc.headers.height()? < maturity_height {
+                break;
+            }
+
+            self.delegations
+                .get_mut(owner)?
+                .ok_or_else(|| Error::Orga(orga::Error::App("Delegation not found".to_string())))?
+                .get_mut(index)?
+                .ok_or_else(|| Error::Orga(orga::Error::App("Delegation not found".to_string())))?
+                .withdraw(btc, &self.params)?;
+            remove_keys.push(*key);
+        }
+
+        for key in remove_keys {
+            self.unbonding.remove(key)?;
+        }
+
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn stake(
         &mut self,
@@ -711,6 +742,7 @@ impl Delegation {
         proof: PartialMerkleTree,
         tx: Transaction,
         params: &Params,
+        unbond_queue: &mut Map<(u32, Identity, u64), ()>,
     ) -> Result<()> {
         if self.status() != DelegationStatus::SignedUnbond {
             return Err(Error::Orga(orga::Error::App(
@@ -755,6 +787,9 @@ impl Delegation {
         }
 
         self.unbonding_height = Some(height);
+
+        let maturity_height = height + self.unbonding_period as u32;
+        unbond_queue.insert((maturity_height, self.owner, self.index), ())?;
 
         Ok(())
     }
