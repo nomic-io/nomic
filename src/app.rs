@@ -361,6 +361,11 @@ impl InnerApp {
         sigset_index: u32,
         dest: Dest,
     ) -> Result<()> {
+        let amount_after_fee =
+            self.bitcoin
+                .amount_after_deposit_fee(&btc_tx, btc_vout, sigset_index, &dest)?;
+        self.validate_dest(&dest, amount_after_fee.into(), Identity::None)?;
+
         Ok(self.bitcoin.relay_deposit(
             btc_tx,
             btc_height,
@@ -385,6 +390,61 @@ impl InnerApp {
         Ok(self
             .cosmos
             .relay_op_key(&self.ibc, client_id, height, cons_key, op_addr, acc)?)
+    }
+
+    pub fn validate_dest(&self, dest: &Dest, amount: Amount, sender: Identity) -> Result<()> {
+        match dest {
+            Dest::NativeAccount { address } => {}
+            Dest::Ibc { data } => data.validate()?,
+            Dest::RewardPool => {}
+            #[cfg(feature = "ethereum")]
+            Dest::EthAccount {
+                network,
+                connection,
+                address,
+            } => {
+                // TODO
+            }
+            #[cfg(feature = "ethereum")]
+            Dest::EthCall { .. } => {
+                // TODO
+            }
+            Dest::Bitcoin { data } => self.bitcoin.validate_withdrawal(data, amount)?,
+            Dest::Stake {
+                return_dest,
+                finality_provider,
+                staking_period,
+            } => {
+                // TODO: move into babylon
+                let params = &self.babylon.params;
+                let amount: u64 = amount.into();
+                if amount < params.min_staking_amount || amount > params.max_staking_amount {
+                    return Err(Error::App("Invalid stake amount".to_string()));
+                }
+
+                if *staking_period < params.min_staking_time
+                    || *staking_period > params.max_staking_time
+                {
+                    return Err(Error::App("Invalid staking period".to_string()));
+                }
+
+                let _: Dest = return_dest.parse()?;
+
+                if self.frost.most_recent_with_key()?.is_none() {
+                    return Err(Error::App("No Frost DKG groups".to_string()));
+                }
+            }
+            Dest::Unstake { index } => {
+                self.babylon
+                    .delegations
+                    .get(sender)?
+                    .ok_or_else(|| Error::App("No delegations found for owner".to_string()))?
+                    .get(*index)?
+                    .ok_or_else(|| Error::App("Delegation not found".to_string()))?;
+            }
+        }
+
+        Ok(())
     }
 
     pub fn credit_dest(&mut self, dest: Dest, nbtc: Coin<Nbtc>, sender: Identity) -> Result<()> {
@@ -770,9 +830,22 @@ mod abci {
                 self.step_frost(now)?;
             }
 
+            #[cfg(feature = "ethereum")]
+            {
+                if !self.bitcoin.checkpoints.is_empty()? {
+                    self.ethereum
+                        .step(&self.bitcoin.checkpoints.active_sigset()?)?;
+                }
+
+                let pending = &mut self.bitcoin.checkpoints.building_mut()?.pending;
+                for (dest, coins, sender) in self.ethereum.take_pending()? {
+                    pending.insert((dest, sender), coins)?;
+                }
+            }
+
             let pending_nbtc_transfers = self.bitcoin.take_pending()?;
             for (dest, coins, sender) in pending_nbtc_transfers {
-                if dest.validate(&self.bitcoin, coins.amount).is_ok() {
+                if self.validate_dest(&dest, coins.amount, sender).is_ok() {
                     let amount = coins.amount;
                     if let Err(e) = self.credit_dest(dest.clone(), coins, sender) {
                         // TODO: this will catch all errors, we only want to catch validation errors
@@ -786,6 +859,27 @@ mod abci {
                     }
                 } else {
                     log::debug!("Invalid transfer to {}, {}", dest, coins.amount);
+
+                    match sender {
+                        Identity::NativeAccount { address } => {
+                            self.bitcoin.accounts.deposit(address, coins)?;
+                        }
+                        Identity::EthAccount {
+                            network,
+                            connection,
+                            address,
+                        } => {
+                            self.ethereum
+                                .networks
+                                .get_mut(network)?
+                                .ok_or_else(|| Error::App("Unknown network".to_string()))?
+                                .connections
+                                .get_mut(connection.into())?
+                                .ok_or_else(|| Error::App("Unknown connection".to_string()))?
+                                .transfer(address.into(), coins)?;
+                        }
+                        _ => {}
+                    }
                 }
             }
 
@@ -812,50 +906,6 @@ mod abci {
             }
 
             self.babylon.step(&mut self.frost, &mut self.bitcoin)?;
-
-            #[cfg(feature = "ethereum")]
-            {
-                if !self.bitcoin.checkpoints.is_empty()? {
-                    self.ethereum
-                        .step(&self.bitcoin.checkpoints.active_sigset()?)?;
-                }
-                // TODO: push to pending
-                for (dest, coins, sender) in self.ethereum.take_pending()? {
-                    let amount = coins.amount;
-                    if dest.validate(&self.bitcoin, amount).is_ok() {
-                        if let Err(e) = self.credit_dest(dest.clone(), coins, sender) {
-                            // TODO: this will catch all errors, we only want to catch validation
-                            // errors
-                            log::debug!(
-                                "Failed to credit transfer to {} (amount: {}, sender: {})",
-                                dest,
-                                amount,
-                                sender,
-                            );
-                            log::debug!("{:?}", e);
-                        }
-                    } else {
-                        log::debug!("Invalid transfer to {}, {}", dest, amount);
-                        if let Dest::EthAccount {
-                            network,
-                            connection,
-                            address,
-                        } = dest
-                        {
-                            self.ethereum
-                                .networks
-                                .get_mut(network)?
-                                .ok_or_else(|| Error::App("Unknown network".to_string()))?
-                                .connections
-                                .get_mut(connection.into())?
-                                .ok_or_else(|| Error::App("Unknown connection".to_string()))?
-                                .transfer(address.into(), coins)?;
-                        } else {
-                            unreachable!();
-                        }
-                    }
-                }
-            }
 
             Ok(())
         }
@@ -1750,40 +1800,6 @@ impl Dest {
         Ok(bytes)
     }
 
-    pub fn validate(&self, bitcoin: &Bitcoin, amount: Amount) -> Result<()> {
-        match self {
-            Dest::NativeAccount { address } => {}
-            Dest::Ibc { data } => data.validate()?,
-            Dest::RewardPool => {}
-            #[cfg(feature = "ethereum")]
-            Dest::EthAccount {
-                network,
-                connection,
-                address,
-            } => {
-                // TODO
-            }
-            #[cfg(feature = "ethereum")]
-            Dest::EthCall { .. } => {
-                // TODO
-            }
-            Dest::Bitcoin { data } => bitcoin.validate_withdrawal(data, amount)?,
-            Dest::Stake {
-                return_dest,
-                finality_provider,
-                staking_period,
-            } => {
-                // TODO: check that the return_dest is valid and that periods
-                // are within bounds
-            }
-            Dest::Unstake { index } => {
-                // TODO: check that the index is valid
-            }
-        }
-
-        Ok(())
-    }
-
     pub fn from_base64(s: &str) -> Result<Self> {
         let bytes =
             base64::decode(s).map_err(|_| Error::App("Failed to decode base64".to_string()))?;
@@ -1813,23 +1829,6 @@ impl Dest {
             dest.is_fee_exempt()
         } else {
             false
-        }
-    }
-
-    pub fn to_identity(&self) -> Identity {
-        match self {
-            Dest::NativeAccount { address } => Identity::NativeAccount { address: *address },
-            #[cfg(feature = "ethereum")]
-            Dest::EthAccount {
-                network,
-                connection,
-                address,
-            } => Identity::EthAccount {
-                network: *network,
-                connection: *connection,
-                address: *address,
-            },
-            _ => Identity::None,
         }
     }
 }

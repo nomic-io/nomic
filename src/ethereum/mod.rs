@@ -1021,7 +1021,6 @@ mod tests {
             possible_vp: 10_000_000_000,
         };
 
-        let id = bytes32(b"test").unwrap();
         let mut ethereum = Connection::new(b"test", Address::NULL, Address::NULL, valset);
         assert_eq!(ethereum.batch_index, 0);
         assert_eq!(ethereum.valset_index, 0);

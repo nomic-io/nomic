@@ -10,8 +10,8 @@ use crate::error::{Error, Result};
 use bitcoin::hashes::Hash;
 use bitcoin::util::bip32::ChildNumber;
 use bitcoin::util::bip32::ExtendedPubKey;
-use bitcoin::Script;
 use bitcoin::{util::merkleblock::PartialMerkleTree, Transaction};
+use bitcoin::{OutPoint, Script};
 use checkpoint::CheckpointQueue;
 use header_queue::HeaderQueue;
 use orga::coins::{Accounts, Address, Amount, Coin, Give, Symbol, Take};
@@ -209,7 +209,7 @@ pub fn matches_bitcoin_network(network: &bitcoin::Network) -> bool {
 
 /// Calculates the bridge fee for a deposit of the given amount of BTC, in
 /// satoshis.
-pub fn calc_deposit_fee(amount: u64) -> u64 {
+pub fn calc_bridge_deposit_fee(amount: u64) -> u64 {
     amount / 100
 }
 
@@ -470,6 +470,51 @@ impl Bitcoin {
         // TODO: we shouldn't need this slice, commitment should be fixed-length
     }
 
+    pub fn amount_after_deposit_fee(
+        &self,
+        tx: &Transaction,
+        vout: u32,
+        sigset_index: u32,
+        dest: &Dest,
+    ) -> Result<u64> {
+        let output = tx.output.get(vout as usize).ok_or_else(|| {
+            Error::Orga(OrgaError::App("Output index is out of bounds".to_string()))
+        })?;
+
+        let prevout = OutPoint {
+            txid: tx.txid(),
+            vout,
+        };
+        let cp = self.checkpoints.get(sigset_index)?;
+        let input = Input::new(
+            prevout,
+            &cp.sigset,
+            &dest.commitment_bytes()?,
+            output.value,
+            self.checkpoints.config.sigset_threshold,
+        )?;
+        let input_size = input.est_vsize();
+
+        let mut amount = output.value * self.config.units_per_sat;
+
+        let miner_fee_amount = input_size * cp.fee_rate * self.checkpoints.config.user_fee_factor
+            / 10_000
+            * self.config.units_per_sat;
+        amount.checked_sub(miner_fee_amount).ok_or_else(|| {
+            OrgaError::App("Deposit amount is too small to pay its spending fee".to_string())
+        })?;
+
+        if !dest.is_fee_exempt() {
+            amount = amount
+                .checked_sub(calc_bridge_deposit_fee(amount))
+                .ok_or_else(|| {
+                    OrgaError::App("Deposit amount is too small to pay its deposit fee".to_string())
+                })?;
+        }
+
+        Ok(amount)
+    }
+
     /// Verifies and processes a deposit of BTC into the reserve.
     ///
     /// This will check that the Bitcoin transaction has been sufficiently
@@ -545,7 +590,7 @@ impl Bitcoin {
                 sigset.output_script(&dest_bytes, self.checkpoints.config.sigset_threshold)?;
             if output.script_pubkey != expected_script {
                 return Err(OrgaError::App(
-                    "Output script does not match signature set".to_string(),
+                    "Output script does not match signer set".to_string(),
                 ))?;
             }
         }
@@ -612,20 +657,11 @@ impl Bitcoin {
         // TODO: keep in excess queue if full
 
         if !dest.is_fee_exempt() {
-            let deposit_fee = nbtc.take(calc_deposit_fee(nbtc.amount.into()))?;
+            let deposit_fee = nbtc.take(calc_bridge_deposit_fee(nbtc.amount.into()))?;
             self.insert_pending(Dest::RewardPool, deposit_fee, Identity::None)?;
         }
 
-        let validation = dest.validate(self, nbtc.amount);
-        if validation.is_ok() {
-            let sender = dest.to_identity();
-            self.insert_pending(dest, nbtc, sender)?;
-        } else {
-            log::debug!(
-                "Skipped inserting deposit destination due to error: {:?}",
-                validation,
-            );
-        }
+        self.insert_pending(dest, nbtc, Identity::None)?;
 
         Ok(())
     }
@@ -804,8 +840,6 @@ impl Bitcoin {
         coins: Coin<Nbtc>,
         sender: Identity,
     ) -> Result<()> {
-        dest.validate(self, coins.amount)?;
-
         let building = &mut self.checkpoints.building_mut()?;
         let mut amount = building
             .pending
@@ -837,7 +871,7 @@ impl Bitcoin {
 
         let dest = Dest::NativeAccount { address: to };
         let coins = self.accounts.withdraw(signer, amount)?;
-        let sender = dest.to_identity();
+        let sender = Identity::from_signer()?;
         self.insert_pending(dest, coins, sender)?;
 
         Ok(())
@@ -1252,6 +1286,8 @@ mod tests {
         TxMerkleNode, Txid,
     };
     use orga::collections::EntryMap;
+
+    use crate::app::InnerApp;
 
     use super::{
         header_queue::{WorkHeader, WrappedHeader},
