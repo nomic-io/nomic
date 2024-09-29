@@ -400,12 +400,8 @@ impl InnerApp {
                 address,
             } => self
                 .ethereum
-                .networks
-                .get_mut(network)?
-                .ok_or_else(|| Error::App("Unknown network".to_string()))?
-                .connections
-                .get_mut(connection.into())?
-                .ok_or_else(|| Error::App("Unknown connection".to_string()))?
+                .network_mut(network)?
+                .connection_mut(connection.into())?
                 .transfer(address.into(), nbtc)?,
             #[cfg(feature = "ethereum")]
             Dest::EthCall {
@@ -417,12 +413,8 @@ impl InnerApp {
                 fallback_address,
             } => self
                 .ethereum
-                .networks
-                .get_mut(network)?
-                .ok_or_else(|| Error::App("Unknown network".to_string()))?
-                .connections
-                .get_mut(connection.into())?
-                .ok_or_else(|| Error::App("Unknown connection".to_string()))?
+                .network_mut(network)?
+                .connection_mut(connection.into())?
                 .call_contract(contract_address, data, max_gas, fallback_address, nbtc)?,
             Dest::Bitcoin { data } => self.bitcoin.add_withdrawal(data, nbtc)?,
             Dest::Stake {
@@ -449,22 +441,16 @@ impl InnerApp {
                 nbtc.burn();
             }
             Dest::AdjustEmergencyDisbursalBalance { data, difference } => {
-                match sender {
-                    Identity::EthAccount {
-                        network,
-                        connection,
-                        ..
-                    } => {
-                        self.ethereum
-                            .networks
-                            .get_mut(network)?
-                            .ok_or_else(|| Error::App("Unknown network".to_string()))?
-                            .connections
-                            .get_mut(connection.into())?
-                            .ok_or_else(|| Error::App("Unknown connection".to_string()))?
-                            .adjust_emergency_disbursal_balance(data, difference)?;
-                    }
-                    _ => {}
+                if let Identity::EthAccount {
+                    network,
+                    connection,
+                    ..
+                } = sender
+                {
+                    self.ethereum
+                        .network_mut(network)?
+                        .connection_mut(connection.into())?
+                        .adjust_emergency_disbursal_balance(data, difference)?;
                 }
                 nbtc.burn();
             }
