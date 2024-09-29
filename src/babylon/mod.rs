@@ -50,38 +50,65 @@ impl Symbol for StakedNbtc {
 #[orga]
 pub struct Babylon {
     pub delegations: Map<Identity, Deque<Delegation>>,
-    pub unbonding: Map<(u32, Identity, u64), ()>,
+    pub staked: DelegationQueue,
+    pub unbonding: DelegationQueue,
     pub params: Params,
 }
 
+pub type DelegationQueue = Map<(u32, Identity, u64), ()>;
+
 #[orga]
 impl Babylon {
-    pub fn step(&mut self, btc: &mut Bitcoin) -> Result<()> {
-        let mut remove_keys = vec![];
-        let mut iter = self.unbonding.iter()?;
-        loop {
-            let Some(entry) = iter.next() else {
-                break;
-            };
+    pub fn step(&mut self, frost: &mut Frost, btc: &mut Bitcoin) -> Result<()> {
+        type QueueHandler = fn(&mut Delegation, &mut Frost, &mut Bitcoin, &Params) -> Result<()>;
+        let mut process_queue = |queue: &mut DelegationQueue,
+                                 condition: fn(u32, u32, &Params) -> bool,
+                                 handler: QueueHandler| {
+            let mut remove_keys = vec![];
+            let mut iter = queue.iter()?;
+            loop {
+                let Some(entry) = iter.next() else {
+                    break;
+                };
 
-            let key = entry?.0;
-            let (maturity_height, owner, index) = *key;
-            if btc.headers.height()? < maturity_height {
-                break;
+                let key = entry?.0;
+                let (height, owner, index) = *key;
+                if !condition(btc.headers.height()?, height, &self.params) {
+                    break;
+                }
+
+                let mut owner_dels = self.delegations.get_mut(owner)?.ok_or_else(|| {
+                    Error::Orga(orga::Error::App("Delegation not found".to_string()))
+                })?;
+                let mut del = owner_dels.get_mut(index)?.ok_or_else(|| {
+                    Error::Orga(orga::Error::App("Delegation not found".to_string()))
+                })?;
+                handler(&mut *del, frost, btc, &self.params)?;
+                remove_keys.push(*key);
             }
 
-            self.delegations
-                .get_mut(owner)?
-                .ok_or_else(|| Error::Orga(orga::Error::App("Delegation not found".to_string())))?
-                .get_mut(index)?
-                .ok_or_else(|| Error::Orga(orga::Error::App("Delegation not found".to_string())))?
-                .withdraw(btc, &self.params)?;
-            remove_keys.push(*key);
-        }
+            for key in remove_keys {
+                queue.remove(key)?;
+            }
 
-        for key in remove_keys {
-            self.unbonding.remove(key)?;
-        }
+            Ok::<_, crate::error::Error>(())
+        };
+
+        // Process unbonding queue (once timelock has passed, withdraw from unbonding
+        // transaction)
+        process_queue(
+            &mut self.unbonding,
+            |btc_height, maturity_height, _| btc_height >= maturity_height,
+            |del, _, btc, params| del.withdraw(btc, params),
+        )?;
+
+        // Process staked queue (once delegations are older than `max_age`, start
+        // unbonding)
+        process_queue(
+            &mut self.staked,
+            |btc_height, staking_height, params| btc_height >= staking_height + params.max_age,
+            |del, frost, btc, params| del.unbond(frost, btc, params),
+        )?;
 
         Ok(())
     }
@@ -138,6 +165,7 @@ impl Babylon {
             .entry(owner)?
             .or_insert_default()?
             .push_back(del)?;
+
         Ok(index)
     }
 
@@ -282,6 +310,7 @@ pub struct Params {
     pub op_return_tag: [u8; 4],
     pub min_btc_confs: u32,
     pub slashing_rate: (u32, u32),
+    pub max_age: u32,
 }
 
 impl Params {
@@ -320,6 +349,7 @@ impl Params {
             op_return_tag: *b"bbb3",
             min_btc_confs: 0,
             slashing_rate: (11, 100),
+            max_age: 1_008,
         }
     }
 
@@ -356,6 +386,7 @@ impl Params {
             op_return_tag: *b"bbb4",
             min_btc_confs: 0,
             slashing_rate: (11, 100),
+            max_age: 1_008,
         }
     }
 
@@ -535,6 +566,7 @@ pub struct Delegation {
     pub staking_height: Option<u32>,
 
     // TODO: handle different types of spends (timelock vs unbonding vs slashed)
+    pub requested_unbond: bool,
     pub withdrawal_sigset_index: Option<u32>,
     pub withdrawal_script_pubkey: Option<crate::bitcoin::adapter::Adapter<Script>>,
     pub frost_sig_offset: Option<u64>,
@@ -603,6 +635,9 @@ impl Delegation {
         tx: Transaction,
         vout: u32,
         params: &Params,
+        stake_queue: &mut DelegationQueue,
+        frost: &mut Frost,
+        btc: &Bitcoin,
     ) -> Result<()> {
         if self.status() != DelegationStatus::Created {
             return Err(Error::Orga(orga::Error::App(
@@ -666,6 +701,38 @@ impl Delegation {
         };
         self.staking_outpoint = Some(outpoint.into());
         self.staking_height = Some(height);
+
+        stake_queue.insert((height, self.owner, self.index), ())?;
+
+        if self.requested_unbond {
+            self.unbond(frost, btc, params)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn request_unbond(
+        &mut self,
+        frost: &mut Frost,
+        btc: &Bitcoin,
+        params: &Params,
+    ) -> Result<()> {
+        self.requested_unbond = true;
+
+        match self.status() {
+            DelegationStatus::Created => {}
+            DelegationStatus::Staked => {
+                self.unbond(frost, btc, params)?;
+            }
+            DelegationStatus::SigningUnbond => {}
+            DelegationStatus::SignedUnbond => {}
+            DelegationStatus::ConfirmedUnbond => {}
+            DelegationStatus::Withdrawn => {
+                return Err(Error::Orga(orga::Error::App(
+                    "Delegation already withdrawn".to_string(),
+                )));
+            }
+        }
 
         Ok(())
     }
@@ -742,7 +809,8 @@ impl Delegation {
         proof: PartialMerkleTree,
         tx: Transaction,
         params: &Params,
-        unbond_queue: &mut Map<(u32, Identity, u64), ()>,
+        unbond_queue: &mut DelegationQueue,
+        stake_queue: &mut DelegationQueue,
     ) -> Result<()> {
         if self.status() != DelegationStatus::SignedUnbond {
             return Err(Error::Orga(orga::Error::App(
@@ -790,6 +858,7 @@ impl Delegation {
 
         let maturity_height = height + self.unbonding_period as u32;
         unbond_queue.insert((maturity_height, self.owner, self.index), ())?;
+        stake_queue.remove((self.staking_height.unwrap(), self.owner, self.index))?;
 
         Ok(())
     }
@@ -836,10 +905,22 @@ impl Delegation {
             .unwrap()
             .input
             .push_back(input)?;
-        building_cp.pending.insert(
-            (self.return_dest.clone(), self.owner),
-            self.stake.take(self.stake.amount)?,
-        )?;
+
+        let dest = if self.requested_unbond {
+            // pay liquid funds to return dest
+            self.return_dest.clone()
+        } else {
+            // renew delegation
+            Dest::Stake {
+                return_dest: self.return_dest.to_string().try_into()?,
+                finality_provider: self.fp_keys[0],
+                staking_period: self.staking_period,
+                unbonding_period: self.unbonding_period,
+            }
+        };
+        building_cp
+            .pending
+            .insert((dest, self.owner), self.stake.take(self.stake.amount)?)?;
 
         self.withdraw_checkpoint_index = Some(sigset.index);
 

@@ -595,6 +595,9 @@ impl InnerApp {
                 tx.into_inner(),
                 vout,
                 &self.babylon.params,
+                &mut self.babylon.staked,
+                &mut self.frost,
+                &self.bitcoin,
             )?;
 
         Ok(())
@@ -625,6 +628,7 @@ impl InnerApp {
                 tx.into_inner(),
                 &self.babylon.params,
                 &mut self.babylon.unbonding,
+                &mut self.babylon.staked,
             )?;
 
         Ok(())
@@ -811,7 +815,7 @@ mod abci {
                 self.staking.give(reward)?;
             }
 
-            self.babylon.step(&mut self.bitcoin)?;
+            self.babylon.step(&mut self.frost, &mut self.bitcoin)?;
 
             #[cfg(feature = "ethereum")]
             {
