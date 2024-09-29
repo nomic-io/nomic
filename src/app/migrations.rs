@@ -113,12 +113,12 @@ impl MigrateFrom<InnerAppV6> for InnerAppV7 {
             // Holesky
             {
                 let bridge_contract =
-                    alloy::primitives::address!("936366c13b43Ab6eC8f70A69038E9187fED0Cd1e")
+                    alloy_core::primitives::address!("936366c13b43Ab6eC8f70A69038E9187fED0Cd1e")
                         .0
                          .0
                         .into();
                 let token_contract =
-                    alloy::primitives::address!("54360db096a2cb43b411f89a584da69a7bac0663")
+                    alloy_core::primitives::address!("54360db096a2cb43b411f89a584da69a7bac0663")
                         .0
                          .0
                         .into();
@@ -144,12 +144,12 @@ impl MigrateFrom<InnerAppV6> for InnerAppV7 {
             // Berachain
             {
                 let bridge_contract =
-                    alloy::primitives::address!("ea55b1E6df415b96C194146abCcE85e6f811CAb7")
+                    alloy_core::primitives::address!("ea55b1E6df415b96C194146abCcE85e6f811CAb7")
                         .0
                          .0
                         .into();
                 let token_contract =
-                    alloy::primitives::address!("45a1947cb7315ce9c569b011a6dee4f67813bb75")
+                    alloy_core::primitives::address!("45a1947cb7315ce9c569b011a6dee4f67813bb75")
                         .0
                          .0
                         .into();

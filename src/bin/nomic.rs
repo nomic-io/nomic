@@ -8,9 +8,9 @@
 #![feature(never_type)]
 
 #[cfg(feature = "ethereum")]
-use alloy::network::EthereumWallet;
+use alloy_provider::network::EthereumWallet;
 #[cfg(feature = "ethereum")]
-use alloy::signers::local::LocalSigner;
+use alloy_signer_local::LocalSigner;
 
 use bitcoin::consensus::{Decodable, Encodable};
 #[cfg(feature = "ethereum")]
@@ -1747,7 +1747,7 @@ impl IbcWithdrawNbtcCmd {
 #[cfg(feature = "ethereum")]
 #[derive(Parser, Debug)]
 pub struct EthTransferNbtcCmd {
-    to: alloy::primitives::Address,
+    to: alloy_core::primitives::Address,
     amount: u64,
 
     #[clap(long)]
@@ -2706,12 +2706,12 @@ impl RelayEthereumCmd {
 
             let signer = LocalSigner::from_slice(privkey.as_slice()).unwrap(); // TODO
             let wallet = EthereumWallet::new(signer);
-            let provider = alloy::providers::ProviderBuilder::new()
+            let provider = alloy_provider::ProviderBuilder::new()
                 .with_recommended_fillers()
                 .wallet(wallet)
                 .on_http(self.eth_rpc_url.parse().unwrap());
             let contract = nomic::ethereum::bridge_contract::new(
-                alloy::core::primitives::Address::from_slice(&bridge_contract.bytes()),
+                alloy_core::primitives::Address::from_slice(&bridge_contract.bytes()),
                 provider,
             );
 
@@ -2811,21 +2811,21 @@ impl RelayEthereumCmd {
                             sigs,
                             transfers
                                 .iter()
-                                .map(|t| alloy::core::primitives::U256::from(t.amount))
+                                .map(|t| alloy_core::primitives::U256::from(t.amount))
                                 .collect(),
                             transfers
                                 .iter()
-                                .map(|t| alloy::core::primitives::Address::from_slice(
+                                .map(|t| alloy_core::primitives::Address::from_slice(
                                     &t.dest.bytes()
                                 ))
                                 .collect(),
                             transfers
                                 .iter()
-                                .map(|t| alloy::core::primitives::U256::from(t.fee_amount))
+                                .map(|t| alloy_core::primitives::U256::from(t.fee_amount))
                                 .collect(),
-                            alloy::core::primitives::U256::from(batch_index),
-                            alloy::core::primitives::Address::from_slice(&token_contract.bytes()),
-                            alloy::core::primitives::U256::from(timeout),
+                            alloy_core::primitives::U256::from(batch_index),
+                            alloy_core::primitives::Address::from_slice(&token_contract.bytes()),
+                            alloy_core::primitives::U256::from(timeout),
                         )
                         .send()
                         .await
@@ -2889,12 +2889,12 @@ impl RelayEthereumCmd {
 
             let signer = LocalSigner::from_slice(privkey.as_slice()).unwrap(); // TODO
             let wallet = EthereumWallet::new(signer);
-            let provider = alloy::providers::ProviderBuilder::new()
+            let provider = alloy_provider::ProviderBuilder::new()
                 .with_recommended_fillers()
                 .wallet(wallet)
                 .on_http(self.eth_rpc_url.parse().unwrap());
             let contract = nomic::ethereum::bridge_contract::new(
-                alloy::core::primitives::Address::from_slice(&bridge_contract.bytes()),
+                alloy_core::primitives::Address::from_slice(&bridge_contract.bytes()),
                 provider,
             );
 
@@ -2930,20 +2930,20 @@ impl RelayEthereumCmd {
             dbg!(contract_index, nomic_index);
 
             let dest_str = contract
-                .state_returnDests(alloy::core::primitives::U256::from(nomic_index))
+                .state_returnDests(alloy_core::primitives::U256::from(nomic_index))
                 .call()
                 .await
                 .unwrap()
                 ._0;
             let amount: u64 = contract
-                .state_returnAmounts(alloy::core::primitives::U256::from(nomic_index))
+                .state_returnAmounts(alloy_core::primitives::U256::from(nomic_index))
                 .call()
                 .await
                 .unwrap()
                 ._0
                 .to();
             let sender = contract
-                .state_returnSenders(alloy::core::primitives::U256::from(nomic_index))
+                .state_returnSenders(alloy_core::primitives::U256::from(nomic_index))
                 .call()
                 .await
                 .unwrap()

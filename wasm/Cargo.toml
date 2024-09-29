@@ -31,7 +31,9 @@ futures-lite = "1.13.0"
 getrandom = { version = "0.2.15", features = ["js"] }
 
 [features]
-testnet = ["nomic/testnet"]
+testnet = ["nomic/testnet", "ethereum", "babylon"]
+ethereum = []
+babylon = []
 
 [dependencies.web-sys]
 version = "0.3.55"

@@ -126,11 +126,7 @@ pub struct UnsafeSendFuture<F>(F);
 
 unsafe impl<F> Send for UnsafeSendFuture<F> {}
 
-use std::future::Future;
-use std::pin::Pin;
-use std::task::{Context, Poll};
-
-impl<F: Future> Future for UnsafeSendFuture<F> {
+impl<F: std::future::Future> Future for UnsafeSendFuture<F> {
     type Output = F::Output;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
