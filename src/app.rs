@@ -403,11 +403,26 @@ impl InnerApp {
                 connection,
                 address,
             } => {
-                // TODO
+                self.ethereum
+                    .network(*network)?
+                    .connection((*connection).into())?;
+                if *address == [0; 20] {
+                    return Err(Error::App("Invalid Ethereum address".to_string()));
+                }
             }
             #[cfg(feature = "ethereum")]
-            Dest::EthCall { .. } => {
-                // TODO
+            Dest::EthCall {
+                network,
+                connection,
+                fallback_address,
+                ..
+            } => {
+                self.ethereum
+                    .network(*network)?
+                    .connection((*connection).into())?;
+                if *fallback_address == [0; 20] {
+                    return Err(Error::App("Invalid Ethereum address".to_string()));
+                }
             }
             Dest::Bitcoin { data } => self.bitcoin.validate_withdrawal(data, amount)?,
             Dest::Stake {
@@ -450,8 +465,65 @@ impl InnerApp {
         Ok(())
     }
 
-    pub fn credit_dest(&mut self, dest: Dest, nbtc: Coin<Nbtc>, sender: Identity) -> Result<()> {
-        dbg!(dest.to_string());
+    fn try_credit_dest(
+        &mut self,
+        dest: Dest,
+        mut coins: Coin<Nbtc>,
+        sender: Identity,
+    ) -> Result<()> {
+        let mut succeeded = false;
+        let amount = coins.amount;
+        if self.validate_dest(&dest, amount, sender).is_ok() {
+            if let Err(e) = self.credit_dest(dest.clone(), coins.take(amount)?, sender) {
+                log::debug!("Error crediting transfer: {:?}", e);
+                // TODO: ensure no errors can happen after mutating
+                // state in credit_dest since state won't be reverted
+
+                // Assume coins passed into credit_dest are burnt,
+                // replace them in `coins`
+                coins.give(Coin::mint(amount))?;
+            } else {
+                succeeded = true;
+            }
+        }
+
+        // Handle failures
+        if !succeeded {
+            log::debug!(
+                "Failed to credit transfer to {} (amount: {}, sender: {})",
+                dest,
+                amount,
+                sender,
+            );
+
+            match sender {
+                Identity::NativeAccount { address } => {
+                    self.bitcoin.accounts.deposit(address, coins)?;
+                }
+                Identity::EthAccount {
+                    network,
+                    connection,
+                    address,
+                } => {
+                    self.ethereum
+                        .network_mut(network)?
+                        .connection_mut(connection.into())?
+                        .transfer(address.into(), coins)?;
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+
+    fn credit_dest(&mut self, dest: Dest, nbtc: Coin<Nbtc>, sender: Identity) -> Result<()> {
+        log::debug!(
+            "Crediting dest: {} (amount: {}, sender: {})",
+            &dest,
+            nbtc.amount,
+            &sender
+        );
         match dest {
             Dest::NativeAccount { address } => self.bitcoin.accounts.deposit(address, nbtc)?,
             Dest::Ibc { data: dest } => dest.transfer(nbtc, &mut self.bitcoin, &mut self.ibc)?,
@@ -854,38 +926,7 @@ mod abci {
 
             let pending_nbtc_transfers = self.bitcoin.take_pending()?;
             for (dest, coins, sender) in pending_nbtc_transfers {
-                if self.validate_dest(&dest, coins.amount, sender).is_ok() {
-                    let amount = coins.amount;
-                    if let Err(e) = self.credit_dest(dest.clone(), coins, sender) {
-                        // TODO: this will catch all errors, we only want to catch validation errors
-                        log::debug!(
-                            "Failed to credit transfer to {} (amount: {}, sender: {})",
-                            dest,
-                            amount,
-                            sender,
-                        );
-                        log::debug!("{:?}", e);
-                    }
-                } else {
-                    log::debug!("Invalid transfer to {}, {}", dest, coins.amount);
-
-                    match sender {
-                        Identity::NativeAccount { address } => {
-                            self.bitcoin.accounts.deposit(address, coins)?;
-                        }
-                        Identity::EthAccount {
-                            network,
-                            connection,
-                            address,
-                        } => {
-                            self.ethereum
-                                .network_mut(network)?
-                                .connection_mut(connection.into())?
-                                .transfer(address.into(), coins)?;
-                        }
-                        _ => {}
-                    }
-                }
+                self.try_credit_dest(dest, coins, sender)?;
             }
 
             let external_outputs = if self.bitcoin.should_push_checkpoint()? {

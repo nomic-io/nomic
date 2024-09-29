@@ -229,6 +229,13 @@ impl Ethereum {
         Ok(to_sign)
     }
 
+    pub fn network(&self, network: u32) -> Result<Ref<Network>> {
+        Ok(self
+            .networks
+            .get(network)?
+            .ok_or_else(|| Error::App("Unknown network".to_string()))?)
+    }
+
     pub fn network_mut(&mut self, network: u32) -> Result<ChildMut<u32, Network>> {
         Ok(self
             .networks
@@ -333,6 +340,13 @@ impl Network {
             pending.extend(conn.take_pending()?);
         }
         Ok(pending)
+    }
+
+    pub fn connection(&self, connection: Address) -> Result<Ref<Connection>> {
+        Ok(self
+            .connections
+            .get(connection)?
+            .ok_or_else(|| Error::App("Unknown connection".to_string()))?)
     }
 
     pub fn connection_mut(&mut self, connection: Address) -> Result<ChildMut<Address, Connection>> {
