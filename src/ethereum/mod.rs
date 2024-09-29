@@ -1159,6 +1159,7 @@ mod tests {
         let contract = bridge_contract::deploy(
             provider,
             ethereum.id.into(),
+            alloy::core::primitives::Address::from_slice(&[0; 20]),
             valset
                 .eth_addresses()
                 .iter()
@@ -1296,6 +1297,7 @@ mod tests {
         let contract = bridge_contract::deploy(
             provider,
             bytes32(b"test").unwrap().into(),
+            alloy::core::primitives::Address::from_slice(&[0; 20]),
             valset
                 .eth_addresses()
                 .iter()
@@ -1472,6 +1474,7 @@ mod tests {
         let contract = bridge_contract::deploy(
             provider,
             bytes32(b"test").unwrap().into(),
+            alloy::core::primitives::Address::from_slice(&[0; 20]),
             valset
                 .eth_addresses()
                 .iter()
@@ -1630,6 +1633,7 @@ mod tests {
         let contract = bridge_contract::deploy(
             &provider,
             bytes32(b"test").unwrap().into(),
+            alloy::core::primitives::Address::from_slice(&[0; 20]),
             valset
                 .eth_addresses()
                 .iter()

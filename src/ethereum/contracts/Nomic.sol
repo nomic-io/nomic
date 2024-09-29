@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "@openzeppelin/contracts/utils/Strings.sol";
 import "./CosmosToken.sol";
 
 error InvalidSignature();
@@ -89,6 +90,7 @@ contract Nomic is ReentrancyGuard {
 
     // This is set once at initialization
     bytes32 public immutable state_gravityId;
+    address public immutable state_owner;
 
     // TransactionBatchExecutedEvent and SendToNomicEvent both include the field _eventNonce.
     // This is incremented every time one of these events is emitted. It is checked by the
@@ -695,9 +697,71 @@ contract Nomic is ReentrancyGuard {
         );
     }
 
+    function setEmergencyDisbursalBalance(
+        address tokenContract,
+        bytes calldata script,
+        uint256 balance
+    ) external {
+        if (msg.sender != state_owner) {
+            revert("Unauthorized");
+        }
+
+        if (script.length == 0 || script.length > 64) {
+            revert("Invalid script");
+        }
+
+        string memory dest = string.concat(
+            '{"type":"setEmergencyDisbursalBalance","data":"',
+            toHex(script),
+            '","balance":',
+            Strings.toString(balance),
+            "}"
+        );
+
+        this.sendToNomic(tokenContract, dest, 0);
+    }
+
+    function adjustEmergencyDisbursalBalance(
+        address tokenContract,
+        string calldata _address,
+        int256 difference
+    ) external {
+        if (msg.sender != state_owner) {
+            revert("Unauthorized");
+        }
+
+        if (_address.length == 0 || _address.length > 35) {
+            revert("Invalid address");
+        }
+
+        string memory dest = string.concat(
+            '{"type":"adjustEmergencyDisbursalBalance","data":"',
+            address,
+            '","amount":',
+            Strings.toString(different),
+            "}"
+        );
+
+        this.sendToNomic(tokenContract, dest, 0);
+    }
+
+    function toHex(bytes memory buffer) internal pure returns (string memory) {
+        bytes memory converted = new bytes(buffer.length * 2);
+
+        bytes memory _base = "0123456789abcdef";
+
+        for (uint256 i = 0; i < buffer.length; i++) {
+            converted[i * 2] = _base[uint8(buffer[i]) / _base.length];
+            converted[i * 2 + 1] = _base[uint8(buffer[i]) % _base.length];
+        }
+
+        return string(converted);
+    }
+
     constructor(
         // A unique identifier for this gravity instance to use in signatures
         bytes32 _gravityId,
+        address _owner,
         // The validator set, not in valset args format since many of it's
         // arguments would never be used in this case
         address[] memory _validators,
@@ -734,6 +798,7 @@ contract Nomic is ReentrancyGuard {
         // ACTIONS
 
         state_gravityId = _gravityId;
+        state_owner = _owner;
         state_lastValsetCheckpoint = newCheckpoint;
 
         // LOGS
