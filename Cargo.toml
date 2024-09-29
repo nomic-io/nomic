@@ -8,6 +8,7 @@ default-run = "nomic"
 [dependencies]
 orga = { git = "https://github.com/nomic-io/orga.git", rev = "35988d76b58008e37794064c41f3d0ba102ca0c8", features = [
     "merk-verify",
+    "feat-ibc",
 ] }
 thiserror = "1.0.30"
 ed = { git = "https://github.com/nomic-io/ed", rev = "a657be856792039ff60c2f67e7920e38cd3acffc" }
@@ -51,7 +52,7 @@ cosmrs = "0.14.0"
 ripemd = "0.1.3"
 frost-secp256k1-tr = { git = "https://github.com/ZcashFoundation/frost", rev = "20c2c98a931c564655e2a03719e19ba916e11545", features = [
     "nightly",
-] }
+], optional = true }
 alloy = { version = "0.2.1", features = [
     "full",
     "node-bindings",
@@ -79,7 +80,7 @@ semver = "1.0.18"
 glob = "0.3.1"
 
 [features]
-default = ["full", "feat-ibc", "testnet", "ethereum"]
+default = ["full", "testnet", "ethereum", "babylon"]
 full = [
     "bitcoincore-rpc-async",
     "clap",
@@ -95,12 +96,13 @@ full = [
     "cosmos-sdk-proto",
     "home",
 ]
-feat-ibc = ["orga/feat-ibc"]
 testnet = []
 devnet = []
 legacy-bin = []
 signet = []
 ethereum = ["alloy"]
+frost = ["frost-secp256k1-tr"]
+babylon = ["frost"]
 
 [profile.release]
 overflow-checks = true

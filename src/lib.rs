@@ -23,12 +23,14 @@ pub use thiserror;
 
 pub mod airdrop;
 pub mod app;
+#[cfg(feature = "babylon")]
 pub mod babylon;
 pub mod bitcoin;
 pub mod cosmos;
 pub mod error;
 #[cfg(feature = "ethereum")]
 pub mod ethereum;
+#[cfg(feature = "frost")]
 pub mod frost;
 pub mod incentives;
 #[cfg(feature = "full")]

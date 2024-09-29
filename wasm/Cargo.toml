@@ -13,7 +13,6 @@ lto = true
 [dependencies]
 wasm-bindgen = "0.2.84"
 nomic = { path = "..", default-features = false, features = [
-    "feat-ibc",
     "csv",
     "rand",
     "clap",

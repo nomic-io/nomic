@@ -25,16 +25,18 @@ use nomic::app::IbcDest;
 use nomic::app::InnerApp;
 use nomic::app::Nom;
 use nomic::app::{Dest, Identity};
+#[cfg(feature = "babylon")]
+use nomic::babylon;
 use nomic::bitcoin::adapter::Adapter;
 use nomic::bitcoin::matches_bitcoin_network;
 use nomic::bitcoin::signatory::SignatorySet;
 use nomic::bitcoin::Nbtc;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
-use nomic::frost::signer::SecretStore;
+#[cfg(feature = "frost")]
+use nomic::frost::{self, signer::SecretStore};
 use nomic::utils::load_bitcoin_key;
 use nomic::utils::load_or_generate;
-use nomic::{babylon, frost};
 use orga::abci::Node;
 use orga::client::wallet::{SimpleWallet, Wallet};
 use orga::coins::{Address, Commission, Decimal, Declaration, Symbol};
@@ -178,8 +180,11 @@ pub enum Command {
     RecoverDeposit(RecoverDepositCmd),
     /// Pays nBTC into the network fee pool.
     PayToFeePool(PayToFeePoolCmd),
+    #[cfg(feature = "babylon")]
     BabylonRelayer(BabylonRelayerCmd),
+    #[cfg(feature = "babylon")]
     StakeNbtc(StakeNbtcCmd),
+    #[cfg(feature = "frost")]
     FrostSigner(FrostSignerCmd),
     #[cfg(feature = "ethereum")]
     RelayEthereum(RelayEthereumCmd),
@@ -249,8 +254,11 @@ impl Command {
                 SigningStatus(cmd) => cmd.run().await,
                 RecoverDeposit(cmd) => cmd.run().await,
                 PayToFeePool(cmd) => cmd.run().await,
+                #[cfg(feature = "babylon")]
                 BabylonRelayer(cmd) => cmd.run().await,
+                #[cfg(feature = "babylon")]
                 StakeNbtc(cmd) => cmd.run().await,
+                #[cfg(feature = "frost")]
                 FrostSigner(cmd) => cmd.run().await,
                 #[cfg(feature = "ethereum")]
                 RelayEthereum(cmd) => cmd.run().await,
@@ -2524,6 +2532,7 @@ impl PayToFeePoolCmd {
     }
 }
 
+#[cfg(feature = "babylon")]
 #[derive(Parser, Debug)]
 pub struct BabylonRelayerCmd {
     #[clap(short = 'p', long, default_value_t = 8332)]
@@ -2538,6 +2547,7 @@ pub struct BabylonRelayerCmd {
     config: nomic::network::Config,
 }
 
+#[cfg(feature = "babylon")]
 impl BabylonRelayerCmd {
     async fn btc_client(&self) -> Result<BtcClient> {
         let rpc_url = format!("http://localhost:{}", self.rpc_port);
@@ -2585,6 +2595,7 @@ impl BabylonRelayerCmd {
     }
 }
 
+#[cfg(feature = "babylon")]
 #[derive(Parser, Debug)]
 pub struct StakeNbtcCmd {
     amount: u64,
@@ -2593,6 +2604,7 @@ pub struct StakeNbtcCmd {
     config: nomic::network::Config,
 }
 
+#[cfg(feature = "babylon")]
 impl StakeNbtcCmd {
     async fn run(&self) -> Result<()> {
         todo!()
@@ -2608,12 +2620,14 @@ impl StakeNbtcCmd {
     }
 }
 
+#[cfg(feature = "frost")]
 #[derive(Parser, Debug)]
 pub struct FrostSignerCmd {
     #[clap(flatten)]
     config: nomic::network::Config,
 }
 
+#[cfg(feature = "frost")]
 impl FrostSignerCmd {
     async fn run(&self) -> Result<()> {
         let signer_dir_path = self.config.home_expect()?.join("frost");

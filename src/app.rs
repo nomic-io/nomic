@@ -7,18 +7,20 @@
 #![allow(unused_imports)]
 
 use crate::airdrop::Airdrop;
+#[cfg(feature = "babylon")]
 use crate::babylon::{self, Babylon, Params};
 use crate::bitcoin::adapter::Adapter;
 use crate::bitcoin::threshold_sig::Signature;
 use crate::bitcoin::{exempt_from_fee, Bitcoin, Nbtc};
 use crate::bitcoin::{matches_bitcoin_network, NETWORK};
 use crate::cosmos::{Chain, Cosmos, Proof};
+#[cfg(feature = "ethereum")]
 use crate::ethereum::Ethereum;
-use crate::frost::{Config as FrostConfig, FrostGroup};
+#[cfg(feature = "frost")]
+use crate::frost::{Config as FrostConfig, Frost, FrostGroup};
 
 #[cfg(feature = "ethereum")]
 use crate::ethereum::Connection;
-use crate::frost::Frost;
 use crate::incentives::Incentives;
 use bitcoin::util::merkleblock::PartialMerkleTree;
 use bitcoin::{PublicKey, Script, Transaction, TxOut};
@@ -101,8 +103,11 @@ const ETH_CREATE_CONNECTION_FEE_USATS: u64 = 10_000_000_000;
 
 const OSMOSIS_CHANNEL_ID: &str = "channel-1";
 
+#[cfg(feature = "frost")]
 const FROST_GROUP_INTERVAL: i64 = 10 * 60;
+#[cfg(feature = "frost")]
 const FROST_TOP_N: u16 = 5;
+#[cfg(feature = "frost")]
 const FROST_THRESHOLD: u16 = 3;
 
 /// The top-level application state type and logic. This contains the major
@@ -177,12 +182,12 @@ pub struct InnerApp {
     #[call]
     pub ethereum: Ethereum,
 
-    #[cfg(feature = "testnet")]
+    #[cfg(all(feature = "babylon", feature = "testnet"))]
     #[orga(version(V7))]
     #[call]
     pub babylon: Babylon,
 
-    #[cfg(feature = "testnet")]
+    #[cfg(all(feature = "frost", feature = "testnet"))]
     #[orga(version(V7))]
     #[call]
     pub frost: Frost,
@@ -422,6 +427,7 @@ impl InnerApp {
                     .validate_contract_call(*max_gas, (*fallback_address).into(), amount.into())?;
             }
             Dest::Bitcoin { data } => self.bitcoin.validate_withdrawal(data, amount)?,
+            #[cfg(feature = "babylon")]
             Dest::Stake {
                 return_dest,
                 finality_provider,
@@ -446,6 +452,7 @@ impl InnerApp {
                     return Err(Error::App("No Frost DKG groups".to_string()));
                 }
             }
+            #[cfg(feature = "babylon")]
             Dest::Unstake { index } => {
                 // TODO: move into babylon
                 let owner_dels = self
@@ -503,6 +510,7 @@ impl InnerApp {
                 Identity::NativeAccount { address } => {
                     self.bitcoin.accounts.deposit(address, coins)?;
                 }
+                #[cfg(feature = "ethereum")]
                 Identity::EthAccount {
                     network,
                     connection,
@@ -555,6 +563,7 @@ impl InnerApp {
                 .connection_mut(connection.into())?
                 .call_contract(contract_address, data, max_gas, fallback_address, nbtc)?,
             Dest::Bitcoin { data } => self.bitcoin.add_withdrawal(data, nbtc)?,
+            #[cfg(feature = "babylon")]
             Dest::Stake {
                 return_dest,
                 finality_provider,
@@ -571,12 +580,14 @@ impl InnerApp {
                     nbtc,
                 )?;
             }
+            #[cfg(feature = "babylon")]
             Dest::Unstake { index } => {
                 self.babylon
                     .unstake(sender, index, &mut self.frost, &self.bitcoin)?;
                 nbtc.burn();
             }
             Dest::AdjustEmergencyDisbursalBalance { data, difference } => {
+                #[cfg(feature = "ethereum")]
                 if let Identity::EthAccount {
                     network,
                     connection,
@@ -693,20 +704,29 @@ impl InnerApp {
         finality_provider: [u8; 32],
         staking_period: u16,
     ) -> Result<()> {
-        // TODO: validate staking/unbonding periods
-        let signer = self.signer()?;
-        let stake = self.bitcoin.accounts.withdraw(signer, amount)?;
-        self.babylon.stake(
-            &mut self.bitcoin,
-            &mut self.frost,
-            Identity::from_signer()?,
-            Dest::NativeAccount { address: signer },
-            finality_provider,
-            staking_period,
-            stake,
-        )?;
+        #[cfg(feature = "babylon")]
+        {
+            // TODO: validate staking/unbonding periods
+            // TODO: go through dest flow
+            let signer = self.signer()?;
+            let stake = self.bitcoin.accounts.withdraw(signer, amount)?;
+            self.babylon.stake(
+                &mut self.bitcoin,
+                &mut self.frost,
+                Identity::from_signer()?,
+                Dest::NativeAccount { address: signer },
+                finality_provider,
+                staking_period,
+                stake,
+            )?;
 
-        Ok(())
+            Ok(())
+        }
+
+        #[cfg(not(feature = "babylon"))]
+        {
+            Err(Error::App("Babylon feature not enabled".into()))
+        }
     }
 
     // TODO: move into babylon module, get HeaderQueue via context
@@ -720,27 +740,35 @@ impl InnerApp {
         tx: Adapter<Transaction>,
         vout: u32,
     ) -> Result<()> {
-        exempt_from_fee()?;
+        #[cfg(feature = "babylon")]
+        {
+            exempt_from_fee()?;
 
-        self.babylon
-            .delegations
-            .get_mut(del_owner)?
-            .ok_or_else(|| Error::App("No delegations found with given owner".into()))?
-            .get_mut(del_index)?
-            .ok_or_else(|| Error::App("Delegation not found".into()))?
-            .relay_staking_tx(
-                &self.bitcoin.headers,
-                height,
-                proof.into_inner(),
-                tx.into_inner(),
-                vout,
-                &self.babylon.params,
-                &mut self.babylon.staked,
-                &mut self.frost,
-                &self.bitcoin,
-            )?;
+            self.babylon
+                .delegations
+                .get_mut(del_owner)?
+                .ok_or_else(|| Error::App("No delegations found with given owner".into()))?
+                .get_mut(del_index)?
+                .ok_or_else(|| Error::App("Delegation not found".into()))?
+                .relay_staking_tx(
+                    &self.bitcoin.headers,
+                    height,
+                    proof.into_inner(),
+                    tx.into_inner(),
+                    vout,
+                    &self.babylon.params,
+                    &mut self.babylon.staked,
+                    &mut self.frost,
+                    &self.bitcoin,
+                )?;
 
-        Ok(())
+            Ok(())
+        }
+
+        #[cfg(not(feature = "babylon"))]
+        {
+            Err(Error::App("Babylon feature not enabled".into()))
+        }
     }
 
     // TODO: move into babylon module, get HeaderQueue via context
@@ -753,25 +781,33 @@ impl InnerApp {
         proof: Adapter<PartialMerkleTree>,
         tx: Adapter<Transaction>,
     ) -> Result<()> {
-        exempt_from_fee()?;
+        #[cfg(feature = "babylon")]
+        {
+            exempt_from_fee()?;
 
-        self.babylon
-            .delegations
-            .get_mut(del_owner)?
-            .ok_or_else(|| Error::App("No delegations found with given owner".into()))?
-            .get_mut(del_index)?
-            .ok_or_else(|| Error::App("Delegation not found".into()))?
-            .relay_unbonding_tx(
-                &self.bitcoin.headers,
-                height,
-                proof.into_inner(),
-                tx.into_inner(),
-                &self.babylon.params,
-                &mut self.babylon.unbonding,
-                &mut self.babylon.staked,
-            )?;
+            self.babylon
+                .delegations
+                .get_mut(del_owner)?
+                .ok_or_else(|| Error::App("No delegations found with given owner".into()))?
+                .get_mut(del_index)?
+                .ok_or_else(|| Error::App("Delegation not found".into()))?
+                .relay_unbonding_tx(
+                    &self.bitcoin.headers,
+                    height,
+                    proof.into_inner(),
+                    tx.into_inner(),
+                    &self.babylon.params,
+                    &mut self.babylon.unbonding,
+                    &mut self.babylon.staked,
+                )?;
 
-        Ok(())
+            Ok(())
+        }
+
+        #[cfg(not(feature = "babylon"))]
+        {
+            Err(Error::App("Babylon feature not enabled".into()))
+        }
     }
 
     #[call]
@@ -781,13 +817,24 @@ impl InnerApp {
         bridge_contract: Address,
         token_contract: Address,
     ) -> Result<()> {
-        self.deduct_nbtc_fee(ETH_CREATE_CONNECTION_FEE_USATS.into())?;
-        // TODO: confirm that this is the right valset to use
-        let valset = self.bitcoin.checkpoints.active_sigset()?;
+        #[cfg(feature = "ethereum")]
+        {
+            self.deduct_nbtc_fee(ETH_CREATE_CONNECTION_FEE_USATS.into())?;
+            // TODO: confirm that this is the right valset to use
+            let valset = self.bitcoin.checkpoints.active_sigset()?;
 
-        Ok(self
-            .ethereum
-            .create_connection(chain_id, bridge_contract, token_contract, valset)?)
+            Ok(self.ethereum.create_connection(
+                chain_id,
+                bridge_contract,
+                token_contract,
+                valset,
+            )?)
+        }
+
+        #[cfg(not(feature = "ethereum"))]
+        {
+            Err(Error::App("Ethereum feature not enabled".into()))
+        }
     }
 
     #[call]
@@ -800,7 +847,7 @@ impl InnerApp {
         Ok(())
     }
 
-    #[cfg(feature = "testnet")]
+    #[cfg(all(feature = "frost", feature = "testnet"))]
     fn step_frost(&mut self, now: i64) -> Result<()> {
         let last_frost_group = self.frost.groups.back()?;
         let last_frost_group_time = last_frost_group.as_ref().map(|g| g.created_at).unwrap_or(0);
@@ -834,7 +881,10 @@ mod abci {
         plugins::{BeginBlockCtx, EndBlockCtx, InitChainCtx, Validators},
     };
 
-    use crate::{ethereum::bytes32, frost::FrostGroup};
+    #[cfg(feature = "ethereum")]
+    use crate::ethereum::bytes32;
+    #[cfg(feature = "frost")]
+    use crate::frost::FrostGroup;
 
     use super::*;
 
@@ -909,7 +959,7 @@ mod abci {
             let ip_reward = self.incentive_pool_rewards.mint()?;
             self.incentive_pool.give(ip_reward)?;
 
-            #[cfg(feature = "testnet")]
+            #[cfg(all(feature = "frost", feature = "testnet"))]
             if !self.bitcoin.checkpoints.is_empty()? {
                 self.step_frost(now)?;
             }
@@ -954,6 +1004,7 @@ mod abci {
                 self.staking.give(reward)?;
             }
 
+            #[cfg(feature = "babylon")]
             self.babylon.step(&mut self.frost, &mut self.bitcoin)?;
 
             Ok(())
@@ -1678,6 +1729,7 @@ pub enum Dest {
         #[serde(with = "SerHex::<StrictPfx>")]
         fallback_address: [u8; 20],
     },
+    #[cfg(feature = "babylon")]
     Stake {
         // TODO: this should be a Dest, but the cycle prevents the macro-generated Terminated impl
         // from applying
@@ -1686,6 +1738,7 @@ pub enum Dest {
         finality_provider: [u8; 32],
         staking_period: u16,
     },
+    #[cfg(feature = "babylon")]
     Unstake {
         index: u64,
     },
@@ -1822,10 +1875,12 @@ impl Dest {
                 contract_address, ..
             } => hex::encode(contract_address),
             Dest::Bitcoin { .. } => return None,
+            #[cfg(feature = "babylon")]
             Dest::Stake { return_dest, .. } => {
                 let return_dest: Dest = return_dest.parse().ok()?;
                 return return_dest.to_receiver_addr();
             }
+            #[cfg(feature = "babylon")]
             Dest::Unstake { .. } => return None,
             Dest::AdjustEmergencyDisbursalBalance { .. } => {
                 return None;

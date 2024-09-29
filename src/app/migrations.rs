@@ -1,10 +1,12 @@
+#[cfg(feature = "babylon")]
+use crate::babylon::Babylon;
+#[cfg(feature = "ethereum")]
+use crate::ethereum::{bytes32, Connection, Ethereum, Network};
 use crate::{
-    babylon::Babylon,
     bitcoin::{
         adapter::Adapter,
         header_queue::{WorkHeader, WrappedHeader},
     },
-    ethereum::{bytes32, Connection, Ethereum, Network},
     incentives::Incentives,
 };
 
@@ -87,6 +89,7 @@ impl MigrateFrom<InnerAppV5> for InnerAppV6 {
 
 impl MigrateFrom<InnerAppV6> for InnerAppV7 {
     fn migrate_from(other: InnerAppV6) -> Result<Self> {
+        #[cfg(all(feature = "testnet", feature = "ethereum"))]
         let mut ethereum = Ethereum::default();
 
         #[cfg(all(feature = "testnet", feature = "ethereum"))]
@@ -186,8 +189,11 @@ impl MigrateFrom<InnerAppV6> for InnerAppV7 {
             incentives: other.incentives,
             ibc: other.ibc,
             cosmos: other.cosmos,
+            #[cfg(feature = "babylon")]
             babylon: Default::default(),
+            #[cfg(feature = "frost")]
             frost: Default::default(),
+            #[cfg(feature = "ethereum")]
             ethereum,
         })
     }
