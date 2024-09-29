@@ -417,14 +417,24 @@ impl Connection {
         Ok(())
     }
 
+    pub fn validate_transfer(&self, dest: Address, amount: u64) -> Result<()> {
+        let fee_amount = APPROX_TRANSFER_GAS * GAS_PRICE;
+        if amount < fee_amount {
+            return Err(Error::App("Insufficient funds for fee".to_string()).into());
+        }
+
+        if dest == Address::NULL {
+            return Err(Error::App("Invalid Ethereum address".to_string()).into());
+        }
+
+        Ok(())
+    }
+
     pub fn transfer(&mut self, dest: Address, coins: Coin<Nbtc>) -> Result<()> {
-        // TODO: validation (min amount, etc)
+        let amount: u64 = coins.amount.into();
+        self.validate_transfer(dest, amount)?;
 
         let fee_amount = APPROX_TRANSFER_GAS * GAS_PRICE;
-        if coins.amount < fee_amount {
-            return Err(Error::App("insufficient funds for fee".to_string()).into());
-        }
-        let amount: u64 = coins.amount.into();
         let amount = amount - fee_amount;
 
         // TODO: batch transfers
@@ -447,6 +457,24 @@ impl Connection {
         Ok(())
     }
 
+    pub fn validate_contract_call(
+        &self,
+        max_gas: u64,
+        fallback_address: Address,
+        amount: u64,
+    ) -> Result<()> {
+        if fallback_address == Address::NULL {
+            return Err(Error::App("Invalid Ethereum address".to_string()).into());
+        }
+
+        let fee_amount = (APPROX_CALL_GAS + max_gas) * GAS_PRICE;
+        if amount < fee_amount {
+            return Err(Error::App("Insufficient funds for fee".to_string()).into());
+        }
+
+        Ok(())
+    }
+
     pub fn call_contract(
         &mut self,
         // TODO: ethaddress type
@@ -458,10 +486,9 @@ impl Connection {
         coins: Coin<Nbtc>,
     ) -> Result<()> {
         let transfer_amount: u64 = coins.amount.into();
+        self.validate_contract_call(max_gas, fallback_address.into(), transfer_amount)?;
+
         let fee_amount = (APPROX_CALL_GAS + max_gas) * GAS_PRICE;
-        if transfer_amount < fee_amount {
-            return Err(Error::App("insufficient funds for fee".to_string()).into());
-        }
         let transfer_amount = transfer_amount - fee_amount;
 
         self.coins.give(coins)?;

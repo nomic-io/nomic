@@ -405,24 +405,21 @@ impl InnerApp {
             } => {
                 self.ethereum
                     .network(*network)?
-                    .connection((*connection).into())?;
-                if *address == [0; 20] {
-                    return Err(Error::App("Invalid Ethereum address".to_string()));
-                }
+                    .connection((*connection).into())?
+                    .validate_transfer((*address).into(), amount.into())?;
             }
             #[cfg(feature = "ethereum")]
             Dest::EthCall {
                 network,
                 connection,
                 fallback_address,
+                max_gas,
                 ..
             } => {
                 self.ethereum
                     .network(*network)?
-                    .connection((*connection).into())?;
-                if *fallback_address == [0; 20] {
-                    return Err(Error::App("Invalid Ethereum address".to_string()));
-                }
+                    .connection((*connection).into())?
+                    .validate_contract_call(*max_gas, (*fallback_address).into(), amount.into())?;
             }
             Dest::Bitcoin { data } => self.bitcoin.validate_withdrawal(data, amount)?,
             Dest::Stake {
@@ -450,12 +447,18 @@ impl InnerApp {
                 }
             }
             Dest::Unstake { index } => {
-                self.babylon
+                // TODO: move into babylon
+                let owner_dels = self
+                    .babylon
                     .delegations
                     .get(sender)?
-                    .ok_or_else(|| Error::App("No delegations found for owner".to_string()))?
+                    .ok_or_else(|| Error::App("No delegations found for owner".to_string()))?;
+                let del = owner_dels
                     .get(*index)?
                     .ok_or_else(|| Error::App("Delegation not found".to_string()))?;
+                if del.status() == babylon::DelegationStatus::Withdrawn {
+                    return Err(Error::App("Delegation already withdrawn".to_string()));
+                }
             }
             Dest::AdjustEmergencyDisbursalBalance { data, difference } => {
                 // TODO

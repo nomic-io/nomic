@@ -188,7 +188,7 @@ impl Babylon {
             .ok_or_else(|| Error::Orga(orga::Error::App("Delegation not found".to_string())))?
             .get_mut(index)?
             .ok_or_else(|| Error::Orga(orga::Error::App("Delegation not found".to_string())))?
-            .unbond(frost, btc, &self.params)
+            .request_unbond(frost, btc, &self.params)
     }
 }
 
