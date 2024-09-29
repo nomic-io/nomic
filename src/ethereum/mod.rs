@@ -4,6 +4,7 @@ use bitcoin::secp256k1::{
     ecdsa::{RecoverableSignature, RecoveryId},
     Message, PublicKey, Secp256k1,
 };
+use bitcoin::Script;
 use orga::encoding::LengthString;
 use orga::query::MethodQuery;
 use std::collections::BTreeSet;
@@ -27,7 +28,7 @@ use serde_hex::{SerHex, StrictPfx};
 
 use crate::app::Identity;
 use crate::bitcoin::signatory::derive_pubkey;
-use crate::bitcoin::Xpub;
+use crate::bitcoin::{Adapter, Xpub};
 use crate::{
     app::Dest,
     bitcoin::{
@@ -340,6 +341,9 @@ pub struct Connection {
     pub valset_index: u64,
     pub return_index: u64,
 
+    pub emergency_disbursal_total: u64,
+    pub emergency_disbursal_balances: Map<Adapter<Script>, u64>,
+
     pub outbox: Deque<OutMessage>,
     pub pending: Deque<(Dest, Coin<Nbtc>, Identity)>,
     pub coins: Coin<Nbtc>,
@@ -368,6 +372,8 @@ impl Connection {
             valset_interval: VALSET_INTERVAL,
             valset,
             pending: Deque::new(),
+            emergency_disbursal_balances: Map::new(),
+            emergency_disbursal_total: 0,
         }
     }
 
@@ -543,6 +549,42 @@ impl Connection {
         }
 
         // TODO: push return queue clear message
+
+        Ok(())
+    }
+
+    pub fn adjust_emergency_disbursal_balance(
+        &mut self,
+        script: Adapter<Script>,
+        difference: i64,
+    ) -> Result<()> {
+        let total_coins: u64 = self.coins.amount.into();
+        if (self.emergency_disbursal_total as i128).saturating_add(difference as i128)
+            > total_coins as i128
+        {
+            return Err(Error::App(
+                "Exceeded balance in emergency disbursal distribution".to_string(),
+            )
+            .into());
+        }
+
+        let mut balance = self
+            .emergency_disbursal_balances
+            .entry(script)?
+            .or_default()?;
+
+        let add = |a: u64, b: i64| {
+            let a = a as i128;
+            let b = b as i128;
+            let sum = a.saturating_add(b);
+            if sum < 0 || sum > u64::MAX as i128 {
+                return Err(Error::App("Balance overflow".to_string()));
+            }
+            Ok(sum as u64)
+        };
+
+        *balance = add(*balance, difference)?;
+        self.emergency_disbursal_total = add(self.emergency_disbursal_total, difference)?;
 
         Ok(())
     }
