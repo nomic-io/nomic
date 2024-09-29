@@ -18,7 +18,10 @@ use orga::{
 use crate::{
     app::{Identity, InnerApp, Nom},
     babylon::DelegationStatus,
-    bitcoin::{adapter::Adapter, checkpoint::CheckpointStatus},
+    bitcoin::{
+        adapter::Adapter,
+        checkpoint::{BatchType, CheckpointStatus},
+    },
     error::{Error, Result},
 };
 
@@ -82,8 +85,10 @@ pub async fn maybe_relay_staking_conf(
 
     let (cp_status, tx) = app_client
         .query(|app| {
-            let cp = app.bitcoin.checkpoints.get(del.checkpoint_index)?;
-            Ok((cp.status, cp.checkpoint_tx()?))
+            let cp = app.bitcoin.checkpoints.get(del.checkpoint_batch_index.0)?;
+            let batch = cp.batches.get(BatchType::Checkpoint as u64)?.unwrap();
+            let tx = batch.get(del.checkpoint_batch_index.1)?.unwrap();
+            Ok((cp.status, tx.to_bitcoin_tx()?))
         })
         .await?;
     if cp_status != CheckpointStatus::Complete {
@@ -125,7 +130,7 @@ pub async fn maybe_relay_staking_conf(
                         del.index,
                         height,
                         Adapter::new(proof.clone()),
-                        tx.clone(),
+                        Adapter::new(tx.clone()),
                         vout
                     ))
                 },

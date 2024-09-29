@@ -83,7 +83,7 @@ impl Babylon {
                 let mut del = owner_dels.get_mut(index)?.ok_or_else(|| {
                     Error::Orga(orga::Error::App("Delegation not found".to_string()))
                 })?;
-                handler(&mut *del, frost, btc, &self.params)?;
+                handler(&mut del, frost, btc, &self.params)?;
                 remove_keys.push(*key);
             }
 
@@ -122,7 +122,6 @@ impl Babylon {
         return_dest: Dest,
         finality_provider: [u8; 32],
         staking_time: u16,
-        unbonding_time: u16,
         nbtc: Coin<Nbtc>,
     ) -> Result<u64> {
         let Some(frost_index) = frost.most_recent_with_key()? else {
@@ -133,6 +132,14 @@ impl Babylon {
         let group_pubkey = frost.group_pubkey(frost_index)?.unwrap();
         let index = self.delegations.get(owner)?.unwrap_or_default().len();
 
+        let batch_index = btc
+            .checkpoints
+            .building()?
+            .batches
+            .get(BatchType::Checkpoint as u64)?
+            .unwrap()
+            .len();
+
         let del = Delegation::new(
             index,
             owner,
@@ -141,9 +148,9 @@ impl Babylon {
             frost_index,
             vec![XOnlyPublicKey::from_slice(&finality_provider)?],
             staking_time,
-            unbonding_time,
+            (btc.checkpoints.index, batch_index),
             nbtc,
-            btc.checkpoints.index,
+            &self.params,
         )?;
 
         // Push staking tx to checkpoint.
@@ -308,9 +315,15 @@ pub struct Params {
     pub slashing_script: Adapter<Script>,
     pub slashing_min_fee: u64,
     pub op_return_tag: [u8; 4],
-    pub min_btc_confs: u32,
     pub slashing_rate: (u32, u32),
     pub max_age: u32,
+    pub min_staking_time: u16,
+    pub max_staking_time: u16,
+    pub unbonding_time: u16,
+    pub min_staking_amount: u64,
+    pub max_staking_amount: u64,
+    pub unbonding_fee: u64,
+    pub confirmation_depth: u32,
 }
 
 impl Params {
@@ -347,9 +360,15 @@ impl Params {
                 .into(),
             slashing_min_fee,
             op_return_tag: *b"bbb3",
-            min_btc_confs: 0,
             slashing_rate: (11, 100),
             max_age: 1_008,
+            min_staking_time: u16::MAX,
+            max_staking_time: 1,
+            unbonding_time: 5,
+            min_staking_amount: 50_000,
+            max_staking_amount: 5_000_000,
+            unbonding_fee: 1_000,
+            confirmation_depth: 10,
         }
     }
 
@@ -384,9 +403,15 @@ impl Params {
                 .into(),
             slashing_min_fee,
             op_return_tag: *b"bbb4",
-            min_btc_confs: 0,
             slashing_rate: (11, 100),
             max_age: 1_008,
+            min_staking_time: 64_000,
+            max_staking_time: 64_000,
+            unbonding_time: 1_008,
+            min_staking_amount: 50_000,
+            max_staking_amount: 5_000_000,
+            unbonding_fee: 10_000,
+            confirmation_depth: 10,
         }
     }
 
@@ -448,7 +473,6 @@ pub fn slashing_tx(
     staker_key: XOnlyPublicKey,
     stake_out: OutPoint,
     stake_value: u64,
-    unbonding_time: u16,
     params: &Params,
 ) -> Result<Transaction> {
     let staking_in = TxIn {
@@ -467,7 +491,7 @@ pub fn slashing_tx(
     };
 
     let change_key = TaprootBuilder::new()
-        .add_leaf(0, timelock_script(staker_key, unbonding_time as u64))?
+        .add_leaf(0, timelock_script(staker_key, params.unbonding_time as u64))?
         .finalize(&Secp256k1::new(), UNSPENDABLE_KEY.parse().unwrap())
         .unwrap()
         .output_key();
@@ -487,10 +511,9 @@ pub fn slashing_tx(
 pub fn unbonding_taproot(
     staker_key: XOnlyPublicKey,
     fp_keys: &[XOnlyPublicKey],
-    unbonding_time: u16,
     params: &Params,
 ) -> Result<TaprootSpendInfo> {
-    let timelock_script = timelock_script(staker_key, unbonding_time as u64);
+    let timelock_script = timelock_script(staker_key, params.unbonding_time as u64);
     let slashing_script = slashing_script(staker_key, fp_keys, params)?;
 
     let internal_key = UNSPENDABLE_KEY.parse()?;
@@ -506,7 +529,6 @@ pub fn unbonding_tx(
     fp_keys: &[XOnlyPublicKey],
     staking_outpoint: OutPoint,
     staking_value: u64,
-    unbonding_time: u16,
     params: &Params,
 ) -> Result<Transaction> {
     let staking_in = TxIn {
@@ -516,11 +538,10 @@ pub fn unbonding_tx(
         witness: Witness::default(),
     };
 
-    let script_pubkey = Script::new_v1_p2tr_tweaked(
-        unbonding_taproot(staker_key, fp_keys, unbonding_time, params)?.output_key(),
-    );
+    let script_pubkey =
+        Script::new_v1_p2tr_tweaked(unbonding_taproot(staker_key, fp_keys, params)?.output_key());
     let out = TxOut {
-        value: staking_value - 1_000, // TODO: parameterize
+        value: staking_value - params.unbonding_fee,
         script_pubkey,
     };
 
@@ -559,8 +580,8 @@ pub struct Delegation {
     pub fp_keys: LengthVec<u8, XOnlyPubkey>,
     pub staking_period: u16,
     pub unbonding_period: u16,
+    pub checkpoint_batch_index: (u32, u64),
     pub stake: Coin<Nbtc>,
-    pub checkpoint_index: u32,
 
     pub staking_outpoint: Option<crate::bitcoin::adapter::Adapter<OutPoint>>,
     pub staking_height: Option<u32>,
@@ -589,10 +610,16 @@ impl Delegation {
         frost_group: u64,
         fp_keys: Vec<XOnlyPublicKey>,
         staking_period: u16,
-        unbonding_period: u16,
+        checkpoint_batch_index: (u32, u64),
         stake: Coin<Nbtc>,
-        checkpoint_index: u32,
+        params: &Params,
     ) -> Result<Self> {
+        if staking_period < params.min_staking_time || staking_period > params.max_staking_time {
+            return Err(Error::Orga(orga::Error::App(
+                "Staking period out of bounds".to_string(),
+            )));
+        }
+
         Ok(Self {
             index,
             owner,
@@ -605,9 +632,9 @@ impl Delegation {
                 .collect::<Vec<_>>()
                 .try_into()?,
             staking_period,
-            unbonding_period,
+            unbonding_period: params.unbonding_time,
+            checkpoint_batch_index,
             stake,
-            checkpoint_index,
             ..Default::default()
         })
     }
@@ -624,7 +651,7 @@ impl Delegation {
 
     pub fn stake_sats(&self) -> u64 {
         let stake_amount: u64 = self.stake.amount.into();
-        stake_amount / 1_000_000 // TODO: get covnersion from bitcoin config
+        stake_amount / 1_000_000 // TODO: get conversion from bitcoin config
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -646,7 +673,7 @@ impl Delegation {
             )));
         }
 
-        if headers.height()?.saturating_sub(height) < params.min_btc_confs {
+        if headers.height()?.saturating_sub(height) < params.confirmation_depth {
             return Err(Error::Orga(orga::Error::App(
                 "Staking tx is not confirmed".to_string(),
             )));
@@ -831,7 +858,7 @@ impl Delegation {
             )));
         }
 
-        if headers.height()?.saturating_sub(height) < params.min_btc_confs {
+        if headers.height()?.saturating_sub(height) < params.confirmation_depth {
             return Err(Error::Orga(orga::Error::App(
                 "Unbonding tx is not confirmed".to_string(),
             )));
@@ -928,7 +955,6 @@ impl Delegation {
                 return_dest: self.return_dest.to_string().try_into()?,
                 finality_provider: self.fp_keys[0],
                 staking_period: self.staking_period,
-                unbonding_period: self.unbonding_period,
             }
         };
         building_cp
@@ -997,7 +1023,6 @@ impl Delegation {
                 Error::Orga(orga::Error::App("Missing staking outpoint".to_string()))
             })?,
             self.stake_sats(),
-            self.unbonding_period,
             params,
         )
     }
@@ -1009,7 +1034,6 @@ impl Delegation {
                 Error::Orga(orga::Error::App("Missing staking outpoint".to_string()))
             })?,
             self.stake_sats(),
-            self.unbonding_period,
             &Params::bbn_test_4(),
         )
     }
@@ -1023,7 +1047,6 @@ impl Delegation {
                 vout: 0,
             },
             unbonding_tx.output[0].value,
-            self.unbonding_period,
             &Params::bbn_test_4(),
         )
     }
@@ -1137,7 +1160,7 @@ impl Delegation {
                 witness: Witness::default(),
             }],
             output: vec![TxOut {
-                value: unbonding_value - 1_000, // TODO: parameterize fee
+                value: unbonding_value - params.unbonding_fee,
                 script_pubkey: unbonding_script.into_inner(),
             }],
         };
@@ -1200,15 +1223,16 @@ mod tests {
             vout: 0,
         };
         let staking_value = 20_000;
-        let unbonding_time = 101;
         let expected_slashing_tx = Transaction::deserialize(&hex::decode("0200000001237aade8b8a56a47e30ed80a6102e5fdc1acd46373dcf640efd8d36940d2f6560000000000ffffffff02980800000000000016001463e2edfae6bf51aebbed63bb823c55565ab5eacea041000000000000225120e9f60075bdb745bb352fee26ee981fd55573652a928c8e6b19db29e00f32646000000000").unwrap()).unwrap();
+
+        let mut params = Params::bbn_test_3();
+        params.unbonding_time = 101;
 
         let slashing_tx = slashing_tx(
             staker_btc_pk.parse().unwrap(),
             staking_outpoint,
             staking_value,
-            unbonding_time,
-            &Params::bbn_test_3(),
+            &params,
         )
         .unwrap();
         assert_eq!(slashing_tx, expected_slashing_tx);
@@ -1225,17 +1249,18 @@ mod tests {
             vout: 0,
         };
         let staking_value = 20_000;
-        let unbonding_time = 101;
         let expected_unbonding_tx = Transaction::deserialize(&hex::decode("0200000001237aade8b8a56a47e30ed80a6102e5fdc1acd46373dcf640efd8d36940d2f6560000000000ffffffff01384a000000000000225120c60d4710421700778d000fe5d618710b3c529aff1db293f9771a718207166b0800000000").unwrap()).unwrap();
         let expected_unbonding_slashing_tx = Transaction::deserialize(&hex::decode("0200000001a92722fb4e58cae7d03e2445ccb2a6201de1603773a5cb2e730136e95d6eabc60000000000ffffffff022a0800000000000016001463e2edfae6bf51aebbed63bb823c55565ab5eace263e000000000000225120e9f60075bdb745bb352fee26ee981fd55573652a928c8e6b19db29e00f32646000000000").unwrap()).unwrap();
+
+        let mut params = Params::bbn_test_3();
+        params.unbonding_time = 101;
 
         let unbonding_tx = unbonding_tx(
             staker_btc_pk.parse().unwrap(),
             &[fp_pk.parse().unwrap()],
             staking_outpoint,
             staking_value,
-            unbonding_time,
-            &Params::bbn_test_3(),
+            &params,
         )
         .unwrap();
         assert_eq!(unbonding_tx, expected_unbonding_tx);
@@ -1247,8 +1272,7 @@ mod tests {
                 vout: 0,
             },
             unbonding_tx.output[0].value,
-            unbonding_time,
-            &Params::bbn_test_3(),
+            &params,
         )
         .unwrap();
         assert_eq!(unbonding_slashing_tx, expected_unbonding_slashing_tx);
@@ -1273,10 +1297,10 @@ mod tests {
             btc_pubkey,
             0,
             vec![XOnlyPublicKey::from_keypair(&keypair).0],
-            150,
-            5,
+            64_000,
+            (0, 1),
             Nbtc::mint(50_000_000_000),
-            0,
+            &params,
         )?;
         assert_eq!(del.status(), DelegationStatus::Created);
 
@@ -1404,25 +1428,27 @@ mod tests {
                 .unwrap(),
         )
         .unwrap()];
+
+        let mut params = Params::bbn_test_4();
+        params.min_staking_time = 0;
+
         let del = Delegation::new(
             0,
-            Identity::default(), // TODO
-            Dest::default(),     // TODO
+            Identity::default(),
+            Dest::default(),
             btc_key,
             0,
             fp_keys,
             150,
-            5,
+            (0, 1),
             Coin::mint(50_000_000_000),
-            0,
+            &params,
         )
         .unwrap();
 
         assert_eq!(del.op_return_bytes().unwrap(), hex::decode("62626234008c0d21a8dd59a2a50f7ab8cb94d3034eb2b3d130589168bf7876a30b22c876d803d5a0bb72d71993e435d6c5a70e2aa4db500a62cfaae33c56050deefee64ec00096").unwrap());
         assert_eq!(
-            del.staking_script(&Params::bbn_test_4())
-                .unwrap()
-                .to_bytes(),
+            del.staking_script(&params).unwrap().to_bytes(),
             hex::decode("51202552bc9fe84a0e05f156d127e7d2460bff26541ba56e9f761d2029ee09f3859f")
                 .unwrap(),
         );

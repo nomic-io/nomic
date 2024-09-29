@@ -429,7 +429,6 @@ impl InnerApp {
                 return_dest,
                 finality_provider,
                 staking_period,
-                unbonding_period,
             } => {
                 let return_dest = return_dest.parse()?;
                 self.babylon.stake(
@@ -439,7 +438,6 @@ impl InnerApp {
                     return_dest,
                     finality_provider,
                     staking_period,
-                    unbonding_period,
                     nbtc,
                 )?;
             }
@@ -550,7 +548,6 @@ impl InnerApp {
         amount: Amount,
         finality_provider: [u8; 32],
         staking_period: u16,
-        unbonding_period: u16,
     ) -> Result<()> {
         // TODO: validate staking/unbonding periods
         let signer = self.signer()?;
@@ -562,7 +559,6 @@ impl InnerApp {
             Dest::NativeAccount { address: signer },
             finality_provider,
             staking_period,
-            unbonding_period,
             stake,
         )?;
 
@@ -1405,12 +1401,7 @@ impl ConvertSdkTx for InnerApp {
                             .map_err(|e: std::num::ParseIntError| Error::App(e.to_string()))?;
 
                         let payer = build_call!(self.pay_nbtc_fee());
-                        let paid = build_call!(self.stake_nbtc(
-                            amount.into(),
-                            fp,
-                            staking_period,
-                            unbonding_period
-                        ));
+                        let paid = build_call!(self.stake_nbtc(amount.into(), fp, staking_period));
 
                         Ok(PaidCall { payer, paid })
                     }
@@ -1595,7 +1586,6 @@ pub enum Dest {
         #[serde(with = "SerHex::<Strict>")]
         finality_provider: [u8; 32],
         staking_period: u16,
-        unbonding_period: u16,
     },
     Unstake {
         index: u64,
@@ -1782,7 +1772,6 @@ impl Dest {
                 return_dest,
                 finality_provider,
                 staking_period,
-                unbonding_period,
             } => {
                 // TODO: check that the return_dest is valid and that periods
                 // are within bounds
