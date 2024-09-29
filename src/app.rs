@@ -448,6 +448,26 @@ impl InnerApp {
                     .unstake(sender, index, &mut self.frost, &self.bitcoin)?;
                 nbtc.burn();
             }
+            Dest::AdjustEmergencyDisbursalBalance { data, difference } => {
+                match sender {
+                    Identity::EthAccount {
+                        network,
+                        connection,
+                        ..
+                    } => {
+                        self.ethereum
+                            .networks
+                            .get_mut(network)?
+                            .ok_or_else(|| Error::App("Unknown network".to_string()))?
+                            .connections
+                            .get_mut(connection.into())?
+                            .ok_or_else(|| Error::App("Unknown connection".to_string()))?
+                            .adjust_emergency_disbursal_balance(data, difference)?;
+                    }
+                    _ => {}
+                }
+                nbtc.burn();
+            }
         };
 
         Ok(())
@@ -1593,6 +1613,11 @@ pub enum Dest {
     Unstake {
         index: u64,
     },
+    AdjustEmergencyDisbursalBalance {
+        #[serde(with = "address_or_script")]
+        data: Adapter<Script>,
+        difference: i64,
+    },
 }
 
 mod address_or_script {
@@ -1726,6 +1751,9 @@ impl Dest {
                 return return_dest.to_receiver_addr();
             }
             Dest::Unstake { .. } => return None,
+            Dest::AdjustEmergencyDisbursalBalance { .. } => {
+                return None;
+            }
         })
     }
 
@@ -1782,6 +1810,12 @@ impl Dest {
             }
             Dest::Unstake { index } => {
                 // TODO: check that the index is valid
+            }
+            Dest::AdjustEmergencyDisbursalBalance {
+                data,
+                difference: amount,
+            } => {
+                // TODO
             }
         }
 
