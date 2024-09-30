@@ -4,10 +4,10 @@ use std::{
     str::FromStr,
 };
 
-use bitcoin::consensus::encode;
+use bitcoin::{consensus::encode, network};
 use ed::{Decode, Encode, Terminated};
 use helios_consensus_core::{
-    apply_bootstrap, apply_finality_update, apply_update,
+    apply_bootstrap, apply_finality_update, apply_update, expected_current_slot,
     types::{
         bls::{PublicKey as HeliosPublicKey, Signature as HeliosSignature},
         Bootstrap as HeliosBootstrap, FinalityUpdate as HeliosFinalityUpdate, Forks, GenericUpdate,
@@ -29,55 +29,40 @@ use crate::error::Result;
 pub mod relayer;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct LightClient(LightClientStore);
+pub struct LightClient {
+    lcs: LightClientStore,
+    network: Network,
+}
 
 impl LightClient {
-    pub fn into_inner(self) -> LightClientStore {
-        self.0
-    }
-
-    pub fn new(bootstrap: Bootstrap) -> Result<Self> {
-        let mut lcs = LightClientStore::default();
+    pub fn new(bootstrap: Bootstrap, network: Network) -> Result<Self> {
         let bootstrap = bootstrap.into();
-        verify_bootstrap(&bootstrap, bootstrap.header.tree_hash_root()).unwrap();
+
+        verify_bootstrap(&bootstrap, bootstrap.header.tree_hash_root())
+            .map_err(|e| orga::Error::App(format!("Invalid bootstrap: {}", e.to_string())))?;
+
+        let mut lcs = LightClientStore::default();
         apply_bootstrap(&mut lcs, &bootstrap);
-        Ok(LightClient(lcs))
+
+        Ok(LightClient { lcs, network })
     }
 
-    pub fn update(&mut self, update: Update) -> Result<()> {
-        let expected_current_slot = 10075240;
-        let genesis_root =
-            hex::decode("4b363db94e286120d76eb905340fdd4e54bfe9f06bf33ff6cf5ad27f511bfe95")
-                .unwrap()
-                .as_slice()
-                .try_into()
-                .unwrap();
+    pub fn update(&mut self, update: Update, now_seconds: u64) -> Result<()> {
+        let expected_slot = (now_seconds - self.network.genesis_time) / 12;
         let mut forks = Forks::default();
-        forks.deneb.fork_version = [4, 0, 0, 0].into();
+        forks.deneb.fork_version = (&self.network.deneb_fork_version.to_le_bytes()).into();
+        let genesis_root = (&self.network.genesis_vals_root.0).into();
 
         if update.next_sync_committee.is_some() {
             let update: HeliosUpdate = update.try_into().unwrap();
-            verify_update(
-                &update,
-                expected_current_slot,
-                &self.0,
-                genesis_root,
-                &forks,
-            )
-            .unwrap();
-            apply_update(&mut self.0, &update);
+            verify_update(&update, expected_slot, &self.lcs, genesis_root, &forks)
+                .map_err(|e| orga::Error::App(format!("Invalid update: {}", e.to_string())))?;
+            apply_update(&mut self.lcs, &update);
         } else {
             let update: HeliosFinalityUpdate = update.into();
-            verify_finality_update(
-                &update,
-                expected_current_slot,
-                &self.0,
-                genesis_root,
-                &forks,
-            )
-            .unwrap();
-            apply_finality_update(&mut self.0, &update);
+            verify_finality_update(&update, expected_slot, &self.lcs, genesis_root, &forks)
+                .map_err(|e| orga::Error::App(format!("Invalid update: {}", e.to_string())))?;
+            apply_finality_update(&mut self.lcs, &update);
         }
 
         Ok(())
@@ -88,13 +73,13 @@ impl Deref for LightClient {
     type Target = LightClientStore;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.lcs
     }
 }
 
 impl DerefMut for LightClient {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+        &mut self.lcs
     }
 }
 
@@ -110,23 +95,30 @@ impl Encode for LightClient {
             encode_sync_committee(sc, dest)?;
         }
         encode_header(&self.optimistic_header, dest)?;
-        self.0.previous_max_active_participants.encode_into(dest)?;
-        self.0.current_max_active_participants.encode_into(dest)
+        self.lcs
+            .previous_max_active_participants
+            .encode_into(dest)?;
+        self.lcs.current_max_active_participants.encode_into(dest)?;
+        self.network.encode_into(dest)
     }
 
     fn encoding_length(&self) -> ed::Result<usize> {
         // TODO: remove need for copying
-        Ok(Header(self.0.finalized_header.clone()).encoding_length()?
-            + SyncCommittee(self.0.current_sync_committee.clone()).encoding_length()?
+        Ok(Header(self.lcs.finalized_header.clone()).encoding_length()?
+            + SyncCommittee(self.lcs.current_sync_committee.clone()).encoding_length()?
             + self
-                .0
+                .lcs
                 .next_sync_committee
                 .clone()
                 .map(SyncCommittee)
                 .encoding_length()?
-            + Header(self.0.optimistic_header.clone()).encoding_length()?
-            + self.0.previous_max_active_participants.encoding_length()?
-            + self.0.current_max_active_participants.encoding_length()?)
+            + Header(self.lcs.optimistic_header.clone()).encoding_length()?
+            + self
+                .lcs
+                .previous_max_active_participants
+                .encoding_length()?
+            + self.lcs.current_max_active_participants.encoding_length()?
+            + self.network.encoding_length()?)
     }
 }
 
@@ -138,19 +130,42 @@ impl Decode for LightClient {
         let optimistic_header = Header::decode(&mut input)?;
         let previous_max_active_participants = u64::decode(&mut input)?;
         let current_max_active_participants = u64::decode(&mut input)?;
+        let network = Network::decode(&mut input)?;
 
-        Ok(LightClient(LightClientStore {
-            finalized_header: finalized_header.into_inner(),
-            current_sync_committee: current_sync_committee.into_inner(),
-            next_sync_committee: next_sync_committee.map(|sc| sc.into_inner()),
-            optimistic_header: optimistic_header.into_inner(),
-            previous_max_active_participants,
-            current_max_active_participants,
-        }))
+        Ok(LightClient {
+            lcs: LightClientStore {
+                finalized_header: finalized_header.into_inner(),
+                current_sync_committee: current_sync_committee.into_inner(),
+                next_sync_committee: next_sync_committee.map(|sc| sc.into_inner()),
+                optimistic_header: optimistic_header.into_inner(),
+                previous_max_active_participants,
+                current_max_active_participants,
+            },
+            network,
+        })
     }
 }
 
 impl Terminated for LightClient {}
+
+#[derive(Clone, Debug, Default, Encode, Decode, Serialize, Deserialize)]
+pub struct Network {
+    pub genesis_vals_root: Bytes32,
+    pub deneb_fork_version: u32,
+    pub genesis_time: u64,
+}
+
+impl Network {
+    pub fn ethereum_mainnet() -> Self {
+        Network {
+            genesis_vals_root: "0x4b363db94e286120d76eb905340fdd4e54bfe9f06bf33ff6cf5ad27f511bfe95"
+                .parse()
+                .unwrap(),
+            deneb_fork_version: 4,
+            genesis_time: 1606824023,
+        }
+    }
+}
 
 #[derive(Clone, Debug, Encode, Decode, Serialize, Deserialize)]
 pub struct Update {
@@ -643,6 +658,8 @@ impl FromStr for Bytes32 {
 
 #[cfg(test)]
 mod tests {
+    use relayer::Response;
+
     use super::*;
 
     #[test]
@@ -651,9 +668,9 @@ mod tests {
         let bytes = pk.encode().unwrap();
         let pk2 = PublicKey::decode(&bytes[..]).unwrap();
 
-        let lcs = LightClient(LightClientStore::default());
-        let bytes = lcs.encode().unwrap();
-        let lcs = LightClient::decode(&bytes[..]).unwrap();
+        let lc = LightClient::default();
+        let bytes = lc.encode().unwrap();
+        let lc = LightClient::decode(&bytes[..]).unwrap();
     }
 
     #[test]
@@ -663,27 +680,27 @@ mod tests {
         assert_eq!(pk_str, "\"0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\"");
         let pk2: PublicKey = serde_json::from_str(&pk_str).unwrap();
 
-        let lcs = LightClient(LightClientStore::default());
-        let lcs_str = serde_json::to_string(&lcs).unwrap();
-        let lcs2: LightClient = serde_json::from_str(&lcs_str).unwrap();
+        let sig = Signature(HeliosSignature::default());
+        let sig_str = serde_json::to_string(&sig).unwrap();
+        assert_eq!(sig_str, "\"0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\"");
+        let sig2: Signature = serde_json::from_str(&sig_str).unwrap();
     }
 
     #[tokio::test]
     async fn update() {
-        let rpc = relayer::Client::new("https://www.lightclientdata.org".to_string());
+        let fixtures = include_str!("test_fixtures.json");
+        let (bootstrap, updates, finality_update): (
+            Response<Bootstrap>,
+            Vec<Response<Update>>,
+            Response<Update>,
+        ) = serde_json::from_str(fixtures).unwrap();
 
-        let bootstrap = rpc
-            .bootstrap(
-                "0xb2536a96e35df54caf8d37e958d2899a6c6b8616342a9e38c913c62e5c85aa93"
-                    .parse()
-                    .unwrap(),
-            )
-            .await
-            .unwrap()
-            .data;
-        let mut client = LightClient::new(bootstrap).unwrap();
+        let mut client = LightClient::new(bootstrap.data, Network::ethereum_mainnet()).unwrap();
+        for update in updates {
+            client.update(update.data, 1727740110).unwrap();
+        }
+        client.update(finality_update.data, 1727740110).unwrap();
 
-        let update = rpc.finality_update().await.unwrap().data;
-        client.update(update).unwrap();
+        assert_eq!(client.lcs.finalized_header.slot, 10076224);
     }
 }

@@ -33,7 +33,7 @@ impl Client {
         Ok(res)
     }
 
-    pub async fn finality_update(&self) -> Result<Response<Update>> {
+    pub async fn get_finality_update(&self) -> Result<Response<Update>> {
         let url = format!(
             "{}/eth/v1/beacon/light_client/finality_update",
             self.rpc_addr,
@@ -68,7 +68,7 @@ mod tests {
     async fn get_updates() {
         let client = Client::new("https://www.lightclientdata.org".to_string());
         let updates = client.get_updates(1229, 1).await.unwrap();
-        let update = client.finality_update().await.unwrap();
+        let update = client.get_finality_update().await.unwrap();
         let bootstrap = client
             .bootstrap(
                 "0xb2536a96e35df54caf8d37e958d2899a6c6b8616342a9e38c913c62e5c85aa93"
