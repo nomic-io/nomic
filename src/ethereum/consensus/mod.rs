@@ -3,13 +3,17 @@ use std::ops::{Deref, DerefMut};
 use bitcoin::consensus::encode;
 use ed::{Decode, Encode, Terminated};
 use helios_consensus_core::types::{
-    bls::PublicKey as HeliosPublicKey, Header as HeliosHeader, LightClientStore,
-    SyncCommittee as HeliosSyncCommittee,
+    bls::{PublicKey as HeliosPublicKey, Signature as HeliosSignature},
+    Header as HeliosHeader, LightClientStore, SyncAggregate as HeliosSyncAggregate,
+    SyncCommittee as HeliosSyncCommittee, Update as HeliosUpdate,
 };
-use orga::orga;
+use orga::{encoding::LengthVec, orga};
 use serde::{Deserialize, Serialize};
+use serde_hex::{SerHex, StrictPfx};
 use ssz::{Decode as SszDecode, Encode as SszEncode};
-use ssz_types::FixedVector;
+use ssz_types::{Bitfield, FixedVector};
+
+use crate::error::Result;
 
 #[cfg(feature = "ethereum-full")]
 pub mod relayer;
@@ -22,6 +26,10 @@ impl LightClient {
     pub fn into_inner(self) -> LightClientStore {
         self.0
     }
+
+    // pub fn update(&mut self, update: Update) -> Result<()> {
+    //     helios_consensus_core::apply_optimistic_update(store, update)
+    // }
 }
 
 impl Deref for LightClient {
@@ -55,6 +63,7 @@ impl Encode for LightClient {
     }
 
     fn encoding_length(&self) -> ed::Result<usize> {
+        // TODO: remove need for copying
         Ok(Header(self.0.finalized_header.clone()).encoding_length()?
             + SyncCommittee(self.0.current_sync_committee.clone()).encoding_length()?
             + self
@@ -90,6 +99,72 @@ impl Decode for LightClient {
 }
 
 impl Terminated for LightClient {}
+
+#[derive(Clone, Debug, Encode, Decode, Serialize, Deserialize)]
+pub struct Update {
+    #[serde(deserialize_with = "wrapped_header::deserialize")]
+    pub attested_header: Header,
+    pub next_sync_committee: Option<SyncCommittee>,
+    pub next_sync_committee_branch: Option<LengthVec<u8, Bytes32>>,
+    #[serde(deserialize_with = "wrapped_header::deserialize")]
+    pub finalized_header: Header,
+    pub finality_branch: LengthVec<u8, Bytes32>,
+    pub sync_aggregate: SyncAggregate,
+    #[serde(with = "u64_string")]
+    pub signature_slot: u64,
+}
+
+// impl Update {
+//     pub fn to_
+// }
+
+mod u64_string {
+    use serde::{de::Error, Deserializer, Serializer};
+
+    pub fn serialize<S>(value: &u64, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&value.to_string())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<u64, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let val: String = serde::Deserialize::deserialize(deserializer)?;
+        val.parse().map_err(D::Error::custom)
+    }
+}
+
+mod wrapped_header {
+    use super::Header;
+    use serde::{Deserialize, Deserializer};
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Header, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let header: LightClientHeader = Deserialize::deserialize(deserializer)?;
+
+        Ok(match header {
+            LightClientHeader::Unwrapped(header) => header,
+            LightClientHeader::Wrapped(header) => header.beacon,
+        })
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(untagged)]
+    enum LightClientHeader {
+        Unwrapped(Header),
+        Wrapped(Beacon),
+    }
+
+    #[derive(serde::Deserialize)]
+    struct Beacon {
+        beacon: Header,
+    }
+}
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -192,9 +267,9 @@ pub fn encode_sync_committee<W: std::io::Write>(
     dest: &mut W,
 ) -> ed::Result<()> {
     for i in 0..512 {
-        PublicKey(sc.pubkeys[i].clone()).encode_into(dest)?;
+        encode_public_key(&sc.pubkeys[i], dest)?;
     }
-    PublicKey(sc.aggregate_pubkey.clone()).encode_into(dest)
+    encode_public_key(&sc.aggregate_pubkey, dest)
 }
 
 impl Decode for SyncCommittee {
@@ -212,7 +287,68 @@ impl Decode for SyncCommittee {
     }
 }
 
+impl Terminated for SyncCommittee {}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct SyncAggregate(HeliosSyncAggregate);
+
+impl SyncAggregate {
+    pub fn into_inner(self) -> HeliosSyncAggregate {
+        self.0
+    }
+}
+
+impl Deref for SyncAggregate {
+    type Target = HeliosSyncAggregate;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for SyncAggregate {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Encode for SyncAggregate {
+    fn encode_into<W: std::io::Write>(&self, dest: &mut W) -> ed::Result<()> {
+        encode_sync_aggregate(&self.0, dest)
+    }
+
+    fn encoding_length(&self) -> ed::Result<usize> {
+        Ok(64 + 96)
+    }
+}
+
+pub fn encode_sync_aggregate<W: std::io::Write>(
+    sa: &HeliosSyncAggregate,
+    dest: &mut W,
+) -> ed::Result<()> {
+    sa.sync_committee_bits.as_slice().encode_into(dest)?;
+    encode_signature(&sa.sync_committee_signature, dest)
+}
+
+impl Decode for SyncAggregate {
+    fn decode<R: std::io::Read>(mut input: R) -> ed::Result<Self> {
+        let sync_committee_bits = Vec::<u8>::decode(&mut input)?;
+        let sync_committee_signature = Signature::decode(&mut input)?.into_inner();
+
+        Ok(SyncAggregate(HeliosSyncAggregate {
+            sync_committee_bits: Bitfield::from_ssz_bytes(&sync_committee_bits)
+                // TODO: pass through error
+                .map_err(|e| ed::Error::UnexpectedByte(34))?,
+            sync_committee_signature,
+        }))
+    }
+}
+
+impl Terminated for SyncAggregate {}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct PublicKey(HeliosPublicKey);
 
 impl PublicKey {
@@ -256,6 +392,10 @@ impl Encode for PublicKey {
     }
 }
 
+fn encode_public_key<W: std::io::Write>(pk: &HeliosPublicKey, dest: &mut W) -> ed::Result<()> {
+    pk.as_ssz_bytes().encode_into(dest)
+}
+
 impl Decode for PublicKey {
     fn decode<R: std::io::Read>(mut input: R) -> ed::Result<Self> {
         let mut bytes = [0u8; 48];
@@ -268,6 +408,84 @@ impl Decode for PublicKey {
 }
 
 impl Terminated for PublicKey {}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Signature(HeliosSignature);
+
+impl Signature {
+    pub fn into_inner(self) -> HeliosSignature {
+        self.0
+    }
+}
+
+impl From<HeliosSignature> for Signature {
+    fn from(value: HeliosSignature) -> Self {
+        Signature(value)
+    }
+}
+
+impl Deref for Signature {
+    type Target = HeliosSignature;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for Signature {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Encode for Signature {
+    fn encode(&self) -> ed::Result<Vec<u8>> {
+        Ok(self.0.as_ssz_bytes())
+    }
+
+    fn encode_into<W: std::io::Write>(&self, dest: &mut W) -> ed::Result<()> {
+        self.0.as_ssz_bytes().encode_into(dest)?;
+        Ok(())
+    }
+
+    fn encoding_length(&self) -> ed::Result<usize> {
+        Ok(self.0.ssz_bytes_len())
+    }
+}
+
+fn encode_signature<W: std::io::Write>(sig: &HeliosSignature, dest: &mut W) -> ed::Result<()> {
+    sig.as_ssz_bytes().encode_into(dest)
+}
+
+impl Decode for Signature {
+    fn decode<R: std::io::Read>(mut input: R) -> ed::Result<Self> {
+        let mut bytes = [0u8; 96];
+        input.read_exact(&mut bytes)?;
+        // TODO: pass through error
+        let value =
+            HeliosSignature::from_ssz_bytes(&bytes).map_err(|e| ed::Error::UnexpectedByte(33))?;
+        Ok(Signature(value))
+    }
+}
+
+impl Terminated for Signature {}
+
+#[derive(Clone, Debug, Default, Encode, Decode, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Bytes32(#[serde(with = "SerHex::<StrictPfx>")] pub [u8; 32]);
+
+impl Bytes32 {
+    pub fn into_inner(self) -> [u8; 32] {
+        self.0
+    }
+}
+
+impl From<[u8; 32]> for Bytes32 {
+    fn from(value: [u8; 32]) -> Self {
+        Bytes32(value)
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -282,5 +500,17 @@ mod tests {
         let lcs = LightClient(LightClientStore::default());
         let bytes = lcs.encode().unwrap();
         let lcs = LightClient::decode(&bytes[..]).unwrap();
+    }
+
+    #[test]
+    fn serialize_deserialize() {
+        let pk = PublicKey(HeliosPublicKey::default());
+        let pk_str = serde_json::to_string(&pk).unwrap();
+        assert_eq!(pk_str, "\"0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\"");
+        let pk2: PublicKey = serde_json::from_str(&pk_str).unwrap();
+
+        let lcs = LightClient(LightClientStore::default());
+        let lcs_str = serde_json::to_string(&lcs).unwrap();
+        let lcs2: LightClient = serde_json::from_str(&lcs_str).unwrap();
     }
 }
