@@ -67,6 +67,7 @@ sol!(
 // TODO: bounceback on failed transfers
 // TODO: fallback to address on failed contract calls
 
+pub mod consensus;
 #[cfg(feature = "full")]
 pub mod signer;
 

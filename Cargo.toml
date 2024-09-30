@@ -60,6 +60,9 @@ alloy-sol-types = { version = "0.8.5", optional = true }
 alloy-contract = { version = "0.3.6", optional = true }
 alloy-provider = { version = "0.3.6", optional = true }
 alloy-signer-local = { version = "0.3.6", optional = true }
+helios-consensus-core = { package = "consensus-core", git = "https://github.com/a16z/helios.git", version = "0.6.0", optional = true }
+ethereum_ssz = { version = "0.6.0", optional = true }
+ssz_types = { version = "0.7.0", optional = true }
 
 [dev-dependencies]
 bitcoind = { version = "0.27.0", features = ["22_0"] }
@@ -106,6 +109,8 @@ ethereum = [
     "alloy-core/dyn-abi",
     "alloy-core/json-abi",
     "alloy-sol-types",
+    "ethereum_ssz",
+    "ssz_types",
 ]
 ethereum-full = [
     "ethereum",
@@ -113,10 +118,10 @@ ethereum-full = [
     "alloy-provider",
     "alloy-provider/anvil-node",
     "alloy-signer-local",
+    "helios-consensus-core",
 ]
 frost = ["frost-secp256k1-tr"]
 babylon = ["frost"]
-alloy-provider = ["dep:alloy-provider"]
 
 [profile.release]
 overflow-checks = true
