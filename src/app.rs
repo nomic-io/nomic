@@ -816,12 +816,13 @@ impl InnerApp {
         chain_id: u32,
         bridge_contract: Address,
         token_contract: Address,
+        sigset_index: u32,
     ) -> Result<()> {
         #[cfg(feature = "ethereum")]
         {
             self.deduct_nbtc_fee(ETH_CREATE_CONNECTION_FEE_USATS.into())?;
-            // TODO: confirm that this is the right valset to use
-            let valset = self.bitcoin.checkpoints.active_sigset()?;
+
+            let valset = self.bitcoin.checkpoints.get(sigset_index)?.sigset.clone();
 
             Ok(self.ethereum.create_connection(
                 chain_id,
