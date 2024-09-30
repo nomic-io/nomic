@@ -291,7 +291,7 @@ pub struct StartCmd {
     /// home directory when initializing.
     #[clap(long)]
     pub validator_key: Option<String>,
-    /// Copies the P2P privaete key at the specified path to the node's home
+    /// Copies the P2P private key at the specified path to the node's home
     /// directory when initializing.
     #[clap(long)]
     pub node_key: Option<String>,
@@ -2263,7 +2263,7 @@ pub struct RecoverDepositCmd {
     #[clap(long)]
     vout: u32,
 
-    /// The path to a file containig the indexes and reserve scripts of
+    /// The path to a file containing the indexes and reserve scripts of
     /// signatories to search. This can be generated with the
     /// `get-reserve-scripts` binary.
     #[clap(long)]
