@@ -88,8 +88,6 @@ contract Nomic is ReentrancyGuard {
     mapping(uint256 => uint256) public state_returnAmounts;
     mapping(uint256 => address) public state_returnSenders;
 
-    // This is set once at initialization
-    bytes32 public immutable state_gravityId;
     address public immutable state_owner;
 
     // TransactionBatchExecutedEvent and SendToNomicEvent both include the field _eventNonce.
@@ -133,31 +131,6 @@ contract Nomic is ReentrancyGuard {
         bytes _returnData,
         uint256 _eventNonce
     );
-
-    // TEST FIXTURES
-    // These are here to make it easier to measure gas usage. They should be removed before production
-    function testMakeCheckpoint(
-        ValsetArgs calldata _valsetArgs,
-        bytes32 _gravityId
-    ) external pure {
-        makeCheckpoint(_valsetArgs, _gravityId);
-    }
-
-    function testCheckValidatorSignatures(
-        ValsetArgs calldata _currentValset,
-        Signature[] calldata _sigs,
-        bytes32 _theHash,
-        uint256 _powerThreshold
-    ) external pure {
-        checkValidatorSignatures(
-            _currentValset,
-            _sigs,
-            _theHash,
-            _powerThreshold
-        );
-    }
-
-    // END TEST FIXTURES
 
     function lastBatchNonce(
         address _erc20Address
@@ -206,15 +179,15 @@ contract Nomic is ReentrancyGuard {
     // The validator powers must be decreasing or equal. This is important for checking the signatures on the
     // next valset, since it allows the caller to stop verifying signatures once a quorum of signatures have been verified.
     function makeCheckpoint(
-        ValsetArgs memory _valsetArgs,
-        bytes32 _gravityId
-    ) private pure returns (bytes32) {
+        ValsetArgs memory _valsetArgs
+    ) private returns (bytes32) {
         // bytes32 encoding of the string "checkpoint"
         bytes32 methodName = 0x636865636b706f696e7400000000000000000000000000000000000000000000;
 
         bytes32 checkpoint = keccak256(
             abi.encode(
-                _gravityId,
+                uint256(block.chainid),
+                address(this),
                 methodName,
                 _valsetArgs.valsetNonce,
                 _valsetArgs.validators,
@@ -316,15 +289,12 @@ contract Nomic is ReentrancyGuard {
         }
 
         // Check that the supplied current validator set matches the saved checkpoint
-        if (
-            makeCheckpoint(_currentValset, state_gravityId) !=
-            state_lastValsetCheckpoint
-        ) {
+        if (makeCheckpoint(_currentValset) != state_lastValsetCheckpoint) {
             revert IncorrectCheckpoint();
         }
 
         // Check that enough current validators have signed off on the new validator set
-        bytes32 newCheckpoint = makeCheckpoint(_newValset, state_gravityId);
+        bytes32 newCheckpoint = makeCheckpoint(_newValset);
 
         checkValidatorSignatures(
             _currentValset,
@@ -402,10 +372,7 @@ contract Nomic is ReentrancyGuard {
             validateValset(_currentValset, _sigs);
 
             // Check that the supplied current validator set matches the saved checkpoint
-            if (
-                makeCheckpoint(_currentValset, state_gravityId) !=
-                state_lastValsetCheckpoint
-            ) {
+            if (makeCheckpoint(_currentValset) != state_lastValsetCheckpoint) {
                 revert IncorrectCheckpoint();
             }
 
@@ -424,7 +391,8 @@ contract Nomic is ReentrancyGuard {
                 // Get hash of the transaction batch and checkpoint
                 keccak256(
                     abi.encode(
-                        state_gravityId,
+                        uint256(block.chainid),
+                        address(this),
                         // bytes32 encoding of "transactionBatch"
                         0x7472616e73616374696f6e426174636800000000000000000000000000000000,
                         _amounts,
@@ -514,10 +482,7 @@ contract Nomic is ReentrancyGuard {
             validateValset(_currentValset, _sigs);
 
             // Check that the supplied current validator set matches the saved checkpoint
-            if (
-                makeCheckpoint(_currentValset, state_gravityId) !=
-                state_lastValsetCheckpoint
-            ) {
+            if (makeCheckpoint(_currentValset) != state_lastValsetCheckpoint) {
                 revert IncorrectCheckpoint();
             }
 
@@ -535,7 +500,8 @@ contract Nomic is ReentrancyGuard {
         {
             bytes32 argsHash = keccak256(
                 abi.encode(
-                    state_gravityId,
+                    uint256(block.chainid),
+                    address(this),
                     // bytes32 encoding of "logicCall"
                     0x6c6f67696343616c6c0000000000000000000000000000000000000000000000,
                     _args.transferAmounts,
@@ -730,15 +696,23 @@ contract Nomic is ReentrancyGuard {
             revert("Unauthorized");
         }
 
-        if (_address.length == 0 || _address.length > 35) {
+        if (bytes(_address).length == 0 || bytes(_address).length > 35) {
             revert("Invalid address");
+        }
+
+        string memory minus;
+        if (difference < 0) {
+            minus = "-";
         }
 
         string memory dest = string.concat(
             '{"type":"adjustEmergencyDisbursalBalance","data":"',
-            address,
+            _address,
             '","amount":',
-            Strings.toString(different),
+            minus,
+            Strings.toString(
+                uint256(difference >= 0 ? difference : -difference)
+            ),
             "}"
         );
 
@@ -759,8 +733,6 @@ contract Nomic is ReentrancyGuard {
     }
 
     constructor(
-        // A unique identifier for this gravity instance to use in signatures
-        bytes32 _gravityId,
         address _owner,
         // The validator set, not in valset args format since many of it's
         // arguments would never be used in this case
@@ -793,11 +765,10 @@ contract Nomic is ReentrancyGuard {
         ValsetArgs memory _valset;
         _valset = ValsetArgs(_validators, _powers, 0, 0, address(0));
 
-        bytes32 newCheckpoint = makeCheckpoint(_valset, _gravityId);
+        bytes32 newCheckpoint = makeCheckpoint(_valset);
 
         // ACTIONS
 
-        state_gravityId = _gravityId;
         state_owner = _owner;
         state_lastValsetCheckpoint = newCheckpoint;
 

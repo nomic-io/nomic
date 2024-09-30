@@ -169,29 +169,20 @@ impl Ethereum {
         token_contract: Address,
         valset: SignatorySet,
     ) -> Result<()> {
-        let Some(mut network) = self.networks.get_mut(chain_id)? else {
-            return Err(Error::App(format!("network with chain ID {} not found", chain_id)).into());
-        };
+        let mut network = self
+            .networks
+            .get_mut(chain_id)?
+            .ok_or_else(|| Error::App(format!("Network with chain ID {} not found", chain_id)))?;
 
         if network.connections.contains_key(bridge_contract)? {
             return Err(Error::App(format!(
-                "connection with bridge contract address {} already exists",
+                "Connection with bridge contract address {} already exists",
                 bridge_contract
             ))
             .into());
         }
 
-        use sha2::{Digest, Sha256};
-
-        // TODO: connection id here is currently sha256(concat(chain_id,
-        // bridge_contract)), but connection ids may not need to be globally
-        // unique, so may not need to include chain id.
-        let id = {
-            let bytes = [chain_id.encode()?, bridge_contract.bytes().to_vec()].concat();
-            Sha256::digest(bytes).to_vec()
-        };
-
-        let connection = Connection::new(&id, bridge_contract, token_contract, valset);
+        let connection = Connection::new(chain_id, bridge_contract, token_contract, valset);
 
         network.connections.insert(bridge_contract, connection)?;
 
@@ -365,7 +356,7 @@ impl Network {
 
 #[orga]
 pub struct Connection {
-    pub id: [u8; 32],
+    pub chain_id: u32,
     pub bridge_contract: Address,
     pub token_contract: Address,
     pub valset_interval: u64,
@@ -387,14 +378,14 @@ pub struct Connection {
 #[orga]
 impl Connection {
     pub fn new(
-        id: &[u8],
+        chain_id: u32,
         bridge_contract: Address,
         token_contract: Address,
         mut valset: SignatorySet,
     ) -> Self {
         valset.normalize_vp(u32::MAX as u64);
         Self {
-            id: bytes32(id).unwrap(),
+            chain_id,
             bridge_contract,
             token_contract,
             outbox: Deque::new(),
@@ -678,7 +669,8 @@ impl Connection {
                 timeout,
                 batch_index,
             } => batch_hash(
-                self.id,
+                self.chain_id,
+                self.bridge_contract,
                 *batch_index,
                 transfers,
                 self.token_contract,
@@ -693,7 +685,8 @@ impl Connection {
                 fee_amount,
                 message_index,
             } => call_hash(
-                self.id,
+                self.chain_id,
+                self.bridge_contract.into(),
                 self.token_contract.into(),
                 *contract_address,
                 data,
@@ -701,7 +694,9 @@ impl Connection {
                 *transfer_amount,
                 *fee_amount,
             ),
-            OutMessageArgs::UpdateValset(index, valset) => checkpoint_hash(self.id, valset, *index),
+            OutMessageArgs::UpdateValset(index, valset) => {
+                checkpoint_hash(self.chain_id, self.bridge_contract, valset, *index)
+            }
         })
     }
 
@@ -807,7 +802,8 @@ impl Describe for OutMessageArgs {
 }
 
 pub fn call_hash(
-    id: [u8; 32],
+    chain_id: u32,
+    bridge_contract: [u8; 20],
     token_contract: [u8; 20],
     dest_contract: [u8; 20],
     data: &[u8],
@@ -816,7 +812,8 @@ pub fn call_hash(
     fee_amount: u64,
 ) -> [u8; 32] {
     let bytes = (
-        id,
+        uint256(chain_id as u64),
+        addr_to_bytes32(bridge_contract.into()),
         bytes32(b"logicCall").unwrap(),
         vec![transfer_amount],
         vec![addr_to_bytes32(token_contract.into())],
@@ -869,9 +866,15 @@ pub struct Transfer {
     pub fee_amount: u64,
 }
 
-pub fn checkpoint_hash(id: [u8; 32], valset: &SignatorySet, valset_index: u64) -> [u8; 32] {
+pub fn checkpoint_hash(
+    chain_id: u32,
+    bridge_contract: Address,
+    valset: &SignatorySet,
+    valset_index: u64,
+) -> [u8; 32] {
     let bytes = (
-        id,
+        uint256(chain_id as u64),
+        addr_to_bytes32(bridge_contract),
         bytes32(b"checkpoint").unwrap(),
         uint256(valset_index),
         valset
@@ -893,7 +896,8 @@ pub fn checkpoint_hash(id: [u8; 32], valset: &SignatorySet, valset_index: u64) -
 }
 
 pub fn batch_hash(
-    id: [u8; 32],
+    chain_id: u32,
+    bridge_contract: Address,
     batch_index: u64,
     transfers: &LengthVec<u16, Transfer>,
     token_contract: Address,
@@ -907,7 +911,8 @@ pub fn batch_hash(
     let fees = transfers.iter().map(|t| t.fee_amount).collect::<Vec<_>>();
 
     let bytes = (
-        id,
+        uint256(chain_id as u64),
+        addr_to_bytes32(bridge_contract),
         bytes32(b"transactionBatch").unwrap(),
         amounts,
         dests,
@@ -1067,10 +1072,8 @@ mod tests {
             possible_vp: 10_000_000_000,
         };
 
-        let id = bytes32(b"test").unwrap();
-
         assert_eq!(
-            hex::encode(checkpoint_hash(id, &valset, 0)),
+            hex::encode(checkpoint_hash(123, [123; 20].into(), &valset, 0)),
             "61fe378d7a8aac20d5882ff4696d9c14c0db93b583fcd25f0616ce5187efae69",
         );
 
@@ -1085,7 +1088,7 @@ mod tests {
             possible_vp: 10_000_000_001,
         };
 
-        let updated_checkpoint = checkpoint_hash(id, &valset2, 1);
+        let updated_checkpoint = checkpoint_hash(123, [123; 20].into(), &valset2, 1);
         assert_eq!(
             hex::encode(updated_checkpoint),
             "0b73bc9926c210f36673973a0ecb0a5f337ca1c7f99ba44ecf3624c891a8ab2b",
@@ -1125,7 +1128,7 @@ mod tests {
             possible_vp: 10_000_000_000,
         };
 
-        let mut ethereum = Connection::new(b"test", Address::NULL, Address::NULL, valset);
+        let mut ethereum = Connection::new(123, Address::NULL, Address::NULL, valset);
         assert_eq!(ethereum.batch_index, 0);
         assert_eq!(ethereum.valset_index, 0);
         assert_eq!(ethereum.message_index, 1);
@@ -1231,8 +1234,8 @@ mod tests {
             Address::from(data)
         };
         // TODO: token contract
-        let mut ethereum = Connection::new(b"test", bridge_addr, bridge_addr, valset);
-        let valset = ethereum.valset.clone();
+        let mut conn = Connection::new(123, bridge_addr, bridge_addr, valset);
+        let valset = conn.valset.clone();
 
         let new_valset = SignatorySet {
             index: 1,
@@ -1244,17 +1247,17 @@ mod tests {
             present_vp: 10_000_000_000,
             possible_vp: 10_000_000_000,
         };
-        ethereum.update_valset(new_valset).unwrap();
-        let new_valset = ethereum.valset.clone();
-        assert_eq!(ethereum.outbox.len(), 1);
-        assert_eq!(ethereum.message_index, 1);
+        conn.update_valset(new_valset).unwrap();
+        let new_valset = conn.valset.clone();
+        assert_eq!(conn.outbox.len(), 1);
+        assert_eq!(conn.message_index, 1);
 
-        let msg = ethereum.get(1).unwrap().sigs.message;
+        let msg = conn.get(1).unwrap().sigs.message;
         let sig = crate::bitcoin::signer::sign(&Secp256k1::signing_only(), &xpriv, &[(msg, 0)])
             .unwrap()[0];
         let pubkey = derive_pubkey(&secp, xpub.into(), 0).unwrap();
-        ethereum.sign(1, pubkey.into(), sig).unwrap();
-        assert!(ethereum.get(1).unwrap().sigs.signed());
+        conn.sign(1, pubkey.into(), sig).unwrap();
+        assert!(conn.get(1).unwrap().sigs.signed());
 
         let anvil = Anvil::new().try_spawn().unwrap();
         let rpc_url = anvil.endpoint().parse().unwrap();
@@ -1262,7 +1265,6 @@ mod tests {
 
         let contract = bridge_contract::deploy(
             provider,
-            ethereum.id.into(),
             alloy_core::primitives::Address::from_slice(&[0; 20]),
             valset
                 .eth_addresses()
@@ -1278,7 +1280,7 @@ mod tests {
         .await
         .unwrap();
 
-        let sigs: Vec<_> = ethereum
+        let sigs: Vec<_> = conn
             .get(1)
             .unwrap()
             .sigs
@@ -1347,18 +1349,6 @@ mod tests {
         )?;
 
         ethereum.create_connection(chain_id, bridge_contract, token_contract, valset.clone())?;
-
-        let network = ethereum.networks.get(chain_id)?.unwrap();
-
-        let connection = network.connections.get(bridge_contract)?.unwrap();
-
-        assert_eq!(
-            connection.id,
-            [
-                123, 72, 3, 32, 235, 251, 47, 68, 47, 142, 52, 47, 100, 168, 102, 9, 162, 101, 175,
-                100, 190, 57, 71, 128, 202, 242, 8, 223, 37, 6, 26, 109
-            ]
-        );
 
         let other_token_contract = Address::from([123; 20]);
 
@@ -1439,7 +1429,7 @@ mod tests {
         }
 
         let mut ethereum = Connection::new(
-            b"test",
+            123,
             contract.address().0 .0.into(),
             token_contract_addr.unwrap().0 .0.into(),
             valset,
@@ -1617,7 +1607,7 @@ mod tests {
         let token_contract_addr = token_contract_addr.unwrap().0 .0.into();
 
         let mut ethereum = Connection::new(
-            b"test",
+            123,
             contract.address().0 .0.into(),
             token_contract_addr,
             valset,
@@ -1776,7 +1766,7 @@ mod tests {
         let token_contract_addr = token_contract_addr.unwrap().0 .0.into();
 
         let mut ethereum = Connection::new(
-            b"test",
+            123,
             contract.address().0 .0.into(),
             token_contract_addr,
             valset,
