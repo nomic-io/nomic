@@ -125,12 +125,7 @@ impl MigrateFrom<InnerAppV6> for InnerAppV7 {
                 let mut connections = Map::default();
                 connections.insert(
                     bridge_contract,
-                    Connection::new(
-                        b"nomic-testnet-6b",
-                        bridge_contract,
-                        token_contract,
-                        sigset.clone(),
-                    ),
+                    Connection::new(17000, bridge_contract, token_contract, sigset.clone()),
                 )?;
                 ethereum.networks.insert(
                     17000,
@@ -156,12 +151,7 @@ impl MigrateFrom<InnerAppV6> for InnerAppV7 {
                 let mut connections = Map::default();
                 connections.insert(
                     bridge_contract,
-                    Connection::new(
-                        b"nomic-testnet-6a",
-                        bridge_contract,
-                        token_contract,
-                        sigset.clone(),
-                    ),
+                    Connection::new(80084, bridge_contract, token_contract, sigset.clone()),
                 )?;
                 ethereum.networks.insert(
                     80084,

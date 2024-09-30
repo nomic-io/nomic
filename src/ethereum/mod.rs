@@ -1390,7 +1390,6 @@ mod tests {
 
         let contract = bridge_contract::deploy(
             provider,
-            bytes32(b"test").unwrap().into(),
             alloy_core::primitives::Address::from_slice(&[0; 20]),
             valset
                 .eth_addresses()
@@ -1567,7 +1566,6 @@ mod tests {
 
         let contract = bridge_contract::deploy(
             provider,
-            bytes32(b"test").unwrap().into(),
             alloy_core::primitives::Address::from_slice(&[0; 20]),
             valset
                 .eth_addresses()
@@ -1726,7 +1724,6 @@ mod tests {
 
         let contract = bridge_contract::deploy(
             &provider,
-            bytes32(b"test").unwrap().into(),
             alloy_core::primitives::Address::from_slice(&[0; 20]),
             valset
                 .eth_addresses()
