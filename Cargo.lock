@@ -4518,6 +4518,7 @@ dependencies = [
  "tokio",
  "toml 0.7.8",
  "toml_edit 0.13.4",
+ "tree_hash",
  "urlencoding",
  "warp",
 ]

@@ -1,17 +1,27 @@
-use std::ops::{Deref, DerefMut};
+use std::{
+    fmt::Display,
+    ops::{Deref, DerefMut},
+    str::FromStr,
+};
 
 use bitcoin::consensus::encode;
 use ed::{Decode, Encode, Terminated};
-use helios_consensus_core::types::{
-    bls::{PublicKey as HeliosPublicKey, Signature as HeliosSignature},
-    Header as HeliosHeader, LightClientStore, SyncAggregate as HeliosSyncAggregate,
-    SyncCommittee as HeliosSyncCommittee, Update as HeliosUpdate,
+use helios_consensus_core::{
+    apply_bootstrap, apply_finality_update, apply_update,
+    types::{
+        bls::{PublicKey as HeliosPublicKey, Signature as HeliosSignature},
+        Bootstrap as HeliosBootstrap, FinalityUpdate as HeliosFinalityUpdate, Forks, GenericUpdate,
+        Header as HeliosHeader, LightClientStore, SyncAggregate as HeliosSyncAggregate,
+        SyncCommittee as HeliosSyncCommittee, Update as HeliosUpdate,
+    },
+    verify_bootstrap, verify_finality_update, verify_update,
 };
 use orga::{encoding::LengthVec, orga};
 use serde::{Deserialize, Serialize};
 use serde_hex::{SerHex, StrictPfx};
 use ssz::{Decode as SszDecode, Encode as SszEncode};
 use ssz_types::{Bitfield, FixedVector};
+use tree_hash::TreeHash;
 
 use crate::error::Result;
 
@@ -27,9 +37,51 @@ impl LightClient {
         self.0
     }
 
-    // pub fn update(&mut self, update: Update) -> Result<()> {
-    //     helios_consensus_core::apply_optimistic_update(store, update)
-    // }
+    pub fn new(bootstrap: Bootstrap) -> Result<Self> {
+        let mut lcs = LightClientStore::default();
+        let bootstrap = bootstrap.into();
+        verify_bootstrap(&bootstrap, bootstrap.header.tree_hash_root()).unwrap();
+        apply_bootstrap(&mut lcs, &bootstrap);
+        Ok(LightClient(lcs))
+    }
+
+    pub fn update(&mut self, update: Update) -> Result<()> {
+        let expected_current_slot = 10075240;
+        let genesis_root =
+            hex::decode("4b363db94e286120d76eb905340fdd4e54bfe9f06bf33ff6cf5ad27f511bfe95")
+                .unwrap()
+                .as_slice()
+                .try_into()
+                .unwrap();
+        let mut forks = Forks::default();
+        forks.deneb.fork_version = [4, 0, 0, 0].into();
+
+        if update.next_sync_committee.is_some() {
+            let update: HeliosUpdate = update.try_into().unwrap();
+            verify_update(
+                &update,
+                expected_current_slot,
+                &self.0,
+                genesis_root,
+                &forks,
+            )
+            .unwrap();
+            apply_update(&mut self.0, &update);
+        } else {
+            let update: HeliosFinalityUpdate = update.into();
+            verify_finality_update(
+                &update,
+                expected_current_slot,
+                &self.0,
+                genesis_root,
+                &forks,
+            )
+            .unwrap();
+            apply_finality_update(&mut self.0, &update);
+        }
+
+        Ok(())
+    }
 }
 
 impl Deref for LightClient {
@@ -114,9 +166,66 @@ pub struct Update {
     pub signature_slot: u64,
 }
 
-// impl Update {
-//     pub fn to_
-// }
+impl TryFrom<Update> for HeliosUpdate {
+    type Error = crate::error::Error;
+
+    fn try_from(value: Update) -> Result<Self> {
+        let attested_header = value.attested_header.into_inner();
+        let next_sync_committee = value
+            .next_sync_committee
+            .map(|sc| sc.into_inner())
+            .ok_or_else(|| orga::Error::App("next_sync_committee is required".to_string()))?;
+        let next_sync_committee_branch = value
+            .next_sync_committee_branch
+            .map(|branch| {
+                Vec::from(branch)
+                    .into_iter()
+                    .map(|b| b.into_inner().into())
+                    .collect()
+            })
+            .ok_or_else(|| {
+                orga::Error::App("next_sync_committee_branch is required".to_string())
+            })?;
+        let finalized_header = value.finalized_header.into_inner();
+        let finality_branch = Vec::from(value.finality_branch)
+            .into_iter()
+            .map(|b| b.into_inner().into())
+            .collect();
+        let sync_aggregate = value.sync_aggregate.into_inner();
+        let signature_slot = value.signature_slot;
+
+        Ok(HeliosUpdate {
+            attested_header,
+            next_sync_committee,
+            next_sync_committee_branch,
+            finalized_header,
+            finality_branch,
+            sync_aggregate,
+            signature_slot,
+        })
+    }
+}
+
+impl From<Update> for HeliosFinalityUpdate {
+    fn from(value: Update) -> Self {
+        let attested_header = value.attested_header.into_inner();
+        let finalized_header = value.finalized_header.into_inner();
+        let finality_branch = Vec::from(value.finality_branch)
+            .into_iter()
+            .map(|b| b.into_inner().into())
+            .collect();
+        let sync_aggregate = value.sync_aggregate.into_inner();
+        let signature_slot = value.signature_slot;
+
+        HeliosFinalityUpdate {
+            attested_header,
+            finalized_header,
+            finality_branch,
+            sync_aggregate,
+            signature_slot,
+        }
+    }
+}
 
 mod u64_string {
     use serde::{de::Error, Deserializer, Serializer};
@@ -163,6 +272,31 @@ mod wrapped_header {
     #[derive(serde::Deserialize)]
     struct Beacon {
         beacon: Header,
+    }
+}
+
+#[derive(Clone, Debug, Encode, Decode, Serialize, Deserialize)]
+pub struct Bootstrap {
+    #[serde(deserialize_with = "wrapped_header::deserialize")]
+    pub header: Header,
+    pub current_sync_committee: SyncCommittee,
+    pub current_sync_committee_branch: LengthVec<u8, Bytes32>,
+}
+
+impl From<Bootstrap> for HeliosBootstrap {
+    fn from(value: Bootstrap) -> Self {
+        let header = value.header.into_inner();
+        let current_sync_committee = value.current_sync_committee.into_inner();
+        let current_sync_committee_branch = Vec::from(value.current_sync_committee_branch)
+            .into_iter()
+            .map(|b| b.into_inner().into())
+            .collect();
+
+        HeliosBootstrap {
+            header,
+            current_sync_committee,
+            current_sync_committee_branch,
+        }
     }
 }
 
@@ -487,6 +621,26 @@ impl From<[u8; 32]> for Bytes32 {
     }
 }
 
+impl Display for Bytes32 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "0x{}", hex::encode(&self.0))
+    }
+}
+
+impl FromStr for Bytes32 {
+    type Err = crate::error::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        let s = s.strip_prefix("0x").unwrap_or(s);
+        let bytes = hex::decode(s).map_err(|_| orga::Error::App("Invalid hex".to_string()))?;
+        let bytes = bytes
+            .as_slice()
+            .try_into()
+            .map_err(|_| orga::Error::App("Invalid length".to_string()))?;
+        Ok(Bytes32(bytes))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -512,5 +666,24 @@ mod tests {
         let lcs = LightClient(LightClientStore::default());
         let lcs_str = serde_json::to_string(&lcs).unwrap();
         let lcs2: LightClient = serde_json::from_str(&lcs_str).unwrap();
+    }
+
+    #[tokio::test]
+    async fn update() {
+        let rpc = relayer::Client::new("https://www.lightclientdata.org".to_string());
+
+        let bootstrap = rpc
+            .bootstrap(
+                "0xb2536a96e35df54caf8d37e958d2899a6c6b8616342a9e38c913c62e5c85aa93"
+                    .parse()
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .data;
+        let mut client = LightClient::new(bootstrap).unwrap();
+
+        let update = rpc.finality_update().await.unwrap().data;
+        client.update(update).unwrap();
     }
 }
