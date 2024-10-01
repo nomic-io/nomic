@@ -11,7 +11,7 @@ use crate::{app, babylon::proto::FinalityProvider, error::Result};
 
 use super::{encode_header, encode_sync_committee};
 
-async fn get_updates<C: OrgaClient<LightClient>>(
+pub async fn get_updates<C: OrgaClient<LightClient>>(
     app_client: &C,
     eth_client: &RpcClient,
 ) -> Result<Vec<Update>> {
