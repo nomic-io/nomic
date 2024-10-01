@@ -63,7 +63,19 @@ alloy-signer-local = { version = "0.3.6", optional = true }
 helios-consensus-core = { package = "consensus-core", git = "https://github.com/a16z/helios.git", version = "0.6.0", optional = true }
 ethereum_ssz = { version = "0.6.0", optional = true }
 ssz_types = { version = "0.7.0", optional = true }
+alloy-trie = { version = "0.6.0", optional = true }
+alloy-primitives = { version = "0.8.5", optional = true }
+alloy-rlp = { version = "0.3.8", optional = true }
 tree_hash = { version = "0.7.0", optional = true }
+rlp = { version = "0.5.1", optional = true }
+ethereum-triedb = { version = "0.1.1", optional = true }
+trie-db = { version = "0.28", optional = true }
+rlp-derive = { version = "0.2.0", optional = true }
+primitive-types = { version = "0.12", features = ["rlp"], optional = true }
+hex-literal = { version = "0.4.1", optional = true }
+alloy-rpc-types = { version = "0.3.6", optional = true }
+alloy-transport = { version = "0.3.6", optional = true }
+alloy-rpc-types-eth = { version = "0.3.6", optional = true }
 
 [dev-dependencies]
 bitcoind = { version = "0.27.0", features = ["22_0"] }
@@ -110,15 +122,27 @@ ethereum = [
     "alloy-core/dyn-abi",
     "alloy-core/json-abi",
     "alloy-sol-types",
+    "alloy-primitives",
+    "alloy-trie",
+    "ethereum-triedb",
+    "alloy-rlp",
+    "primitive-types",
     "ethereum_ssz",
     "ssz_types",
     "tree_hash",
+    "rlp",
+    "rlp-derive",
+    "trie-db",
 ]
 ethereum-full = [
     "ethereum",
     "alloy-contract",
     "alloy-provider",
+    "alloy-rpc-types",
+    "alloy-rpc-types-eth",
+    "alloy-transport",
     "alloy-provider/anvil-node",
+    "alloy-provider/rpc-api",
     "alloy-signer-local",
     "helios-consensus-core",
 ]

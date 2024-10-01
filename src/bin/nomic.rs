@@ -33,6 +33,7 @@ use nomic::bitcoin::signatory::SignatorySet;
 use nomic::bitcoin::Nbtc;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
+use nomic::ethereum;
 #[cfg(feature = "frost")]
 use nomic::frost::{self, signer::SecretStore};
 use nomic::utils::load_bitcoin_key;
@@ -2895,8 +2896,10 @@ impl RelayEthereumCmd {
                 .on_http(self.eth_rpc_url.parse().unwrap());
             let contract = nomic::ethereum::bridge_contract::new(
                 alloy_core::primitives::Address::from_slice(&bridge_contract.bytes()),
-                provider,
+                provider.clone(),
             );
+            let bridge_contract_addr =
+                alloy_core::primitives::Address::from_slice(&bridge_contract.bytes());
 
             let has_contract_index = !contract
                 .state_lastReturnNonce()
@@ -2950,23 +2953,16 @@ impl RelayEthereumCmd {
                 ._0;
             dbg!(&dest_str, amount, sender);
 
-            // TODO: build proofs
+            let (consensus_proof, state_proof) =
+                ethereum::relayer::get_proofs(&provider, bridge_contract_addr, nomic_index).await?;
             client
                 .call(
                     move |app| {
                         build_call!(app.ethereum.relay_return(
                             self.eth_chainid,
                             bridge_contract,
-                            (),
-                            (),
-                            vec![(
-                                nomic_index,
-                                dest_str.clone().try_into().unwrap(),
-                                amount,
-                                **sender
-                            )]
-                            .try_into()
-                            .unwrap()
+                            consensus_proof.clone(),
+                            state_proof.clone()
                         ))
                     },
                     |app| build_call!(app.app_noop()),

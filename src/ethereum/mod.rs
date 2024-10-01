@@ -7,8 +7,8 @@ use bitcoin::secp256k1::{
     Message, PublicKey, Secp256k1,
 };
 use bitcoin::Script;
-use orga::encoding::LengthString;
 use orga::query::MethodQuery;
+use proofs::{BridgeContractData, ConsensusProof, ConsensusState, StateProof};
 use std::collections::BTreeSet;
 use std::u64;
 
@@ -63,12 +63,12 @@ sol!(
 
 // TODO: message ttl/pruning
 // TODO: multi-token support
-// TODO: call fees
-// TODO: bounceback on failed transfers
-// TODO: fallback to address on failed contract calls
 
 pub mod consensus;
-#[cfg(feature = "full")]
+pub mod proofs;
+#[cfg(feature = "ethereum-full")]
+pub mod relayer;
+#[cfg(feature = "ethereum-full")]
 pub mod signer;
 
 pub const VALSET_INTERVAL: u64 = 60 * 60 * 24;
@@ -119,12 +119,8 @@ impl Ethereum {
         &mut self,
         network: u32,
         connection: Address,
-        consensus_proof: (),
-        account_proof: (),
-        // TODO: storage_proofs: LengthVec<u16, (LengthVec<u8, u8>, u64)>,
-        returns: LengthVec<u16, (u64, LengthString<u16>, u64, [u8; 20])>, /* TODO: don't include
-                                                                           * data, just
-                                                                           * state proof */
+        consensus_proof: ConsensusProof,
+        state_proof: StateProof,
     ) -> Result<()> {
         exempt_from_fee()?;
 
@@ -132,12 +128,20 @@ impl Ethereum {
             .networks
             .get_mut(network)?
             .ok_or_else(|| Error::App("network not found".to_string()))?;
+
+        net.update_consensus_state(consensus_proof)?;
+        // TODO
+        // let consensus_state = net.consensus_state.clone();
+
         let mut conn = net
             .connections
             .get_mut(connection)?
             .ok_or_else(|| Error::App("connection not found".to_string()))?;
 
-        conn.relay_return(network, consensus_proof, account_proof, returns)
+        // TODO
+        // let consensus_state: ConsensusState = todo!();
+        // conn.relay_return(network, &consensus_state, state_proof)
+        Ok(())
     }
 
     #[call]
@@ -307,7 +311,8 @@ type Sigs = Vec<(Pubkey, Option<Signature>)>;
 #[orga]
 pub struct Network {
     pub id: u32,
-    pub connections: Map<Address, Connection>, // TODO: use an eth address type
+    pub connections: Map<Address, Connection>, /* TODO: use an eth address type
+                                                * pub consensus_state: ConsensusState, */
 }
 
 #[orga]
@@ -352,6 +357,12 @@ impl Network {
             .connections
             .get_mut(connection)?
             .ok_or_else(|| Error::App("Unknown connection".to_string()))?)
+    }
+
+    pub fn update_consensus_state(&mut self, consensus_proof: ConsensusProof) -> Result<()> {
+        // self.consensus_state = consensus_proof.verify(&self.consensus_state)?;
+
+        Ok(())
     }
 }
 
@@ -552,12 +563,8 @@ impl Connection {
     pub fn relay_return(
         &mut self,
         network: u32,
-        _consensus_proof: (),
-        _account_proof: (),
-        // TODO: storage_proofs: LengthVec<u16, (LengthVec<u8, u8>, u64)>,
-        returns: LengthVec<u16, (u64, LengthString<u16>, u64, [u8; 20])>, /* TODO: don't include
-                                                                           * data, just
-                                                                           * state proof */
+        consensus_state: &ConsensusState,
+        state_proof: StateProof,
     ) -> Result<()> {
         exempt_from_fee()?;
 
@@ -576,26 +583,28 @@ impl Connection {
             }
         }
 
-        if returns.len() == 0 {
-            return Err(orga::Error::App("Returns must not be empty".to_string()).into());
-        }
+        for BridgeContractData {
+            dest,
+            amount,
+            sender,
+            index,
+        } in state_proof.verify(consensus_state.state_root)?
+        {
+            if index != self.return_index {
+                return Err(orga::Error::App("Return index does not match".to_string()).into());
+            }
 
-        // TODO: validate consensus proof
-        // TODO: validate state proofs (account proof, storage proofs)
-
-        // TODO: validate return entry indexes
-        for (_, dest, amount, sender_addr) in returns.iter().cloned() {
             let coins = self.coins.take(amount)?;
             let sender_id = Identity::EthAccount {
                 network,
                 connection: self.bridge_contract.bytes(),
-                address: sender_addr,
+                address: sender.bytes(),
             };
             match dest.parse() {
                 Ok(dest) => self.pending.push_back((dest, coins, sender_id))?,
                 Err(e) => {
                     log::debug!("failed to parse dest: {}, {}", dest.as_str(), e);
-                    self.transfer(sender_addr.into(), coins)?;
+                    self.transfer(sender.into(), coins)?;
                 }
             }
             self.return_index += 1;
