@@ -16,7 +16,9 @@ use helios_consensus_core::{
     },
     verify_bootstrap, verify_finality_update, verify_update,
 };
-use orga::{encoding::LengthVec, orga};
+use orga::{
+    call::FieldCall, encoding::LengthVec, migrate::Migrate, orga, query::FieldQuery, state::State,
+};
 use serde::{Deserialize, Serialize};
 use serde_hex::{SerHex, StrictPfx};
 use ssz::{Decode as SszDecode, Encode as SszEncode};
@@ -66,6 +68,63 @@ impl LightClient {
         }
 
         Ok(())
+    }
+
+    pub fn slot(&self) -> u64 {
+        self.lcs.finalized_header.slot
+    }
+
+    pub fn state_root(&self) -> Bytes32 {
+        self.lcs.finalized_header.state_root.0.into()
+    }
+
+    pub fn light_client_store(&self) -> &LightClientStore {
+        &self.lcs
+    }
+}
+
+impl State for LightClient {
+    fn attach(&mut self, _store: orga::prelude::Store) -> orga::Result<()> {
+        Ok(())
+    }
+
+    fn field_keyop(_field_name: &str) -> Option<orga::describe::KeyOp> {
+        // TODO
+        None
+    }
+
+    fn flush<W: std::io::Write>(self, out: &mut W) -> orga::Result<()> {
+        Ok(self.encode_into(out)?)
+    }
+
+    fn load(store: orga::prelude::Store, bytes: &mut &[u8]) -> orga::Result<Self> {
+        Ok(Self::decode(bytes)?)
+    }
+}
+
+impl Migrate for LightClient {
+    fn migrate(
+        _src: orga::prelude::Store,
+        _dest: orga::prelude::Store,
+        bytes: &mut &[u8],
+    ) -> orga::Result<Self> {
+        Ok(Self::decode(bytes)?)
+    }
+}
+
+impl FieldCall for LightClient {
+    type FieldCall = ();
+
+    fn field_call(&mut self, call: ()) -> orga::Result<()> {
+        Err(orga::Error::App("FieldCall not supported".to_string()))
+    }
+}
+
+impl FieldQuery for LightClient {
+    type FieldQuery = ();
+
+    fn field_query(&self, query: ()) -> orga::Result<()> {
+        Err(orga::Error::App("FieldQuery not supported".to_string()))
     }
 }
 
