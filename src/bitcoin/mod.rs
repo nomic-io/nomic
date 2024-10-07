@@ -1287,8 +1287,6 @@ mod tests {
     };
     use orga::collections::EntryMap;
 
-    
-
     use super::{
         header_queue::{WorkHeader, WrappedHeader},
         *,
@@ -1382,8 +1380,10 @@ mod tests {
         };
 
         let secp = Secp256k1::new();
-        let xpriv = [ExtendedPrivKey::new_master(super::NETWORK, &[0]).unwrap(),
-            ExtendedPrivKey::new_master(super::NETWORK, &[1]).unwrap()];
+        let xpriv = [
+            ExtendedPrivKey::new_master(super::NETWORK, &[0]).unwrap(),
+            ExtendedPrivKey::new_master(super::NETWORK, &[1]).unwrap(),
+        ];
         let xpub = vec![
             ExtendedPubKey::from_priv(&secp, &xpriv[0]),
             ExtendedPubKey::from_priv(&secp, &xpriv[1]),

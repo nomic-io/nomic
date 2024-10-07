@@ -21,10 +21,10 @@ use bitcoin::util::bip32::ExtendedPubKey;
 use bitcoincore_rpc_async::RpcApi;
 use bitcoincore_rpc_async::{Auth, Client as BtcClient};
 use clap::Parser;
+use nomic::app::Dest;
 use nomic::app::IbcDest;
 use nomic::app::InnerApp;
 use nomic::app::Nom;
-use nomic::app::Dest;
 #[cfg(feature = "babylon")]
 use nomic::babylon;
 use nomic::bitcoin::adapter::Adapter;

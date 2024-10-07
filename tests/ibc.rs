@@ -696,10 +696,7 @@ async fn ibc_test() {
                 "--timeout-seconds",
                 "300",
                 "--memo",
-                &format!(
-                    "withdraw:{}",
-                    funded_accounts[1].bitcoin_address()
-                ),
+                &format!("withdraw:{}", funded_accounts[1].bitcoin_address()),
             ])
             .spawn()
             .unwrap()
