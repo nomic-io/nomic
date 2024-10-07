@@ -97,7 +97,7 @@ semver = "1.0.18"
 glob = "0.3.1"
 
 [features]
-default = ["full", "testnet", "ethereum-full", "babylon"]
+default = ["full", "testnet"]
 full = [
     "bitcoincore-rpc-async",
     "clap",
@@ -113,7 +113,7 @@ full = [
     "cosmos-sdk-proto",
     "home",
 ]
-testnet = ["ethereum", "babylon"]
+testnet = []
 devnet = []
 legacy-bin = []
 signet = []
@@ -151,6 +151,9 @@ babylon = ["frost"]
 
 [profile.release]
 overflow-checks = true
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
 
 [[bin]]
 name = "nomic"

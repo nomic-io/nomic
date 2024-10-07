@@ -1279,7 +1279,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, fs, rc::Rc};
+    use std::{cell::RefCell, rc::Rc};
 
     use bitcoin::{
         secp256k1::Secp256k1, util::bip32::ExtendedPrivKey, BlockHash, BlockHeader, OutPoint,
@@ -1287,7 +1287,7 @@ mod tests {
     };
     use orga::collections::EntryMap;
 
-    use crate::app::InnerApp;
+    
 
     use super::{
         header_queue::{WorkHeader, WrappedHeader},
@@ -1366,7 +1366,7 @@ mod tests {
             Rc::new(RefCell::new(Some(EntryMap::new()))),
             Rc::new(RefCell::new(Some(Map::new()))),
         );
-        let addr = vec![Address::from_pubkey([0; 33]), Address::from_pubkey([1; 33])];
+        let addr = [Address::from_pubkey([0; 33]), Address::from_pubkey([1; 33])];
         vals.set_voting_power([0; 32], 100);
         vals.set_operator([0; 32], addr[0])?;
         vals.set_voting_power([1; 32], 10);
@@ -1382,10 +1382,8 @@ mod tests {
         };
 
         let secp = Secp256k1::new();
-        let xpriv = vec![
-            ExtendedPrivKey::new_master(super::NETWORK, &[0]).unwrap(),
-            ExtendedPrivKey::new_master(super::NETWORK, &[1]).unwrap(),
-        ];
+        let xpriv = [ExtendedPrivKey::new_master(super::NETWORK, &[0]).unwrap(),
+            ExtendedPrivKey::new_master(super::NETWORK, &[1]).unwrap()];
         let xpub = vec![
             ExtendedPubKey::from_priv(&secp, &xpriv[0]),
             ExtendedPubKey::from_priv(&secp, &xpriv[1]),

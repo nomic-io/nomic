@@ -15,7 +15,7 @@ use alloy_signer_local::LocalSigner;
 use bitcoin::consensus::{Decodable, Encodable};
 #[cfg(feature = "ethereum")]
 use bitcoin::secp256k1::Message;
-use bitcoin::secp256k1::{self, SecretKey};
+use bitcoin::secp256k1::{self};
 
 use bitcoin::util::bip32::ExtendedPubKey;
 use bitcoincore_rpc_async::RpcApi;
@@ -24,7 +24,7 @@ use clap::Parser;
 use nomic::app::IbcDest;
 use nomic::app::InnerApp;
 use nomic::app::Nom;
-use nomic::app::{Dest, Identity};
+use nomic::app::Dest;
 #[cfg(feature = "babylon")]
 use nomic::babylon;
 use nomic::bitcoin::adapter::Adapter;
@@ -33,6 +33,7 @@ use nomic::bitcoin::signatory::SignatorySet;
 use nomic::bitcoin::Nbtc;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
+#[cfg(feature = "ethereum")]
 use nomic::ethereum;
 #[cfg(feature = "frost")]
 use nomic::frost::{self, signer::SecretStore};

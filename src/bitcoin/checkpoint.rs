@@ -2449,19 +2449,13 @@ mod test {
     #[cfg(feature = "full")]
     use bitcoin::{
         secp256k1::Secp256k1,
-        util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey},
-        OutPoint, PubkeyHash, Script, Txid,
+        util::bip32::{ExtendedPrivKey, ExtendedPubKey},
+        OutPoint, Script, Txid,
     };
-    use orga::{
-        collections::EntryMap,
-        context::Context,
-        secp256k1::{PublicKey, SecretKey},
-    };
-    #[cfg(feature = "full")]
-    use rand::Rng;
+    use orga::{collections::EntryMap, context::Context};
 
     #[cfg(feature = "full")]
-    use crate::bitcoin::{signatory::Signatory, threshold_sig::Share};
+    use crate::bitcoin::signatory::Signatory;
 
     use super::*;
 
@@ -2674,7 +2668,7 @@ mod test {
         let xpub = ExtendedPubKey::from_priv(&secp, &xpriv);
 
         let mut sig_keys = Map::new();
-        sig_keys.insert([0; 32], Xpub::new(xpub));
+        sig_keys.insert([0; 32], Xpub::new(xpub)).unwrap();
 
         let queue = Rc::new(RefCell::new(CheckpointQueue::default()));
         queue.borrow_mut().config = Config {
@@ -2707,7 +2701,7 @@ mod test {
                 .unwrap();
         };
         let push_deposit = || {
-            let mut input = Input::new(
+            let input = Input::new(
                 OutPoint {
                     txid: Txid::from_slice(&[0; 32]).unwrap(),
                     vout: 0,
@@ -2733,7 +2727,7 @@ mod test {
             let mut queue = queue.borrow_mut();
             let cp = queue.signing().unwrap().unwrap();
             let sigset_index = cp.sigset.index;
-            let to_sign = cp.to_sign(Xpub::new(xpub.clone())).unwrap();
+            let to_sign = cp.to_sign(Xpub::new(xpub)).unwrap();
             let secp2 = Secp256k1::signing_only();
             let sigs = crate::bitcoin::signer::sign(&secp2, &xpriv, &to_sign).unwrap();
             drop(cp);
@@ -2748,7 +2742,7 @@ mod test {
                 sign_batch(btc_height);
             }
         };
-        let confirm_cp = |index, btc_height| {
+        let confirm_cp = |index, _btc_height| {
             let mut queue = queue.borrow_mut();
             queue.confirmed_index = Some(index);
         };
@@ -2884,7 +2878,7 @@ mod test {
         let xpub = ExtendedPubKey::from_priv(&secp, &xpriv);
 
         let mut sig_keys = Map::new();
-        sig_keys.insert([0; 32], Xpub::new(xpub));
+        sig_keys.insert([0; 32], Xpub::new(xpub)).unwrap();
 
         let queue = Rc::new(RefCell::new(CheckpointQueue::default()));
         queue.borrow_mut().config = Config {
@@ -2922,7 +2916,7 @@ mod test {
                 .unwrap();
         };
         let push_deposit = || {
-            let mut input = Input::new(
+            let input = Input::new(
                 OutPoint {
                     txid: Txid::from_slice(&[0; 32]).unwrap(),
                     vout: 0,
@@ -2948,7 +2942,7 @@ mod test {
             let mut queue = queue.borrow_mut();
             let cp = queue.signing().unwrap().unwrap();
             let sigset_index = cp.sigset.index;
-            let to_sign = cp.to_sign(Xpub::new(xpub.clone())).unwrap();
+            let to_sign = cp.to_sign(Xpub::new(xpub)).unwrap();
             let secp2 = Secp256k1::signing_only();
             let sigs = crate::bitcoin::signer::sign(&secp2, &xpriv, &to_sign).unwrap();
             drop(cp);
@@ -2963,7 +2957,7 @@ mod test {
                 sign_batch(btc_height);
             }
         };
-        let confirm_cp = |index, btc_height| {
+        let confirm_cp = |index, _btc_height| {
             let mut queue = queue.borrow_mut();
             queue.confirmed_index = Some(index);
         };
@@ -3012,9 +3006,11 @@ mod test {
     }
 
     fn sigset(n: u32) -> SignatorySet {
-        let mut sigset = SignatorySet::default();
-        sigset.index = n;
-        sigset.create_time = n as u64;
+        let mut sigset = SignatorySet {
+            index: n,
+            create_time: n as u64,
+            ..Default::default()
+        };
 
         let secret = bitcoin::secp256k1::SecretKey::from_slice(&[(n + 1) as u8; 32]).unwrap();
         let pubkey: Pubkey = bitcoin::secp256k1::PublicKey::from_secret_key(
@@ -3024,7 +3020,7 @@ mod test {
         .into();
 
         sigset.signatories.push(Signatory {
-            pubkey: pubkey.into(),
+            pubkey,
             voting_power: 100,
         });
 
@@ -3036,8 +3032,10 @@ mod test {
 
     #[test]
     fn backfill_basic() {
-        let mut queue = CheckpointQueue::default();
-        queue.index = 10;
+        let mut queue = CheckpointQueue {
+            index: 10,
+            ..Default::default()
+        };
         queue
             .queue
             .push_back(Checkpoint::new(sigset(7)).unwrap())
@@ -3091,8 +3089,10 @@ mod test {
 
     #[test]
     fn backfill_with_zeroth() {
-        let mut queue = CheckpointQueue::default();
-        queue.index = 1;
+        let mut queue = CheckpointQueue {
+            index: 1,
+            ..Default::default()
+        };
         queue
             .queue
             .push_back(Checkpoint::new(sigset(1)).unwrap())

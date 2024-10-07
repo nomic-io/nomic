@@ -631,7 +631,7 @@ mod tests {
 
         let (sigset, commitment) = SignatorySet::from_script(&script, (2, 3)).unwrap();
 
-        let pk = |bytes| Pubkey::new(bytes).unwrap().into();
+        let pk = |bytes| Pubkey::new(bytes).unwrap();
         assert_eq!(
             sigset,
             SignatorySet {

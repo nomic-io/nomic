@@ -97,8 +97,10 @@ const IBC_FEE_USATS: u64 = 1_000_000;
 /// The fixed amount of nBTC fee required to make any application call, in
 /// micro-satoshis.
 const CALL_FEE_USATS: u64 = 100_000_000;
+
 /// The fixed amount of nBTC fee required to create a new Ethereum connection,
 /// in micro-satoshis.
+#[cfg(feature = "ethereum")]
 const ETH_CREATE_CONNECTION_FEE_USATS: u64 = 10_000_000_000;
 
 const OSMOSIS_CHANNEL_ID: &str = "channel-1";
@@ -2005,9 +2007,10 @@ impl Default for Dest {
     }
 }
 
-#[derive(Encode, Decode, Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Encode, Decode, Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum Identity {
+    #[default]
     None,
     NativeAccount {
         address: Address,
@@ -2082,12 +2085,6 @@ impl Describe for Identity {
         ::orga::describe::Builder::new::<Self>()
             .meta::<()>()
             .build()
-    }
-}
-
-impl Default for Identity {
-    fn default() -> Self {
-        Identity::None
     }
 }
 
