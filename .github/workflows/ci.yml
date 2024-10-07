@@ -90,7 +90,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --verbose --features=signet,devnet bitcoin -- --ignored
+          args: --verbose --features=devnet bitcoin -- --ignored
 
   check-rest:
     runs-on: ubuntu-latest
