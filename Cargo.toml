@@ -50,7 +50,7 @@ lazy_static = "1.4.0"
 prost = "0.13.3"
 cosmrs = "0.14.0"
 ripemd = "0.1.3"
-frost-secp256k1-tr = { git = "https://github.com/ZcashFoundation/frost", rev = "20c2c98a931c564655e2a03719e19ba916e11545", features = [
+frost-secp256k1-tr = { git = "https://github.com/ZcashFoundation/frost", rev = "51fa7d09f3742563a35d065afcff6ad486430dac", features = [
     "nightly",
 ], optional = true }
 bitcoin = { version = "0.29.2", features = ["serde", "rand"] }
