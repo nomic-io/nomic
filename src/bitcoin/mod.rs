@@ -4,15 +4,14 @@
 use self::checkpoint::Input;
 use self::recovery::{RecoveryTxInput, RecoveryTxs};
 use self::threshold_sig::Signature;
-use crate::app::Dest;
+use crate::app::{Dest, Identity};
 use crate::bitcoin::checkpoint::BatchType;
 use crate::error::{Error, Result};
-use adapter::Adapter;
 use bitcoin::hashes::Hash;
 use bitcoin::util::bip32::ChildNumber;
 use bitcoin::util::bip32::ExtendedPubKey;
-use bitcoin::Script;
 use bitcoin::{util::merkleblock::PartialMerkleTree, Transaction};
+use bitcoin::{OutPoint, Script};
 use checkpoint::CheckpointQueue;
 use header_queue::HeaderQueue;
 use orga::coins::{Accounts, Address, Amount, Coin, Give, Symbol, Take};
@@ -52,6 +51,8 @@ pub mod signatory;
 pub mod signer;
 pub mod threshold_sig;
 
+pub use adapter::Adapter;
+
 /// The symbol for nBTC, the network's native BTC token.
 #[derive(State, Debug, Clone, Encode, Decode, Default, Migrate, Serialize)]
 pub struct Nbtc(());
@@ -60,11 +61,18 @@ impl Symbol for Nbtc {
     const NAME: &'static str = "usat";
 }
 
-#[cfg(all(not(feature = "testnet"), not(feature = "devnet")))]
+// TODO: select via generics or at runtime
+#[cfg(all(
+    not(feature = "testnet"),
+    not(feature = "devnet"),
+    not(feature = "signet")
+))]
 pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Bitcoin;
-#[cfg(all(feature = "testnet", not(feature = "devnet")))]
+#[cfg(feature = "signet")]
+pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Signet;
+#[cfg(all(feature = "testnet", not(feature = "devnet"), not(feature = "signet")))]
 pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Testnet;
-#[cfg(all(feature = "devnet", feature = "testnet"))]
+#[cfg(all(feature = "devnet", feature = "testnet", not(feature = "signet")))]
 pub const NETWORK: ::bitcoin::Network = ::bitcoin::Network::Regtest;
 
 // TODO: move to config
@@ -182,8 +190,7 @@ impl Default for Config {
     fn default() -> Self {
         match NETWORK {
             bitcoin::Network::Regtest => Config::regtest(),
-            bitcoin::Network::Testnet | bitcoin::Network::Bitcoin => Config::bitcoin(),
-            _ => unimplemented!(),
+            _ => Config::bitcoin(),
         }
     }
 }
@@ -202,7 +209,7 @@ pub fn matches_bitcoin_network(network: &bitcoin::Network) -> bool {
 
 /// Calculates the bridge fee for a deposit of the given amount of BTC, in
 /// satoshis.
-pub fn calc_deposit_fee(amount: u64) -> u64 {
+pub fn calc_bridge_deposit_fee(amount: u64) -> u64 {
     amount / 100
 }
 
@@ -463,6 +470,51 @@ impl Bitcoin {
         // TODO: we shouldn't need this slice, commitment should be fixed-length
     }
 
+    pub fn amount_after_deposit_fee(
+        &self,
+        tx: &Transaction,
+        vout: u32,
+        sigset_index: u32,
+        dest: &Dest,
+    ) -> Result<u64> {
+        let output = tx.output.get(vout as usize).ok_or_else(|| {
+            Error::Orga(OrgaError::App("Output index is out of bounds".to_string()))
+        })?;
+
+        let prevout = OutPoint {
+            txid: tx.txid(),
+            vout,
+        };
+        let cp = self.checkpoints.get(sigset_index)?;
+        let input = Input::new(
+            prevout,
+            &cp.sigset,
+            &dest.commitment_bytes()?,
+            output.value,
+            self.checkpoints.config.sigset_threshold,
+        )?;
+        let input_size = input.est_vsize();
+
+        let mut amount = output.value * self.config.units_per_sat;
+
+        let miner_fee_amount = input_size * cp.fee_rate * self.checkpoints.config.user_fee_factor
+            / 10_000
+            * self.config.units_per_sat;
+        amount.checked_sub(miner_fee_amount).ok_or_else(|| {
+            OrgaError::App("Deposit amount is too small to pay its spending fee".to_string())
+        })?;
+
+        if !dest.is_fee_exempt() {
+            amount = amount
+                .checked_sub(calc_bridge_deposit_fee(amount))
+                .ok_or_else(|| {
+                    OrgaError::App("Deposit amount is too small to pay its deposit fee".to_string())
+                })?;
+        }
+
+        Ok(amount)
+    }
+
     /// Verifies and processes a deposit of BTC into the reserve.
     ///
     /// This will check that the Bitcoin transaction has been sufficiently
@@ -538,7 +590,7 @@ impl Bitcoin {
                 sigset.output_script(&dest_bytes, self.checkpoints.config.sigset_threshold)?;
             if output.script_pubkey != expected_script {
                 return Err(OrgaError::App(
-                    "Output script does not match signature set".to_string(),
+                    "Output script does not match signer set".to_string(),
                 ))?;
             }
         }
@@ -605,19 +657,11 @@ impl Bitcoin {
         // TODO: keep in excess queue if full
 
         if !dest.is_fee_exempt() {
-            let deposit_fee = nbtc.take(calc_deposit_fee(nbtc.amount.into()))?;
-            self.insert_pending(Dest::RewardPool, deposit_fee)?;
+            let deposit_fee = nbtc.take(calc_bridge_deposit_fee(nbtc.amount.into()))?;
+            self.insert_pending(Dest::RewardPool, deposit_fee, Identity::None)?;
         }
 
-        let validation = dest.validate(self, nbtc.amount);
-        if validation.is_ok() {
-            self.insert_pending(dest, nbtc)?;
-        } else {
-            log::debug!(
-                "Skipped inserting deposit destination due to error: {:?}",
-                validation,
-            );
-        }
+        self.insert_pending(dest, nbtc, Identity::None)?;
 
         Ok(())
     }
@@ -790,16 +834,21 @@ impl Bitcoin {
     /// Transfers will be processed once the containing checkpoint is finished
     /// being signed, but will be represented in the checkpoint's emergency
     /// disbursal before they are processed.
-    pub fn insert_pending(&mut self, dest: Dest, coins: Coin<Nbtc>) -> Result<()> {
-        dest.validate(self, coins.amount)?;
-
+    pub fn insert_pending(
+        &mut self,
+        dest: Dest,
+        coins: Coin<Nbtc>,
+        sender: Identity,
+    ) -> Result<()> {
         let building = &mut self.checkpoints.building_mut()?;
         let mut amount = building
             .pending
-            .remove(dest.clone())?
+            .remove((dest.clone(), sender))?
             .map_or(0.into(), |c| c.amount);
         amount = (amount + coins.amount).result()?;
-        building.pending.insert(dest, Coin::mint(amount))?;
+        building
+            .pending
+            .insert((dest, sender), Coin::mint(amount))?;
 
         Ok(())
     }
@@ -822,7 +871,8 @@ impl Bitcoin {
 
         let dest = Dest::NativeAccount { address: to };
         let coins = self.accounts.withdraw(signer, amount)?;
-        self.insert_pending(dest, coins)?;
+        let sender = Identity::from_signer()?;
+        self.insert_pending(dest, coins, sender)?;
 
         Ok(())
     }
@@ -1040,7 +1090,7 @@ impl Bitcoin {
     ///
     /// This should be used to process the pending transfers, crediting each of
     /// them now that the checkpoint has been fully signed.
-    pub fn take_pending(&mut self) -> Result<Vec<(Dest, Coin<Nbtc>)>> {
+    pub fn take_pending(&mut self) -> Result<Vec<(Dest, Coin<Nbtc>, Identity)>> {
         if let Err(Error::Orga(OrgaError::App(err))) = self.checkpoints.last_completed_index() {
             if err == "No completed checkpoints yet" {
                 return Ok(vec![]);
@@ -1051,14 +1101,17 @@ impl Bitcoin {
         let pending = &mut self.checkpoints.last_completed_mut()?.pending;
         let keys = pending
             .iter()?
-            .map(|entry| entry.map(|(dest, _)| dest.clone()).map_err(Error::from))
-            .collect::<Result<Vec<Dest>>>()?;
-        let mut dests = vec![];
-        for dest in keys {
-            let coins = pending.remove(dest.clone())?.unwrap().into_inner();
-            dests.push((dest, coins));
+            .map(|entry| entry.map(|(k, _)| k.clone()).map_err(Error::from))
+            .collect::<Result<Vec<_>>>()?;
+        let mut transfers = vec![];
+        for (dest, sender) in keys {
+            let coins = pending
+                .remove((dest.clone(), sender))?
+                .unwrap()
+                .into_inner();
+            transfers.push((dest, coins, sender));
         }
-        Ok(dests)
+        Ok(transfers)
     }
 
     pub fn give_miner_fee(&mut self, coin: Coin<Nbtc>) -> Result<()> {
@@ -1226,7 +1279,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, fs, rc::Rc};
+    use std::{cell::RefCell, rc::Rc};
 
     use bitcoin::{
         secp256k1::Secp256k1, util::bip32::ExtendedPrivKey, BlockHash, BlockHeader, OutPoint,
@@ -1311,7 +1364,7 @@ mod tests {
             Rc::new(RefCell::new(Some(EntryMap::new()))),
             Rc::new(RefCell::new(Some(Map::new()))),
         );
-        let addr = vec![Address::from_pubkey([0; 33]), Address::from_pubkey([1; 33])];
+        let addr = [Address::from_pubkey([0; 33]), Address::from_pubkey([1; 33])];
         vals.set_voting_power([0; 32], 100);
         vals.set_operator([0; 32], addr[0])?;
         vals.set_voting_power([1; 32], 10);
@@ -1327,7 +1380,7 @@ mod tests {
         };
 
         let secp = Secp256k1::new();
-        let xpriv = vec![
+        let xpriv = [
             ExtendedPrivKey::new_master(super::NETWORK, &[0]).unwrap(),
             ExtendedPrivKey::new_master(super::NETWORK, &[1]).unwrap(),
         ];

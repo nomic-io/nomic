@@ -1,14 +1,14 @@
 [package]
 name = "nomic"
-version = "9.0.0"
+version = "9.1.4"
 authors = ["Nomic DAO Foundation <foundation@nomic.io>"]
 edition = "2021"
 default-run = "nomic"
 
 [dependencies]
-bitcoin = { version = "0.29.2", features = ["serde", "rand"] }
-orga = { git = "https://github.com/nomic-io/orga.git", rev = "4274220595a14f759e009a912ee96b6e8013e281", features = [
+orga = { git = "https://github.com/nomic-io/orga.git", rev = "35988d76b58008e37794064c41f3d0ba102ca0c8", features = [
     "merk-verify",
+    "feat-ibc",
 ] }
 thiserror = "1.0.30"
 ed = { git = "https://github.com/nomic-io/ed", rev = "a657be856792039ff60c2f67e7920e38cd3acffc" }
@@ -47,11 +47,35 @@ ics23 = "0.12.0"
 cosmos-sdk-proto = { version = "0.23.0", optional = true }
 prometheus_exporter = "0.8.5"
 lazy_static = "1.4.0"
-alloy = { version = "0.2.1", features = [
-    "full",
-    "node-bindings",
-    "sol-types",
+prost = "0.13.3"
+cosmrs = "0.14.0"
+ripemd = "0.1.3"
+frost-secp256k1-tr = { git = "https://github.com/ZcashFoundation/frost", rev = "51fa7d09f3742563a35d065afcff6ad486430dac", features = [
+    "nightly",
 ], optional = true }
+bitcoin = { version = "0.29.2", features = ["serde", "rand"] }
+serde-hex = "0.1.0"
+alloy-core = { version = "0.8.5", optional = true }
+alloy-sol-types = { version = "0.8.5", optional = true }
+alloy-contract = { version = "0.3.6", optional = true }
+alloy-provider = { version = "0.3.6", optional = true }
+alloy-signer-local = { version = "0.3.6", optional = true }
+helios-consensus-core = { package = "consensus-core", git = "https://github.com/a16z/helios.git", version = "0.6.0", optional = true }
+ethereum_ssz = { version = "0.6.0", optional = true }
+ssz_types = { version = "0.7.0", optional = true }
+alloy-trie = { version = "0.6.0", optional = true }
+alloy-primitives = { version = "0.8.5", optional = true }
+alloy-rlp = { version = "0.3.8", optional = true }
+tree_hash = { version = "0.7.0", optional = true }
+rlp = { version = "0.5.1", optional = true }
+ethereum-triedb = { version = "0.1.1", optional = true }
+trie-db = { version = "0.28", optional = true }
+rlp-derive = { version = "0.2.0", optional = true }
+primitive-types = { version = "0.12", features = ["rlp"], optional = true }
+hex-literal = { version = "0.4.1", optional = true }
+alloy-rpc-types = { version = "0.3.6", optional = true }
+alloy-transport = { version = "0.3.6", optional = true }
+alloy-rpc-types-eth = { version = "0.3.6", optional = true }
 
 [dev-dependencies]
 bitcoind = { version = "0.27.0", features = ["22_0"] }
@@ -65,13 +89,15 @@ crossbeam-channel = "0.5.8"
 chrono = "0.4.19"
 serial_test = "2.0.0"
 tempfile = "3.12.0"
+alloy-node-bindings = "0.3.6"
 
 [build-dependencies]
 toml = { version = "0.7.2", features = ["parse"] }
 semver = "1.0.18"
+glob = "0.3.1"
 
 [features]
-default = ["full", "feat-ibc", "legacy-bin"]
+default = ["full", "testnet"]
 full = [
     "bitcoincore-rpc-async",
     "clap",
@@ -87,14 +113,47 @@ full = [
     "cosmos-sdk-proto",
     "home",
 ]
-feat-ibc = ["orga/feat-ibc"]
 testnet = []
 devnet = []
 legacy-bin = []
-ethereum = ["alloy"]
+signet = []
+ethereum = [
+    "alloy-core",
+    "alloy-core/dyn-abi",
+    "alloy-core/json-abi",
+    "alloy-sol-types",
+    "alloy-primitives",
+    "alloy-trie",
+    "ethereum-triedb",
+    "alloy-rlp",
+    "primitive-types",
+    "ethereum_ssz",
+    "ssz_types",
+    "tree_hash",
+    "rlp",
+    "rlp-derive",
+    "trie-db",
+]
+ethereum-full = [
+    "ethereum",
+    "alloy-contract",
+    "alloy-provider",
+    "alloy-rpc-types",
+    "alloy-rpc-types-eth",
+    "alloy-transport",
+    "alloy-provider/anvil-node",
+    "alloy-provider/rpc-api",
+    "alloy-signer-local",
+    "helios-consensus-core",
+]
+frost = ["frost-secp256k1-tr"]
+babylon = ["frost"]
 
 [profile.release]
 overflow-checks = true
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
 
 [[bin]]
 name = "nomic"

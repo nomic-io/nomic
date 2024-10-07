@@ -95,16 +95,16 @@ where
     /// - `key_path`: The path to the file containing the extended private key,
     ///   or where it should be written if it does not yet exist.
     /// - `max_withdrawal_rate`: The maximum rate at which Bitcoin can be
-    /// withdrawn from the reserve in a 24-hour period, temporarily halting
-    /// signing if the limit is reached.
+    ///   withdrawn from the reserve in a 24-hour period, temporarily halting
+    ///   signing if the limit is reached.
     /// - `max_sigset_change_rate`: The maximum rate at which the signatory set
-    /// can change in a 24-hour period, temporarily halting signing if the limit
-    /// is reached.
+    ///   can change in a 24-hour period, temporarily halting signing if the
+    ///   limit is reached.
     /// - `min_checkpoint_seconds`: The minimum amount of time that must pass
-    /// before this signer will contribute its signature.
+    ///   before this signer will contribute its signature.
     /// - `reset_index`: A checkpoint index at which the rate limits should be
-    /// reset, used to manually override the limits if the signer has checked on
-    /// the pending withdrawals and decided they are legitimate.
+    ///   reset, used to manually override the limits if the signer has checked
+    ///   on the pending withdrawals and decided they are legitimate.
     /// - `app_client`: A function that returns a new app client to be used in
     ///   querying and submitting calls.
     #[allow(clippy::too_many_arguments)]
@@ -150,21 +150,21 @@ where
     ///
     /// **Parameters:**
     /// - `op_addr`: The operator address of the submitter. Used to check if the
-    ///  operator has already submitted a signatory key.
-    /// - `xpriv`: The extended private key to use for signing.
+    ///   operator has already submitted a signatory key.
+    /// - `xprivs`: The extended private keys to use for signing.
     /// - `max_withdrawal_rate`: The maximum rate at which Bitcoin can be
-    /// withdrawn from the reserve in a 24-hour period, temporarily halting
-    /// signing if the limit is reached.
+    ///   withdrawn from the reserve in a 24-hour period, temporarily halting
+    ///   signing if the limit is reached.
     /// - `max_sigset_change_rate`: The maximum rate at which the signatory set
-    /// can change in a 24-hour period, temporarily halting signing if the limit
-    /// is reached.
+    ///   can change in a 24-hour period, temporarily halting signing if the
+    ///   limit is reached.
     /// - `min_blocks_per_checkpoint`: The minimum number of new Bitcoin blocks
-    /// that must be mined before this signer will contribute its signature.
+    ///   that must be mined before this signer will contribute its signature.
     /// - `reset_index`: A checkpoint index at which the rate limits should be
-    /// reset, used to manually override the limits if the signer has checked on
-    /// the pending withdrawals and decided they are legitimate.
+    ///   reset, used to manually override the limits if the signer has checked
+    ///   on the pending withdrawals and decided they are legitimate.
     /// - `app_client`: A function that returns a new app client to be used in
-    ///  querying and submitting calls.
+    ///   querying and submitting calls.
     pub fn new(
         op_addr: Address,
         xprivs: Vec<ExtendedPrivKey>,
@@ -542,7 +542,7 @@ mod test {
         )
         .unwrap();
 
-        assert!(signer.xprivs.get(0).unwrap() == &xpriv);
+        assert!(signer.xprivs.first().unwrap() == &xpriv);
     }
 
     #[test]
@@ -568,7 +568,7 @@ mod test {
         )
         .unwrap();
         assert!(signer.xprivs.len() == 1);
-        assert!(signer.xprivs.get(0).unwrap() == &xpriv);
+        assert!(signer.xprivs.first().unwrap() == &xpriv);
     }
 
     #[test]

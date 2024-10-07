@@ -223,12 +223,12 @@ async fn bank_balances(address: &str) -> Result<Value, BadRequest<String>> {
     let nom_balance: u64 = app_client()
         .query(|app| app.accounts.balance(address))
         .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+        .map_err(|e| BadRequest(format!("{:?}", e)))?
         .into();
     let nbtc_balance: u64 = app_client()
         .query(|app| app.bitcoin.accounts.balance(address))
         .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+        .map_err(|e| BadRequest(format!("{:?}", e)))?
         .into();
 
     Ok(json!({
@@ -256,7 +256,7 @@ async fn bank_balances_2(address: &str) -> Result<Value, BadRequest<String>> {
     let balance: u64 = app_client()
         .query(|app| app.accounts.balance(address))
         .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+        .map_err(|e| BadRequest(format!("{:?}", e)))?
         .into();
 
     Ok(json!({
@@ -277,13 +277,13 @@ async fn auth_accounts(addr_str: &str) -> Result<Value, BadRequest<String>> {
     let balance: u64 = app_client()
         .query(|app| app.accounts.balance(address))
         .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+        .map_err(|e| BadRequest(format!("{:?}", e)))?
         .into();
 
     let mut nonce: u64 = app_client()
         .query_root(|app| app.inner.inner.borrow().inner.inner.inner.nonce(address))
         .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+        .map_err(|e| BadRequest(format!("{:?}", e)))?;
     nonce += 1;
 
     Ok(json!({
@@ -311,13 +311,13 @@ async fn auth_accounts2(addr_str: &str) -> Result<Value, BadRequest<String>> {
     let _balance: u64 = app_client()
         .query(|app| app.accounts.balance(address))
         .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+        .map_err(|e| BadRequest(format!("{:?}", e)))?
         .into();
 
     let mut nonce: u64 = app_client()
         .query_root(|app| app.inner.inner.borrow().inner.inner.inner.nonce(address))
         .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+        .map_err(|e| BadRequest(format!("{:?}", e)))?;
     nonce += 1;
 
     Ok(json!({
@@ -351,13 +351,13 @@ async fn txs(tx: &str) -> Result<Value, BadRequest<String>> {
         let tx: TxRequest = serde_json::from_str(tx).unwrap();
         serde_json::to_vec(&tx.tx).unwrap()
     } else {
-        base64::decode(tx).map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+        base64::decode(tx).map_err(|e| BadRequest(format!("{:?}", e)))?
     };
 
     let res = client
         .broadcast_tx_commit(tx_bytes.into())
         .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+        .map_err(|e| BadRequest(format!("{:?}", e)))?;
 
     let tx_response = if res.check_tx.code.is_err() {
         &res.check_tx
@@ -395,15 +395,15 @@ async fn txs2(tx: &str) -> Result<Value, BadRequest<String>> {
 
     let tx_bytes = if let Some('{') = tx.chars().next() {
         let tx: TxRequest2 = serde_json::from_str(tx).unwrap();
-        base64::decode(tx.tx_bytes.as_str()).map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+        base64::decode(tx.tx_bytes.as_str()).map_err(|e| BadRequest(format!("{:?}", e)))?
     } else {
-        base64::decode(tx).map_err(|e| BadRequest(Some(format!("{:?}", e))))?
+        base64::decode(tx).map_err(|e| BadRequest(format!("{:?}", e)))?
     };
 
     let res = client
         .broadcast_tx_commit(tx_bytes.into())
         .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+        .map_err(|e| BadRequest(format!("{:?}", e)))?;
 
     let tx_response = if res.check_tx.code.is_err() {
         &res.check_tx
@@ -453,19 +453,19 @@ async fn query(query: &str, height: Option<u32>) -> Result<String, BadRequest<St
 
     let client = tm::HttpClient::new(app_host()).unwrap();
 
-    let query_bytes = hex::decode(query).map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+    let query_bytes = hex::decode(query).map_err(|e| BadRequest(format!("{:?}", e)))?;
 
     let res = client
         .abci_query(None, query_bytes, height.map(Into::into), true)
         .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+        .map_err(|e| BadRequest(format!("{:?}", e)))?;
 
     let res_height: u64 = res.height.into();
     let res_height: u32 = res_height.try_into().unwrap();
 
     if let tendermint::abci::Code::Err(code) = res.code {
         let msg = format!("code {}: {}", code, res.log);
-        return Err(BadRequest(Some(msg)));
+        return Err(BadRequest(msg));
     }
 
     let res_b64 = base64::encode([res_height.to_be_bytes().to_vec(), res.value].concat());
@@ -520,7 +520,7 @@ async fn staking_delegators_delegations_2(address: &str) -> Result<Value, BadReq
     let delegations = app_client()
         .query(|app| app.staking.delegations(address))
         .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+        .map_err(|e| BadRequest(format!("{:?}", e)))?;
 
     let total_staked: u64 = delegations
         .iter()
@@ -814,7 +814,7 @@ async fn minting_inflation() -> Result<Value, BadRequest<String>> {
     let validators = app_client()
         .query(|app| app.staking.all_validators())
         .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+        .map_err(|e| BadRequest(format!("{:?}", e)))?;
 
     let total_staked: u64 = validators
         .iter()
@@ -824,7 +824,7 @@ async fn minting_inflation() -> Result<Value, BadRequest<String>> {
     let yearly_inflation = Decimal::from(64_682_541_340_000);
     let apr = (yearly_inflation / Decimal::from(4) / Decimal::from(total_staked))
         .result()
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+        .map_err(|e| BadRequest(format!("{:?}", e)))?;
 
     Ok(json!({ "inflation": apr.to_string() }))
 }
@@ -834,7 +834,7 @@ async fn minting_inflation_2() -> Result<Value, BadRequest<String>> {
     let validators = app_client()
         .query(|app| app.staking.all_validators())
         .await
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+        .map_err(|e| BadRequest(format!("{:?}", e)))?;
 
     let total_staked: u64 = validators
         .iter()
@@ -844,7 +844,7 @@ async fn minting_inflation_2() -> Result<Value, BadRequest<String>> {
     let yearly_inflation = Decimal::from(64_682_541_340_000);
     let apr = (yearly_inflation / Decimal::from(4) / Decimal::from(total_staked))
         .result()
-        .map_err(|e| BadRequest(Some(format!("{:?}", e))))?;
+        .map_err(|e| BadRequest(format!("{:?}", e)))?;
 
     Ok(json!({ "height": "0", "result": apr.to_string() }))
 }

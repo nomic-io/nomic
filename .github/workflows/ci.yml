@@ -23,7 +23,7 @@ jobs:
       - name: Use Nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2024-04-25
+          toolchain: nightly-2024-07-21
           override: true
       - name: Cache
         uses: actions/cache@v4
@@ -38,9 +38,9 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --verbose --no-default-features --features=full,feat-ibc,testnet
+          args: --verbose --no-default-features --features=full
 
-  test-all-features:
+  test-testnet:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -48,7 +48,7 @@ jobs:
       - name: Use Nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2024-04-25
+          toolchain: nightly-2024-07-21
           override: true
       - name: Cache
         uses: actions/cache@v4
@@ -56,14 +56,14 @@ jobs:
           path: |
             ~/.cargo
             ./target
-          key: ${{ runner.os }}-test-all-features-${{ hashFiles('Cargo.lock') }}
+          key: ${{ runner.os }}-test-testnet-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-test-all-features-
+            ${{ runner.os }}-test-testnet-
       - name: Test
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --verbose --all-features
+          args: --verbose --no-default-features --features=full,testnet
 
   test-bitcoin:
     runs-on: ubuntu-latest
@@ -73,7 +73,7 @@ jobs:
       - name: Use Nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2024-04-25
+          toolchain: nightly-2024-07-21
           override: true
       - name: Cache
         uses: actions/cache@v4
@@ -81,16 +81,16 @@ jobs:
           path: |
             ~/.cargo
             ./target
-          key: ${{ runner.os }}-test-all-features-${{ hashFiles('Cargo.lock') }}
+          key: ${{ runner.os }}-test-testnet-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-test-all-features-
+            ${{ runner.os }}-test-testnet-
       - name: Test
         env:
           RUST_LOG: info
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --verbose --all-features bitcoin -- --ignored
+          args: --verbose --features=devnet bitcoin -- --ignored
 
   check-rest:
     runs-on: ubuntu-latest
@@ -100,7 +100,7 @@ jobs:
       - name: Use Nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2024-04-25
+          toolchain: nightly-2024-07-21
           override: true
       - name: Check Rest
         uses: actions-rs/cargo@v1
@@ -116,7 +116,7 @@ jobs:
       - name: Use Nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2024-04-25
+          toolchain: nightly-2024-07-21
           override: true
       - name: Install
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
@@ -132,7 +132,7 @@ jobs:
       - name: Use Nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2024-04-25
+          toolchain: nightly-2024-07-21
           components: llvm-tools-preview
           override: true
       - name: Cache
@@ -155,7 +155,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: llvm-cov
-          args: --no-cfg-coverage-nightly --no-default-features --features=full,feat-ibc,testnet --workspace --lcov --output-path lcov.info
+          args: --no-cfg-coverage-nightly --workspace --lcov --output-path lcov.info
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v1
         with:
@@ -171,7 +171,7 @@ jobs:
       - name: Use Nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2024-04-25
+          toolchain: nightly-2024-07-21
           components: rustfmt
           override: true
       - name: Check
@@ -188,7 +188,7 @@ jobs:
       - name: Use Nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2024-04-25
+          toolchain: nightly-2024-07-21
           components: clippy
           override: true
       - name: Cache
@@ -204,4 +204,4 @@ jobs:
         uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          args: --no-default-features --features=full,feat-ibc,testnet -- -D warnings
+          args: -- -D warnings

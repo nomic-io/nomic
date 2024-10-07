@@ -46,8 +46,8 @@ pub async fn transfer(to_addr: String, amount: u64) -> Result<JsValue, JsError> 
     //     .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
 
     // client
-    //     .pay_from(async move |mut client| client.accounts.take_as_funding(MIN_FEE.into()).await)
-    //     .accounts
+    //     .pay_from(async move |mut client|
+    // client.accounts.take_as_funding(MIN_FEE.into()).await)     .accounts
     //     .transfer(address, amount.into())
     //     .await?;
     // Ok(client.last_res()?)
@@ -430,7 +430,9 @@ pub async fn gen_deposit_addr(dest_addr: String) -> Result<DepositAddress, JsErr
         })
         .await?;
     let script = sigset.output_script(
-        Dest::NativeAccount { address: dest_addr }.commitment_bytes()?.as_slice(),
+        Dest::NativeAccount { address: dest_addr }
+            .commitment_bytes()?
+            .as_slice(),
         threshold,
     )?;
     // TODO: get network from somewhere
@@ -611,6 +613,44 @@ pub async fn withdraw(address: String, dest_addr: String, amount: u64) -> Result
         address,
         sdk::Msg {
             type_: "nomic/MsgWithdraw".to_string(),
+            value: value.into(),
+        },
+    )
+    .await
+}
+
+#[cfg(feature = "babylon")]
+#[wasm_bindgen(js_name = stakeNbtc)]
+pub async fn stake_nbtc(address: String, amount: u64) -> Result<String, JsError> {
+    let mut value = serde_json::Map::new();
+    value.insert("amount".to_string(), amount.to_string().into());
+    let address = address
+        .parse()
+        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+
+    gen_call_bytes(
+        address,
+        sdk::Msg {
+            type_: "nomic/MsgStakeNbtc".to_string(),
+            value: value.into(),
+        },
+    )
+    .await
+}
+
+#[cfg(feature = "babylon")]
+#[wasm_bindgen(js_name = unstakeNbtc)]
+pub async fn unstake_nbtc(address: String, amount: u64) -> Result<String, JsError> {
+    let mut value = serde_json::Map::new();
+    value.insert("amount".to_string(), amount.to_string().into());
+    let address = address
+        .parse()
+        .map_err(|e| Error::Wasm(format!("{:?}", e)))?;
+
+    gen_call_bytes(
+        address,
+        sdk::Msg {
+            type_: "nomic/MsgUnstakeNbtc".to_string(),
             value: value.into(),
         },
     )

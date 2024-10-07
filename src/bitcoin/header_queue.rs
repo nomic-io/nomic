@@ -250,7 +250,7 @@ impl Default for Config {
             bitcoin::Network::Bitcoin => Config::mainnet(),
             bitcoin::Network::Testnet => Config::testnet(),
             bitcoin::Network::Regtest => Config::regtest(),
-            _ => unimplemented!(),
+            bitcoin::Network::Signet => Config::signet(),
         }
     }
 }
@@ -297,6 +297,28 @@ impl Config {
             encoded_trusted_header: header_bytes.try_into().unwrap(),
             retargeting: true,
             min_difficulty_blocks: true,
+        }
+    }
+
+    pub fn signet() -> Self {
+        let checkpoint_json = include_str!("./signet_checkpoint.json");
+        let checkpoint: (u32, BlockHeader) = serde_json::from_str(checkpoint_json).unwrap();
+        let (height, header) = checkpoint;
+
+        let mut header_bytes = vec![];
+        header.consensus_encode(&mut header_bytes).unwrap();
+
+        Self {
+            max_length: MAX_LENGTH,
+            max_time_increase: MAX_TIME_INCREASE,
+            retarget_interval: RETARGET_INTERVAL,
+            target_spacing: TARGET_SPACING,
+            target_timespan: TARGET_TIMESPAN,
+            max_target: 0x1e0377ae,
+            trusted_height: height,
+            encoded_trusted_header: header_bytes.try_into().unwrap(),
+            retargeting: true,
+            min_difficulty_blocks: false,
         }
     }
 

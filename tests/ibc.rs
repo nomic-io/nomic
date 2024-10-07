@@ -30,7 +30,6 @@ use orga::client::{
     AppClient,
 };
 use orga::coins::{Address, Amount};
-use orga::encoding::Adapter as EdAdapter;
 use orga::encoding::Encode;
 use orga::ibc::GrpcOpts;
 use orga::ibc::IbcTimestamp as Timestamp;
@@ -106,7 +105,7 @@ pub async fn broadcast_deposit_addr(
 
     match res.status() {
         StatusCode::OK => Ok(()),
-        _ => Err(Error::Relayer(format!("{}", res.text().await.unwrap()))),
+        _ => Err(Error::Relayer(res.text().await.unwrap().to_string())),
     }
 }
 
@@ -143,7 +142,7 @@ async fn direct_deposit_bitcoin(
     let script = sigset.output_script(dest.commitment_bytes()?.as_slice(), threshold)?;
     let btc_addr = bitcoin::Address::from_script(&script, nomic::bitcoin::NETWORK).unwrap();
 
-    let url = format!("{}/address", "http://localhost:8999".to_string(),);
+    let url = format!("{}/address", "http://localhost:8999",);
     let client = reqwest::Client::new();
     let res = client
         .post(url)
@@ -171,7 +170,7 @@ async fn direct_deposit_bitcoin(
 
     match res.status() {
         StatusCode::OK => Ok(()),
-        _ => Err(Error::Relayer(format!("{}", res.text().await.unwrap()))),
+        _ => Err(Error::Relayer(res.text().await.unwrap().to_string())),
     }
 }
 
@@ -313,7 +312,7 @@ async fn ibc_test() {
     );
     let checkpoints = relayer.start_checkpoint_relay();
 
-    let mut relayer = Relayer::new(
+    let relayer = Relayer::new(
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
         rpc_addr.clone(),
     );
@@ -329,7 +328,7 @@ async fn ibc_test() {
         tokio::time::sleep(Duration::from_secs(10)).await;
         dbg!("Starting gRPC server...");
         orga::ibc::start_grpc(
-            || app_client().sub(|app| app.ibc.ctx),
+            || app_client().sub(|app| Ok(app.ibc.ctx)),
             &GrpcOpts {
                 host: "127.0.0.1".to_string(),
                 port: 9001,
@@ -697,10 +696,7 @@ async fn ibc_test() {
                 "--timeout-seconds",
                 "300",
                 "--memo",
-                &format!(
-                    "withdraw:{}",
-                    funded_accounts[1].bitcoin_address().to_string()
-                ),
+                &format!("withdraw:{}", funded_accounts[1].bitcoin_address()),
             ])
             .spawn()
             .unwrap()
