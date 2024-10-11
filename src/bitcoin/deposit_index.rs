@@ -5,21 +5,12 @@ use std::collections::HashMap;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Deposit {
-    txid: Txid,
-    vout: u32,
-    amount: u64,
-    height: Option<u64>,
-}
-
-impl Deposit {
-    pub fn new(txid: Txid, vout: u32, amount: u64, height: Option<u64>) -> Self {
-        Self {
-            txid,
-            vout,
-            amount,
-            height,
-        }
-    }
+    pub txid: Txid,
+    pub vout: u32,
+    pub amount: u64,
+    pub height: Option<u64>,
+    pub sigset_index: u32,
+    pub miner_fee_rate: f64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
