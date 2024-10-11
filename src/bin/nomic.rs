@@ -1767,9 +1767,7 @@ impl GrpcCmd {
         }));
         log::info!("Starting gRPC server on {}:{}", self.host, self.port);
         orga::ibc::start_grpc(
-            // TODO: support configuring RPC address (closure capturing `self.config.node`
-            // breaks coercion to fn pointer)
-            || nomic::app_client("http://localhost:26657").sub(|app| app.ibc.ctx),
+            || self.config.client().sub(|app| app.ibc.ctx),
             &GrpcOpts {
                 host: self.host.to_string(),
                 port: self.port,
