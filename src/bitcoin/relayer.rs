@@ -1099,14 +1099,12 @@ impl Default for BridgeFeeOverrides {
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct RawSignatorySet {
     pub signatories: Vec<RawSignatory>,
     pub index: u32,
-    #[serde(rename = "bridgeFeeRate")]
     pub bridge_fee_rate: f64,
-    #[serde(rename = "minerFeeRate")]
     pub miner_fee_rate: f64,
-    #[serde(rename = "depositsEnabled")]
     pub deposits_enabled: bool,
     pub threshold: (u64, u64),
     pub bridge_fee_overrides: BridgeFeeOverrides,
