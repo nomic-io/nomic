@@ -1312,7 +1312,7 @@ impl ClaimAirdropCmd {
 /// Relays data between the Bitcoin and Nomic networks.
 #[derive(Parser, Debug)]
 pub struct RelayerCmd {
-    /// The port of the Bitcoin RPC server.
+    /// The port of the local Bitcoin RPC server.
     // TODO: get the default based on the network
     #[clap(short = 'p', long, default_value_t = 8332)]
     rpc_port: u16,
@@ -1325,6 +1325,10 @@ pub struct RelayerCmd {
     #[clap(short = 'P', long)]
     rpc_pass: Option<String>,
 
+    /// The URL for the Bitcoin RPC server, e.g. http://localhost:8332.
+    #[clap(short = 'r', long, conflicts_with = "rpc-port")]
+    rpc_url: Option<String>,
+
     #[clap(flatten)]
     config: nomic::network::Config,
 }
@@ -1332,7 +1336,11 @@ pub struct RelayerCmd {
 impl RelayerCmd {
     /// Builds Bitcoin RPC client.
     async fn btc_client(&self) -> Result<BtcClient> {
-        let rpc_url = format!("http://localhost:{}", self.rpc_port);
+        let rpc_url = if let Some(rpc) = self.rpc_url.clone() {
+            rpc
+        } else {
+            format!("http://localhost:{}", self.rpc_port)
+        };
         let auth = match (self.rpc_user.clone(), self.rpc_pass.clone()) {
             (Some(user), Some(pass)) => Auth::UserPass(user, pass),
             _ => Auth::None,
