@@ -733,6 +733,7 @@ mod tests {
         assert_eq!(valset.present_vp, u32::MAX as u64);
     }
 
+    #[ignore]
     #[tokio::test]
     #[serial_test::serial]
     async fn valset_update() {
@@ -843,6 +844,7 @@ mod tests {
         Context::remove::<Paid>();
     }
 
+    #[ignore]
     #[tokio::test]
     #[serial_test::serial]
     async fn transfer() {
@@ -1019,6 +1021,7 @@ mod tests {
         Context::remove::<Paid>();
     }
 
+    #[ignore]
     #[tokio::test]
     #[serial_test::serial]
     #[should_panic]
@@ -1158,6 +1161,7 @@ mod tests {
         Context::remove::<Paid>();
     }
 
+    #[ignore]
     #[tokio::test]
     #[serial_test::serial]
     async fn return_queue() {

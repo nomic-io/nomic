@@ -88,6 +88,7 @@ pub async fn main() {
     }
 }
 
+/// Returns the current time as a Unix timestamp (in seconds).
 fn now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

@@ -1349,10 +1349,12 @@ fn dest_json() {
     )
     .unwrap();
 
-    #[cfg(feature = "testnet")]
+    #[cfg(all(feature = "testnet", not(feature = "devnet")))]
     let out = "{\"type\":\"bitcoin\",\"data\":\"tb1q2xq57yyxwzkw6tthcxq9mhtxxj7f63e3dgldfj\"}";
-    #[cfg(not(feature = "testnet"))]
+    #[cfg(all(not(feature = "testnet"), not(feature = "devnet")))]
     let out = "{\"type\":\"bitcoin\",\"data\":\"bc1q2xq57yyxwzkw6tthcxq9mhtxxj7f63e38wy7jp\"}";
+    #[cfg(all(feature = "devnet", feature = "testnet"))]
+    let out = "{\"type\":\"bitcoin\",\"data\":\"bcrt1q2xq57yyxwzkw6tthcxq9mhtxxj7f63e30pxq7m\"}";
     assert_eq!(
         Dest::Bitcoin {
             data: Adapter::new(addr.script_pubkey())
@@ -1364,7 +1366,6 @@ fn dest_json() {
     let Dest::Bitcoin { data } = Dest::from_str(out).unwrap() else {
         unreachable!();
     };
-
     assert_eq!(*data, addr.script_pubkey());
 }
 
