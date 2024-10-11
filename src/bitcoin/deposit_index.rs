@@ -11,6 +11,7 @@ pub struct Deposit {
     pub height: Option<u64>,
     pub sigset_index: u32,
     pub miner_fee_rate: f64,
+    pub bridge_fee_rate: f64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

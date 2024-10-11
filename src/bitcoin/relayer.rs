@@ -458,6 +458,7 @@ impl Relayer {
                     };
 
                     let miner_fee_rate = self.miner_fee_rate(sigset_index).await?;
+                    let bridge_fee_rate = self.bridge_fee_rate(&dest, sigset_index)?;
 
                     index.insert_deposit(
                         receiver_addr,
@@ -469,6 +470,7 @@ impl Relayer {
                             height: None,
                             sigset_index,
                             miner_fee_rate,
+                            bridge_fee_rate,
                         },
                     )
                 }
@@ -494,6 +496,21 @@ impl Relayer {
             .await?;
 
         Ok(miner_fee_rate)
+    }
+
+    pub fn bridge_fee_rate(&self, dest: &Dest, _sigset_index: u32) -> Result<f64> {
+        // TODO: fee should depend on sigset index
+        let fee_rate = if dest.is_fee_exempt() {
+            0.0
+        } else if matches!(dest, Dest::Ibc { .. }) {
+            // deposit fee + transfer fee
+            0.015
+        } else {
+            // deposit fee
+            0.01
+        };
+
+        Ok(fee_rate)
     }
 
     pub async fn start_emergency_disbursal_transaction_relay(&mut self) -> Result<()> {
@@ -935,6 +952,7 @@ impl Relayer {
             }
 
             let miner_fee_rate = self.miner_fee_rate(sigset_index).await?;
+            let bridge_fee_rate = self.bridge_fee_rate(&dest, sigset_index)?;
 
             let mut index_guard = index.lock().await;
             index_guard.insert_deposit(
@@ -947,6 +965,7 @@ impl Relayer {
                     height: Some(height.into()),
                     sigset_index,
                     miner_fee_rate,
+                    bridge_fee_rate,
                 },
             );
         }
