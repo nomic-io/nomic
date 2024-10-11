@@ -1084,6 +1084,19 @@ pub struct OutputMatch {
     vout: u32,
     dest: Dest,
 }
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct BridgeFeeOverrides {
+    /// Map of channel id to bridge fee rate
+    pub ibc: HashMap<String, f64>,
+}
+
+impl Default for BridgeFeeOverrides {
+    fn default() -> Self {
+        Self {
+            ibc: HashMap::from([(crate::app::OSMOSIS_CHANNEL_ID.to_string(), 0.0)]),
+        }
+    }
+}
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct RawSignatorySet {
@@ -1096,6 +1109,7 @@ pub struct RawSignatorySet {
     #[serde(rename = "depositsEnabled")]
     pub deposits_enabled: bool,
     pub threshold: (u64, u64),
+    pub bridge_fee_overrides: BridgeFeeOverrides,
 }
 
 impl RawSignatorySet {
@@ -1121,6 +1135,7 @@ impl RawSignatorySet {
             threshold: (9, 10),
             #[cfg(not(feature = "testnet"))]
             threshold: (2, 3),
+            bridge_fee_overrides: BridgeFeeOverrides::default(),
         }
     }
 }
