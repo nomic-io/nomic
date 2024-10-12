@@ -7,7 +7,7 @@ default-run = "nomic"
 
 [dependencies]
 bitcoin = { version = "0.29.2", features = ["serde", "rand"] }
-orga = { git = "https://github.com/nomic-io/orga.git", rev = "4274220595a14f759e009a912ee96b6e8013e281", features = [
+orga = { git = "https://github.com/nomic-io/orga.git", rev = "73a3a567f68e3ca0c67a6c8b67f6392df31958a0", features = [
     "merk-verify",
 ] }
 thiserror = "1.0.30"
@@ -71,7 +71,7 @@ toml = { version = "0.7.2", features = ["parse"] }
 semver = "1.0.18"
 
 [features]
-default = ["full", "feat-ibc", "legacy-bin"]
+default = ["full", "feat-ibc"]
 full = [
     "bitcoincore-rpc-async",
     "clap",

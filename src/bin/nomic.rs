@@ -1749,8 +1749,10 @@ impl EthTransferNbtcCmd {
 #[derive(Parser, Debug)]
 pub struct GrpcCmd {
     /// The port to listen on.
-    #[clap(default_value_t = 9001)]
+    #[clap(long, default_value_t = 9001)]
     port: u16,
+    #[clap(long, default_value = "127.0.0.1")]
+    host: String,
 
     #[clap(flatten)]
     config: nomic::network::Config,
@@ -1760,12 +1762,14 @@ impl GrpcCmd {
     /// Runs the `grpc` command.
     async fn run(&self) -> Result<()> {
         use orga::ibc::GrpcOpts;
-        std::panic::set_hook(Box::new(|_| {}));
+        std::panic::set_hook(Box::new(|e| {
+            log::error!("{}", e.to_string());
+        }));
+        log::info!("Starting gRPC server on {}:{}", self.host, self.port);
         orga::ibc::start_grpc(
-            // TODO: support configuring RPC address
-            || nomic::app_client("http://localhost:26657").sub(|app| app.ibc.ctx),
+            || self.config.client().sub(|app| app.ibc.ctx),
             &GrpcOpts {
-                host: "127.0.0.1".to_string(),
+                host: self.host.to_string(),
                 port: self.port,
                 chain_id: self.config.chain_id.clone().unwrap(),
             },
