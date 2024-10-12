@@ -2,6 +2,7 @@ use super::signatory::Signatory;
 use super::SignatorySet;
 use super::SIGSET_THRESHOLD;
 use crate::app::Dest;
+use crate::app::InnerApp;
 use crate::app_client;
 use crate::bitcoin::deposit_index::{Deposit, DepositIndex};
 use crate::bitcoin::{adapter::Adapter, header_queue::WrappedHeader};
@@ -273,6 +274,8 @@ impl Relayer {
                 let sigset = app_client(app_client_addr)
                     .query(|app: crate::app::InnerApp| {
                         let building = app.bitcoin.checkpoints.building()?;
+                        // TODO: use self.miner_fee_rate() once this endpoint
+                        // takes an optional `index` arg.
                         let est_miner_fee =
                             (app.bitcoin.checkpoints.active_sigset()?.est_witness_vsize() + 40)
                                 * building.fee_rate
@@ -440,7 +443,9 @@ impl Relayer {
                     return Ok(());
                 }
 
-                if let Some((dest, _)) = script_guard.as_ref().unwrap().scripts.get(&script) {
+                if let Some((dest, sigset_index)) =
+                    script_guard.as_ref().unwrap().scripts.get(&script)
+                {
                     let bitcoin_address = bitcoin::Address::from_script(
                         &output.script_pubkey.clone(),
                         super::NETWORK,
@@ -451,10 +456,22 @@ impl Relayer {
                         Some(addr) => addr,
                         None => continue,
                     };
+
+                    let miner_fee_rate = self.miner_fee_rate(sigset_index).await?;
+                    let bridge_fee_rate = self.bridge_fee_rate(&dest, sigset_index)?;
+
                     index.insert_deposit(
                         receiver_addr,
                         bitcoin_address,
-                        Deposit::new(txid, vout as u32, output.value, None),
+                        Deposit {
+                            txid,
+                            vout: vout as u32,
+                            amount: output.value,
+                            height: None,
+                            sigset_index,
+                            miner_fee_rate,
+                            bridge_fee_rate,
+                        },
                     )
                 }
             }
@@ -462,6 +479,38 @@ impl Relayer {
         }
 
         Ok(())
+    }
+
+    pub async fn miner_fee_rate(&self, sigset_index: u32) -> Result<f64> {
+        let client = app_client(&self.app_client_addr);
+        let miner_fee_rate = client
+            .query(|app: InnerApp| {
+                let chkpt = app.bitcoin.checkpoints.get(sigset_index)?;
+                let est_miner_fee = (chkpt.sigset.est_witness_vsize() + 40)
+                    * chkpt.fee_rate
+                    * app.bitcoin.checkpoints.config.user_fee_factor
+                    / 10_000;
+
+                Ok(est_miner_fee as f64 / 100_000_000.0)
+            })
+            .await?;
+
+        Ok(miner_fee_rate)
+    }
+
+    pub fn bridge_fee_rate(&self, dest: &Dest, _sigset_index: u32) -> Result<f64> {
+        // TODO: fee should depend on sigset index
+        let fee_rate = if dest.is_fee_exempt() {
+            0.0
+        } else if matches!(dest, Dest::Ibc { .. }) {
+            // deposit fee + transfer fee
+            0.015
+        } else {
+            // deposit fee
+            0.01
+        };
+
+        Ok(fee_rate)
     }
 
     pub async fn start_emergency_disbursal_transaction_relay(&mut self) -> Result<()> {
@@ -885,6 +934,7 @@ impl Relayer {
         let outpoint = (txid.into_inner(), output.vout);
         let dest = output.dest.clone();
         let vout = output.vout;
+        let sigset_index = output.sigset_index;
         let contains_outpoint = app_client(&self.app_client_addr)
             .query(|app| app.bitcoin.processed_outpoints.contains(outpoint))
             .await?;
@@ -901,16 +951,22 @@ impl Relayer {
                 return Ok(());
             }
 
+            let miner_fee_rate = self.miner_fee_rate(sigset_index).await?;
+            let bridge_fee_rate = self.bridge_fee_rate(&dest, sigset_index)?;
+
             let mut index_guard = index.lock().await;
             index_guard.insert_deposit(
                 receiver_addr,
                 deposit_address.clone(),
-                Deposit::new(
+                Deposit {
                     txid,
                     vout,
-                    tx.output.get(vout as usize).unwrap().value,
-                    Some(height.into()),
-                ),
+                    amount: tx.output.get(vout as usize).unwrap().value,
+                    height: Some(height.into()),
+                    sigset_index,
+                    miner_fee_rate,
+                    bridge_fee_rate,
+                },
             );
         }
 
