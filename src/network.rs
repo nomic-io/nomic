@@ -253,6 +253,9 @@ impl FromArgMatches for Config {
             if arg_config.home.is_some() {
                 net_config.home.clone_from(&arg_config.home)
             }
+            if arg_config.node.is_some() {
+                net_config.node.clone_from(&arg_config.node)
+            }
 
             if !arg_config.state_sync_rpc.is_empty() {
                 net_config
