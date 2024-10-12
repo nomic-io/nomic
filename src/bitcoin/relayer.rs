@@ -4,6 +4,7 @@ use super::SIGSET_THRESHOLD;
 use crate::app::Dest;
 use crate::app::InnerApp;
 use crate::app_client;
+use crate::bitcoin::checkpoint::CheckpointStatus;
 use crate::bitcoin::deposit_index::{Deposit, DepositIndex};
 use crate::bitcoin::{adapter::Adapter, header_queue::WrappedHeader};
 use crate::error::Error;
@@ -40,6 +41,11 @@ const HEADER_BATCH_SIZE: usize = 250;
 #[derive(Serialize, Deserialize)]
 pub struct DepositsQuery {
     pub receiver: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SigsetQuery {
+    pub index: Option<u32>,
 }
 
 pub struct Relayer {
@@ -270,23 +276,42 @@ impl Relayer {
             );
 
         let sigset_route = warp::path("sigset")
-            .and_then(move || async {
+            .and(warp::query::<SigsetQuery>())
+            .and_then(move |query: SigsetQuery| async move {
                 let sigset = app_client(app_client_addr)
-                    .query(|app: crate::app::InnerApp| {
-                        let building = app.bitcoin.checkpoints.building()?;
+                    .query(move |app: crate::app::InnerApp| {
+                        let chkpt = match query.index {
+                            Some(index) => &app.bitcoin.checkpoints.get(index)?,
+                            None => &*app.bitcoin.checkpoints.building()?,
+                        };
+
+                        let maybe_chkpt_tx = (chkpt.status != CheckpointStatus::Building)
+                            .then(|| chkpt.checkpoint_tx())
+                            .transpose()?;
+
+                        let mut pending = vec![];
+                        for entry in chkpt.pending.iter()? {
+                            let (dest, coin) = entry?;
+                            pending.push((dest.clone(), coin.amount.into()));
+                        }
+
                         // TODO: use self.miner_fee_rate() once this endpoint
                         // takes an optional `index` arg.
                         let est_miner_fee =
                             (app.bitcoin.checkpoints.active_sigset()?.est_witness_vsize() + 40)
-                                * building.fee_rate
+                                * chkpt.fee_rate
                                 * app.bitcoin.checkpoints.config.user_fee_factor
                                 / 10_000;
-                        let deposits_enabled = building.deposits_enabled;
+
                         let sigset = RawSignatorySet::new(
-                            app.bitcoin.checkpoints.active_sigset()?,
+                            chkpt.sigset.clone(),
                             0.015,
                             est_miner_fee as f64 / 100_000_000.0,
-                            deposits_enabled,
+                            chkpt.deposits_enabled,
+                            maybe_chkpt_tx,
+                            chkpt.signed_at_btc_height,
+                            chkpt.create_time(),
+                            pending,
                         );
                         Ok(sigset)
                     })
@@ -1140,18 +1165,34 @@ pub struct OutputMatch {
     vout: u32,
     dest: Dest,
 }
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct BridgeFeeOverrides {
+    /// Map of channel id to bridge fee rate
+    pub ibc: HashMap<String, f64>,
+}
+
+impl Default for BridgeFeeOverrides {
+    fn default() -> Self {
+        Self {
+            ibc: HashMap::from([(crate::app::OSMOSIS_CHANNEL_ID.to_string(), 0.0)]),
+        }
+    }
+}
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct RawSignatorySet {
     pub signatories: Vec<RawSignatory>,
     pub index: u32,
-    #[serde(rename = "bridgeFeeRate")]
     pub bridge_fee_rate: f64,
-    #[serde(rename = "minerFeeRate")]
     pub miner_fee_rate: f64,
-    #[serde(rename = "depositsEnabled")]
     pub deposits_enabled: bool,
     pub threshold: (u64, u64),
+    pub bridge_fee_overrides: BridgeFeeOverrides,
+    pub txid: Option<String>,
+    pub signed_at_btc_height: Option<u32>,
+    pub create_time: u64,
+    pub pending: Vec<(Dest, u64)>,
 }
 
 impl RawSignatorySet {
@@ -1160,6 +1201,10 @@ impl RawSignatorySet {
         bridge_fee_rate: f64,
         miner_fee_rate: f64,
         deposits_enabled: bool,
+        maybe_checkpoint_tx: Option<Adapter<bitcoin::Transaction>>,
+        signed_at_btc_height: Option<u32>,
+        create_time: u64,
+        pending: Vec<(Dest, u64)>,
     ) -> Self {
         let signatories = sigset
             .iter()
@@ -1177,6 +1222,11 @@ impl RawSignatorySet {
             threshold: (9, 10),
             #[cfg(not(feature = "testnet"))]
             threshold: (2, 3),
+            bridge_fee_overrides: BridgeFeeOverrides::default(),
+            txid: maybe_checkpoint_tx.map(|tx| tx.txid().to_string()),
+            signed_at_btc_height,
+            create_time,
+            pending,
         }
     }
 }

@@ -89,7 +89,7 @@ const IBC_FEE_USATS: u64 = 1_000_000;
 /// The fixed amount of nBTC fee required to make any application call, in
 /// micro-satoshis.
 const CALL_FEE_USATS: u64 = 100_000_000;
-const OSMOSIS_CHANNEL_ID: &str = "channel-1";
+pub const OSMOSIS_CHANNEL_ID: &str = "channel-1";
 
 /// The top-level application state type and logic. This contains the major
 /// state types for the various subsystems of the Nomic protocol.
