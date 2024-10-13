@@ -11,7 +11,7 @@
 
 ![CI](https://github.com/nomic-io/nomic/actions/workflows/ci.yml/badge.svg)
 
-Nomic is a blockchain which offers a decentralized custody solution for Bitcoin. Built on Turbofish’s [Orga](https://github.com/turbofish-org/orga), a custom high-performance blockchain application framework. Nomic mints nBTC, a token backed 1:1 with BTC, using [IBC](https://www.ibcprotocol.dev/) for secure and efficient bridging.
+Nomic is a blockchain that offers a decentralized custody solution for Bitcoin. Built on Turbofish’s [Orga](https://github.com/turbofish-org/orga), a custom high-performance blockchain application framework. Nomic mints nBTC, a token backed 1:1 with BTC, using [IBC](https://www.ibcprotocol.dev/) for secure and efficient bridging.
 
 
 ## Running a Node
@@ -36,7 +36,7 @@ Nomic is an open-source project spearheaded by contributors. Anyone is able to c
 
 Nomic is currently undergoing security audits.
 
-Vulnerabilities should not be reported through public channels, including GitHub Issues. You can report a vunerability via GitHub's Private Vunerability Reporting or via the Nomic DAO Foundation at `foundation@nomic.io`.
+Vulnerabilities should not be reported through public channels, including GitHub Issues. You can report a vulnerability via GitHub's Private Vulnerability Reporting or via the Nomic DAO Foundation at `foundation@nomic.io`.
 
 [Report a Vulnerability](https://github.com/nomic-io/nomic/security/advisories/new)
 

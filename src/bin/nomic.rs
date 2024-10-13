@@ -317,7 +317,7 @@ pub struct StartCmd {
     /// home directory when initializing.
     #[clap(long)]
     pub validator_key: Option<String>,
-    /// Copies the P2P privaete key at the specified path to the node's home
+    /// Copies the P2P private key at the specified path to the node's home
     /// directory when initializing.
     #[clap(long)]
     pub node_key: Option<String>,
@@ -2257,7 +2257,7 @@ impl SigningStatusCmd {
 }
 
 /// Attempts to recover a deposit which has not yet been processed by the
-/// Nomic network by relaying a proof of its confirmation on the Bitcoin
+/// Nomic network by relaying proof of its confirmation on the Bitcoin
 /// network.
 ///
 /// This command is useful when a deposit has been made to the network and
@@ -2298,7 +2298,7 @@ pub struct RecoverDepositCmd {
     /// The Nomic bech32 wallet address associated with the deposit.
     #[clap(long)]
     nomic_addr: Address,
-    /// The Bitcoin address the deposit was made to.
+    /// The Bitcoin address to the deposit was made to.
     #[clap(long)]
     deposit_addr: bitcoin::Address,
     /// The Bitcoin block hash the deposit transaction was confirmed in.
@@ -2312,7 +2312,7 @@ pub struct RecoverDepositCmd {
     #[clap(long)]
     vout: u32,
 
-    /// The path to a file containig the indexes and reserve scripts of
+    /// The path to a file containing the indexes and reserve scripts of
     /// signatories to search. This can be generated with the
     /// `get-reserve-scripts` binary.
     #[clap(long)]
