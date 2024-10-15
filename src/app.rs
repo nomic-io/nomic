@@ -95,7 +95,7 @@ const IBC_FEE_USATS: u64 = 1_000_000;
 /// The fixed amount of nBTC fee required to make any application call, in
 /// micro-satoshis.
 const CALL_FEE_USATS: u64 = 100_000_000;
-const OSMOSIS_CHANNEL_ID: &str = "channel-1";
+pub const OSMOSIS_CHANNEL_ID: &str = "channel-1";
 
 const FROST_GROUP_INTERVAL: i64 = 10 * 60;
 const FROST_TOP_N: u16 = 5;

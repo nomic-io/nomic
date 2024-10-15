@@ -1326,7 +1326,7 @@ impl ClaimAirdropCmd {
 /// Relays data between the Bitcoin and Nomic networks.
 #[derive(Parser, Debug)]
 pub struct RelayerCmd {
-    /// The port of the Bitcoin RPC server.
+    /// The port of the local Bitcoin RPC server.
     // TODO: get the default based on the network
     #[clap(short = 'p', long, default_value_t = 8332)]
     rpc_port: u16,
@@ -1339,6 +1339,10 @@ pub struct RelayerCmd {
     #[clap(short = 'P', long)]
     rpc_pass: Option<String>,
 
+    /// The URL for the Bitcoin RPC server, e.g. http://localhost:8332.
+    #[clap(short = 'r', long, conflicts_with = "rpc-port")]
+    rpc_url: Option<String>,
+
     #[clap(flatten)]
     config: nomic::network::Config,
 }
@@ -1346,7 +1350,11 @@ pub struct RelayerCmd {
 impl RelayerCmd {
     /// Builds Bitcoin RPC client.
     async fn btc_client(&self) -> Result<BtcClient> {
-        let rpc_url = format!("http://localhost:{}", self.rpc_port);
+        let rpc_url = if let Some(rpc) = self.rpc_url.clone() {
+            rpc
+        } else {
+            format!("http://localhost:{}", self.rpc_port)
+        };
         let auth = match (self.rpc_user.clone(), self.rpc_pass.clone()) {
             (Some(user), Some(pass)) => Auth::UserPass(user, pass),
             _ => Auth::None,
@@ -1791,8 +1799,10 @@ impl EthTransferNbtcCmd {
 #[derive(Parser, Debug)]
 pub struct GrpcCmd {
     /// The port to listen on.
-    #[clap(default_value_t = 9001)]
+    #[clap(long, default_value_t = 9001)]
     port: u16,
+    #[clap(long, default_value = "127.0.0.1")]
+    host: String,
 
     #[clap(flatten)]
     config: nomic::network::Config,
@@ -1802,12 +1812,14 @@ impl GrpcCmd {
     /// Runs the `grpc` command.
     async fn run(&self) -> Result<()> {
         use orga::ibc::GrpcOpts;
-        std::panic::set_hook(Box::new(|_| {}));
+        std::panic::set_hook(Box::new(|e| {
+            log::error!("{}", e.to_string());
+        }));
+        log::info!("Starting gRPC server on {}:{}", self.host, self.port);
         orga::ibc::start_grpc(
-            // TODO: support configuring RPC address
-            || nomic::app_client("http://localhost:26657").sub(|app| Ok(app.ibc.ctx)),
+            || self.config.client().sub(|app| app.ibc.ctx),
             &GrpcOpts {
-                host: "127.0.0.1".to_string(),
+                host: self.host.to_string(),
                 port: self.port,
                 chain_id: self.config.chain_id.clone().unwrap(),
             },
