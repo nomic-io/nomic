@@ -2419,6 +2419,19 @@ impl CheckpointQueue {
 
         Ok(())
     }
+
+    /// Returns the pending transfers for the building checkpoint.
+    ///
+    /// This query is a temporary workaround for a client iteration issue.
+    #[query]
+    pub fn pending(&self) -> Result<Vec<(Dest, u64)>> {
+        let mut pending = vec![];
+        for entry in self.building()?.pending.iter()? {
+            let (dest, coin) = entry?;
+            pending.push((dest.clone(), coin.amount.into()));
+        }
+        Ok(pending)
+    }
 }
 
 /// Takes a previous fee rate and returns a new fee rate, adjusted up or down by

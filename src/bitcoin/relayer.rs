@@ -280,28 +280,24 @@ impl Relayer {
             .and_then(move |query: SigsetQuery| async move {
                 let sigset = app_client(app_client_addr)
                     .query(move |app: crate::app::InnerApp| {
-                        let chkpt = match query.index {
-                            Some(index) => &app.bitcoin.checkpoints.get(index)?,
-                            None => &*app.bitcoin.checkpoints.building()?,
+                        let (chkpt, pending) = match query.index {
+                            Some(index) => (&app.bitcoin.checkpoints.get(index)?, vec![]),
+                            None => (
+                                &*app.bitcoin.checkpoints.building()?,
+                                app.bitcoin.checkpoints.pending()?,
+                            ),
                         };
 
                         let maybe_chkpt_tx = (chkpt.status != CheckpointStatus::Building)
                             .then(|| chkpt.checkpoint_tx())
                             .transpose()?;
 
-                        let mut pending = vec![];
-                        for entry in chkpt.pending.iter()? {
-                            let (dest, coin) = entry?;
-                            pending.push((dest.clone(), coin.amount.into()));
-                        }
-
                         // TODO: use self.miner_fee_rate() once this endpoint
                         // takes an optional `index` arg.
-                        let est_miner_fee =
-                            (app.bitcoin.checkpoints.active_sigset()?.est_witness_vsize() + 40)
-                                * chkpt.fee_rate
-                                * app.bitcoin.checkpoints.config.user_fee_factor
-                                / 10_000;
+                        let est_miner_fee = (chkpt.sigset.est_witness_vsize() + 40)
+                            * chkpt.fee_rate
+                            * app.bitcoin.checkpoints.config.user_fee_factor
+                            / 10_000;
 
                         let sigset = RawSignatorySet::new(
                             chkpt.sigset.clone(),
