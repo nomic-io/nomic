@@ -888,7 +888,9 @@ impl Relayer {
         let mut hash = bitcoin::BlockHash::from_inner(hash.into_inner());
 
         for _ in 0..n {
-            let block = self.btc_client().await.get_block(&hash.clone()).await?;
+            let Ok(block) = self.btc_client().await.get_block(&hash.clone()).await else {
+                return Ok(blocks);
+            };
             hash = block.header.prev_blockhash;
 
             let mut block_bytes = vec![];
@@ -1192,6 +1194,7 @@ pub struct RawSignatorySet {
 }
 
 impl RawSignatorySet {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         sigset: SignatorySet,
         bridge_fee_rate: f64,
