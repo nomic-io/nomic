@@ -31,6 +31,7 @@ use orga::describe::{Describe, Descriptor};
 use orga::encoding::{Decode, Encode, LengthString, LengthVec};
 use orga::ibc::ibc_rs::apps::transfer::types::Memo;
 use orga::ibc::ClientIdKey as ClientId;
+use sha2::{Digest, Sha256};
 
 use std::io::Read;
 use std::str::FromStr;
@@ -1328,7 +1329,7 @@ pub struct IbcDest {
     pub receiver: LengthString<u8>,
     pub sender: LengthString<u8>,
     pub timeout_timestamp: u64,
-    pub memo: LengthString<u8>,
+    pub memo: LengthString<u16>,
 }
 
 impl IbcDest {
@@ -1415,7 +1416,9 @@ impl IbcDest {
         Ok(())
     }
 
-    pub fn legacy_encode(&self) -> Result<Vec<u8>> {
+    pub fn legacy_encode(&self) -> Result<Vec<Vec<u8>>> {
+        let mut encodings = vec![];
+
         let mut bytes = vec![];
         self.source_port.encode_into(&mut bytes)?;
         self.source_channel.encode_into(&mut bytes)?;
@@ -1423,8 +1426,46 @@ impl IbcDest {
         EdAdapter(self.sender_signer()?).encode_into(&mut bytes)?;
         self.timeout_timestamp.encode_into(&mut bytes)?;
         self.memo.encode_into(&mut bytes)?;
+        encodings.push(Sha256::digest(bytes).to_vec());
 
-        Ok(bytes)
+        if self.memo.len() < 256 {
+            let mut bytes = vec![];
+            self.source_port.encode_into(&mut bytes)?;
+            self.source_channel.encode_into(&mut bytes)?;
+            self.receiver.encode_into(&mut bytes)?;
+            self.sender.encode_into(&mut bytes)?;
+            self.timeout_timestamp.encode_into(&mut bytes)?;
+            LengthString::<u8>::new(self.memo.len() as u8, self.memo.to_string())
+                .encode_into(&mut bytes)?;
+
+            let hash = Sha256::digest(bytes);
+            let mut bytes = Vec::with_capacity(hash.len() + 1);
+            bytes.push(0); // version byte
+            bytes.extend_from_slice(&hash);
+            encodings.push(bytes);
+        }
+
+        Ok(encodings)
+    }
+}
+
+impl Migrate for IbcDest {
+    fn migrate(_src: Store, _dest: Store, mut bytes: &mut &[u8]) -> Result<Self> {
+        let source_port = LengthString::<u8>::decode(&mut bytes)?;
+        let source_channel = LengthString::<u8>::decode(&mut bytes)?;
+        let receiver = LengthString::<u8>::decode(&mut bytes)?;
+        let sender = LengthString::<u8>::decode(&mut bytes)?;
+        let timeout_timestamp = u64::decode(&mut bytes)?;
+        let memo = LengthString::<u8>::decode(&mut bytes)?;
+
+        Ok(IbcDest {
+            source_port,
+            source_channel,
+            receiver,
+            sender,
+            timeout_timestamp,
+            memo: memo.to_string().try_into().unwrap(),
+        })
     }
 }
 
@@ -1610,11 +1651,11 @@ impl Dest {
     }
 
     // TODO: remove once there are no legacy commitments in-flight
-    pub fn legacy_commitment_bytes(&self) -> Result<Vec<u8>> {
+    pub fn legacy_commitment_bytes(&self) -> Result<Vec<Vec<u8>>> {
         use sha2::{Digest, Sha256};
         let bytes = match self {
-            Dest::NativeAccount { address } => address.bytes().into(),
-            Dest::Ibc { data } => Sha256::digest(data.legacy_encode()?).to_vec(),
+            Dest::NativeAccount { address } => vec![address.bytes().into()],
+            Dest::Ibc { data } => data.legacy_encode()?,
             _ => return Err(Error::App("Invalid dest for legacy commitment".to_string())),
         };
 
@@ -1722,6 +1763,16 @@ impl Query for Dest {
 
 impl Migrate for Dest {
     fn migrate(src: Store, dest: Store, bytes: &mut &[u8]) -> Result<Self> {
+        // TODO: !!!!!!!! remove from here once there are no legacy IBC dests
+        // Migrate IBC dests
+        let mut maybe_ibc_bytes = &mut &**bytes;
+        let variant = u8::decode(&mut maybe_ibc_bytes)?;
+        if variant == 1 {
+            let ibc_dest = IbcDest::migrate(src, dest, maybe_ibc_bytes)?;
+            return Ok(Self::Ibc { data: ibc_dest });
+        }
+        // TODO: !!!!!!!! remove to here once there are no legacy IBC dests
+
         Self::load(src, bytes)
     }
 }
