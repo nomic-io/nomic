@@ -1,13 +1,13 @@
 state_sync_rpc = [
-    "http://147.182.171.216:26657",
-    "http://147.182.171.216:26657",
+  "http://147.182.171.216:26657",
+  "http://147.182.171.216:26657",
 ]
 tendermint_flags = ["--p2p.seeds", """
     a07d56aa65e395c332a7bf226ec4e2f844519ffa@147.182.171.216:26656,\
 """]
 btc_relayer = ["https://relayer.nomic-testnet.mappum.io:8443"]
 
-legacy_version = "8.1.x"
+legacy_version = "9.1.x"
 
 genesis = """
 {

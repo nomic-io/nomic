@@ -191,7 +191,7 @@ impl InnerApp {
     /// breaking changes are made to either the state encoding or logic of the
     /// protocol, and requires a network upgrade to be coordinated via the
     /// upgrade module.
-    pub const CONSENSUS_VERSION: u8 = 13;
+    pub const CONSENSUS_VERSION: u8 = 14;
 
     #[cfg(feature = "full")]
     fn configure_faucets(&mut self) -> Result<()> {
