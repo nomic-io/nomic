@@ -2434,12 +2434,12 @@ impl CheckpointQueue {
     }
 }
 
-/// Takes a previous fee rate and returns a new fee rate, adjusted up or down by
-/// 25%. The new fee rate is capped at the maximum and minimum fee rates
+/// Takes a previous fee rate and returns a new fee rate, adjusted up by 75% or
+/// down by 25%. The new fee rate is capped at the maximum and minimum fee rates
 /// specified in the given config.
 pub fn adjust_fee_rate(prev_fee_rate: u64, up: bool, config: &Config) -> u64 {
     if up {
-        (prev_fee_rate * 5 / 4).max(prev_fee_rate + 1)
+        (prev_fee_rate * 7 / 4).max(prev_fee_rate + 1)
     } else {
         (prev_fee_rate * 3 / 4).min(prev_fee_rate - 1)
     }

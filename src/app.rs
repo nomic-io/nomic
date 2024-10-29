@@ -104,7 +104,7 @@ const FROST_THRESHOLD: u16 = 3;
 
 /// The top-level application state type and logic. This contains the major
 /// state types for the various subsystems of the Nomic protocol.
-#[orga(version = 5..=7)]
+#[orga(version = 5..=8)]
 pub struct InnerApp {
     /// Account state for the NOM token.
     #[call]
@@ -170,17 +170,17 @@ pub struct InnerApp {
     #[call]
     pub ethereum: Connection,
     #[cfg(all(feature = "ethereum", feature = "testnet"))]
-    #[orga(version(V7))]
+    #[orga(version(V7, V8))]
     #[call]
     pub ethereum: Ethereum,
 
     #[cfg(feature = "testnet")]
-    #[orga(version(V7))]
+    #[orga(version(V7, V8))]
     #[call]
     pub babylon: Babylon,
 
     #[cfg(feature = "testnet")]
-    #[orga(version(V7))]
+    #[orga(version(V7, V8))]
     #[call]
     pub frost: Frost,
 }

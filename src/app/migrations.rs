@@ -8,7 +8,7 @@ use crate::{
     incentives::Incentives,
 };
 
-use super::{InnerAppV5, InnerAppV6, InnerAppV7};
+use super::{InnerAppV5, InnerAppV6, InnerAppV7, InnerAppV8};
 use bitcoin::{
     util::{uint::Uint256, BitArray},
     BlockHeader,
@@ -189,6 +189,37 @@ impl MigrateFrom<InnerAppV6> for InnerAppV7 {
             babylon: Default::default(),
             frost: Default::default(),
             ethereum,
+        })
+    }
+}
+
+impl MigrateFrom<InnerAppV7> for InnerAppV8 {
+    fn migrate_from(mut other: InnerAppV7) -> Result<Self> {
+        #[cfg(feature = "testnet")]
+        {
+            other.bitcoin.checkpoints.config.max_fee_rate = 5_000;
+            other.bitcoin.checkpoints.config.max_unconfirmed_checkpoints = 24;
+        }
+
+        Ok(Self {
+            accounts: other.accounts,
+            staking: other.staking,
+            airdrop: other.airdrop,
+            community_pool: other.community_pool,
+            incentive_pool: other.incentive_pool,
+            staking_rewards: other.staking_rewards,
+            dev_rewards: other.dev_rewards,
+            community_pool_rewards: other.community_pool_rewards,
+            incentive_pool_rewards: other.incentive_pool_rewards,
+            bitcoin: other.bitcoin,
+            reward_timer: other.reward_timer,
+            upgrade: other.upgrade,
+            incentives: other.incentives,
+            ibc: other.ibc,
+            cosmos: other.cosmos,
+            babylon: other.babylon,
+            frost: other.frost,
+            ethereum: other.ethereum,
         })
     }
 }
