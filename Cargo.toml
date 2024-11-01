@@ -7,12 +7,12 @@ default-run = "nomic"
 
 [dependencies]
 bitcoin = { version = "0.29.2", features = ["serde", "rand"] }
-orga = { git = "https://github.com/nomic-io/orga.git", rev = "3b3d25ade40d81cb64f19335535e3a47bb47778f", features = [
+orga = { git = "https://github.com/turbofish-org/orga.git", rev = "ff7eab1587bdf148df2a5f210d815f8efeee99a6", features = [
     "merk-verify",
     "feat-ibc",
 ] }
 thiserror = "1.0.30"
-ed = { git = "https://github.com/nomic-io/ed", rev = "a657be856792039ff60c2f67e7920e38cd3acffc" }
+ed = { git = "https://github.com/turbofish-org/ed", rev = "a657be856792039ff60c2f67e7920e38cd3acffc" }
 clap = { version = "3.2.16", features = ["derive"], optional = true }
 tokio = { version = "1.39.2", features = ["full"], optional = true }
 base64 = "0.13.0"
