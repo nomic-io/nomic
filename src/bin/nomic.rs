@@ -1508,12 +1508,11 @@ impl SignerCmd {
         let relaunch = relaunch_on_migrate(&self.config);
 
         #[cfg(feature = "frost")]
-        let frost_signer = {
-            let frost_cmd = FrostSignerCmd {
-                config: self.config.clone(),
-            };
-            frost_cmd.run()
+        let frost_cmd = FrostSignerCmd {
+            config: self.config.clone(),
         };
+        #[cfg(feature = "frost")]
+        let frost_signer = frost_cmd.run();
         #[cfg(not(feature = "frost"))]
         let frost_signer = async { Ok(()) };
 
