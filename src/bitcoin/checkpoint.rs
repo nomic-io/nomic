@@ -1682,6 +1682,19 @@ impl<'a> BuildingCheckpointMut<'a> {
             for i in 1..checkpoint_batch.len() {
                 let mut tx = checkpoint_batch.get_mut(i)?.unwrap();
                 tx.input.get_mut(0)?.unwrap().prevout.txid = checkpoint_txid;
+
+                let bitcoin_tx = tx.to_bitcoin_tx()?;
+                let mut sc = bitcoin::util::sighash::SighashCache::new(&bitcoin_tx);
+                for i in 0..tx.input.len() {
+                    let mut input = tx.input.get_mut(i)?.unwrap();
+                    let sighash = sc.segwit_signature_hash(
+                        i as usize,
+                        &input.redeem_script,
+                        input.amount,
+                        EcdsaSighashType::All,
+                    )?;
+                    input.signatures.set_message(sighash.into_inner());
+                }
             }
         }
 
