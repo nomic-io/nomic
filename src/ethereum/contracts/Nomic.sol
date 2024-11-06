@@ -537,7 +537,7 @@ contract Nomic is ReentrancyGuard {
         // Make call to logic contract
         (bool success, bytes memory returnData) = address(this).call(
             abi.encodeWithSignature(
-                "submitLogicCall((address[],uint256[],uint256,uint256,address),(uint8,bytes32,bytes32)[],(uint256[],address[],uint256[],address[],address,bytes,uint256,uint256,bytes32,uint256,address))",
+                "remoteCall((address[],uint256[],uint256,uint256,address),(uint8,bytes32,bytes32)[],(uint256[],address[],uint256[],address[],address,bytes,uint256,uint256,bytes32,uint256,address))",
                 _args
             )
         );
@@ -619,7 +619,7 @@ contract Nomic is ReentrancyGuard {
 
         // a very strange ERC20 may trigger this condition, if we didn't have this we would
         // underflow, so it's mostly just an error message printer
-        if (ourEndingBalance <= ourStartingBalance) {
+        if (ourEndingBalance < ourStartingBalance) {
             revert InvalidSendToNomic();
         }
 
