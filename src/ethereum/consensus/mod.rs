@@ -281,6 +281,17 @@ impl Network {
             genesis_time: 1655733600,
         }
     }
+
+    /// Network parameters for the Ethereum Holesky testnet.
+    pub fn ethereum_holesky() -> Self {
+        Network {
+            genesis_vals_root: "0x9143aa7c615a7f7115e2b6aac319c03529df8242ae705fba9df39b79c59fa8b1"
+                .parse()
+                .unwrap(),
+            deneb_fork_version: 0x05017000,
+            genesis_time: 1695902400,
+        }
+    }
 }
 
 /// An update to the light client state, and all necessary proof and signature

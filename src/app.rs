@@ -967,6 +967,19 @@ mod abci {
                             crate::ethereum::consensus::Network::ethereum_sepolia(),
                         )?,
                     )?;
+
+                    // Add Ethereum Holesky
+                    let bootstrap =
+                        serde_json::from_str(include_str!("./ethereum/bootstrap/holesky.json"))
+                            .unwrap();
+                    self.ethereum.networks.insert(
+                        17000,
+                        crate::ethereum::Network::new(
+                            17000,
+                            bootstrap,
+                            crate::ethereum::consensus::Network::ethereum_holesky(),
+                        )?,
+                    )?;
                 }
             }
 
@@ -1048,6 +1061,24 @@ mod abci {
 
             #[cfg(feature = "babylon")]
             self.babylon.step(&mut self.frost, &mut self.bitcoin)?;
+
+            #[cfg(feature = "ethereum")]
+            {
+                // Add Ethereum Holesky
+                if self.ethereum.networks.get(17000)?.is_none() {
+                    let bootstrap =
+                        serde_json::from_str(include_str!("./ethereum/bootstrap/holesky.json"))
+                            .unwrap();
+                    self.ethereum.networks.insert(
+                        17000,
+                        crate::ethereum::Network::new(
+                            17000,
+                            bootstrap,
+                            crate::ethereum::consensus::Network::ethereum_holesky(),
+                        )?,
+                    )?;
+                }
+            }
 
             Ok(())
         }
