@@ -469,6 +469,13 @@ impl InnerApp {
                 let del = owner_dels
                     .get(*index)?
                     .ok_or_else(|| Error::App("Delegation not found".to_string()))?;
+
+                if del.requested_unbond {
+                    return Err(Error::App(
+                        "Delegation already requested unbond".to_string(),
+                    ));
+                }
+
                 if del.status() == babylon::DelegationStatus::Withdrawn {
                     return Err(Error::App("Delegation already withdrawn".to_string()));
                 }
