@@ -3035,7 +3035,8 @@ impl RelayEthereumCmd {
                     11155111, // TODO: self.eth_chainid,
                     update.finalized_header.beacon.slot
                 );
-                self.config
+                if let Err(e) = self
+                    .config
                     .client()
                     .call(
                         move |app| {
@@ -3045,9 +3046,12 @@ impl RelayEthereumCmd {
                         },
                         |app| build_call!(app.app_noop()),
                     )
-                    .await?;
-
-                log::info!("Consensus update relayed.");
+                    .await
+                {
+                    log::warn!("Failed to relay Ethereum consensus update: {:?}", e);
+                } else {
+                    log::info!("Consensus update relayed.");
+                }
             }
 
             Ok::<_, nomic::error::Error>(())
