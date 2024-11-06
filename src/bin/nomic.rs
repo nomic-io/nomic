@@ -2569,6 +2569,9 @@ pub struct BabylonRelayerCmd {
     #[clap(short = 'P', long)]
     rpc_pass: Option<String>,
 
+    #[clap(long)]
+    bbn_api_addr: String,
+
     // TODO: babylon rpc
     #[clap(flatten)]
     config: nomic::network::Config,
@@ -2591,12 +2594,18 @@ impl BabylonRelayerCmd {
     }
 
     async fn run(&self) -> Result<()> {
-        let app_client = self.config.client();
+        // TODO: validate bbn_api_addr
+
         let btc_client = self.btc_client().await?;
 
         let staking_confs = async {
             loop {
-                babylon::relayer::relay_staking_confs(&app_client, &btc_client).await?;
+                let app_client = self.config.client();
+                if let Err(e) =
+                    babylon::relayer::relay_staking_confs(&app_client, &btc_client).await
+                {
+                    log::error!("Error in staking conf relay: {}", e);
+                }
 
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             }
@@ -2607,7 +2616,16 @@ impl BabylonRelayerCmd {
 
         let unbonding_confs = async {
             loop {
-                babylon::relayer::relay_unbonding_confs(&app_client, &btc_client).await?;
+                let app_client = self.config.client();
+                if let Err(e) = babylon::relayer::relay_unbonding_confs(
+                    &app_client,
+                    &btc_client,
+                    &self.bbn_api_addr,
+                )
+                .await
+                {
+                    log::error!("Error in unbonding conf relay: {}", e);
+                }
 
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             }

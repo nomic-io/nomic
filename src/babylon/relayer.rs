@@ -25,7 +25,7 @@ use crate::{
     error::{Error, Result},
 };
 
-use super::Delegation;
+use super::{Delegation, Params};
 
 pub async fn relay_staking_confs(
     app_client: &AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned>,
@@ -56,9 +56,14 @@ pub async fn relay_staking_confs(
             })
             .await?;
 
+        if unconf_dels.is_empty() {
+            continue;
+        }
+
         log::info!(
-            "Found {} unconfirmed delegations for owner {}",
+            "Found {} unconfirmed delegation{} for owner {}",
             unconf_dels.len(),
+            if unconf_dels.len() == 1 { "" } else { "s" },
             owner,
         );
 
@@ -151,6 +156,7 @@ pub async fn maybe_relay_staking_conf(
 pub async fn relay_unbonding_confs(
     app_client: &AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned>,
     btc_client: &BitcoinRpcClient,
+    bbn_api_addr: &str,
 ) -> Result<()> {
     let (owners, params) = app_client
         .query(|app| {
@@ -177,14 +183,19 @@ pub async fn relay_unbonding_confs(
             })
             .await?;
 
+        if unconf_dels.is_empty() {
+            continue;
+        }
+
         log::info!(
-            "Found {} SignedUnbond delegations for owner {}",
+            "Found {} SignedUnbond delegation{} for owner {}",
             unconf_dels.len(),
+            if unconf_dels.len() == 1 { "" } else { "s" },
             owner,
         );
 
         for del in unconf_dels {
-            maybe_relay_unbonding_conf(app_client, btc_client, &del, &params).await?;
+            maybe_relay_unbonding_conf(app_client, btc_client, bbn_api_addr, &del, &params).await?;
         }
     }
 
@@ -194,6 +205,7 @@ pub async fn relay_unbonding_confs(
 pub async fn maybe_relay_unbonding_conf(
     app_client: &AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned>,
     btc_client: &BitcoinRpcClient,
+    bbn_api_addr: &str,
     del: &Delegation,
     params: &crate::babylon::Params,
 ) -> Result<bool> {
@@ -202,12 +214,14 @@ pub async fn maybe_relay_unbonding_conf(
         return Ok(true);
     }
 
-    let tx = del.unbonding_tx(params)?;
+    let unbonding_tx = del.unbonding_tx(params)?;
 
-    let maybe_conf = scan_for_txid(btc_client, tx.txid(), 100).await?;
+    try_submit_unbond(del, bbn_api_addr, params).await?;
+
+    let maybe_conf = scan_for_txid(btc_client, unbonding_tx.txid(), 100).await?;
     if let Some((height, block_hash)) = maybe_conf {
         let proof_bytes = btc_client
-            .get_tx_out_proof(&[tx.txid()], Some(&block_hash))
+            .get_tx_out_proof(&[unbonding_tx.txid()], Some(&block_hash))
             .await?;
         let proof = ::bitcoin::MerkleBlock::consensus_decode(&mut proof_bytes.as_slice())?.txn;
 
@@ -220,7 +234,7 @@ pub async fn maybe_relay_unbonding_conf(
                         del.index,
                         height,
                         Adapter::new(proof.clone()),
-                        Adapter::new(tx.clone())
+                        Adapter::new(unbonding_tx.clone())
                     ))
                 },
                 |app| build_call!(app.app_noop()),
@@ -275,4 +289,61 @@ pub async fn last_n_blocks(
     }
 
     Ok(blocks)
+}
+
+pub async fn try_submit_unbond(del: &Delegation, api_addr: &str, params: &Params) -> Result<()> {
+    let unbonding_tx = del.unbonding_tx(params)?;
+    let mut unbonding_tx_bytes = vec![];
+    unbonding_tx
+        .consensus_encode(&mut unbonding_tx_bytes)
+        .unwrap();
+
+    let body = format!(
+        r#"
+    {{
+        "staker_signed_signature_hex": "{}",
+        "staking_tx_hash_hex": "{}",
+        "unbonding_tx_hash_hex": "{}",
+        "unbonding_tx_hex": "{}"
+    }}"#,
+        hex::encode(del.staking_unbonding_sig.unwrap().0),
+        del.staking_outpoint.unwrap().txid,
+        unbonding_tx.txid(),
+        hex::encode(unbonding_tx_bytes),
+    );
+
+    let res = reqwest::Client::new()
+        .post(format!("{}/v1/unbonding", api_addr))
+        .header("Content-Type", "application/json")
+        .body(body)
+        .send()
+        .await
+        .map_err(|e| Error::Relayer(e.to_string()))?;
+    let status = res.status().as_u16();
+
+    let res_body: serde_json::Value = res
+        .json()
+        .await
+        .map_err(|e| Error::Relayer(e.to_string()))?;
+
+    if status != 202 {
+        let err_message = res_body
+            .as_object()
+            .cloned()
+            .unwrap_or_default()
+            .get("message")
+            .cloned()
+            .unwrap_or_default()
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
+        if !err_message.contains("delegation state is not active") {
+            log::error!("Failed to submit unbonding tx: {:?}", res_body);
+            return Ok(());
+        }
+    }
+
+    log::info!("Unbonding request submitted to Babylon API");
+
+    Ok(())
 }
