@@ -101,7 +101,8 @@ impl StateProof {
             state_root,
             keccak_256(self.address.bytes().as_slice()).as_slice(),
             &self.account_proof,
-        )?;
+        )?
+        .ok_or_else(|| Error::Relayer("Empty account".to_string()))?;
         let account = Account::decode(&Rlp::new(&result))
             .map_err(|e| Error::Relayer(format!("Failed to decode account: {}", e)))?;
 
@@ -121,13 +122,19 @@ impl StateProof {
                 root,
                 keccak_256(dest_key.as_slice()).as_slice(),
                 &storage_proof[0],
-            )?;
+            )?
+            .ok_or_else(|| Error::Relayer("Empty dest".to_string()))?;
 
             let amount_bytes = verify_key(
                 root,
                 keccak_256(amount_key.as_slice()).as_slice(),
                 &storage_proof[1],
             )?;
+            let return_amount: u64 = amount_bytes
+                .map(|b| Decodable::decode(&mut b.as_slice()))
+                .transpose()
+                .map_err(|e| Error::Relayer(format!("Failed to decode return amount: {}", e)))?
+                .unwrap_or_default();
 
             let sender_bytes_rlp = verify_key(
                 root,
@@ -177,7 +184,8 @@ impl StateProof {
                         keccak_256(BridgeContractData::dest_chunk_key(index, i).as_slice())
                             .as_slice(),
                         &storage_proof[i as usize + 3],
-                    )?;
+                    )?
+                    .ok_or_else(|| Error::Relayer("Empty dest chunk".to_string()))?;
 
                     let chunk_str: String =
                         Decodable::decode(&mut dest_chunk.as_slice()).map_err(|e| {
@@ -207,17 +215,13 @@ impl StateProof {
 
 /// Verifies and returns the value at the provided key in the trie with the
 /// given root and encoded proof.
-fn verify_key(root: [u8; 32], key: &[u8], proof: &EncodedProof) -> AppResult<Vec<u8>> {
+fn verify_key(root: [u8; 32], key: &[u8], proof: &EncodedProof) -> AppResult<Option<Vec<u8>>> {
     let root = H256(root);
     let proof_data: Vec<_> = proof.iter().map(|b| b.to_vec()).collect();
     let db = StorageProof::new(proof_data).into_memory_db::<KeccakHasher>();
     let trie = TrieDBBuilder::<EIP1186Layout<KeccakHasher>>::new(&db, &root).build();
-    let result = trie
-        .get(key)
-        .map_err(|e| Error::Relayer(format!("TrieError: {}", e)))?
-        .ok_or(Error::Relayer(format!("Key not found: {:?}", key)))?;
-
-    Ok(result)
+    trie.get(key)
+        .map_err(|e| Error::Relayer(format!("TrieError: {}", e)))
 }
 
 /// Data proven by a [StateProof].
