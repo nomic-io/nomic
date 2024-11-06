@@ -129,14 +129,21 @@ impl StateProof {
                 &storage_proof[1],
             )?;
 
-            let sender_bytes = verify_key(
+            let sender_bytes_rlp = verify_key(
                 root,
                 keccak_256(sender_key.as_slice()).as_slice(),
                 &storage_proof[2],
-            )?;
-
-            let sender_addr = EthAddress::decode(&mut sender_bytes.as_slice())
-                .map_err(|e| Error::Relayer(format!("Failed to decode return sender: {}", e)))?;
+            )?
+            .ok_or_else(|| Error::Relayer("Empty sender".to_string()))?;
+            let sender_bytes = Rlp::new(&sender_bytes_rlp).data().map_err(|e| {
+                Error::Relayer(format!("Failed to decode return sender RLP: {}", e))
+            })?;
+            if sender_bytes.len() > 20 {
+                return Err(Error::Relayer("Invalid sender address length".to_string()));
+            }
+            let mut sender_bytes_buf = [0u8; 20];
+            sender_bytes_buf[20 - sender_bytes.len()..].copy_from_slice(sender_bytes);
+            let sender_addr = EthAddress::from_slice(&sender_bytes_buf);
 
             // check if dest_bytes low bit is set
 
