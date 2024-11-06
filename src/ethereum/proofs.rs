@@ -153,13 +153,8 @@ impl StateProof {
             let sender_addr = EthAddress::from_slice(&sender_bytes_buf);
 
             // check if dest_bytes low bit is set
-
-            let return_amount: u64 = Decodable::decode(&mut amount_bytes.as_slice())
-                .map_err(|e| Error::Relayer(format!("Failed to decode return amount: {}", e)))?;
-
-            let dest_entry = U256::from_big_endian(dest_bytes.as_slice());
-
-            let dest_str: String = if dest_entry.bit(0) {
+            let lowest_bit = dest_bytes[dest_bytes.len() - 1] & 1;
+            let dest_str: String = if lowest_bit == 1 {
                 // length is stored
 
                 let dest_len: u64 = Decodable::decode(&mut dest_bytes.as_slice()).map_err(|e| {
@@ -196,8 +191,17 @@ impl StateProof {
 
                 Ok(dest_str)
             } else {
-                // string stored directly
-                Decodable::decode(&mut dest_bytes.as_slice())
+                // string stored inline
+                let data = Rlp::new(&dest_bytes).data().map_err(|e| {
+                    Error::Relayer(format!("Failed to decode return dest RLP: {}", e))
+                })?;
+                if data.len() != 32 {
+                    return Err(Error::Relayer("Invalid dest data length".to_string()));
+                }
+                let length = (data[31] / 2) as usize;
+                // TODO: handle strings with invalid utf8
+                String::from_utf8(data[..length].to_vec())
+                    .map_err(|e| Error::Relayer(format!("Failed to decode return dest: {}", e)))
             }
             .map_err(|e| Error::Relayer(format!("Failed to decode return dest: {}", e)))?;
 
