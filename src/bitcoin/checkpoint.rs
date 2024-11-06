@@ -2458,6 +2458,18 @@ impl CheckpointQueue {
         }
         Ok(pending)
     }
+
+    #[query]
+    pub fn cp_tx(&self, cp_index: u32, tx_index: u64) -> Result<Adapter<bitcoin::Transaction>> {
+        self.get(cp_index)?
+            .batches
+            .get(BatchType::Checkpoint as u64)?
+            .unwrap()
+            .get(tx_index)?
+            .ok_or_else(|| Error::Checkpoint("Transaction index out of bounds".to_string()))?
+            .to_bitcoin_tx()
+            .map(Into::into)
+    }
 }
 
 /// Takes a previous fee rate and returns a new fee rate, adjusted up or down by

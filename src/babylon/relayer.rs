@@ -47,9 +47,7 @@ pub async fn relay_staking_confs(
         let unconf_dels = app_client
             .query(|app| {
                 let mut unconf_dels = vec![];
-                for entry in app.babylon.delegations.get(owner)?.unwrap().iter()? {
-                    let del = entry?.encode()?;
-                    let del = Delegation::decode(&mut del.as_slice())?;
+                for del in app.babylon.owner_delegations(owner)? {
                     if del.staking_outpoint.is_none() {
                         unconf_dels.push(del);
                     }
@@ -85,12 +83,20 @@ pub async fn maybe_relay_staking_conf(
 
     let (cp_status, tx) = app_client
         .query(|app| {
-            let cp = app.bitcoin.checkpoints.get(del.checkpoint_batch_index.0)?;
-            let batch = cp.batches.get(BatchType::Checkpoint as u64)?.unwrap();
-            let tx = batch.get(del.checkpoint_batch_index.1)?.unwrap();
-            Ok((cp.status, tx.to_bitcoin_tx()?))
+            let status = app
+                .bitcoin
+                .checkpoints
+                .get(del.checkpoint_batch_index.0)?
+                .status;
+            let tx = app
+                .bitcoin
+                .checkpoints
+                .cp_tx(del.checkpoint_batch_index.0, del.checkpoint_batch_index.1)?;
+
+            Ok((status, tx.into_inner()))
         })
         .await?;
+
     if cp_status != CheckpointStatus::Complete {
         log::debug!("Checkpoint not yet finalized");
         return Ok(false);

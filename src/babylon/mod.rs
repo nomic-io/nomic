@@ -190,6 +190,16 @@ impl Babylon {
             .ok_or_else(|| Error::Orga(orga::Error::App("Delegation not found".to_string())))?
             .request_unbond(frost, btc, &self.params)
     }
+
+    #[query]
+    pub fn owner_delegations(&self, owner: Identity) -> Result<Vec<Delegation>> {
+        self.delegations
+            .get(owner)?
+            .unwrap_or_default()
+            .iter()?
+            .map(|entry| Ok(Delegation::decode(entry?.encode()?.as_slice())?))
+            .collect()
+    }
 }
 
 pub fn multisig_script(pks: &[XOnlyPublicKey], threshold: u32, verify: bool) -> Result<Script> {
