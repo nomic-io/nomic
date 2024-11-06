@@ -720,8 +720,17 @@ impl Connection {
             match dest.parse() {
                 Ok(dest) => self.pending.push_back((dest, coins, sender_id))?,
                 Err(e) => {
-                    log::debug!("failed to parse dest: {}, {}", dest.as_str(), e);
-                    self.transfer(sender, coins)?;
+                    log::debug!("Failed to parse dest: {}, {}", dest.as_str(), e);
+                    if let Err(e) = self.validate_transfer(sender, amount.into()) {
+                        log::debug!("Cannot bounce back to sender: {}", e);
+                    } else {
+                        log::debug!(
+                            "Bouncing back to sender: 0x{}, {}",
+                            hex::encode(sender.bytes()),
+                            coins.amount,
+                        );
+                        self.transfer(sender, coins)?;
+                    }
                 }
             }
             self.return_index += 1;
