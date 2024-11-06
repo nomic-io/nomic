@@ -31,7 +31,9 @@ pub async fn get_state_proof<
 
     for i in indices {
         let idx = Uint::<256, 4>::from(i);
-        let dest: String = contract.state_returnDests(idx).call().await.unwrap()._0;
+        let dest = contract.state_returnDests(idx).call().await.unwrap()._0;
+        let amount = contract.state_returnAmounts(idx).call().await.unwrap()._0;
+        log::debug!("Return entry {}: dest={}, amount={}", i, dest, amount);
         dests.push((dest, i));
     }
 
