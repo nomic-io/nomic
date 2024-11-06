@@ -438,8 +438,11 @@ impl InnerApp {
             } => {
                 // TODO: move into babylon
                 let params = &self.babylon.params;
-                let amount: u64 = amount.into();
-                if amount < params.min_staking_amount || amount > params.max_staking_amount {
+
+                let stake_amount = u64::from(amount) / self.bitcoin.config.units_per_sat;
+                if stake_amount < params.min_staking_amount
+                    || stake_amount > params.max_staking_amount
+                {
                     return Err(Error::App("Invalid stake amount".to_string()));
                 }
 
