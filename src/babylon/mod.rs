@@ -369,7 +369,7 @@ impl Params {
                 .script_pubkey()
                 .into(),
             slashing_min_fee,
-            op_return_tag: *b"bbb3",
+            op_return_tag: *b"bbn3",
             slashing_rate: (11, 100),
             max_age: 1_008,
             min_staking_time: u16::MAX,
@@ -384,11 +384,17 @@ impl Params {
 
     pub fn bbn_test_4() -> Self {
         let covenant_keys = [
-            "a10a06bb3bae360db3aef0326413b55b9e46bf20b9a96fc8a806a99e644fe277",
-            "6f13a6d104446520d1757caec13eaf6fbcf29f488c31e0107e7351d4994cd068",
-            "a5e21514682b87e37fb5d3c9862055041d1e6f4cc4f3034ceaf3d90f86b230a6",
+            "fa9d882d45f4060bdb8042183828cd87544f1ea997380e586cab77d5fd698737",
+            "0aee0509b16db71c999238a4827db945526859b13c95487ab46725357c9a9f25",
+            "17921cf156ccb4e73d428f996ed11b245313e37e27c978ac4d2cc21eca4672e4",
+            "113c3a32a9d320b72190a04a020a0db3976ef36972673258e9a38a364f3dc3b0",
+            "79a71ffd71c503ef2e2f91bccfc8fcda7946f4653cef0d9f3dde20795ef3b9f0",
+            "3bb93dfc8b61887d771f3630e9a63e97cbafcfcc78556a474df83a31a0ef899c",
+            "d21faf78c6751a0d38e6bd8028b907ff07e9a869a43fc837d6b3f8dff6119a36",
+            "40afaf47c4ffa56de86410d8e47baa2bb6f04b604f4ea24323737ddc3fe092df",
+            "f5199efae3f28bb82476163a7e458c7ad445d9bffb0682d10d3bdb2cb41f8e8e",
         ];
-        let covenant_quorum = 2;
+        let covenant_quorum = 6;
 
         let slashing_addr = "tb1qv03wm7hxhag6awldvwacy0z42edtt6kwljrhd9";
         let slashing_min_fee = 2_000;
@@ -412,7 +418,7 @@ impl Params {
                 .script_pubkey()
                 .into(),
             slashing_min_fee,
-            op_return_tag: *b"bbb4",
+            op_return_tag: *b"bbt4",
             slashing_rate: (11, 100),
             max_age: 1_008,
             min_staking_time: 64_000,
@@ -420,7 +426,7 @@ impl Params {
             unbonding_time: 1_008,
             min_staking_amount: 50_000,
             max_staking_amount: 5_000_000,
-            unbonding_fee: 10_000,
+            unbonding_fee: 5_000,
             confirmation_depth: 10,
         }
     }
