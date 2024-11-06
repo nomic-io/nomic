@@ -882,9 +882,12 @@ impl InnerApp {
                 FrostConfig::from_staking(&self.staking, FROST_TOP_N, FROST_THRESHOLD, &absent)?;
 
             if frost_config.participants.len() < 2 {
+                log::debug!("Skipping FROST group creation due to insufficient participants");
                 return Ok(());
             }
             let group = FrostGroup::with_config(frost_config, now)?;
+
+            log::debug!("Creating FROST group {}", self.frost.groups.len());
 
             self.frost.groups.push_back(group)?;
         }
