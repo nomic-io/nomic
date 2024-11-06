@@ -2988,27 +2988,6 @@ impl RelayEthereumCmd {
             }
             dbg!(contract_index, nomic_index);
 
-            let dest_str = contract
-                .state_returnDests(alloy_core::primitives::U256::from(nomic_index))
-                .call()
-                .await
-                .unwrap()
-                ._0;
-            let amount: u64 = contract
-                .state_returnAmounts(alloy_core::primitives::U256::from(nomic_index))
-                .call()
-                .await
-                .unwrap()
-                ._0
-                .to();
-            let sender = contract
-                .state_returnSenders(alloy_core::primitives::U256::from(nomic_index))
-                .call()
-                .await
-                .unwrap()
-                ._0;
-            dbg!(&dest_str, amount, sender);
-
             let block_number = self
                 .config
                 .client()
@@ -3053,14 +3032,14 @@ impl RelayEthereumCmd {
             let rpc_client =
                 ethereum::consensus::relayer::RpcClient::new(self.beacon_api_url.clone());
             // TODO: use chain_id in closure without breaking fn coercion
-            let lc = client.sub(move |app: InnerApp| Ok(app.ethereum.light_client(11155111)?));
+            let lc = client.sub(move |app: InnerApp| Ok(app.ethereum.light_client(17000)?));
             let updates = ethereum::consensus::relayer::get_updates(&lc, &rpc_client).await?;
             dbg!(updates.len());
 
             for update in updates {
                 log::info!(
                     "Relaying Ethereum consensus update... (chainid={}, slot={})",
-                    11155111, // TODO: self.eth_chainid,
+                    17000, // TODO: self.eth_chainid,
                     update.finalized_header.beacon.slot
                 );
                 if let Err(e) = self
