@@ -2675,9 +2675,17 @@ pub struct FrostSignerCmd {
 #[cfg(feature = "frost")]
 impl FrostSignerCmd {
     async fn run(&self) -> Result<()> {
+        log::info!("Starting FROST signer...");
+
         let signer_dir_path = self.config.home_expect()?.join("frost");
         if !signer_dir_path.exists() {
+            log::debug!("Creating FROST signer directory at {:?}", signer_dir_path);
             std::fs::create_dir(&signer_dir_path)?;
+        } else {
+            log::debug!(
+                "Using existing FROST signer directory at {:?}",
+                signer_dir_path,
+            );
         }
         let store = SecretStore::new_store(signer_dir_path);
         let mut signer = crate::frost::signer::Signer::new(
@@ -2686,7 +2694,9 @@ impl FrostSignerCmd {
             my_address(),
         );
         loop {
-            signer.step().await?;
+            if let Err(e) = signer.step().await {
+                log::error!("Error in FROST signer: {}", e);
+            }
             std::thread::sleep(std::time::Duration::from_secs(5));
         }
     }
