@@ -110,6 +110,49 @@ impl Babylon {
             |del, frost, btc, params| del.unbond(frost, btc, params),
         )?;
 
+        // TODO: don't iterate through all delegations
+        let mut to_advance = vec![];
+        for entry in self.delegations.iter()? {
+            let (_, owner_dels) = entry?;
+            for del in owner_dels.iter()? {
+                let del = del?;
+
+                if del.status() != DelegationStatus::SigningUnbond {
+                    continue;
+                }
+
+                let unbonding_withdrawal_sig =
+                    frost.signature(del.frost_group, del.frost_sig_offset.unwrap())?;
+                let staking_unbonding_sig =
+                    frost.signature(del.frost_group, del.frost_sig_offset.unwrap() + 1)?;
+
+                if let (Some(unbonding_withdrawal_sig), Some(staking_unbonding_sig)) =
+                    (unbonding_withdrawal_sig, staking_unbonding_sig)
+                {
+                    to_advance.push((
+                        del.owner,
+                        del.index,
+                        Signature(unbonding_withdrawal_sig.inner.serialize()),
+                        Signature(staking_unbonding_sig.inner.serialize()),
+                    ));
+                }
+            }
+        }
+        for (owner, index, unbonding_withdrawal_sig, staking_unbonding_sig) in to_advance {
+            let mut owner_dels = self
+                .delegations
+                .get_mut(owner)?
+                .ok_or_else(|| Error::Orga(orga::Error::App("Delegation not found".to_string())))?;
+            let mut del = owner_dels
+                .get_mut(index)?
+                .ok_or_else(|| Error::Orga(orga::Error::App("Delegation not found".to_string())))?;
+            del.sign_unbond(
+                unbonding_withdrawal_sig,
+                staking_unbonding_sig,
+                &self.params,
+            )?;
+        }
+
         Ok(())
     }
 
@@ -607,6 +650,7 @@ pub struct Delegation {
     pub withdrawal_sigset_index: Option<u32>,
     pub withdrawal_script_pubkey: Option<crate::bitcoin::adapter::Adapter<Script>>,
     pub frost_sig_offset: Option<u64>,
+
     pub(crate) staking_unbonding_sig: Option<Signature>,
     pub(crate) unbonding_withdrawal_sig: Option<Signature>,
 
@@ -822,8 +866,8 @@ impl Delegation {
 
     pub fn sign_unbond(
         &mut self,
-        staking_unbonding_sig: Signature,
         unbonding_withdrawal_sig: Signature,
+        staking_unbonding_sig: Signature,
         params: &Params,
     ) -> Result<()> {
         assert_eq!(self.status(), DelegationStatus::SigningUnbond);
