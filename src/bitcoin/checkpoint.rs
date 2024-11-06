@@ -1562,7 +1562,8 @@ impl<'a> BuildingCheckpointMut<'a> {
             let mut checkpoint_batch = self.batches.get_mut(BatchType::Checkpoint as u64)?.unwrap();
             for i in 1..checkpoint_batch.len() {
                 let mut tx = checkpoint_batch.get_mut(i)?.unwrap();
-                let value = tx.value()?;
+                let fee = tx.est_vsize()? * fee_rate;
+                let value = tx.value()? + fee;
 
                 // Add a funding input, to be populated once the checkpoint tx is finalized.
                 tx.input.push_back(Input::new(
@@ -1575,13 +1576,11 @@ impl<'a> BuildingCheckpointMut<'a> {
                     value,
                     SIGSET_THRESHOLD,
                 )?)?;
-                let fee = tx.est_vsize()? * fee_rate;
-                tx.input.back_mut()?.unwrap().amount += fee;
                 // TODO: do accounting for fee, e.g. from fee pool
 
                 // Add the output to the checkpoint tx.
                 let out = bitcoin::TxOut {
-                    value: tx.value()?,
+                    value,
                     script_pubkey: sigset.output_script(&[0], SIGSET_THRESHOLD)?,
                 };
                 checkpoint_batch
