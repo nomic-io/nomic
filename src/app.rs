@@ -944,6 +944,7 @@ mod abci {
                 self.bitcoin.config.min_confirmations = 0;
                 self.bitcoin.config.min_withdrawal_checkpoints = 0;
                 self.bitcoin.checkpoints.config.min_checkpoint_interval = 60;
+                self.bitcoin.checkpoints.config.wait_to_collect_fees = false;
 
                 include_str!("../testnet_addresses.csv")
                     .lines()
