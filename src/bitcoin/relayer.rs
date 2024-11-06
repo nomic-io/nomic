@@ -643,16 +643,20 @@ impl Relayer {
                 {
                     Ok(_) => {
                         info!("Relayed checkpoint: {}", tx.txid());
+                        relayed.insert(tx.txid());
                     }
                     Err(err) if err.to_string().contains("bad-txns-inputs-missingorspent") => {}
                     Err(err)
                         if err
                             .to_string()
                             .contains("Transaction already in block chain") => {}
-                    Err(err) => Err(err)?,
+                    Err(err) if err.to_string().contains("min relay fee not met") => {
+                        log::warn!("{}", err);
+                    }
+                    Err(err) => {
+                        log::error!("{} (skipping)", err);
+                    }
                 }
-
-                relayed.insert(tx.txid());
             }
 
             tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
