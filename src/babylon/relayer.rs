@@ -167,14 +167,12 @@ pub async fn relay_unbonding_confs(
     for owner in owners {
         let unconf_dels = app_client
             .query(|app| {
-                let mut unconf_dels = vec![];
-                for entry in app.babylon.delegations.get(owner)?.unwrap().iter()? {
-                    let del = entry?.encode()?;
-                    let del = Delegation::decode(&mut del.as_slice())?;
-                    if del.status() == DelegationStatus::SignedUnbond {
-                        unconf_dels.push(del);
-                    }
-                }
+                let unconf_dels: Vec<_> = app
+                    .babylon
+                    .owner_delegations(owner)?
+                    .into_iter()
+                    .filter(|del| del.status() == DelegationStatus::SignedUnbond)
+                    .collect();
                 Ok(unconf_dels)
             })
             .await?;
