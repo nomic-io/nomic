@@ -966,7 +966,7 @@ impl Delegation {
     pub fn can_withdraw(&self, btc: &Bitcoin) -> Result<bool> {
         Ok(self.status() == DelegationStatus::ConfirmedUnbond
             && btc.headers.height()?
-                < self.unbonding_height.unwrap() + self.unbonding_period as u32)
+                >= self.unbonding_height.unwrap() + self.unbonding_period as u32)
     }
 
     pub fn withdraw(&mut self, btc: &mut Bitcoin, params: &Params) -> Result<()> {
