@@ -303,6 +303,9 @@ impl InnerApp {
         address: Address,
         amount: Amount,
     ) -> Result<()> {
+        #[cfg(feature = "devnet")]
+        disable_fee();
+
         #[cfg(feature = "ethereum")]
         {
             let signer = self.signer()?;
@@ -940,14 +943,19 @@ mod abci {
 
                 #[cfg(feature = "ethereum")]
                 {
+                    #[cfg(feature = "devnet")]
+                    let chain_id = 0;
+                    #[cfg(not(feature = "devnet"))]
+                    let chain_id = 11155111;
+
                     // Add Ethereum Sepolia
                     let bootstrap =
                         serde_json::from_str(include_str!("./ethereum/bootstrap/sepolia.json"))
                             .unwrap();
                     self.ethereum.networks.insert(
-                        11155111,
+                        chain_id,
                         crate::ethereum::Network::new(
-                            11155111,
+                            chain_id,
                             bootstrap,
                             crate::ethereum::consensus::Network::ethereum_sepolia(),
                         )?,

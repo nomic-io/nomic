@@ -35,6 +35,7 @@ use orga::plugins::{ABCIPlugin, ChainId, SignerCall, Time, MIN_FEE};
 use orga::state::State;
 #[cfg(feature = "full")]
 use orga::store::BackingStore;
+use orga::store::Read;
 #[cfg(feature = "full")]
 use orga::store::Write;
 #[cfg(feature = "full")]
@@ -573,4 +574,16 @@ pub fn start_rest() -> Result<Child> {
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn()?)
+}
+
+pub fn export_state(path: &Path) -> Result<()> {
+    let store_path = path.join("merk");
+    let store = Store::new(BackingStore::Merk(Shared::new(MerkStore::open_readonly(
+        store_path,
+    ))));
+    let root_bytes = store.get(&[])?.unwrap();
+    let app = ABCIPlugin::<App>::load(store, &mut root_bytes.as_slice())?;
+    let file = std::fs::File::create("state.json")?;
+    serde_json::to_writer_pretty(file, &app).unwrap();
+    Ok(())
 }
