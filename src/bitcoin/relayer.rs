@@ -1224,10 +1224,7 @@ impl RawSignatorySet {
             miner_fee_rate,
             deposits_enabled,
             // TODO: get threshold from checkpoint once it is stored in state
-            #[cfg(feature = "testnet")]
-            threshold: (9, 10),
-            #[cfg(not(feature = "testnet"))]
-            threshold: (2, 3),
+            threshold: SIGSET_THRESHOLD,
             bridge_fee_overrides: BridgeFeeOverrides::default(),
             txid: maybe_checkpoint_tx.map(|tx| tx.txid().to_string()),
             signed_at_btc_height,
