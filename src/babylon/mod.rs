@@ -427,17 +427,11 @@ impl Params {
 
     pub fn bbn_test_4() -> Self {
         let covenant_keys = [
-            "fa9d882d45f4060bdb8042183828cd87544f1ea997380e586cab77d5fd698737",
-            "0aee0509b16db71c999238a4827db945526859b13c95487ab46725357c9a9f25",
+            "49766ccd9e3cd94343e2040474a77fb37cdfd30530d05f9f1e96ae1e2102c86e",
+            "76d1ae01f8fb6bf30108731c884cddcf57ef6eef2d9d9559e130894e0e40c62c",
             "17921cf156ccb4e73d428f996ed11b245313e37e27c978ac4d2cc21eca4672e4",
-            "113c3a32a9d320b72190a04a020a0db3976ef36972673258e9a38a364f3dc3b0",
-            "79a71ffd71c503ef2e2f91bccfc8fcda7946f4653cef0d9f3dde20795ef3b9f0",
-            "3bb93dfc8b61887d771f3630e9a63e97cbafcfcc78556a474df83a31a0ef899c",
-            "d21faf78c6751a0d38e6bd8028b907ff07e9a869a43fc837d6b3f8dff6119a36",
-            "40afaf47c4ffa56de86410d8e47baa2bb6f04b604f4ea24323737ddc3fe092df",
-            "f5199efae3f28bb82476163a7e458c7ad445d9bffb0682d10d3bdb2cb41f8e8e",
         ];
-        let covenant_quorum = 6;
+        let covenant_quorum = 2;
 
         let slashing_addr = "tb1qv03wm7hxhag6awldvwacy0z42edtt6kwljrhd9";
         let slashing_min_fee = 2_000;
@@ -461,16 +455,16 @@ impl Params {
                 .script_pubkey()
                 .into(),
             slashing_min_fee,
-            op_return_tag: *b"bbt4",
+            op_return_tag: *b"bbd4",
             slashing_rate: (11, 100),
             max_age: 1_008,
-            min_staking_time: 64_000,
+            min_staking_time: 150,
             max_staking_time: 64_000,
-            unbonding_time: 1_008,
-            min_staking_amount: 50_000,
-            max_staking_amount: 5_000_000,
-            unbonding_fee: 5_000,
-            confirmation_depth: 10,
+            unbonding_time: 5,
+            min_staking_amount: 30_000,
+            max_staking_amount: 100_000_000,
+            unbonding_fee: 3_000,
+            confirmation_depth: 2,
         }
     }
 
