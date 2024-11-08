@@ -247,7 +247,6 @@ pub async fn maybe_relay_unbonding_conf(
 pub async fn relay_withdrawal_txs(
     app_client: &AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned>,
     btc_client: &BitcoinRpcClient,
-    bbn_api_addr: &str,
 ) -> Result<()> {
     let (owners, params) = app_client
         .query(|app| {
@@ -297,6 +296,12 @@ pub async fn relay_withdrawal_tx(
     btc_client
         .send_raw_transaction(&withdrawal_tx_bytes)
         .await?;
+    log::info!(
+        "Relayed withdrawal tx. txid={}, owner={}, index={}",
+        withdrawal_tx.txid(),
+        del.owner,
+        del.index
+    );
 
     Ok(())
 }

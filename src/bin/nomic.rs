@@ -2641,12 +2641,8 @@ impl BabylonRelayerCmd {
         let withdrawal_txs = async {
             loop {
                 let app_client = self.config.client();
-                if let Err(e) = babylon::relayer::relay_withdrawal_txs(
-                    &app_client,
-                    &btc_client,
-                    &self.bbn_api_addr,
-                )
-                .await
+                if let Err(e) =
+                    babylon::relayer::relay_withdrawal_txs(&app_client, &btc_client).await
                 {
                     log::error!("Error in withdrawal tx relay: {}", e);
                 }
