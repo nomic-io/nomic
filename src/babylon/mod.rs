@@ -634,6 +634,7 @@ pub struct Delegation {
     pub staking_period: u16,
     pub unbonding_period: u16,
     pub checkpoint_batch_index: (u32, u64),
+    // TODO: add field for stake_amount, equal to `stake` except after withdraw
     pub stake: Coin<Nbtc>,
 
     pub staking_outpoint: Option<crate::bitcoin::adapter::Adapter<OutPoint>>,
@@ -1011,9 +1012,9 @@ impl Delegation {
                 staking_period: self.staking_period,
             }
         };
-        building_cp
-            .pending
-            .insert((dest, self.owner), self.stake.take(self.stake.amount)?)?;
+        // TODO: take from self.stake
+        let nbtc = Coin::mint(self.stake.amount);
+        building_cp.pending.insert((dest, self.owner), nbtc)?;
 
         self.withdraw_checkpoint_index = Some(sigset.index);
 
@@ -1202,6 +1203,21 @@ impl Delegation {
             ))
         })?;
 
+        let tr = unbonding_taproot(self.btc_key()?, &self.fp_keys()?, params)?;
+
+        let leaf_ver = bitcoin::util::taproot::LeafVersion::TapScript;
+        let cb = tr
+            .control_block(&(unbonding_script.clone(), leaf_ver))
+            .unwrap()
+            .serialize();
+        let witness = Witness::from_vec(vec![
+            self.unbonding_withdrawal_sig
+                .map(|b| b.to_vec())
+                .unwrap_or_default(),
+            unbonding_script.to_bytes(),
+            cb,
+        ]);
+
         let unbonding_tx = Transaction {
             version: 2,
             lock_time: PackedLockTime::ZERO,
@@ -1212,12 +1228,7 @@ impl Delegation {
                 },
                 script_sig: Script::default(),
                 sequence: Sequence(params.unbonding_time as u32),
-                witness: Witness::from_vec(vec![
-                    unbonding_script.to_bytes(),
-                    self.unbonding_withdrawal_sig
-                        .map(|b| b.to_vec())
-                        .unwrap_or_default(),
-                ]),
+                witness,
             }],
             output: vec![TxOut {
                 value: unbonding_value - params.unbonding_fee,
