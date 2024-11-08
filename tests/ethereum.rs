@@ -18,28 +18,21 @@ use chrono::TimeZone;
 use chrono::Utc;
 use log::info;
 use nomic::app::Dest;
-use nomic::app::{InnerApp, Nom};
 use nomic::app_client;
 use nomic::bitcoin::adapter::Adapter;
 use nomic::bitcoin::checkpoint::Config as CheckpointConfig;
 use nomic::bitcoin::header_queue::Config as HeaderQueueConfig;
-use nomic::bitcoin::relayer::DepositAddress;
 use nomic::bitcoin::relayer::Relayer;
-use nomic::error::{Error, Result};
+use nomic::error::Error;
 use nomic::ethereum::relayer::Relayer as EthRelayer;
 use nomic::ethereum::{bridge_contract, token_contract};
 use nomic::utils::*;
 use orga::abci::Node;
-use orga::client::{
-    wallet::{DerivedKey, Unsigned},
-    AppClient,
-};
-use orga::coins::{Address, Amount};
+use orga::client::wallet::DerivedKey;
+use orga::coins::Amount;
 use orga::encoding::Encode;
 use orga::macros::build_call;
 use orga::plugins::{load_privkey, Time, MIN_FEE};
-use orga::tendermint::client::HttpClient;
-use reqwest::StatusCode;
 use serial_test::serial;
 use std::fs;
 use std::str::FromStr;

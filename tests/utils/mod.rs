@@ -1,5 +1,5 @@
 use bitcoind::bitcoincore_rpc::RpcApi;
-use nomic::error::{Error, Result};
+use nomic::error::Result;
 use nomic::utils::{broadcast_deposit_addr, generate_deposit_address};
 use orga::coins::Address;
 use std::str::FromStr;

@@ -6,7 +6,6 @@ use crate::error::Result;
 use crate::ethereum::proofs::extra_slots_required;
 use alloy_core::primitives::Address as EthAddress;
 use alloy_primitives::Uint;
-use alloy_provider::network::EthereumWallet;
 use alloy_provider::Provider;
 use alloy_signer_local::LocalSigner;
 use alloy_transport::Transport;

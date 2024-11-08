@@ -2,7 +2,7 @@
 use crate::utils::deposit_bitcoin;
 use bitcoin::blockdata::transaction::EcdsaSighashType;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
-use bitcoin::{secp256k1, Script};
+use bitcoin::secp256k1;
 use bitcoincore_rpc_async::RpcApi as AsyncRpcApi;
 use bitcoind::bitcoincore_rpc::json::{
     ImportMultiRequest, ImportMultiRequestScriptPubkey, ImportMultiRescanSince,
@@ -12,44 +12,34 @@ use bitcoind::{BitcoinD, Conf};
 use chrono::TimeZone;
 use chrono::Utc;
 use log::info;
-use nomic::app::Dest;
-use nomic::app::{InnerApp, Nom};
+use nomic::app::InnerApp;
 use nomic::app_client;
 use nomic::bitcoin::adapter::Adapter;
 use nomic::bitcoin::checkpoint::CheckpointStatus;
 use nomic::bitcoin::checkpoint::Config as CheckpointConfig;
-use nomic::bitcoin::deposit_index::DepositIndex;
-use nomic::bitcoin::deposit_index::{Deposit, DepositInfo};
+use nomic::bitcoin::deposit_index::DepositInfo;
 use nomic::bitcoin::header_queue::Config as HeaderQueueConfig;
-use nomic::bitcoin::relayer::DepositAddress;
 use nomic::bitcoin::relayer::Relayer;
 use nomic::bitcoin::signer::Signer;
 use nomic::bitcoin::threshold_sig::Pubkey;
 use nomic::bitcoin::Config as BitcoinConfig;
-use nomic::error::{Error, Result};
+use nomic::error::Error;
 use nomic::utils::*;
 use orga::abci::Node;
-use orga::client::{
-    wallet::{DerivedKey, Unsigned},
-    AppClient,
-};
+use orga::client::wallet::DerivedKey;
 use orga::coins::{Address, Amount};
 use orga::encoding::Encode;
 use orga::macros::build_call;
 use orga::plugins::{load_privkey, Time, MIN_FEE};
-use orga::tendermint::client::HttpClient;
 use rand::Rng;
-use reqwest::StatusCode;
 use serial_test::serial;
 use std::collections::HashMap;
 use std::fs;
 use std::str::FromStr;
-use std::sync::Arc;
 use std::sync::Once;
 use std::time::Duration;
 use tempfile::tempdir;
 use tokio::sync::mpsc;
-use tokio::sync::Mutex;
 
 mod utils;
 
