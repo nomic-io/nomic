@@ -1,6 +1,5 @@
 #![feature(async_closure)]
 use crate::utils::*;
-use nomic::app_client;
 use bitcoin::secp256k1;
 use bitcoin::util::bip32::ExtendedPubKey;
 use bitcoincore_rpc_async::RpcApi as AsyncRpcApi;
@@ -15,6 +14,7 @@ use log::info;
 use nomic::app::Dest;
 use nomic::app::IbcDest;
 use nomic::app::{InnerApp, Nom};
+use nomic::app_client;
 use nomic::bitcoin::adapter::Adapter;
 use nomic::bitcoin::header_queue::Config as HeaderQueueConfig;
 use nomic::bitcoin::relayer::DepositAddress;

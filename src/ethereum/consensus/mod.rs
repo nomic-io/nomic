@@ -21,8 +21,8 @@ use helios_consensus_core::{
     verify_bootstrap, verify_finality_update, verify_update,
 };
 use orga::{
-    call::FieldCall, describe::Describe, encoding::LengthVec, migrate::Migrate,
-    query::FieldQuery, state::State,
+    call::FieldCall, describe::Describe, encoding::LengthVec, migrate::Migrate, query::FieldQuery,
+    state::State,
 };
 use serde::{Deserialize, Serialize};
 use serde_hex::{SerHex, StrictPfx};
