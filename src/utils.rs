@@ -55,7 +55,7 @@ use std::str::FromStr;
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const DEFAULT_RPC: &str = "http://localhost:26657";
+pub const DEFAULT_RPC: &str = "http://localhost:26657";
 
 pub fn retry<F, T, E>(f: F, max_retries: u32) -> std::result::Result<T, E>
 where
@@ -376,32 +376,6 @@ pub async fn poll_for_completed_checkpoint(num_checkpoints: u32) {
     }
 }
 
-pub async fn poll_for_updated_balance(address: Address, expected_balance: u64) -> u64 {
-    info!("Polling for updated balance...");
-    let initial_balance = app_client(DEFAULT_RPC)
-        .query(|app| app.bitcoin.accounts.balance(address))
-        .await
-        .unwrap();
-
-    if initial_balance == expected_balance {
-        return initial_balance.into();
-    }
-
-    let mut count = 0;
-    loop {
-        let balance = app_client(DEFAULT_RPC)
-            .query(|app| app.bitcoin.accounts.balance(address))
-            .await
-            .unwrap();
-        if count >= 60 || balance != initial_balance {
-            break balance.into();
-        }
-
-        tokio::time::sleep(Duration::from_secs(1)).await;
-        count += 1;
-    }
-}
-
 pub async fn poll_for_bitcoin_header(height: u32) -> Result<()> {
     info!("Scanning for bitcoin header {}...", height);
     loop {
@@ -412,6 +386,40 @@ pub async fn poll_for_bitcoin_header(height: u32) -> Result<()> {
             info!("Found bitcoin header {}", height);
             break Ok(());
         }
+    }
+}
+
+pub async fn poll_for_updated_query_data<T: PartialEq>(
+    rpc_url: String,
+    polling_text: Option<String>,
+    timeout_secs: Option<u64>,
+    initial_data: T,
+    query: impl Fn(crate::app::InnerApp) -> OrgaResult<T>,
+) -> Result<T> {
+    if let Some(text) = polling_text {
+        info!("{}", text);
+    }
+
+    let start_time = std::time::Instant::now();
+    loop {
+        if let Some(timeout) = timeout_secs {
+            if start_time.elapsed().as_secs() >= timeout {
+                return Err(crate::error::Error::Orga(orga::Error::App(
+                    "Polling timed out".to_string(),
+                )));
+            }
+        }
+
+        match app_client(&rpc_url).query(&query).await {
+            Ok(data) => {
+                if data != initial_data {
+                    return Ok(data);
+                }
+
+                continue;
+            }
+            Err(_) => tokio::time::sleep(Duration::from_secs(1)).await,
+        };
     }
 }
 

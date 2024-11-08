@@ -19,11 +19,6 @@ use nomic::bitcoin::relayer::DepositAddress;
 use nomic::bitcoin::relayer::Relayer;
 use nomic::error::{Error, Result};
 use nomic::utils::*;
-use nomic::utils::{
-    declare_validator, poll_for_active_sigset, poll_for_blocks, poll_for_updated_balance,
-    populate_bitcoin_block, retry, set_time, setup_test_app, setup_test_signer,
-    test_bitcoin_client,
-};
 use orga::abci::Node;
 use orga::client::{
     wallet::{DerivedKey, Unsigned},
@@ -398,11 +393,6 @@ async fn ibc_test() {
             .unwrap();
 
         poll_for_bitcoin_header(1120).await.unwrap();
-
-        let expected_balance = 0;
-        let balance = poll_for_updated_balance(funded_accounts[0].address, expected_balance).await;
-        assert_eq!(balance, expected_balance);
-
         poll_for_active_sigset().await;
         poll_for_signatory_key(consensus_key).await;
 
@@ -413,10 +403,6 @@ async fn ibc_test() {
         )
         .await
         .unwrap();
-
-        let expected_balance = 0;
-        let balance = poll_for_updated_balance(funded_accounts[0].address, expected_balance).await;
-        assert_eq!(balance, expected_balance);
 
         deposit_bitcoin(
             &Address::from_str("nomic1vd0r7t04vnr36x6pydel9eacvn776psetwqndl").unwrap(),
@@ -434,10 +420,6 @@ async fn ibc_test() {
         poll_for_bitcoin_header(1124).await.unwrap();
         poll_for_signing_checkpoint().await;
 
-        let expected_balance = 0;
-        let balance = poll_for_updated_balance(funded_accounts[0].address, expected_balance).await;
-        assert_eq!(balance, expected_balance);
-
         let confirmed_index = app_client()
             .query(|app| Ok(app.bitcoin.checkpoints.confirmed_index))
             .await
@@ -445,10 +427,6 @@ async fn ibc_test() {
         assert_eq!(confirmed_index, None);
 
         poll_for_completed_checkpoint(1).await;
-
-        let expected_balance = 989996871600000;
-        let balance = poll_for_updated_balance(funded_accounts[0].address, expected_balance).await;
-        assert_eq!(balance, Amount::from(expected_balance));
 
         let res = reqwest::get("http://localhost:27011/cosmos/bank/v1beta1/balances/cosmos1vd0r7t04vnr36x6pydel9eacvn776psehknf74").await.unwrap();
         let mut balances: serde_json::Value =

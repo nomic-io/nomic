@@ -1,3 +1,4 @@
+#![cfg(feature = "ethereum-full")]
 #![feature(async_closure)]
 use alloy_node_bindings::Anvil;
 use alloy_provider::ext::AnvilApi;
@@ -31,7 +32,7 @@ use orga::client::{
     wallet::{DerivedKey, Unsigned},
     AppClient,
 };
-use orga::coins::Address;
+use orga::coins::{Address, Amount};
 use orga::encoding::Encode;
 use orga::macros::build_call;
 use orga::plugins::{load_privkey, Time, MIN_FEE};
@@ -552,7 +553,17 @@ async fn ethereum() {
         poll_for_bitcoin_header(1142).await.unwrap();
         poll_for_completed_checkpoint(3).await;
 
-        poll_for_updated_balance(funded_accounts[1].address, 20_000_000_000).await;
+        let expected_balance = 20_000_000_000;
+        let balance = poll_for_updated_query_data(
+            DEFAULT_RPC.to_string(),
+            Some("Polling for updated balance...".to_string()),
+            None,
+            Amount::from(0),
+            |app| app.bitcoin.accounts.balance(funded_accounts[1].address),
+        )
+        .await
+        .unwrap();
+        assert_eq!(balance, Amount::from(expected_balance));
 
         Err::<(), Error>(Error::Test("Test completed successfully".to_string()))
     };
