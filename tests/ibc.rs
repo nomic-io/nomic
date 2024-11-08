@@ -1,4 +1,6 @@
 #![feature(async_closure)]
+use crate::utils::*;
+use nomic::app_client;
 use bitcoin::secp256k1;
 use bitcoin::util::bip32::ExtendedPubKey;
 use bitcoincore_rpc_async::RpcApi as AsyncRpcApi;
@@ -41,66 +43,24 @@ use std::time::SystemTime;
 use tempfile::tempdir;
 use tokio::process::Command;
 
+pub mod utils;
+
 static INIT: Once = Once::new();
 const TEST_CHAIN_ID: &str = "nomic-e2e";
 
-fn app_client() -> AppClient<InnerApp, InnerApp, orga::tendermint::client::HttpClient, Nom, Unsigned>
-{
-    nomic::app_client("http://localhost:26657")
-}
+struct GmHandler {}
 
-async fn generate_deposit_address(address: &Address) -> Result<DepositAddress> {
-    info!("Generating deposit address for {}...", address);
-    let (sigset, threshold) = app_client()
-        .query(|app| {
-            Ok((
-                app.bitcoin.checkpoints.active_sigset()?,
-                app.bitcoin.checkpoints.config.sigset_threshold,
-            ))
-        })
-        .await?;
-    let script = sigset.output_script(
-        Dest::NativeAccount { address: *address }
-            .commitment_bytes()?
-            .as_slice(),
-        threshold,
-    )?;
+impl GmHandler {
+    async fn start(gm_path: String) -> Result<()> {
+        Command::new(gm_path.clone())
+            .args(["reset", "ibc-0"])
+            .spawn()?;
+        Command::new(gm_path.clone())
+            .args(["reset", "node-0"])
+            .spawn()?;
+        Command::new(gm_path).arg("start").spawn()?;
 
-    Ok(DepositAddress {
-        deposit_addr: bitcoin::Address::from_script(&script, bitcoin::Network::Regtest)
-            .unwrap()
-            .to_string(),
-        sigset_index: sigset.index(),
-    })
-}
-
-pub async fn broadcast_deposit_addr(
-    dest_addr: String,
-    sigset_index: u32,
-    relayer: String,
-    deposit_addr: String,
-) -> Result<()> {
-    info!("Broadcasting deposit address to relayer...");
-    let dest_addr = dest_addr.parse().unwrap();
-
-    let commitment = Dest::NativeAccount { address: dest_addr }.encode()?;
-
-    let url = format!("{}/address", relayer,);
-    let client = reqwest::Client::new();
-    let res = client
-        .post(url)
-        .query(&[
-            ("sigset_index", &sigset_index.to_string()),
-            ("deposit_addr", &deposit_addr),
-        ])
-        .body(commitment)
-        .send()
-        .await
-        .unwrap();
-
-    match res.status() {
-        StatusCode::OK => Ok(()),
-        _ => Err(Error::Relayer(res.text().await.unwrap().to_string())),
+        Ok(())
     }
 }
 
@@ -126,7 +86,7 @@ async fn direct_deposit_bitcoin(
         },
     };
 
-    let (sigset, threshold) = app_client()
+    let (sigset, threshold) = app_client(DEFAULT_RPC)
         .query(|app| {
             Ok((
                 app.bitcoin.checkpoints.active_sigset()?,
@@ -166,58 +126,6 @@ async fn direct_deposit_bitcoin(
     match res.status() {
         StatusCode::OK => Ok(()),
         _ => Err(Error::Relayer(res.text().await.unwrap().to_string())),
-    }
-}
-
-async fn deposit_bitcoin(
-    address: &Address,
-    btc: bitcoin::Amount,
-    wallet: &bitcoind::bitcoincore_rpc::Client,
-) -> Result<()> {
-    let deposit_address = generate_deposit_address(address).await.unwrap();
-    broadcast_deposit_addr(
-        address.to_string(),
-        deposit_address.sigset_index,
-        "http://localhost:8999".to_string(),
-        deposit_address.deposit_addr.clone(),
-    )
-    .await?;
-
-    wallet
-        .send_to_address(
-            &bitcoin::Address::from_str(&deposit_address.deposit_addr).unwrap(),
-            btc,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
-
-    Ok(())
-}
-
-fn client_provider() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, DerivedKey> {
-    let val_priv_key = load_privkey().unwrap();
-    let wallet = DerivedKey::from_secret_key(val_priv_key);
-    app_client().with_wallet(wallet)
-}
-
-struct GmHandler {}
-
-impl GmHandler {
-    async fn start(gm_path: String) -> Result<()> {
-        Command::new(gm_path.clone())
-            .args(["reset", "ibc-0"])
-            .spawn()?;
-        Command::new(gm_path.clone())
-            .args(["reset", "node-0"])
-            .spawn()?;
-        Command::new(gm_path).arg("start").spawn()?;
-
-        Ok(())
     }
 }
 
@@ -323,7 +231,7 @@ async fn ibc_test() {
         tokio::time::sleep(Duration::from_secs(10)).await;
         dbg!("Starting gRPC server...");
         orga::ibc::start_grpc(
-            || app_client().sub(|app| Ok(app.ibc.ctx)),
+            || app_client(DEFAULT_RPC).sub(|app| Ok(app.ibc.ctx)),
             &GrpcOpts {
                 host: "127.0.0.1".to_string(),
                 port: 9001,
@@ -342,7 +250,7 @@ async fn ibc_test() {
         declare_validator(consensus_key, nomic_wallet, 100_000)
             .await
             .unwrap();
-        app_client()
+        app_client(DEFAULT_RPC)
             .with_wallet(DerivedKey::from_secret_key(val_priv_key))
             .call(
                 |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
@@ -420,7 +328,7 @@ async fn ibc_test() {
         poll_for_bitcoin_header(1124).await.unwrap();
         poll_for_signing_checkpoint().await;
 
-        let confirmed_index = app_client()
+        let confirmed_index = app_client(DEFAULT_RPC)
             .query(|app| Ok(app.bitcoin.checkpoints.confirmed_index))
             .await
             .unwrap();
@@ -581,7 +489,7 @@ async fn ibc_test() {
             memo: "".try_into().unwrap(),
         };
 
-        app_client()
+        app_client(DEFAULT_RPC)
             .with_wallet(funded_accounts[0].wallet.clone())
             .call(
                 |app| build_call!(app.ibc_transfer_nbtc(ibc_dest, 9_913_960_000.into())),
@@ -744,7 +652,7 @@ async fn ibc_test() {
             .unwrap();
 
         poll_for_bitcoin_header(1132).await.unwrap();
-        app_client()
+        app_client(DEFAULT_RPC)
             .with_wallet(funded_accounts[0].wallet.clone())
             .call(
                 |app| build_call!(app.bitcoin.transfer_to_fee_pool(10000000000.into())),

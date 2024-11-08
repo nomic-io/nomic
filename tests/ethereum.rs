@@ -1,5 +1,6 @@
 #![cfg(feature = "ethereum-full")]
 #![feature(async_closure)]
+use crate::utils::*;
 use alloy_node_bindings::Anvil;
 use alloy_provider::ext::AnvilApi;
 use alloy_provider::network::EthereumWallet;
@@ -18,6 +19,7 @@ use chrono::Utc;
 use log::info;
 use nomic::app::Dest;
 use nomic::app::{InnerApp, Nom};
+use nomic::app_client;
 use nomic::bitcoin::adapter::Adapter;
 use nomic::bitcoin::checkpoint::Config as CheckpointConfig;
 use nomic::bitcoin::header_queue::Config as HeaderQueueConfig;
@@ -46,121 +48,9 @@ use std::time::Duration;
 use tempfile::tempdir;
 use tokio::sync::mpsc;
 
+pub mod utils;
+
 static INIT: Once = Once::new();
-
-fn app_client() -> AppClient<InnerApp, InnerApp, orga::tendermint::client::HttpClient, Nom, Unsigned>
-{
-    nomic::app_client("http://localhost:26657")
-}
-
-async fn generate_deposit_address(address: &Address) -> Result<DepositAddress> {
-    info!("Generating deposit address for {}...", address);
-    let (sigset, threshold) = app_client()
-        .query(|app| {
-            Ok((
-                app.bitcoin.checkpoints.active_sigset()?,
-                app.bitcoin.checkpoints.config.sigset_threshold,
-            ))
-        })
-        .await?;
-    let script = sigset.output_script(
-        Dest::NativeAccount { address: *address }
-            .commitment_bytes()?
-            .as_slice(),
-        threshold,
-    )?;
-
-    Ok(DepositAddress {
-        deposit_addr: bitcoin::Address::from_script(&script, bitcoin::Network::Regtest)
-            .unwrap()
-            .to_string(),
-        sigset_index: sigset.index(),
-    })
-}
-
-pub async fn broadcast_deposit_addr(
-    dest_addr: String,
-    sigset_index: u32,
-    relayer: String,
-    deposit_addr: String,
-) -> Result<()> {
-    info!("Broadcasting deposit address to relayer...");
-    let dest_addr = dest_addr.parse().unwrap();
-
-    let commitment = Dest::NativeAccount { address: dest_addr }.encode()?;
-
-    let url = format!("{}/address", relayer,);
-    let client = reqwest::Client::new();
-    let res = client
-        .post(url)
-        .query(&[
-            ("sigset_index", &sigset_index.to_string()),
-            ("deposit_addr", &deposit_addr),
-        ])
-        .body(commitment)
-        .send()
-        .await
-        .unwrap();
-
-    match res.status() {
-        StatusCode::OK => Ok(()),
-        _ => Err(Error::Relayer(res.text().await.unwrap())),
-    }
-}
-
-async fn set_recovery_address(nomic_account: NomicTestWallet) -> Result<()> {
-    info!("Setting recovery address...");
-
-    app_client()
-        .with_wallet(nomic_account.wallet)
-        .call(
-            move |app| build_call!(app.accounts.take_as_funding((MIN_FEE).into())),
-            move |app| {
-                build_call!(app
-                    .bitcoin
-                    .set_recovery_script(Adapter::new(nomic_account.script.clone())))
-            },
-        )
-        .await?;
-    info!("Validator declared");
-    Ok(())
-}
-
-async fn deposit_bitcoin(
-    address: &Address,
-    btc: bitcoin::Amount,
-    wallet: &bitcoind::bitcoincore_rpc::Client,
-) -> Result<()> {
-    let deposit_address = generate_deposit_address(address).await.unwrap();
-    broadcast_deposit_addr(
-        address.to_string(),
-        deposit_address.sigset_index,
-        "http://localhost:8999".to_string(),
-        deposit_address.deposit_addr.clone(),
-    )
-    .await?;
-
-    wallet
-        .send_to_address(
-            &bitcoin::Address::from_str(&deposit_address.deposit_addr).unwrap(),
-            btc,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
-
-    Ok(())
-}
-
-fn client_provider() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, DerivedKey> {
-    let val_priv_key = load_privkey().unwrap();
-    let wallet = DerivedKey::from_secret_key(val_priv_key);
-    app_client().with_wallet(wallet)
-}
 
 #[tokio::test]
 #[serial]
@@ -317,7 +207,7 @@ async fn ethereum() {
         declare_validator(consensus_key, nomic_wallet, 100_000)
             .await
             .unwrap();
-        app_client()
+        app_client(DEFAULT_RPC)
             .with_wallet(DerivedKey::from_secret_key(val_priv_key))
             .call(
                 |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
@@ -394,7 +284,7 @@ async fn ethereum() {
             .unwrap();
         poll_for_bitcoin_header(1130).await.unwrap();
 
-        let mut current_valset = app_client()
+        let mut current_valset = app_client(DEFAULT_RPC)
             .query(|app| Ok(app.bitcoin.checkpoints.get(0)?.sigset.clone()))
             .await
             .unwrap();
@@ -434,7 +324,7 @@ async fn ethereum() {
 
         let token_contract_address = token_contract.address().0 .0;
 
-        app_client()
+        app_client(DEFAULT_RPC)
             .with_wallet(funded_accounts[0].wallet.clone())
             .call(
                 move |app| {
@@ -453,7 +343,7 @@ async fn ethereum() {
             .await
             .unwrap();
 
-        app_client()
+        app_client(DEFAULT_RPC)
             .with_wallet(funded_accounts[0].wallet.clone())
             .call(
                 |app| {
@@ -530,7 +420,7 @@ async fn ethereum() {
         let state_root = header.state_root;
         let block_number = header.number;
 
-        app_client()
+        app_client(DEFAULT_RPC)
             .with_wallet(funded_accounts[0].wallet.clone())
             .call(
                 |app| {

@@ -1,4 +1,5 @@
 #![feature(async_closure)]
+use crate::utils::deposit_bitcoin;
 use bitcoin::blockdata::transaction::EcdsaSighashType;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::{secp256k1, Script};
@@ -13,6 +14,7 @@ use chrono::Utc;
 use log::info;
 use nomic::app::Dest;
 use nomic::app::{InnerApp, Nom};
+use nomic::app_client;
 use nomic::bitcoin::adapter::Adapter;
 use nomic::bitcoin::checkpoint::CheckpointStatus;
 use nomic::bitcoin::checkpoint::Config as CheckpointConfig;
@@ -49,147 +51,9 @@ use tempfile::tempdir;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 
+mod utils;
+
 static INIT: Once = Once::new();
-
-fn app_client() -> AppClient<InnerApp, InnerApp, orga::tendermint::client::HttpClient, Nom, Unsigned>
-{
-    nomic::app_client("http://localhost:26657")
-}
-
-async fn generate_deposit_address(address: &Address) -> Result<DepositAddress> {
-    info!("Generating deposit address for {}...", address);
-    let (sigset, threshold) = app_client()
-        .query(|app| {
-            Ok((
-                app.bitcoin.checkpoints.active_sigset()?,
-                app.bitcoin.checkpoints.config.sigset_threshold,
-            ))
-        })
-        .await?;
-    let script = sigset.output_script(
-        Dest::NativeAccount { address: *address }
-            .commitment_bytes()?
-            .as_slice(),
-        threshold,
-    )?;
-
-    Ok(DepositAddress {
-        deposit_addr: bitcoin::Address::from_script(&script, bitcoin::Network::Regtest)
-            .unwrap()
-            .to_string(),
-        sigset_index: sigset.index(),
-    })
-}
-
-pub async fn broadcast_deposit_addr(
-    dest_addr: String,
-    sigset_index: u32,
-    relayer: String,
-    deposit_addr: String,
-) -> Result<()> {
-    info!("Broadcasting deposit address to relayer...");
-    let dest_addr = dest_addr.parse().unwrap();
-
-    let commitment = Dest::NativeAccount { address: dest_addr }.encode()?;
-
-    let url = format!("{}/address", relayer,);
-    let client = reqwest::Client::new();
-    let res = client
-        .post(url)
-        .query(&[
-            ("sigset_index", &sigset_index.to_string()),
-            ("deposit_addr", &deposit_addr),
-        ])
-        .body(commitment)
-        .send()
-        .await
-        .unwrap();
-
-    match res.status() {
-        StatusCode::OK => Ok(()),
-        _ => Err(Error::Relayer(format!("{}", res.text().await.unwrap()))),
-    }
-}
-
-async fn set_recovery_address(nomic_account: NomicTestWallet) -> Result<()> {
-    info!("Setting recovery address...");
-
-    app_client()
-        .with_wallet(nomic_account.wallet)
-        .call(
-            move |app| build_call!(app.accounts.take_as_funding((MIN_FEE).into())),
-            move |app| {
-                build_call!(app
-                    .bitcoin
-                    .set_recovery_script(Adapter::new(nomic_account.script.clone())))
-            },
-        )
-        .await?;
-    info!("Validator declared");
-    Ok(())
-}
-
-async fn deposit_bitcoin(
-    address: &Address,
-    btc: bitcoin::Amount,
-    wallet: &bitcoind::bitcoincore_rpc::Client,
-) -> Result<()> {
-    let deposit_address = generate_deposit_address(address).await.unwrap();
-    broadcast_deposit_addr(
-        address.to_string(),
-        deposit_address.sigset_index,
-        "http://localhost:8999".to_string(),
-        deposit_address.deposit_addr.clone(),
-    )
-    .await?;
-
-    wallet
-        .send_to_address(
-            &bitcoin::Address::from_str(&deposit_address.deposit_addr).unwrap(),
-            btc,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
-
-    Ok(())
-}
-
-async fn withdraw_bitcoin(
-    nomic_account: &NomicTestWallet,
-    amount: bitcoin::Amount,
-    dest_address: &bitcoin::Address,
-) -> Result<()> {
-    let dest_script = nomic::bitcoin::adapter::Adapter::new(dest_address.script_pubkey());
-    let usats = amount.to_sat() * 1_000_000;
-    app_client()
-        .with_wallet(nomic_account.wallet.clone())
-        .call(
-            move |app| build_call!(app.withdraw_nbtc(dest_script, Amount::from(usats))),
-            |app| build_call!(app.app_noop()),
-        )
-        .await?;
-    Ok(())
-}
-
-async fn get_signatory_script() -> Result<Script> {
-    Ok(app_client()
-        .query(|app: InnerApp| {
-            let tx = app.bitcoin.checkpoints.emergency_disbursal_txs()?;
-            Ok(tx[0].output[1].script_pubkey.clone())
-        })
-        .await?)
-}
-
-fn client_provider() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, DerivedKey> {
-    let val_priv_key = load_privkey().unwrap();
-    let wallet = DerivedKey::from_secret_key(val_priv_key);
-    app_client().with_wallet(wallet)
-}
 
 #[tokio::test]
 #[serial]
@@ -306,7 +170,7 @@ async fn bitcoin_test() {
             None,
             || {
                 let wallet = DerivedKey::from_secret_key(privkey);
-                app_client().with_wallet(wallet)
+                app_client(DEFAULT_RPC).with_wallet(wallet)
             },
             None,
         )
@@ -325,7 +189,7 @@ async fn bitcoin_test() {
         declare_validator(consensus_key, nomic_wallet, 100_000)
             .await
             .unwrap();
-        app_client()
+        app_client(DEFAULT_RPC)
             .with_wallet(DerivedKey::from_secret_key(val_priv_key))
             .call(
                 |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
@@ -338,7 +202,7 @@ async fn bitcoin_test() {
         declare_validator([0; 32], funded_accounts[2].wallet.clone(), 4_000)
             .await
             .unwrap();
-        app_client()
+        app_client(DEFAULT_RPC)
             .with_wallet(DerivedKey::from_secret_key(privkey))
             .call(
                 |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
@@ -408,7 +272,7 @@ async fn bitcoin_test() {
         poll_for_bitcoin_header(1124).await.unwrap();
         poll_for_signing_checkpoint().await;
 
-        let confirmed_index = app_client()
+        let confirmed_index = app_client(DEFAULT_RPC)
             .query(|app| Ok(app.bitcoin.checkpoints.confirmed_index))
             .await
             .unwrap();
@@ -465,7 +329,7 @@ async fn bitcoin_test() {
         .unwrap();
         assert_eq!(balance, Amount::from(expected_balance));
 
-        app_client()
+        app_client(DEFAULT_RPC)
             .with_wallet(funded_accounts[0].wallet.clone())
             .call(
                 move |app| build_call!(app.accounts.take_as_funding((MIN_FEE).into())),
@@ -489,7 +353,7 @@ async fn bitcoin_test() {
         poll_for_bitcoin_header(1135).await.unwrap();
         poll_for_completed_checkpoint(3).await;
 
-        let signer_jailed = app_client()
+        let signer_jailed = app_client(DEFAULT_RPC)
             .query(|app| {
                 Ok(app
                     .staking
@@ -513,7 +377,7 @@ async fn bitcoin_test() {
         .unwrap();
         assert_eq!(balance, Amount::from(expected_balance));
 
-        let disbursal_txs = app_client()
+        let disbursal_txs = app_client(DEFAULT_RPC)
             .query(|app: InnerApp| {
                 Ok(app
                     .bitcoin
@@ -576,7 +440,7 @@ async fn bitcoin_test() {
 
         for (i, account) in funded_accounts[0..1].iter().enumerate() {
             let dump_address = wallet.get_new_address(None, None).unwrap();
-            let disbursal_txs = app_client()
+            let disbursal_txs = app_client(DEFAULT_RPC)
                 .query(|app| Ok(app.bitcoin.checkpoints.emergency_disbursal_txs()?))
                 .await
                 .unwrap();
@@ -667,17 +531,19 @@ async fn bitcoin_test() {
 async fn signing_completed_checkpoint_test() {
     INIT.call_once(|| {
         pretty_env_logger::init();
-        let genesis_time = Utc.with_ymd_and_hms(2022, 10, 5, 0, 0, 0).unwrap();
-        let time = Time::from_seconds(genesis_time.timestamp());
+        let genesis_time = Utc.with_ymd_and_hms(2022, 10, 5, 0, 0,
+0).unwrap();         let time = Time::from_seconds(genesis_time.timestamp());
         set_time(time);
     });
 
     let mut conf = Conf::default();
     conf.args.push("-txindex");
-    let bitcoind = BitcoinD::with_conf(bitcoind::downloaded_exe_path().unwrap(), &conf).unwrap();
-    let rpc_url = bitcoind.rpc_url();
+    let bitcoind =
+BitcoinD::with_conf(bitcoind::downloaded_exe_path().unwrap(),
+&conf).unwrap();     let rpc_url = bitcoind.rpc_url();
     let cookie_file = bitcoind.params.cookie_file.clone();
-    let btc_client = test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await;
+    let btc_client = test_bitcoin_client(rpc_url.clone(),
+cookie_file.clone()).await;
 
     let block_data = populate_bitcoin_block(&btc_client).await;
 
@@ -693,8 +559,8 @@ async fn signing_completed_checkpoint_test() {
         xpriv.to_string().as_bytes(),
     )
     .unwrap();
-    let xpub = ExtendedPubKey::from_priv(&secp256k1::Secp256k1::new(), &xpriv);
-    let header_relayer_path = path.clone();
+    let xpub = ExtendedPubKey::from_priv(&secp256k1::Secp256k1::new(),
+&xpriv);     let header_relayer_path = path.clone();
 
     std::env::set_var("NOMIC_HOME_DIR", &path);
 
@@ -724,8 +590,8 @@ async fn signing_completed_checkpoint_test() {
     );
 
     info!("Starting Nomic node...");
-    let node = Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"), Default::default()).await;
-    let node_child = node.run().await.unwrap();
+    let node = Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"),
+Default::default()).await;     let node_child = node.run().await.unwrap();
 
     let rpc_addr = "http://localhost:26657".to_string();
 
@@ -739,7 +605,8 @@ async fn signing_completed_checkpoint_test() {
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
         rpc_addr.clone(),
     );
-    let deposits = relayer.start_deposit_relay(&header_relayer_path, 60 * 60 * 12);
+    let deposits = relayer.start_deposit_relay(&header_relayer_path, 60 * 60
+* 12);
 
     let mut relayer = Relayer::new(
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
@@ -757,28 +624,28 @@ async fn signing_completed_checkpoint_test() {
     let (tx, mut rx) = mpsc::channel(100);
     let shutdown_listener = async {
         rx.recv().await;
-        Err::<(), Error>(Error::Test("Signer shutdown initiated".to_string()))
-    };
+        Err::<(), Error>(Error::Test("Signer shutdown
+initiated".to_string()))     };
 
     let slashable_xpriv_seed: [u8; 32] = rand::thread_rng().gen();
 
     let slashable_signer = async {
         tokio::time::sleep(Duration::from_secs(15)).await;
         let xpriv =
-            ExtendedPrivKey::new_master(bitcoin::Network::Testnet, slashable_xpriv_seed.as_slice())
-                .unwrap();
+            ExtendedPrivKey::new_master(bitcoin::Network::Testnet,
+slashable_xpriv_seed.as_slice())                 .unwrap();
         let privkey_bytes = funded_accounts[2].privkey.secret_bytes();
-        let privkey = orga::secp256k1::SecretKey::from_slice(&privkey_bytes).unwrap();
-        let signer = Signer::new(
-            address_from_privkey(&funded_accounts[2].privkey),
-            vec![xpriv],
+        let privkey =
+orga::secp256k1::SecretKey::from_slice(&privkey_bytes).unwrap();         let
+signer = Signer::new(
+address_from_privkey(&funded_accounts[2].privkey),             vec![xpriv],
             0.1,
             1.0,
             0,
             None,
             || {
                 let wallet = DerivedKey::from_secret_key(privkey);
-                app_client().with_wallet(wallet)
+                app_client(DEFAULT_RPC).with_wallet(wallet)
             },
             None,
         )
@@ -793,10 +660,11 @@ async fn signing_completed_checkpoint_test() {
     let slashable_signer_2 = {
         tokio::time::sleep(Duration::from_secs(15)).await;
         let xpriv =
-            ExtendedPrivKey::new_master(bitcoin::Network::Testnet, slashable_xpriv_seed.as_slice())
-                .unwrap();
+            ExtendedPrivKey::new_master(bitcoin::Network::Testnet,
+slashable_xpriv_seed.as_slice())                 .unwrap();
         let privkey_bytes = funded_accounts[2].privkey.secret_bytes();
-        let privkey = orga::secp256k1::SecretKey::from_slice(&privkey_bytes).unwrap();
+        let privkey =
+orga::secp256k1::SecretKey::from_slice(&privkey_bytes).unwrap();
         Signer::new(
             address_from_privkey(&funded_accounts[2].privkey),
             vec![xpriv],
@@ -806,7 +674,7 @@ async fn signing_completed_checkpoint_test() {
             None,
             move || {
                 let wallet = DerivedKey::from_secret_key(privkey);
-                app_client().with_wallet(wallet)
+                app_client(DEFAULT_RPC).with_wallet(wallet)
             },
             None,
         )
@@ -820,7 +688,7 @@ async fn signing_completed_checkpoint_test() {
         declare_validator(consensus_key, nomic_wallet, 100_000)
             .await
             .unwrap();
-        app_client()
+        app_client(DEFAULT_RPC)
             .with_wallet(DerivedKey::from_secret_key(val_priv_key))
             .call(
                 |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
@@ -829,15 +697,16 @@ async fn signing_completed_checkpoint_test() {
             .await?;
 
         let xpriv =
-            ExtendedPrivKey::new_master(bitcoin::Network::Testnet, slashable_xpriv_seed.as_slice())
-                .unwrap();
-        let xpub = ExtendedPubKey::from_priv(&secp256k1::Secp256k1::new(), &xpriv);
-        let privkey_bytes = funded_accounts[2].privkey.secret_bytes();
-        let privkey = orga::secp256k1::SecretKey::from_slice(&privkey_bytes).unwrap();
+            ExtendedPrivKey::new_master(bitcoin::Network::Testnet,
+slashable_xpriv_seed.as_slice())                 .unwrap();
+        let xpub = ExtendedPubKey::from_priv(&secp256k1::Secp256k1::new(),
+&xpriv);         let privkey_bytes =
+funded_accounts[2].privkey.secret_bytes();         let privkey =
+orga::secp256k1::SecretKey::from_slice(&privkey_bytes).unwrap();
         declare_validator([0; 32], funded_accounts[2].wallet.clone(), 4_000)
             .await
             .unwrap();
-        app_client()
+        app_client(DEFAULT_RPC)
             .with_wallet(DerivedKey::from_secret_key(privkey))
             .call(
                 |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
@@ -845,10 +714,12 @@ async fn signing_completed_checkpoint_test() {
             )
             .await?;
 
-        let wallet = retry(|| bitcoind.create_wallet("nomic-integration-test"), 10).unwrap();
-        let wallet_address = wallet.get_new_address(None, None).unwrap();
-        let async_wallet_address =
-            bitcoincore_rpc_async::bitcoin::Address::from_str(&wallet_address.to_string()).unwrap();
+        let wallet = retry(||
+bitcoind.create_wallet("nomic-integration-test"), 10).unwrap();         let
+wallet_address = wallet.get_new_address(None, None).unwrap();         let
+async_wallet_address =
+bitcoincore_rpc_async::bitcoin::Address::from_str(&wallet_address.
+to_string()).unwrap();
 
         btc_client
             .generate_to_address(120, &async_wallet_address)
@@ -879,9 +750,9 @@ async fn signing_completed_checkpoint_test() {
             poll_for_completed_checkpoint(i + 1).await;
         }
 
-        let checkpoint_txs = app_client()
-            .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.completed_txs(20)?))
-            .await
+        let checkpoint_txs = app_client(DEFAULT_RPC)
+            .query(|app: InnerApp|
+Ok(app.bitcoin.checkpoints.completed_txs(20)?))             .await
             .unwrap();
         let pre_tx_sizes = checkpoint_txs
             .iter()
@@ -891,16 +762,16 @@ async fn signing_completed_checkpoint_test() {
         tokio::spawn(slashable_signer_2);
         tokio::time::sleep(Duration::from_secs(30)).await;
 
-        let checkpoint_txs = app_client()
-            .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.completed_txs(20)?))
-            .await
+        let checkpoint_txs = app_client(DEFAULT_RPC)
+            .query(|app: InnerApp|
+Ok(app.bitcoin.checkpoints.completed_txs(20)?))             .await
             .unwrap();
         let post_tx_sizes = checkpoint_txs
             .iter()
             .map(|tx| tx.vsize())
             .collect::<Vec<_>>();
 
-        let signatory_lengths = app_client()
+        let signatory_lengths = app_client(DEFAULT_RPC)
             .query(|app: InnerApp| {
                 Ok(app
                     .bitcoin
@@ -908,8 +779,8 @@ async fn signing_completed_checkpoint_test() {
                     .all()?
                     .iter()
                     .filter_map(|checkpoint| {
-                        if checkpoint.1.status != CheckpointStatus::Complete {
-                            return None;
+                        if checkpoint.1.status != CheckpointStatus::Complete
+{                             return None;
                         }
                         Some(checkpoint.1.sigset.signatories.len().clone())
                     })
@@ -924,8 +795,8 @@ async fn signing_completed_checkpoint_test() {
             }
         }
 
-        Err::<(), Error>(Error::Test("Test completed successfully".to_string()))
-    };
+        Err::<(), Error>(Error::Test("Test completed
+successfully".to_string()))     };
 
     poll_for_blocks().await;
 
@@ -956,10 +827,12 @@ async fn pending_deposits() {
 
     let mut conf = Conf::default();
     conf.args.push("-txindex");
-    let bitcoind = BitcoinD::with_conf(bitcoind::downloaded_exe_path().unwrap(), &conf).unwrap();
-    let rpc_url = bitcoind.rpc_url();
+    let bitcoind =
+BitcoinD::with_conf(bitcoind::downloaded_exe_path().unwrap(),
+&conf).unwrap();     let rpc_url = bitcoind.rpc_url();
     let cookie_file = bitcoind.params.cookie_file.clone();
-    let btc_client = test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await;
+    let btc_client = test_bitcoin_client(rpc_url.clone(),
+cookie_file.clone()).await;
 
     let block_data = populate_bitcoin_block(&btc_client).await;
 
@@ -975,8 +848,8 @@ async fn pending_deposits() {
         xpriv.to_string().as_bytes(),
     )
     .unwrap();
-    let xpub = ExtendedPubKey::from_priv(&secp256k1::Secp256k1::new(), &xpriv);
-    let header_relayer_path = path.clone();
+    let xpub = ExtendedPubKey::from_priv(&secp256k1::Secp256k1::new(),
+&xpriv);     let header_relayer_path = path.clone();
 
     std::env::set_var("NOMIC_HOME_DIR", &path);
 
@@ -1005,8 +878,8 @@ async fn pending_deposits() {
         None,
     );
 
-    let node = Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"), Default::default());
-    let node_child = node.await.run().await.unwrap();
+    let node = Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"),
+Default::default());     let node_child = node.await.run().await.unwrap();
 
     let rpc_addr = "http://localhost:26657".to_string();
 
@@ -1020,7 +893,8 @@ async fn pending_deposits() {
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
         rpc_addr.clone(),
     );
-    let deposits = relayer.start_deposit_relay(&header_relayer_path, 60 * 60 * 12);
+    let deposits = relayer.start_deposit_relay(&header_relayer_path, 60 * 60
+* 12);
 
     let mut relayer = Relayer::new(
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
@@ -1048,7 +922,7 @@ async fn pending_deposits() {
         declare_validator(consensus_key, nomic_wallet, 100_000)
             .await
             .unwrap();
-        app_client()
+        app_client(DEFAULT_RPC)
             .with_wallet(DerivedKey::from_secret_key(val_priv_key))
             .call(
                 |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
@@ -1056,10 +930,12 @@ async fn pending_deposits() {
             )
             .await?;
 
-        let wallet = retry(|| bitcoind.create_wallet("nomic-integration-test"), 10).unwrap();
-        let wallet_address = wallet.get_new_address(None, None).unwrap();
-        let async_wallet_address =
-            bitcoincore_rpc_async::bitcoin::Address::from_str(&wallet_address.to_string()).unwrap();
+        let wallet = retry(||
+bitcoind.create_wallet("nomic-integration-test"), 10).unwrap();         let
+wallet_address = wallet.get_new_address(None, None).unwrap();         let
+async_wallet_address =
+bitcoincore_rpc_async::bitcoin::Address::from_str(&wallet_address.
+to_string()).unwrap();
 
         btc_client
             .generate_to_address(120, &async_wallet_address)
@@ -1070,8 +946,8 @@ async fn pending_deposits() {
         poll_for_active_sigset().await;
         poll_for_signatory_key(consensus_key).await;
 
-        let deposit_address = generate_deposit_address(&funded_accounts[0].address)
-            .await
+        let deposit_address =
+generate_deposit_address(&funded_accounts[0].address)             .await
             .unwrap();
         broadcast_deposit_addr(
             funded_accounts[0].address.to_string(),
@@ -1083,7 +959,8 @@ async fn pending_deposits() {
         tokio::time::sleep(Duration::from_secs(10)).await;
         &wallet
             .send_to_address(
-                &bitcoin::Address::from_str(&deposit_address.deposit_addr).unwrap(),
+
+&bitcoin::Address::from_str(&deposit_address.deposit_addr).unwrap(),
                 bitcoin::Amount::from_btc(10.0).unwrap(),
                 None,
                 None,
@@ -1147,13 +1024,13 @@ async fn pending_deposits() {
 
         assert!(deposits.is_empty());
 
-        Err::<(), Error>(Error::Test("Test completed successfully".to_string()))
-    };
+        Err::<(), Error>(Error::Test("Test completed
+successfully".to_string()))     };
 
     poll_for_blocks().await;
 
-    match futures::try_join!(headers, deposits, checkpoints, disbursal, signer, test) {
-        Err(Error::Test(_)) => (),
+    match futures::try_join!(headers, deposits, checkpoints, disbursal,
+signer, test) {         Err(Error::Test(_)) => (),
         Ok(_) => (),
         other => {
             other.unwrap();
@@ -1167,17 +1044,19 @@ async fn pending_deposits() {
 async fn signer_key_updating() {
     INIT.call_once(|| {
         pretty_env_logger::init();
-        let genesis_time = Utc.with_ymd_and_hms(2022, 10, 5, 0, 0, 0).unwrap();
-        let time = Time::from_seconds(genesis_time.timestamp());
+        let genesis_time = Utc.with_ymd_and_hms(2022, 10, 5, 0, 0,
+0).unwrap();         let time = Time::from_seconds(genesis_time.timestamp());
         set_time(time);
     });
 
     let mut conf = Conf::default();
     conf.args.push("-txindex");
-    let bitcoind = BitcoinD::with_conf(bitcoind::downloaded_exe_path().unwrap(), &conf).unwrap();
-    let rpc_url = bitcoind.rpc_url();
+    let bitcoind =
+BitcoinD::with_conf(bitcoind::downloaded_exe_path().unwrap(),
+&conf).unwrap();     let rpc_url = bitcoind.rpc_url();
     let cookie_file = bitcoind.params.cookie_file.clone();
-    let btc_client = test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await;
+    let btc_client = test_bitcoin_client(rpc_url.clone(),
+cookie_file.clone()).await;
 
     let block_data = populate_bitcoin_block(&btc_client).await;
 
@@ -1189,14 +1068,15 @@ async fn signer_key_updating() {
     let header_relayer_path = path.clone();
 
     let seed: [u8; 32] = rand::thread_rng().gen();
-    let xpriv = ExtendedPrivKey::new_master(bitcoin::Network::Testnet, seed.as_slice()).unwrap();
-    fs::create_dir_all(signer_path.join("signer")).unwrap();
-    fs::write(
+    let xpriv = ExtendedPrivKey::new_master(bitcoin::Network::Testnet,
+seed.as_slice()).unwrap();     fs::create_dir_all(signer_path.join("signer"
+)).unwrap();     fs::write(
         signer_path.join("signer/xpriv"),
         xpriv.to_string().as_bytes(),
     )
     .unwrap();
-    let xpub = ExtendedPubKey::from_priv(&secp256k1::Secp256k1::new(), &xpriv);
+    let xpub = ExtendedPubKey::from_priv(&secp256k1::Secp256k1::new(),
+&xpriv);
 
     std::env::set_var("NOMIC_HOME_DIR", &path);
 
@@ -1212,10 +1092,11 @@ async fn signer_key_updating() {
         max_length: 59,
         ..Default::default()
     };
-    let funded_accounts = setup_test_app(&path, 4, Some(headers_config), None, None, None);
+    let funded_accounts = setup_test_app(&path, 4, Some(headers_config),
+None, None, None);
 
-    let node = Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"), Default::default());
-    let _node_child = node.await.run().await.unwrap();
+    let node = Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"),
+Default::default());     let _node_child = node.await.run().await.unwrap();
 
     let rpc_addr = "http://localhost:26657".to_string();
 
@@ -1229,7 +1110,8 @@ async fn signer_key_updating() {
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
         rpc_addr.clone(),
     );
-    let deposits = relayer.start_deposit_relay(&header_relayer_path, 60 * 60 * 12);
+    let deposits = relayer.start_deposit_relay(&header_relayer_path, 60 * 60
+* 12);
 
     let mut relayer = Relayer::new(
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
@@ -1240,15 +1122,16 @@ async fn signer_key_updating() {
     let (tx, mut rx) = mpsc::channel(100);
     let shutdown_listener = async {
         rx.recv().await;
-        Err::<(), Error>(Error::Test("Signer shutdown initiated".to_string()))
-    };
+        Err::<(), Error>(Error::Test("Signer shutdown
+initiated".to_string()))     };
 
     let signer = async {
         tokio::time::sleep(Duration::from_secs(15)).await;
 
-        let tm_privkey_bytes = std::fs::read(signer_path.join(".orga-wallet/privkey")).unwrap();
-        let tm_privkey =
-            orga::secp256k1::SecretKey::from_slice(tm_privkey_bytes.as_slice()).unwrap();
+        let tm_privkey_bytes =
+std::fs::read(signer_path.join(".orga-wallet/privkey")).unwrap();         let
+tm_privkey =
+orga::secp256k1::SecretKey::from_slice(tm_privkey_bytes.as_slice()).unwrap();
         let pubkey = orga::secp256k1::PublicKey::from_secret_key(
             &orga::secp256k1::Secp256k1::new(),
             &tm_privkey,
@@ -1279,7 +1162,7 @@ async fn signer_key_updating() {
         declare_validator(consensus_key, nomic_wallet, 100_000)
             .await
             .unwrap();
-        app_client()
+        app_client(DEFAULT_RPC)
             .with_wallet(DerivedKey::from_secret_key(val_priv_key))
             .call(
                 |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
@@ -1287,10 +1170,12 @@ async fn signer_key_updating() {
             )
             .await?;
 
-        let wallet = retry(|| bitcoind.create_wallet("nomic-integration-test"), 10).unwrap();
-        let wallet_address = wallet.get_new_address(None, None).unwrap();
-        let async_wallet_address =
-            bitcoincore_rpc_async::bitcoin::Address::from_str(&wallet_address.to_string()).unwrap();
+        let wallet = retry(||
+bitcoind.create_wallet("nomic-integration-test"), 10).unwrap();         let
+wallet_address = wallet.get_new_address(None, None).unwrap();         let
+async_wallet_address =
+bitcoincore_rpc_async::bitcoin::Address::from_str(&wallet_address.
+to_string()).unwrap();
 
         btc_client
             .generate_to_address(120, &async_wallet_address)
@@ -1319,12 +1204,12 @@ async fn signer_key_updating() {
 
         poll_for_completed_checkpoint(1).await;
 
-        let completed_checkpoint_0_pubkey = app_client()
+        let completed_checkpoint_0_pubkey = app_client(DEFAULT_RPC)
             .query(|app| {
-                let last_completed = app.bitcoin.checkpoints.last_completed()?;
-                assert!(last_completed.sigset.signatories.len() == 1);
-                Ok(last_completed.sigset.signatories.get(0).unwrap().pubkey)
-            })
+                let last_completed =
+app.bitcoin.checkpoints.last_completed()?;
+assert!(last_completed.sigset.signatories.len() == 1);
+Ok(last_completed.sigset.signatories.get(0).unwrap().pubkey)             })
             .await
             .unwrap();
 
@@ -1341,7 +1226,7 @@ async fn signer_key_updating() {
             Pubkey::from(derived_public_key_0)
         );
 
-        let building_checkpoint_1_pubkey = app_client()
+        let building_checkpoint_1_pubkey = app_client(DEFAULT_RPC)
             .query(|app| {
                 let building = app.bitcoin.checkpoints.building()?;
                 assert!(building.sigset.signatories.len() == 1);
@@ -1366,12 +1251,14 @@ async fn signer_key_updating() {
         tx.send(Some(())).await.unwrap();
 
         let seed: [u8; 32] = rand::thread_rng().gen();
-        let new_xpriv = ExtendedPrivKey::new_master(bitcoin::Network::Testnet, seed.as_slice())?;
+        let new_xpriv =
+ExtendedPrivKey::new_master(bitcoin::Network::Testnet, seed.as_slice())?;
         fs::write(
             signer_path.join("signer/xpriv-new"),
             new_xpriv.to_string().as_bytes(),
         )?;
-        let new_xpub = ExtendedPubKey::from_priv(&secp256k1::Secp256k1::new(), &new_xpriv);
+        let new_xpub =
+ExtendedPubKey::from_priv(&secp256k1::Secp256k1::new(), &new_xpriv);
 
         client_provider()
             .call(
@@ -1382,10 +1269,14 @@ async fn signer_key_updating() {
 
         let new_key_signer = {
             tokio::time::sleep(Duration::from_secs(15)).await;
-            let tm_privkey_bytes = std::fs::read(signer_path.join(".orga-wallet/privkey"))?;
-            let tm_privkey = secp256k1::SecretKey::from_slice(tm_privkey_bytes.as_slice()).unwrap();
+            let tm_privkey_bytes =
+std::fs::read(signer_path.join(".orga-wallet/privkey"))?;             let
+tm_privkey =
+secp256k1::SecretKey::from_slice(tm_privkey_bytes.as_slice()).unwrap();
             let tm_pubkey =
-                secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &tm_privkey);
+
+secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(),
+&tm_privkey);
 
             Signer::new(
                 Address::from_pubkey(tm_pubkey.serialize()),
@@ -1420,12 +1311,12 @@ async fn signer_key_updating() {
         poll_for_signing_checkpoint().await;
         poll_for_completed_checkpoint(2).await;
 
-        let completed_checkpoint_1_pubkey = app_client()
+        let completed_checkpoint_1_pubkey = app_client(DEFAULT_RPC)
             .query(|app| {
-                let last_completed = app.bitcoin.checkpoints.last_completed()?;
-                assert!(last_completed.sigset.signatories.len() == 1);
-                Ok(last_completed.sigset.signatories.get(0).unwrap().pubkey)
-            })
+                let last_completed =
+app.bitcoin.checkpoints.last_completed()?;
+assert!(last_completed.sigset.signatories.len() == 1);
+Ok(last_completed.sigset.signatories.get(0).unwrap().pubkey)             })
             .await
             .unwrap();
 
@@ -1434,7 +1325,7 @@ async fn signer_key_updating() {
             Pubkey::from(derived_public_key_1)
         );
 
-        let building_checkpoint_2_pubkey = app_client()
+        let building_checkpoint_2_pubkey = app_client(DEFAULT_RPC)
             .query(|app| {
                 let building = app.bitcoin.checkpoints.building()?;
                 assert!(building.sigset.signatories.len() == 1);
@@ -1473,12 +1364,12 @@ async fn signer_key_updating() {
         poll_for_signing_checkpoint().await;
         poll_for_completed_checkpoint(3).await;
 
-        let completed_checkpoint_2_pubkey = app_client()
+        let completed_checkpoint_2_pubkey = app_client(DEFAULT_RPC)
             .query(|app| {
-                let last_completed = app.bitcoin.checkpoints.last_completed()?;
-                assert!(last_completed.sigset.signatories.len() == 1);
-                Ok(last_completed.sigset.signatories.get(0).unwrap().pubkey)
-            })
+                let last_completed =
+app.bitcoin.checkpoints.last_completed()?;
+assert!(last_completed.sigset.signatories.len() == 1);
+Ok(last_completed.sigset.signatories.get(0).unwrap().pubkey)             })
             .await
             .unwrap();
 
@@ -1487,8 +1378,8 @@ async fn signer_key_updating() {
             Pubkey::from(derived_public_key_2)
         );
 
-        Err::<(), Error>(Error::Test("Test completed successfully".to_string()))
-    };
+        Err::<(), Error>(Error::Test("Test completed
+successfully".to_string()))     };
 
     poll_for_blocks().await;
 
@@ -1507,17 +1398,19 @@ async fn signer_key_updating() {
 async fn recover_expired_deposit() {
     INIT.call_once(|| {
         pretty_env_logger::init();
-        let genesis_time = Utc.with_ymd_and_hms(2022, 10, 5, 0, 0, 0).unwrap();
-        let time = Time::from_seconds(genesis_time.timestamp());
+        let genesis_time = Utc.with_ymd_and_hms(2022, 10, 5, 0, 0,
+0).unwrap();         let time = Time::from_seconds(genesis_time.timestamp());
         set_time(time);
     });
 
     let mut conf = Conf::default();
     conf.args.push("-txindex");
-    let bitcoind = BitcoinD::with_conf(bitcoind::downloaded_exe_path().unwrap(), &conf).unwrap();
-    let rpc_url = bitcoind.rpc_url();
+    let bitcoind =
+BitcoinD::with_conf(bitcoind::downloaded_exe_path().unwrap(),
+&conf).unwrap();     let rpc_url = bitcoind.rpc_url();
     let cookie_file = bitcoind.params.cookie_file.clone();
-    let btc_client = test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await;
+    let btc_client = test_bitcoin_client(rpc_url.clone(),
+cookie_file.clone()).await;
 
     let block_data = populate_bitcoin_block(&btc_client).await;
 
@@ -1535,7 +1428,8 @@ async fn recover_expired_deposit() {
         xpriv.to_string().as_bytes(),
     )
     .unwrap();
-    let xpub = ExtendedPubKey::from_priv(&secp256k1::Secp256k1::new(), &xpriv);
+    let xpub = ExtendedPubKey::from_priv(&secp256k1::Secp256k1::new(),
+&xpriv);
 
     std::env::set_var("NOMIC_HOME_DIR", &path);
 
@@ -1567,8 +1461,8 @@ async fn recover_expired_deposit() {
         None,
     );
 
-    let node = Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"), Default::default());
-    let node_child = node.await.run().await.unwrap();
+    let node = Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"),
+Default::default());     let node_child = node.await.run().await.unwrap();
 
     let rpc_addr = "http://localhost:26657".to_string();
 
@@ -1582,7 +1476,8 @@ async fn recover_expired_deposit() {
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
         rpc_addr.clone(),
     );
-    let deposits = relayer.start_deposit_relay(&header_relayer_path, 60 * 60 * 12);
+    let deposits = relayer.start_deposit_relay(&header_relayer_path, 60 * 60
+* 12);
 
     let mut relayer = Relayer::new(
         test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await,
@@ -1616,7 +1511,7 @@ async fn recover_expired_deposit() {
         declare_validator(consensus_key, nomic_wallet.clone(), 100_000)
             .await
             .unwrap();
-        app_client()
+        app_client(DEFAULT_RPC)
             .with_wallet(nomic_wallet.clone())
             .call(
                 |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
@@ -1624,10 +1519,12 @@ async fn recover_expired_deposit() {
             )
             .await?;
 
-        let wallet = retry(|| bitcoind.create_wallet("nomic-integration-test"), 10).unwrap();
-        let wallet_address = wallet.get_new_address(None, None).unwrap();
-        let async_wallet_address =
-            bitcoincore_rpc_async::bitcoin::Address::from_str(&wallet_address.to_string()).unwrap();
+        let wallet = retry(||
+bitcoind.create_wallet("nomic-integration-test"), 10).unwrap();         let
+wallet_address = wallet.get_new_address(None, None).unwrap();         let
+async_wallet_address =
+bitcoincore_rpc_async::bitcoin::Address::from_str(&wallet_address.
+to_string()).unwrap();
 
         set_recovery_address(funded_accounts[0].clone())
             .await
@@ -1642,8 +1539,8 @@ async fn recover_expired_deposit() {
         poll_for_active_sigset().await;
         poll_for_signatory_key(consensus_key).await;
 
-        let expiring_deposit_address = generate_deposit_address(&funded_accounts[1].address)
-            .await
+        let expiring_deposit_address =
+generate_deposit_address(&funded_accounts[1].address)             .await
             .unwrap();
 
         deposit_bitcoin(
@@ -1664,7 +1561,8 @@ async fn recover_expired_deposit() {
 
         let sent_txid = wallet
             .send_to_address(
-                &bitcoin::Address::from_str(&expiring_deposit_address.deposit_addr).unwrap(),
+
+&bitcoin::Address::from_str(&expiring_deposit_address.deposit_addr).unwrap(),
                 bitcoin::Amount::from_btc(0.4).unwrap(),
                 None,
                 None,
@@ -1737,8 +1635,8 @@ async fn recover_expired_deposit() {
         .unwrap();
         assert_eq!(balance, Amount::from(expected_balance));
 
-        Err::<(), Error>(Error::Test("Test completed successfully".to_string()))
-    };
+        Err::<(), Error>(Error::Test("Test completed
+successfully".to_string()))     };
 
     poll_for_blocks().await;
 
@@ -1765,17 +1663,19 @@ async fn recover_expired_deposit() {
 async fn generate_deposit_expired() {
     INIT.call_once(|| {
         pretty_env_logger::init();
-        let genesis_time = Utc.with_ymd_and_hms(2022, 10, 5, 0, 0, 0).unwrap();
-        let time = Time::from_seconds(genesis_time.timestamp());
+        let genesis_time = Utc.with_ymd_and_hms(2022, 10, 5, 0, 0,
+0).unwrap();         let time = Time::from_seconds(genesis_time.timestamp());
         set_time(time);
     });
 
     let mut conf = Conf::default();
     conf.args.push("-txindex");
-    let bitcoind = BitcoinD::with_conf(bitcoind::downloaded_exe_path().unwrap(), &conf).unwrap();
-    let rpc_url = bitcoind.rpc_url();
+    let bitcoind =
+BitcoinD::with_conf(bitcoind::downloaded_exe_path().unwrap(),
+&conf).unwrap();     let rpc_url = bitcoind.rpc_url();
     let cookie_file = bitcoind.params.cookie_file.clone();
-    let btc_client = test_bitcoin_client(rpc_url.clone(), cookie_file.clone()).await;
+    let btc_client = test_bitcoin_client(rpc_url.clone(),
+cookie_file.clone()).await;
 
     let block_data = populate_bitcoin_block(&btc_client).await;
 
@@ -1815,8 +1715,8 @@ async fn generate_deposit_expired() {
         None,
     );
 
-    let node = Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"), Default::default());
-    let node_child = node.await.run().await.unwrap();
+    let node = Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"),
+Default::default());     let node_child = node.await.run().await.unwrap();
 
     let rpc_addr = "http://localhost:26657".to_string();
 
@@ -1845,7 +1745,8 @@ async fn generate_deposit_expired() {
         xpriv.to_string().as_bytes(),
     )
     .unwrap();
-    let xpub = ExtendedPubKey::from_priv(&secp256k1::Secp256k1::new(), &xpriv);
+    let xpub = ExtendedPubKey::from_priv(&secp256k1::Secp256k1::new(),
+&xpriv);
 
     let signer = async {
         tokio::time::sleep(Duration::from_secs(10)).await;
@@ -1861,7 +1762,7 @@ async fn generate_deposit_expired() {
         declare_validator(consensus_key, nomic_wallet.clone(), 100_000)
             .await
             .unwrap();
-        app_client()
+        app_client(DEFAULT_RPC)
             .with_wallet(nomic_wallet.clone())
             .call(
                 |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
@@ -1869,10 +1770,12 @@ async fn generate_deposit_expired() {
             )
             .await?;
 
-        let wallet = retry(|| bitcoind.create_wallet("nomic-integration-test"), 10).unwrap();
-        let wallet_address = wallet.get_new_address(None, None).unwrap();
-        let async_wallet_address =
-            bitcoincore_rpc_async::bitcoin::Address::from_str(&wallet_address.to_string()).unwrap();
+        let wallet = retry(||
+bitcoind.create_wallet("nomic-integration-test"), 10).unwrap();         let
+wallet_address = wallet.get_new_address(None, None).unwrap();         let
+async_wallet_address =
+bitcoincore_rpc_async::bitcoin::Address::from_str(&wallet_address.
+to_string()).unwrap();
 
         btc_client
             .generate_to_address(120, &async_wallet_address)
@@ -1881,9 +1784,9 @@ async fn generate_deposit_expired() {
 
         poll_for_bitcoin_header(1120).await.unwrap();
 
-        let balance = app_client()
-            .query(|app| app.bitcoin.accounts.balance(funded_accounts[0].address))
-            .await
+        let balance = app_client(DEFAULT_RPC)
+            .query(|app|
+app.bitcoin.accounts.balance(funded_accounts[0].address))             .await
             .unwrap();
         assert_eq!(balance, Amount::from(0));
 
@@ -1897,16 +1800,16 @@ async fn generate_deposit_expired() {
         )
         .await?;
 
-        Err::<(), Error>(Error::Test("Test completed successfully".to_string()))
-    };
+        Err::<(), Error>(Error::Test("Test completed
+successfully".to_string()))     };
 
     poll_for_blocks().await;
 
     match futures::try_join!(headers, deposits, checkpoints, signer, test) {
-        Err(Error::Test(_)) => panic!("Test failed to fail on deposit address generation"),
-        Err(Error::Relayer(e)) => {
-            if !e.to_string().contains("Unable to generate deposit address") {
-                panic!("Unexpected error: {}", e);
+        Err(Error::Test(_)) => panic!("Test failed to fail on deposit address
+generation"),         Err(Error::Relayer(e)) => {
+            if !e.to_string().contains("Unable to generate deposit address")
+{                 panic!("Unexpected error: {}", e);
             }
         }
         Ok(_) => panic!("Expected error"),
