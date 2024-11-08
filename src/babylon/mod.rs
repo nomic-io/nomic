@@ -733,7 +733,7 @@ impl Delegation {
             )));
         }
 
-        if headers.height()?.saturating_sub(height) < params.confirmation_depth {
+        if headers.height()?.saturating_sub(height) < params.confirmation_depth - 1 {
             return Err(Error::Orga(orga::Error::App(
                 "Staking tx is not confirmed".to_string(),
             )));
@@ -918,7 +918,7 @@ impl Delegation {
             )));
         }
 
-        if headers.height()?.saturating_sub(height) < params.confirmation_depth {
+        if headers.height()?.saturating_sub(height) < params.confirmation_depth - 1 {
             return Err(Error::Orga(orga::Error::App(
                 "Unbonding tx is not confirmed".to_string(),
             )));
@@ -1201,7 +1201,8 @@ impl Delegation {
         let unbonding_txid = unbonding_tx.txid();
         let unbonding_vout = 0;
         let unbonding_value = unbonding_tx.output[0].value;
-        let unbonding_script = self.withdrawal_script_pubkey.clone().ok_or_else(|| {
+        let unbonding_script = timelock_script(self.btc_key()?, params.unbonding_time as u64);
+        let withdrawal_script = self.withdrawal_script_pubkey.clone().ok_or_else(|| {
             Error::Orga(orga::Error::App(
                 "Missing withdrawal script pubkey".to_string(),
             ))
@@ -1216,12 +1217,17 @@ impl Delegation {
                     vout: unbonding_vout,
                 },
                 script_sig: Script::default(),
-                sequence: Sequence::MAX,
-                witness: Witness::default(),
+                sequence: Sequence(params.unbonding_time as u32),
+                witness: Witness::from_vec(vec![
+                    unbonding_script.to_bytes(),
+                    self.unbonding_withdrawal_sig
+                        .map(|b| b.to_vec())
+                        .unwrap_or_default(),
+                ]),
             }],
             output: vec![TxOut {
                 value: unbonding_value - params.unbonding_fee,
-                script_pubkey: unbonding_script.into_inner(),
+                script_pubkey: withdrawal_script.into_inner(),
             }],
         };
 
