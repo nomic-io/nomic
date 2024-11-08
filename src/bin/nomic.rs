@@ -2638,7 +2638,27 @@ impl BabylonRelayerCmd {
             Ok::<_, nomic::error::Error>(())
         };
 
-        futures::try_join!(staking_confs, unbonding_confs)?;
+        let withdrawal_txs = async {
+            loop {
+                let app_client = self.config.client();
+                if let Err(e) = babylon::relayer::relay_withdrawal_txs(
+                    &app_client,
+                    &btc_client,
+                    &self.bbn_api_addr,
+                )
+                .await
+                {
+                    log::error!("Error in withdrawal tx relay: {}", e);
+                }
+
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            }
+
+            #[allow(unreachable_code)]
+            Ok::<_, nomic::error::Error>(())
+        };
+
+        futures::try_join!(staking_confs, unbonding_confs, withdrawal_txs)?;
 
         Ok(())
     }

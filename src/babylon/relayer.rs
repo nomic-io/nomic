@@ -171,15 +171,14 @@ pub async fn relay_unbonding_confs(
         })
         .await?;
     for owner in owners {
-        let unconf_dels = app_client
+        let unconf_dels: Vec<_> = app_client
             .query(|app| {
-                let unconf_dels: Vec<_> = app
+                Ok(app
                     .babylon
                     .owner_delegations(owner)?
                     .into_iter()
                     .filter(|del| del.status() == DelegationStatus::SignedUnbond)
-                    .collect();
-                Ok(unconf_dels)
+                    .collect())
             })
             .await?;
 
@@ -243,6 +242,63 @@ pub async fn maybe_relay_unbonding_conf(
     }
 
     Ok(false)
+}
+
+pub async fn relay_withdrawal_txs(
+    app_client: &AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned>,
+    btc_client: &BitcoinRpcClient,
+    bbn_api_addr: &str,
+) -> Result<()> {
+    let (owners, params) = app_client
+        .query(|app| {
+            let mut owners = vec![];
+            for entry in app.babylon.delegations.iter()? {
+                let (owner, _) = entry?;
+                let owner = owner.encode()?;
+                let owner = Identity::decode(&mut owner.as_slice())?;
+                owners.push(owner);
+            }
+            Ok((owners, app.babylon.params.clone()))
+        })
+        .await?;
+    for owner in owners {
+        let withdrawing_dels: Vec<_> = app_client
+            .query(|app| {
+                Ok(app
+                    .babylon
+                    .owner_delegations(owner)?
+                    .into_iter()
+                    .filter(|del| del.status() == DelegationStatus::Withdrawn)
+                    .collect())
+            })
+            .await?;
+
+        for del in withdrawing_dels {
+            if let Err(e) = relay_withdrawal_tx(btc_client, &del, &params).await {
+                log::error!("Failed to relay withdrawal tx: {:?}", e);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn relay_withdrawal_tx(
+    btc_client: &BitcoinRpcClient,
+    del: &Delegation,
+    params: &crate::babylon::Params,
+) -> Result<()> {
+    let withdrawal_tx = del.unbonding_withdrawal_tx(params)?;
+    let mut withdrawal_tx_bytes = vec![];
+    withdrawal_tx
+        .consensus_encode(&mut withdrawal_tx_bytes)
+        .unwrap();
+
+    btc_client
+        .send_raw_transaction(&withdrawal_tx_bytes)
+        .await?;
+
+    Ok(())
 }
 
 // TODO: dedupe from bitcoin relayer
