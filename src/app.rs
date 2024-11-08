@@ -750,6 +750,24 @@ impl InnerApp {
         }
     }
 
+    #[call]
+    pub fn unstake_nbtc(&mut self, index: u64) -> Result<()> {
+        #[cfg(feature = "babylon")]
+        {
+            // TODO: go through dest flow
+            let owner = Identity::from_signer()?;
+            self.babylon
+                .unstake(owner, index, &mut self.frost, &self.bitcoin)?;
+
+            Ok(())
+        }
+
+        #[cfg(not(feature = "babylon"))]
+        {
+            Err(Error::App("Babylon feature not enabled".into()))
+        }
+    }
+
     // TODO: move into babylon module, get HeaderQueue via context
     #[call]
     pub fn relay_btc_staking_tx(

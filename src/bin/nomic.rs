@@ -186,6 +186,8 @@ pub enum Command {
     BabylonRelayer(BabylonRelayerCmd),
     #[cfg(feature = "babylon")]
     StakeNbtc(StakeNbtcCmd),
+    #[cfg(feature = "babylon")]
+    UnstakeNbtc(UnstakeNbtcCmd),
     #[cfg(feature = "ethereum")]
     RelayEthereum(RelayEthereumCmd),
     #[cfg(feature = "ethereum")]
@@ -262,6 +264,8 @@ impl Command {
                 BabylonRelayer(cmd) => cmd.run().await,
                 #[cfg(feature = "babylon")]
                 StakeNbtc(cmd) => cmd.run().await,
+                #[cfg(feature = "babylon")]
+                UnstakeNbtc(cmd) => cmd.run().await,
                 #[cfg(feature = "ethereum")]
                 RelayEthereum(cmd) => cmd.run().await,
                 #[cfg(feature = "ethereum")]
@@ -2644,6 +2648,8 @@ impl BabylonRelayerCmd {
 #[derive(Parser, Debug)]
 pub struct StakeNbtcCmd {
     amount: u64,
+    finality_provider: String,
+    staking_time: u16,
 
     #[clap(flatten)]
     config: nomic::network::Config,
@@ -2652,16 +2658,48 @@ pub struct StakeNbtcCmd {
 #[cfg(feature = "babylon")]
 impl StakeNbtcCmd {
     async fn run(&self) -> Result<()> {
-        todo!()
-        // Ok(self
-        //     .config
-        //     .client()
-        //     .with_wallet(wallet())
-        //     .call(
-        //         |app| build_call!(app.pay_nbtc_fee()),
-        //         |app| build_call!(app.stake_nbtc((self.amount).into())),
-        //     )
-        //     .await?)
+        let fp_vec = hex::decode(&self.finality_provider).unwrap();
+        let mut fp = [0u8; 32];
+        if fp_vec.len() != 32 {
+            return Err(nomic::error::Error::Orga(orga::Error::App(
+                "Invalid finality provider length".to_string(),
+            )));
+        }
+        fp.copy_from_slice(&fp_vec);
+
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
+            .call(
+                |app| build_call!(app.pay_nbtc_fee()),
+                |app| build_call!(app.stake_nbtc(self.amount.into(), fp, self.staking_time)),
+            )
+            .await?)
+    }
+}
+
+#[cfg(feature = "babylon")]
+#[derive(Parser, Debug)]
+pub struct UnstakeNbtcCmd {
+    index: u64,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
+}
+
+#[cfg(feature = "babylon")]
+impl UnstakeNbtcCmd {
+    async fn run(&self) -> Result<()> {
+        Ok(self
+            .config
+            .client()
+            .with_wallet(wallet())
+            .call(
+                |app| build_call!(app.pay_nbtc_fee()),
+                |app| build_call!(app.unstake_nbtc(self.index)),
+            )
+            .await?)
     }
 }
 
