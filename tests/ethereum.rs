@@ -18,21 +18,28 @@ use chrono::TimeZone;
 use chrono::Utc;
 use log::info;
 use nomic::app::Dest;
+use nomic::app::{InnerApp, Nom};
 use nomic::app_client;
 use nomic::bitcoin::adapter::Adapter;
 use nomic::bitcoin::checkpoint::Config as CheckpointConfig;
 use nomic::bitcoin::header_queue::Config as HeaderQueueConfig;
+use nomic::bitcoin::relayer::DepositAddress;
 use nomic::bitcoin::relayer::Relayer;
-use nomic::error::Error;
+use nomic::error::{Error, Result};
 use nomic::ethereum::relayer::Relayer as EthRelayer;
 use nomic::ethereum::{bridge_contract, token_contract};
 use nomic::utils::*;
 use orga::abci::Node;
-use orga::client::wallet::DerivedKey;
-use orga::coins::Amount;
+use orga::client::{
+    wallet::{DerivedKey, Unsigned},
+    AppClient,
+};
+use orga::coins::{Address, Amount};
 use orga::encoding::Encode;
 use orga::macros::build_call;
 use orga::plugins::{load_privkey, Time, MIN_FEE};
+use orga::tendermint::client::HttpClient;
+use reqwest::StatusCode;
 use serial_test::serial;
 use std::fs;
 use std::str::FromStr;
@@ -249,10 +256,24 @@ async fn ethereum() {
             .await
             .unwrap();
 
-        poll_for_bitcoin_header(1120).await.unwrap();
-
-        poll_for_active_sigset().await;
-        poll_for_signatory_key(consensus_key).await;
+        poll_for_finalized_query_data(
+            DEFAULT_RPC.to_string(),
+            Some("Polling for Bitcoin headers...".to_string()),
+            None,
+            1120,
+            |app| Ok(app.bitcoin.headers.height()?),
+        )
+        .await
+        .unwrap();
+        poll_for_finalized_query_data(
+            DEFAULT_RPC.to_string(),
+            Some("Polling for signatory key...".to_string()),
+            None,
+            true,
+            |app| Ok(app.bitcoin.signatory_keys.get(consensus_key)?.is_some()),
+        )
+        .await
+        .unwrap();
 
         deposit_bitcoin(
             &funded_accounts[0].address,
@@ -267,15 +288,30 @@ async fn ethereum() {
             .await
             .unwrap();
 
-        poll_for_bitcoin_header(1124).await.unwrap();
-        poll_for_signing_checkpoint().await;
-        poll_for_completed_checkpoint(1).await;
+        poll_for_finalized_query_data(
+            DEFAULT_RPC.to_string(),
+            Some("Polling for completed checkpoint...".to_string()),
+            None,
+            1,
+            |app| Ok(app.bitcoin.checkpoints.completed(1_000)?.len()),
+        )
+        .await
+        .unwrap();
 
         btc_client
             .generate_to_address(6, &async_wallet_address)
             .await
             .unwrap();
-        poll_for_bitcoin_header(1130).await.unwrap();
+
+        poll_for_finalized_query_data(
+            DEFAULT_RPC.to_string(),
+            Some("Polling for Bitcoin headers...".to_string()),
+            None,
+            1130,
+            |app| Ok(app.bitcoin.headers.height()?),
+        )
+        .await
+        .unwrap();
 
         let mut current_valset = app_client(DEFAULT_RPC)
             .query(|app| Ok(app.bitcoin.checkpoints.get(0)?.sigset.clone()))
@@ -357,9 +393,15 @@ async fn ethereum() {
             .await
             .unwrap();
 
-        poll_for_bitcoin_header(1136).await.unwrap();
-        poll_for_signing_checkpoint().await;
-        poll_for_completed_checkpoint(2).await;
+        poll_for_finalized_query_data(
+            DEFAULT_RPC.to_string(),
+            Some("Polling for completed checkpoint...".to_string()),
+            None,
+            2,
+            |app| Ok(app.bitcoin.checkpoints.completed(1_000)?.len()),
+        )
+        .await
+        .unwrap();
 
         loop {
             let balance = token_contract
@@ -433,8 +475,15 @@ async fn ethereum() {
             .await
             .unwrap();
 
-        poll_for_bitcoin_header(1142).await.unwrap();
-        poll_for_completed_checkpoint(3).await;
+        poll_for_finalized_query_data(
+            DEFAULT_RPC.to_string(),
+            Some("Polling for completed checkpoint...".to_string()),
+            None,
+            3,
+            |app| Ok(app.bitcoin.checkpoints.completed(1_000)?.len()),
+        )
+        .await
+        .unwrap();
 
         let expected_balance = 20_000_000_000;
         let balance = poll_for_updated_query_data(

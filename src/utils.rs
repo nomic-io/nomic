@@ -54,6 +54,7 @@ use rand::Rng;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::fmt::Debug;
 use std::fs;
 #[cfg(feature = "full")]
 use std::path::Path;
@@ -62,6 +63,19 @@ use std::process::{Child, Command, Stdio};
 use std::str::FromStr;
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+pub async fn poll_for_active_sigset() {
+    info!("Polling for active sigset...");
+    loop {
+        match app_client(DEFAULT_RPC)
+            .query(|app| Ok(app.bitcoin.checkpoints.active_sigset()?))
+            .await
+        {
+            Ok(_) => break,
+            Err(_) => tokio::time::sleep(Duration::from_secs(2)).await,
+        }
+    }
+}
 
 pub const DEFAULT_RPC: &str = "http://localhost:26657";
 
@@ -327,76 +341,6 @@ pub async fn poll_for_blocks() {
     }
 }
 
-pub async fn poll_for_active_sigset() {
-    info!("Polling for active sigset...");
-    loop {
-        match app_client(DEFAULT_RPC)
-            .query(|app| Ok(app.bitcoin.checkpoints.active_sigset()?))
-            .await
-        {
-            Ok(_) => break,
-            Err(_) => tokio::time::sleep(Duration::from_secs(2)).await,
-        }
-    }
-}
-
-pub async fn poll_for_signatory_key(consensus_key: [u8; 32]) {
-    info!("Scanning for signatory key...");
-    loop {
-        match app_client(DEFAULT_RPC)
-            .query(|app| Ok(app.bitcoin.signatory_keys.get(consensus_key)?))
-            .await
-        {
-            Ok(Some(_)) => break,
-            Err(_) | Ok(None) => tokio::time::sleep(Duration::from_secs(2)).await,
-        }
-    }
-}
-
-pub async fn poll_for_signing_checkpoint() {
-    info!("Scanning for signing checkpoint...");
-
-    loop {
-        let has_signing = app_client(DEFAULT_RPC)
-            .query(|app| Ok(app.bitcoin.checkpoints.signing()?.is_some()))
-            .await
-            .unwrap();
-        if has_signing {
-            break;
-        }
-        tokio::time::sleep(Duration::from_secs(1)).await;
-    }
-}
-
-pub async fn poll_for_completed_checkpoint(num_checkpoints: u32) {
-    info!("Scanning for signed checkpoints...");
-    let mut checkpoint_len = app_client(DEFAULT_RPC)
-        .query(|app| Ok(app.bitcoin.checkpoints.completed(1_000)?.len()))
-        .await
-        .unwrap();
-
-    while checkpoint_len < num_checkpoints as usize {
-        checkpoint_len = app_client(DEFAULT_RPC)
-            .query(|app| Ok(app.bitcoin.checkpoints.completed(1_000)?.len()))
-            .await
-            .unwrap();
-        tokio::time::sleep(Duration::from_secs(1)).await;
-    }
-}
-
-pub async fn poll_for_bitcoin_header(height: u32) -> Result<()> {
-    info!("Scanning for bitcoin header {}...", height);
-    loop {
-        let current_height = app_client(DEFAULT_RPC)
-            .query(|app| Ok(app.bitcoin.headers.height()?))
-            .await?;
-        if current_height >= height {
-            info!("Found bitcoin header {}", height);
-            break Ok(());
-        }
-    }
-}
-
 pub async fn poll_for_updated_query_data<T: PartialEq>(
     rpc_url: String,
     polling_text: Option<String>,
@@ -418,16 +362,44 @@ pub async fn poll_for_updated_query_data<T: PartialEq>(
             }
         }
 
-        match app_client(&rpc_url).query(&query).await {
-            Ok(data) => {
-                if data != initial_data {
-                    return Ok(data);
-                }
-
-                continue;
+        if let Ok(data) = app_client(&rpc_url).query(&query).await {
+            if data != initial_data {
+                return Ok(data);
             }
-            Err(_) => tokio::time::sleep(Duration::from_secs(1)).await,
-        };
+        }
+
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+}
+
+pub async fn poll_for_finalized_query_data<T: PartialEq + Debug>(
+    rpc_url: String,
+    polling_text: Option<String>,
+    timeout_secs: Option<u64>,
+    finalized_data: T,
+    query: impl Fn(crate::app::InnerApp) -> OrgaResult<T>,
+) -> Result<T> {
+    if let Some(text) = polling_text.clone() {
+        info!("{}", text);
+    }
+
+    let start_time = std::time::Instant::now();
+    loop {
+        if let Some(timeout) = timeout_secs {
+            if start_time.elapsed().as_secs() >= timeout {
+                return Err(crate::error::Error::Orga(orga::Error::App(
+                    "Polling timed out".to_string(),
+                )));
+            }
+        }
+
+        if let Ok(data) = app_client(&rpc_url).query(&query).await {
+            if data == finalized_data {
+                return Ok(data);
+            }
+        }
+
+        tokio::time::sleep(Duration::from_secs(1)).await
     }
 }
 

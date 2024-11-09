@@ -300,9 +300,24 @@ async fn ibc_test() {
             .await
             .unwrap();
 
-        poll_for_bitcoin_header(1120).await.unwrap();
-        poll_for_active_sigset().await;
-        poll_for_signatory_key(consensus_key).await;
+        poll_for_finalized_query_data(
+            DEFAULT_RPC.to_string(),
+            Some("Polling for Bitcoin headers...".to_string()),
+            None,
+            1120,
+            |app| Ok(app.bitcoin.headers.height()?),
+        )
+        .await
+        .unwrap();
+        poll_for_finalized_query_data(
+            DEFAULT_RPC.to_string(),
+            Some("Polling for signatory key...".to_string()),
+            None,
+            true,
+            |app| Ok(app.bitcoin.signatory_keys.get(consensus_key)?.is_some()),
+        )
+        .await
+        .unwrap();
 
         deposit_bitcoin(
             &funded_accounts[0].address,
@@ -325,16 +340,15 @@ async fn ibc_test() {
             .await
             .unwrap();
 
-        poll_for_bitcoin_header(1124).await.unwrap();
-        poll_for_signing_checkpoint().await;
-
-        let confirmed_index = app_client(DEFAULT_RPC)
-            .query(|app| Ok(app.bitcoin.checkpoints.confirmed_index))
-            .await
-            .unwrap();
-        assert_eq!(confirmed_index, None);
-
-        poll_for_completed_checkpoint(1).await;
+        poll_for_finalized_query_data(
+            DEFAULT_RPC.to_string(),
+            Some("Polling for completed checkpoint...".to_string()),
+            None,
+            1,
+            |app| Ok(app.bitcoin.checkpoints.completed(1_000)?.len()),
+        )
+        .await
+        .unwrap();
 
         let res = reqwest::get("http://localhost:27011/cosmos/bank/v1beta1/balances/cosmos1vd0r7t04vnr36x6pydel9eacvn776psehknf74").await.unwrap();
         let mut balances: serde_json::Value =
@@ -511,9 +525,15 @@ async fn ibc_test() {
             .await
             .unwrap();
 
-        poll_for_bitcoin_header(1128).await.unwrap();
-        poll_for_signing_checkpoint().await;
-        poll_for_completed_checkpoint(2).await;
+        poll_for_finalized_query_data(
+            DEFAULT_RPC.to_string(),
+            Some("Polling for completed checkpoint...".to_string()),
+            None,
+            2,
+            |app| Ok(app.bitcoin.checkpoints.completed(1_000)?.len()),
+        )
+        .await
+        .unwrap();
 
         Command::new("hermes")
             .args([
@@ -651,7 +671,16 @@ async fn ibc_test() {
             .await
             .unwrap();
 
-        poll_for_bitcoin_header(1132).await.unwrap();
+        poll_for_finalized_query_data(
+            DEFAULT_RPC.to_string(),
+            Some("Polling for Bitcoin headers...".to_string()),
+            None,
+            1132,
+            |app| Ok(app.bitcoin.headers.height()?),
+        )
+        .await
+        .unwrap();
+
         app_client(DEFAULT_RPC)
             .with_wallet(funded_accounts[0].wallet.clone())
             .call(
@@ -666,9 +695,15 @@ async fn ibc_test() {
             .await
             .unwrap();
 
-        poll_for_bitcoin_header(1132).await.unwrap();
-        poll_for_signing_checkpoint().await;
-        poll_for_completed_checkpoint(3).await;
+        poll_for_finalized_query_data(
+            DEFAULT_RPC.to_string(),
+            Some("Polling for completed checkpoint...".to_string()),
+            None,
+            3,
+            |app| Ok(app.bitcoin.checkpoints.completed(1_000)?.len()),
+        )
+        .await
+        .unwrap();
 
         Command::new("hermes")
             .args([
@@ -724,7 +759,15 @@ async fn ibc_test() {
             .await
             .unwrap();
 
-        poll_for_bitcoin_header(1136).await.unwrap();
+        poll_for_finalized_query_data(
+            DEFAULT_RPC.to_string(),
+            Some("Polling for Bitcoin headers...".to_string()),
+            None,
+            1136,
+            |app| Ok(app.bitcoin.headers.height()?),
+        )
+        .await
+        .unwrap();
 
         let received_bitcoin_amount =
             match wallet.get_received_by_address(&funded_accounts[1].bitcoin_address(), None) {
