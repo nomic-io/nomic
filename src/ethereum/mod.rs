@@ -395,21 +395,6 @@ impl Ethereum {
             net.light_client
                 .unsafe_update_consensus(state_root, block_number)?;
 
-            dbg!(self
-                .networks
-                .get(chain_id)
-                .unwrap()
-                .unwrap()
-                .light_client
-                .block_number());
-
-            dbg!(self
-                .networks
-                .get(chain_id)
-                .unwrap()
-                .unwrap()
-                .light_client
-                .state_root());
         }
 
         Ok(())
