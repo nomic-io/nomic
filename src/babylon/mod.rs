@@ -726,12 +726,18 @@ pub struct Delegation {
     /// transaction is included it, and the transaction index within its
     /// checkpoint batch.
     pub checkpoint_batch_index: (u32, u64),
-    // TODO: add field for stake_amount, equal to `stake` except after withdraw
     /// The staked nBTC held in the delegation.
     ///
     /// Since `Coin` has move-semantics for funds, this will be consumed and
     /// have an amount of 0 once the delegation has been withdrawn.
     pub stake: Coin<Nbtc>,
+    /// The amount staked in the delegation, in microsats.
+    ///
+    /// Note that this will be equal to the amount in the `stake` field for most
+    /// of the delegation's lifecycle. However, `stake` will be consumed when
+    /// the delegation is withdrawn, so this field is used to keep track of the
+    /// original amount staked.
+    pub stake_amount: u64,
 
     // Fields for `Staked` state:
     /// The staking transaction's outpoint, set once the staking transaction has
@@ -823,6 +829,7 @@ impl Delegation {
             staking_period,
             unbonding_period: params.unbonding_time,
             checkpoint_batch_index,
+            stake_amount: stake.amount.into(),
             stake,
             ..Default::default()
         })
@@ -839,8 +846,8 @@ impl Delegation {
     }
 
     pub fn stake_sats(&self) -> u64 {
-        let stake_amount: u64 = self.stake.amount.into();
-        stake_amount / 1_000_000 // TODO: get conversion from bitcoin config
+        self.stake_amount / 1_000_000 // TODO: get conversion from bitcoin
+                                      // config
     }
 
     /// Relays proof of the staking transaction's inclusion in a Bitcoin block.
@@ -1183,8 +1190,7 @@ impl Delegation {
                 staking_period: self.staking_period,
             }
         };
-        // TODO: take from self.stake
-        let nbtc = Coin::mint(self.stake.amount);
+        let nbtc = self.stake.take(self.stake.amount)?;
         building_cp.pending.insert((dest, self.owner), nbtc)?;
 
         self.withdraw_checkpoint_index = Some(sigset.index);
@@ -1718,11 +1724,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(del.op_return_bytes().unwrap(), hex::decode("62626234008c0d21a8dd59a2a50f7ab8cb94d3034eb2b3d130589168bf7876a30b22c876d803d5a0bb72d71993e435d6c5a70e2aa4db500a62cfaae33c56050deefee64ec00096").unwrap());
+        assert_eq!(hex::encode(del.op_return_bytes().unwrap()), "62626434008c0d21a8dd59a2a50f7ab8cb94d3034eb2b3d130589168bf7876a30b22c876d803d5a0bb72d71993e435d6c5a70e2aa4db500a62cfaae33c56050deefee64ec00096");
         assert_eq!(
-            del.staking_script(&params).unwrap().to_bytes(),
-            hex::decode("51202552bc9fe84a0e05f156d127e7d2460bff26541ba56e9f761d2029ee09f3859f")
-                .unwrap(),
+            hex::encode(del.staking_script(&params).unwrap().to_bytes()),
+            "512083f18ab40065c1bd5ab6616535e9af358df7640e935c16012d0df306a4c0e42f",
         );
     }
 }
