@@ -982,7 +982,11 @@ impl Delegation {
             txid: withdrawal_tx.txid(),
             vout: 0,
         };
-        let sigset = btc.checkpoints.active_sigset()?;
+        let sigset = btc
+            .checkpoints
+            .get(self.withdrawal_sigset_index.unwrap())?
+            .sigset
+            .clone();
         let input = Input::new(
             withdrawal_outpoint,
             &sigset,
