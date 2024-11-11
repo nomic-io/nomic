@@ -654,7 +654,7 @@ impl Relayer {
                         log::warn!("{}", err);
                     }
                     Err(err) => {
-                        log::error!("{} (skipping)", err);
+                        log::error!("{}, txid={} (skipping)", err, tx.txid());
                     }
                 }
             }
