@@ -18,10 +18,7 @@ use orga::{
 use crate::{
     app::{Identity, InnerApp, Nom},
     babylon::DelegationStatus,
-    bitcoin::{
-        adapter::Adapter,
-        checkpoint::{BatchType, CheckpointStatus},
-    },
+    bitcoin::{adapter::Adapter, checkpoint::CheckpointStatus},
     error::{Error, Result},
 };
 
