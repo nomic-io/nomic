@@ -394,7 +394,6 @@ impl Ethereum {
             let mut net = self.networks.get_mut(chain_id)?.unwrap();
             net.light_client
                 .unsafe_update_consensus(state_root, block_number)?;
-
         }
 
         Ok(())
