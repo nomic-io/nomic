@@ -27,6 +27,7 @@ use crate::{
 
 use super::{Delegation, Params};
 
+/// Relay all staking txs that have been confirmed on the Bitcoin chain.
 pub async fn relay_staking_confs(
     app_client: &AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned>,
     btc_client: &BitcoinRpcClient,
@@ -75,6 +76,7 @@ pub async fn relay_staking_confs(
     Ok(())
 }
 
+/// Relay a staking tx if it has been confirmed on the Bitcoin chain.
 pub async fn maybe_relay_staking_conf(
     app_client: &AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned>,
     btc_client: &BitcoinRpcClient,
@@ -153,6 +155,7 @@ pub async fn maybe_relay_staking_conf(
     Ok(false)
 }
 
+/// Relay all unbonding txs that have been confirmed on the Bitcoin chain.
 pub async fn relay_unbonding_confs(
     app_client: &AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned>,
     btc_client: &BitcoinRpcClient,
@@ -201,6 +204,11 @@ pub async fn relay_unbonding_confs(
     Ok(())
 }
 
+/// Relay an unbonding tx if it has been confirmed on the Bitcoin chain.
+///
+/// This function will also submit the unbonding tx to the Babylon API, so that
+/// the covenant committee can sign the unbonding tx and the Babylon API can
+/// broadcast the unbonding tx to the Bitcoin network.
 pub async fn maybe_relay_unbonding_conf(
     app_client: &AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned>,
     btc_client: &BitcoinRpcClient,
@@ -244,6 +252,7 @@ pub async fn maybe_relay_unbonding_conf(
     Ok(false)
 }
 
+/// Relay all withdrawal txs to the Bitcoin network.
 pub async fn relay_withdrawal_txs(
     app_client: &AppClient<InnerApp, InnerApp, HttpClient, Nom, Unsigned>,
     btc_client: &BitcoinRpcClient,
@@ -282,6 +291,7 @@ pub async fn relay_withdrawal_txs(
     Ok(())
 }
 
+/// Relay a withdrawal tx to the Bitcoin network.
 pub async fn relay_withdrawal_tx(
     btc_client: &BitcoinRpcClient,
     del: &Delegation,
@@ -306,6 +316,10 @@ pub async fn relay_withdrawal_tx(
     Ok(())
 }
 
+/// Scans the Bitcoin chain for a txid in the last `num_blocks` blocks.
+///
+/// This is written as a full scan so nodes aren't required to have been run
+/// with `-txindex`.
 // TODO: dedupe from bitcoin relayer
 async fn scan_for_txid(
     client: &BitcoinRpcClient,
@@ -328,6 +342,7 @@ async fn scan_for_txid(
     Ok(None)
 }
 
+/// Get the last `n` blocks from the Bitcoin chain.
 // TODO: dedupe from bitcoin relayer
 pub async fn last_n_blocks(
     client: &BitcoinRpcClient,
@@ -352,6 +367,7 @@ pub async fn last_n_blocks(
     Ok(blocks)
 }
 
+/// Submit an unbonding tx to the Babylon API.
 pub async fn try_submit_unbond(del: &Delegation, api_addr: &str, params: &Params) -> Result<()> {
     let unbonding_tx = del.unbonding_tx(params)?;
     let mut unbonding_tx_bytes = vec![];

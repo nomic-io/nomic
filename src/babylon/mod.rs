@@ -47,11 +47,19 @@ impl Symbol for StakedNbtc {
     const NAME: &'static str = "stusat";
 }
 
+/// The main state struct which manages all delegations and their state
+/// transitions.
 #[orga]
 pub struct Babylon {
+    /// A map of all delegations, indexed by the owner's identity.
     pub delegations: Map<Identity, Deque<Delegation>>,
+    /// A queue of all delegations which are currently staked, used to process
+    /// delegations which reach maturity.
     pub staked: DelegationQueue,
+    /// A queue of all delegations which are currently unbonding, used to
+    /// process unbondings which reach maturity.
     pub unbonding: DelegationQueue,
+    /// The parameters which define the Babylon network.
     pub params: Params,
 }
 
@@ -59,6 +67,7 @@ pub type DelegationQueue = Map<(u32, Identity, u64), ()>;
 
 #[orga]
 impl Babylon {
+    /// Called once per Nomic block to process delegation queues.
     pub fn step(&mut self, frost: &mut Frost, btc: &mut Bitcoin) -> Result<()> {
         type QueueHandler = fn(&mut Delegation, &mut Frost, &mut Bitcoin, &Params) -> Result<()>;
         let mut process_queue = |queue: &mut DelegationQueue,
@@ -111,6 +120,9 @@ impl Babylon {
         )?;
 
         // TODO: don't iterate through all delegations
+        // Process delegations which have started unbonding and have now been fully
+        // signed by the FROST signers, adding their signatures from the Frost state to
+        // the delegation struct.
         let mut to_advance = vec![];
         for entry in self.delegations.iter()? {
             let (_, owner_dels) = entry?;
@@ -156,6 +168,7 @@ impl Babylon {
         Ok(())
     }
 
+    /// Stake nBTC via Babylon, creating a new delegation.
     #[allow(clippy::too_many_arguments)]
     pub fn stake(
         &mut self,
@@ -219,6 +232,7 @@ impl Babylon {
         Ok(index)
     }
 
+    /// Unstake nBTC from a delegation, starting the unbonding process.
     pub fn unstake(
         &mut self,
         owner: Identity,
@@ -234,6 +248,7 @@ impl Babylon {
             .request_unbond(frost, btc, &self.params)
     }
 
+    /// Get all delegations owned by `owner`.
     #[query]
     pub fn owner_delegations(&self, owner: Identity) -> Result<Vec<Delegation>> {
         self.delegations
@@ -245,6 +260,8 @@ impl Babylon {
     }
 }
 
+/// Construct a multisig Bitcoin script fragment, as defined by the Babylon
+/// protocol.
 pub fn multisig_script(pks: &[XOnlyPublicKey], threshold: u32, verify: bool) -> Result<Script> {
     if pks.is_empty() {
         return Err(Error::Orga(orga::Error::App(
@@ -306,6 +323,7 @@ pub fn multisig_script(pks: &[XOnlyPublicKey], threshold: u32, verify: bool) -> 
     Ok(bytes.into())
 }
 
+/// Sort a list of public keys and ensure there are no duplicates.
 pub fn sort_keys(pks: &[XOnlyPublicKey]) -> Result<Vec<XOnlyPublicKey>> {
     if pks.len() < 2 {
         return Err(Error::Orga(orga::Error::App(
@@ -327,6 +345,8 @@ pub fn sort_keys(pks: &[XOnlyPublicKey]) -> Result<Vec<XOnlyPublicKey>> {
     Ok(pks)
 }
 
+/// Construct a single-key Bitcoin script fragment, as defined by the Babylon
+/// protocol.
 pub fn single_key_script(pk: XOnlyPublicKey, verify: bool) -> Script {
     let pk = pk.serialize().to_vec();
     if verify {
@@ -344,6 +364,8 @@ pub fn single_key_script(pk: XOnlyPublicKey, verify: bool) -> Script {
     }
 }
 
+/// Construct a timelock Bitcoin script fragment, as defined by the Babylon
+/// protocol.
 pub fn timelock_script(pk: XOnlyPublicKey, timelock: u64) -> Script {
     let mut bytes = single_key_script(pk, true).into_bytes();
     // TODO: put this allow in the bitcoin_script crate
@@ -352,6 +374,7 @@ pub fn timelock_script(pk: XOnlyPublicKey, timelock: u64) -> Script {
     bytes.into()
 }
 
+/// Aggregate a list of Bitcoin scripts into a single script.
 pub fn aggregate_scripts(scripts: &[Script]) -> Script {
     let mut bytes = vec![];
     for script in scripts.iter() {
@@ -360,26 +383,46 @@ pub fn aggregate_scripts(scripts: &[Script]) -> Script {
     bytes.into()
 }
 
+/// The parameters which define the Babylon network.
 #[orga(skip(Default))]
 #[derive(Debug, Clone)]
 pub struct Params {
+    /// The public keys of the covenant signers.
     pub covenant_keys: LengthVec<u8, [u8; 32]>,
+    /// The quorum required to sign a covenant transaction.
     pub covenant_quorum: u32,
+    /// The script pubkey of the slashing address.
     pub slashing_script: Adapter<Script>,
+    /// The fee used in a delegation's slashing transactions.
     pub slashing_min_fee: u64,
+    /// The tag used as the starting magic bytes of the OP_RETURN output in a
+    /// staking transaction.
     pub op_return_tag: [u8; 4],
+    /// The slashing rate used in a delegation's slashing transactions (a ratio
+    /// as `(numerator, denominator)`).
     pub slashing_rate: (u32, u32),
+    /// The maximum age of a staking transaction before Nomic will automatically
+    /// start unbonding it before restaking it.
     pub max_age: u32,
+    /// The minimum staking time allowed for a delegation.
     pub min_staking_time: u16,
+    /// The maximum staking time allowed for a delegation.
     pub max_staking_time: u16,
+    /// The time a delegation must wait before unbonding.
     pub unbonding_time: u16,
+    /// The minimum amount of nBTC required to stake (in microsats).
     pub min_staking_amount: u64,
+    /// The maximum amount of nBTC allowed to stake (in microsats).
     pub max_staking_amount: u64,
+    /// The fee used in a delegation's unbonding transaction.
     pub unbonding_fee: u64,
+    /// The number of Bitcoin block confirmations required for a staking
+    /// transaction to be considered confirmed.
     pub confirmation_depth: u32,
 }
 
 impl Params {
+    /// Parameters for Babylon testnet 3.
     pub fn bbn_test_3() -> Self {
         let covenant_keys = [
             "ffeaec52a9b407b355ef6967a7ffc15fd6c3fe07de2844d61550475e7a5233e5",
@@ -425,7 +468,8 @@ impl Params {
         }
     }
 
-    pub fn bbn_test_4() -> Self {
+    /// Parameters for the Babylon staging testnet.
+    pub fn bbn_staging_testnet() -> Self {
         let covenant_keys = [
             "49766ccd9e3cd94343e2040474a77fb37cdfd30530d05f9f1e96ae1e2102c86e",
             "76d1ae01f8fb6bf30108731c884cddcf57ef6eef2d9d9559e130894e0e40c62c",
@@ -468,6 +512,7 @@ impl Params {
         }
     }
 
+    /// Gets the covenant keys as a list of `XOnlyPublicKey`s.
     pub fn covenant_keys(&self) -> Vec<XOnlyPublicKey> {
         self.covenant_keys
             .iter()
@@ -478,10 +523,12 @@ impl Params {
 
 impl Default for Params {
     fn default() -> Self {
-        Self::bbn_test_4()
+        Self::bbn_staging_testnet()
     }
 }
 
+/// Constructs the script for the unbonding path of a delegation, as defined by
+/// the Babylon protocol.
 pub fn unbonding_script(staker_key: XOnlyPublicKey, params: &Params) -> Result<Script> {
     Ok(aggregate_scripts(&[
         single_key_script(staker_key, true),
@@ -489,6 +536,8 @@ pub fn unbonding_script(staker_key: XOnlyPublicKey, params: &Params) -> Result<S
     ]))
 }
 
+/// Constructs the script for the slashing path of a delegation, as defined by
+/// the Babylon protocol.
 pub fn slashing_script(
     staker_key: XOnlyPublicKey,
     fp_keys: &[XOnlyPublicKey],
@@ -501,8 +550,12 @@ pub fn slashing_script(
     ]))
 }
 
+/// An unspendable key used as the internal key for Taproot scripts that have no
+/// key path, as defined in BIP 341.
 const UNSPENDABLE_KEY: &str = "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
 
+/// Construct the Taproot for the staking output of a delegation, as defined by
+/// the Babylon protocol.
 pub fn staking_taproot(
     staker_key: XOnlyPublicKey,
     fp_keys: &[XOnlyPublicKey],
@@ -522,6 +575,12 @@ pub fn staking_taproot(
         .map_err(|_| Error::Orga(orga::Error::App("Failed to finalize taproot".to_string())))
 }
 
+/// Construct a slashing transaction of a delegation, as defined by the
+/// Babylon protocol.
+///
+/// Note that there is used to construct 2 different slashing transactions: one
+/// spending from the staking output, and one spending from the unbonding
+/// output.
 pub fn slashing_tx(
     staker_key: XOnlyPublicKey,
     stake_out: OutPoint,
@@ -561,6 +620,8 @@ pub fn slashing_tx(
     })
 }
 
+/// Construct the Taproot for the unbonding output of a delegation, as defined
+/// by the Babylon protocol.
 pub fn unbonding_taproot(
     staker_key: XOnlyPublicKey,
     fp_keys: &[XOnlyPublicKey],
@@ -577,6 +638,8 @@ pub fn unbonding_taproot(
         .map_err(|_| Error::Orga(orga::Error::App("Failed to finalize taproot".to_string())))
 }
 
+/// Construct the unbonding transaction of a delegation, as defined by the
+/// Babylon protocol.
 pub fn unbonding_tx(
     staker_key: XOnlyPublicKey,
     fp_keys: &[XOnlyPublicKey],
@@ -606,12 +669,17 @@ pub fn unbonding_tx(
     })
 }
 
+/// Raw bytes of a serialized `XOnlyPubkey`.
 pub type XOnlyPubkey = [u8; 32];
 
+/// Convert serialized `XOnlyPubkey` bytes to the `XOnlyPublicKey` type.
 fn bytes_to_pubkey(bytes: XOnlyPubkey) -> Result<XOnlyPublicKey> {
     Ok(XOnlyPublicKey::from_slice(&bytes)?)
 }
 
+/// The status of a delegation.
+///
+/// This is derived in a stateful manner from the delegation's fields.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DelegationStatus {
     Created,
@@ -622,40 +690,106 @@ pub enum DelegationStatus {
     Withdrawn,
 }
 
+/// A delegation of nBTC to the Babylon network.
+///
+/// This type represents a state machine which transitions through various
+/// states as the delegation is created, staked, unbonded, and withdrawn.
 #[orga]
 #[derive(Debug)]
 pub struct Delegation {
+    // Fields for `Created` state:
+    /// The index of the delegation within the owner's list of delegations.
+    ///
+    /// Multiple delegations can have the same index but with different owners.
     pub index: u64,
+    /// The owner of the delegation.
     pub owner: Identity,
+    /// The destination where the nBTC should be returned once the delegation
+    /// is withdrawn.
     pub return_dest: Dest,
+    /// The public key used to create the staking output.
+    ///
+    /// In practice this is the aggregated public key of the FROST group.
     pub btc_key: XOnlyPubkey,
+    /// The index of the FROST group used to sign the delegation.
     pub frost_group: u64,
+    /// The finality provider keys this delegation is being staked to.
+    ///
+    /// Note that as of Babylon mainnet cap 2, testnet 4, and the staging
+    /// testnet, there is only one finality provider key.
     pub fp_keys: LengthVec<u8, XOnlyPubkey>,
+    /// The amount of Bitcoin blocks the delegation is staked for.
     pub staking_period: u16,
+    /// The amount of Bitcoin blocks the delegation must wait before unbonding.
     pub unbonding_period: u16,
+    /// The index of the Nomic BTC checkpoint the delegation's staking
+    /// transaction is included it, and the transaction index within its
+    /// checkpoint batch.
     pub checkpoint_batch_index: (u32, u64),
     // TODO: add field for stake_amount, equal to `stake` except after withdraw
+    /// The staked nBTC held in the delegation.
+    ///
+    /// Since `Coin` has move-semantics for funds, this will be consumed and
+    /// have an amount of 0 once the delegation has been withdrawn.
     pub stake: Coin<Nbtc>,
 
+    // Fields for `Staked` state:
+    /// The staking transaction's outpoint, set once the staking transaction has
+    /// been proven to have confirmed on the Bitcoin blockchain.
     pub staking_outpoint: Option<crate::bitcoin::adapter::Adapter<OutPoint>>,
+    /// The height of the Bitcoin block the staking transaction was included in.
+    ///
+    /// Set once the staking transaction has been proven to have confirmed on
+    /// the Bitcoin blockchain.
     pub staking_height: Option<u32>,
 
+    // Fields for `SigningUnbond` state:
     // TODO: handle different types of spends (timelock vs unbonding vs slashed)
+    /// Whether the owner has requested to unbond the delegation.
     pub requested_unbond: bool,
+    /// The index of the signatory set the delegation is paying to in its
+    /// withdrawal, which will be used to collect the funds back into the Nomic
+    /// reserve once the withdrawal transaction has confirmed.
+    ///
+    /// Set once the delegation has started unbonding.
     pub withdrawal_sigset_index: Option<u32>,
+    /// The script pubkey of the withdrawal output, set once the delegation has
+    /// started unbonding.
     pub withdrawal_script_pubkey: Option<crate::bitcoin::adapter::Adapter<Script>>,
+    /// The index of the start of the relevant signatures within the FROST
+    /// group.
+    ///
+    /// Set once the delegation has started unbonding.
     pub frost_sig_offset: Option<u64>,
 
+    // Fields for `SignedUnbond` state:
+    /// The signature of the unbonding transaction's spend of the staking
+    /// output.
+    ///
+    /// Set once the delegation has been fully signed by the FROST group.
     pub(crate) staking_unbonding_sig: Option<Signature>,
+    /// The signature of the withdrawal transaction's spend of the unbonding
+    /// output.
+    ///
+    /// Set once the delegation has been fully signed by the FROST group.
     pub(crate) unbonding_withdrawal_sig: Option<Signature>,
 
+    // Fields for `ConfirmedUnbond` state:
+    /// The height of the Bitcoin block the unbonding transaction was included
+    /// in.
+    ///
+    /// Set once the unbonding transaction has been proven to have confirmed on
+    /// the Bitcoin blockchain.
     pub unbonding_height: Option<u32>,
 
+    // Fields for `Withdrawn` state:
+    /// The index of the checkpoint which included the withdrawal transaction.
     pub withdraw_checkpoint_index: Option<u32>,
 }
 
 #[orga]
 impl Delegation {
+    /// Construct a new delegation.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         index: u64,
@@ -709,6 +843,9 @@ impl Delegation {
         stake_amount / 1_000_000 // TODO: get conversion from bitcoin config
     }
 
+    /// Relays proof of the staking transaction's inclusion in a Bitcoin block.
+    ///
+    /// This advances the delegation's state from `Created` to `Staked`.
     #[allow(clippy::too_many_arguments)]
     pub fn relay_staking_tx(
         &mut self,
@@ -794,6 +931,11 @@ impl Delegation {
         Ok(())
     }
 
+    /// Requests to unbond the delegation.
+    ///
+    /// If the delegation is still being created, the unbonding will begin as
+    /// soon as the staking transaction is confirmed. If the delegation is
+    /// already staked, the unbonding will begin immediately.
     pub fn request_unbond(
         &mut self,
         frost: &mut Frost,
@@ -831,6 +973,12 @@ impl Delegation {
         Ok(())
     }
 
+    /// Begin unbonding the delegation, transitioning it to the `SigningUnbond`
+    /// state.
+    ///
+    /// This requests the FROST group to sign the unbonding transaction's spend
+    /// of the staking output, and the withdrawal transaction's spend of the
+    /// unbonding output.
     pub fn unbond(&mut self, frost: &mut Frost, btc: &Bitcoin, params: &Params) -> Result<()> {
         if self.status() != DelegationStatus::Staked {
             return Err(Error::Orga(orga::Error::App(
@@ -859,6 +1007,9 @@ impl Delegation {
         Ok(())
     }
 
+    /// Add the unbonding signatures from the FROST group to the delegation.
+    ///
+    /// This transitions the delegation to the `SignedUnbond` state.
     pub fn sign_unbond(
         &mut self,
         unbonding_withdrawal_sig: Signature,
@@ -896,6 +1047,13 @@ impl Delegation {
         Ok(())
     }
 
+    /// Relays proof of the unbonding transaction's inclusion in a Bitcoin
+    /// block.
+    ///
+    /// This advances the delegation's state from `SignedUnbond` to
+    /// `ConfirmedUnbond` and adds the unbond to the unbonding queue based on
+    /// its confirmation height. Once the unbonding period has passed, the
+    /// delegation will be withdrawn.
     #[allow(clippy::too_many_arguments)]
     pub fn relay_unbonding_tx(
         &mut self,
@@ -958,12 +1116,21 @@ impl Delegation {
         Ok(())
     }
 
+    /// Whether the delegation can be withdrawn.
+    ///
+    /// This is based on the current Bitcoin blockchain height, the height when
+    /// the delegation's unbonding period began, and the length of the unbonding
+    /// period.
     pub fn can_withdraw(&self, btc: &Bitcoin) -> Result<bool> {
         Ok(self.status() == DelegationStatus::ConfirmedUnbond
             && btc.headers.height()?
                 >= self.unbonding_height.unwrap() + self.unbonding_period as u32)
     }
 
+    /// Withdraw from the matured unbonding transaction of the delegation.
+    ///
+    /// This pushes the withdrawal transaction to the checkpoint batch, and
+    /// pushes the input spending it to the building checkpoint transaction.
     pub fn withdraw(&mut self, btc: &mut Bitcoin, params: &Params) -> Result<()> {
         if self.status() != DelegationStatus::ConfirmedUnbond {
             return Err(Error::Orga(orga::Error::App(
@@ -1025,6 +1192,10 @@ impl Delegation {
         Ok(())
     }
 
+    /// The status of the delegation.
+    ///
+    /// This is derived in a stateful manner from the delegation's fields. The
+    /// status is sequential and can only advance from one state to the next.
     pub fn status(&self) -> DelegationStatus {
         assert_eq!(
             self.staking_outpoint.is_none(),
@@ -1046,6 +1217,8 @@ impl Delegation {
         }
     }
 
+    /// The staking output - the output of the staking transaction containing
+    /// the Babylon protocol Taproot construction.
     pub fn staking_output(&self, params: &Params) -> Result<TxOut> {
         Ok(TxOut {
             value: self.stake_sats(),
@@ -1053,6 +1226,9 @@ impl Delegation {
         })
     }
 
+    /// The OP_RETURN output - the output of the unbonding transaction
+    /// containing the Babylon protocol OP_RETURN data (used by Babylon to
+    /// identify the delegation).
     pub fn op_return_output(&self) -> Result<TxOut> {
         Ok(TxOut {
             value: 0,
@@ -1060,6 +1236,7 @@ impl Delegation {
         })
     }
 
+    /// The staking Taproot construction for this delegation.
     pub fn staking_taproot(&self, params: &Params) -> Result<TaprootSpendInfo> {
         staking_taproot(
             self.btc_key()?,
@@ -1069,11 +1246,13 @@ impl Delegation {
         )
     }
 
+    /// The script paying to the staking Taproot construction.
     pub fn staking_script(&self, params: &Params) -> Result<Script> {
         let spend_info = self.staking_taproot(params)?;
         Ok(Script::new_v1_p2tr_tweaked(spend_info.output_key()))
     }
 
+    /// The unbonding transaction for the delegation.
     pub fn unbonding_tx(&self, params: &Params) -> Result<Transaction> {
         unbonding_tx(
             self.btc_key()?,
@@ -1086,6 +1265,8 @@ impl Delegation {
         )
     }
 
+    /// The slashing transaction for the delegation which spends the staking
+    /// output.
     pub fn slashing_tx(&self) -> Result<Transaction> {
         slashing_tx(
             self.btc_key()?,
@@ -1093,10 +1274,12 @@ impl Delegation {
                 Error::Orga(orga::Error::App("Missing staking outpoint".to_string()))
             })?,
             self.stake_sats(),
-            &Params::bbn_test_4(),
+            &Params::bbn_staging_testnet(),
         )
     }
 
+    /// The slashing transaction for the delegation which spends the unbonding
+    /// output.
     pub fn unbonding_slashing_tx(&self, params: &Params) -> Result<Transaction> {
         let unbonding_tx = self.unbonding_tx(params)?;
         slashing_tx(
@@ -1106,10 +1289,13 @@ impl Delegation {
                 vout: 0,
             },
             unbonding_tx.output[0].value,
-            &Params::bbn_test_4(),
+            &Params::bbn_staging_testnet(),
         )
     }
 
+    /// The sighash for the staking transaction's spend of the staking output,
+    /// for the path which becomes valid once the staking output has matured
+    /// (its staking period has passed).
     pub fn staking_timelock_sighash(
         &self,
         spending_tx: &Transaction,
@@ -1131,6 +1317,7 @@ impl Delegation {
         )?)
     }
 
+    /// The sighash for the unbonding transaction's spend of the staking output.
     pub fn staking_unbonding_sighash(&self, params: &Params) -> Result<TapSighashHash> {
         let unbonding_tx = self.unbonding_tx(params)?;
         let mut sc = SighashCache::new(&unbonding_tx);
@@ -1141,13 +1328,14 @@ impl Delegation {
                 value: self.stake_sats(),
             }]),
             TapLeafHash::from_script(
-                &unbonding_script(self.btc_key()?, &Params::bbn_test_4())?,
+                &unbonding_script(self.btc_key()?, &Params::bbn_staging_testnet())?,
                 bitcoin::util::taproot::LeafVersion::TapScript,
             ),
             bitcoin::SchnorrSighashType::Default,
         )?)
     }
 
+    /// The sighash for the slashing transaction's spend of the staking output.
     pub fn staking_slashing_sighash(&self, params: &Params) -> Result<TapSighashHash> {
         let slashing_tx = self.slashing_tx()?;
         let mut sc = SighashCache::new(&slashing_tx);
@@ -1165,6 +1353,8 @@ impl Delegation {
         )?)
     }
 
+    /// The sighash for the withdrawal transaction's spend of the unbonding
+    /// output.
     pub fn unbonding_withdrawal_sighash(&self, params: &Params) -> Result<TapSighashHash> {
         let unbonding_tx = self.unbonding_tx(params)?;
         let withdrawal_tx = self.unbonding_withdrawal_tx(params)?;
@@ -1180,9 +1370,13 @@ impl Delegation {
         )?)
     }
 
+    /// The OP_RETURN data for the delegation.
+    ///
+    /// This is used by Babylon to identify the delegation on the Bitcoin
+    /// blockchain.
     pub fn op_return_bytes(&self) -> Result<Vec<u8>> {
         let data = OpReturnData {
-            magic_byes: Params::bbn_test_4().op_return_tag,
+            magic_byes: Params::bbn_staging_testnet().op_return_tag,
             version: 0,
             staker_btc_pk: self.btc_key,
             fp_pk: *self
@@ -1195,6 +1389,7 @@ impl Delegation {
         Ok(data.encode()?)
     }
 
+    /// The withdrawal transaction which spends the unbonding output.
     pub fn unbonding_withdrawal_tx(&self, params: &Params) -> Result<Transaction> {
         let unbonding_tx = self.unbonding_tx(params)?;
         let unbonding_txid = unbonding_tx.txid();
@@ -1244,6 +1439,8 @@ impl Delegation {
     }
 }
 
+/// The data stored in the OP_RETURN output of a delegation's staking
+/// transaction.
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct OpReturnData {
     pub magic_byes: [u8; 4],
@@ -1363,7 +1560,7 @@ mod tests {
         // tb1p7aunqrcsrr0vrh7w9jcsm82w7c8xlrgererrfc5zae9ejxfupl3st6lal6
         let btc_pubkey = keypair.x_only_public_key().0;
 
-        let params = Params::bbn_test_4();
+        let params = Params::bbn_staging_testnet();
 
         let mut del = Delegation::new(
             0,
@@ -1504,7 +1701,7 @@ mod tests {
         )
         .unwrap()];
 
-        let mut params = Params::bbn_test_4();
+        let mut params = Params::bbn_staging_testnet();
         params.min_staking_time = 0;
 
         let del = Delegation::new(
