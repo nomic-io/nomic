@@ -1,3 +1,6 @@
+//! The signing process for the [`Frost`] module.
+//! Commitments and key shares are kept in a [`MerkStore`], and the signing
+//! process is driven by calls to [`Signer::step`].
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -24,6 +27,9 @@ use orga::state::State;
 use orga::store::{DefaultBackingStore, Read, Shared, Store, Write};
 use orga::{Error, Result};
 
+/// A key-value store for the signer's private data.
+///
+/// Updates are committed to disk immediately after each operation.
 pub struct SecretStore {
     merk_store: MerkStore,
 }
@@ -35,6 +41,7 @@ impl SecretStore {
         Self { merk_store }
     }
 
+    /// Create a new [`Store`] backed by a [`MerkStore`] at the provided path.
     pub fn new_store<P: AsRef<Path>>(path: P) -> Store {
         let secret_store = Self::new(path);
 
@@ -80,11 +87,19 @@ impl SecretStore {
     }
 }
 
+/// The signing process for the [`Frost`] module.
 pub struct Signer<W, C> {
+    /// The app client constructor for interacting with a Nomic full node.
     client: C,
+    /// The key-value store for the signer's private data.
     secret_store: Store,
+    /// The address of this signer.
     address: Address,
+    /// Secret packages from the first DKG round, indexed by (group index,
+    /// participant index).
     dkg_round1: HashMap<(u64, u16), dkg::round1::SecretPackage>,
+    /// Secret packages from the second DKG round, indexed by (group index,
+    /// participant index).
     dkg_round2: HashMap<(u64, u16), dkg::round2::SecretPackage>,
     _pd: std::marker::PhantomData<W>,
 }
@@ -94,6 +109,7 @@ where
     C: Fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, W>,
     W: Wallet,
 {
+    /// Create a new [`Signer`] for the provided operator address.
     pub fn new(secret_store: Store, client: C, address: Address) -> Self {
         Self {
             client,
@@ -105,6 +121,8 @@ where
         }
     }
 
+    /// Access the key packages stored in the [`SecretStore`] using the provided
+    /// `op` function, flushing immediately after execution.
     fn with_key_package<T, F: FnMut(&mut Map<(u64, u16), Adapter<KeyPackage>>) -> Result<T>>(
         &mut self,
         mut op: F,
@@ -119,6 +137,8 @@ where
         Ok(res)
     }
 
+    /// Access the signing nonces stored in the [`SecretStore`] using the
+    /// provided `op` function, flushing immediately after execution.
     fn with_signing_nonces<
         T,
         F: FnMut(&mut Map<(u64, u64, u32, u16), Adapter<SigningNonces>>) -> Result<T>,
@@ -136,6 +156,7 @@ where
         Ok(res)
     }
 
+    /// Builds and executes the given `payer` call with a no-op payee call.
     pub async fn call<F: FnOnce(&InnerApp) -> <InnerApp as Call>::Call>(
         &mut self,
         payer: F,
@@ -151,6 +172,7 @@ where
         (self.client)()
     }
 
+    /// Performs the DKG and signing steps where required for this signer.
     pub async fn step(&mut self) -> Result<()> {
         self.dkg_step().await?;
         self.signing_step().await?;
@@ -158,6 +180,7 @@ where
         Ok(())
     }
 
+    /// Performs the DKG steps where required for this signer.
     pub async fn dkg_step(&mut self) -> Result<()> {
         let address = self.address;
         let indices: Vec<u64> = self
@@ -189,6 +212,7 @@ where
         Ok(())
     }
 
+    /// Performs the signing steps where required for this signer.
     pub async fn signing_step(&mut self) -> Result<()> {
         let address = self.address;
         let indices: Vec<(u64, u64)> = self
@@ -221,12 +245,17 @@ where
         Ok(())
     }
 
+    /// Queries the [`Config`] for the provided group index.
     async fn get_config(&self, index: u64) -> Result<Config> {
         self.client()
             .query(|app: InnerApp| app.frost.config(index))
             .await
     }
 
+    /// Performs the DKG round 1 step for the given
+    /// group index.
+    ///
+    /// See [`frost_secp256k1_tr::keys::dkg::part1`].
     async fn dkg_part1(&mut self, index: u64) -> Result<()> {
         let mut rng = thread_rng();
         let config = self.get_config(index).await?;
@@ -251,6 +280,9 @@ where
         Ok(())
     }
 
+    /// Performs the DKG round 2 step for the given group index.
+    ///
+    /// See [`frost_secp256k1_tr::keys::dkg::part2`].
     async fn dkg_part2(&mut self, index: u64) -> Result<()> {
         let config = self.get_config(index).await?;
         let packages: Vec<(u16, dkg::round1::Package)> = self
@@ -288,6 +320,10 @@ where
         Ok(())
     }
 
+    /// Performs the DKG round 3 step for the given group index and submits the
+    /// public key attestation.
+    ///
+    /// See [`frost_secp256k1_tr::keys::dkg::part3`].
     async fn dkg_part3(&mut self, index: u64) -> Result<()> {
         let config = self.get_config(index).await?;
         let packages: Vec<(u16, dkg::round1::Package)> = self
@@ -347,6 +383,10 @@ where
         Ok(())
     }
 
+    /// Performs the signing round 1 step for the given group index and
+    /// participant index.
+    ///
+    /// See [`frost_secp256k1_tr::round1::commit`].
     async fn signing_commit(
         &mut self,
         group_index: u64,
@@ -401,6 +441,10 @@ where
         Ok(())
     }
 
+    /// Performs the signing round 2 step for the given group index and
+    /// participant index.
+    ///
+    /// See [`frost_secp256k1_tr::round2::sign`].
     async fn signing_sign(
         &mut self,
         group_index: u64,

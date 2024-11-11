@@ -1,3 +1,4 @@
+//! Encoding and decoding for the [`Frost`] module.
 use ed::{Decode, Encode, Terminated};
 use orga::describe::Descriptor;
 use orga::migrate::Migrate;
