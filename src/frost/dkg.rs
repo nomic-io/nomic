@@ -7,14 +7,23 @@ use orga::{collections::Map, orga};
 use orga::{Error, Result};
 use serde::{Deserialize, Serialize};
 
+/// The state of the DKG process for a group.
 #[derive(
     Clone, Copy, PartialEq, Eq, Hash, Debug, Default, Serialize, Deserialize, Encode, Decode,
 )]
 pub enum DkgState {
+    /// The group's participants need to complete
+    /// [`frost_secp256k1_tr::keys::dkg::part1`].
     #[default]
     Round1,
+    /// The group's participants need to complete
+    /// [`frost_secp256k1_tr::keys::dkg::part2`].
     Round2,
+    /// The group's participants need to complete
+    /// [`frost_secp256k1_tr::keys::dkg::part3`] and attest to the public key
+    /// package.
     Attesting,
+    /// The DKG process is complete and a group public key is available.
     Complete,
 }
 
@@ -26,19 +35,29 @@ impl Query for DkgState {
     }
 }
 
+/// The state of the DKG process for a group.
 #[orga]
 pub struct Dkg {
+    /// The number of participants in the group.
     participants: u16,
+    /// The round 1 packages submitted by participants.
     round1: Map<u16, Adapter<round1::Package>>,
+    /// The number of round 1 packages submitted by participants.
     round1_len: u16,
+    /// The round 2 packages submitted by participants.
     round2: Map<u16, Map<u16, Adapter<round2::Package>>>,
+    /// The number of round 2 packages submitted by participants.
     round2_len: u16,
+    /// The group public key, if the DKG process is complete.
     group_pubkey: Option<Adapter<PublicKeyPackage>>,
+    /// The participants who have attested to the public key package.
     attested: Map<u16, ()>,
+    /// The number of participants who have attested to the public key package.
     attested_len: u16,
 }
 
 impl Dkg {
+    /// Creates a new [`Dkg`] from the provided [`Config`].
     pub fn from_config(config: &Config) -> Result<Self> {
         Ok(Self {
             participants: config.total_shares(),
@@ -46,6 +65,7 @@ impl Dkg {
         })
     }
 
+    /// Returns the current state of the DKG process.
     pub fn state(&self) -> DkgState {
         if self.round1_len < self.participants {
             return DkgState::Round1;
@@ -62,6 +82,7 @@ impl Dkg {
         DkgState::Complete
     }
 
+    /// Submits a round 1 package for the provided participant.
     pub fn submit_round1(
         &mut self,
         participant: u16,
@@ -79,6 +100,7 @@ impl Dkg {
         Ok(())
     }
 
+    /// Submits round 2 packages for the provided participant.
     pub fn submit_round2(
         &mut self,
         participant: u16,
@@ -102,6 +124,11 @@ impl Dkg {
         Ok(())
     }
 
+    /// Attests to the public key package for the provided participant.
+    ///
+    /// Since 100% participation is required for the DKG process to complete
+    /// successfully, this method will fail if the participant has already
+    /// attested to a different [`PublicKeyPackage`] than the one provided.
     pub fn attest_pubkey_package(
         &mut self,
         participant: u16,
@@ -125,6 +152,7 @@ impl Dkg {
         Ok(())
     }
 
+    /// Returns the group public key, if the DKG process is complete.
     pub fn group_pubkey(&self) -> Result<Option<Adapter<PublicKeyPackage>>> {
         if self.state() == DkgState::Complete {
             Ok(self.group_pubkey.clone())
@@ -133,6 +161,7 @@ impl Dkg {
         }
     }
 
+    /// Returns the round 1 packages submitted by participants.
     pub fn round1_packages(&self) -> Result<Vec<(u16, round1::Package)>> {
         let mut packages = vec![];
         for i in 0..self.participants {
@@ -144,6 +173,8 @@ impl Dkg {
         Ok(packages)
     }
 
+    /// Returns the round 2 packages submitted by participants intended for
+    /// delivery to the provided participant index (`receiver`).
     pub fn round2_packages(&self, receiver: u16) -> Result<Vec<(u16, round2::Package)>> {
         let mut packages = vec![];
         for sender in 0..self.participants {
@@ -157,6 +188,8 @@ impl Dkg {
         Ok(packages)
     }
 
+    /// Returns whether the provided participant is required to take some action
+    /// in the DKG process.
     pub fn requires_action_from(&self, participant: u16) -> Result<bool> {
         match self.state() {
             DkgState::Round1 => self.absent(participant),
@@ -166,6 +199,8 @@ impl Dkg {
         }
     }
 
+    /// Returns whether the provided participant is absent from the first round
+    /// of this group's DKG process.
     pub fn absent(&self, participant: u16) -> Result<bool> {
         Ok(!self.round1.contains_key(participant)?)
     }

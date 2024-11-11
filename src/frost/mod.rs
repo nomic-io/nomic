@@ -27,11 +27,20 @@ use self::signing::{Signing, SigningState};
 #[orga]
 #[derive(Debug, Clone)]
 pub struct Config {
+    /// The number of shares required to sign a message.
     pub threshold: u16,
+    /// The participants in the group, with their respective addresses and share
+    /// counts.
     pub participants: LengthVec<u16, Participant>,
 }
 
 impl Config {
+    /// Creates a new [`Config`] with the given parameters from the [`Staking`]
+    /// state.
+    ///
+    /// The `top_n` validators with the highest stake are selected to
+    /// participate in the group, ignoring any validators considered absent
+    /// (via the `absent` set).
     pub fn from_staking<S: Symbol>(
         staking: &orga::coins::Staking<S>,
         top_n: u16,
@@ -63,14 +72,18 @@ impl Config {
             threshold,
         })
     }
+
+    /// Returns the total number of shares in the group.
     pub fn total_shares(&self) -> u16 {
         self.participants.iter().map(|p| p.shares).sum()
     }
 
+    /// Returns `true` if the given address is a participant in the group.
     pub fn contains(&self, address: Address) -> bool {
         self.participants.iter().any(|p| p.address == address)
     }
 
+    /// Returns the range of shares for which the given address is responsible.
     pub fn share_range(&self, address: Address) -> Result<Range<u16>> {
         let mut index = 0;
         for participant in self.participants.iter() {
@@ -84,27 +97,40 @@ impl Config {
     }
 }
 
+/// A single Frost group.
 #[orga]
 pub struct FrostGroup {
+    /// The configuration for this group, describing the share distribution and
+    /// signing parameters.
     pub config: Config,
+    /// The Distributed Key Generation state for this group.
     pub dkg: dkg::Dkg,
+    /// A queue of messages signed by or requiring signatures from this group.
     pub signing: Deque<Signing>,
+    /// The timestamp at which this group was created in unix seconds.
     pub created_at: i64,
 }
 
+/// The main Frost module, which manages a queue of [`FrostGroup`]s.
 #[orga]
 pub struct Frost {
+    /// A queue of groups.
     pub groups: Deque<FrostGroup>,
 }
 
+/// A participant in a Frost group.
 #[orga]
 #[derive(Debug, Clone)]
 pub struct Participant {
+    /// The operator address of the participant.
     pub address: Address,
+    /// The number of shares the participant has in the group.
     pub shares: u16,
 }
 
 impl FrostGroup {
+    /// Creates a new [`FrostGroup`] with the given [`Config`] and current
+    /// timestamp.
     pub fn with_config(config: Config, now: i64) -> Result<Self> {
         let dkg = Dkg::from_config(&config)?;
         Ok(Self {
@@ -115,6 +141,7 @@ impl FrostGroup {
         })
     }
 
+    /// Adds a new message for this group to sign.
     pub fn push_message(&mut self, message: LengthVec<u16, u8>) -> Result<()> {
         let now = self.now()?;
         self.signing
@@ -137,6 +164,10 @@ impl FrostGroup {
             .seconds)
     }
 
+    /// Submits the round 1 DKG packages for this group. `packages.len()` must
+    /// equal the number of shares controlled by the calling participant.
+    ///
+    /// See [`frost_secp256k1_tr::keys::dkg::part1`].
     pub fn submit_dkg_round1(
         &mut self,
         packages: LengthVec<u16, Adapter<frost_dkg::round1::Package>>,
@@ -156,6 +187,9 @@ impl FrostGroup {
         Ok(())
     }
 
+    /// Submits the round 2 DKG packages for this group.
+    ///
+    /// See [`frost_secp256k1_tr::keys::dkg::part2`].
     pub fn submit_dkg_round2(
         &mut self,
         packages: LengthVec<u16, LengthVec<u16, (u16, Adapter<frost_dkg::round2::Package>)>>,
@@ -176,6 +210,9 @@ impl FrostGroup {
         Ok(())
     }
 
+    /// Submits the DKG public key package for this group. `pubkey_package`
+    /// will be the result of a successful DKG round 2, and must be attested to
+    /// by all participants in the group to complete the DKG process.
     pub fn attest_pubkey_package(
         &mut self,
         pubkey_package: Adapter<PublicKeyPackage>,
@@ -189,6 +226,10 @@ impl FrostGroup {
         Ok(())
     }
 
+    /// Submits the round 1 signing commitments for a single participant in this
+    /// group.
+    ///
+    /// See [`frost_secp256k1_tr::round1::commit`].
     pub fn submit_commitments(
         &mut self,
         sig_index: u64,
@@ -210,6 +251,10 @@ impl FrostGroup {
         Ok(())
     }
 
+    /// Submits the round 2 signature shares for a single participant in this
+    /// group.
+    ///
+    /// See [`frost_secp256k1_tr::round2::sign`].
     pub fn submit_sig_shares(
         &mut self,
         sig_index: u64,
@@ -237,6 +282,10 @@ impl FrostGroup {
         Ok(())
     }
 
+    /// Advances to the next signing iteration for this group if the
+    /// signing process has not been completed within the provided timeout.
+    /// `timeout` is the number of seconds since the beginning of the current
+    /// iteration.
     pub fn advance_with_timeout(&mut self, timeout: i64) -> Result<()> {
         let now = self.now()?;
         for i in 0..self.signing.len() {
@@ -250,6 +299,8 @@ impl FrostGroup {
         Ok(())
     }
 
+    /// Returns the set of participant addresses that are absent from this
+    /// group's DKG process.
     pub fn absent(&self) -> Result<HashSet<Address>> {
         let mut res = HashSet::new();
         if self.dkg.state() != DkgState::Round1 {
@@ -274,6 +325,10 @@ impl Frost {
         Ok(())
     }
 
+    /// Submits a participant's round 1 DKG packages for the provided
+    /// group index.
+    ///
+    /// See [`FrostGroup::submit_dkg_round1`].
     #[call]
     pub fn submit_dkg_round1(
         &mut self,
@@ -289,6 +344,10 @@ impl Frost {
         group.submit_dkg_round1(packages)
     }
 
+    /// Submits the participant's round 2 DKG packages for the provided
+    /// group index.
+    ///
+    /// See [`FrostGroup::submit_dkg_round2`].
     #[call]
     pub fn submit_dkg_round2(
         &mut self,
@@ -304,6 +363,10 @@ impl Frost {
         group.submit_dkg_round2(packages)
     }
 
+    /// Submits the participant's DKG public key attestation package for the
+    /// provided group index.
+    ///
+    /// See [`FrostGroup::attest_pubkey_package`].
     #[call]
     pub fn attest_dkg_pubkey(
         &mut self,
@@ -319,6 +382,10 @@ impl Frost {
         group.attest_pubkey_package(package)
     }
 
+    /// Submits the participant's round 1 signing commitments for the provided
+    /// group index.
+    ///
+    /// See [`FrostGroup::submit_commitments`].
     #[call]
     pub fn submit_commitments(
         &mut self,
@@ -336,6 +403,10 @@ impl Frost {
         group.submit_commitments(sig_index, iteration, commitments)
     }
 
+    /// Submits the participant's round 2 signature shares for the provided
+    /// group index.
+    ///
+    /// See [`FrostGroup::submit_sig_shares`].
     #[call]
     pub fn submit_sig_shares(
         &mut self,
@@ -353,6 +424,7 @@ impl Frost {
         group.submit_sig_shares(sig_index, iteration, shares)
     }
 
+    /// Returns the round 1 DKG packages for the provided group index.
     #[query]
     pub fn dkg_round1_packages(
         &self,
@@ -364,6 +436,8 @@ impl Frost {
             .ok_or(Error::App("Sig not found".into()))?
     }
 
+    /// Returns the round 2 DKG packages for the provided group index and
+    /// receiver share index.
     #[query]
     pub fn dkg_round2_packages(
         &self,
@@ -376,6 +450,7 @@ impl Frost {
             .ok_or(Error::App("Sig not found".into()))?
     }
 
+    /// Returns the current DKG state for the provided group index.
     #[query]
     pub fn dkg_state(&self, index: u64) -> Result<DkgState> {
         self.groups
@@ -384,6 +459,8 @@ impl Frost {
             .ok_or(Error::App("Sig not found".into()))
     }
 
+    /// Returns the current signing state for a single message within a group's
+    /// message queue.
     #[query]
     pub fn signing_state(&self, group_index: u64, sig_index: u64) -> Result<SigningState> {
         let group = self
@@ -399,6 +476,8 @@ impl Frost {
         Ok(sig.state())
     }
 
+    /// Returns the current signing state and iteration for a single message
+    /// within a group's message queue.
     #[query]
     pub fn signing_state_with_iteration(
         &self,
@@ -418,6 +497,7 @@ impl Frost {
         Ok((sig.iteration, sig.state()))
     }
 
+    /// Returns the configuration for the provided group index.
     #[query]
     pub fn config(&self, index: u64) -> Result<Config> {
         self.groups
@@ -426,6 +506,8 @@ impl Frost {
             .ok_or(Error::App("Sig not found".into()))
     }
 
+    /// Returns the current DKG group public key for the provided group index,
+    /// if the DKG process has been completed.
     #[query]
     pub fn group_pubkey(&self, index: u64) -> Result<Option<Adapter<PublicKeyPackage>>> {
         self.groups
@@ -435,6 +517,9 @@ impl Frost {
             .group_pubkey()
     }
 
+    /// Returns the group indices for which the provided participant address
+    /// requires DKG participation (which currently may only be the most recent
+    /// group).
     #[query]
     pub fn dkg_action_required(&self, address: Address) -> Result<Vec<u64>> {
         let mut res = vec![];
@@ -462,6 +547,8 @@ impl Frost {
         Ok(res)
     }
 
+    /// Returns the group indices and signing indices for which action is
+    /// required from the provided participant address.
     #[query]
     pub fn signing_action_required(&self, address: Address) -> Result<Vec<(u64, u64)>> {
         let mut res = vec![];
@@ -493,6 +580,8 @@ impl Frost {
         Ok(res)
     }
 
+    /// Returns the [`SigningPackage`] for a single message within a group's
+    /// message queue.
     #[query]
     pub fn signing_package(
         &self,
@@ -510,6 +599,8 @@ impl Frost {
             .clone())
     }
 
+    /// Returns the completed signature for a message within a group's message
+    /// queue.
     #[query]
     pub fn signature(
         &self,
@@ -527,6 +618,8 @@ impl Frost {
             .clone())
     }
 
+    /// Returns the index of the latest group to have successfully generated a
+    /// key.
     #[query]
     pub fn most_recent_with_key(&self) -> Result<Option<u64>> {
         for i in (0..self.groups.len()).rev() {
@@ -538,6 +631,8 @@ impl Frost {
         Ok(None)
     }
 
+    /// Advances to the next signing iteration for all groups according to the
+    /// provided `timeout` limit in seconds.
     pub fn advance_with_timeout(&mut self, timeout: i64) -> Result<()> {
         for i in 0..self.groups.len() {
             let mut group = self
@@ -551,16 +646,22 @@ impl Frost {
     }
 }
 
+/// Returns an [`Identifier`] for the provided participant index.
 fn identifier(participant_index: u16) -> Identifier {
     Identifier::try_from(participant_index + 1).unwrap()
 }
 
+/// Assembles a collection of items by their participant index (converted to an
+/// [`Identifier`] as required by the operations in [`frost_secp256k1_tr`]).
 fn assemble_by_identifier<T>(packages: impl Iterator<Item = (u16, T)>) -> BTreeMap<Identifier, T> {
     packages
         .map(|(i, p)| (identifier(i), p))
         .collect::<BTreeMap<_, _>>()
 }
 
+/// Disassembles a map of items indexed by [`Identifier`] into a vector of
+/// tuples of participant index and items, using the indexing scheme of the
+/// [`Frost`] module.
 fn disassemble_by_identifier<T: Clone>(map: &BTreeMap<Identifier, T>) -> Vec<(u16, T)> {
     let mut res = vec![];
     for i in 0..=map.len() {

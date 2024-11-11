@@ -12,6 +12,7 @@ use orga::{collections::Map, encoding::LengthVec, orga, Result};
 
 use super::{assemble_by_identifier, Adapter, Config};
 
+/// The state of the signing process for a single message.
 #[derive(
     Clone, Copy, PartialEq, Eq, Hash, Debug, Default, Serialize, Deserialize, Encode, Decode,
 )]
@@ -30,21 +31,35 @@ impl Query for SigningState {
     }
 }
 
+/// The state machine for the signing process for a single message.
 #[orga]
 pub struct Signing {
+    /// The configuration for the group.
     config: Config,
+    /// The message to sign.
     message: LengthVec<u16, u8>,
+    /// The round 1 signing commitments indexed by (iteration, participant).
     commitments: Map<(u32, u16), Adapter<SigningCommitments>>,
+    /// The number of [`SigningCommitments`] submitted by participants.
     commitments_len: u16,
+    /// The [`frost_secp256k1_tr::SigningPackage`], if it has been built.
     pub(crate) signing_package: Option<Adapter<SigningPackage>>,
+    /// The signature shares indexed by (iteration, participant).
     sig_shares: Map<(u32, u16), Adapter<SignatureShare>>,
+    /// The number of signature shares submitted by participants.
     sig_shares_len: u16,
+    /// The aggregated [`Signature`] after successful completion of the signing
+    /// process.
     pub signature: Option<Adapter<Signature>>,
+    /// The current iteration.
     pub iteration: u32,
+    /// The start time of the current iteration.
     pub iteration_start_seconds: i64,
 }
 
 impl Signing {
+    /// Creates a new [`Signing`] from the provided [`Config`] and message
+    /// payload.
     pub fn new(config: Config, message: LengthVec<u16, u8>, now: i64) -> Self {
         Self {
             config,
@@ -54,6 +69,8 @@ impl Signing {
         }
     }
 
+    /// Advances the state machine to the next iteration if the current one has
+    /// timed out.
     pub fn advance_with_timeout(&mut self, now: i64, timeout: i64) -> Result<()> {
         if now > self.iteration_start_seconds + timeout && self.state() != SigningState::Complete {
             self.next_iteration(now)?;
@@ -62,7 +79,10 @@ impl Signing {
         Ok(())
     }
 
+    /// Advances the state machine to the next iteration.
     pub fn next_iteration(&mut self, now: i64) -> Result<()> {
+        // TODO: Retry with a different subset of participants, omitting absent
+        // or misbehaving signers.
         self.iteration += 1;
         self.commitments_len = 0;
         self.sig_shares_len = 0;
@@ -72,6 +92,8 @@ impl Signing {
         Ok(())
     }
 
+    /// Returns whether the signing action is required for the provided
+    /// participant index.
     pub fn requires_action_from(&self, participant: u16) -> Result<bool> {
         if self.state() == SigningState::Round1 {
             return Ok(!self
@@ -87,6 +109,7 @@ impl Signing {
         Ok(false)
     }
 
+    /// Returns the current [`SigningState`] of the signing process.
     pub fn state(&self) -> SigningState {
         if self.commitments_len < self.config.threshold {
             return SigningState::Round1;
@@ -98,6 +121,10 @@ impl Signing {
         SigningState::Complete
     }
 
+    /// Submits [`SigningCommitments`] for the provided iteration and
+    /// participant.
+    ///
+    /// See [`frost_secp256k1_tr::round1::commit`].
     pub fn submit_commitments(
         &mut self,
         iteration: u32,
@@ -125,6 +152,9 @@ impl Signing {
         Ok(())
     }
 
+    /// Submits a [`SignatureShare`] for the provided iteration and participant.
+    ///
+    /// See [`frost_secp256k1_tr::round2::sign`].
     pub fn submit_sig_share(
         &mut self,
         iteration: u32,
@@ -154,6 +184,7 @@ impl Signing {
         Ok(())
     }
 
+    /// Builds the [`SigningPackage`] for the current iteration.
     fn build_signing_package(&mut self) -> Result<()> {
         let mut commitments = vec![];
         if self.signing_package.is_some() {
@@ -181,6 +212,7 @@ impl Signing {
         Ok(())
     }
 
+    /// Aggregates the signature shares into a complete [`Signature`].
     fn aggregate_signature(&mut self, pubkey_package: &PublicKeyPackage) -> Result<()> {
         let Some(Adapter {
             inner: signing_package,
