@@ -54,7 +54,6 @@ static INIT: Once = Once::new();
 
 #[tokio::test]
 #[serial]
-#[ignore]
 async fn ethereum() {
     INIT.call_once(|| {
         pretty_env_logger::init();
@@ -110,8 +109,22 @@ async fn ethereum() {
     let funded_accounts =
         setup_test_app(&path, 4, Some(headers_config), Some(cp_config), None, None);
 
-    let node = Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"), Default::default());
-    let _node_child = node.await.run().await.unwrap();
+    let node = Node::<nomic::app::App>::new(node_path, Some("nomic-e2e"), Default::default()).await;
+    let config_path = path.join("tendermint/config/config.toml");
+    edit_block_time(&config_path, "10ms");
+    configure_node(&config_path, |cfg| {
+        cfg["consensus"]["create_empty_blocks"] = toml_edit::value(false);
+    });
+    let _node_child = node
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .tendermint_flags(vec![
+            "--consensus.create_empty_blocks".to_string(),
+            "false".to_string(),
+        ])
+        .run()
+        .await
+        .unwrap();
 
     let anvil = Anvil::default().chain_id(0).port(8545u16);
 
@@ -137,7 +150,16 @@ async fn ethereum() {
     let checkpoints = relayer.start_checkpoint_relay();
 
     let signer = async {
-        tokio::time::sleep(Duration::from_secs(10)).await;
+        let consensus_key = load_consensus_key(&path)?;
+        poll_for_finalized_query_data(
+            DEFAULT_RPC.to_string(),
+            Some("Polling for signatory key...".to_string()),
+            None,
+            true,
+            |app| Ok(app.bitcoin.signatory_keys.get(consensus_key)?.is_some()),
+        )
+        .await
+        .unwrap();
         setup_test_signer(&signer_path, client_provider)
             .start()
             .await
@@ -194,7 +216,7 @@ async fn ethereum() {
                 Ok(_) => break,
                 Err(e) => {
                     info!("Eth relayer error: {}", e);
-                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    sleep(1).await;
                 }
             }
         }
@@ -415,7 +437,7 @@ async fn ethereum() {
                 break;
             }
 
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            sleep(1).await;
         }
 
         token_contract

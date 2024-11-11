@@ -39,6 +39,7 @@ use nomic::ethereum;
 use nomic::frost::{self, signer::SecretStore};
 use nomic::utils::load_bitcoin_key;
 use nomic::utils::load_or_generate;
+use nomic::utils::sleep;
 use orga::abci::Node;
 use orga::client::wallet::{SimpleWallet, Wallet};
 use orga::coins::{Address, Commission, Decimal, Declaration, Symbol};
@@ -475,7 +476,7 @@ impl StartCmd {
 
                     loop {
                         let signal_version = signal_version.clone().try_into().unwrap();
-                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                        sleep(5).await;
                         if let Err(err) = client
                             .call(
                                 |app| build_call!(app.signal(signal_version)),
@@ -673,7 +674,7 @@ async fn relaunch_on_migrate(config: &nomic::network::Config) -> Result<()> {
 
         initial_ver = Some(version);
 
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        sleep(5).await;
     }
 }
 
@@ -2599,7 +2600,7 @@ impl BabylonRelayerCmd {
             loop {
                 babylon::relayer::relay_staking_confs(&app_client, &btc_client).await?;
 
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                sleep(5).await;
             }
 
             #[allow(unreachable_code)]
@@ -2610,7 +2611,7 @@ impl BabylonRelayerCmd {
             loop {
                 babylon::relayer::relay_unbonding_confs(&app_client, &btc_client).await?;
 
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                sleep(5).await;
             }
 
             #[allow(unreachable_code)]

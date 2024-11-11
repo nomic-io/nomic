@@ -2,6 +2,7 @@ use crate::app::{InnerApp, Nom};
 use crate::bitcoin::signatory::derive_pubkey;
 use crate::bitcoin::signer::Signer;
 use crate::error::Result;
+use crate::utils::sleep;
 use bitcoin::secp256k1::Secp256k1;
 use bitcoin::util::bip32::{ExtendedPrivKey, ExtendedPubKey};
 use log::info;
@@ -25,7 +26,7 @@ where
             for (xpub, xpriv) in key_pairs.iter() {
                 self.sign_eth_messages(xpub, xpriv).await?;
 
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                sleep(5).await;
             }
         }
     }

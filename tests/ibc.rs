@@ -221,14 +221,14 @@ async fn ibc_test() {
     );
 
     let signer = async {
-        tokio::time::sleep(Duration::from_secs(10)).await;
+        sleep(10).await;
         setup_test_signer(&signer_path, client_provider)
             .start()
             .await
     };
 
     let grpc = async {
-        tokio::time::sleep(Duration::from_secs(10)).await;
+        sleep(10).await;
         dbg!("Starting gRPC server...");
         orga::ibc::start_grpc(
             || app_client(DEFAULT_RPC).sub(|app| Ok(app.ibc.ctx)),

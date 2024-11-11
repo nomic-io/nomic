@@ -72,7 +72,7 @@ pub async fn poll_for_active_sigset() {
             .await
         {
             Ok(_) => break,
-            Err(_) => tokio::time::sleep(Duration::from_secs(2)).await,
+            Err(_) => sleep(2).await,
         }
     }
 }
@@ -105,9 +105,12 @@ pub fn time_now() -> u64 {
         .as_secs()
 }
 
-pub fn sleep(seconds: u64) {
-    let duration = std::time::Duration::from_secs(seconds);
-    std::thread::sleep(duration);
+pub async fn sleep(interval: u64) {
+    #[cfg(feature = "devnet")]
+    tokio::time::sleep(Duration::from_millis(interval)).await;
+
+    #[cfg(not(feature = "devnet"))]
+    tokio::time::sleep(Duration::from_secs(interval)).await;
 }
 
 pub fn generate_sign_doc(chain_id: String, msg: sdk::Msg, nonce: u64) -> sdk::SignDoc {
@@ -335,7 +338,7 @@ pub async fn poll_for_blocks() {
                 break;
             }
             Err(_) => {
-                tokio::time::sleep(Duration::from_secs(1)).await;
+                sleep(1).await;
             }
         }
     }
@@ -368,7 +371,7 @@ pub async fn poll_for_updated_query_data<T: PartialEq>(
             }
         }
 
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        sleep(1).await;
     }
 }
 
@@ -399,7 +402,7 @@ pub async fn poll_for_finalized_query_data<T: PartialEq + Debug>(
             }
         }
 
-        tokio::time::sleep(Duration::from_secs(1)).await
+        sleep(1).await;
     }
 }
 
@@ -679,4 +682,26 @@ pub fn client_provider() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, Deriv
     let val_priv_key = orga_load_privkey().unwrap();
     let wallet = DerivedKey::from_secret_key(val_priv_key);
     app_client(DEFAULT_RPC).with_wallet(wallet)
+}
+
+pub fn edit_block_time(cfg_path: &std::path::PathBuf, timeout_commit: &str) {
+    configure_node(cfg_path, |cfg| {
+        cfg["consensus"]["timeout_commit"] = toml_edit::value(timeout_commit);
+    });
+}
+
+pub fn configure_node<P, F>(cfg_path: &P, configure: F)
+where
+    P: AsRef<std::path::Path>,
+    F: Fn(&mut toml_edit::Document),
+{
+    let data = std::fs::read_to_string(cfg_path).expect("Failed to read config.toml");
+
+    let mut toml = data
+        .parse::<toml_edit::Document>()
+        .expect("Failed to parse config.toml");
+
+    configure(&mut toml);
+
+    std::fs::write(cfg_path, toml.to_string()).expect("Failed to write config.toml");
 }

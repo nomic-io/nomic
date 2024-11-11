@@ -4,6 +4,7 @@ use crate::app_client;
 use crate::error::Result as AppResult;
 use crate::error::Result;
 use crate::ethereum::proofs::extra_slots_required;
+use crate::utils::sleep;
 use alloy_core::primitives::Address as EthAddress;
 use alloy_primitives::Uint;
 use alloy_provider::Provider;
@@ -76,7 +77,7 @@ impl<
                     log::error!("Ethereum relayer error: {:?}", e);
                 };
 
-                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+                sleep(10).await;
             }
 
             #[allow(unreachable_code)]
@@ -97,7 +98,7 @@ impl<
                     log::error!("Nomic relayer error: {:?}", e);
                 };
 
-                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+                sleep(10).await;
             }
 
             #[allow(unreachable_code)]
@@ -114,7 +115,7 @@ impl<
                     log::error!("Nomic relayer error: {:?}", e);
                 };
 
-                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+                sleep(10).await;
             }
 
             #[allow(unreachable_code)]

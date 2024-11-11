@@ -2,7 +2,7 @@ use crate::app::{InnerApp, Nom};
 use crate::bitcoin::checkpoint::CheckpointStatus;
 use crate::bitcoin::threshold_sig::Signature;
 use crate::error::{Error, Result};
-use crate::utils::load_bitcoin_key;
+use crate::utils::{load_bitcoin_key, sleep};
 use bitcoin::secp256k1::{Message, Secp256k1};
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use futures::try_join;
@@ -288,7 +288,7 @@ where
             if signed {
                 index += 1;
             } else {
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                sleep(5).await;
             }
         }
     }
@@ -309,7 +309,7 @@ where
                     }
                 }
 
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                sleep(5).await;
             }
         }
     }

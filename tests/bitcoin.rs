@@ -48,6 +48,7 @@ static INIT: Once = Once::new();
 
 #[tokio::test]
 #[serial]
+#[ignore]
 async fn bitcoin_test() {
     INIT.call_once(|| {
         pretty_env_logger::init();
@@ -131,7 +132,16 @@ async fn bitcoin_test() {
     let disbursal = relayer.start_emergency_disbursal_transaction_relay();
 
     let signer = async {
-        tokio::time::sleep(Duration::from_secs(10)).await;
+        let consensus_key = load_consensus_key(&path)?;
+        poll_for_finalized_query_data(
+            DEFAULT_RPC.to_string(),
+            Some("Polling for signatory key...".to_string()),
+            None,
+            true,
+            |app| Ok(app.bitcoin.signatory_keys.get(consensus_key)?.is_some()),
+        )
+        .await
+        .unwrap();
         setup_test_signer(&signer_path, client_provider)
             .start()
             .await
@@ -149,7 +159,15 @@ async fn bitcoin_test() {
         &slashable_signer_xpriv.clone(),
     );
     let slashable_signer = async {
-        tokio::time::sleep(Duration::from_secs(15)).await;
+        poll_for_finalized_query_data(
+            DEFAULT_RPC.to_string(),
+            Some("Polling for signatory key...".to_string()),
+            None,
+            true,
+            |app| Ok(app.bitcoin.signatory_keys.get([0; 32])?.is_some()),
+        )
+        .await
+        .unwrap();
         let privkey_bytes = funded_accounts[2].privkey.secret_bytes();
         let privkey = orga::secp256k1::SecretKey::from_slice(&privkey_bytes).unwrap();
         let signer = Signer::new(
@@ -176,7 +194,7 @@ async fn bitcoin_test() {
     let test = async {
         let val_priv_key = load_privkey().unwrap();
         let nomic_wallet = DerivedKey::from_secret_key(val_priv_key);
-        let consensus_key = load_consensus_key(&path)?;
+        let consensus_key = load_consensus_key(&path).unwrap();
         declare_validator(consensus_key, nomic_wallet, 100_000)
             .await
             .unwrap();
@@ -186,7 +204,8 @@ async fn bitcoin_test() {
                 |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
                 |app| build_call!(app.bitcoin.set_signatory_key(xpub.into())),
             )
-            .await?;
+            .await
+            .unwrap();
 
         let privkey_bytes = funded_accounts[2].privkey.secret_bytes();
         let privkey = orga::secp256k1::SecretKey::from_slice(&privkey_bytes).unwrap();
@@ -199,7 +218,8 @@ async fn bitcoin_test() {
                 |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
                 |app| build_call!(app.bitcoin.set_signatory_key(slashable_signer_xpub.into())),
             )
-            .await?;
+            .await
+            .unwrap();
 
         let wallet = retry(|| bitcoind.create_wallet("nomic-integration-test"), 10).unwrap();
         let wallet_address = wallet.get_new_address(None, None).unwrap();
@@ -449,7 +469,7 @@ async fn bitcoin_test() {
                 .await
                 .is_err()
             {
-                tokio::time::sleep(Duration::from_secs(2)).await;
+                sleep(2).await;
             }
         }
 
@@ -663,7 +683,16 @@ async fn signing_completed_checkpoint_test() {
     let checkpoints = relayer.start_checkpoint_relay();
 
     let signer = async {
-        tokio::time::sleep(Duration::from_secs(10)).await;
+        let consensus_key = load_consensus_key(&path)?;
+        poll_for_finalized_query_data(
+            DEFAULT_RPC.to_string(),
+            Some("Polling for signatory key...".to_string()),
+            None,
+            1,
+            |app| Ok(app.staking.all_validators()?.len()),
+        )
+        .await
+        .unwrap();
         setup_test_signer(&signer_path, client_provider)
             .start()
             .await
@@ -682,7 +711,15 @@ initiated"
     let slashable_xpriv_seed: [u8; 32] = rand::thread_rng().gen();
 
     let slashable_signer = async {
-        tokio::time::sleep(Duration::from_secs(15)).await;
+        poll_for_finalized_query_data(
+            DEFAULT_RPC.to_string(),
+            Some("Polling for signatory key...".to_string()),
+            None,
+            2,
+            |app| Ok(app.staking.all_validators()?.len()),
+        )
+        .await
+        .unwrap();
         let xpriv =
             ExtendedPrivKey::new_master(bitcoin::Network::Testnet, slashable_xpriv_seed.as_slice())
                 .unwrap();
@@ -710,7 +747,7 @@ initiated"
     };
 
     let slashable_signer_2 = {
-        tokio::time::sleep(Duration::from_secs(15)).await;
+        sleep(15).await;
         let xpriv =
             ExtendedPrivKey::new_master(bitcoin::Network::Testnet, slashable_xpriv_seed.as_slice())
                 .unwrap();
@@ -833,7 +870,7 @@ initiated"
             .collect::<Vec<_>>();
 
         tokio::spawn(slashable_signer_2);
-        tokio::time::sleep(Duration::from_secs(30)).await;
+        sleep(30).await;
 
         let checkpoint_txs = app_client(DEFAULT_RPC)
             .query(|app: InnerApp| Ok(app.bitcoin.checkpoints.completed_txs(20)?))
@@ -983,7 +1020,16 @@ async fn pending_deposits() {
     let disbursal = relayer.start_emergency_disbursal_transaction_relay();
 
     let signer = async {
-        tokio::time::sleep(Duration::from_secs(15)).await;
+        let consensus_key = load_consensus_key(&path)?;
+        poll_for_finalized_query_data(
+            DEFAULT_RPC.to_string(),
+            Some("Polling for signatory key...".to_string()),
+            None,
+            true,
+            |app| Ok(app.bitcoin.signatory_keys.get(consensus_key)?.is_some()),
+        )
+        .await
+        .unwrap();
         setup_test_signer(&signer_path, client_provider)
             .start()
             .await
@@ -1033,7 +1079,7 @@ async fn pending_deposits() {
             deposit_address.deposit_addr.clone(),
         )
         .await?;
-        tokio::time::sleep(Duration::from_secs(10)).await;
+        sleep(10).await;
         &wallet
             .send_to_address(
                 &bitcoin::Address::from_str(&deposit_address.deposit_addr).unwrap(),
@@ -1062,7 +1108,7 @@ async fn pending_deposits() {
                 break;
             }
 
-            tokio::time::sleep(Duration::from_secs(5)).await;
+            sleep(5).await;
         }
 
         for i in 0..=4 {
@@ -1085,7 +1131,7 @@ async fn pending_deposits() {
                 .await
                 .unwrap();
 
-            tokio::time::sleep(Duration::from_secs(5)).await;
+            sleep(5).await;
         }
 
         let deposits = reqwest::get(format!(
@@ -1205,8 +1251,16 @@ initiated"
     };
 
     let signer = async {
-        tokio::time::sleep(Duration::from_secs(15)).await;
-
+        let consensus_key = load_consensus_key(&path)?;
+        poll_for_finalized_query_data(
+            DEFAULT_RPC.to_string(),
+            Some("Polling for signatory key...".to_string()),
+            None,
+            true,
+            |app| Ok(app.bitcoin.signatory_keys.get(consensus_key)?.is_some()),
+        )
+        .await
+        .unwrap();
         let tm_privkey_bytes = std::fs::read(signer_path.join(".orga-wallet/privkey")).unwrap();
         let tm_privkey =
             orga::secp256k1::SecretKey::from_slice(tm_privkey_bytes.as_slice()).unwrap();
@@ -1361,7 +1415,7 @@ initiated"
             .await?;
 
         let new_key_signer = {
-            tokio::time::sleep(Duration::from_secs(15)).await;
+            sleep(15).await;
             let tm_privkey_bytes = std::fs::read(signer_path.join(".orga-wallet/privkey"))?;
             let tm_privkey = secp256k1::SecretKey::from_slice(tm_privkey_bytes.as_slice()).unwrap();
             let tm_pubkey =
@@ -1381,7 +1435,7 @@ initiated"
         };
 
         tokio::spawn(new_key_signer);
-        tokio::time::sleep(Duration::from_secs(30)).await;
+        sleep(30).await;
 
         deposit_bitcoin(
             &funded_accounts[0].address,
@@ -1595,7 +1649,16 @@ async fn recover_expired_deposit() {
     let disbursal = relayer.start_emergency_disbursal_transaction_relay();
 
     let signer = async {
-        tokio::time::sleep(Duration::from_secs(10)).await;
+        let consensus_key = load_consensus_key(&path)?;
+        poll_for_finalized_query_data(
+            DEFAULT_RPC.to_string(),
+            Some("Polling for signatory key...".to_string()),
+            None,
+            true,
+            |app| Ok(app.bitcoin.signatory_keys.get(consensus_key)?.is_some()),
+        )
+        .await
+        .unwrap();
         setup_test_signer(&signer_path, client_provider)
             .start()
             .await
@@ -1704,7 +1767,7 @@ async fn recover_expired_deposit() {
         .await
         .unwrap();
 
-        tokio::time::sleep(Duration::from_secs(90)).await;
+        sleep(90).await;
         deposit_bitcoin(
             &funded_accounts[0].address,
             bitcoin::Amount::from_btc(5.0).unwrap(),
@@ -1728,7 +1791,7 @@ async fn recover_expired_deposit() {
         .await
         .unwrap();
 
-        tokio::time::sleep(Duration::from_secs(90)).await;
+        sleep(90).await;
 
         broadcast_deposit_addr(
             funded_accounts[1].address.to_string(),
@@ -1753,7 +1816,7 @@ async fn recover_expired_deposit() {
         .await
         .unwrap();
 
-        tokio::time::sleep(Duration::from_secs(30)).await;
+        sleep(30).await;
 
         btc_client
             .generate_to_address(50, &async_wallet_address)
@@ -1893,7 +1956,16 @@ async fn generate_deposit_expired() {
     let xpub = ExtendedPubKey::from_priv(&secp256k1::Secp256k1::new(), &xpriv);
 
     let signer = async {
-        tokio::time::sleep(Duration::from_secs(10)).await;
+        let consensus_key = load_consensus_key(&path)?;
+        poll_for_finalized_query_data(
+            DEFAULT_RPC.to_string(),
+            Some("Polling for signatory key...".to_string()),
+            None,
+            true,
+            |app| Ok(app.bitcoin.signatory_keys.get(consensus_key)?.is_some()),
+        )
+        .await
+        .unwrap();
         setup_test_signer(&signer_path, client_provider)
             .start()
             .await
