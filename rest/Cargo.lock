@@ -1861,8 +1861,8 @@ dependencies = [
 
 [[package]]
 name = "consensus-core"
-version = "0.6.0"
-source = "git+https://github.com/a16z/helios.git#b9bc6bf03b3f271773307210fd67ade62f719ae1"
+version = "0.6.1"
+source = "git+https://github.com/a16z/helios.git?rev=0.7.0#545d809be0f135f69a8e6f613bb6bdd0fb4b22d1"
 dependencies = [
  "alloy",
  "bls12_381",
@@ -2438,9 +2438,9 @@ dependencies = [
 [[package]]
 name = "ed"
 version = "0.3.0"
-source = "git+https://github.com/nomic-io/ed?rev=a657be856792039ff60c2f67e7920e38cd3acffc#a657be856792039ff60c2f67e7920e38cd3acffc"
+source = "git+https://github.com/turbofish-org/ed?rev=a657be856792039ff60c2f67e7920e38cd3acffc#a657be856792039ff60c2f67e7920e38cd3acffc"
 dependencies = [
- "ed-derive 0.3.0 (git+https://github.com/nomic-io/ed?rev=a657be856792039ff60c2f67e7920e38cd3acffc)",
+ "ed-derive 0.3.0 (git+https://github.com/turbofish-org/ed?rev=a657be856792039ff60c2f67e7920e38cd3acffc)",
  "thiserror",
 ]
 
@@ -2458,7 +2458,7 @@ dependencies = [
 [[package]]
 name = "ed-derive"
 version = "0.3.0"
-source = "git+https://github.com/nomic-io/ed?rev=a657be856792039ff60c2f67e7920e38cd3acffc#a657be856792039ff60c2f67e7920e38cd3acffc"
+source = "git+https://github.com/turbofish-org/ed?rev=a657be856792039ff60c2f67e7920e38cd3acffc#a657be856792039ff60c2f67e7920e38cd3acffc"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4488,7 +4488,7 @@ dependencies = [
 [[package]]
 name = "merk"
 version = "2.0.0"
-source = "git+https://github.com/nomic-io/merk?rev=cc496300bff8a9223e5589cdc2f2e0db3ae14208#cc496300bff8a9223e5589cdc2f2e0db3ae14208"
+source = "git+https://github.com/turbofish-org/merk?rev=058839b813bb373e724b7c9826030e6df1aec2cb#058839b813bb373e724b7c9826030e6df1aec2cb"
 dependencies = [
  "colored",
  "ed 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -4615,7 +4615,7 @@ dependencies = [
 
 [[package]]
 name = "nomic"
-version = "9.1.4"
+version = "9.4.0"
 dependencies = [
  "alloy-contract",
  "alloy-core 0.8.5",
@@ -4641,7 +4641,7 @@ dependencies = [
  "cosmrs 0.14.0",
  "csv",
  "derive_more 0.99.18",
- "ed 0.3.0 (git+https://github.com/nomic-io/ed?rev=a657be856792039ff60c2f67e7920e38cd3acffc)",
+ "ed 0.3.0 (git+https://github.com/turbofish-org/ed?rev=a657be856792039ff60c2f67e7920e38cd3acffc)",
  "ethereum-triedb",
  "ethereum_ssz 0.6.0",
  "frost-secp256k1-tr",
@@ -4663,6 +4663,7 @@ dependencies = [
  "ripemd",
  "rlp",
  "rlp-derive",
+ "ruint",
  "semver 1.0.23",
  "serde",
  "serde-big-array",
@@ -4874,7 +4875,7 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.3.1"
-source = "git+https://github.com/nomic-io/orga.git?rev=35988d76b58008e37794064c41f3d0ba102ca0c8#35988d76b58008e37794064c41f3d0ba102ca0c8"
+source = "git+https://github.com/turbofish-org/orga.git?rev=6a9d720574f87528217e3d355e18f738a5bb1576#6a9d720574f87528217e3d355e18f738a5bb1576"
 dependencies = [
  "abci2",
  "async-trait",
@@ -4883,7 +4884,7 @@ dependencies = [
  "borsh",
  "cosmrs 0.18.0",
  "derive_more 0.99.18",
- "ed 0.3.0 (git+https://github.com/nomic-io/ed?rev=a657be856792039ff60c2f67e7920e38cd3acffc)",
+ "ed 0.3.0 (git+https://github.com/turbofish-org/ed?rev=a657be856792039ff60c2f67e7920e38cd3acffc)",
  "ed25519-dalek 2.1.1",
  "educe",
  "flate2",
@@ -4931,7 +4932,7 @@ dependencies = [
 [[package]]
 name = "orga-macros"
 version = "0.3.1"
-source = "git+https://github.com/nomic-io/orga.git?rev=35988d76b58008e37794064c41f3d0ba102ca0c8#35988d76b58008e37794064c41f3d0ba102ca0c8"
+source = "git+https://github.com/turbofish-org/orga.git?rev=6a9d720574f87528217e3d355e18f738a5bb1576#6a9d720574f87528217e3d355e18f738a5bb1576"
 dependencies = [
  "darling 0.20.10",
  "heck 0.3.3",

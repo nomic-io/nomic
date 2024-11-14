@@ -116,6 +116,30 @@ impl LightClient {
             .into()
     }
 
+    #[cfg(feature = "devnet")]
+    pub fn unsafe_update_consensus(
+        &mut self,
+        state_root: [u8; 32],
+        block_number: u64,
+    ) -> Result<()> {
+        self.lcs
+            .finalized_header
+            .execution
+            .as_mut()
+            .unwrap()
+            .state_root_mut()
+            .copy_from_slice(&state_root);
+        *self
+            .lcs
+            .finalized_header
+            .execution
+            .as_mut()
+            .unwrap()
+            .block_number_mut() = block_number;
+
+        Ok(())
+    }
+
     /// Get the underlying `LightClientStore`.
     pub fn light_client_store(&self) -> &LightClientStore {
         &self.lcs
@@ -418,7 +442,7 @@ mod u64_string {
     }
 }
 
-#[derive(Clone, Debug, Encode, Decode, Serialize, Deserialize)]
+#[derive(Clone, Default, Debug, Encode, Decode, Serialize, Deserialize)]
 pub struct Bootstrap {
     pub header: LightClientHeader,
     pub current_sync_committee: SyncCommittee,

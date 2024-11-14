@@ -11,6 +11,7 @@ use crate::bitcoin::{adapter::Adapter, header_queue::WrappedHeader};
 use crate::error::Error;
 use crate::error::Result;
 use crate::orga::encoding::Encode;
+use crate::utils::sleep;
 use crate::utils::time_now;
 use bitcoin::consensus::{Decodable, Encodable};
 use bitcoin::Txid;
@@ -87,7 +88,7 @@ impl Relayer {
                 error!("Header relay error: {}", e);
             }
 
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            sleep(2).await;
         }
     }
 
@@ -142,7 +143,7 @@ impl Relayer {
                     error!("Deposit relay error: {}", e);
                 }
 
-                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                sleep(2).await;
             }
         };
 
@@ -159,7 +160,7 @@ impl Relayer {
                     }
                 }
 
-                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                sleep(2).await;
             }
         };
 
@@ -449,6 +450,9 @@ impl Relayer {
                 continue;
             }
 
+            #[cfg(feature = "devnet")]
+            tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
+            #[cfg(not(feature = "devnet"))]
             tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
             let tx = self
@@ -546,7 +550,7 @@ impl Relayer {
                 }
             }
 
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            sleep(2).await;
         }
     }
 
@@ -595,7 +599,7 @@ impl Relayer {
                 relayed.insert(tx.txid());
             }
 
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            sleep(2).await;
         }
     }
 
@@ -608,7 +612,7 @@ impl Relayer {
                 }
             }
 
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            sleep(2).await;
         }
     }
 
@@ -659,7 +663,7 @@ impl Relayer {
                 }
             }
 
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            sleep(2).await;
         }
     }
 
@@ -674,7 +678,7 @@ impl Relayer {
                 error!("Recovery tx relay error: {}", e);
             }
 
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            sleep(2).await;
         }
     }
 
@@ -737,7 +741,7 @@ impl Relayer {
                 }
             }
 
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            sleep(2).await;
         }
     }
 
@@ -749,7 +753,7 @@ impl Relayer {
                 error!("Checkpoint confirmation relay error: {}", e);
             }
 
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            sleep(1).await;
         }
     }
 
@@ -775,7 +779,7 @@ impl Relayer {
                     Ok(res) => res,
                     Err(err) => {
                         if err.to_string().contains("No completed checkpoints yet") {
-                            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                            sleep(2).await;
                             continue;
                         }
 
@@ -788,7 +792,7 @@ impl Relayer {
 
             if let Some(confirmed_index) = confirmed_index {
                 if confirmed_index == unconf_index {
-                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                    sleep(5).await;
                     continue;
                 }
             }

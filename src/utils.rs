@@ -3,14 +3,17 @@
 #![cfg(not(target_arch = "wasm32"))]
 #[cfg(feature = "full")]
 use crate::app::App;
+use crate::app::Dest;
 use crate::app::InnerApp;
 use crate::app::Nom;
 use crate::app_client;
 use crate::bitcoin::checkpoint::Config as CheckpointQueueConfig;
 #[cfg(feature = "full")]
 use crate::bitcoin::header_queue::Config as HeaderQueueConfig;
+use crate::bitcoin::relayer::DepositAddress;
 #[cfg(feature = "full")]
 use crate::bitcoin::signer::Signer;
+use crate::bitcoin::Adapter;
 use crate::bitcoin::Config as BitcoinConfig;
 use crate::error::{Error, Result};
 use bitcoin::hashes::hex::ToHex;
@@ -21,20 +24,25 @@ use bitcoin::BlockHeader;
 use bitcoin::Script;
 #[cfg(feature = "full")]
 use bitcoincore_rpc_async::{Auth, Client as BitcoinRpcClient, RpcApi};
+use ed::Encode;
 #[cfg(feature = "full")]
 use log::info;
 use log::warn;
+use orga::client::AppClient;
 use orga::client::Wallet;
 use orga::coins::staking::{Commission, Declaration};
+use orga::coins::Amount;
 use orga::coins::{Address, Coin, Decimal};
 use orga::context::Context;
 #[cfg(feature = "full")]
 use orga::merk::MerkStore;
+use orga::plugins::load_privkey as orga_load_privkey;
 use orga::plugins::sdk_compat::sdk;
 use orga::plugins::{ABCIPlugin, ChainId, SignerCall, Time, MIN_FEE};
 use orga::state::State;
 #[cfg(feature = "full")]
 use orga::store::BackingStore;
+use orga::store::Read;
 #[cfg(feature = "full")]
 use orga::store::Write;
 #[cfg(feature = "full")]
@@ -43,8 +51,10 @@ use orga::tendermint::client::HttpClient;
 use orga::Result as OrgaResult;
 use orga::{client::wallet::DerivedKey, macros::build_call};
 use rand::Rng;
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::fmt::Debug;
 use std::fs;
 #[cfg(feature = "full")]
 use std::path::Path;
@@ -54,7 +64,20 @@ use std::str::FromStr;
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const DEFAULT_RPC: &str = "http://localhost:26657";
+pub async fn poll_for_active_sigset() {
+    info!("Polling for active sigset...");
+    loop {
+        match app_client(DEFAULT_RPC)
+            .query(|app| Ok(app.bitcoin.checkpoints.active_sigset()?))
+            .await
+        {
+            Ok(_) => break,
+            Err(_) => sleep(2).await,
+        }
+    }
+}
+
+pub const DEFAULT_RPC: &str = "http://localhost:26657";
 
 pub fn retry<F, T, E>(f: F, max_retries: u32) -> std::result::Result<T, E>
 where
@@ -82,9 +105,12 @@ pub fn time_now() -> u64 {
         .as_secs()
 }
 
-pub fn sleep(seconds: u64) {
-    let duration = std::time::Duration::from_secs(seconds);
-    std::thread::sleep(duration);
+pub async fn sleep(interval: u64) {
+    #[cfg(feature = "devnet")]
+    tokio::time::sleep(Duration::from_millis(interval)).await;
+
+    #[cfg(not(feature = "devnet"))]
+    tokio::time::sleep(Duration::from_secs(interval)).await;
 }
 
 pub fn generate_sign_doc(chain_id: String, msg: sdk::Msg, nonce: u64) -> sdk::SignDoc {
@@ -312,105 +338,71 @@ pub async fn poll_for_blocks() {
                 break;
             }
             Err(_) => {
-                tokio::time::sleep(Duration::from_secs(1)).await;
+                sleep(1).await;
             }
         }
     }
 }
 
-pub async fn poll_for_active_sigset() {
-    info!("Polling for active sigset...");
+pub async fn poll_for_updated_query_data<T: PartialEq>(
+    rpc_url: String,
+    polling_text: Option<String>,
+    timeout_secs: Option<u64>,
+    initial_data: T,
+    query: impl Fn(crate::app::InnerApp) -> OrgaResult<T>,
+) -> Result<T> {
+    if let Some(text) = polling_text {
+        info!("{}", text);
+    }
+
+    let start_time = std::time::Instant::now();
     loop {
-        match app_client(DEFAULT_RPC)
-            .query(|app| Ok(app.bitcoin.checkpoints.active_sigset()?))
-            .await
-        {
-            Ok(_) => break,
-            Err(_) => tokio::time::sleep(Duration::from_secs(2)).await,
+        if let Some(timeout) = timeout_secs {
+            if start_time.elapsed().as_secs() >= timeout {
+                return Err(crate::error::Error::Orga(orga::Error::App(
+                    "Polling timed out".to_string(),
+                )));
+            }
         }
+
+        if let Ok(data) = app_client(&rpc_url).query(&query).await {
+            if data != initial_data {
+                return Ok(data);
+            }
+        }
+
+        sleep(1).await;
     }
 }
 
-pub async fn poll_for_signatory_key(consensus_key: [u8; 32]) {
-    info!("Scanning for signatory key...");
+pub async fn poll_for_finalized_query_data<T: PartialEq + Debug>(
+    rpc_url: String,
+    polling_text: Option<String>,
+    timeout_secs: Option<u64>,
+    finalized_data: T,
+    query: impl Fn(crate::app::InnerApp) -> OrgaResult<T>,
+) -> Result<T> {
+    if let Some(text) = polling_text.clone() {
+        info!("{}", text);
+    }
+
+    let start_time = std::time::Instant::now();
     loop {
-        match app_client(DEFAULT_RPC)
-            .query(|app| Ok(app.bitcoin.signatory_keys.get(consensus_key)?))
-            .await
-        {
-            Ok(Some(_)) => break,
-            Err(_) | Ok(None) => tokio::time::sleep(Duration::from_secs(2)).await,
-        }
-    }
-}
-
-pub async fn poll_for_signing_checkpoint() {
-    info!("Scanning for signing checkpoint...");
-
-    loop {
-        let has_signing = app_client(DEFAULT_RPC)
-            .query(|app| Ok(app.bitcoin.checkpoints.signing()?.is_some()))
-            .await
-            .unwrap();
-        if has_signing {
-            break;
-        }
-        tokio::time::sleep(Duration::from_secs(1)).await;
-    }
-}
-
-pub async fn poll_for_completed_checkpoint(num_checkpoints: u32) {
-    info!("Scanning for signed checkpoints...");
-    let mut checkpoint_len = app_client(DEFAULT_RPC)
-        .query(|app| Ok(app.bitcoin.checkpoints.completed(1_000)?.len()))
-        .await
-        .unwrap();
-
-    while checkpoint_len < num_checkpoints as usize {
-        checkpoint_len = app_client(DEFAULT_RPC)
-            .query(|app| Ok(app.bitcoin.checkpoints.completed(1_000)?.len()))
-            .await
-            .unwrap();
-        tokio::time::sleep(Duration::from_secs(1)).await;
-    }
-}
-
-pub async fn poll_for_updated_balance(address: Address, expected_balance: u64) -> u64 {
-    info!("Polling for updated balance...");
-    let initial_balance = app_client(DEFAULT_RPC)
-        .query(|app| app.bitcoin.accounts.balance(address))
-        .await
-        .unwrap();
-
-    if initial_balance == expected_balance {
-        return initial_balance.into();
-    }
-
-    let mut count = 0;
-    loop {
-        let balance = app_client(DEFAULT_RPC)
-            .query(|app| app.bitcoin.accounts.balance(address))
-            .await
-            .unwrap();
-        if count >= 60 || balance != initial_balance {
-            break balance.into();
+        if let Some(timeout) = timeout_secs {
+            if start_time.elapsed().as_secs() >= timeout {
+                return Err(crate::error::Error::Orga(orga::Error::App(
+                    "Polling timed out".to_string(),
+                )));
+            }
         }
 
-        tokio::time::sleep(Duration::from_secs(1)).await;
-        count += 1;
-    }
-}
-
-pub async fn poll_for_bitcoin_header(height: u32) -> Result<()> {
-    info!("Scanning for bitcoin header {}...", height);
-    loop {
-        let current_height = app_client(DEFAULT_RPC)
-            .query(|app| Ok(app.bitcoin.headers.height()?))
-            .await?;
-        if current_height >= height {
-            info!("Found bitcoin header {}", height);
-            break Ok(());
+        if let Ok(data) = app_client(&rpc_url).query(&query).await {
+            if data == finalized_data {
+                return Ok(data);
+            }
         }
+
+        sleep(1).await;
     }
 }
 
@@ -573,4 +565,143 @@ pub fn start_rest() -> Result<Child> {
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn()?)
+}
+
+pub fn export_state(path: &Path) -> Result<()> {
+    let store_path = path.join("merk");
+    let store = Store::new(BackingStore::Merk(Shared::new(MerkStore::open_readonly(
+        store_path,
+    ))));
+    let root_bytes = store.get(&[])?.unwrap();
+    let app = ABCIPlugin::<App>::load(store, &mut root_bytes.as_slice())?;
+    let file = std::fs::File::create("state.json")?;
+    serde_json::to_writer_pretty(file, &app).unwrap();
+    Ok(())
+}
+
+pub async fn generate_deposit_address(address: &Address) -> Result<DepositAddress> {
+    info!("Generating deposit address for {}...", address);
+    let (sigset, threshold) = app_client(DEFAULT_RPC)
+        .query(|app| {
+            Ok((
+                app.bitcoin.checkpoints.active_sigset()?,
+                app.bitcoin.checkpoints.config.sigset_threshold,
+            ))
+        })
+        .await?;
+    let script = sigset.output_script(
+        Dest::NativeAccount { address: *address }
+            .commitment_bytes()?
+            .as_slice(),
+        threshold,
+    )?;
+
+    Ok(DepositAddress {
+        deposit_addr: bitcoin::Address::from_script(&script, bitcoin::Network::Regtest)
+            .unwrap()
+            .to_string(),
+        sigset_index: sigset.index(),
+    })
+}
+
+pub async fn broadcast_deposit_addr(
+    dest_addr: String,
+    sigset_index: u32,
+    relayer: String,
+    deposit_addr: String,
+) -> Result<()> {
+    info!("Broadcasting deposit address to relayer...");
+    let dest_addr = dest_addr.parse().unwrap();
+
+    let commitment = Dest::NativeAccount { address: dest_addr }.encode()?;
+
+    let url = format!("{}/address", relayer,);
+    let client = reqwest::Client::new();
+    let res = client
+        .post(url)
+        .query(&[
+            ("sigset_index", &sigset_index.to_string()),
+            ("deposit_addr", &deposit_addr),
+        ])
+        .body(commitment)
+        .send()
+        .await
+        .unwrap();
+
+    match res.status() {
+        StatusCode::OK => Ok(()),
+        _ => Err(Error::Relayer(res.text().await.unwrap())),
+    }
+}
+
+pub async fn set_recovery_address(nomic_account: NomicTestWallet) -> Result<()> {
+    info!("Setting recovery address...");
+
+    app_client(DEFAULT_RPC)
+        .with_wallet(nomic_account.wallet)
+        .call(
+            move |app| build_call!(app.accounts.take_as_funding((MIN_FEE).into())),
+            move |app| {
+                build_call!(app
+                    .bitcoin
+                    .set_recovery_script(Adapter::new(nomic_account.script.clone())))
+            },
+        )
+        .await?;
+    info!("Validator declared");
+    Ok(())
+}
+
+pub async fn withdraw_bitcoin(
+    nomic_account: &NomicTestWallet,
+    amount: bitcoin::Amount,
+    dest_address: &bitcoin::Address,
+) -> Result<()> {
+    let dest_script = Adapter::new(dest_address.script_pubkey());
+    let usats = amount.to_sat() * 1_000_000;
+    app_client(DEFAULT_RPC)
+        .with_wallet(nomic_account.wallet.clone())
+        .call(
+            move |app| build_call!(app.withdraw_nbtc(dest_script, Amount::from(usats))),
+            |app| build_call!(app.app_noop()),
+        )
+        .await?;
+    Ok(())
+}
+
+pub async fn get_signatory_script() -> Result<Script> {
+    Ok(app_client(DEFAULT_RPC)
+        .query(|app: InnerApp| {
+            let tx = app.bitcoin.checkpoints.emergency_disbursal_txs()?;
+            Ok(tx[0].output[1].script_pubkey.clone())
+        })
+        .await?)
+}
+
+pub fn client_provider() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, DerivedKey> {
+    let val_priv_key = orga_load_privkey().unwrap();
+    let wallet = DerivedKey::from_secret_key(val_priv_key);
+    app_client(DEFAULT_RPC).with_wallet(wallet)
+}
+
+pub fn edit_block_time(cfg_path: &std::path::PathBuf, timeout_commit: &str) {
+    configure_node(cfg_path, |cfg| {
+        cfg["consensus"]["timeout_commit"] = toml_edit::value(timeout_commit);
+    });
+}
+
+pub fn configure_node<P, F>(cfg_path: &P, configure: F)
+where
+    P: AsRef<std::path::Path>,
+    F: Fn(&mut toml_edit::Document),
+{
+    let data = std::fs::read_to_string(cfg_path).expect("Failed to read config.toml");
+
+    let mut toml = data
+        .parse::<toml_edit::Document>()
+        .expect("Failed to parse config.toml");
+
+    configure(&mut toml);
+
+    std::fs::write(cfg_path, toml.to_string()).expect("Failed to write config.toml");
 }
