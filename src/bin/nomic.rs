@@ -374,8 +374,7 @@ impl StartCmd {
         let has_node = if !home.join("merk/db/CURRENT").exists() {
             false
         } else {
-            let store = MerkStore::open_readonly(home.join("merk"));
-            store.merk().get_aux(b"height").unwrap().is_some()
+            MerkStore::initialized(home.join("merk"))
         };
         let config_path = home.join("tendermint/config/config.toml");
         let chain_id = cmd.config.chain_id.as_deref();
