@@ -1948,12 +1948,10 @@ fn dest_json() {
         Dest::Ibc {
             data: IbcDest {
                 source_port: "transfer".try_into().unwrap(),
-                source_channel: "
-    channel-0"
+                source_channel: "channel-0"
                     .try_into()
                     .unwrap(),
-                sender: "
-    nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h"
+                sender: "nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h"
                     .try_into()
                     .unwrap(),
                 receiver: "nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h"

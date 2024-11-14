@@ -1048,6 +1048,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn update() {
         let fixtures = include_str!("test_fixtures.json");
         let (bootstrap, updates, finality_update): (

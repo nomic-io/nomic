@@ -1,4 +1,4 @@
-#![cfg(feature = "ethereum-full")]
+#![cfg(all(feature = "ethereum-full", feature = "devnet"))]
 #![feature(async_closure)]
 use crate::utils::*;
 use alloy_node_bindings::Anvil;

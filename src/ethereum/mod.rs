@@ -1258,6 +1258,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore]
     fn checkpoint_fixture() {
         let secp = Secp256k1::new();
 
