@@ -8,7 +8,6 @@ use bitcoin::secp256k1::{
 };
 use bitcoin::Script;
 use consensus::LightClient;
-use orga::plugins::disable_fee;
 use orga::{context::GetContext as _, plugins::Time, query::MethodQuery};
 use proofs::{BridgeContractData, StateProof};
 use std::collections::BTreeSet;
@@ -380,6 +379,7 @@ impl Ethereum {
             .clone())
     }
 
+    #[allow(unused_imports)]
     #[call]
     pub fn unsafe_update_consensus(
         &mut self,
@@ -389,14 +389,17 @@ impl Ethereum {
     ) -> Result<()> {
         #[cfg(feature = "devnet")]
         {
-            disable_fee();
+            orga::plugins::disable_fee();
 
             let mut net = self.networks.get_mut(chain_id)?.unwrap();
             net.light_client
                 .unsafe_update_consensus(state_root, block_number)?;
+
+            Ok(())
         }
 
-        Ok(())
+        #[cfg(not(feature = "devnet"))]
+        Err(Error::App("Method not available".to_string()).into())
     }
 }
 type ToSign = Vec<(u32, Address, u64, u32, [u8; 32], OutMessageArgs)>;
