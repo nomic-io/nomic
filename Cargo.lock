@@ -4445,7 +4445,6 @@ dependencies = [
 [[package]]
 name = "merk"
 version = "2.0.0"
-source = "git+https://github.com/turbofish-org/merk?rev=84261c2c0fdcc09792cede6b21ba72b6d008fea6#84261c2c0fdcc09792cede6b21ba72b6d008fea6"
 dependencies = [
  "colored",
  "ed 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -4572,7 +4571,7 @@ dependencies = [
 
 [[package]]
 name = "nomic"
-version = "9.4.0"
+version = "10.0.0"
 dependencies = [
  "alloy-contract",
  "alloy-core 0.8.9",
@@ -4806,7 +4805,6 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.3.1"
-source = "git+https://github.com/turbofish-org/orga.git?rev=8d9bf572242557e1a5592bcf56b9fe0902a2bb48#8d9bf572242557e1a5592bcf56b9fe0902a2bb48"
 dependencies = [
  "abci2",
  "async-trait",
@@ -4863,7 +4861,6 @@ dependencies = [
 [[package]]
 name = "orga-macros"
 version = "0.3.1"
-source = "git+https://github.com/turbofish-org/orga.git?rev=8d9bf572242557e1a5592bcf56b9fe0902a2bb48#8d9bf572242557e1a5592bcf56b9fe0902a2bb48"
 dependencies = [
  "darling 0.20.10",
  "heck 0.3.3",

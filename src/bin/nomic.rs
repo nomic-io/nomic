@@ -543,19 +543,27 @@ fn legacy_bin(config: &nomic::network::Config) -> Result<Option<PathBuf>> {
             if !home.join("merk/db/CURRENT").exists() {
                 (false, false)
             } else {
-                let store = MerkStore::open_readonly(home.join("merk"));
-                let store_ver = store.merk().get_aux(b"consensus_version").unwrap();
-                let utd = if let Some(store_ver) = store_ver {
-                    store_ver == vec![InnerApp::CONSENSUS_VERSION]
-                } else {
-                    let store_ver = store.merk().get(b"/version").unwrap();
-                    if let Some(store_ver) = store_ver {
-                        store_ver == vec![1, InnerApp::CONSENSUS_VERSION]
-                    } else {
-                        false
+                let path = home.join("merk");
+
+                let utd = match MerkStore::open_readonly(&path) {
+                    Err(orga::Error::Merk(orga::merk::merk::Error::Version(_))) => false,
+                    Err(err) => Err(err)?,
+                    Ok(store) => {
+                        let store_ver = store.merk().get_aux(b"consensus_version").unwrap();
+                        if let Some(store_ver) = store_ver {
+                            store_ver == vec![InnerApp::CONSENSUS_VERSION]
+                        } else {
+                            let store_ver = store.merk().get(b"/version").unwrap();
+                            if let Some(store_ver) = store_ver {
+                                store_ver == vec![1, InnerApp::CONSENSUS_VERSION]
+                            } else {
+                                false
+                            }
+                        }
                     }
                 };
-                let initialized = store.merk().get_aux(b"height").unwrap().is_some();
+
+                let initialized = MerkStore::initialized(&path);
                 (utd, initialized)
             }
         };
@@ -1920,7 +1928,7 @@ impl ExportCmd {
 
         let store_path = home.join("merk");
         let store = Store::new(orga::store::BackingStore::Merk(orga::store::Shared::new(
-            MerkStore::open_readonly(store_path),
+            MerkStore::open_readonly(store_path)?,
         )));
         let root_bytes = store.get(&[])?.unwrap();
 
@@ -2207,7 +2215,7 @@ impl SigningStatusCmd {
 
         let store_path = home.join("merk");
         let store = Store::new(orga::store::BackingStore::Merk(orga::store::Shared::new(
-            MerkStore::open_readonly(store_path),
+            MerkStore::open_readonly(store_path)?,
         )));
         let root_bytes = store.get(&[])?.unwrap();
 
