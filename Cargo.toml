@@ -7,7 +7,7 @@ default-run = "nomic"
 
 [dependencies]
 bitcoin = { version = "0.29.2", features = ["serde", "rand"] }
-orga = { git = "https://github.com/turbofish-org/orga.git", rev = "6a9d720574f87528217e3d355e18f738a5bb1576", features = [
+orga = { git = "https://github.com/turbofish-org/orga.git", rev = "8d9bf572242557e1a5592bcf56b9fe0902a2bb48", features = [
     "merk-verify",
     "feat-ibc",
 ] }
