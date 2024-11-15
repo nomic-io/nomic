@@ -467,7 +467,7 @@ pub const DEFAULT_FEE_RATE: u64 = 10;
 /// "intermediate emergency disbursal transaction" (in the second batch of the
 /// `batches` deque), and one or more "final emergency disbursal transactions"
 /// (in the first batch of the `batches` deque).
-#[orga(skip(Default), version = 3..=4)]
+#[orga(skip(Default), version = 3..=5)]
 #[derive(Debug)]
 pub struct Checkpoint {
     /// The status of the checkpoint, either `Building`, `Signing`, or
@@ -487,6 +487,10 @@ pub struct Checkpoint {
     /// disbursal.
     ///
     /// These transfers can be initiated by a simple nBTC send or by a deposit.
+    #[orga(version(V3, V4))]
+    pub pending: Map<Dest, Coin<Nbtc>>,
+
+    #[orga(version(V5))]
     pub pending: Map<(Dest, Identity), Coin<Nbtc>>,
 
     /// The fee rate to use when calculating the miner fee for the transactions
@@ -510,7 +514,7 @@ pub struct Checkpoint {
     /// the system.
     pub deposits_enabled: bool,
 
-    #[orga(version(V4))]
+    #[orga(version(V4, V5))]
     pub fees_collected: u64,
 
     /// The signatory set associated with the checkpoint. Note that deposits to
@@ -530,6 +534,34 @@ impl MigrateFrom<CheckpointV3> for CheckpointV4 {
             deposits_enabled: value.deposits_enabled,
             sigset: value.sigset,
             fees_collected: 0,
+        })
+    }
+}
+
+impl MigrateFrom<CheckpointV4> for CheckpointV5 {
+    fn migrate_from(mut value: CheckpointV4) -> OrgaResult<Self> {
+        let mut pending = Map::new();
+
+        let mut keys = vec![];
+        for entry in value.pending.iter()? {
+            let (dest, coin) = entry?;
+            keys.push(dest.clone());
+            pending.insert((dest.clone(), Identity::None), coin.amount.into())?;
+        }
+
+        for key in keys {
+            value.pending.remove(key)?;
+        }
+
+        Ok(Self {
+            status: value.status,
+            batches: value.batches,
+            pending,
+            fee_rate: value.fee_rate,
+            signed_at_btc_height: value.signed_at_btc_height,
+            deposits_enabled: value.deposits_enabled,
+            sigset: value.sigset,
+            fees_collected: value.fees_collected,
         })
     }
 }
