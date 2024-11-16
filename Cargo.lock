@@ -4445,7 +4445,7 @@ dependencies = [
 [[package]]
 name = "merk"
 version = "2.0.0"
-source = "git+https://github.com/turbofish-org/merk?rev=97fca3d9b8d05fb265bbd0c07100bdcddcbdfd37#97fca3d9b8d05fb265bbd0c07100bdcddcbdfd37"
+source = "git+https://github.com/nomic-io/merk?rev=a914255712fb609bbfb093150b745ab1b0152182#a914255712fb609bbfb093150b745ab1b0152182"
 dependencies = [
  "colored",
  "ed 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
