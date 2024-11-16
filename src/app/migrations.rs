@@ -88,10 +88,33 @@ impl MigrateFrom<InnerAppV5> for InnerAppV6 {
 }
 
 impl MigrateFrom<InnerAppV6> for InnerAppV7 {
-    fn migrate_from(other: InnerAppV6) -> Result<Self> {
-        // #[cfg(all(feature = "testnet", feature = "ethereum"))]
-        // let mut ethereum = Ethereum::default();
+    fn migrate_from(mut other: InnerAppV6) -> Result<Self> {
+        other
+            .ibc
+            .update_client_from_header(0, 1, include_str!("./kujira-header.json"))?;
 
-        todo!();
+        Ok(Self {
+            accounts: other.accounts,
+            staking: other.staking,
+            airdrop: other.airdrop,
+            community_pool: other.community_pool,
+            incentive_pool: other.incentive_pool,
+            staking_rewards: other.staking_rewards,
+            dev_rewards: other.dev_rewards,
+            community_pool_rewards: other.community_pool_rewards,
+            incentive_pool_rewards: other.incentive_pool_rewards,
+            bitcoin: other.bitcoin,
+            reward_timer: other.reward_timer,
+            upgrade: other.upgrade,
+            incentives: other.incentives,
+            ibc: other.ibc,
+            cosmos: other.cosmos,
+            #[cfg(all(feature = "ethereum", feature = "testnet"))]
+            ethereum: Default::default(),
+            #[cfg(all(feature = "babylon", feature = "testnet"))]
+            babylon: Default::default(),
+            #[cfg(all(feature = "frost", feature = "testnet"))]
+            frost: Default::default(),
+        })
     }
 }
