@@ -8,12 +8,12 @@ use frost_secp256k1_tr::round1::{commit, SigningCommitments, SigningNonces};
 use frost_secp256k1_tr::round2;
 use frost_secp256k1_tr::round2::SignatureShare;
 use orga::call::build_call;
-use orga::client::{AppClient, Wallet};
+use orga::client::{AppClient, Transport, Wallet};
 use orga::merk::MerkStore;
-use orga::tendermint::client::HttpClient;
+use orga::plugins::ABCIPlugin;
 use rand::thread_rng;
 
-use crate::app::{InnerApp, Nom};
+use crate::app::{App, InnerApp, Nom};
 
 use super::dkg::DkgState;
 use super::signing::SigningState;
@@ -104,10 +104,11 @@ pub struct Signer<W, C> {
     _pd: std::marker::PhantomData<W>,
 }
 
-impl<W, C> Signer<W, C>
+impl<W, C, Tr> Signer<W, C>
 where
-    C: Fn() -> AppClient<InnerApp, InnerApp, HttpClient, Nom, W>,
+    C: Fn() -> AppClient<InnerApp, InnerApp, Tr, Nom, W>,
     W: Wallet,
+    Tr: Transport<ABCIPlugin<App>>,
 {
     /// Create a new [`Signer`] for the provided operator address.
     pub fn new(secret_store: Store, client: C, address: Address) -> Self {
@@ -168,7 +169,7 @@ where
         Ok(())
     }
 
-    fn client(&self) -> AppClient<InnerApp, InnerApp, HttpClient, Nom, W> {
+    fn client(&self) -> AppClient<InnerApp, InnerApp, Tr, Nom, W> {
         (self.client)()
     }
 

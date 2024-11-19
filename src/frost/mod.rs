@@ -674,189 +674,191 @@ fn disassemble_by_identifier<T: Clone>(map: &BTreeMap<Identifier, T>) -> Vec<(u1
     res
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use frost_secp256k1_tr::{SigningParameters, SigningTarget};
+#[cfg(test)]
+mod tests {
+    use frost_secp256k1_tr::SigningParameters;
 
-//     use orga::client::mock::MockClient;
-//     use orga::client::wallet::DerivedKey;
-//     use orga::client::AppClient;
+    use orga::client::mock::MockClient;
+    use orga::client::wallet::DerivedKey;
+    use orga::client::AppClient;
 
-//     use orga::state::State;
-//     use orga::store::{Read, Store, Write};
+    use orga::context::Context;
+    use orga::state::State;
+    use orga::store::{Read, Store, Write};
 
-//     use self::signer::Signer;
+    use self::signer::Signer;
+    use crate::app::{App as TestApp, InnerApp};
+    use orga::plugins::ABCIPlugin;
+    type App = ABCIPlugin<TestApp>;
 
-//     use super::*;
+    use super::*;
 
-//     fn setup(mut store: Store) -> Result<()> {
-//         let mut app = App::default();
-//         app.attach(store.clone())?;
+    fn setup(mut store: Store) -> Result<()> {
+        let mut app = App::default();
+        app.attach(store.clone())?;
 
-//         {
-//             app.inner.inner.borrow_mut().inner.inner.chain_id =
-// b"foo".to_vec().try_into()?;
+        {
+            app.inner.inner.borrow_mut().inner.inner.chain_id = vec![3, 3, 3].try_into()?;
+            let inner_app: &mut InnerApp = &mut app
+                .inner
+                .inner
+                .borrow_mut()
+                .inner
+                .inner
+                .inner
+                .inner
+                .inner
+                .inner;
 
-//             let inner_app = &mut app
-//                 .inner
-//                 .inner
-//                 .borrow_mut()
-//                 .inner
-//                 .inner
-//                 .inner
-//                 .inner
-//                 .inner
-//                 .inner;
+            inner_app.frost.groups.push_back(FrostGroup::with_config(
+                Config {
+                    threshold: 2,
+                    participants: vec![
+                        Participant {
+                            address: DerivedKey::new(b"alice")?.address(),
+                            shares: 1,
+                        },
+                        Participant {
+                            address: DerivedKey::new(b"bob")?.address(),
+                            shares: 1,
+                        },
+                    ]
+                    .try_into()?,
+                },
+                0,
+            )?)?;
+        };
 
-//             inner_app
-//                 .frost
-//                 .groups
-//                 .push_back(FrostGroup::with_config(Config {
-//                     threshold: 2,
-//                     participants: vec![
-//                         Participant {
-//                             address: DerivedKey::new(b"alice")?.address(),
-//                             shares: 1,
-//                         },
-//                         Participant {
-//                             address: DerivedKey::new(b"bob")?.address(),
-//                             shares: 1,
-//                         },
-//                     ]
-//                     .try_into()?,
-//                 })?)?;
-//         };
+        let mut bytes = vec![];
+        app.flush(&mut bytes)?;
+        store.put(vec![], bytes)?;
 
-//         let mut bytes = vec![];
-//         app.flush(&mut bytes)?;
-//         store.put(vec![], bytes)?;
+        Ok(())
+    }
 
-//         Ok(())
-//     }
+    fn with_app<F: FnMut(&mut InnerApp) -> Result<()>>(mut store: Store, mut op: F) -> Result<()> {
+        let bytes = store.get(&[])?.unwrap_or_default();
+        let app: App = State::load(store.clone(), &mut bytes.as_slice())?;
+        {
+            let inner_app: &mut InnerApp = &mut app
+                .inner
+                .inner
+                .borrow_mut()
+                .inner
+                .inner
+                .inner
+                .inner
+                .inner
+                .inner;
 
-//     fn with_app<F: FnMut(&mut TestApp) -> Result<()>>(mut store: Store, mut
-// op: F) -> Result<()> {         let bytes =
-// store.get(&[])?.unwrap_or_default();         let app: App =
-// State::load(store.clone(), &mut bytes.as_slice())?;         {
-//             let inner_app = &mut app
-//                 .inner
-//                 .inner
-//                 .borrow_mut()
-//                 .inner
-//                 .inner
-//                 .inner
-//                 .inner
-//                 .inner
-//                 .inner;
+            op(inner_app)?;
+        }
+        let mut bytes = vec![];
+        app.flush(&mut bytes)?;
 
-//             op(inner_app)?;
-//         }
-//         let mut bytes = vec![];
-//         app.flush(&mut bytes)?;
+        store.put(vec![], bytes)?;
 
-//         store.put(vec![], bytes)?;
+        Ok(())
+    }
 
-//         Ok(())
-//     }
+    #[tokio::test]
+    async fn two_signers_basic() -> Result<()> {
+        Context::add(Time::from_seconds(0));
+        let store = Store::with_map_store();
+        setup(store.clone())?;
 
-//     #[tokio::test]
-//     async fn two_signers_basic() -> Result<()> {
-//         let store = Store::with_map_store();
-//         setup(store.clone())?;
+        let make_signer = |store: Store, name: &[u8]| {
+            let secret_store = Store::with_map_store();
+            let name = name.to_vec();
+            let name_clone = name.clone();
+            let make_client = move || {
+                let mock_client = MockClient::<App>::with_store(store.clone());
+                let wallet = DerivedKey::new(&name_clone).unwrap();
+                AppClient::<_, _, _, _, _>::new(mock_client, wallet)
+            };
+            Signer::new(
+                secret_store,
+                make_client,
+                DerivedKey::new(&name).unwrap().address(),
+            )
+        };
 
-//         let alice_secret_store = Store::with_map_store();
-//         let mock_client = MockClient::<App>::with_store(store.clone());
-//         let client: AppClient<TestApp, TestApp, MockClient<App>, Simp,
-// DerivedKey> =             AppClient::<TestApp, TestApp, _, _, _>::new(
-//                 mock_client,
-//                 DerivedKey::new(b"alice").unwrap(),
-//             );
+        let mut alice = make_signer(store.clone(), b"alice");
+        let mut bob = make_signer(store.clone(), b"bob");
 
-//         let client = client.sub(|app| app);
-//         let mut alice = Signer::new(alice_secret_store, client);
+        with_app(store.clone(), |app| {
+            let group = app.frost.groups.front_mut().unwrap().unwrap();
+            assert_eq!(group.dkg.state(), DkgState::Round1);
+            Ok(())
+        })?;
+        alice.step().await?;
+        bob.step().await?;
+        with_app(store.clone(), |app| {
+            let group = app.frost.groups.front_mut().unwrap().unwrap();
+            assert_eq!(group.dkg.state(), DkgState::Round2);
+            Ok(())
+        })?;
 
-//         let bob_secret_store = Store::with_map_store();
-//         let mock_client = MockClient::<App>::with_store(store.clone());
-//         let client: AppClient<TestApp, TestApp, _, Simp, _> =
-//             AppClient::<TestApp, TestApp, _, _, _>::new(
-//                 mock_client,
-//                 DerivedKey::new(b"bob").unwrap(),
-//             );
-//         let mut bob = Signer::new(bob_secret_store, client);
+        alice.step().await?;
+        bob.step().await?;
+        with_app(store.clone(), |app| {
+            let group = app.frost.groups.front_mut().unwrap().unwrap();
+            assert_eq!(group.dkg.state(), DkgState::Attesting);
+            Ok(())
+        })?;
 
-//         with_app(store.clone(), |app| {
-//             let mut group = app.frost.groups.front_mut().unwrap().unwrap();
-//             assert_eq!(group.dkg.state(), DkgState::Round1);
-//             Ok(())
-//         })?;
-//         alice.step().await?;
-//         bob.step().await?;
-//         with_app(store.clone(), |app| {
-//             let mut group = app.frost.groups.front_mut().unwrap().unwrap();
-//             assert_eq!(group.dkg.state(), DkgState::Round2);
-//             Ok(())
-//         })?;
+        alice.step().await?;
+        bob.step().await?;
 
-//         alice.step().await?;
-//         bob.step().await?;
-//         with_app(store.clone(), |app| {
-//             let mut group = app.frost.groups.front_mut().unwrap().unwrap();
-//             assert_eq!(group.dkg.state(), DkgState::Attesting);
-//             Ok(())
-//         })?;
+        with_app(store.clone(), |app| {
+            let group = app.frost.groups.front_mut().unwrap().unwrap();
+            assert_eq!(group.dkg.state(), DkgState::Complete);
+            Ok(())
+        })?;
 
-//         alice.step().await?;
-//         bob.step().await?;
+        alice.step().await?;
+        bob.step().await?;
 
-//         with_app(store.clone(), |app| {
-//             let mut group = app.frost.groups.front_mut().unwrap().unwrap();
-//             assert_eq!(group.dkg.state(), DkgState::Complete);
-//             Ok(())
-//         })?;
+        with_app(store.clone(), |app| {
+            let mut group = app.frost.groups.front_mut().unwrap().unwrap();
+            assert_eq!(group.dkg.state(), DkgState::Complete);
 
-//         alice.step().await?;
-//         bob.step().await?;
+            group.push_message(vec![1, 2, 3].try_into()?)?;
 
-//         with_app(store.clone(), |app| {
-//             let mut group = app.frost.groups.front_mut().unwrap().unwrap();
-//             assert_eq!(group.dkg.state(), DkgState::Complete);
+            assert_eq!(app.frost.signing_state(0, 0)?, SigningState::Round1);
 
-//             group.push_message(vec![1, 2, 3].try_into()?)?;
+            Ok(())
+        })?;
 
-//             assert_eq!(app.frost.signing_state(0, 0)?, SigningState::Round1);
+        alice.step().await?;
+        bob.step().await?;
 
-//             Ok(())
-//         })?;
+        with_app(store.clone(), |app| {
+            assert_eq!(app.frost.signing_state(0, 0)?, SigningState::Round2);
 
-//         alice.step().await?;
-//         bob.step().await?;
+            Ok(())
+        })?;
 
-//         with_app(store.clone(), |app| {
-//             assert_eq!(app.frost.signing_state(0, 0)?, SigningState::Round2);
+        alice.step().await?;
+        bob.step().await?;
 
-//             Ok(())
-//         })?;
+        with_app(store.clone(), |app| {
+            assert_eq!(app.frost.signing_state(0, 0)?, SigningState::Complete);
+            let signature = app.frost.signature(0, 0)?.unwrap().inner;
+            let group_key = &app.frost.group_pubkey(0)?.unwrap().inner;
+            let signing_params = SigningParameters {
+                tapscript_merkle_root: None,
+            };
 
-//         alice.step().await?;
-//         bob.step().await?;
+            assert!(group_key
+                .verifying_key()
+                .effective_key(&signing_params)
+                .verify([1, 2, 3], &signature)
+                .is_ok());
 
-//         with_app(store.clone(), |app| {
-//             assert_eq!(app.frost.signing_state(0, 0)?,
-// SigningState::Complete);             let signature = app.frost.signature(0,
-// 0)?.unwrap().inner;             let group_key =
-// &app.frost.group_pubkey(0)?.unwrap().inner;             let signing_params =
-// SigningParameters {                 tapscript_merkle_root: Some(vec![0]),
-//             };
+            Ok(())
+        })?;
 
-//             assert!(group_key
-//                 .verifying_key()
-//                 .effective_key(&signing_params)
-//                 .verify([1, 2, 3], &signature)
-//                 .is_ok());
-
-//             Ok(())
-//         })?;
-
-//         Ok(())
-//     }
-// }
+        Ok(())
+    }
+}
