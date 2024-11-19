@@ -116,7 +116,12 @@ impl Babylon {
         process_queue(
             &mut self.staked,
             |btc_height, staking_height, params| btc_height >= staking_height + params.max_age,
-            |del, frost, btc, params| del.unbond(frost, btc, params),
+            |del, frost, btc, params| {
+                if del.status() != DelegationStatus::Withdrawn && !del.requested_unbond {
+                    del.request_unbond(frost, btc, params)?;
+                }
+                Ok(())
+            },
         )?;
 
         // TODO: don't iterate through all delegations
