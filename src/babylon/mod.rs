@@ -1723,11 +1723,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(del.op_return_bytes().unwrap(), hex::decode("62626234008c0d21a8dd59a2a50f7ab8cb94d3034eb2b3d130589168bf7876a30b22c876d803d5a0bb72d71993e435d6c5a70e2aa4db500a62cfaae33c56050deefee64ec00096").unwrap());
+        assert_eq!(hex::encode(del.op_return_bytes().unwrap()), "62626434008c0d21a8dd59a2a50f7ab8cb94d3034eb2b3d130589168bf7876a30b22c876d803d5a0bb72d71993e435d6c5a70e2aa4db500a62cfaae33c56050deefee64ec00096");
         assert_eq!(
-            del.staking_script(&params).unwrap().to_bytes(),
-            hex::decode("51202552bc9fe84a0e05f156d127e7d2460bff26541ba56e9f761d2029ee09f3859f")
-                .unwrap(),
+            hex::encode(del.staking_script(&params).unwrap().to_bytes()),
+            "512083f18ab40065c1bd5ab6616535e9af358df7640e935c16012d0df306a4c0e42f",
         );
     }
 }
