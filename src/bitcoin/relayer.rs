@@ -300,10 +300,16 @@ impl Relayer {
                             * app.bitcoin.checkpoints.config.user_fee_factor
                             / 10_000;
 
+                        let miner_fee_rate = (chkpt.fee_rate
+                            * app.bitcoin.checkpoints.config.user_fee_factor)
+                            as f64
+                            / 10_000.0;
+
                         let sigset = RawSignatorySet::new(
                             chkpt.sigset.clone(),
                             0.015,
                             est_miner_fee as f64 / 100_000_000.0,
+                            miner_fee_rate,
                             chkpt.deposits_enabled,
                             maybe_chkpt_tx,
                             chkpt.signed_at_btc_height,
@@ -1191,6 +1197,7 @@ pub struct RawSignatorySet {
     pub index: u32,
     pub bridge_fee_rate: f64,
     pub miner_fee_rate: f64,
+    pub miner_fee: f64,
     pub deposits_enabled: bool,
     pub threshold: (u64, u64),
     pub bridge_fee_overrides: BridgeFeeOverrides,
@@ -1205,6 +1212,7 @@ impl RawSignatorySet {
     pub fn new(
         sigset: SignatorySet,
         bridge_fee_rate: f64,
+        est_deposit_miner_fee: f64,
         miner_fee_rate: f64,
         deposits_enabled: bool,
         maybe_checkpoint_tx: Option<Adapter<bitcoin::Transaction>>,
@@ -1221,7 +1229,9 @@ impl RawSignatorySet {
             signatories,
             index: sigset.index(),
             bridge_fee_rate,
-            miner_fee_rate,
+            // TODO: rename
+            miner_fee_rate: est_deposit_miner_fee,
+            miner_fee: miner_fee_rate,
             deposits_enabled,
             // TODO: get threshold from checkpoint once it is stored in state
             threshold: SIGSET_THRESHOLD,
