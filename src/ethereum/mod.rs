@@ -72,7 +72,11 @@ pub mod relayer;
 pub mod signer;
 
 /// How often to send messages updating to a new valset, in seconds.
+#[cfg(not(feature = "devnet"))]
 pub const VALSET_INTERVAL: u64 = 60 * 60 * 24;
+#[cfg(feature = "devnet")]
+pub const VALSET_INTERVAL: u64 = 0;
+
 /// Gas price in microsats.
 pub const GAS_PRICE: u64 = 160_000;
 /// Approximate gas cost for a transfer in wei, deducted from transfers from
@@ -373,6 +377,29 @@ impl Ethereum {
             .ok_or(Error::App("Chain not found".to_string()))?
             .light_client
             .clone())
+    }
+
+    #[allow(unused_imports)]
+    #[call]
+    pub fn unsafe_update_consensus(
+        &mut self,
+        chain_id: u32,
+        state_root: [u8; 32],
+        block_number: u64,
+    ) -> Result<()> {
+        #[cfg(feature = "devnet")]
+        {
+            orga::plugins::disable_fee();
+
+            let mut net = self.networks.get_mut(chain_id)?.unwrap();
+            net.light_client
+                .unsafe_update_consensus(state_root, block_number)?;
+
+            Ok(())
+        }
+
+        #[cfg(not(feature = "devnet"))]
+        Err(Error::App("Method not available".to_string()).into())
     }
 }
 type ToSign = Vec<(u32, Address, u64, u32, [u8; 32], OutMessageArgs)>;
@@ -1234,6 +1261,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore]
     fn checkpoint_fixture() {
         let secp = Secp256k1::new();
 

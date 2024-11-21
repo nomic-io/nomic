@@ -202,7 +202,7 @@ impl InnerApp {
     /// breaking changes are made to either the state encoding or logic of the
     /// protocol, and requires a network upgrade to be coordinated via the
     /// upgrade module.
-    pub const CONSENSUS_VERSION: u8 = 14;
+    pub const CONSENSUS_VERSION: u8 = 15;
 
     #[cfg(feature = "full")]
     fn configure_faucets(&mut self) -> Result<()> {
@@ -303,6 +303,9 @@ impl InnerApp {
         address: Address,
         amount: Amount,
     ) -> Result<()> {
+        #[cfg(feature = "devnet")]
+        disable_fee();
+
         #[cfg(feature = "ethereum")]
         {
             disable_fee();
@@ -958,11 +961,14 @@ mod abci {
 
             #[cfg(feature = "testnet")]
             {
-                self.upgrade.activation_delay_seconds = 20 * 60;
-                self.bitcoin.config.min_confirmations = 0;
-                self.bitcoin.config.min_withdrawal_checkpoints = 0;
-                self.bitcoin.checkpoints.config.min_checkpoint_interval = 60;
-                self.bitcoin.checkpoints.config.wait_to_collect_fees = false;
+                #[cfg(not(feature = "devnet"))]
+                {
+                    self.upgrade.activation_delay_seconds = 20 * 60;
+                    self.bitcoin.config.min_confirmations = 0;
+                    self.bitcoin.config.min_withdrawal_checkpoints = 0;
+                    self.bitcoin.checkpoints.config.min_checkpoint_interval = 60;
+                    self.bitcoin.checkpoints.config.min_checkpoint_interval = 8;
+                }
 
                 include_str!("../testnet_addresses.csv")
                     .lines()
@@ -973,14 +979,19 @@ mod abci {
 
                 #[cfg(feature = "ethereum")]
                 {
+                    #[cfg(feature = "devnet")]
+                    let chain_id = 0;
+                    #[cfg(not(feature = "devnet"))]
+                    let chain_id = 11155111;
+
                     // Add Ethereum Sepolia
                     let bootstrap =
                         serde_json::from_str(include_str!("./ethereum/bootstrap/sepolia.json"))
                             .unwrap();
                     self.ethereum.networks.insert(
-                        11155111,
+                        chain_id,
                         crate::ethereum::Network::new(
-                            11155111,
+                            chain_id,
                             bootstrap,
                             crate::ethereum::consensus::Network::ethereum_sepolia(),
                         )?,
@@ -1934,7 +1945,22 @@ fn dest_json() {
     );
 
     assert_eq!(
-        Dest::Ibc { data: IbcDest{source_port:"transfer".try_into().unwrap(),source_channel:"channel-0".try_into().unwrap(),sender:"nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h".try_into().unwrap(),receiver:"nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h".try_into().unwrap(),timeout_timestamp:123_456_789,memo:"memo".try_into().unwrap(),} }
+        Dest::Ibc {
+            data: IbcDest {
+                source_port: "transfer".try_into().unwrap(),
+                source_channel: "channel-0"
+                    .try_into()
+                    .unwrap(),
+                sender: "nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h"
+                    .try_into()
+                    .unwrap(),
+                receiver: "nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h"
+                    .try_into()
+                    .unwrap(),
+                timeout_timestamp: 123_456_789,
+                memo: "memo".try_into().unwrap(),
+            }
+        }
         .to_string(),
         "{\"type\":\"ibc\",\"data\":{\"source_port\":\"transfer\",\"source_channel\":\"channel-0\",\"receiver\":\"nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h\",\"sender\":\"nomic1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0mn95h\",\"timeout_timestamp\":123456789,\"memo\":\"memo\"}}"
     );

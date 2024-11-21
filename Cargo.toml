@@ -1,13 +1,13 @@
 [package]
 name = "nomic"
-version = "9.4.0"
+version = "10.0.2"
 authors = ["Nomic DAO Foundation <foundation@nomic.io>"]
 edition = "2021"
 default-run = "nomic"
 
 [dependencies]
 bitcoin = { version = "0.29.2", features = ["serde", "rand"] }
-orga = { git = "https://github.com/turbofish-org/orga.git", rev = "6a9d720574f87528217e3d355e18f738a5bb1576", features = [
+orga = { git = "https://github.com/turbofish-org/orga.git", rev = "c1c7a0469cd2e5fb079d05ad697cc44b055949ca", features = [
     "merk-verify",
     "feat-ibc",
 ] }
@@ -78,6 +78,9 @@ alloy-transport = { version = "0.3.6", optional = true }
 alloy-rpc-types-eth = { version = "0.3.6", optional = true }
 ruint = { version = "1.12.3", optional = true }
 
+[patch."https://github.com/turbofish-org/merk"]
+merk = { git = "https://github.com/nomic-io/merk", rev = "a914255712fb609bbfb093150b745ab1b0152182", optional = true, default-features = false }
+
 [dev-dependencies]
 bitcoind = { version = "0.27.0", features = ["22_0"] }
 bitcoin_hashes = "0.11.0"
@@ -98,7 +101,7 @@ semver = "1.0.18"
 glob = "0.3.1"
 
 [features]
-default = ["full", "testnet", "ethereum-full", "frost", "babylon"]
+default = ["full"]
 full = [
     "bitcoincore-rpc-async",
     "clap",

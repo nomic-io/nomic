@@ -39,6 +39,7 @@ use nomic::ethereum;
 use nomic::frost::{self, signer::SecretStore};
 use nomic::utils::load_bitcoin_key;
 use nomic::utils::load_or_generate;
+use nomic::utils::sleep;
 use orga::abci::Node;
 use orga::client::wallet::{SimpleWallet, Wallet};
 use orga::coins::{Address, Commission, Decimal, Declaration, Symbol};
@@ -52,6 +53,7 @@ use orga::plugins::MIN_FEE;
 use orga::prelude::*;
 use orga::{client::AppClient, tendermint::client::HttpClient};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fs::Permissions;
 use std::os::unix::fs::PermissionsExt;
@@ -135,6 +137,8 @@ pub enum Command {
     /// Edits the description of the validator associated with the wallet's
     /// operator address.
     Edit(EditCmd),
+    /// Casts a vote on a governance proposal.
+    Vote(VoteCmd),
     /// Claims the rewards earned by the wallet.
     Claim(ClaimCmd),
     /// Shows the wallet's available airdrop balances which can be claimed.
@@ -240,6 +244,7 @@ impl Command {
                 Redelegate(cmd) => cmd.run().await,
                 Unjail(cmd) => cmd.run().await,
                 Edit(cmd) => cmd.run().await,
+                Vote(cmd) => cmd.run().await,
                 Claim(cmd) => cmd.run().await,
                 ClaimAirdrop(cmd) => cmd.run().await,
                 Airdrop(cmd) => cmd.run().await,
@@ -373,8 +378,7 @@ impl StartCmd {
         let has_node = if !home.join("merk/db/CURRENT").exists() {
             false
         } else {
-            let store = MerkStore::open_readonly(home.join("merk"));
-            store.merk().get_aux(b"height").unwrap().is_some()
+            MerkStore::initialized(home.join("merk"))
         };
         let config_path = home.join("tendermint/config/config.toml");
         let chain_id = cmd.config.chain_id.as_deref();
@@ -479,7 +483,7 @@ impl StartCmd {
 
                     loop {
                         let signal_version = signal_version.clone().try_into().unwrap();
-                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                        sleep(5).await;
                         if let Err(err) = client
                             .call(
                                 |app| build_call!(app.signal(signal_version)),
@@ -543,19 +547,27 @@ fn legacy_bin(config: &nomic::network::Config) -> Result<Option<PathBuf>> {
             if !home.join("merk/db/CURRENT").exists() {
                 (false, false)
             } else {
-                let store = MerkStore::open_readonly(home.join("merk"));
-                let store_ver = store.merk().get_aux(b"consensus_version").unwrap();
-                let utd = if let Some(store_ver) = store_ver {
-                    store_ver == vec![InnerApp::CONSENSUS_VERSION]
-                } else {
-                    let store_ver = store.merk().get(b"/version").unwrap();
-                    if let Some(store_ver) = store_ver {
-                        store_ver == vec![1, InnerApp::CONSENSUS_VERSION]
-                    } else {
-                        false
+                let path = home.join("merk");
+
+                let utd = match MerkStore::open_readonly(&path) {
+                    Err(orga::Error::Merk(orga::merk::merk::Error::Version(_))) => false,
+                    Err(err) => Err(err)?,
+                    Ok(store) => {
+                        let store_ver = store.merk().get_aux(b"consensus_version").unwrap();
+                        if let Some(store_ver) = store_ver {
+                            store_ver == vec![InnerApp::CONSENSUS_VERSION]
+                        } else {
+                            let store_ver = store.merk().get(b"/version").unwrap();
+                            if let Some(store_ver) = store_ver {
+                                store_ver == vec![1, InnerApp::CONSENSUS_VERSION]
+                            } else {
+                                false
+                            }
+                        }
                     }
                 };
-                let initialized = store.merk().get_aux(b"height").unwrap().is_some();
+
+                let initialized = MerkStore::initialized(&path);
                 (utd, initialized)
             }
         };
@@ -677,7 +689,7 @@ async fn relaunch_on_migrate(config: &nomic::network::Config) -> Result<()> {
 
         initial_ver = Some(version);
 
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        sleep(5).await;
     }
 }
 
@@ -1027,6 +1039,7 @@ pub struct DeclareInfo {
     pub identity: String,
     /// Description text about the validator.
     pub details: String,
+    pub proposals: Option<HashMap<String, bool>>,
 }
 
 impl DeclareCmd {
@@ -1042,6 +1055,7 @@ impl DeclareCmd {
             website: self.website.clone(),
             identity: self.identity.clone(),
             details: self.details.clone(),
+            proposals: None,
         };
         let info_json = serde_json::to_string(&info)
             .map_err(|_| orga::Error::App("invalid json".to_string()))?;
@@ -1110,11 +1124,27 @@ pub struct EditCmd {
 impl EditCmd {
     /// Runs the `edit` command.
     async fn run(&self) -> Result<()> {
+        let wallet = wallet();
+        let client = self.config.client();
+
+        let addr = wallet.address()?.unwrap();
+        let vals = client.query(|app| app.staking.all_validators()).await?;
+        let val = vals.iter().find(|val| Address::from(val.address) == addr);
+
+        let existing_info: Option<DeclareInfo> = val
+            .map(|v| {
+                serde_json::from_slice(v.info.as_slice())
+                    .map_err(|err| orga::Error::App(format!("invalid json: {}", err)))
+            })
+            .transpose()?;
+
+        // TODO: auto-populate from existing values
         let info = DeclareInfo {
             moniker: self.moniker.clone(),
             website: self.website.clone(),
             identity: self.identity.clone(),
             details: self.details.clone(),
+            proposals: existing_info.and_then(|i| i.proposals),
         };
         let info_json = serde_json::to_string(&info)
             .map_err(|_| orga::Error::App("invalid json".to_string()))?;
@@ -1123,7 +1153,7 @@ impl EditCmd {
         Ok(self
             .config
             .client()
-            .with_wallet(wallet())
+            .with_wallet(wallet)
             .call(
                 |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
                 |app| {
@@ -1135,6 +1165,94 @@ impl EditCmd {
                 },
             )
             .await?)
+    }
+}
+
+#[derive(clap::ArgEnum, Debug, Clone, PartialEq, Eq)]
+pub enum Vote {
+    Yes,
+    No,
+    None,
+}
+
+impl FromStr for Vote {
+    type Err = nomic::error::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        match s.to_lowercase().as_str() {
+            "yes" => Ok(Vote::Yes),
+            "no" => Ok(Vote::No),
+            "none" => Ok(Vote::None),
+            _ => Err(orga::Error::App("invalid vote".to_string()).into()),
+        }
+    }
+}
+
+/// Casts a vote on a governance proposal.
+#[derive(Parser, Debug)]
+pub struct VoteCmd {
+    proposal: String,
+    vote: Vote,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
+}
+
+impl VoteCmd {
+    async fn run(&self) -> Result<()> {
+        if self.proposal.len() != 64 {
+            return Err(orga::Error::App("invalid proposal".to_string()).into());
+        }
+
+        let wallet = wallet();
+        let client = self.config.client();
+
+        let addr = wallet.address()?.unwrap();
+        let vals = client.query(|app| app.staking.all_validators()).await?;
+        let val = vals
+            .iter()
+            .find(|val| Address::from(val.address) == addr)
+            .ok_or_else(|| orga::Error::App("validator not found".to_string()))?;
+
+        let mut info: DeclareInfo = serde_json::from_slice(val.info.as_slice())
+            .map_err(|err| orga::Error::App(format!("invalid json: {}", err)))?;
+
+        info.proposals = Some(info.proposals.unwrap_or_default());
+        let props = info.proposals.as_mut().unwrap();
+        if self.vote == Vote::Yes {
+            props.insert(self.proposal.clone(), true);
+        } else if self.vote == Vote::No {
+            props.insert(self.proposal.clone(), false);
+        } else {
+            props.remove(&self.proposal);
+        }
+
+        let info_json = serde_json::to_string(&info)
+            .map_err(|err| orga::Error::App(format!("failed to serialize to json: {}", err)))?;
+        let info_bytes = info_json.as_bytes().to_vec();
+
+        log::info!(
+            "Submitting updated vote map... {}",
+            serde_json::to_string_pretty(&info.proposals).unwrap()
+        );
+
+        client
+            .with_wallet(wallet)
+            .call(
+                |app| build_call!(app.accounts.take_as_funding(MIN_FEE.into())),
+                |app| {
+                    build_call!(app.staking.edit_validator_self(
+                        val.commission.rate,
+                        val.min_self_delegation,
+                        info_bytes.clone().try_into().unwrap()
+                    ))
+                },
+            )
+            .await?;
+
+        log::info!("Vote submitted.");
+
+        Ok(())
     }
 }
 
@@ -1841,7 +1959,7 @@ impl GrpcCmd {
         }));
         log::info!("Starting gRPC server on {}:{}", self.host, self.port);
         orga::ibc::start_grpc(
-            || self.config.client().sub(|app| Ok(app.ibc.ctx)),
+            || nomic::app_client("http://localhost:26657").sub(|app| Ok(app.ibc.ctx)),
             &GrpcOpts {
                 host: self.host.to_string(),
                 port: self.port,
@@ -1920,7 +2038,7 @@ impl ExportCmd {
 
         let store_path = home.join("merk");
         let store = Store::new(orga::store::BackingStore::Merk(orga::store::Shared::new(
-            MerkStore::open_readonly(store_path),
+            MerkStore::open_readonly(store_path)?,
         )));
         let root_bytes = store.get(&[])?.unwrap();
 
@@ -1945,7 +2063,7 @@ impl UpgradeStatusCmd {
     async fn run(&self) -> Result<()> {
         use orga::coins::staking::ValidatorQueryInfo;
         use orga::coins::VersionedAddress;
-        use std::collections::{HashMap, HashSet};
+        use std::collections::HashSet;
         let client = self.config.client();
         let tm_client =
             tendermint_rpc::HttpClient::new(self.config.node.as_ref().unwrap().as_str()).unwrap();
@@ -2207,7 +2325,7 @@ impl SigningStatusCmd {
 
         let store_path = home.join("merk");
         let store = Store::new(orga::store::BackingStore::Merk(orga::store::Shared::new(
-            MerkStore::open_readonly(store_path),
+            MerkStore::open_readonly(store_path)?,
         )));
         let root_bytes = store.get(&[])?.unwrap();
 
@@ -2611,7 +2729,7 @@ impl BabylonRelayerCmd {
                     log::error!("Error in staking conf relay: {}", e);
                 }
 
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                sleep(5).await;
             }
 
             #[allow(unreachable_code)]
@@ -2631,7 +2749,7 @@ impl BabylonRelayerCmd {
                     log::error!("Error in unbonding conf relay: {}", e);
                 }
 
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                sleep(5).await;
             }
 
             #[allow(unreachable_code)]
@@ -2779,6 +2897,7 @@ pub struct RelayEthereumCmd {
 #[cfg(feature = "ethereum")]
 impl RelayEthereumCmd {
     async fn run(&self) -> Result<()> {
+        use nomic::ethereum::relayer::Relayer as EthRelayer;
         let mut privkey_hex = self.private_key.as_str();
         if privkey_hex.starts_with("0x") {
             privkey_hex = &privkey_hex[2..];
@@ -2790,376 +2909,24 @@ impl RelayEthereumCmd {
             )));
         }
 
-        if !self.eth_contract.starts_with("0x") {
-            return Err(nomic::error::Error::Orga(orga::Error::App(
-                "Invalid contract address".to_string(),
-            )));
-        }
-        if self.eth_contract.len() != 42 {
-            return Err(nomic::error::Error::Orga(orga::Error::App(
-                "Invalid contract address".to_string(),
-            )));
-        }
-        let bridge_contract_vec = hex::decode(&self.eth_contract[2..]).unwrap();
-        let mut bridge_contract = [0u8; 20];
-        bridge_contract.copy_from_slice(&bridge_contract_vec);
-        let bridge_contract = Address::from(bridge_contract);
+        let signer = LocalSigner::from_slice(privkey.as_slice()).unwrap(); // TODO
+        let eth_wallet = EthereumWallet::new(signer);
+        let provider = alloy_provider::ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(eth_wallet.clone())
+            .on_http(self.eth_rpc_url.parse().unwrap());
 
-        let try_relay_msg = || async {
-            let client = self.config.clone().client();
-            let token_contract = client
-                .query(|app| {
-                    Ok(app
-                        .ethereum
-                        .token_contract(self.eth_chainid, bridge_contract)?)
-                })
-                .await?;
+        let relayer = EthRelayer::new("http://localhost:26657".to_string(), wallet(), provider);
 
-            let signer = LocalSigner::from_slice(privkey.as_slice()).unwrap(); // TODO
-            let wallet = EthereumWallet::new(signer);
-            let provider = alloy_provider::ProviderBuilder::new()
-                .with_recommended_fillers()
-                .wallet(wallet)
-                .on_http(self.eth_rpc_url.parse().unwrap());
-            let contract = nomic::ethereum::bridge_contract::new(
-                alloy_core::primitives::Address::from_slice(&bridge_contract.bytes()),
-                provider,
-            );
-
-            let msg_index: u64 = contract
-                .state_lastEventNonce()
-                .call()
-                .await
-                .unwrap()
-                ._0
-                .to();
-            dbg!(msg_index);
-
-            let Some((msg, sigs, data)) = client
-                .query(|app| {
-                    if app
-                        .ethereum
-                        .message_index(self.eth_chainid, bridge_contract)?
-                        < msg_index
-                    {
-                        return Ok(None);
-                    }
-
-                    if !app
-                        .ethereum
-                        .signed(self.eth_chainid, bridge_contract, msg_index)?
-                    {
-                        log::debug!("Message {msg_index} is still being signed");
-                        return Ok(None);
-                    }
-
-                    Ok(Some(app.ethereum.msd(
-                        self.eth_chainid,
-                        bridge_contract,
-                        msg_index,
-                    )?))
-                })
-                .await?
-            else {
-                return Ok(());
-            };
-
-            let (ss_index, valset_index) = client
-                .query(|app| {
-                    for i in 1..msg_index {
-                        let (_, _, args) =
-                            app.ethereum
-                                .msd(self.eth_chainid, bridge_contract, msg_index - i)?;
-                        if let nomic::ethereum::OutMessageArgs::UpdateValset(
-                            valset_index,
-                            ref valset,
-                        ) = args
-                        {
-                            return Ok((valset.index, valset_index));
-                        }
-                    }
-
-                    Ok((0, 0))
-                })
-                .await?;
-            let mut valset = client
-                .query(|app| Ok(app.bitcoin.checkpoints.get(ss_index)?.sigset.clone()))
-                .await?;
-            valset.normalize_vp(u32::MAX as u64);
-
-            let sigs: Vec<_> = sigs
-                .into_iter()
-                .map(|(pk, sig)| {
-                    let Some(sig) = sig else {
-                        return nomic::ethereum::bridge_contract::Signature {
-                            v: 0,
-                            r: [0; 32].into(),
-                            s: [0; 32].into(),
-                        };
-                    };
-                    let (v, r, s) = nomic::ethereum::to_eth_sig(
-                        &bitcoin::secp256k1::ecdsa::Signature::from_compact(&sig.0).unwrap(),
-                        &bitcoin::secp256k1::PublicKey::from_slice(pk.as_slice()).unwrap(),
-                        &Message::from_slice(&msg).unwrap(),
-                    );
-                    nomic::ethereum::bridge_contract::Signature {
-                        v,
-                        r: r.into(),
-                        s: s.into(),
-                    }
-                })
-                .collect();
-
-            match data {
-                nomic::ethereum::OutMessageArgs::Batch {
-                    transfers,
-                    timeout,
-                    batch_index,
-                } => {
-                    dbg!(contract
-                        .submitBatch(
-                            valset.to_abi(valset_index),
-                            sigs,
-                            transfers
-                                .iter()
-                                .map(|t| alloy_core::primitives::U256::from(t.amount))
-                                .collect(),
-                            transfers
-                                .iter()
-                                .map(|t| alloy_core::primitives::Address::from_slice(
-                                    &t.dest.bytes()
-                                ))
-                                .collect(),
-                            transfers
-                                .iter()
-                                .map(|t| alloy_core::primitives::U256::from(t.fee_amount))
-                                .collect(),
-                            alloy_core::primitives::U256::from(batch_index),
-                            alloy_core::primitives::Address::from_slice(&token_contract.bytes()),
-                            alloy_core::primitives::U256::from(timeout),
-                        )
-                        .send()
-                        .await
-                        .unwrap()
-                        .get_receipt()
-                        .await
-                        .unwrap());
-                }
-                nomic::ethereum::OutMessageArgs::ContractCall {
-                    contract_address,
-                    data,
-                    max_gas,
-                    fallback_address,
-                    transfer_amount,
-                    fee_amount,
-                    message_index,
-                } => {
-                    contract
-                        .submitLogicCall(
-                            valset.to_abi(valset_index),
-                            sigs,
-                            nomic::ethereum::logic_call_args(
-                                transfer_amount,
-                                fee_amount,
-                                token_contract.into(),
-                                contract_address,
-                                data.as_slice(),
-                                max_gas,
-                                fallback_address,
-                                message_index,
-                            ),
-                        )
-                        .send()
-                        .await
-                        .unwrap()
-                        .get_receipt()
-                        .await
-                        .unwrap();
-                }
-                nomic::ethereum::OutMessageArgs::UpdateValset(index, new_valset) => {
-                    dbg!(contract
-                        .updateValset(new_valset.to_abi(index), valset.to_abi(valset_index), sigs)
-                        .send()
-                        .await
-                        .unwrap()
-                        .get_receipt()
-                        .await
-                        .unwrap());
-                }
-            };
-
-            Ok::<_, nomic::error::Error>(())
-        };
-
-        let try_relay_return = || async {
-            let client = self
-                .config
-                .clone()
-                .client()
-                .with_wallet(SimpleWallet::open(".").unwrap());
-
-            let signer = LocalSigner::from_slice(privkey.as_slice()).unwrap(); // TODO
-            let wallet = EthereumWallet::new(signer);
-            let provider = alloy_provider::ProviderBuilder::new()
-                .with_recommended_fillers()
-                .wallet(wallet)
-                .on_http(self.eth_rpc_url.parse().unwrap());
-            let contract = nomic::ethereum::bridge_contract::new(
-                alloy_core::primitives::Address::from_slice(&bridge_contract.bytes()),
-                provider.clone(),
-            );
-            let bridge_contract_addr =
-                alloy_core::primitives::Address::from_slice(&bridge_contract.bytes());
-
-            let has_contract_index = !contract
-                .state_lastReturnNonce()
-                .call_raw()
-                .await
-                .unwrap()
-                .is_empty();
-            if !has_contract_index {
-                dbg!("No return nonce");
-                return Ok(());
-            }
-
-            let contract_index: u64 = contract
-                .state_lastReturnNonce()
-                .call()
-                .await
-                .unwrap()
-                ._0
-                .to();
-            let nomic_index = client
-                .query(|app| {
-                    Ok(app
-                        .ethereum
-                        .return_index(self.eth_chainid, bridge_contract)?)
-                })
-                .await?;
-
-            if nomic_index == contract_index {
-                return Ok(());
-            }
-            dbg!(contract_index, nomic_index);
-
-            let block_number = self
-                .config
-                .client()
-                .query(|app| Ok(app.ethereum.block_number(self.eth_chainid)?))
-                .await?;
-
-            log::debug!(
-                "Getting state proof... (chainid={}, block_number={})",
+        relayer
+            .start_eth_relay(
+                self.private_key.clone(),
+                self.eth_rpc_url.clone(),
+                self.beacon_api_url.clone(),
                 self.eth_chainid,
-                block_number
-            );
-
-            let state_proof = ethereum::relayer::get_state_proof(
-                &provider,
-                bridge_contract_addr,
-                nomic_index,
-                block_number,
+                self.eth_contract.clone(),
             )
-            .await?;
-
-            self.config
-                .client()
-                .with_wallet(crate::wallet())
-                .call(
-                    move |app| {
-                        build_call!(app.ethereum.relay_return(
-                            self.eth_chainid,
-                            bridge_contract,
-                            state_proof.clone()
-                        ))
-                    },
-                    |app| build_call!(app.app_noop()),
-                )
-                .await?;
-
-            Ok::<_, nomic::error::Error>(())
-        };
-
-        let try_relay_consensus = || async {
-            let client = self.config.clone().client();
-
-            let rpc_client =
-                ethereum::consensus::relayer::RpcClient::new(self.beacon_api_url.clone());
-            // TODO: use chain_id in closure without breaking fn coercion
-            let lc = client.sub(move |app: InnerApp| Ok(app.ethereum.light_client(17000)?));
-            let updates = ethereum::consensus::relayer::get_updates(&lc, &rpc_client).await?;
-            dbg!(updates.len());
-
-            for update in updates {
-                log::info!(
-                    "Relaying Ethereum consensus update... (chainid={}, slot={})",
-                    17000, // TODO: self.eth_chainid,
-                    update.finalized_header.beacon.slot
-                );
-                if let Err(e) = self
-                    .config
-                    .client()
-                    .call(
-                        move |app| {
-                            build_call!(app
-                                .ethereum
-                                .relay_consensus_update(self.eth_chainid, update.clone()))
-                        },
-                        |app| build_call!(app.app_noop()),
-                    )
-                    .await
-                {
-                    log::warn!("Failed to relay Ethereum consensus update: {:?}", e);
-                } else {
-                    log::info!("Consensus update relayed.");
-                }
-            }
-
-            Ok::<_, nomic::error::Error>(())
-        };
-
-        let relay_msgs = async {
-            loop {
-                if let Err(e) = try_relay_msg().await {
-                    log::error!("Ethereum relayer error: {:?}", e);
-                };
-
-                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
-            }
-
-            #[allow(unreachable_code)]
-            Ok::<_, nomic::error::Error>(())
-        };
-
-        let relay_returns = async {
-            loop {
-                if let Err(e) = try_relay_return().await {
-                    log::error!("Nomic relayer error: {:?}", e);
-                };
-
-                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
-            }
-
-            #[allow(unreachable_code)]
-            Ok::<_, nomic::error::Error>(())
-        };
-
-        let relay_consensus = async {
-            loop {
-                if let Err(e) = try_relay_consensus().await {
-                    log::error!("Nomic relayer error: {:?}", e);
-                };
-
-                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
-            }
-
-            #[allow(unreachable_code)]
-            Ok::<_, nomic::error::Error>(())
-        };
-
-        futures::try_join!(relay_msgs, relay_returns, relay_consensus)?;
-
-        Ok(())
+            .await
     }
 }
 

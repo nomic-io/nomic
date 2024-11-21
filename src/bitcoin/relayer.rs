@@ -11,6 +11,7 @@ use crate::bitcoin::{adapter::Adapter, header_queue::WrappedHeader};
 use crate::error::Error;
 use crate::error::Result;
 use crate::orga::encoding::Encode;
+use crate::utils::sleep;
 use crate::utils::time_now;
 use bitcoin::consensus::{Decodable, Encodable};
 use bitcoin::Txid;
@@ -25,7 +26,6 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::future::Future;
 use std::sync::Arc;
 use tokio::join;
-use tokio::sync::mpsc::Receiver;
 use tokio::sync::{Mutex, RwLock, RwLockReadGuard};
 use warp::reject;
 use warp::reply::Json;
@@ -87,7 +87,7 @@ impl Relayer {
                 error!("Header relay error: {}", e);
             }
 
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            sleep(2).await;
         }
     }
 
@@ -134,15 +134,15 @@ impl Relayer {
 
         self.deposit_buffer = Some(deposit_buffer);
 
-        let (server, mut recv) = self.create_address_server(index.clone())?;
+        let server = self.create_address_server(index.clone())?;
 
         let deposit_relay = async {
             loop {
-                if let Err(e) = self.relay_deposits(&mut recv, index.clone()).await {
+                if let Err(e) = self.relay_deposits(index.clone()).await {
                     error!("Deposit relay error: {}", e);
                 }
 
-                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                sleep(2).await;
             }
         };
 
@@ -159,7 +159,7 @@ impl Relayer {
                     }
                 }
 
-                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                sleep(2).await;
             }
         };
 
@@ -170,9 +170,7 @@ impl Relayer {
     fn create_address_server(
         &self,
         index: Arc<Mutex<DepositIndex>>,
-    ) -> Result<(impl Future<Output = ()>, Receiver<(Dest, u32)>)> {
-        let (send, recv) = tokio::sync::mpsc::channel(1024);
-
+    ) -> Result<impl Future<Output = ()>> {
         let sigsets = Arc::new(Mutex::new(BTreeMap::new()));
 
         // TODO: pass into closures more cleanly
@@ -184,6 +182,7 @@ impl Relayer {
             None => return Err(Error::Relayer("Deposit buffer not set".to_string())),
         };
 
+        let watched_script_store = self.scripts.clone();
         // TODO: configurable listen address
         use bytes::Bytes;
         use warp::Filter;
@@ -191,13 +190,15 @@ impl Relayer {
             .and(warp::path("address"))
             .and(warp::query::<DepositAddress>())
             .and(warp::filters::body::bytes())
-            .map(move |query: DepositAddress, body| (query, send.clone(), sigsets.clone(), body))
+            .map(move |query: DepositAddress, body| {
+                (query, sigsets.clone(), body, watched_script_store.clone())
+            })
             .and_then(
-                move |(query, send, sigsets, body): (
+                move |(query, sigsets, body, watched_script_store): (
                     DepositAddress,
-                    tokio::sync::mpsc::Sender<_>,
                     Arc<Mutex<BTreeMap<_, _>>>,
                     Bytes,
+                    Arc<Mutex<_>>,
                 )| {
                     async move {
                         let dest = Dest::decode(body.to_vec().as_slice())
@@ -245,21 +246,28 @@ impl Relayer {
                             dest,
                             sigset.create_time,
                             query.sigset_index,
-                            send,
+                            watched_script_store,
+                            sigset.clone(),
                         ))
                     }
                 },
             )
             .and_then(
-                move |(dest, create_time, sigset_index, send): (
+                move |(dest, create_time, sigset_index, watched_script_store, sigset): (
                     Dest,
                     u64,
                     u32,
-                    tokio::sync::mpsc::Sender<_>,
+                    Arc<Mutex<Option<WatchedScriptStore>>>,
+                    SignatorySet,
                 )| {
                     async move {
                         debug!("Received deposit commitment: {}, {}", dest, sigset_index);
-                        send.send((dest, sigset_index)).await.unwrap();
+                        let mut script_guard = watched_script_store.lock().await;
+                        script_guard
+                            .as_mut()
+                            .unwrap()
+                            .insert(dest, &sigset)
+                            .map_err(|e| warp::reject::custom(Error::from(e)))?;
                         let max_deposit_age = app_client(app_client_addr)
                             .query(|app| Ok(app.bitcoin.config.max_deposit_age))
                             .await
@@ -377,18 +385,14 @@ impl Relayer {
                 ),
         )
         .run(([0, 0, 0, 0], 8999));
-        Ok((server, recv))
+        Ok(server)
     }
 
-    async fn relay_deposits(
-        &self,
-        recv: &mut Receiver<(Dest, u32)>,
-        index: Arc<Mutex<DepositIndex>>,
-    ) -> Result<!> {
+    async fn relay_deposits(&self, index: Arc<Mutex<DepositIndex>>) -> Result<!> {
         let mut prev_tip = None;
 
         loop {
-            self.insert_announced_addrs(recv).await?;
+            self.remove_expired().await?;
 
             let tip = self.sidechain_block_hash().await?;
             let prev = prev_tip.unwrap_or(tip);
@@ -455,6 +459,9 @@ impl Relayer {
                 continue;
             }
 
+            #[cfg(feature = "devnet")]
+            tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
+            #[cfg(not(feature = "devnet"))]
             tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
             let tx = self
@@ -552,7 +559,7 @@ impl Relayer {
                 }
             }
 
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            sleep(2).await;
         }
     }
 
@@ -601,7 +608,7 @@ impl Relayer {
                 relayed.insert(tx.txid());
             }
 
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            sleep(2).await;
         }
     }
 
@@ -614,7 +621,7 @@ impl Relayer {
                 }
             }
 
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            sleep(2).await;
         }
     }
 
@@ -665,7 +672,7 @@ impl Relayer {
                 }
             }
 
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            sleep(2).await;
         }
     }
 
@@ -680,7 +687,7 @@ impl Relayer {
                 error!("Recovery tx relay error: {}", e);
             }
 
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            sleep(2).await;
         }
     }
 
@@ -743,7 +750,7 @@ impl Relayer {
                 }
             }
 
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            sleep(2).await;
         }
     }
 
@@ -755,7 +762,7 @@ impl Relayer {
                 error!("Checkpoint confirmation relay error: {}", e);
             }
 
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            sleep(1).await;
         }
     }
 
@@ -781,7 +788,7 @@ impl Relayer {
                     Ok(res) => res,
                     Err(err) => {
                         if err.to_string().contains("No completed checkpoints yet") {
-                            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                            sleep(2).await;
                             continue;
                         }
 
@@ -794,7 +801,7 @@ impl Relayer {
 
             if let Some(confirmed_index) = confirmed_index {
                 if confirmed_index == unconf_index {
-                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                    sleep(5).await;
                     continue;
                 }
             }
@@ -865,22 +872,7 @@ impl Relayer {
         Ok(None)
     }
 
-    async fn insert_announced_addrs(&self, recv: &mut Receiver<(Dest, u32)>) -> Result<()> {
-        while let Ok((addr, sigset_index)) = recv.try_recv() {
-            let sigset_res = app_client(&self.app_client_addr)
-                .query(|app| Ok(app.bitcoin.checkpoints.get(sigset_index)?.sigset.clone()))
-                .await;
-            let sigset = match sigset_res {
-                Ok(sigset) => sigset,
-                Err(err) => {
-                    error!("{}", err);
-                    continue;
-                }
-            };
-            let mut script_guard = self.scripts.lock().await;
-            script_guard.as_mut().unwrap().insert(addr, &sigset)?;
-        }
-
+    async fn remove_expired(&self) -> Result<()> {
         let max_age = app_client(&self.app_client_addr)
             .query(|app| Ok(app.bitcoin.checkpoints.config.max_age))
             .await?;
