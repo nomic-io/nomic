@@ -13,8 +13,6 @@ use alloy_provider::network::EthereumWallet;
 use alloy_signer_local::LocalSigner;
 
 use bitcoin::consensus::{Decodable, Encodable};
-#[cfg(feature = "ethereum")]
-use bitcoin::secp256k1::Message;
 use bitcoin::secp256k1::{self};
 
 use bitcoin::util::bip32::ExtendedPubKey;
@@ -33,8 +31,6 @@ use nomic::bitcoin::signatory::SignatorySet;
 use nomic::bitcoin::Nbtc;
 use nomic::bitcoin::{relayer::Relayer, signer::Signer};
 use nomic::error::Result;
-#[cfg(feature = "ethereum")]
-use nomic::ethereum;
 #[cfg(feature = "frost")]
 use nomic::frost::{self, signer::SecretStore};
 use nomic::utils::load_bitcoin_key;
@@ -2921,7 +2917,6 @@ impl RelayEthereumCmd {
         relayer
             .start_eth_relay(
                 self.private_key.clone(),
-                self.eth_rpc_url.clone(),
                 self.beacon_api_url.clone(),
                 self.eth_chainid,
                 self.eth_contract.clone(),

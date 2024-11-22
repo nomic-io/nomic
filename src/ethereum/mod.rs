@@ -379,7 +379,7 @@ impl Ethereum {
             .clone())
     }
 
-    #[allow(unused_imports)]
+    #[allow(unused_variables)]
     #[call]
     pub fn unsafe_update_consensus(
         &mut self,

@@ -8,7 +8,6 @@ use crate::utils::sleep;
 use alloy_core::primitives::Address as EthAddress;
 use alloy_primitives::Uint;
 use alloy_provider::Provider;
-use alloy_signer_local::LocalSigner;
 use alloy_transport::Transport;
 use bitcoin::secp256k1::Message;
 use orga::call::build_call;
@@ -40,7 +39,6 @@ impl<
     pub async fn start_eth_relay(
         &self,
         private_key: String,
-        eth_rpc_url: String,
         beacon_api_url: String,
         eth_chainid: u32,
         eth_contract: String,
@@ -86,15 +84,7 @@ impl<
 
         let relay_returns = async {
             loop {
-                if let Err(e) = self
-                    .try_relay_return(
-                        eth_chainid,
-                        eth_rpc_url.clone(),
-                        bridge_contract,
-                        privkey.clone(),
-                    )
-                    .await
-                {
+                if let Err(e) = self.try_relay_return(eth_chainid, bridge_contract).await {
                     log::error!("Nomic relayer error: {:?}", e);
                 };
 
@@ -299,16 +289,9 @@ impl<
         Ok(())
     }
 
-    async fn try_relay_return(
-        &self,
-        eth_chainid: u32,
-        eth_rpc_url: String,
-        bridge_contract: Address,
-        privkey: Vec<u8>,
-    ) -> Result<()> {
+    async fn try_relay_return(&self, eth_chainid: u32, bridge_contract: Address) -> Result<()> {
         let client = app_client(&self.app_client_addr);
 
-        let signer = LocalSigner::from_slice(privkey.as_slice()).unwrap();
         let contract = crate::ethereum::bridge_contract::new(
             alloy_core::primitives::Address::from_slice(&bridge_contract.bytes()),
             self.provider.clone(),
@@ -387,8 +370,7 @@ impl<
 
         for update in updates {
             log::info!(
-                "Relaying Ethereum consensus update... (chainid={},
-    slot={})",
+                "Relaying Ethereum consensus update... (chainid={}, slot={})",
                 11155111, // TODO: self.eth_chainid,
                 update.finalized_header.beacon.slot
             );
