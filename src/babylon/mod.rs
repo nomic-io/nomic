@@ -20,6 +20,8 @@ use orga::{
     state::State,
 };
 use serde::Serialize;
+use serde_with::serde_as;
+use serde_with::TryFromInto;
 
 use crate::{
     app::{Dest, Identity},
@@ -699,6 +701,8 @@ pub enum DelegationStatus {
 ///
 /// This type represents a state machine which transitions through various
 /// states as the delegation is created, staked, unbonded, and withdrawn.
+
+#[serde_as]
 #[orga]
 #[derive(Debug)]
 pub struct Delegation {
@@ -715,6 +719,7 @@ pub struct Delegation {
     /// The public key used to create the staking output.
     ///
     /// In practice this is the aggregated public key of the FROST group.
+    #[serde_as(as = "serde_with::hex::Hex")]
     pub btc_key: XOnlyPubkey,
     /// The index of the FROST group used to sign the delegation.
     pub frost_group: u64,
@@ -722,6 +727,7 @@ pub struct Delegation {
     ///
     /// Note that as of Babylon mainnet cap 2, testnet 4, and the staging
     /// testnet, there is only one finality provider key.
+    #[serde_as(as = "TryFromInto<Vec<XOnlyPubkey>>")]
     pub fp_keys: LengthVec<u8, XOnlyPubkey>,
     /// The amount of Bitcoin blocks the delegation is staked for.
     pub staking_period: u16,

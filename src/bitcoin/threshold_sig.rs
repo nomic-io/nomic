@@ -13,6 +13,7 @@ use orga::migrate::{Migrate, MigrateFrom};
 use orga::state::State;
 use orga::{orga, Error, Result};
 use serde::Serialize;
+use serde_with::serde_as;
 
 // TODO: update for taproot-based design (musig rounds, fallback path)
 
@@ -20,6 +21,7 @@ use serde::Serialize;
 pub type Message = [u8; MESSAGE_SIZE];
 
 /// A compact secp256k1 ECDSA signature.
+#[serde_as]
 #[derive(
     Encode,
     Decode,
@@ -37,9 +39,7 @@ pub type Message = [u8; MESSAGE_SIZE];
     PartialOrd,
     Ord,
 )]
-pub struct Signature(
-    #[serde(serialize_with = "<[_]>::serialize")] pub [u8; COMPACT_SIGNATURE_SIZE],
-);
+pub struct Signature(#[serde_as(as = "serde_with::hex::Hex")] pub [u8; COMPACT_SIGNATURE_SIZE]);
 
 /// A compressed secp256k1 public key.
 #[orga(skip(Default), version = 1)]

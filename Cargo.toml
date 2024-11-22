@@ -77,6 +77,7 @@ alloy-rpc-types = { version = "0.3.6", optional = true }
 alloy-transport = { version = "0.3.6", optional = true }
 alloy-rpc-types-eth = { version = "0.3.6", optional = true }
 ruint = { version = "1.12.3", optional = true }
+serde_with = { version = "3.11.0", features = ["json", "hex"] }
 
 [patch."https://github.com/turbofish-org/merk"]
 merk = { git = "https://github.com/nomic-io/merk", rev = "a914255712fb609bbfb093150b745ab1b0152182", optional = true, default-features = false }
