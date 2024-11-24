@@ -1454,9 +1454,19 @@ impl Fairing for CORS {
     }
 }
 
+
+#[catch(404)]
+fn not_found(req: &Request) -> Value {
+    json!({
+        "code": 12,
+        "message": "Not Implemented",
+        "details": []
+    })
+}
+
 #[launch]
 fn rocket() -> _ {
-    rocket::build().attach(CORS).mount(
+    rocket::build().attach(CORS).register("/", catchers![not_found]).mount(
         "/",
         routes![
             bank_balances,
