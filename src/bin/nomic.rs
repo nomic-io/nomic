@@ -717,7 +717,7 @@ async fn configure_for_statesync(cfg_path: &PathBuf, rpc_servers: &[&str]) {
 
     configure_node(cfg_path, |cfg| {
         cfg["statesync"]["enable"] = toml_edit::value(true);
-        cfg["statesync"]["rpc_servers"] = toml_edit::value(rpc_servers.join(","));
+        cfg["statesync"]["rpc_servers"] = toml_edit::value("https://nomic-rpc.polkachu.com:443,https://nomic-rpc.polkachu.com:443");
         cfg["statesync"]["trust_height"] = toml_edit::value(height);
         cfg["statesync"]["trust_hash"] = toml_edit::value(hash.clone());
         cfg["statesync"]["discovery_time"] = toml_edit::value("8s");
@@ -758,7 +758,7 @@ async fn get_bootstrap_state(rpc_servers: &[&str]) -> Result<(i64, String)> {
     latest_heights.sort_unstable();
     let latest_height = latest_heights[latest_heights.len() / 2] as u32;
 
-    let height = latest_height.checked_sub(1000).unwrap_or(1);
+    let height = latest_height.checked_sub(10000).unwrap_or(1);
 
     // get block hash
     let mut hash = None;

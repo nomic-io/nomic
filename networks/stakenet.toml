@@ -1,11 +1,11 @@
 state_sync_rpc = [
-  "http://161.35.51.124:26667",
-  "http://161.35.51.124:26667"
+  "https://nomic-rpc.polkachu.com:443",
+  "https://rpc.nomic.basementnodes.ca:443"
 ]
 tendermint_flags = [
     "--p2p.seeds",
     """
-      238120dfe716082754048057c1fdc3d6f09609b5@161.35.51.124:26656
+      238120dfe716082754048057c1fdc3d6f09609b5@161.35.51.124:26656,d4342c478c75704e8284dc3494fbd0acc444e674@basementnodes.ca:20656
     """,
 ]
 btc_relayer = [
