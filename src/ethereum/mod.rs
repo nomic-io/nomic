@@ -153,12 +153,7 @@ impl Ethereum {
     /// from the remote chain. This should be called by relayers whenever there
     /// is a new state proof from the remote chain.
     #[call]
-    pub fn relay_return(
-        &mut self,
-        network: u32,
-        connection: Address,
-        state_proof: StateProof,
-    ) -> Result<()> {
+    pub fn relay_return(&mut self, network: u32, state_proof: StateProof) -> Result<()> {
         exempt_from_fee()?;
 
         let mut net = self
@@ -170,7 +165,7 @@ impl Ethereum {
 
         let mut conn = net
             .connections
-            .get_mut(connection)?
+            .get_mut(state_proof.address)?
             .ok_or_else(|| Error::App("connection not found".to_string()))?;
 
         conn.relay_return(network, state_root, state_proof)

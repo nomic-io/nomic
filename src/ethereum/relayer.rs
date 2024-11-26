@@ -345,13 +345,7 @@ impl<
         app_client(&self.app_client_addr)
             .with_wallet(self.wallet.clone())
             .call(
-                move |app| {
-                    build_call!(app.ethereum.relay_return(
-                        eth_chainid,
-                        bridge_contract,
-                        state_proof.clone()
-                    ))
-                },
+                move |app| build_call!(app.ethereum.relay_return(eth_chainid, state_proof.clone())),
                 |app| build_call!(app.app_noop()),
             )
             .await?;
