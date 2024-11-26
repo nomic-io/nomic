@@ -80,7 +80,7 @@ ruint = { version = "1.12.3", optional = true }
 serde_with = { version = "3.11.0", features = ["json", "hex"] }
 
 [patch."https://github.com/turbofish-org/merk"]
-merk = { git = "https://github.com/nomic-io/merk", rev = "a914255712fb609bbfb093150b745ab1b0152182", optional = true, default-features = false }
+merk = { git = "https://github.com/nomic-io/merk", rev = "ece89c3adac49da4f6f202874964df18563b5c5d", optional = true, default-features = false }
 
 [dev-dependencies]
 bitcoind = { version = "0.27.0", features = ["22_0"] }
