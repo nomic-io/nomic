@@ -844,7 +844,6 @@ impl Connection {
                 self.bridge_contract,
                 *batch_index,
                 transfers,
-                self.token_contract,
                 timeout,
             ),
             OutMessageArgs::ContractCall {
@@ -858,7 +857,6 @@ impl Connection {
             } => call_hash(
                 self.chain_id,
                 self.bridge_contract.into(),
-                self.token_contract.into(),
                 *contract_address,
                 *fallback_address,
                 data,
@@ -986,7 +984,6 @@ impl Describe for OutMessageArgs {
 pub fn call_hash(
     chain_id: u32,
     bridge_contract: [u8; 20],
-    token_contract: [u8; 20],
     dest_contract: [u8; 20],
     fallback_addr: [u8; 20],
     data: &[u8],
@@ -999,10 +996,8 @@ pub fn call_hash(
         uint256(chain_id as u64),
         addr_to_bytes32(bridge_contract.into()),
         bytes32(b"logicCall").unwrap(),
-        vec![transfer_amount],
-        vec![addr_to_bytes32(token_contract.into())],
-        vec![fee_amount],
-        vec![addr_to_bytes32(token_contract.into())],
+        uint256(transfer_amount),
+        uint256(fee_amount),
         addr_to_bytes32(dest_contract.into()),
         addr_to_bytes32(fallback_addr.into()),
         data,
@@ -1023,7 +1018,6 @@ pub fn call_hash(
 pub fn logic_call_args(
     transfer_amount: u64,
     fee_amount: u64,
-    token_contract: [u8; 20],
     dest_contract: [u8; 20],
     data: &[u8],
     max_gas: u64,
@@ -1031,17 +1025,15 @@ pub fn logic_call_args(
     nonce_id: u64,
 ) -> LogicCallArgs {
     LogicCallArgs {
-        transferAmounts: vec![alloy_core::primitives::U256::from(transfer_amount)],
-        transferTokenContracts: vec![alloy_core::primitives::Address::from_slice(&token_contract)],
-        feeAmounts: vec![alloy_core::primitives::U256::from(fee_amount)],
-        feeTokenContracts: vec![alloy_core::primitives::Address::from_slice(&token_contract)],
+        transferAmount: alloy_core::primitives::U256::from(transfer_amount),
+        feeAmount: alloy_core::primitives::U256::from(fee_amount),
         logicContractAddress: alloy_core::primitives::Address::from_slice(&dest_contract),
-        fallbackAddress: alloy_core::primitives::Address::from_slice(&fallback_address),
-        maxGas: alloy_core::primitives::U256::from(max_gas),
         payload: alloy_core::primitives::Bytes::from(data.to_vec()),
+        maxGas: alloy_core::primitives::U256::from(max_gas),
         timeOut: alloy_core::primitives::U256::from(u64::MAX),
         invalidationId: alloy_core::primitives::FixedBytes::from(uint256(nonce_id)),
         invalidationNonce: alloy_core::primitives::U256::from(1),
+        fallbackAddress: alloy_core::primitives::Address::from_slice(&fallback_address),
     }
 }
 
@@ -1090,7 +1082,6 @@ pub fn batch_hash(
     bridge_contract: Address,
     batch_index: u64,
     transfers: &LengthVec<u16, Transfer>,
-    token_contract: Address,
     timeout: &u64,
 ) -> [u8; 32] {
     let dests = transfers
@@ -1108,7 +1099,6 @@ pub fn batch_hash(
         dests,
         fees,
         batch_index,
-        addr_to_bytes32(token_contract),
         timeout,
     )
         .abi_encode_params();
@@ -1696,7 +1686,7 @@ mod tests {
             dbg!(contract
                 .submitBatch(
                     ethereum.valset.to_abi(ethereum.valset_index),
-                    sigs.clone(),
+                    sigs,
                     transfers
                         .iter()
                         .map(|t| alloy_core::primitives::U256::from(t.amount))
@@ -1710,7 +1700,6 @@ mod tests {
                         .map(|t| alloy_core::primitives::U256::from(t.fee_amount))
                         .collect(),
                     alloy_core::primitives::U256::from(batch_index),
-                    alloy_core::primitives::Address::from_slice(&ethereum.token_contract.bytes()),
                     alloy_core::primitives::U256::from(timeout),
                 )
                 .into_transaction_request());

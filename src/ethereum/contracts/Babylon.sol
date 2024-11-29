@@ -44,11 +44,7 @@ contract Babylon is ReentrancyGuard {
             '}"}'
         );
 
-        Nomic(state_nomicContract).sendToNomic(
-            state_tokenContract,
-            dest,
-            amount
-        );
+        Nomic(state_nomicContract).sendToNomic(dest, amount);
 
         uint256 index = state_delegations;
         state_owners[index] = msg.sender;
@@ -69,7 +65,7 @@ contract Babylon is ReentrancyGuard {
             "}"
         );
 
-        Nomic(state_nomicContract).sendToNomic(state_tokenContract, dest, 0);
+        Nomic(state_nomicContract).sendToNomic(dest, 0);
     }
 
     constructor(address _nomicContract, address _tokenContract) {

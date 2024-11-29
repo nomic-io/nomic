@@ -124,10 +124,6 @@ impl<
     async fn try_relay_msg(&self, eth_chainid: u32, bridge_contract: Address) -> Result<()> {
         let client = app_client(&self.app_client_addr);
 
-        let token_contract = client
-            .query(|app| Ok(app.ethereum.token_contract(eth_chainid, bridge_contract)?))
-            .await?;
-
         let bridge_contract_addr =
             alloy_core::primitives::Address::from_slice(&bridge_contract.bytes());
         let contract =
@@ -233,7 +229,6 @@ impl<
                             .map(|t| alloy_core::primitives::U256::from(t.fee_amount))
                             .collect(),
                         alloy_core::primitives::U256::from(batch_index),
-                        alloy_core::primitives::Address::from_slice(&token_contract.bytes()),
                         alloy_core::primitives::U256::from(timeout),
                     )
                     .send()
@@ -259,7 +254,6 @@ impl<
                         crate::ethereum::logic_call_args(
                             transfer_amount,
                             fee_amount,
-                            token_contract.into(),
                             contract_address,
                             data.as_slice(),
                             max_gas,

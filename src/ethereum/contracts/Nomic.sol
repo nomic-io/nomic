@@ -29,11 +29,9 @@ error FailedLogicCall();
 // This is being used purely to avoid stack too deep errors
 struct LogicCallArgs {
     // Transfers out to the logic contract
-    uint256[] transferAmounts;
-    address[] transferTokenContracts;
+    uint256 transferAmount;
     // The fees (transferred to msg.sender)
-    uint256[] feeAmounts;
-    address[] feeTokenContracts;
+    uint256 feeAmount;
     // The arbitrary logic call
     address logicContractAddress;
     bytes payload;
@@ -89,6 +87,7 @@ contract Nomic is ReentrancyGuard {
     mapping(uint256 => address) public state_returnSenders;
 
     address public immutable state_owner;
+    address public immutable state_nbtc_contract;
 
     // TransactionBatchExecutedEvent and SendToNomicEvent both include the field _eventNonce.
     // This is incremented every time one of these events is emitted. It is checked by the
@@ -102,7 +101,6 @@ contract Nomic is ReentrancyGuard {
         uint256 _eventNonce
     );
     event SendToNomicEvent(
-        address indexed _tokenContract,
         address indexed _sender,
         string _destination,
         uint256 _amount,
@@ -180,7 +178,7 @@ contract Nomic is ReentrancyGuard {
     // next valset, since it allows the caller to stop verifying signatures once a quorum of signatures have been verified.
     function makeCheckpoint(
         ValsetArgs memory _valsetArgs
-    ) private returns (bytes32) {
+    ) private view returns (bytes32) {
         // bytes32 encoding of the string "checkpoint"
         bytes32 methodName = 0x636865636b706f696e7400000000000000000000000000000000000000000000;
 
@@ -349,17 +347,16 @@ contract Nomic is ReentrancyGuard {
         address[] calldata _destinations,
         uint256[] calldata _fees,
         uint256 _batchNonce,
-        address _tokenContract,
         // a block height beyond which this batch is not valid
         // used to provide a fee-free timeout
         uint256 _batchTimeout
     ) external nonReentrant {
         // CHECKS scoped to reduce stack depth
         {
-            if (_batchNonce != state_lastBatchNonces[_tokenContract] + 1) {
+            if (_batchNonce != state_lastBatchNonces[state_nbtc_contract] + 1) {
                 revert InvalidBatchNonce({
                     newNonce: _batchNonce,
-                    currentNonce: state_lastBatchNonces[_tokenContract]
+                    currentNonce: state_lastBatchNonces[state_nbtc_contract]
                 });
             }
 
@@ -399,7 +396,6 @@ contract Nomic is ReentrancyGuard {
                         _destinations,
                         _fees,
                         _batchNonce,
-                        _tokenContract,
                         _batchTimeout
                     )
                 ),
@@ -409,13 +405,13 @@ contract Nomic is ReentrancyGuard {
             // ACTIONS
 
             // Store batch nonce
-            state_lastBatchNonces[_tokenContract] = _batchNonce;
+            state_lastBatchNonces[state_nbtc_contract] = _batchNonce;
 
             {
                 // Send transaction amounts to destinations
                 uint256 totalFee;
                 for (uint256 i = 0; i < _amounts.length; i++) {
-                    IERC20(_tokenContract).safeTransfer(
+                    IERC20(state_nbtc_contract).safeTransfer(
                         _destinations[i],
                         _amounts[i]
                     );
@@ -423,7 +419,7 @@ contract Nomic is ReentrancyGuard {
                 }
 
                 // Send transaction fees to msg.sender
-                IERC20(_tokenContract).safeTransfer(msg.sender, totalFee);
+                IERC20(state_nbtc_contract).safeTransfer(msg.sender, totalFee);
             }
         }
 
@@ -432,7 +428,7 @@ contract Nomic is ReentrancyGuard {
             state_lastEventNonce = state_lastEventNonce + 1;
             emit TransactionBatchExecutedEvent(
                 _batchNonce,
-                _tokenContract,
+                state_nbtc_contract,
                 state_lastEventNonce
             );
         }
@@ -485,18 +481,8 @@ contract Nomic is ReentrancyGuard {
             if (makeCheckpoint(_currentValset) != state_lastValsetCheckpoint) {
                 revert IncorrectCheckpoint();
             }
-
-            if (
-                _args.transferAmounts.length !=
-                _args.transferTokenContracts.length
-            ) {
-                revert InvalidLogicCallTransfers();
-            }
-
-            if (_args.feeAmounts.length != _args.feeTokenContracts.length) {
-                revert InvalidLogicCallFees();
-            }
         }
+
         {
             bytes32 argsHash = keccak256(
                 abi.encode(
@@ -504,10 +490,8 @@ contract Nomic is ReentrancyGuard {
                     address(this),
                     // bytes32 encoding of "logicCall"
                     0x6c6f67696343616c6c0000000000000000000000000000000000000000000000,
-                    _args.transferAmounts,
-                    _args.transferTokenContracts,
-                    _args.feeAmounts,
-                    _args.feeTokenContracts,
+                    _args.transferAmount,
+                    _args.feeAmount,
                     _args.logicContractAddress,
                     _args.fallbackAddress,
                     _args.payload,
@@ -542,21 +526,14 @@ contract Nomic is ReentrancyGuard {
             )
         );
         if (!success) {
-            for (uint256 i = 0; i < _args.transferAmounts.length; i++) {
-                IERC20(_args.transferTokenContracts[i]).safeTransfer(
-                    _args.fallbackAddress,
-                    _args.transferAmounts[i]
-                );
-            }
+            IERC20(state_nbtc_contract).safeTransfer(
+                _args.fallbackAddress,
+                _args.transferAmount
+            );
         }
 
         // Send fees to msg.sender
-        for (uint256 i = 0; i < _args.feeAmounts.length; i++) {
-            IERC20(_args.feeTokenContracts[i]).safeTransfer(
-                msg.sender,
-                _args.feeAmounts[i]
-            );
-        }
+        IERC20(state_nbtc_contract).safeTransfer(msg.sender, _args.feeAmount);
 
         // LOGS scoped to reduce stack depth
         {
@@ -572,12 +549,10 @@ contract Nomic is ReentrancyGuard {
 
     function remoteCall(LogicCallArgs memory _args) internal {
         // Send tokens to the logic contract
-        for (uint256 i = 0; i < _args.transferAmounts.length; i++) {
-            IERC20(_args.transferTokenContracts[i]).safeTransfer(
-                _args.logicContractAddress,
-                _args.transferAmounts[i]
-            );
-        }
+        IERC20(state_nbtc_contract).safeTransfer(
+            _args.logicContractAddress,
+            _args.transferAmount
+        );
 
         if (_args.logicContractAddress.code.length > 0) {
             revert InvalidLogicCallAddress();
@@ -592,19 +567,18 @@ contract Nomic is ReentrancyGuard {
     }
 
     function sendToNomic(
-        address _tokenContract,
         string calldata _destination,
         uint256 _amount
     ) external nonReentrant {
         // TODO: validate destination
 
         // we snapshot our current balance of this token
-        uint256 ourStartingBalance = IERC20(_tokenContract).balanceOf(
+        uint256 ourStartingBalance = IERC20(state_nbtc_contract).balanceOf(
             address(this)
         );
 
         // attempt to transfer the user specified amount
-        IERC20(_tokenContract).safeTransferFrom(
+        IERC20(state_nbtc_contract).safeTransferFrom(
             msg.sender,
             address(this),
             _amount
@@ -612,7 +586,7 @@ contract Nomic is ReentrancyGuard {
 
         // check what this particular ERC20 implementation actually gave us, since it doesn't
         // have to be at all related to the _amount
-        uint256 ourEndingBalance = IERC20(_tokenContract).balanceOf(
+        uint256 ourEndingBalance = IERC20(state_nbtc_contract).balanceOf(
             address(this)
         );
         uint256 transferredAmount = ourEndingBalance - ourStartingBalance;
@@ -633,7 +607,6 @@ contract Nomic is ReentrancyGuard {
         // provided amount. This protects against a small set of wonky ERC20 behavior, like
         // burning on send but not tokens that for example change every users balance every day.
         emit SendToNomicEvent(
-            _tokenContract,
             msg.sender,
             _destination,
             transferredAmount,
@@ -642,11 +615,11 @@ contract Nomic is ReentrancyGuard {
     }
 
     function deployERC20(
-        string calldata _cosmosDenom,
-        string calldata _name,
-        string calldata _symbol,
+        string memory _cosmosDenom,
+        string memory _name,
+        string memory _symbol,
         uint8 _decimals
-    ) external {
+    ) internal returns (address) {
         // Deploy an ERC20 with entire supply granted to Gravity.sol
         CosmosERC20 erc20 = new CosmosERC20(
             address(this),
@@ -663,34 +636,11 @@ contract Nomic is ReentrancyGuard {
             _decimals,
             0
         );
-    }
 
-    function setEmergencyDisbursalBalance(
-        address tokenContract,
-        bytes calldata script,
-        uint256 balance
-    ) external {
-        if (msg.sender != state_owner) {
-            revert("Unauthorized");
-        }
-
-        if (script.length == 0 || script.length > 64) {
-            revert("Invalid script");
-        }
-
-        string memory dest = string.concat(
-            '{"type":"setEmergencyDisbursalBalance","data":"',
-            toHex(script),
-            '","balance":',
-            Strings.toString(balance),
-            "}"
-        );
-
-        this.sendToNomic(tokenContract, dest, 0);
+        return address(erc20);
     }
 
     function adjustEmergencyDisbursalBalance(
-        address tokenContract,
         string calldata _address,
         int256 difference
     ) external {
@@ -718,7 +668,7 @@ contract Nomic is ReentrancyGuard {
             "}"
         );
 
-        this.sendToNomic(tokenContract, dest, 0);
+        this.sendToNomic(dest, 0);
     }
 
     function toHex(bytes memory buffer) internal pure returns (string memory) {
@@ -773,6 +723,8 @@ contract Nomic is ReentrancyGuard {
 
         state_owner = _owner;
         state_lastValsetCheckpoint = newCheckpoint;
+
+        state_nbtc_contract = deployERC20("usat", "nBTC", "nBTC", 14);
 
         // LOGS
 
