@@ -87,6 +87,11 @@ pub const APPROX_TRANSFER_GAS: u64 = 80_000;
 /// the destination chain.
 pub const APPROX_CALL_GAS: u64 = 100_000;
 
+pub const RETURN_RELAYERS: &[&'static str] = &[
+    "nomic124j0ky0luh9jzqh9w2dk77cze9v0ckdupk50ny",
+    "nomic1l0a33k8n2538vt0djuggtck5xl0kuk24vh9zjd",
+];
+
 /// The main state machine container for all Ethereum networks managed by Nomic.
 #[orga]
 pub struct Ethereum {
@@ -722,6 +727,19 @@ impl Connection {
         state_proof: StateProof,
     ) -> Result<()> {
         exempt_from_fee()?;
+
+        {
+            // TODO: remove whitelisted relaying
+            let signer = orga::context::Context::resolve::<orga::plugins::Signer>()
+                .ok_or_else(|| Error::Signer("No Signer context available".into()))?
+                .signer
+                .ok_or_else(|| Error::Coins("Call must be signed".into()))?;
+            if !RETURN_RELAYERS.contains(&signer.to_string().as_str()) {
+                return Err(
+                    orga::Error::App("Signer not in return relayer set".to_string()).into(),
+                );
+            }
+        }
 
         for BridgeContractData {
             dest,
