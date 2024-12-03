@@ -14,6 +14,8 @@ use orga::plugins::ABCIPlugin;
 use rand::thread_rng;
 
 use crate::app::{App, InnerApp, Nom};
+use crate::bitcoin::threshold_sig::Pubkey;
+use crate::frost::Encrypted;
 
 use super::dkg::DkgState;
 use super::signing::SigningState;
@@ -93,6 +95,8 @@ pub struct Signer<W, C> {
     client: C,
     /// The key-value store for the signer's private data.
     secret_store: Store,
+    /// The communication secret key for this signer.
+    comm_secret_key: ecies::SecretKey,
     /// The address of this signer.
     address: Address,
     /// Secret packages from the first DKG round, indexed by (group index,
@@ -111,15 +115,36 @@ where
     Tr: Transport<ABCIPlugin<App>>,
 {
     /// Create a new [`Signer`] for the provided operator address.
-    pub fn new(secret_store: Store, client: C, address: Address) -> Self {
+    pub fn new(mut secret_store: Store, client: C, address: Address) -> Self {
+        // TODO: audit secret store atomicity
+        let maybe_comm_secret_key = secret_store.get(&[2]).unwrap();
+
+        let comm_secret_key = match maybe_comm_secret_key {
+            Some(key) => key,
+            None => {
+                let (sk, _pk) = ecies::utils::generate_keypair();
+
+                secret_store.put(vec![2], sk.serialize().to_vec()).unwrap();
+                secret_store.clone().flush(&mut vec![]).unwrap();
+
+                sk.serialize().to_vec()
+            }
+        };
+
         Self {
             client,
             secret_store,
+            comm_secret_key: ecies::SecretKey::parse_slice(&comm_secret_key).unwrap(),
             dkg_round1: HashMap::new(),
             dkg_round2: HashMap::new(),
             address,
             _pd: Default::default(),
         }
+    }
+
+    fn comm_pubkey(&self) -> Pubkey {
+        Pubkey::new(ecies::PublicKey::from_secret_key(&self.comm_secret_key).serialize_compressed())
+            .unwrap()
     }
 
     /// Access the key packages stored in the [`SecretStore`] using the provided
@@ -269,10 +294,11 @@ where
             let (secret_package, package) = dkg::part1(id, max_signers, min_signers, &mut rng)
                 .map_err(|e| Error::App(format!("Error during DKG part 1: {}", e)))?;
             self.dkg_round1.insert((index, i), secret_package);
-            packages.push(Adapter { inner: package });
+            packages.push((Adapter { inner: package }, self.comm_pubkey()));
         }
 
-        let packages: LengthVec<u16, Adapter<dkg::round1::Package>> = packages.try_into()?;
+        let packages: LengthVec<u16, (Adapter<dkg::round1::Package>, Pubkey)> =
+            packages.try_into()?;
         self.call(|app| build_call!(app.frost.submit_dkg_round1(index, packages.clone())))
             .await?;
 
@@ -286,14 +312,21 @@ where
     /// See [`frost_secp256k1_tr::keys::dkg::part2`].
     async fn dkg_part2(&mut self, index: u64) -> Result<()> {
         let config = self.get_config(index).await?;
-        let packages: Vec<(u16, dkg::round1::Package)> = self
+        let packages: Vec<(u16, (dkg::round1::Package, Pubkey))> = self
             .client()
             .query(|app: InnerApp| app.frost.dkg_round1_packages(index))
             .await?;
 
-        let round1_packages = assemble_by_identifier(packages.into_iter());
+        let round1_packages =
+            assemble_by_identifier(packages.iter().map(|(i, (p, _))| (*i, p.clone())));
+        let round1_pubkeys: HashMap<frost_secp256k1_tr::Identifier, Pubkey> = packages
+            .iter()
+            .map(|(i, (_, pk))| (identifier(*i), *pk))
+            .collect();
 
-        let mut round2_packages: Vec<LengthVec<u16, (u16, Adapter<dkg::round2::Package>)>> = vec![];
+        let mut round2_packages: Vec<
+            LengthVec<u16, (u16, Encrypted<Adapter<dkg::round2::Package>>)>,
+        > = vec![];
         for i in config.share_range(self.address)? {
             let mut round1_packages = round1_packages.clone();
             round1_packages.remove(&identifier(i));
@@ -307,7 +340,13 @@ where
             self.dkg_round2.insert((index, i), secret_package);
             let round2_package = round2_package
                 .into_iter()
-                .map(|(i, p)| (i, Adapter { inner: p }))
+                .map(|(i, package)| {
+                    let pk = round1_pubkeys.get(&i).unwrap();
+                    (
+                        i,
+                        Encrypted::encrypt(pk.as_slice(), Adapter { inner: package }).unwrap(),
+                    )
+                })
                 .collect();
             round2_packages.push(disassemble_by_identifier(&round2_package).try_into()?);
         }
@@ -327,17 +366,18 @@ where
     /// See [`frost_secp256k1_tr::keys::dkg::part3`].
     async fn dkg_part3(&mut self, index: u64) -> Result<()> {
         let config = self.get_config(index).await?;
-        let packages: Vec<(u16, dkg::round1::Package)> = self
+        let packages: Vec<(u16, (dkg::round1::Package, Pubkey))> = self
             .client()
             .query(|app: InnerApp| app.frost.dkg_round1_packages(index))
             .await?;
 
-        let round1_packages = assemble_by_identifier(packages.into_iter());
+        let round1_packages =
+            assemble_by_identifier(packages.into_iter().map(|(i, (p, _))| (i, p)));
         let mut last_pubkey_package = None;
         for i in config.share_range(self.address)? {
             let mut round1_packages = round1_packages.clone();
             round1_packages.remove(&identifier(i));
-            let round2_packages: Vec<(u16, dkg::round2::Package)> = self
+            let round2_packages: Vec<(u16, Encrypted<Adapter<dkg::round2::Package>>)> = self
                 .client()
                 .query(|app: InnerApp| app.frost.dkg_round2_packages(index, i))
                 .await?;
@@ -345,10 +385,18 @@ where
             let secret_package = self.dkg_round2.get(&(index, i)).ok_or_else(|| {
                 Error::App(format!("Missing secret package for participant {}", i))
             })?;
+            let mut decrypted_round2_packages = vec![];
+
+            for (i, encrypted_package) in round2_packages {
+                let decrypted =
+                    encrypted_package.decrypt(self.comm_secret_key.serialize().as_slice())?;
+                decrypted_round2_packages.push((i, decrypted.inner));
+            }
+
             let (key_package, pubkey_package) = dkg::part3(
                 secret_package,
                 &round1_packages,
-                &assemble_by_identifier(round2_packages.into_iter()),
+                &assemble_by_identifier(decrypted_round2_packages.into_iter()),
             )
             .map_err(|e| Error::App(format!("Error during DKG part 3: {}", e)))?;
 

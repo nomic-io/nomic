@@ -1,3 +1,5 @@
+#![allow(clippy::type_complexity)]
+
 use std::collections::{BTreeMap, HashSet};
 use std::ops::Range;
 
@@ -15,7 +17,7 @@ pub mod encoding;
 #[cfg(feature = "full")]
 pub mod signer;
 pub mod signing;
-pub use encoding::Adapter;
+pub use encoding::{Adapter, Encrypted};
 use frost_secp256k1_tr::keys::{dkg as frost_dkg, PublicKeyPackage};
 use frost_secp256k1_tr::round1::SigningCommitments;
 use frost_secp256k1_tr::round2::SignatureShare;
@@ -23,6 +25,7 @@ use frost_secp256k1_tr::{Identifier, Signature, SigningPackage};
 
 use self::dkg::{Dkg, DkgState};
 use self::signing::{Signing, SigningState};
+use crate::bitcoin::threshold_sig::Pubkey;
 
 #[orga]
 #[derive(Debug, Clone)]
@@ -170,7 +173,7 @@ impl FrostGroup {
     /// See [`frost_secp256k1_tr::keys::dkg::part1`].
     pub fn submit_dkg_round1(
         &mut self,
-        packages: LengthVec<u16, Adapter<frost_dkg::round1::Package>>,
+        packages: LengthVec<u16, (Adapter<frost_dkg::round1::Package>, Pubkey)>,
     ) -> Result<()> {
         let packages: Vec<_> = packages.into();
         let address = self.signer()?;
@@ -179,9 +182,9 @@ impl FrostGroup {
             return Err(Error::App("Invalid number of packages".into()));
         }
 
-        for (offset, package) in packages.into_iter().enumerate() {
+        for (offset, (package, comm_pubkey)) in packages.into_iter().enumerate() {
             let participant = share_range.start + offset as u16;
-            self.dkg.submit_round1(participant, package)?;
+            self.dkg.submit_round1(participant, package, comm_pubkey)?;
         }
 
         Ok(())
@@ -192,7 +195,10 @@ impl FrostGroup {
     /// See [`frost_secp256k1_tr::keys::dkg::part2`].
     pub fn submit_dkg_round2(
         &mut self,
-        packages: LengthVec<u16, LengthVec<u16, (u16, Adapter<frost_dkg::round2::Package>)>>,
+        packages: LengthVec<
+            u16,
+            LengthVec<u16, (u16, Encrypted<Adapter<frost_dkg::round2::Package>>)>,
+        >,
     ) -> Result<()> {
         let packages: Vec<_> = packages.into();
         let address = self.signer()?;
@@ -333,7 +339,7 @@ impl Frost {
     pub fn submit_dkg_round1(
         &mut self,
         index: u64,
-        packages: LengthVec<u16, Adapter<frost_dkg::round1::Package>>,
+        packages: LengthVec<u16, (Adapter<frost_dkg::round1::Package>, Pubkey)>,
     ) -> Result<()> {
         disable_fee();
         let mut group = self
@@ -352,7 +358,10 @@ impl Frost {
     pub fn submit_dkg_round2(
         &mut self,
         index: u64,
-        packages: LengthVec<u16, LengthVec<u16, (u16, Adapter<frost_dkg::round2::Package>)>>,
+        packages: LengthVec<
+            u16,
+            LengthVec<u16, (u16, Encrypted<Adapter<frost_dkg::round2::Package>>)>,
+        >,
     ) -> Result<()> {
         disable_fee();
         let mut group = self
@@ -429,7 +438,7 @@ impl Frost {
     pub fn dkg_round1_packages(
         &self,
         index: u64,
-    ) -> Result<Vec<(u16, frost_dkg::round1::Package)>> {
+    ) -> Result<Vec<(u16, (frost_dkg::round1::Package, Pubkey))>> {
         self.groups
             .get(index)?
             .map(|sig| sig.dkg.round1_packages())
@@ -443,7 +452,7 @@ impl Frost {
         &self,
         index: u64,
         receiver: u16,
-    ) -> Result<Vec<(u16, frost_dkg::round2::Package)>> {
+    ) -> Result<Vec<(u16, Encrypted<Adapter<frost_dkg::round2::Package>>)>> {
         self.groups
             .get(index)?
             .map(|sig| sig.dkg.round2_packages(receiver))
