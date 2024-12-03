@@ -2,6 +2,7 @@ use alloy_core::{
     primitives::keccak256,
     sol_types::{sol, SolValue},
 };
+use alloy_primitives::U256;
 use bitcoin::secp256k1::{
     ecdsa::{RecoverableSignature, RecoveryId},
     Message, PublicKey, Secp256k1,
@@ -1135,13 +1136,31 @@ pub fn to_eth_sig(
             break;
         }
     }
-    let v = recid.unwrap() as u8 + 27;
+    let mut v = recid.unwrap() as u8 + 27;
 
     let mut r = [0; 32];
     r.copy_from_slice(&rs[0..32]);
 
     let mut s = [0; 32];
     s.copy_from_slice(&rs[32..]);
+
+    // if s-value is in the upper range, calculate a new s-value with
+    // 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141 - s1 and
+    // flip v from 27 to 28 or vice versa
+    let mut s_u256 = U256::from_be_slice(&s);
+    let max_s_u256: U256 = "0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141"
+        .parse()
+        .unwrap();
+    if s_u256 > max_s_u256 {
+        if v == 27 {
+            v = 28;
+        } else {
+            v = 27;
+        }
+
+        s_u256 = max_s_u256 - s_u256;
+        s = s_u256.to_be_bytes();
+    }
 
     (v, r, s)
 }
