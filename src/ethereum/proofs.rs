@@ -161,7 +161,7 @@ impl StateProof {
                     Error::Relayer(format!("Failed to decode return dest length: {}", e))
                 })?;
 
-                let dest_len = (dest_len / 2).saturating_sub(1);
+                let dest_len = dest_len.saturating_sub(1) / 2;
 
                 let extra_storage_slots = (dest_len + 31) / 32;
 
