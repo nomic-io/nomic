@@ -53,7 +53,7 @@ contract Babylon is ReentrancyGuard {
     }
 
     function unstake(uint256 index) external {
-        require(index <= state_delegations, "Invalid index");
+        require(index < state_delegations, "Invalid index");
         require(
             state_owners[index] == msg.sender,
             "Not the owner of the delegation"
