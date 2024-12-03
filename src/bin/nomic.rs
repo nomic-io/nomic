@@ -3181,6 +3181,7 @@ pub fn main() {
         pretty_env_logger::formatted_timed_builder()
     }
     .filter_level(log::LevelFilter::Info)
+    .filter_module("nomic", log::LevelFilter::Debug)
     .parse_env("NOMIC_LOG")
     .init();
 
