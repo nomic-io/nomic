@@ -196,6 +196,10 @@ pub enum Command {
     GetSigsetEthAddresses(GetSigsetEthAddressesCmd),
     #[cfg(feature = "ethereum")]
     CreateEthConnection(CreateEthConnectionCmd),
+    #[cfg(feature = "frost")]
+    FrostSigner(FrostSignerCmd),
+    #[cfg(feature = "frost")]
+    CreateAuxFrostGroup(CreateAuxFrostGroupCmd),
 }
 
 impl Command {
@@ -275,6 +279,10 @@ impl Command {
                 GetSigsetEthAddresses(cmd) => cmd.run().await,
                 #[cfg(feature = "ethereum")]
                 CreateEthConnection(cmd) => cmd.run().await,
+                #[cfg(feature = "frost")]
+                FrostSigner(cmd) => cmd.run().await,
+                #[cfg(feature = "frost")]
+                CreateAuxFrostGroup(cmd) => cmd.run().await,
             }
         })
     }
@@ -2781,6 +2789,11 @@ pub struct StakeNbtcCmd {
     finality_provider: String,
     staking_time: u16,
 
+    #[clap(long)]
+    frost_set: Option<u8>,
+    #[clap(long)]
+    frost_group: Option<u64>,
+
     #[clap(flatten)]
     config: nomic::network::Config,
 }
@@ -2797,13 +2810,30 @@ impl StakeNbtcCmd {
         }
         fp.copy_from_slice(&fp_vec);
 
+        let frost_group = match (self.frost_set, self.frost_group) {
+            (Some(frost_set), Some(frost_group)) => Some((frost_set, frost_group)),
+            (None, None) => None,
+            _ => {
+                return Err(nomic::error::Error::Orga(orga::Error::App(
+                    "--frost-set and --frost-group must be specified together".to_string(),
+                )))
+            }
+        };
+
         Ok(self
             .config
             .client()
             .with_wallet(wallet())
             .call(
                 |app| build_call!(app.pay_nbtc_fee()),
-                |app| build_call!(app.stake_nbtc(self.amount.into(), fp, self.staking_time)),
+                |app| {
+                    build_call!(app.stake_nbtc(
+                        self.amount.into(),
+                        fp,
+                        self.staking_time,
+                        frost_group
+                    ))
+                },
             )
             .await?)
     }
@@ -2861,10 +2891,36 @@ impl FrostSignerCmd {
             || self.config.client().with_wallet(wallet()),
             my_address(),
         );
+
+        let signer_dir_path_aux = self.config.home_expect()?.join("frost_aux");
+        if !signer_dir_path_aux.exists() {
+            log::debug!(
+                "Creating FROST aux signer directory at {:?}",
+                signer_dir_path_aux
+            );
+            std::fs::create_dir(&signer_dir_path_aux)?;
+        } else {
+            log::debug!(
+                "Using existing FROST aux signer directory at {:?}",
+                signer_dir_path_aux,
+            );
+        }
+        let store_aux = SecretStore::new_store(signer_dir_path_aux);
+        let mut signer_aux = crate::frost::signer::AuxSigner::new(
+            store_aux,
+            || self.config.client().with_wallet(wallet()),
+            my_address(),
+        );
+
         loop {
             if let Err(e) = signer.step().await {
                 log::error!("Error in FROST signer: {}", e);
             }
+
+            if let Err(e) = signer_aux.step().await {
+                log::error!("Error in FROST aux signer: {}", e);
+            }
+
             std::thread::sleep(std::time::Duration::from_secs(5));
         }
     }
@@ -3009,6 +3065,106 @@ impl CreateEthConnectionCmd {
                 |app| build_call!(app.app_noop()),
             )
             .await?;
+
+        Ok(())
+    }
+}
+
+#[cfg(feature = "frost")]
+#[derive(Parser, Debug)]
+pub struct CreateAuxFrostGroupCmd {
+    #[clap(long)]
+    threshold: u16,
+    #[clap(long)]
+    validator_shares: u16,
+    #[clap(long)]
+    self_shares: u16,
+
+    #[clap(flatten)]
+    config: nomic::network::Config,
+}
+
+#[cfg(feature = "frost")]
+impl CreateAuxFrostGroupCmd {
+    async fn run(&self) -> Result<()> {
+        if self.threshold > self.validator_shares + self.self_shares {
+            return Err(nomic::error::Error::Orga(orga::Error::App(
+                "Threshold must be less than or equal to the sum of validator and self shares"
+                    .to_string(),
+            )));
+        }
+
+        let client = self.config.client().with_wallet(wallet());
+
+        let mut validators = self
+            .config
+            .client()
+            .query(|app| app.staking.all_validators())
+            .await?;
+
+        validators.sort_by(|a, b| b.amount_staked.cmp(&a.amount_staked));
+        let validators: Vec<_> = validators
+            .into_iter()
+            .take(self.validator_shares as usize)
+            .collect();
+        if validators.len() < self.validator_shares as usize {
+            return Err(nomic::error::Error::Orga(orga::Error::App(
+                "Not enough validators to create group".to_string(),
+            )));
+        }
+
+        println!(
+            "Creating group ({}-of-{})...",
+            self.threshold,
+            self.validator_shares + self.self_shares,
+        );
+
+        let mut participants = vec![];
+
+        if self.self_shares > 0 {
+            participants.push(frost::Participant {
+                address: my_address(),
+                shares: self.self_shares,
+            });
+
+            println!(
+                "- {} share{}: {} (self)",
+                self.self_shares,
+                if self.self_shares == 1 { "" } else { "s" },
+                my_address(),
+            );
+        }
+
+        for validator in validators {
+            participants.push(frost::Participant {
+                address: validator.address.into(),
+                shares: 1,
+            });
+
+            let bytes: Vec<u8> = validator.info.into();
+            let info: DeclareInfo = serde_json::from_slice(bytes.as_slice()).unwrap();
+            println!("- 1 share: {} ({})", validator.address, info.moniker);
+        }
+
+        let config = frost::Config {
+            threshold: self.threshold,
+            participants: participants.try_into().unwrap(),
+        };
+
+        let index = self
+            .config
+            .client()
+            .query(|app| Ok(app.aux_frost.groups.len()))
+            .await?;
+
+        client
+            .call(
+                |app| build_call!(app.create_aux_frost_group(config, index)),
+                |app| build_call!(app.app_noop()),
+            )
+            .await?;
+
+        println!("Group created with index {}", index);
 
         Ok(())
     }

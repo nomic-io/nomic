@@ -70,8 +70,9 @@ pub type DelegationQueue = Map<(u32, Identity, u64), ()>;
 #[orga]
 impl Babylon {
     /// Called once per Nomic block to process delegation queues.
-    pub fn step(&mut self, frost: &mut Frost, btc: &mut Bitcoin) -> Result<()> {
-        type QueueHandler = fn(&mut Delegation, &mut Frost, &mut Bitcoin, &Params) -> Result<()>;
+    pub fn step(&mut self, frost_sets: &mut [&mut Frost], btc: &mut Bitcoin) -> Result<()> {
+        type QueueHandler =
+            fn(&mut Delegation, &mut [&mut Frost], &mut Bitcoin, &Params) -> Result<()>;
         let mut process_queue = |queue: &mut DelegationQueue,
                                  condition: fn(u32, u32, &Params) -> bool,
                                  handler: QueueHandler| {
@@ -94,7 +95,7 @@ impl Babylon {
                 let mut del = owner_dels.get_mut(index)?.ok_or_else(|| {
                     Error::Orga(orga::Error::App("Delegation not found".to_string()))
                 })?;
-                handler(&mut del, frost, btc, &self.params)?;
+                handler(&mut del, frost_sets, btc, &self.params)?;
                 remove_keys.push(*key);
             }
 
@@ -118,9 +119,9 @@ impl Babylon {
         process_queue(
             &mut self.staked,
             |btc_height, staking_height, params| btc_height >= staking_height + params.max_age,
-            |del, frost, btc, params| {
+            |del, frost_sets, btc, params| {
                 if del.status() != DelegationStatus::Withdrawn && !del.requested_unbond {
-                    del.request_unbond(frost, btc, params)?;
+                    del.request_unbond(frost_sets, btc, params)?;
                 }
                 Ok(())
             },
@@ -140,10 +141,12 @@ impl Babylon {
                     continue;
                 }
 
+                let frost = &mut frost_sets[del.frost_group.0 as usize];
+
                 let unbonding_withdrawal_sig =
-                    frost.signature(del.frost_group, del.frost_sig_offset.unwrap())?;
+                    frost.signature(del.frost_group.1, del.frost_sig_offset.unwrap())?;
                 let staking_unbonding_sig =
-                    frost.signature(del.frost_group, del.frost_sig_offset.unwrap() + 1)?;
+                    frost.signature(del.frost_group.1, del.frost_sig_offset.unwrap() + 1)?;
 
                 if let (Some(unbonding_withdrawal_sig), Some(staking_unbonding_sig)) =
                     (unbonding_withdrawal_sig, staking_unbonding_sig)
@@ -180,19 +183,40 @@ impl Babylon {
     pub fn stake(
         &mut self,
         btc: &mut crate::bitcoin::Bitcoin,
-        frost: &mut crate::frost::Frost,
+        frost_sets: &mut [&mut crate::frost::Frost],
+        frost_group: Option<(u8, u64)>,
         owner: Identity,
         return_dest: Dest,
         finality_provider: [u8; 32],
         staking_time: u16,
         nbtc: Coin<Nbtc>,
     ) -> Result<u64> {
-        let Some(frost_index) = frost.most_recent_with_key()? else {
-            return Err(Error::Orga(orga::Error::App(
-                "Frost not initialized".to_string(),
-            )));
-        };
-        let group_pubkey = frost.group_pubkey(frost_index)?.unwrap();
+        let (frost_set, frost_group, group_pubkey) =
+            if let Some((set_index, group_index)) = frost_group {
+                // user specified a frost group
+                if set_index as usize >= frost_sets.len() {
+                    return Err(Error::Orga(orga::Error::App(
+                        "Frost set not found".to_string(),
+                    )));
+                }
+                let pubkey = frost_sets[set_index as usize]
+                    .group_pubkey(group_index)?
+                    .ok_or_else(|| {
+                        Error::Orga(orga::Error::App("Frost group not found".to_string()))
+                    })?;
+                (set_index, group_index, pubkey)
+            } else if let Some(group_index) = frost_sets[0].most_recent_with_key()? {
+                // user did not specify a frost group, so we use the most recent main frost
+                // group
+                let pubkey = frost_sets[0].group_pubkey(group_index)?.unwrap();
+                (0, group_index, pubkey)
+            } else {
+                // user did not specify a frost group, and there are no main frost groups
+                return Err(Error::Orga(orga::Error::App(
+                    "Frost not initialized".to_string(),
+                )));
+            };
+
         let index = self.delegations.get(owner)?.unwrap_or_default().len();
 
         let batch_index = btc
@@ -208,7 +232,7 @@ impl Babylon {
             owner,
             return_dest,
             PublicKey::from_slice(&group_pubkey.inner.verifying_key().serialize())?.into(),
-            frost_index,
+            (frost_set, frost_group),
             vec![XOnlyPublicKey::from_slice(&finality_provider)?],
             staking_time,
             (btc.checkpoints.index, batch_index),
@@ -244,7 +268,7 @@ impl Babylon {
         &mut self,
         owner: Identity,
         index: u64,
-        frost: &mut Frost,
+        frost_sets: &mut [&mut Frost],
         btc: &Bitcoin,
     ) -> Result<()> {
         self.delegations
@@ -252,7 +276,7 @@ impl Babylon {
             .ok_or_else(|| Error::Orga(orga::Error::App("Delegation not found".to_string())))?
             .get_mut(index)?
             .ok_or_else(|| Error::Orga(orga::Error::App("Delegation not found".to_string())))?
-            .request_unbond(frost, btc, &self.params)
+            .request_unbond(frost_sets, btc, &self.params)
     }
 
     /// Get all delegations owned by `owner`.
@@ -721,8 +745,9 @@ pub struct Delegation {
     /// In practice this is the aggregated public key of the FROST group.
     #[serde_as(as = "serde_with::hex::Hex")]
     pub btc_key: XOnlyPubkey,
-    /// The index of the FROST group used to sign the delegation.
-    pub frost_group: u64,
+    /// The set (0 for `frost` and 1 for `aux_frost`) and index of the FROST
+    /// group used to sign the delegation.
+    pub frost_group: (u8, u64),
     /// The finality provider keys this delegation is being staked to.
     ///
     /// Note that as of Babylon mainnet cap 2, testnet 4, and the staging
@@ -813,7 +838,7 @@ impl Delegation {
         owner: Identity,
         return_dest: Dest,
         btc_key: XOnlyPublicKey,
-        frost_group: u64,
+        frost_group: (u8, u64),
         fp_keys: Vec<XOnlyPublicKey>,
         staking_period: u16,
         checkpoint_batch_index: (u32, u64),
@@ -874,7 +899,7 @@ impl Delegation {
         vout: u32,
         params: &Params,
         stake_queue: &mut DelegationQueue,
-        frost: &mut Frost,
+        frost_sets: &mut [&mut Frost],
         btc: &Bitcoin,
     ) -> Result<()> {
         if self.status() != DelegationStatus::Created {
@@ -943,7 +968,7 @@ impl Delegation {
         stake_queue.insert((height, self.owner, self.index), ())?;
 
         if self.requested_unbond {
-            self.unbond(frost, btc, params)?;
+            self.unbond(frost_sets, btc, params)?;
         }
 
         Ok(())
@@ -956,7 +981,7 @@ impl Delegation {
     /// already staked, the unbonding will begin immediately.
     pub fn request_unbond(
         &mut self,
-        frost: &mut Frost,
+        frost_sets: &mut [&mut Frost],
         btc: &Bitcoin,
         params: &Params,
     ) -> Result<()> {
@@ -976,7 +1001,7 @@ impl Delegation {
         match self.status() {
             DelegationStatus::Created => {}
             DelegationStatus::Staked => {
-                self.unbond(frost, btc, params)?;
+                self.unbond(frost_sets, btc, params)?;
             }
             DelegationStatus::SigningUnbond => {}
             DelegationStatus::SignedUnbond => {}
@@ -997,7 +1022,12 @@ impl Delegation {
     /// This requests the FROST group to sign the unbonding transaction's spend
     /// of the staking output, and the withdrawal transaction's spend of the
     /// unbonding output.
-    pub fn unbond(&mut self, frost: &mut Frost, btc: &Bitcoin, params: &Params) -> Result<()> {
+    pub fn unbond(
+        &mut self,
+        frost_sets: &mut [&mut Frost],
+        btc: &Bitcoin,
+        params: &Params,
+    ) -> Result<()> {
         if self.status() != DelegationStatus::Staked {
             return Err(Error::Orga(orga::Error::App(
                 "Delegation not in Staked state".to_string(),
@@ -1009,7 +1039,8 @@ impl Delegation {
         self.withdrawal_sigset_index = Some(sigset.index);
         self.withdrawal_script_pubkey = Some(script.into());
 
-        let mut group = frost.groups.get_mut(self.frost_group)?.unwrap();
+        let frost = &mut frost_sets[self.frost_group.0 as usize];
+        let mut group = frost.groups.get_mut(self.frost_group.1)?.unwrap();
         self.frost_sig_offset.replace(group.signing.len());
         group.push_message(
             self.unbonding_withdrawal_sighash(params)?
@@ -1190,17 +1221,8 @@ impl Delegation {
             .input
             .push_back(input)?;
 
-        let dest = if self.requested_unbond {
-            // pay liquid funds to return dest
-            self.return_dest.clone()
-        } else {
-            // renew delegation
-            Dest::Stake {
-                return_dest: self.return_dest.to_string().try_into()?,
-                finality_provider: self.fp_keys[0],
-                staking_period: self.staking_period,
-            }
-        };
+        // TODO: allow auto-renewal of stake by paying to updated stake dest
+        let dest = self.return_dest.clone();
         let nbtc = self.stake.take(self.stake.amount)?;
         building_cp.pending.insert((dest, self.owner), nbtc)?;
 

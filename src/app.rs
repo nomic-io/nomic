@@ -103,6 +103,10 @@ const CALL_FEE_USATS: u64 = 100_000_000;
 /// in micro-satoshis.
 #[cfg(feature = "ethereum")]
 const ETH_CREATE_CONNECTION_FEE_USATS: u64 = 10_000_000_000;
+/// The fixed amount of nBTC fee required to create a new aux Frost group, in
+/// micro-satoshis.
+#[cfg(feature = "frost")]
+const FROST_CREATE_GROUP_FEE_USATS: u64 = 1_000_000_000;
 
 pub const OSMOSIS_CHANNEL_ID: &str = "channel-1";
 
@@ -115,7 +119,7 @@ const FROST_THRESHOLD: u16 = 3;
 
 /// The top-level application state type and logic. This contains the major
 /// state types for the various subsystems of the Nomic protocol.
-#[orga(version = 5..=7)]
+#[orga(version = 5..=8)]
 pub struct InnerApp {
     /// Account state for the NOM token.
     #[call]
@@ -181,19 +185,24 @@ pub struct InnerApp {
     #[call]
     pub ethereum: Connection,
     #[cfg(all(feature = "ethereum", feature = "testnet"))]
-    #[orga(version(V7))]
+    #[orga(version(V7, V8))]
     #[call]
     pub ethereum: Ethereum,
 
     #[cfg(all(feature = "babylon", feature = "testnet"))]
-    #[orga(version(V7))]
+    #[orga(version(V7, V8))]
     #[call]
     pub babylon: Babylon,
 
     #[cfg(all(feature = "frost", feature = "testnet"))]
-    #[orga(version(V7))]
+    #[orga(version(V7, V8))]
     #[call]
     pub frost: Frost,
+
+    #[cfg(all(feature = "frost", feature = "testnet"))]
+    #[orga(version(V8))]
+    #[call]
+    pub aux_frost: Frost,
 }
 
 #[orga]
@@ -438,9 +447,21 @@ impl InnerApp {
                 return_dest,
                 finality_provider,
                 staking_period,
+                frost_group,
             } => {
                 // TODO: move into babylon
                 let params = &self.babylon.params;
+
+                if let Some((frost_set, frost_group)) = *frost_group {
+                    let frost = match frost_set {
+                        0 => &self.frost,
+                        1 => &self.aux_frost,
+                        _ => return Err(Error::App("Invalid frost set".to_string())),
+                    };
+                    if frost_group as u64 >= frost.groups.len() {
+                        return Err(Error::App("Invalid frost group".to_string()));
+                    }
+                }
 
                 let stake_amount = u64::from(amount) / self.bitcoin.config.units_per_sat;
                 if stake_amount < params.min_staking_amount
@@ -592,11 +613,13 @@ impl InnerApp {
                 return_dest,
                 finality_provider,
                 staking_period,
+                frost_group,
             } => {
                 let return_dest = return_dest.parse()?;
                 self.babylon.stake(
                     &mut self.bitcoin,
-                    &mut self.frost,
+                    &mut [&mut self.frost, &mut self.aux_frost],
+                    frost_group,
                     sender,
                     return_dest,
                     finality_provider,
@@ -606,8 +629,12 @@ impl InnerApp {
             }
             #[cfg(feature = "babylon")]
             Dest::Unstake { index } => {
-                self.babylon
-                    .unstake(sender, index, &mut self.frost, &self.bitcoin)?;
+                self.babylon.unstake(
+                    sender,
+                    index,
+                    &mut [&mut self.frost, &mut self.aux_frost],
+                    &self.bitcoin,
+                )?;
                 nbtc.burn();
             }
             Dest::AdjustEmergencyDisbursalBalance { data, difference } => {
@@ -727,6 +754,7 @@ impl InnerApp {
         amount: Amount,
         finality_provider: [u8; 32],
         staking_period: u16,
+        frost_group: Option<(u8, u64)>,
     ) -> Result<()> {
         #[cfg(feature = "babylon")]
         {
@@ -736,7 +764,8 @@ impl InnerApp {
             let stake = self.bitcoin.accounts.withdraw(signer, amount)?;
             self.babylon.stake(
                 &mut self.bitcoin,
-                &mut self.frost,
+                &mut [&mut self.frost, &mut self.aux_frost],
+                frost_group,
                 Identity::from_signer()?,
                 Dest::NativeAccount { address: signer },
                 finality_provider,
@@ -759,8 +788,12 @@ impl InnerApp {
         {
             // TODO: go through dest flow
             let owner = Identity::from_signer()?;
-            self.babylon
-                .unstake(owner, index, &mut self.frost, &self.bitcoin)?;
+            self.babylon.unstake(
+                owner,
+                index,
+                &mut [&mut self.frost, &mut self.aux_frost],
+                &self.bitcoin,
+            )?;
 
             Ok(())
         }
@@ -800,7 +833,7 @@ impl InnerApp {
                     vout,
                     &self.babylon.params,
                     &mut self.babylon.staked,
-                    &mut self.frost,
+                    &mut [&mut self.frost, &mut self.aux_frost],
                     &self.bitcoin,
                 )?;
 
@@ -881,6 +914,47 @@ impl InnerApp {
     }
 
     #[call]
+    pub fn create_aux_frost_group(&mut self, config: FrostConfig, index: u64) -> Result<()> {
+        #[cfg(all(feature = "frost", feature = "testnet"))]
+        {
+            // self.deduct_nbtc_fee(FROST_CREATE_GROUP_FEE_USATS.into())?;
+            exempt_from_fee()?;
+
+            // We specify the index even though it is being derived from the length
+            // of the aux_frost.groups queue as a test-and-set to make relayer logic easier
+            // when multiple clients are racing to create a group for a given index.
+            if self.aux_frost.groups.len() != index {
+                return Err(Error::App("Invalid group index".into()));
+            }
+
+            let now = self
+                .context::<Time>()
+                .ok_or_else(|| Error::App("No time context available".to_string()))?;
+
+            // TODO: move to frost module
+            // TODO: any other validation?
+            if config.threshold < 2 {
+                return Err(Error::App("Threshold must be at least 2".into()));
+            }
+            if config.threshold > config.total_shares() {
+                return Err(Error::App(
+                    "Threshold must be less than total shares".into(),
+                ));
+            }
+
+            let group = FrostGroup::with_config(config, now.seconds)?;
+            self.aux_frost.groups.push_back(group)?;
+
+            Ok(())
+        }
+
+        #[cfg(not(all(feature = "frost", feature = "testnet")))]
+        {
+            Err(Error::App("Frost feature not enabled".into()))
+        }
+    }
+
+    #[call]
     pub fn app_noop(&mut self) -> Result<()> {
         Ok(())
     }
@@ -914,6 +988,8 @@ impl InnerApp {
         }
 
         self.frost.advance_with_timeout(60 * 5)?;
+        self.aux_frost.advance_with_timeout(60 * 5)?;
+
         Ok(())
     }
 }
@@ -1089,7 +1165,10 @@ mod abci {
             }
 
             #[cfg(feature = "babylon")]
-            self.babylon.step(&mut self.frost, &mut self.bitcoin)?;
+            self.babylon.step(
+                &mut [&mut self.frost, &mut self.aux_frost],
+                &mut self.bitcoin,
+            )?;
 
             #[cfg(feature = "ethereum")]
             {
@@ -1652,8 +1731,25 @@ impl ConvertSdkTx for InnerApp {
                             .parse()
                             .map_err(|e: std::num::ParseIntError| Error::App(e.to_string()))?;
 
+                        let frost_set: Option<u8> = msg
+                            .get("frost_set")
+                            .map(|v| v.as_str().unwrap().parse().unwrap());
+
+                        let frost_group: Option<u64> = msg
+                            .get("frost_group")
+                            .map(|v| v.as_str().unwrap().parse().unwrap());
+
                         let payer = build_call!(self.pay_nbtc_fee());
-                        let paid = build_call!(self.stake_nbtc(amount.into(), fp, staking_period));
+                        let paid = build_call!(self.stake_nbtc(
+                            amount.into(),
+                            fp,
+                            staking_period,
+                            if let (Some(set), Some(group)) = (frost_set, frost_group) {
+                                Some((set, group))
+                            } else {
+                                None
+                            }
+                        ));
 
                         Ok(PaidCall { payer, paid })
                     }
@@ -1880,6 +1976,7 @@ pub enum Dest {
         #[serde(with = "SerHex::<Strict>")]
         finality_provider: [u8; 32],
         staking_period: u16,
+        frost_group: Option<(u8, u64)>,
     },
     #[cfg(feature = "babylon")]
     Unstake {

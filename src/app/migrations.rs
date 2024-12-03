@@ -10,7 +10,7 @@ use crate::{
     incentives::Incentives,
 };
 
-use super::{InnerAppV5, InnerAppV6, InnerAppV7};
+use super::{InnerAppV5, InnerAppV6, InnerAppV7, InnerAppV8};
 use bitcoin::{
     util::{uint::Uint256, BitArray},
     BlockHeader,
@@ -115,6 +115,36 @@ impl MigrateFrom<InnerAppV6> for InnerAppV7 {
             babylon: Default::default(),
             #[cfg(all(feature = "frost", feature = "testnet"))]
             frost: Default::default(),
+        })
+    }
+}
+
+impl MigrateFrom<InnerAppV7> for InnerAppV8 {
+    fn migrate_from(other: InnerAppV7) -> Result<Self> {
+        Ok(Self {
+            accounts: other.accounts,
+            staking: other.staking,
+            airdrop: other.airdrop,
+            community_pool: other.community_pool,
+            incentive_pool: other.incentive_pool,
+            staking_rewards: other.staking_rewards,
+            dev_rewards: other.dev_rewards,
+            community_pool_rewards: other.community_pool_rewards,
+            incentive_pool_rewards: other.incentive_pool_rewards,
+            bitcoin: other.bitcoin,
+            reward_timer: other.reward_timer,
+            upgrade: other.upgrade,
+            incentives: other.incentives,
+            ibc: other.ibc,
+            cosmos: other.cosmos,
+            #[cfg(all(feature = "ethereum", feature = "testnet"))]
+            ethereum: other.ethereum,
+            #[cfg(all(feature = "babylon", feature = "testnet"))]
+            babylon: other.babylon,
+            #[cfg(all(feature = "frost", feature = "testnet"))]
+            frost: other.frost,
+            #[cfg(all(feature = "frost", feature = "testnet"))]
+            aux_frost: Default::default(),
         })
     }
 }
