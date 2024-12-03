@@ -422,9 +422,12 @@ impl StartCmd {
             }
 
             edit_block_time(&config_path, "3s");
-
             configure_node(&config_path, |cfg| {
-                cfg["rpc"]["laddr"] = toml_edit::value("tcp://0.0.0.0:26657");
+                let addr = cfg["rpc"]["laddr"]
+                    .as_str()
+                    .unwrap()
+                    .replace("127.0.0.1", "0.0.0.0");
+                cfg["rpc"]["laddr"] = toml_edit::value(addr);
             });
 
             if !cmd.config.state_sync_rpc.is_empty() {
