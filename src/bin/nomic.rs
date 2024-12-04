@@ -3108,6 +3108,7 @@ impl CreateAuxFrostGroupCmd {
         validators.sort_by(|a, b| b.amount_staked.cmp(&a.amount_staked));
         let validators: Vec<_> = validators
             .into_iter()
+            .filter(|v| v.address != my_address().into())
             .take(self.validator_shares as usize)
             .collect();
         if validators.len() < self.validator_shares as usize {
