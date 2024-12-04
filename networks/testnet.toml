@@ -10,7 +10,7 @@ btc_relayer = ["https://relayer.nomic-testnet.mappum.io:8443"]
 genesis = """
 {
   "app_hash": "",
-  "chain_id": "nomic-testnet-8",
+  "chain_id": "nomic-testnet-9",
   "consensus_params": {
     "block": {
       "max_bytes": "22020096",
@@ -29,16 +29,16 @@ genesis = """
     },
     "version": {}
   },
-  "genesis_time": "2024-11-22T00:07:25.84308933Z",
+  "genesis_time": "2024-12-04T23:19:37.575622553Z",
   "initial_height": "0",
   "validators": [
     {
-      "address": "181470FEC0B875EA84118B881EF13F7F04FD3BF8",
+      "address": "10F174927A503920103FF39FAE2EE8B9FB218430",
       "name": "",
       "power": "10",
       "pub_key": {
         "type": "tendermint/PubKeyEd25519",
-        "value": "fghI84cjr84yUcah2Aic+iDEIr1ZWQO29eFAzNjqmSQ="
+        "value": "SwjfqSeXZzIqvnEIlbSPG0u04XpucreKSUwP2U0zC9k="
       }
     }
   ]
