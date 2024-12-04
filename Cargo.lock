@@ -4643,7 +4643,7 @@ dependencies = [
 
 [[package]]
 name = "nomic"
-version = "9.5.0"
+version = "10.1.0"
 dependencies = [
  "alloy-contract",
  "alloy-core 0.8.9",
