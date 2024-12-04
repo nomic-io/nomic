@@ -20,13 +20,23 @@ contract Babylon is ReentrancyGuard {
     function stake(
         uint256 amount,
         bytes32 finalityProvider,
-        uint16 stakingPeriod
+        uint16 stakingPeriod,
+        uint64 auxFrostGroup
     ) external returns (uint256) {
         IERC20(state_tokenContract).safeTransferFrom(
             msg.sender,
             address(this),
             amount
         );
+
+        string memory frost_group = "null";
+        if (auxFrostGroup != 0) {
+            frost_group = string.concat(
+                "[1,",
+                Strings.toString(auxFrostGroup),
+                "]"
+            );
+        }
 
         string memory dest = string.concat(
             '{"type":"stake","owner":"',
@@ -35,6 +45,8 @@ contract Babylon is ReentrancyGuard {
             Strings.toHexString(uint256(finalityProvider), 32),
             '","staking_period":',
             Strings.toString(stakingPeriod),
+            '","frost_group":',
+            frost_group,
             ',"return_dest":"{\\"type\\":\\"ethAccount\\",\\"address\\":\\"',
             Strings.toHexString(uint256(uint160(msg.sender)), 20),
             '\\",\\"connection\\":\\"',
