@@ -996,24 +996,6 @@ impl Bitcoin {
         external_outputs: impl Iterator<Item = Result<bitcoin::TxOut>>,
         timestamping_commitment: Vec<u8>,
     ) -> Result<Vec<ConsensusKey>> {
-        let has_completed_cp = if let Err(Error::Orga(OrgaError::App(err))) =
-            self.checkpoints.last_completed_index()
-        {
-            if err == "No completed checkpoints yet" {
-                false
-            } else {
-                return Err(Error::Orga(OrgaError::App(err)));
-            }
-        } else {
-            true
-        };
-
-        let reached_capacity_limit = if has_completed_cp {
-            self.value_locked()? >= self.config.capacity_limit
-        } else {
-            false
-        };
-
         let pushed = self
             .checkpoints
             .maybe_step(
@@ -1022,7 +1004,7 @@ impl Bitcoin {
                 &self.recovery_scripts,
                 external_outputs,
                 self.headers.height()?,
-                !reached_capacity_limit,
+                true,
                 timestamping_commitment,
                 &mut self.fee_pool,
                 &self.config,
