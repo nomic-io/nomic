@@ -917,8 +917,7 @@ impl InnerApp {
     pub fn create_aux_frost_group(&mut self, config: FrostConfig, index: u64) -> Result<()> {
         #[cfg(all(feature = "frost", feature = "testnet"))]
         {
-            // self.deduct_nbtc_fee(FROST_CREATE_GROUP_FEE_USATS.into())?;
-            exempt_from_fee()?;
+            self.deduct_nbtc_fee(FROST_CREATE_GROUP_FEE_USATS.into())?;
 
             // We specify the index even though it is being derived from the length
             // of the aux_frost.groups queue as a test-and-set to make relayer logic easier
