@@ -436,10 +436,7 @@ impl InnerApp {
                 max_gas,
                 ..
             } => {
-                self.ethereum
-                    .network(*network)?
-                    .connection((*connection).into())?
-                    .validate_contract_call(*max_gas, (*fallback_address).into(), amount.into())?;
+                return Err(Error::App("EthCall destination not supported".to_string()));
             }
             Dest::Bitcoin { data } => self.bitcoin.validate_withdrawal(data, amount)?,
             #[cfg(feature = "babylon")]
@@ -602,11 +599,7 @@ impl InnerApp {
                 data,
                 max_gas,
                 fallback_address,
-            } => self
-                .ethereum
-                .network_mut(network)?
-                .connection_mut(connection.into())?
-                .call_contract(contract_address, data, max_gas, fallback_address, nbtc)?,
+            } => return Err(Error::App("EthCall destination not supported".to_string())),
             Dest::Bitcoin { data } => self.bitcoin.add_withdrawal(data, nbtc)?,
             #[cfg(feature = "babylon")]
             Dest::Stake {
