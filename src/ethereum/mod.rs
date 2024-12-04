@@ -786,10 +786,7 @@ impl Connection {
     /// from the remote bridge contract deployment.
     ///
     /// NOTE: as of this version, the emergency disbursal balances are not yet
-    /// being used by the Bitcoin state machine. When it is integrated, the
-    /// total balances will be checked against the actual amount of funds
-    /// bridged to the contract and all emergency disbursal balances will be
-    /// ignored if the total exceeds the actual balance.
+    /// being used by the Bitcoin state machine.
     pub fn adjust_emergency_disbursal_balance(
         &mut self,
         script: Adapter<Script>,
