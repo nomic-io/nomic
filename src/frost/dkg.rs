@@ -1,4 +1,5 @@
-use super::{Adapter, Config};
+use super::{Adapter, Config, Encrypted};
+use crate::bitcoin::threshold_sig::Pubkey;
 use ed::{Decode, Encode};
 use frost_secp256k1_tr::keys::{dkg::*, PublicKeyPackage};
 use orga::encoding::LengthVec;
@@ -42,10 +43,11 @@ pub struct Dkg {
     participants: u16,
     /// The round 1 packages submitted by participants.
     round1: Map<u16, Adapter<round1::Package>>,
+    round1_pubkeys: Map<u16, Pubkey>,
     /// The number of round 1 packages submitted by participants.
     round1_len: u16,
     /// The round 2 packages submitted by participants.
-    round2: Map<u16, Map<u16, Adapter<round2::Package>>>,
+    round2: Map<u16, Map<u16, Encrypted<Adapter<round2::Package>>>>,
     /// The number of round 2 packages submitted by participants.
     round2_len: u16,
     /// The group public key, if the DKG process is complete.
@@ -87,6 +89,7 @@ impl Dkg {
         &mut self,
         participant: u16,
         package: Adapter<round1::Package>,
+        comm_pubkey: Pubkey,
     ) -> Result<()> {
         if self.state() != DkgState::Round1 {
             return Err(Error::App("Round 1 already complete".to_string()));
@@ -95,6 +98,7 @@ impl Dkg {
             return Err(Error::App("Round 1 package already submitted".to_string()));
         }
         self.round1.insert(participant, package)?;
+        self.round1_pubkeys.insert(participant, comm_pubkey)?;
         self.round1_len += 1;
 
         Ok(())
@@ -104,7 +108,7 @@ impl Dkg {
     pub fn submit_round2(
         &mut self,
         participant: u16,
-        packages: LengthVec<u16, (u16, Adapter<round2::Package>)>,
+        packages: LengthVec<u16, (u16, Encrypted<Adapter<round2::Package>>)>,
     ) -> Result<()> {
         if self.state() != DkgState::Round2 {
             return Err(Error::App("Not currently in round 2".to_string()));
@@ -162,12 +166,18 @@ impl Dkg {
     }
 
     /// Returns the round 1 packages submitted by participants.
-    pub fn round1_packages(&self) -> Result<Vec<(u16, round1::Package)>> {
+    pub fn round1_packages(&self) -> Result<Vec<(u16, (round1::Package, Pubkey))>> {
         let mut packages = vec![];
         for i in 0..self.participants {
-            if let Some(package) = self.round1.get(i)? {
-                packages.push((i, package.inner.clone()));
-            }
+            let package = self
+                .round1
+                .get(i)?
+                .ok_or(Error::App("Round 1 package not found".to_string()))?;
+            let comm_pubkey = self
+                .round1_pubkeys
+                .get(i)?
+                .ok_or(Error::App("Communication public key not found".to_string()))?;
+            packages.push((i, (package.inner.clone(), *comm_pubkey)));
         }
 
         Ok(packages)
@@ -175,12 +185,15 @@ impl Dkg {
 
     /// Returns the round 2 packages submitted by participants intended for
     /// delivery to the provided participant index (`receiver`).
-    pub fn round2_packages(&self, receiver: u16) -> Result<Vec<(u16, round2::Package)>> {
+    pub fn round2_packages(
+        &self,
+        receiver: u16,
+    ) -> Result<Vec<(u16, Encrypted<Adapter<round2::Package>>)>> {
         let mut packages = vec![];
         for sender in 0..self.participants {
             if let Some(package_bundle) = self.round2.get(sender)? {
                 if let Some(package) = package_bundle.get(receiver)? {
-                    packages.push((sender, package.inner.clone()));
+                    packages.push((sender, package.clone()));
                 }
             }
         }
