@@ -2999,7 +2999,7 @@ impl GetSigsetEthAddressesCmd {
     async fn run(&self) -> Result<()> {
         let client = self.config.client();
 
-        let sigset = client
+        let mut sigset = client
             .query(|app| {
                 Ok(app
                     .bitcoin
@@ -3010,6 +3010,8 @@ impl GetSigsetEthAddressesCmd {
             })
             .await?;
 
+        sigset.normalize_vp(u32::MAX as u64);
+
         print!("[");
         for (i, addr) in sigset.eth_addresses().into_iter().enumerate() {
             print!(
@@ -3017,6 +3019,12 @@ impl GetSigsetEthAddressesCmd {
                 if i > 0 { "," } else { "" },
                 hex::encode(addr.bytes()),
             );
+        }
+        println!("]");
+
+        print!("[");
+        for (i, signatory) in sigset.signatories.into_iter().enumerate() {
+            print!("{}{}", if i > 0 { "," } else { "" }, signatory.voting_power,);
         }
         println!("]");
 
