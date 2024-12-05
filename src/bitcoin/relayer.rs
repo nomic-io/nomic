@@ -41,8 +41,8 @@ where
 const HEADER_BATCH_SIZE: usize = 250;
 
 const HOLESKY_CHAIN_ID: u32 = 17000;
-const HOLESKY_CONNECTION: &str = "0x63bfb9abe9ae79532b1fb1c3490eaa7bdfaa0f67";
-const HOLESKY_BABYLON_CONTRACT: &str = "0x573c7e0867f0294cd23179ca81e2f76f274170e6";
+const HOLESKY_CONNECTION: &str = "0x148dA8C984AA14d1255BB0d6ddcD5a0f221D4ef8";
+const HOLESKY_BABYLON_CONTRACT: &str = "0x1A4631f9C29f86Ea85e33deC0134796C628Ff743";
 
 #[derive(Serialize, Deserialize)]
 pub struct DepositsQuery {
