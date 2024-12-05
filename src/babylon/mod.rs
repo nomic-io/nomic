@@ -114,19 +114,6 @@ impl Babylon {
             |del, _, btc, params| del.withdraw(btc, params),
         )?;
 
-        // Process staked queue (once delegations are older than `max_age`, start
-        // unbonding)
-        process_queue(
-            &mut self.staked,
-            |btc_height, staking_height, params| btc_height >= staking_height + params.max_age,
-            |del, frost_sets, btc, params| {
-                if del.status() != DelegationStatus::Withdrawn && !del.requested_unbond {
-                    del.request_unbond(frost_sets, btc, params)?;
-                }
-                Ok(())
-            },
-        )?;
-
         // TODO: don't iterate through all delegations
         // Process delegations which have started unbonding and have now been fully
         // signed by the FROST signers, adding their signatures from the Frost state to
