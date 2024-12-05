@@ -45,7 +45,7 @@ contract Babylon is ReentrancyGuard {
             Strings.toHexString(uint256(finalityProvider), 32),
             '","staking_period":',
             Strings.toString(stakingPeriod),
-            '","frost_group":',
+            ',"frost_group":',
             frost_group,
             ',"return_dest":"{\\"type\\":\\"ethAccount\\",\\"address\\":\\"',
             Strings.toHexString(uint256(uint160(msg.sender)), 20),
