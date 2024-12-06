@@ -87,7 +87,7 @@ pub const APPROX_TRANSFER_GAS: u64 = 80_000;
 /// the destination chain.
 pub const APPROX_CALL_GAS: u64 = 100_000;
 
-pub const RETURN_RELAYERS: &[&'static str] = &[
+pub const RETURN_RELAYERS: &[&str] = &[
     "nomic124j0ky0luh9jzqh9w2dk77cze9v0ckdupk50ny",
     "nomic1l0a33k8n2538vt0djuggtck5xl0kuk24vh9zjd",
 ];

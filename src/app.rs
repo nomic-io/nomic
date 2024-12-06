@@ -211,7 +211,7 @@ pub struct InnerApp {
     #[call]
     pub frost: Frost,
 
-    #[cfg(all(feature = "frost"))]
+    #[cfg(feature = "frost")]
     #[orga(version(V8))]
     #[call]
     pub aux_frost: Frost,
@@ -467,7 +467,7 @@ impl InnerApp {
                         1 => &self.aux_frost,
                         _ => return Err(Error::App("Invalid frost set".to_string())),
                     };
-                    if frost_group as u64 >= frost.groups.len() {
+                    if frost_group >= frost.groups.len() {
                         return Err(Error::App("Invalid frost group".to_string()));
                     }
                 }
@@ -932,7 +932,7 @@ impl InnerApp {
 
     #[call]
     pub fn create_aux_frost_group(&mut self, config: FrostConfig, index: u64) -> Result<()> {
-        #[cfg(all(feature = "frost"))]
+        #[cfg(feature = "frost")]
         {
             self.deduct_nbtc_fee(FROST_CREATE_GROUP_FEE_USATS.into())?;
 
@@ -1136,7 +1136,7 @@ mod abci {
             let ip_reward = self.incentive_pool_rewards.mint()?;
             self.incentive_pool.give(ip_reward)?;
 
-            #[cfg(all(feature = "frost"))]
+            #[cfg(feature = "frost")]
             if !self.bitcoin.checkpoints.is_empty()? {
                 self.step_frost(now)?;
             }
@@ -1945,8 +1945,8 @@ impl IbcDest {
 
 impl Migrate for IbcDest {
     #[allow(clippy::needless_borrows_for_generic_args)]
-    fn migrate(_src: Store, _dest: Store, mut bytes: &mut &[u8]) -> Result<Self> {
-        Ok(Self::load(_src, bytes)?)
+    fn migrate(_src: Store, _dest: Store, bytes: &mut &[u8]) -> Result<Self> {
+        Self::load(_src, bytes)
     }
 }
 

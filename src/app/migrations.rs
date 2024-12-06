@@ -149,7 +149,7 @@ impl MigrateFrom<InnerAppV7> for InnerAppV8 {
             frost: other.frost,
             #[cfg(all(feature = "frost", not(feature = "testnet")))]
             frost: Default::default(),
-            #[cfg(all(feature = "frost"))]
+            #[cfg(feature = "frost")]
             aux_frost: Default::default(),
         })
     }

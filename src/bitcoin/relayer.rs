@@ -278,7 +278,7 @@ impl Relayer {
                             .as_mut()
                             .unwrap()
                             .insert(dest, &sigset)
-                            .map_err(|e| warp::reject::custom(Error::from(e)))?;
+                            .map_err(warp::reject::custom)?;
                         let max_deposit_age = app_client(app_client_addr)
                             .query(|app| Ok(app.bitcoin.config.max_deposit_age))
                             .await
