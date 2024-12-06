@@ -188,9 +188,17 @@ pub struct InnerApp {
     #[orga(version(V7, V8))]
     #[call]
     pub ethereum: Ethereum,
+    #[cfg(all(feature = "ethereum", not(feature = "testnet")))]
+    #[orga(version(V8))]
+    #[call]
+    pub ethereum: Ethereum,
 
     #[cfg(all(feature = "babylon", feature = "testnet"))]
     #[orga(version(V7, V8))]
+    #[call]
+    pub babylon: Babylon,
+    #[cfg(all(feature = "babylon", not(feature = "testnet")))]
+    #[orga(version(V8))]
     #[call]
     pub babylon: Babylon,
 
@@ -198,8 +206,12 @@ pub struct InnerApp {
     #[orga(version(V7, V8))]
     #[call]
     pub frost: Frost,
+    #[cfg(all(feature = "frost", not(feature = "testnet")))]
+    #[orga(version(V8))]
+    #[call]
+    pub frost: Frost,
 
-    #[cfg(all(feature = "frost", feature = "testnet"))]
+    #[cfg(all(feature = "frost"))]
     #[orga(version(V8))]
     #[call]
     pub aux_frost: Frost,
@@ -908,7 +920,7 @@ impl InnerApp {
 
     #[call]
     pub fn create_aux_frost_group(&mut self, config: FrostConfig, index: u64) -> Result<()> {
-        #[cfg(all(feature = "frost", feature = "testnet"))]
+        #[cfg(all(feature = "frost"))]
         {
             self.deduct_nbtc_fee(FROST_CREATE_GROUP_FEE_USATS.into())?;
 
@@ -940,7 +952,7 @@ impl InnerApp {
             Ok(())
         }
 
-        #[cfg(not(all(feature = "frost", feature = "testnet")))]
+        #[cfg(not(feature = "frost"))]
         {
             Err(Error::App("Frost feature not enabled".into()))
         }
@@ -956,7 +968,7 @@ impl InnerApp {
         Ok(())
     }
 
-    #[cfg(all(feature = "frost", feature = "testnet"))]
+    #[cfg(feature = "frost")]
     fn step_frost(&mut self, now: i64) -> Result<()> {
         let last_frost_group = self.frost.groups.back()?;
         let last_frost_group_time = last_frost_group.as_ref().map(|g| g.created_at).unwrap_or(0);
@@ -1112,7 +1124,7 @@ mod abci {
             let ip_reward = self.incentive_pool_rewards.mint()?;
             self.incentive_pool.give(ip_reward)?;
 
-            #[cfg(all(feature = "frost", feature = "testnet"))]
+            #[cfg(all(feature = "frost"))]
             if !self.bitcoin.checkpoints.is_empty()? {
                 self.step_frost(now)?;
             }
@@ -1163,7 +1175,7 @@ mod abci {
                 &mut self.bitcoin,
             )?;
 
-            #[cfg(feature = "ethereum")]
+            #[cfg(all(feature = "ethereum", feature = "testnet"))]
             {
                 // Add Ethereum Holesky
                 if self.ethereum.networks.get(17000)?.is_none() {

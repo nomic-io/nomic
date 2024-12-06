@@ -81,8 +81,8 @@ impl MigrateFrom<InnerAppV5> for InnerAppV6 {
             incentives: other.incentives,
             ibc: other.ibc,
             cosmos: other.cosmos,
-            #[cfg(feature = "ethereum")]
-            ethereum: Default::default(), // TODO
+            #[cfg(all(feature = "ethereum", feature = "testnet"))]
+            ethereum: Default::default(),
         })
     }
 }
@@ -139,11 +139,17 @@ impl MigrateFrom<InnerAppV7> for InnerAppV8 {
             cosmos: other.cosmos,
             #[cfg(all(feature = "ethereum", feature = "testnet"))]
             ethereum: other.ethereum,
+            #[cfg(all(feature = "ethereum", not(feature = "testnet")))]
+            ethereum: Default::default(),
             #[cfg(all(feature = "babylon", feature = "testnet"))]
             babylon: other.babylon,
+            #[cfg(all(feature = "babylon", not(feature = "testnet")))]
+            babylon: Default::default(),
             #[cfg(all(feature = "frost", feature = "testnet"))]
             frost: other.frost,
-            #[cfg(all(feature = "frost", feature = "testnet"))]
+            #[cfg(all(feature = "frost", not(feature = "testnet")))]
+            frost: Default::default(),
+            #[cfg(all(feature = "frost"))]
             aux_frost: Default::default(),
         })
     }
