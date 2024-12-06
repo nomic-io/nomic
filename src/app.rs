@@ -1946,21 +1946,7 @@ impl IbcDest {
 impl Migrate for IbcDest {
     #[allow(clippy::needless_borrows_for_generic_args)]
     fn migrate(_src: Store, _dest: Store, mut bytes: &mut &[u8]) -> Result<Self> {
-        let source_port = LengthString::<u8>::decode(&mut bytes)?;
-        let source_channel = LengthString::<u8>::decode(&mut bytes)?;
-        let receiver = LengthString::<u8>::decode(&mut bytes)?;
-        let sender = LengthString::<u8>::decode(&mut bytes)?;
-        let timeout_timestamp = u64::decode(&mut bytes)?;
-        let memo = LengthString::<u8>::decode(&mut bytes)?;
-
-        Ok(IbcDest {
-            source_port,
-            source_channel,
-            receiver,
-            sender,
-            timeout_timestamp,
-            memo: memo.to_string().try_into().unwrap(),
-        })
+        Ok(Self::load(_src, bytes)?)
     }
 }
 
@@ -2275,16 +2261,6 @@ impl Query for Dest {
 impl Migrate for Dest {
     #[allow(clippy::needless_borrows_for_generic_args)]
     fn migrate(src: Store, dest: Store, bytes: &mut &[u8]) -> Result<Self> {
-        // TODO: !!!!!!!! remove from here once there are no legacy IBC dests
-        // Migrate IBC dests
-        let mut maybe_ibc_bytes = &mut &**bytes;
-        let variant = u8::decode(&mut maybe_ibc_bytes)?;
-        if variant == 1 {
-            let ibc_dest = IbcDest::migrate(src, dest, maybe_ibc_bytes)?;
-            return Ok(Self::Ibc { data: ibc_dest });
-        }
-        // TODO: !!!!!!!! remove to here once there are no legacy IBC dests
-
         Self::load(src, bytes)
     }
 }
