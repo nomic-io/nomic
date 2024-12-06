@@ -694,6 +694,7 @@ mod tests {
     use orga::context::Context;
     use orga::state::State;
     use orga::store::{Read, Store, Write};
+    use serial_test::serial;
 
     use self::signer::Signer;
     use crate::app::{App as TestApp, InnerApp};
@@ -771,6 +772,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn two_signers_basic() -> Result<()> {
         Context::add(Time::from_seconds(0));
         let store = Store::with_map_store();
