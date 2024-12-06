@@ -423,11 +423,11 @@ impl Relayer {
                                     }
 
                                     if query.address.is_none()
-                                        || query.address
+                                        || query.address.as_ref().map(|v| v.to_lowercase())
                                             == delegation
                                                 .return_dest
                                                 .to_receiver_addr()
-                                                .map(|addr| format!("0x{addr}"))
+                                                .map(|addr| format!("0x{addr}").to_lowercase())
                                     {
                                         // TODO: replace encoding-based clone, either by actually
                                         // implementing Clone for Delegation, or by returning a
