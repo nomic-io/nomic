@@ -1593,7 +1593,7 @@ mod tests {
             Identity::default(), // TODO
             Dest::default(),     // TODO
             btc_pubkey,
-            0,
+            (0, 0),
             vec![XOnlyPublicKey::from_keypair(&keypair).0],
             64_000,
             (0, 1),
@@ -1735,7 +1735,7 @@ mod tests {
             Identity::default(),
             Dest::default(),
             btc_key,
-            0,
+            (0, 0),
             fp_keys,
             150,
             (0, 1),

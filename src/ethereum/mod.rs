@@ -1300,7 +1300,7 @@ mod tests {
 
         assert_eq!(
             hex::encode(checkpoint_hash(123, [123; 20].into(), &valset, 0)),
-            "61fe378d7a8aac20d5882ff4696d9c14c0db93b583fcd25f0616ce5187efae69",
+            "6d5469e82c284f8ba066be6dc2a21fb2ce5bf65abb942d73f38f438c6088a7f8",
         );
 
         let valset2 = SignatorySet {
@@ -1317,7 +1317,7 @@ mod tests {
         let updated_checkpoint = checkpoint_hash(123, [123; 20].into(), &valset2, 1);
         assert_eq!(
             hex::encode(updated_checkpoint),
-            "0b73bc9926c210f36673973a0ecb0a5f337ca1c7f99ba44ecf3624c891a8ab2b",
+            "ae7f01e8b0d801eb7e8d834a1057678f141dc8dd991b341feb924821bc75c6d0",
         );
 
         let valset_update_sighash = sighash(updated_checkpoint);
@@ -1325,14 +1325,14 @@ mod tests {
         let sig = secp.sign_ecdsa(&msg, &privkey);
         let vrs = to_eth_sig(&sig, &pubkey, &msg);
 
-        assert_eq!(vrs.0, 27);
+        assert_eq!(vrs.0, 28);
         assert_eq!(
             hex::encode(vrs.1),
-            "060215a246c6439b1ba1cf29577936ef20912e9e97b44326fd063b22221f69d8",
+            "f6d2f179a91d5470c56b16f93c327a5280b4d2fbf8668d80c30011461c60d7cf",
         );
         assert_eq!(
             hex::encode(vrs.2),
-            "24d9924b969a742b877831a43b14e0ea88886308ecf0e37ee70a096346966a43",
+            "1513f03dd5c9d5b0304440005e00c90c6a5ab4b7108133f3ad0ea0add8a338ba",
         );
     }
 
@@ -1636,32 +1636,20 @@ mod tests {
         .await
         .unwrap();
 
-        let receipt = dbg!(contract
-            .deployERC20(
-                "usat".to_string(),
-                "nBTC".to_string(),
-                "nBTC".to_string(),
-                14,
-            )
-            .send()
+        let token_contract_addr = contract
+            .state_nbtc_contract()
+            .call()
             .await
             .unwrap()
-            .get_receipt()
-            .await
-            .unwrap());
-        let mut token_contract_addr = None;
-        for log in receipt.inner.logs().into_iter() {
-            let res = bridge_contract::ERC20DeployedEvent::decode_log_data(log.data(), true);
-            if let Ok(e) = res {
-                token_contract_addr = Some(e._tokenContract);
-                println!("{}", e._tokenContract);
-            }
-        }
+            ._0
+            .0
+             .0
+            .into();
 
         let mut ethereum = Connection::new(
             anvil.chain_id().try_into().unwrap(),
             contract.address().0 .0.into(),
-            token_contract_addr.unwrap().0 .0.into(),
+            token_contract_addr,
             valset,
         );
         println!(
@@ -1720,7 +1708,7 @@ mod tests {
             dbg!(contract
                 .submitBatch(
                     ethereum.valset.to_abi(ethereum.valset_index),
-                    sigs,
+                    sigs.clone(),
                     transfers
                         .iter()
                         .map(|t| alloy_core::primitives::U256::from(t.amount))
@@ -1754,7 +1742,6 @@ mod tests {
                         .map(|t| alloy_core::primitives::U256::from(t.fee_amount))
                         .collect(),
                     alloy_core::primitives::U256::from(batch_index),
-                    alloy_core::primitives::Address::from_slice(&ethereum.token_contract.bytes()),
                     alloy_core::primitives::U256::from(timeout),
                 )
                 .send()
@@ -1815,28 +1802,15 @@ mod tests {
         .await
         .unwrap();
 
-        let receipt = dbg!(contract
-            .deployERC20(
-                "usat".to_string(),
-                "nBTC".to_string(),
-                "nBTC".to_string(),
-                14,
-            )
-            .send()
+        let token_contract_addr = contract
+            .state_nbtc_contract()
+            .call()
             .await
             .unwrap()
-            .get_receipt()
-            .await
-            .unwrap());
-        let mut token_contract_addr = None;
-        for log in receipt.inner.logs().into_iter() {
-            let res = bridge_contract::ERC20DeployedEvent::decode_log_data(log.data(), true);
-            if let Ok(e) = res {
-                token_contract_addr = Some(e._tokenContract);
-                println!("{}", e._tokenContract);
-            }
-        }
-        let token_contract_addr = token_contract_addr.unwrap().0 .0.into();
+            ._0
+            .0
+             .0
+            .into();
 
         let mut ethereum = Connection::new(
             anvil.chain_id().try_into().unwrap(),
@@ -1907,7 +1881,6 @@ mod tests {
                     logic_call_args(
                         transfer_amount,
                         fee_amount,
-                        token_contract_addr.into(),
                         contract_address,
                         data.as_slice(),
                         max_gas,
@@ -1973,28 +1946,15 @@ mod tests {
         .await
         .unwrap();
 
-        let receipt = dbg!(contract
-            .deployERC20(
-                "usat".to_string(),
-                "nBTC".to_string(),
-                "nBTC".to_string(),
-                14,
-            )
-            .send()
+        let token_contract_addr = contract
+            .state_nbtc_contract()
+            .call()
             .await
             .unwrap()
-            .get_receipt()
-            .await
-            .unwrap());
-        let mut token_contract_addr = None;
-        for log in receipt.inner.logs().into_iter() {
-            let res = bridge_contract::ERC20DeployedEvent::decode_log_data(log.data(), true);
-            if let Ok(e) = res {
-                token_contract_addr = Some(e._tokenContract);
-                println!("{}", e._tokenContract);
-            }
-        }
-        let token_contract_addr = token_contract_addr.unwrap().0 .0.into();
+            ._0
+            .0
+             .0
+            .into();
 
         let mut ethereum = Connection::new(
             anvil.chain_id().try_into().unwrap(),
@@ -2066,7 +2026,6 @@ mod tests {
                         .map(|t| alloy_core::primitives::U256::from(t.fee_amount))
                         .collect(),
                     alloy_core::primitives::U256::from(batch_index),
-                    alloy_core::primitives::Address::from_slice(&ethereum.token_contract.bytes()),
                     alloy_core::primitives::U256::from(timeout),
                 )
                 .send()
@@ -2086,7 +2045,19 @@ mod tests {
 
         dbg!(token_contract_client
             .approve(
-                alloy_core::primitives::Address::from_slice(&ethereum.bridge_contract.bytes()),
+                *contract.address(),
+                alloy_core::primitives::U256::from(u64::MAX),
+            )
+            .send()
+            .await
+            .unwrap()
+            .get_receipt()
+            .await
+            .unwrap());
+
+        dbg!(token_contract_client
+            .approve(
+                *contract.address(),
                 alloy_core::primitives::U256::from(u64::MAX),
             )
             .send()
@@ -2098,8 +2069,10 @@ mod tests {
 
         dbg!(contract
             .sendToNomic(
-                alloy_core::primitives::Address::from_slice(&ethereum.token_contract.bytes()),
-                Address::from_pubkey([0; 33]).to_string(),
+                format!(
+                    "{{\"type\":\"nativeAccount\",\"address\":\"{}\"}}",
+                    Address::from([0; 20]),
+                ),
                 alloy_core::primitives::U256::from(500_000_000_000u64),
             )
             .send()

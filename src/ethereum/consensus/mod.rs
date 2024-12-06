@@ -290,7 +290,7 @@ impl Network {
             genesis_vals_root: "0x4b363db94e286120d76eb905340fdd4e54bfe9f06bf33ff6cf5ad27f511bfe95"
                 .parse()
                 .unwrap(),
-            deneb_fork_version: 4,
+            deneb_fork_version: 0x04000000,
             genesis_time: 1606824023,
         }
     }
