@@ -763,8 +763,20 @@ impl InnerApp {
     ) -> Result<()> {
         #[cfg(feature = "babylon")]
         {
-            // TODO: validate staking/unbonding periods
             // TODO: go through dest flow
+
+            let amount_sats = u64::from(amount) / self.bitcoin.config.units_per_sat;
+            if amount_sats < self.babylon.params.min_staking_amount
+                || amount_sats > self.babylon.params.max_staking_amount
+            {
+                return Err(Error::App("Invalid stake amount".into()));
+            }
+            if staking_period < self.babylon.params.min_staking_time
+                || staking_period > self.babylon.params.max_staking_time
+            {
+                return Err(Error::App("Invalid staking period".into()));
+            }
+
             let signer = self.signer()?;
             let stake = self.bitcoin.accounts.withdraw(signer, amount)?;
             self.babylon.stake(
