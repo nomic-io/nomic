@@ -1205,6 +1205,24 @@ mod abci {
                 }
             }
 
+            #[cfg(feature = "ethereum")]
+            {
+                // Add Ethereum mainnet
+                if self.ethereum.networks.get(1)?.is_none() {
+                    let bootstrap =
+                        serde_json::from_str(include_str!("./ethereum/bootstrap/mainnet.json"))
+                            .unwrap();
+                    self.ethereum.networks.insert(
+                        1,
+                        crate::ethereum::Network::new(
+                            1,
+                            bootstrap,
+                            crate::ethereum::consensus::Network::ethereum_mainnet(),
+                        )?,
+                    )?;
+                }
+            }
+
             Ok(())
         }
     }
