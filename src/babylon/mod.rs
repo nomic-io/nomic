@@ -530,6 +530,56 @@ impl Params {
         }
     }
 
+    /// Parameters for the Babylon mainnet (as of phase 1, cap 3).
+    pub fn bbn_mainnet() -> Self {
+        let covenant_keys = [
+            "d45c70d28f169e1f0c7f4a78e2bc73497afe585b70aa897955989068f3350aaa",
+            "4b15848e495a3a62283daaadb3f458a00859fe48e321f0121ebabbdd6698f9fa",
+            "23b29f89b45f4af41588dcaf0ca572ada32872a88224f311373917f1b37d08d1",
+            "d3c79b99ac4d265c2f97ac11e3232c07a598b020cf56c6f055472c893c0967ae",
+            "8242640732773249312c47ca7bdb50ca79f15f2ecc32b9c83ceebba44fb74df7",
+            "e36200aaa8dce9453567bba108bdc51f7f1174b97a65e4dc4402fc5de779d41c",
+            "cbdd028cfe32c1c1f2d84bfec71e19f92df509bba7b8ad31ca6c1a134fe09204",
+            "f178fcce82f95c524b53b077e6180bd2d779a9057fdff4255a0af95af918cee0",
+            "de13fc96ea6899acbdc5db3afaa683f62fe35b60ff6eb723dad28a11d2b12f8c",
+        ];
+        let covenant_quorum = 6;
+
+        let slashing_addr = "tb1qv03wm7hxhag6awldvwacy0z42edtt6kwljrhd9";
+        let slashing_min_fee = 2_000;
+
+        Self {
+            covenant_keys: covenant_keys
+                .iter()
+                .map(|k| {
+                    let mut key = [0; 32];
+                    let v = hex::decode(k).unwrap();
+                    key.copy_from_slice(&v);
+                    key
+                })
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+            covenant_quorum,
+            slashing_script: slashing_addr
+                .parse::<bitcoin::Address>()
+                .unwrap()
+                .script_pubkey()
+                .into(),
+            slashing_min_fee,
+            op_return_tag: *b"bbn1",
+            slashing_rate: (11, 100),
+            max_age: u32::MAX,
+            min_staking_time: 64_000,
+            max_staking_time: 64_000,
+            unbonding_time: 1_008,
+            min_staking_amount: 500_000,
+            max_staking_amount: 500_000_000_000,
+            unbonding_fee: 32_000,
+            confirmation_depth: 10,
+        }
+    }
+
     /// Gets the covenant keys as a list of `XOnlyPublicKey`s.
     pub fn covenant_keys(&self) -> Vec<XOnlyPublicKey> {
         self.covenant_keys
@@ -541,7 +591,7 @@ impl Params {
 
 impl Default for Params {
     fn default() -> Self {
-        Self::bbn_staging_testnet()
+        Self::bbn_mainnet()
     }
 }
 
@@ -1300,7 +1350,7 @@ impl Delegation {
                 Error::Orga(orga::Error::App("Missing staking outpoint".to_string()))
             })?,
             self.stake_sats(),
-            &Params::bbn_staging_testnet(),
+            &Params::bbn_mainnet(),
         )
     }
 
@@ -1315,7 +1365,7 @@ impl Delegation {
                 vout: 0,
             },
             unbonding_tx.output[0].value,
-            &Params::bbn_staging_testnet(),
+            &Params::bbn_mainnet(),
         )
     }
 
@@ -1354,7 +1404,7 @@ impl Delegation {
                 value: self.stake_sats(),
             }]),
             TapLeafHash::from_script(
-                &unbonding_script(self.btc_key()?, &Params::bbn_staging_testnet())?,
+                &unbonding_script(self.btc_key()?, &Params::bbn_mainnet())?,
                 bitcoin::util::taproot::LeafVersion::TapScript,
             ),
             bitcoin::SchnorrSighashType::Default,
@@ -1402,7 +1452,7 @@ impl Delegation {
     /// blockchain.
     pub fn op_return_bytes(&self) -> Result<Vec<u8>> {
         let data = OpReturnData {
-            magic_byes: Params::bbn_staging_testnet().op_return_tag,
+            magic_byes: Params::bbn_mainnet().op_return_tag,
             version: 0,
             staker_btc_pk: self.btc_key,
             fp_pk: *self
