@@ -234,7 +234,7 @@ impl Babylon {
             .push_back(Adapter::new(del.staking_output(&self.params)?))?;
         staking_tx
             .output
-            .push_back(Adapter::new(del.op_return_output()?))?;
+            .push_back(Adapter::new(del.op_return_output(&self.params)?))?;
         btc.checkpoints
             .building_mut()?
             .batches
@@ -1305,10 +1305,10 @@ impl Delegation {
     /// The OP_RETURN output - the output of the unbonding transaction
     /// containing the Babylon protocol OP_RETURN data (used by Babylon to
     /// identify the delegation).
-    pub fn op_return_output(&self) -> Result<TxOut> {
+    pub fn op_return_output(&self, params: &Params) -> Result<TxOut> {
         Ok(TxOut {
             value: 0,
-            script_pubkey: Script::new_op_return(self.op_return_bytes()?.as_slice()),
+            script_pubkey: Script::new_op_return(self.op_return_bytes(params)?.as_slice()),
         })
     }
 
@@ -1343,14 +1343,14 @@ impl Delegation {
 
     /// The slashing transaction for the delegation which spends the staking
     /// output.
-    pub fn slashing_tx(&self) -> Result<Transaction> {
+    pub fn slashing_tx(&self, params: &Params) -> Result<Transaction> {
         slashing_tx(
             self.btc_key()?,
             *self.staking_outpoint.ok_or_else(|| {
                 Error::Orga(orga::Error::App("Missing staking outpoint".to_string()))
             })?,
             self.stake_sats(),
-            &Params::bbn_mainnet(),
+            params,
         )
     }
 
@@ -1365,7 +1365,7 @@ impl Delegation {
                 vout: 0,
             },
             unbonding_tx.output[0].value,
-            &Params::bbn_mainnet(),
+            params,
         )
     }
 
@@ -1404,7 +1404,7 @@ impl Delegation {
                 value: self.stake_sats(),
             }]),
             TapLeafHash::from_script(
-                &unbonding_script(self.btc_key()?, &Params::bbn_mainnet())?,
+                &unbonding_script(self.btc_key()?, params)?,
                 bitcoin::util::taproot::LeafVersion::TapScript,
             ),
             bitcoin::SchnorrSighashType::Default,
@@ -1413,7 +1413,7 @@ impl Delegation {
 
     /// The sighash for the slashing transaction's spend of the staking output.
     pub fn staking_slashing_sighash(&self, params: &Params) -> Result<TapSighashHash> {
-        let slashing_tx = self.slashing_tx()?;
+        let slashing_tx = self.slashing_tx(params)?;
         let mut sc = SighashCache::new(&slashing_tx);
         Ok(sc.taproot_script_spend_signature_hash(
             0,
@@ -1450,9 +1450,9 @@ impl Delegation {
     ///
     /// This is used by Babylon to identify the delegation on the Bitcoin
     /// blockchain.
-    pub fn op_return_bytes(&self) -> Result<Vec<u8>> {
+    pub fn op_return_bytes(&self, params: &Params) -> Result<Vec<u8>> {
         let data = OpReturnData {
-            magic_byes: Params::bbn_mainnet().op_return_tag,
+            magic_byes: params.op_return_tag,
             version: 0,
             staker_btc_pk: self.btc_key,
             fp_pk: *self
@@ -1670,7 +1670,7 @@ mod tests {
             }],
             output: vec![
                 del.staking_output(&params).unwrap(),
-                del.op_return_output().unwrap(),
+                del.op_return_output(&params).unwrap(),
                 TxOut {
                     value: 107_135 - 50_000 - (16 * 200),
                     // addr: bc1q7nqxt2rq0tqzt6x3h54hrvw8pfr4s0uuwyfgvq
@@ -1794,7 +1794,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(hex::encode(del.op_return_bytes().unwrap()), "62626434008c0d21a8dd59a2a50f7ab8cb94d3034eb2b3d130589168bf7876a30b22c876d803d5a0bb72d71993e435d6c5a70e2aa4db500a62cfaae33c56050deefee64ec00096");
+        assert_eq!(hex::encode(del.op_return_bytes(&params).unwrap()), "62626434008c0d21a8dd59a2a50f7ab8cb94d3034eb2b3d130589168bf7876a30b22c876d803d5a0bb72d71993e435d6c5a70e2aa4db500a62cfaae33c56050deefee64ec00096");
         assert_eq!(
             hex::encode(del.staking_script(&params).unwrap().to_bytes()),
             "512083f18ab40065c1bd5ab6616535e9af358df7640e935c16012d0df306a4c0e42f",
