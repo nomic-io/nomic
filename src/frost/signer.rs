@@ -1064,6 +1064,14 @@ where
                     .clone())
             })?;
 
+            if signing_package
+                .signing_commitments()
+                .get(key_package.identifier())
+                .is_none()
+            {
+                continue;
+            }
+
             let nonces = self.with_signing_nonces(|signing_nonces| {
                 Ok(signing_nonces
                     .get((group_index, sig_index, iteration, i))?

@@ -276,6 +276,9 @@ impl FrostGroup {
         for (i, commitment) in commitments.into_iter().enumerate() {
             let participant = share_range.start + i as u16;
             sig.submit_commitments(iteration, participant, commitment)?;
+            if sig.state() == SigningState::Round2 {
+                break;
+            }
         }
 
         Ok(())
