@@ -111,7 +111,9 @@ const FROST_CREATE_GROUP_FEE_USATS: u64 = 1_000_000_000;
 pub const OSMOSIS_CHANNEL_ID: &str = "channel-1";
 
 #[cfg(feature = "frost")]
-const FROST_GROUP_INTERVAL: i64 = 10 * 60;
+const FROST_GROUP_INTERVAL: i64 = 4 * 60 * 60;
+#[cfg(feature = "frost")]
+const FROST_SIG_TIMEOUT_SECONDS: i64 = 20 * 60;
 #[cfg(feature = "frost")]
 const FROST_TOP_N: u16 = 5;
 #[cfg(feature = "frost")]
@@ -1009,8 +1011,9 @@ impl InnerApp {
             self.frost.groups.push_back(group)?;
         }
 
-        self.frost.advance_with_timeout(60 * 5)?;
-        self.aux_frost.advance_with_timeout(60 * 5)?;
+        self.frost.advance_with_timeout(FROST_SIG_TIMEOUT_SECONDS)?;
+        self.aux_frost
+            .advance_with_timeout(FROST_SIG_TIMEOUT_SECONDS)?;
 
         Ok(())
     }
