@@ -2895,6 +2895,10 @@ impl FrostSignerCmd {
             my_address(),
         );
 
+        if let Err(e) = signer.audit().await {
+            log::error!("Error in FROST signer audit: {}", e);
+        }
+
         let signer_dir_path_aux = self.config.home_expect()?.join("frost_aux");
         if !signer_dir_path_aux.exists() {
             log::debug!(
@@ -2914,6 +2918,10 @@ impl FrostSignerCmd {
             || self.config.client().with_wallet(wallet()),
             my_address(),
         );
+
+        if let Err(e) = signer_aux.audit().await {
+            log::error!("Error in FROST aux signer audit: {}", e);
+        }
 
         loop {
             if let Err(e) = signer.step().await {
