@@ -4883,7 +4883,7 @@ dependencies = [
 [[package]]
 name = "orga"
 version = "0.3.1"
-source = "git+https://github.com/turbofish-org/orga.git?rev=c1c7a0469cd2e5fb079d05ad697cc44b055949ca#c1c7a0469cd2e5fb079d05ad697cc44b055949ca"
+source = "git+https://github.com/turbofish-org/orga.git?rev=7482c82c2e8a5cbae13029557ed01b5f67d3ed43#7482c82c2e8a5cbae13029557ed01b5f67d3ed43"
 dependencies = [
  "abci2",
  "async-trait",
@@ -4940,7 +4940,7 @@ dependencies = [
 [[package]]
 name = "orga-macros"
 version = "0.3.1"
-source = "git+https://github.com/turbofish-org/orga.git?rev=c1c7a0469cd2e5fb079d05ad697cc44b055949ca#c1c7a0469cd2e5fb079d05ad697cc44b055949ca"
+source = "git+https://github.com/turbofish-org/orga.git?rev=7482c82c2e8a5cbae13029557ed01b5f67d3ed43#7482c82c2e8a5cbae13029557ed01b5f67d3ed43"
 dependencies = [
  "darling 0.20.10",
  "heck 0.3.3",
