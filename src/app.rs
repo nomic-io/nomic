@@ -948,10 +948,16 @@ impl InnerApp {
                 .ok_or_else(|| Error::App("No time context available".to_string()))?;
 
             // TODO: move to frost module
-            // TODO: any other validation?
             if config.threshold < 2 {
                 return Err(Error::App("Threshold must be at least 2".into()));
             }
+
+            if config.total_shares() > 10 {
+                return Err(Error::App(
+                    "Total signing shares must be less than or equal to 10".into(),
+                ));
+            }
+
             if config.threshold > config.total_shares() {
                 return Err(Error::App(
                     "Threshold must be less than total shares".into(),
@@ -981,7 +987,7 @@ impl InnerApp {
     }
 
     #[cfg(feature = "frost")]
-    fn step_frost(&mut self, now: i64) -> Result<()> {
+    pub fn step_frost(&mut self, now: i64) -> Result<()> {
         let last_frost_group = self.frost.groups.back()?;
         let last_frost_group_time = last_frost_group.as_ref().map(|g| g.created_at).unwrap_or(0);
         let absent = last_frost_group

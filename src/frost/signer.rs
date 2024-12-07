@@ -449,7 +449,12 @@ where
             let key_package: KeyPackage = self.with_key_package(|key_packages| {
                 Ok(key_packages
                     .get((group_index, i))?
-                    .ok_or_else(|| Error::App("Missing key package".to_string()))?
+                    .ok_or_else(|| {
+                        Error::App(format!(
+                            "Missing key package group {} participant {}",
+                            group_index, i
+                        ))
+                    })?
                     .inner
                     .clone())
             })?;
@@ -555,6 +560,29 @@ where
             sig_index,
             iteration
         );
+
+        Ok(())
+    }
+
+    pub async fn audit(&mut self) -> Result<()> {
+        let groups = self
+            .client()
+            .query(|app| app.frost.completed_groups_for_address(self.address))
+            .await?;
+
+        self.with_key_package(|key_packages| {
+            for (group_index, shares) in groups.iter() {
+                for share in shares {
+                    if !key_packages.contains_key((*group_index, *share))? {
+                        return Err(Error::App(format!(
+                            "Missing key package for group {} share {}",
+                            group_index, share
+                        )));
+                    }
+                }
+            }
+            Ok(())
+        })?;
 
         Ok(())
     }
@@ -877,6 +905,11 @@ where
             .map_err(|e| Error::App(format!("Error during DKG part 3: {}", e)))?;
 
             self.with_key_package(|key_packages| {
+                log::debug!(
+                    "Inserting key package for group {} participant {}",
+                    index,
+                    i
+                );
                 key_packages.insert(
                     (index, i),
                     Adapter {
@@ -927,7 +960,12 @@ where
             let key_package: KeyPackage = self.with_key_package(|key_packages| {
                 Ok(key_packages
                     .get((group_index, i))?
-                    .ok_or_else(|| Error::App("Missing key package".to_string()))?
+                    .ok_or_else(|| {
+                        Error::App(format!(
+                            "Missing key package group {} participant {}",
+                            group_index, i
+                        ))
+                    })?
                     .inner
                     .clone())
             })?;
@@ -1033,6 +1071,29 @@ where
             sig_index,
             iteration
         );
+
+        Ok(())
+    }
+
+    pub async fn audit(&mut self) -> Result<()> {
+        let groups = self
+            .client()
+            .query(|app| app.aux_frost.completed_groups_for_address(self.address))
+            .await?;
+
+        self.with_key_package(|key_packages| {
+            for (group_index, shares) in groups.iter() {
+                for share in shares {
+                    if !key_packages.contains_key((*group_index, *share))? {
+                        return Err(Error::App(format!(
+                            "Missing key package for group {} share {}",
+                            group_index, share
+                        )));
+                    }
+                }
+            }
+            Ok(())
+        })?;
 
         Ok(())
     }

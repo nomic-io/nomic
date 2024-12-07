@@ -150,7 +150,7 @@ impl Dkg {
         } else {
             self.group_pubkey = Some(package);
         }
-
+        self.attested.insert(participant, ())?;
         self.attested_len += 1;
 
         Ok(())

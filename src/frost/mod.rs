@@ -182,6 +182,11 @@ impl FrostGroup {
             return Err(Error::App("Invalid number of packages".into()));
         }
 
+        log::debug!(
+            "DKG round 1 submitted by {} {:?}",
+            &address,
+            &share_range.clone().collect::<Vec<_>>()
+        );
         for (offset, (package, comm_pubkey)) in packages.into_iter().enumerate() {
             let participant = share_range.start + offset as u16;
             self.dkg.submit_round1(participant, package, comm_pubkey)?;
@@ -207,6 +212,11 @@ impl FrostGroup {
             return Err(Error::App("Invalid number of packages".into()));
         }
 
+        log::debug!(
+            "DKG round 2 submitted by {} {:?}",
+            &address,
+            &share_range.clone().collect::<Vec<_>>()
+        );
         for (offset, packages) in packages.into_iter().enumerate() {
             let participant = share_range.start + offset as u16;
 
@@ -225,6 +235,12 @@ impl FrostGroup {
     ) -> Result<()> {
         let address = self.signer()?;
         let share_range = self.config.share_range(address)?;
+
+        log::debug!(
+            "DKG attest pubkey by {} {:?}",
+            &address,
+            &share_range.clone().collect::<Vec<_>>()
+        );
         for i in share_range {
             self.dkg.attest_pubkey_package(i, pubkey_package.clone())?;
         }
@@ -249,6 +265,14 @@ impl FrostGroup {
             .get_mut(sig_index)?
             .ok_or(Error::App("Signing not found".into()))?;
         let commitments: Vec<Adapter<SigningCommitments>> = commitments.into();
+
+        log::debug!(
+            "Signing round 1 submitted by {} {:?} iteration {}",
+            &address,
+            &share_range.clone().collect::<Vec<_>>(),
+            iteration
+        );
+
         for (i, commitment) in commitments.into_iter().enumerate() {
             let participant = share_range.start + i as u16;
             sig.submit_commitments(iteration, participant, commitment)?;
@@ -280,6 +304,14 @@ impl FrostGroup {
             .get_mut(sig_index)?
             .ok_or(Error::App("Signing not found".into()))?;
         let shares: Vec<Adapter<SignatureShare>> = shares.into();
+
+        log::debug!(
+            "Signing round 2 submitted by {} {:?} iteration {}",
+            &address,
+            &share_range.clone().collect::<Vec<_>>(),
+            iteration
+        );
+
         for (i, share) in shares.into_iter().enumerate() {
             let participant = share_range.start + i as u16;
             sig.submit_sig_share(iteration, participant, share, pubkey_package)?;
@@ -464,8 +496,8 @@ impl Frost {
     pub fn dkg_state(&self, index: u64) -> Result<DkgState> {
         self.groups
             .get(index)?
-            .map(|sig| sig.dkg.state())
-            .ok_or(Error::App("Sig not found".into()))
+            .map(|group| group.dkg.state())
+            .ok_or(Error::App("Group not found".into()))
     }
 
     /// Returns the current signing state for a single message within a group's
@@ -640,6 +672,22 @@ impl Frost {
         Ok(None)
     }
 
+    #[query]
+    pub fn completed_groups_for_address(&self, address: Address) -> Result<Vec<(u64, Vec<u16>)>> {
+        let mut res = vec![];
+        for i in 0..self.groups.len() {
+            let group = self
+                .groups
+                .get(i)?
+                .ok_or(Error::App("Group not found".into()))?;
+            if group.dkg.state() == DkgState::Complete && group.config.contains(address) {
+                let shares = group.config.share_range(address)?;
+                res.push((i, shares.collect()));
+            }
+        }
+        Ok(res)
+    }
+
     /// Advances to the next signing iteration for all groups according to the
     /// provided `timeout` limit in seconds.
     pub fn advance_with_timeout(&mut self, timeout: i64) -> Result<()> {
@@ -695,6 +743,7 @@ mod tests {
     use orga::state::State;
     use orga::store::{Read, Store, Write};
     use serial_test::serial;
+    use signer::AuxSigner;
 
     use self::signer::Signer;
     use crate::app::{App as TestApp, InnerApp};
@@ -703,7 +752,7 @@ mod tests {
 
     use super::*;
 
-    fn setup(mut store: Store) -> Result<()> {
+    fn setup(mut store: Store, config: Config, aux: bool) -> Result<()> {
         let mut app = App::default();
         app.attach(store.clone())?;
 
@@ -720,23 +769,14 @@ mod tests {
                 .inner
                 .inner;
 
-            inner_app.frost.groups.push_back(FrostGroup::with_config(
-                Config {
-                    threshold: 2,
-                    participants: vec![
-                        Participant {
-                            address: DerivedKey::new(b"alice")?.address(),
-                            shares: 1,
-                        },
-                        Participant {
-                            address: DerivedKey::new(b"bob")?.address(),
-                            shares: 1,
-                        },
-                    ]
-                    .try_into()?,
-                },
-                0,
-            )?)?;
+            let frost = if aux {
+                &mut inner_app.aux_frost
+            } else {
+                &mut inner_app.frost
+            };
+            frost
+                .groups
+                .push_back(FrostGroup::with_config(config, 0)?)?;
         };
 
         let mut bytes = vec![];
@@ -746,10 +786,10 @@ mod tests {
         Ok(())
     }
 
-    fn with_app<F: FnMut(&mut InnerApp) -> Result<()>>(mut store: Store, mut op: F) -> Result<()> {
+    fn with_app<F: FnMut(&mut InnerApp) -> Result<T>, T>(mut store: Store, mut op: F) -> Result<T> {
         let bytes = store.get(&[])?.unwrap_or_default();
         let app: App = State::load(store.clone(), &mut bytes.as_slice())?;
-        {
+        let res = {
             let inner_app: &mut InnerApp = &mut app
                 .inner
                 .inner
@@ -761,14 +801,14 @@ mod tests {
                 .inner
                 .inner;
 
-            op(inner_app)?;
-        }
+            op(inner_app)?
+        };
         let mut bytes = vec![];
         app.flush(&mut bytes)?;
 
         store.put(vec![], bytes)?;
 
-        Ok(())
+        Ok(res)
     }
 
     #[tokio::test]
@@ -776,7 +816,21 @@ mod tests {
     async fn two_signers_basic() -> Result<()> {
         Context::add(Time::from_seconds(0));
         let store = Store::with_map_store();
-        setup(store.clone())?;
+        let config = Config {
+            threshold: 2,
+            participants: vec![
+                Participant {
+                    address: DerivedKey::new(b"alice")?.address(),
+                    shares: 1,
+                },
+                Participant {
+                    address: DerivedKey::new(b"bob")?.address(),
+                    shares: 1,
+                },
+            ]
+            .try_into()?,
+        };
+        setup(store.clone(), config, false)?;
 
         let make_signer = |store: Store, name: &[u8]| {
             let secret_store = Store::with_map_store();
@@ -865,6 +919,157 @@ mod tests {
                 .verifying_key()
                 .effective_key(&signing_params)
                 .verify([1, 2, 3], &signature)
+                .is_ok());
+
+            Ok(())
+        })?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn aux_signers_full() -> Result<()> {
+        Context::add(Time::from_seconds(0));
+        let store = Store::with_map_store();
+        let config = Config {
+            threshold: 3,
+            participants: (0..4)
+                .map(|i| Participant {
+                    address: DerivedKey::new(&[i as u8]).unwrap().address(),
+                    shares: if i == 0 { 2 } else { 1 },
+                })
+                .collect::<Vec<_>>()
+                .try_into()?,
+        };
+
+        setup(store.clone(), config, true)?;
+
+        let make_signer = |store: Store, name: &[u8]| {
+            let secret_store = Store::with_map_store();
+            let name = name.to_vec();
+            let name_clone = name.clone();
+            let make_client = move || {
+                let mock_client = MockClient::<App>::with_store(store.clone());
+                let wallet = DerivedKey::new(&name_clone).unwrap();
+                AppClient::<_, _, _, _, _>::new(mock_client, wallet)
+            };
+            AuxSigner::new(
+                secret_store,
+                make_client,
+                DerivedKey::new(&name).unwrap().address(),
+            )
+        };
+
+        let mut signers = (0..4)
+            .map(|i| make_signer(store.clone(), &[i as u8]))
+            .collect::<Vec<_>>();
+
+        for signer in signers.iter_mut() {
+            signer.audit().await?;
+        }
+
+        with_app(store.clone(), |app| {
+            let group = app.aux_frost.groups.front_mut().unwrap().unwrap();
+            assert_eq!(group.dkg.state(), DkgState::Round1);
+            Ok(())
+        })?;
+
+        for signer in signers.iter_mut() {
+            signer.step().await?;
+        }
+
+        with_app(store.clone(), |app| {
+            let group = app.aux_frost.groups.front_mut().unwrap().unwrap();
+            assert_eq!(group.dkg.state(), DkgState::Round2);
+            Ok(())
+        })?;
+
+        for signer in signers.iter_mut() {
+            signer.step().await?;
+        }
+
+        with_app(store.clone(), |app| {
+            let group = app.aux_frost.groups.front_mut().unwrap().unwrap();
+            assert_eq!(group.dkg.state(), DkgState::Attesting);
+            Ok(())
+        })?;
+
+        for signer in signers.iter_mut() {
+            signer.step().await?;
+        }
+
+        with_app(store.clone(), |app| {
+            let group = app.aux_frost.groups.front_mut().unwrap().unwrap();
+            assert_eq!(group.dkg.state(), DkgState::Complete);
+            Ok(())
+        })?;
+
+        with_app(store.clone(), |app| {
+            let mut group = app.aux_frost.groups.front_mut().unwrap().unwrap();
+            assert_eq!(group.dkg.state(), DkgState::Complete);
+
+            group.push_message(vec![1, 2, 3, 4].try_into()?)?;
+            group.push_message(vec![1, 2, 3, 4, 5].try_into()?)?;
+
+            assert_eq!(app.aux_frost.signing_state(0, 0)?, SigningState::Round1);
+            assert_eq!(app.aux_frost.signing_state(0, 1)?, SigningState::Round1);
+
+            Ok(())
+        })?;
+
+        for signer in signers.iter_mut() {
+            signer.step().await?;
+        }
+
+        with_app(store.clone(), |app| {
+            assert_eq!(app.aux_frost.signing_state(0, 0)?, SigningState::Round2);
+            assert_eq!(app.aux_frost.signing_state(0, 1)?, SigningState::Round2);
+
+            Ok(())
+        })?;
+
+        loop {
+            for signer in signers.iter_mut().take(2) {
+                signer.step().await?;
+            }
+            if with_app(store.clone(), |app| {
+                let time_ctx = Context::resolve::<Time>().unwrap();
+                app.step_frost(time_ctx.seconds)?;
+                time_ctx.seconds += 6 * 60;
+
+                Ok(app.aux_frost.signing_state(0, 0)? == SigningState::Complete)
+            })? {
+                break;
+            }
+        }
+        for signer in signers.iter_mut() {
+            signer.audit().await?;
+        }
+
+        signers[2] = make_signer(store.clone(), &[2]);
+
+        assert!(signers[2].audit().await.is_err());
+
+        with_app(store.clone(), |app| {
+            assert_eq!(app.aux_frost.signing_state(0, 0)?, SigningState::Complete);
+            let signature1 = app.aux_frost.signature(0, 0)?.unwrap().inner;
+            let signature2 = app.aux_frost.signature(0, 1)?.unwrap().inner;
+            let group_key = &app.aux_frost.group_pubkey(0)?.unwrap().inner;
+            let signing_params = SigningParameters {
+                tapscript_merkle_root: None,
+            };
+
+            assert!(group_key
+                .verifying_key()
+                .effective_key(&signing_params)
+                .verify([1, 2, 3, 4], &signature1)
+                .is_ok());
+
+            assert!(group_key
+                .verifying_key()
+                .effective_key(&signing_params)
+                .verify([1, 2, 3, 4, 5], &signature2)
                 .is_ok());
 
             Ok(())
