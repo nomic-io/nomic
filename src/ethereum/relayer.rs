@@ -353,13 +353,13 @@ impl<
         let rpc_client =
             crate::ethereum::consensus::relayer::RpcClient::new(beacon_api_url.clone());
         // TODO: use chain_id in closure without breaking fn coercion
-        let lc = client.sub(move |app: InnerApp| Ok(app.ethereum.light_client(17000)?));
+        let lc = client.sub(move |app: InnerApp| Ok(app.ethereum.light_client(1)?));
         let updates = crate::ethereum::consensus::relayer::get_updates(&lc, &rpc_client).await?;
 
         for update in updates {
             log::info!(
                 "Relaying Ethereum consensus update... (chainid={}, slot={})",
-                17000, // TODO: self.eth_chainid,
+                1, // TODO: self.eth_chainid,
                 update.finalized_header.beacon.slot
             );
 
