@@ -2,7 +2,9 @@
 //! Commitments and key shares are kept in a [`MerkStore`], and the signing
 //! process is driven by calls to [`Signer::step`].
 use std::collections::HashMap;
-use std::path::Path;
+use std::fs::{File, OpenOptions};
+use std::io::Write as IoWrite;
+use std::path::{Path, PathBuf};
 
 use frost_secp256k1_tr::round1::{commit, SigningCommitments, SigningNonces};
 use frost_secp256k1_tr::round2;
@@ -34,13 +36,17 @@ use orga::{Error, Result};
 /// Updates are committed to disk immediately after each operation.
 pub struct SecretStore {
     merk_store: MerkStore,
+    path: PathBuf,
 }
 
 impl SecretStore {
     fn new<P: AsRef<Path>>(path: P) -> Self {
-        let merk_store: MerkStore = MerkStore::new(path);
+        let merk_store: MerkStore = MerkStore::new(path.as_ref());
 
-        Self { merk_store }
+        Self {
+            merk_store,
+            path: path.as_ref().to_path_buf(),
+        }
     }
 
     /// Create a new [`Store`] backed by a [`MerkStore`] at the provided path.
@@ -50,6 +56,18 @@ impl SecretStore {
         Store::new(DefaultBackingStore::Other(Shared::new(Box::new(
             secret_store,
         ))))
+    }
+
+    pub fn wal_path(&self) -> PathBuf {
+        self.path.join("secret_store.wal")
+    }
+
+    pub fn wal_file(&self) -> Result<File> {
+        OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(self.wal_path())
+            .map_err(|e| Error::App(format!("Failed to open WAL file: {}", e)))
     }
 }
 
@@ -67,14 +85,20 @@ impl Read for SecretStore {
     }
 }
 
-impl Write for SecretStore {
+impl orga::store::Write for SecretStore {
     fn delete(&mut self, key: &[u8]) -> Result<()> {
+        let mut wal = self.wal_file()?;
+        writeln!(wal, "delete {:?}", key)?;
+
         self.merk_store.delete(key)?;
 
         self.flush()
     }
 
     fn put(&mut self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
+        let mut wal = self.wal_file()?;
+        writeln!(wal, "put {:?} value {:?}", key, value)?;
+
         self.merk_store.put(key, value)?;
 
         self.flush()
