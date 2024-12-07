@@ -273,7 +273,7 @@ impl BitcoinTx {
     pub fn est_vsize(&self) -> Result<u64> {
         let base_vsize: u64 = self.to_bitcoin_tx()?.vsize().try_into()?;
         let est_witness_vsize = self.input.iter()?.try_fold(0, |sum: u64, input| {
-            Ok::<_, Error>(sum + input?.est_witness_vsize)
+            Ok::<_, Error>(sum + input?.est_vsize())
         })?;
         Ok(base_vsize + est_witness_vsize)
     }
@@ -1594,8 +1594,7 @@ impl<'a> BuildingCheckpointMut<'a> {
             let mut checkpoint_batch = self.batches.get_mut(BatchType::Checkpoint as u64)?.unwrap();
             for i in 1..checkpoint_batch.len() {
                 let mut tx = checkpoint_batch.get_mut(i)?.unwrap();
-                let fee = tx.est_vsize()? * fee_rate;
-                let value = tx.value()? + fee;
+                let mut value = tx.value()?;
 
                 // Add a funding input, to be populated once the checkpoint tx is finalized.
                 tx.input.push_back(Input::new(
@@ -1608,6 +1607,12 @@ impl<'a> BuildingCheckpointMut<'a> {
                     value,
                     SIGSET_THRESHOLD,
                 )?)?;
+
+                let fee = tx.est_vsize()? * fee_rate;
+                value += fee;
+
+                tx.input.get_mut(0)?.unwrap().amount += fee;
+
                 // TODO: do accounting for fee, e.g. from fee pool
 
                 // Add the output to the checkpoint tx.
