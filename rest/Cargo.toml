@@ -7,14 +7,11 @@ edition = "2021"
 
 [dependencies]
 rocket = { version = "0.5.0-rc.1", features = ["json", "tls"] }
-nomic = { path = "..", default-features = true, features = [
-    "full",
-    "testnet",
-] }
+nomic = { path = ".." }
 hex = "0.4.3"
-tendermint-rpc = { version = "=0.23.7", features = ["http-client"] }
-tendermint = "=0.23.7"
-tendermint-proto = "=0.23.9"
+tendermint-rpc = { version = "0.25", features = ["http-client"] }
+tendermint = "0.25"
+tendermint-proto = "0.25"
 ibc = { version = "0.54.0", features = ["borsh"] }
 ibc-proto = { version = "0.47.0", default-features = false, features = [
     "std",
@@ -29,3 +26,8 @@ tokio = "1.19.2"
 chrono = { version = "0.4.31", features = ["serde"] }
 sha2 = "0.10.6"
 bech32 = { version = "0.9.1" }
+
+[patch."https://github.com/turbofish-org/merk"]
+merk = { git = "https://github.com/nomic-io/merk", rev = "ece89c3adac49da4f6f202874964df18563b5c5d", optional = true }
+
+
