@@ -2920,7 +2920,7 @@ impl FrostSignerCmd {
         );
 
         if let Err(e) = signer_aux.audit().await {
-            log::error!("Error in FROST aux signer audit: {}", e);
+            log::warn!("Error in FROST aux signer audit: {}", e);
         }
 
         loop {

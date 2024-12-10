@@ -444,13 +444,13 @@ where
             } else {
                 last_pubkey_package.replace(pubkey_package);
             }
-            if let Some(pubkey) = last_pubkey_package.take() {
-                let pubkey = Adapter { inner: pubkey };
-                self.call(|app| build_call!(app.frost.attest_dkg_pubkey(index, pubkey.clone())))
-                    .await?;
+        }
+        if let Some(pubkey) = last_pubkey_package.take() {
+            let pubkey = Adapter { inner: pubkey };
+            self.call(|app| build_call!(app.frost.attest_dkg_pubkey(index, pubkey.clone())))
+                .await?;
 
-                log::info!("Submitted DKG pubkey attestation for group {}", index);
-            }
+            log::info!("Submitted DKG pubkey attestation for group {}", index);
         }
 
         Ok(())
@@ -953,15 +953,13 @@ where
             } else {
                 last_pubkey_package.replace(pubkey_package);
             }
-            if let Some(pubkey) = last_pubkey_package.take() {
-                let pubkey = Adapter { inner: pubkey };
-                self.call(|app| {
-                    build_call!(app.aux_frost.attest_dkg_pubkey(index, pubkey.clone()))
-                })
+        }
+        if let Some(pubkey) = last_pubkey_package.take() {
+            let pubkey = Adapter { inner: pubkey };
+            self.call(|app| build_call!(app.aux_frost.attest_dkg_pubkey(index, pubkey.clone())))
                 .await?;
 
-                log::info!("Submitted DKG pubkey attestation for group {}", index);
-            }
+            log::info!("Submitted DKG pubkey attestation for group {}", index);
         }
 
         Ok(())
