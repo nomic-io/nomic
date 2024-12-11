@@ -19,9 +19,8 @@ use orga::{
     orga,
     state::State,
 };
-use serde::Serialize;
+use serde::{ser::SerializeSeq as _, Serialize, Serializer};
 use serde_with::serde_as;
-use serde_with::TryFromInto;
 
 use crate::{
     app::{Dest, Identity},
@@ -789,7 +788,7 @@ pub struct Delegation {
     ///
     /// Note that as of Babylon mainnet cap 2, testnet 4, and the staging
     /// testnet, there is only one finality provider key.
-    #[serde_as(as = "TryFromInto<Vec<XOnlyPubkey>>")]
+    #[serde(serialize_with = "serialize_fp_keys")]
     pub fp_keys: LengthVec<u8, XOnlyPubkey>,
     /// The amount of Bitcoin blocks the delegation is staked for.
     pub staking_period: u16,
@@ -864,6 +863,21 @@ pub struct Delegation {
     // Fields for `Withdrawn` state:
     /// The index of the checkpoint which included the withdrawal transaction.
     pub withdraw_checkpoint_index: Option<u32>,
+}
+
+fn serialize_fp_keys<S>(
+    keys: &LengthVec<u8, XOnlyPubkey>,
+    serializer: S,
+) -> std::result::Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let keys = keys.to_vec();
+    let mut seq = serializer.serialize_seq(Some(keys.len()))?;
+    for key in keys.iter() {
+        seq.serialize_element(&hex::encode(key))?;
+    }
+    seq.end()
 }
 
 #[orga]
