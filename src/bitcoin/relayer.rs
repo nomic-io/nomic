@@ -40,10 +40,6 @@ where
 
 const HEADER_BATCH_SIZE: usize = 250;
 
-const HOLESKY_CHAIN_ID: u32 = 17000;
-const HOLESKY_CONNECTION: &str = "0x148dA8C984AA14d1255BB0d6ddcD5a0f221D4ef8";
-const HOLESKY_BABYLON_CONTRACT: &str = "0xa59B4f91853295B5573A398CBCF6e149E84980B7";
-
 #[derive(Serialize, Deserialize)]
 pub struct DepositsQuery {
     pub receiver: String,
@@ -376,79 +372,50 @@ impl Relayer {
             );
 
         let delegations_route = warp::path("delegations")
-            .and(warp::path("holesky").map(|| {
-                (
-                    HOLESKY_CHAIN_ID,
-                    HOLESKY_CONNECTION,
-                    HOLESKY_BABYLON_CONTRACT,
-                )
-            }))
             .and(warp::query::<DelegationsQuery>())
-            .and_then(
-                move |(network, connection, owner_address): (u32, &'static str, &'static str),
-                      query: DelegationsQuery| async move {
-                    let parse_eth_address = |addr: &str| {
-                        if !addr.starts_with("0x") || addr.len() != 42 {
-                            return Err(warp::reject());
-                        }
-                        let mut addr_bytes = [0u8; 20];
-                        addr_bytes
-                            .copy_from_slice(&hex::decode(&addr[2..]).map_err(|_| warp::reject())?);
-                        Ok(addr_bytes)
-                    };
+            .and_then(move |query: DelegationsQuery| async move {
+                let delegations: Vec<Delegation> = app_client(app_client_addr)
+                    .query(|app| {
+                        let mut res = vec![];
 
-                    let expected_owner = Identity::EthAccount {
-                        network,
-                        connection: parse_eth_address(connection)?,
-                        address: parse_eth_address(owner_address)?,
-                    };
-                    let delegations: Vec<Delegation> = app_client(app_client_addr)
-                        .query(|app| {
-                            let mut res = vec![];
+                        // TODO: only need to get one `delegations` entry since they're indexed
+                        // by owner, but `Map::get` causes client issue
+                        for entry in app.babylon.delegations.iter()? {
+                            let (_owner, delegations) = entry?;
+                            for entry in delegations.iter()? {
+                                let delegation = entry?;
 
-                            // TODO: only need to get one `delegations` entry since they're indexed
-                            // by owner, but `Map::get` causes client issue
-                            for entry in app.babylon.delegations.iter()? {
-                                let (_owner, delegations) = entry?;
-                                for entry in delegations.iter()? {
-                                    let delegation = entry?;
-                                    if delegation.owner != expected_owner {
+                                if let Some(index) = query.index {
+                                    if delegation.index != index {
                                         continue;
                                     }
+                                }
 
-                                    if let Some(index) = query.index {
-                                        if delegation.index != index {
-                                            continue;
-                                        }
-                                    }
+                                if query.address.is_none()
+                                    || query.address.as_ref().map(|v| v.to_lowercase())
+                                        == delegation
+                                            .return_dest
+                                            .to_receiver_addr()
+                                            .map(|addr| addr.to_lowercase())
+                                {
+                                    // TODO: replace encoding-based clone, either by actually
+                                    // implementing Clone for Delegation, or by returning a
+                                    // separate type here.
+                                    let delegation =
+                                        Delegation::decode(delegation.encode().unwrap().as_slice())
+                                            .unwrap(); // round-trip encoding is infallible
 
-                                    if query.address.is_none()
-                                        || query.address.as_ref().map(|v| v.to_lowercase())
-                                            == delegation
-                                                .return_dest
-                                                .to_receiver_addr()
-                                                .map(|addr| format!("0x{addr}").to_lowercase())
-                                    {
-                                        // TODO: replace encoding-based clone, either by actually
-                                        // implementing Clone for Delegation, or by returning a
-                                        // separate type here.
-                                        let delegation = Delegation::decode(
-                                            delegation.encode().unwrap().as_slice(),
-                                        )
-                                        .unwrap(); // round-trip encoding is infallible
-
-                                        res.push(delegation);
-                                    }
+                                    res.push(delegation);
                                 }
                             }
-                            Ok(res)
-                        })
-                        .await
-                        .map_err(|_| reject())?;
+                        }
+                        Ok(res)
+                    })
+                    .await
+                    .map_err(|_| reject())?;
 
-                    Ok::<_, warp::Rejection>(warp::reply::json(&delegations))
-                },
-            );
+                Ok::<_, warp::Rejection>(warp::reply::json(&delegations))
+            });
 
         let server = warp::serve(
             warp::any()
