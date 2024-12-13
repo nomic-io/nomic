@@ -11,71 +11,71 @@ orga = { git = "https://github.com/turbofish-org/orga.git", rev = "7482c82c2e8a5
     "merk-verify",
     "feat-ibc",
 ] }
-thiserror = "1.0.30"
+thiserror = "1.0.69"
 ed = { git = "https://github.com/turbofish-org/ed", rev = "a657be856792039ff60c2f67e7920e38cd3acffc" }
-clap = { version = "3.2.16", features = ["derive"], optional = true }
-tokio = { version = "1.39.2", features = ["full"], optional = true }
-base64 = "0.13.0"
-js-sys = { version = "0.3.55" }
-serde = "1.0.208"
-serde_json = "1.0.125"
-csv = { version = "1.1.6", optional = true }
+clap = { version = "3.2.25", features = ["derive"], optional = true }
+tokio = { version = "1.42.0", features = ["full"], optional = true }
+base64 = "0.13.1"
+js-sys = { version = "0.3.76" }
+serde = "1.0.216"
+serde_json = "1.0.133"
+csv = { version = "1.3.1", optional = true }
 bech32 = { version = "0.9.1" }
-futures = "0.3.21"
+futures = "0.3.31"
 toml_edit = "0.13.4"
-tendermint-rpc = { version = "0.38.0", features = [
+tendermint-rpc = { version = "0.40.0", features = [
     "http-client",
 ], optional = true }
 bitcoincore-rpc-async = { package = "bitcoincore-rpc-async2", version = "4.0.2", optional = true }
-bitcoin-script = "0.1.1"
-warp = { version = "0.3.2", optional = true }
-derive_more = "0.99.17"
+bitcoin-script = "0.1.3"
+warp = { version = "0.3.7", optional = true }
+derive_more = "0.99.18"
 pretty_env_logger = { git = "https://github.com/seanmonstar/pretty-env-logger", rev = "f9e35b6dbbf06de55222c944c9e1e176ce73b3a7" }
-reqwest = { version = "0.11.16", optional = true, features = ["json"] }
+reqwest = { version = "0.11.27", optional = true, features = ["json"] }
 rand = { version = "0.8.5", optional = true }
-sha2 = "0.10.6"
-bytes = "1.2.1"
+sha2 = "0.10.8"
+bytes = "1.9.0"
 serde-big-array = "0.4.1"
-log = "0.4.17"
+log = "0.4.22"
 hex = "0.4.3"
-toml = { version = "0.7.2", features = ["parse"] }
+toml = { version = "0.7.8", features = ["parse"] }
 split-iter = "0.1.0"
-chrono = "0.4.19"
+chrono = "0.4.39"
 tempfile = "3"
-home = { version = "0.5.5", optional = true }
-semver = "1.0.18"
+home = { version = "0.5.9", optional = true }
+semver = "1.0.24"
 ics23 = "0.12.0"
 cosmos-sdk-proto = { version = "0.23.0", optional = true }
 prometheus_exporter = "0.8.5"
-lazy_static = "1.4.0"
-prost = "0.13.3"
+lazy_static = "1.5.0"
+prost = "0.13.4"
 cosmrs = "0.14.0"
 ripemd = "0.1.3"
 frost-secp256k1-tr = { git = "https://github.com/ZcashFoundation/frost", rev = "51fa7d09f3742563a35d065afcff6ad486430dac", features = [
     "nightly",
 ], optional = true }
 serde-hex = "0.1.0"
-alloy-core = { version = "0.8.5", optional = true }
-alloy-sol-types = { version = "0.8.5", optional = true }
-alloy-contract = { version = "0.3.6", optional = true }
-alloy-provider = { version = "0.3.6", optional = true }
-alloy-signer-local = { version = "0.3.6", optional = true }
+alloy-core = { version = "0.8.15", optional = true }
+alloy-sol-types = { version = "0.8.15", optional = true }
+alloy-contract = { version = "0.8.0", optional = true }
+alloy-provider = { version = "0.8.0", optional = true }
+alloy-signer-local = { version = "0.8.0", optional = true }
 helios-consensus-core = { package = "consensus-core", git = "https://github.com/a16z/helios.git", rev = "0.7.0", optional = true }
 ethereum_ssz = { version = "0.6.0", optional = true }
 ssz_types = { version = "0.7.0", optional = true }
 alloy-trie = { version = "0.6.0", optional = true }
-alloy-primitives = { version = "0.8.5", optional = true }
-alloy-rlp = { version = "0.3.8", optional = true }
+alloy-primitives = { version = "0.8.15", optional = true }
+alloy-rlp = { version = "0.3.10", optional = true }
 tree_hash = { version = "0.7.0", optional = true }
-rlp = { version = "0.5.1", optional = true }
+rlp = { version = "0.5.2", optional = true }
 ethereum-triedb = { version = "0.1.1", optional = true }
 trie-db = { version = "0.28", optional = true }
 rlp-derive = { version = "0.2.0", optional = true }
 primitive-types = { version = "0.12", features = ["rlp"], optional = true }
 hex-literal = { version = "0.4.1", optional = true }
-alloy-rpc-types = { version = "0.3.6", optional = true }
-alloy-transport = { version = "0.3.6", optional = true }
-alloy-rpc-types-eth = { version = "0.3.6", optional = true }
+alloy-rpc-types = { version = "0.8.0", optional = true }
+alloy-transport = { version = "0.8.0", optional = true }
+alloy-rpc-types-eth = { version = "0.8.0", optional = true }
 ruint = { version = "1.12.3", optional = true }
 serde_with = { version = "3.11.0", features = ["json", "hex"] }
 ecies = "0.2.7"
@@ -84,22 +84,22 @@ ecies = "0.2.7"
 merk = { git = "https://github.com/nomic-io/merk", rev = "ece89c3adac49da4f6f202874964df18563b5c5d", optional = true }
 
 [dev-dependencies]
-bitcoind = { version = "0.27.0", features = ["22_0"] }
+bitcoind = { version = "0.36.1", features = ["26_0"] }
 bitcoin_hashes = "0.11.0"
-serde_json = "1.0.68"
-serde = "1.0.130"
+serde_json = "1.0.133"
+serde = "1.0.216"
 mutagen = "0.1.2"
-curl = "0.4.44"
-urlencoding = "2.1.2"
-crossbeam-channel = "0.5.8"
-chrono = "0.4.19"
+curl = "0.4.47"
+urlencoding = "2.1.3"
+crossbeam-channel = "0.5.13"
+chrono = "0.4.39"
 serial_test = "2.0.0"
-tempfile = "3.12.0"
+tempfile = "3.14.0"
 alloy-node-bindings = "0.3.6"
 
 [build-dependencies]
-toml = { version = "0.7.2", features = ["parse"] }
-semver = "1.0.18"
+toml = { version = "0.7.8", features = ["parse"] }
+semver = "1.0.24"
 glob = "0.3.1"
 
 [features]
