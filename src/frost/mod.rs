@@ -98,6 +98,35 @@ impl Config {
 
         Err(Error::App(format!("Participant not found: {}", address)))
     }
+
+    pub fn nth_quorum(&self, n: u32) -> HashSet<Address> {
+        let mut participants = self.participants.clone();
+
+        let len = participants.len();
+        let mut factorials = vec![1; len];
+        for i in 1..len {
+            factorials[i] = factorials[i - 1] * i;
+        }
+
+        let mut n = n as usize;
+        let mut perm = Vec::with_capacity(len);
+        for i in (1..=len).rev() {
+            let idx = n / factorials[i - 1];
+            n %= factorials[i - 1];
+            perm.push(participants.remove(idx));
+        }
+
+        let mut res = HashSet::new();
+        let mut total_shares = 0;
+        for p in perm {
+            res.insert(p.address);
+            total_shares += p.shares;
+            if total_shares >= self.threshold {
+                break;
+            }
+        }
+        res
+    }
 }
 
 /// A single Frost group.
@@ -259,6 +288,12 @@ impl FrostGroup {
         commitments: LengthVec<u16, Adapter<SigningCommitments>>,
     ) -> Result<()> {
         let address = self.signer()?;
+        if iteration > 0 {
+            let quorum = self.config.nth_quorum(iteration);
+            if !quorum.contains(&address) {
+                return Err(Error::App("Not in quorum".into()));
+            }
+        }
         let share_range = self.config.share_range(address)?;
         let mut sig = self
             .signing
@@ -736,6 +771,8 @@ fn disassemble_by_identifier<T: Clone>(map: &BTreeMap<Identifier, T>) -> Vec<(u1
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use frost_secp256k1_tr::SigningParameters;
 
     use orga::client::mock::MockClient;
@@ -1079,5 +1116,49 @@ mod tests {
         })?;
 
         Ok(())
+    }
+
+    #[test]
+    fn nth_quorum_3_of_5() {
+        let participants = vec![
+            Participant {
+                address: [0; 20].into(),
+                shares: 1,
+            },
+            Participant {
+                address: [1; 20].into(),
+                shares: 1,
+            },
+            Participant {
+                address: [2; 20].into(),
+                shares: 1,
+            },
+            Participant {
+                address: [3; 20].into(),
+                shares: 1,
+            },
+            Participant {
+                address: [4; 20].into(),
+                shares: 1,
+            },
+        ];
+
+        let config = Config {
+            threshold: 3,
+            participants: participants.try_into().unwrap(),
+        };
+
+        let mut quorums = vec![];
+        for i in 0..100 {
+            let q = config.nth_quorum(i);
+            quorums.push(q);
+        }
+
+        let unique_sets: HashSet<BTreeSet<String>> = quorums
+            .iter()
+            .map(|q| q.iter().map(|a| a.to_string()).collect())
+            .collect();
+
+        assert_eq!(unique_sets.len(), 10);
     }
 }
