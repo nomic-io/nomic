@@ -1,6 +1,6 @@
 [package]
 name = "nomic"
-version = "11.0.1"
+version = "11.1.0"
 authors = ["Nomic DAO Foundation <foundation@nomic.io>"]
 edition = "2021"
 default-run = "nomic"
