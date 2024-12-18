@@ -590,7 +590,7 @@ impl Params {
 
 impl Default for Params {
     fn default() -> Self {
-        Self::bbn_mainnet()
+        Self::bbn_staging_testnet()
     }
 }
 
