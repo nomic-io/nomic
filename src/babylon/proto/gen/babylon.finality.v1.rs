@@ -83,7 +83,7 @@ pub struct GenesisState {
     #[prost(message, repeated, tag="5")]
     pub public_randomness: ::prost::alloc::vec::Vec<PublicRandomness>,
 }
-/// VoteSig the vote of an finality provider
+/// VoteSig the vote of a finality provider
 /// with the block of the vote, the finality provider btc public key and the vote signature.
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
