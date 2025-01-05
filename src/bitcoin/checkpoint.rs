@@ -698,7 +698,7 @@ impl Checkpoint {
 
     /// Gets the output containing the reserve funds for the checkpoint, the
     /// "reserve output". This output is owned by the latest signatory set, and
-    /// is spent by the suceeding checkpoint transaction.
+    /// is spent by the succeeding checkpoint transaction.
     ///
     /// This output is not created until the checkpoint advances to `Signing`
     /// status.
@@ -903,7 +903,7 @@ pub struct Config {
     /// to be accepted by the Bitcoin network.
     ///
     /// If a checkpoint has more inputs than this when advancing from `Building`
-    /// to `Signing`, the excess inputs will be moved to the suceeding,
+    /// to `Signing`, the excess inputs will be moved to the succeeding,
     /// newly-created `Building` checkpoint.
     pub max_inputs: u64,
 
@@ -914,7 +914,7 @@ pub struct Config {
     ///
     /// If a checkpoint has more outputs than this when advancing from
     /// `Building` to `Signing`, the excess outputs will be moved to the
-    /// suceeding, newly-created `Building` checkpoint.∑
+    /// succeeding, newly-created `Building` checkpoint.∑
     pub max_outputs: u64,
 
     /// The maximum age of a checkpoint to retain, in seconds.
@@ -1596,7 +1596,7 @@ impl<'a> BuildingCheckpointMut<'a> {
 
         let (res, checkpoint_txid) = {
             // Remove excess inputs and outputs from the checkpoint tx, to be pushed
-            // onto the suceeding checkpoint while in its `Building` state.
+            // onto the succeeding checkpoint while in its `Building` state.
             let fee_rate = self.fee_rate;
             let mut checkpoint_batch = self.batches.get_mut(BatchType::Checkpoint as u64)?.unwrap();
             let mut checkpoint_tx = checkpoint_batch.get_mut(0)?.unwrap();

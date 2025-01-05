@@ -1011,7 +1011,7 @@ pub struct DeclareCmd {
     config: nomic::network::Config,
 }
 
-/// Infomation to be posted on-chain when declaring a new validator.
+/// Information to be posted on-chain when declaring a new validator.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DeclareInfo {
     /// The validator's name.
