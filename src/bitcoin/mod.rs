@@ -436,7 +436,7 @@ impl Bitcoin {
     }
 
     /// Called by users to set their recovery script, which is their desired
-    /// destination paid out to in the emergency disbursal process if the the
+    /// destination paid out to in the emergency disbursal process if the
     /// account has sufficient balance.
     #[call]
     pub fn set_recovery_script(&mut self, signatory_script: Adapter<Script>) -> Result<()> {
