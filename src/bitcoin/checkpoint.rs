@@ -67,7 +67,7 @@ pub enum CheckpointStatus {
     /// remove inputs or outputs.
     Signing,
 
-    /// All inputs in the the checkpoint are fully signed and the contained
+    /// All inputs in the checkpoint are fully signed and the contained
     /// checkpoint transaction is valid and ready to be broadcast on the bitcoin
     /// network.
     Complete,
@@ -455,7 +455,7 @@ pub const DEFAULT_FEE_RATE: u64 = 10;
 ///
 /// Checkpoints are each associated with a main transaction, the "checkpoint
 /// transaction", which spends the reserve output of the previous checkpoint
-/// transaction and the outputs of any incoming deposits. It pays out to the the
+/// transaction and the outputs of any incoming deposits. It pays out to the
 /// latest signatory set (in the "reserve output") and to destinations of any
 /// requested withdrawals. This transaction is included in the third batch of
 /// the `batches` deque.
@@ -1311,7 +1311,7 @@ impl<'a> BuildingCheckpointMut<'a> {
             for (i, (vout, output)) in intermediate_tx_outputs.iter().enumerate() {
                 if output == &(input.amount) {
                     // Once found, link the final tx's input to the vout index
-                    // of the the matching output from the intermediate tx, and
+                    // of the matching output from the intermediate tx, and
                     // remove it from the matching list.
 
                     input.prevout = Adapter::new(bitcoin::OutPoint {
