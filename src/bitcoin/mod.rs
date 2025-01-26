@@ -846,6 +846,23 @@ impl Bitcoin {
         sender: Identity,
     ) -> Result<()> {
         let building = &mut self.checkpoints.building_mut()?;
+
+        // Bitcoin dests are special-cased to go directly into outputs
+        if let Dest::Bitcoin { data } = dest {
+            let mut batch = building
+                .batches
+                .get_mut(BatchType::Checkpoint as u64)?
+                .unwrap();
+            let mut tx = batch.get_mut(0)?.unwrap();
+            let output = bitcoin::TxOut {
+                script_pubkey: data.into_inner(),
+                value: Into::<u64>::into(coins.amount) / self.config.units_per_sat,
+            };
+            coins.burn();
+            tx.output.push_back(Adapter::new(output))?;
+            return Ok(());
+        };
+
         let mut amount = building
             .pending
             .remove((dest.clone(), sender))?
