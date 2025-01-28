@@ -590,6 +590,9 @@ impl Params {
 
 impl Default for Params {
     fn default() -> Self {
+        #[cfg(not(feature = "testnet"))]
+        Self::bbn_mainnet()
+        #[cfg(feature = "testnet")]
         Self::bbn_staging_testnet()
     }
 }
