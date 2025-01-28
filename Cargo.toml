@@ -103,7 +103,7 @@ semver = "1.0.24"
 glob = "0.3.1"
 
 [features]
-default = ["full", "babylon", "frost", "ethereum-full", "testnet"]
+default = ["full", "babylon", "frost", "ethereum-full"]
 full = [
     "bitcoincore-rpc-async",
     "clap",
