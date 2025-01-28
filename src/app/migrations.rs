@@ -171,7 +171,10 @@ impl MigrateFrom<InnerAppV8> for InnerAppV9 {
         {
             use orga::ibc::ibc_rs::apps::transfer::context::TokenTransferExecutionContext;
 
+            // The amount of nBTC (in usats) transferred to Osmosis.
             let usat_amount = 199_993_033_000_000;
+
+            // Burn the coins from the Osmosis escrow address (channel-1/transfer).
             let coins = Coin::<Nbtc>::mint(usat_amount);
             let escrow_address = cosmos_adr028_escrow_address(
                 &PortId::new("transfer".to_string()).unwrap(),
@@ -183,6 +186,9 @@ impl MigrateFrom<InnerAppV8> for InnerAppV9 {
                 &coins.into(),
                 &"".parse().unwrap(),
             )?;
+
+            // Construct a destination with the same parameters as the transfer that
+            // failed. Only the `timeout_timestamp` has been modified.
 
             let coins = Coin::<Nbtc>::mint(usat_amount);
             let sender: Address = "nomic163gdzl33kjdxac6h6clt827fczjc456f4g5vf9"
@@ -200,6 +206,8 @@ impl MigrateFrom<InnerAppV8> for InnerAppV9 {
                 },
             };
 
+            // Insert the coins as a new pending transfer with the same destination
+            // on Osmosis.
             other
                 .bitcoin
                 .insert_pending(dest, coins, Identity::NativeAccount { address: sender })
