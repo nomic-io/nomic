@@ -1080,4 +1080,108 @@ mod tests {
 
         Ok(())
     }
+
+    #[tokio::test]
+    #[serial]
+    async fn sign_local() -> Result<()> {
+        Context::add(Time::from_seconds(0));
+        let store = Store::with_map_store();
+        let config = Config {
+            threshold: 3,
+            participants: (0..5)
+                .map(|i| Participant {
+                    address: DerivedKey::new(&[i as u8]).unwrap().address(),
+                    shares: if i == 1 { 3 } else { 1 },
+                })
+                .collect::<Vec<_>>()
+                .try_into()?,
+        };
+
+        setup(store.clone(), config, true)?;
+
+        let make_signer = |store: Store, name: &[u8]| {
+            let secret_store = Store::with_map_store();
+            let name = name.to_vec();
+            let name_clone = name.clone();
+            let make_client = move || {
+                let mock_client = MockClient::<App>::with_store(store.clone());
+                let wallet = DerivedKey::new(&name_clone).unwrap();
+                AppClient::<_, _, _, _, _>::new(mock_client, wallet)
+            };
+            AuxSigner::new(
+                secret_store,
+                make_client,
+                DerivedKey::new(&name).unwrap().address(),
+            )
+        };
+
+        let mut signers = (0..5)
+            .map(|i| make_signer(store.clone(), &[i as u8]))
+            .collect::<Vec<_>>();
+
+        for signer in signers.iter_mut() {
+            signer.audit().await?;
+        }
+
+        with_app(store.clone(), |app| {
+            let group = app.aux_frost.groups.front_mut().unwrap().unwrap();
+            assert_eq!(group.dkg.state(), DkgState::Round1);
+            Ok(())
+        })?;
+
+        for signer in signers.iter_mut() {
+            signer.step().await?;
+        }
+
+        with_app(store.clone(), |app| {
+            let group = app.aux_frost.groups.front_mut().unwrap().unwrap();
+            assert_eq!(group.dkg.state(), DkgState::Round2);
+            Ok(())
+        })?;
+
+        for signer in signers.iter_mut() {
+            signer.step().await?;
+        }
+
+        with_app(store.clone(), |app| {
+            let group = app.aux_frost.groups.front_mut().unwrap().unwrap();
+            assert_eq!(group.dkg.state(), DkgState::Attesting);
+            Ok(())
+        })?;
+
+        for signer in signers.iter_mut() {
+            signer.step().await?;
+        }
+
+        with_app(store.clone(), |app| {
+            let group = app.aux_frost.groups.front_mut().unwrap().unwrap();
+            assert_eq!(group.dkg.state(), DkgState::Complete);
+            Ok(())
+        })?;
+
+        let signature = signers[1].sign_local(0, &[1, 2, 3]).await?;
+
+        with_app(store.clone(), |app| {
+            let group_key = &app.aux_frost.group_pubkey(0)?.unwrap().inner;
+            let signing_params = SigningParameters {
+                tapscript_merkle_root: None,
+            };
+
+            assert!(group_key
+                .verifying_key()
+                .effective_key(&signing_params)
+                .verify([1, 2, 3], &signature)
+                .is_ok());
+
+            assert!(group_key
+                .verifying_key()
+                .effective_key(&signing_params)
+                .verify([1, 2, 3, 4], &signature)
+                .is_err());
+
+            Ok(())
+        })?;
+
+        Ok(())
+    }
 }

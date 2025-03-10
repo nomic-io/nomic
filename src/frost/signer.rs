@@ -7,8 +7,8 @@ use std::io::Write as IoWrite;
 use std::path::{Path, PathBuf};
 
 use frost_secp256k1_tr::round1::{commit, SigningCommitments, SigningNonces};
-use frost_secp256k1_tr::round2;
 use frost_secp256k1_tr::round2::SignatureShare;
+use frost_secp256k1_tr::{aggregate, round2, Signature, SigningPackage};
 use orga::call::build_call;
 use orga::client::{AppClient, Transport, Wallet};
 use orga::merk::MerkStore;
@@ -1126,5 +1126,74 @@ where
         })?;
 
         Ok(())
+    }
+
+    /// Creates a signature for a FROST group where the signing threshold can be
+    /// reached with key packages available locally.
+    pub async fn sign_local(&mut self, group_index: u64, message: &[u8]) -> Result<Signature> {
+        let mut rng = thread_rng();
+
+        let config = self.get_config(group_index).await?;
+        let pubkey_package = self
+            .client()
+            .query(|app: InnerApp| app.aux_frost.group_pubkey(group_index))
+            .await?
+            .ok_or_else(|| {
+                Error::App(format!(
+                    "Missing public key for specified group: {}",
+                    group_index
+                ))
+            })?
+            .inner;
+        let mut keys = vec![];
+        let mut commitments = vec![];
+        let mut nonces = vec![];
+        for i in config.share_range(self.address)? {
+            let key_package: KeyPackage = self.with_key_package(|key_packages| {
+                Ok(key_packages
+                    .get((group_index, i))?
+                    .ok_or_else(|| {
+                        Error::App(format!(
+                            "Missing key package group {} participant {}",
+                            group_index, i
+                        ))
+                    })?
+                    .inner
+                    .clone())
+            })?;
+            keys.push((i, key_package));
+        }
+        let key_packages = assemble_by_identifier(keys.iter().map(|(i, k)| (*i, k.clone())));
+
+        // Round 1
+        for (i, key) in keys.iter() {
+            let (signing_nonces, commitment) = commit(key.signing_share(), &mut rng);
+            nonces.push((i, signing_nonces));
+            commitments.push((i, commitment));
+        }
+        let signing_package = SigningPackage::new(
+            assemble_by_identifier(commitments.iter().map(|(i, c)| (**i, *c))),
+            message,
+        );
+        let nonces = assemble_by_identifier(nonces.iter().map(|(i, n)| (**i, n.clone())));
+
+        // Round 2
+        let mut sig_shares = vec![];
+        for (i, _key) in keys.iter() {
+            let sig_share = round2::sign(
+                &signing_package,
+                nonces.get(&identifier(*i)).unwrap(),
+                key_packages.get(&identifier(*i)).unwrap(),
+            )
+            .map_err(|e| Error::App(format!("Error during signing: {}", e)))?;
+
+            sig_shares.push((i, sig_share));
+        }
+        let sig_shares = assemble_by_identifier(sig_shares.iter().map(|(i, s)| (**i, *s)));
+
+        let signature = aggregate(&signing_package, &sig_shares, &pubkey_package)
+            .map_err(|e| Error::App(format!("Error during signature aggregation: {}", e)))?;
+
+        Ok(signature)
     }
 }

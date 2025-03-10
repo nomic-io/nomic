@@ -199,6 +199,8 @@ pub enum Command {
     #[cfg(feature = "frost")]
     FrostSigner(FrostSignerCmd),
     #[cfg(feature = "frost")]
+    FrostSignLocal(FrostSignLocalCmd),
+    #[cfg(feature = "frost")]
     CreateAuxFrostGroup(CreateAuxFrostGroupCmd),
 }
 
@@ -281,6 +283,8 @@ impl Command {
                 CreateEthConnection(cmd) => cmd.run().await,
                 #[cfg(feature = "frost")]
                 FrostSigner(cmd) => cmd.run().await,
+                #[cfg(feature = "frost")]
+                FrostSignLocal(cmd) => cmd.run().await,
                 #[cfg(feature = "frost")]
                 CreateAuxFrostGroup(cmd) => cmd.run().await,
             }
@@ -2934,6 +2938,53 @@ impl FrostSignerCmd {
 
             std::thread::sleep(std::time::Duration::from_secs(5));
         }
+    }
+}
+
+#[cfg(feature = "frost")]
+#[derive(Parser, Debug)]
+pub struct FrostSignLocalCmd {
+    #[clap(flatten)]
+    config: nomic::network::Config,
+
+    #[clap(long)]
+    message_base64: String,
+
+    #[clap(long)]
+    group_index: u64,
+}
+
+#[cfg(feature = "frost")]
+impl FrostSignLocalCmd {
+    async fn run(&self) -> Result<()> {
+        log::info!("Creating local FROST signature...");
+
+        let signer_dir_path_aux = self.config.home_expect()?.join("frost_aux");
+        if !signer_dir_path_aux.exists() {
+            log::error!(
+                "Expected FROST aux signer directory at {:?}",
+                signer_dir_path_aux
+            );
+            return Err(nomic::error::Error::Orga(orga::Error::App(
+                "FROST aux signer directory not found".to_string(),
+            )));
+        }
+        let store_aux = SecretStore::new_store(signer_dir_path_aux);
+        let mut signer_aux = crate::frost::signer::AuxSigner::new(
+            store_aux,
+            || self.config.client().with_wallet(wallet()),
+            my_address(),
+        );
+
+        let message =
+            base64::decode(&self.message_base64).expect("Failed to decode base64 message");
+        let signature = signer_aux
+            .sign_local(self.group_index, message.as_slice())
+            .await?;
+
+        println!("{}", base64::encode(signature.serialize()));
+
+        Ok(())
     }
 }
 
