@@ -1513,7 +1513,7 @@ impl<'a> BuildingCheckpointMut<'a> {
             // unaccounted-for funds to return them to the rightful nBTC
             // holders.
             let intermediate_tx_out_value = intermediate_tx.value()?;
-            let excess_value = reserve_value - intermediate_tx_out_value;
+            let excess_value = reserve_value.saturating_sub(intermediate_tx_out_value);
             let excess_tx_out = bitcoin::TxOut {
                 value: excess_value,
                 script_pubkey: output_script,
