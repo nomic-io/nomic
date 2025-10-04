@@ -9,7 +9,7 @@
 <i>Decentralized Custody Engine for Bitcoin</i>
 </p>
 
-![CI](https://github.com/nomic-io/nomic/actions/workflows/ci.yml/badge.svg)
+[![CI](https://github.com/nomic-io/nomic/actions/workflows/ci.yml/badge.svg)](https://github.com/nomic-io/nomic/actions/workflows/ci.yml)
 
 Nomic is a blockchain that offers a decentralized custody solution for Bitcoin. Built on Turbofish’s [Orga](https://github.com/turbofish-org/orga), a custom high-performance blockchain application framework. Nomic mints nBTC, a token backed 1:1 with BTC, using [IBC](https://www.ibcprotocol.dev/) for secure and efficient bridging.
 
