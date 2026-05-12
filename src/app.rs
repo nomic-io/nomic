@@ -121,7 +121,7 @@ const FROST_THRESHOLD: u16 = 3;
 
 /// The top-level application state type and logic. This contains the major
 /// state types for the various subsystems of the Nomic protocol.
-#[orga(version = 5..=9)]
+#[orga(version = 5..=10)]
 pub struct InnerApp {
     /// Account state for the NOM token.
     #[call]
@@ -187,34 +187,34 @@ pub struct InnerApp {
     #[call]
     pub ethereum: Connection,
     #[cfg(all(feature = "ethereum", feature = "testnet"))]
-    #[orga(version(V7, V8, V9))]
+    #[orga(version(V7, V8, V9, V10))]
     #[call]
     pub ethereum: Ethereum,
     #[cfg(all(feature = "ethereum", not(feature = "testnet")))]
-    #[orga(version(V8, V9))]
+    #[orga(version(V8, V9, V10))]
     #[call]
     pub ethereum: Ethereum,
 
     #[cfg(all(feature = "babylon", feature = "testnet"))]
-    #[orga(version(V7, V8, V9))]
+    #[orga(version(V7, V8, V9, V10))]
     #[call]
     pub babylon: Babylon,
     #[cfg(all(feature = "babylon", not(feature = "testnet")))]
-    #[orga(version(V8, V9))]
+    #[orga(version(V8, V9, V10))]
     #[call]
     pub babylon: Babylon,
 
     #[cfg(all(feature = "frost", feature = "testnet"))]
-    #[orga(version(V7, V8, V9))]
+    #[orga(version(V7, V8, V9, V10))]
     #[call]
     pub frost: Frost,
     #[cfg(all(feature = "frost", not(feature = "testnet")))]
-    #[orga(version(V8, V9))]
+    #[orga(version(V8, V9, V10))]
     #[call]
     pub frost: Frost,
 
     #[cfg(feature = "frost")]
-    #[orga(version(V8, V9))]
+    #[orga(version(V8, V9, V10))]
     #[call]
     pub aux_frost: Frost,
 }
@@ -225,7 +225,7 @@ impl InnerApp {
     /// breaking changes are made to either the state encoding or logic of the
     /// protocol, and requires a network upgrade to be coordinated via the
     /// upgrade module.
-    pub const CONSENSUS_VERSION: u8 = 17;
+    pub const CONSENSUS_VERSION: u8 = 18;
 
     #[cfg(feature = "full")]
     fn configure_faucets(&mut self) -> Result<()> {

@@ -12,7 +12,7 @@ use crate::{
     incentives::Incentives,
 };
 
-use super::{InnerAppV5, InnerAppV6, InnerAppV7, InnerAppV8, InnerAppV9};
+use super::{InnerAppV10, InnerAppV5, InnerAppV6, InnerAppV7, InnerAppV8, InnerAppV9};
 use bitcoin::{
     util::{uint::Uint256, BitArray},
     BlockHeader,
@@ -99,7 +99,7 @@ impl MigrateFrom<InnerAppV6> for InnerAppV7 {
     fn migrate_from(mut other: InnerAppV6) -> Result<Self> {
         other
             .ibc
-            .update_client_from_header(0, 1, include_str!("./kujira-header.json"))?;
+            .update_client_from_header(0, 1, include_str!("./kujira-header-v7.json"))?;
 
         Ok(Self {
             accounts: other.accounts,
@@ -164,6 +164,7 @@ impl MigrateFrom<InnerAppV7> for InnerAppV8 {
 }
 
 impl MigrateFrom<InnerAppV8> for InnerAppV9 {
+    #[allow(unused_mut)]
     fn migrate_from(mut other: InnerAppV8) -> Result<Self> {
         // Re-trigger nBTC transfer to Osmosis which failed in Osmosis transaction
         // 32F54466B740ACE357378E628C1EA6B590ACBDD9E7B261AE022865DC11281103.
@@ -212,6 +213,47 @@ impl MigrateFrom<InnerAppV8> for InnerAppV9 {
                 .bitcoin
                 .insert_pending(dest, coins, Identity::NativeAccount { address: sender })
                 .unwrap();
+        }
+
+        Ok(Self {
+            accounts: other.accounts,
+            staking: other.staking,
+            airdrop: other.airdrop,
+            community_pool: other.community_pool,
+            incentive_pool: other.incentive_pool,
+            staking_rewards: other.staking_rewards,
+            dev_rewards: other.dev_rewards,
+            community_pool_rewards: other.community_pool_rewards,
+            incentive_pool_rewards: other.incentive_pool_rewards,
+            bitcoin: other.bitcoin,
+            reward_timer: other.reward_timer,
+            upgrade: other.upgrade,
+            incentives: other.incentives,
+            ibc: other.ibc,
+            cosmos: other.cosmos,
+            #[cfg(feature = "ethereum")]
+            ethereum: other.ethereum,
+            #[cfg(feature = "babylon")]
+            babylon: other.babylon,
+            #[cfg(feature = "frost")]
+            frost: other.frost,
+            #[cfg(feature = "frost")]
+            aux_frost: other.aux_frost,
+        })
+    }
+}
+
+impl MigrateFrom<InnerAppV9> for InnerAppV10 {
+    #[allow(unused_mut)]
+    fn migrate_from(mut other: InnerAppV9) -> Result<Self> {
+        #[cfg(not(feature = "testnet"))]
+        {
+            other
+                .ibc
+                .update_client_from_header(0, 1, include_str!("./kujira-header.json"))?;
+            other
+                .ibc
+                .update_client_from_header(1, 1, include_str!("./osmosis-header.json"))?;
         }
 
         Ok(Self {
