@@ -906,6 +906,70 @@ impl Checkpoint {
 
         Ok(vec![reserve_out, timestamping_commitment_out])
     }
+
+    /// Returns `true` if advancing this checkpoint to `Signing` would succeed,
+    /// i.e. the checkpoint's inputs are sufficient to cover its outputs and
+    /// miner fees.
+    ///
+    /// Mirrors the accounting performed by `BuildingCheckpointMut::advance`
+    /// without mutating state, including the addition of aux transaction
+    /// funding outputs and the removal of excess inputs and outputs.
+    ///
+    /// This is used to prevent a checkpoint from being advanced when it cannot
+    /// cover its costs, which would otherwise fail with an "Insufficient funds
+    /// to cover fees" error and halt the network.
+    #[cfg(feature = "full")]
+    pub fn can_advance(
+        &self,
+        config: &Config,
+        timestamping_commitment: &[u8],
+        additional_fees: u64,
+    ) -> Result<bool> {
+        let base_fee = self.base_fee(config, timestamping_commitment)?;
+
+        let checkpoint_batch = self.batches.get(BatchType::Checkpoint as u64)?.unwrap();
+        let checkpoint_tx = checkpoint_batch.get(0)?.unwrap();
+
+        // Sum the inputs which would remain after excess inputs are removed,
+        // matching `advance`.
+        let mut in_amount: u64 = 0;
+        for i in 0..checkpoint_tx.input.len().min(config.max_inputs) {
+            in_amount += checkpoint_tx.input.get(i)?.unwrap().amount;
+        }
+
+        // Sum the outputs which would remain after the additional outputs
+        // (reserve and timestamping commitment, both zero-valued) are added to
+        // the front and excess outputs are removed from the back, matching
+        // `advance`. Aux transaction funding outputs are appended after the
+        // existing outputs, so they are included only while there is room below
+        // the maximum output count.
+        let mut out_amount: u64 = 0;
+        let mut num_outputs: u64 = 2; // the additional outputs
+        for i in 0..checkpoint_tx.output.len() {
+            if num_outputs >= config.max_outputs {
+                break;
+            }
+            out_amount += checkpoint_tx.output.get(i)?.unwrap().value;
+            num_outputs += 1;
+        }
+        // The vsize contribution of the funding input added to each aux
+        // transaction by `advance`, including its base size and worst-case
+        // signed witness size.
+        let funding_input_vsize = 41 + self.sigset.est_witness_vsize() + 40;
+        for i in 1..checkpoint_batch.len() {
+            if num_outputs >= config.max_outputs {
+                break;
+            }
+            let tx = checkpoint_batch.get(i)?.unwrap();
+            let value = tx.value()?;
+            let fee = (tx.est_vsize()? + funding_input_vsize) * self.fee_rate;
+            out_amount += value + fee;
+            num_outputs += 1;
+        }
+
+        let fee = base_fee + additional_fees;
+        Ok(in_amount >= out_amount.saturating_add(fee))
+    }
 }
 
 /// Configuration parameters used in processing checkpoints.
@@ -2255,6 +2319,20 @@ impl CheckpointQueue {
             return Ok(false);
         }
 
+        // If pushing would advance the current `Building` checkpoint (i.e.
+        // there is a previous checkpoint), do not push if its inputs cannot
+        // cover its outputs and miner fees. Advancing such a checkpoint would
+        // fail with an "Insufficient funds to cover fees" error, halting the
+        // network, so instead delay advancing until sufficient deposits arrive.
+        if !self.queue.is_empty() {
+            let building = self.building()?;
+            let additional_fees = self.fee_adjustment(building.fee_rate, &self.config)?;
+            if !building.can_advance(&self.config, timestamping_commitment, additional_fees)? {
+                log::debug!("Not enough funds to cover checkpoint outputs and fees");
+                return Ok(false);
+            }
+        }
+
         // Increment the index. For the first checkpoint, leave the index at
         // zero.
         let mut index = self.index;
@@ -3112,6 +3190,142 @@ mod test {
         sigset.present_vp = 100;
 
         sigset
+    }
+
+    #[cfg(feature = "full")]
+    #[test]
+    fn can_advance_solvency() {
+        let config = Config::bitcoin();
+        let sigset = sigset(1);
+
+        let mut cp = Checkpoint::new(sigset.clone()).unwrap();
+
+        // Solvent: a deposit covers the outputs and miner fees.
+        let deposit = Input::new(
+            OutPoint {
+                txid: Txid::from_slice(&[0; 32]).unwrap(),
+                vout: 0,
+            },
+            &sigset,
+            &[0u8],
+            1_000_000_000,
+            (2, 3),
+        )
+        .unwrap();
+        let mut checkpoint_batch = cp
+            .batches
+            .get_mut(BatchType::Checkpoint as u64)
+            .unwrap()
+            .unwrap();
+        let mut checkpoint_tx = checkpoint_batch.get_mut(0).unwrap().unwrap();
+        checkpoint_tx.input.push_back(deposit).unwrap();
+        drop(checkpoint_batch);
+
+        assert!(cp.can_advance(&config, &[0; 32], 0).unwrap());
+
+        // Insolvent: a withdrawal far exceeding the deposit and reserve cannot
+        // be covered by advancing.
+        let mut checkpoint_batch = cp
+            .batches
+            .get_mut(BatchType::Checkpoint as u64)
+            .unwrap()
+            .unwrap();
+        let mut checkpoint_tx = checkpoint_batch.get_mut(0).unwrap().unwrap();
+        push_bitcoin_tx_output(&mut checkpoint_tx, 100_000_000_000);
+        drop(checkpoint_batch);
+
+        assert!(!cp.can_advance(&config, &[0; 32], 0).unwrap());
+    }
+
+    #[cfg(feature = "full")]
+    #[test]
+    #[serial_test::serial]
+    fn no_advance_when_insolvent() {
+        let paid = orga::plugins::Paid::default();
+        Context::add(paid);
+
+        let mut vals = orga::plugins::Validators::new(
+            Rc::new(RefCell::new(Some(EntryMap::new()))),
+            Rc::new(RefCell::new(None)),
+        );
+        vals.set_voting_power([0; 32], 100);
+        Context::add(vals);
+
+        let secp = Secp256k1::new();
+        let xpriv = ExtendedPrivKey::new_master(bitcoin::Network::Regtest, &[0]).unwrap();
+        let xpub = ExtendedPubKey::from_priv(&secp, &xpriv);
+
+        let mut sig_keys = Map::new();
+        sig_keys.insert([0; 32], Xpub::new(xpub)).unwrap();
+
+        let queue = Rc::new(RefCell::new(CheckpointQueue::default()));
+        queue.borrow_mut().config = Config {
+            min_fee_rate: 2,
+            max_fee_rate: 200,
+            target_checkpoint_inclusion: 2,
+            min_checkpoint_interval: 100,
+            ..Default::default()
+        };
+
+        let mut fee_pool = 0;
+        let mut maybe_step = |btc_height| {
+            queue
+                .borrow_mut()
+                .maybe_step(
+                    &sig_keys,
+                    &Accounts::default(),
+                    &Map::new(),
+                    vec![Ok(bitcoin::TxOut {
+                        script_pubkey: Script::new(),
+                        value: 1_000_000,
+                    })]
+                    .into_iter(),
+                    btc_height,
+                    true,
+                    vec![1, 2, 3],
+                    &mut fee_pool,
+                    &super::super::Config::default(),
+                )
+                .unwrap();
+        };
+
+        set_time(0);
+        maybe_step(8);
+
+        // Deposit 1 BTC, then add a withdrawal far exceeding it plus the
+        // reserve, making the checkpoint unable to cover its outputs and fees.
+        {
+            let input = Input::new(
+                OutPoint {
+                    txid: Txid::from_slice(&[0; 32]).unwrap(),
+                    vout: 0,
+                },
+                &queue.borrow().building().unwrap().sigset,
+                &[0u8],
+                100_000_000,
+                (2, 3),
+            )
+            .unwrap();
+            let mut queue = queue.borrow_mut();
+            let mut building_mut = queue.building_mut().unwrap();
+            building_mut.fees_collected = 100_000_000;
+            let mut checkpoint_batch = building_mut
+                .batches
+                .get_mut(BatchType::Checkpoint as u64)
+                .unwrap()
+                .unwrap();
+            let mut checkpoint_tx = checkpoint_batch.get_mut(0).unwrap().unwrap();
+            checkpoint_tx.input.push_back(input).unwrap();
+            push_bitcoin_tx_output(&mut checkpoint_tx, 1_000_000_000);
+        }
+
+        set_time(1_000);
+        maybe_step(8);
+
+        // The checkpoint must not be advanced (which would fail with an
+        // "Insufficient funds" error); it stays in the `Building` state.
+        assert_eq!(queue.borrow().len().unwrap(), 1);
+        assert!(queue.borrow().building().is_ok());
     }
 
     #[test]
